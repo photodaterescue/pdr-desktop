@@ -1,0 +1,90 @@
+Design a premium desktop application UI for “Photo Date Rescue” (PDR).
+
+Photo Date Rescue is a paid Windows/macOS desktop application that safely fixes photo and video dates and filenames after cloud exports, phone transfers, or backups.
+
+Positioning & tone:
+
+This is the premium desktop product (not a web demo)
+
+Calm, reassuring, professional, and minimal
+
+Lavender-themed, generous spacing, no rushed or destructive feeling
+
+Congruent with a premium SaaS website experience
+
+Launch experience:
+
+App opens to a calm home screen explaining what the app does
+
+Home screen offers clear actions (add folders, ZIPs, drives)
+
+Include a checkbox: “Skip this screen next time” (unchecked by default)
+
+Workspace model:
+
+Users work inside a Workspace
+
+A workspace can contain multiple sources at once:
+folders, ZIP archives, external drives
+
+No immediate file picker on launch
+
+Workspace layout concept:
+
+Left panel: added sources with status indicators
+
+Main panel: summary view
+
+Action area: preview, output selection, run
+
+Confidence score (key feature):
+
+Confidence is calculated per file (never per folder or drive)
+
+It represents strength and agreement of metadata signals, not “accuracy”
+
+Signals include EXIF, video metadata, Google Takeout JSON, Apple metadata, filenames, folder structure, heuristics
+
+UI shows aggregated summaries: high / medium / low confidence counts
+
+Users can filter to review only low-confidence files
+
+Users are not expected to review every file
+
+Output handling:
+
+App never overwrites originals by default
+
+Output selection is a dedicated step
+
+Users choose an output folder or drive
+
+App checks available space and warns if insufficient
+
+Default is a new dated output folder
+
+Safety & messaging:
+
+Emphasise that originals are untouched
+
+Encourage backing up files first
+
+Clear, reassuring language throughout
+
+Cloud stance:
+
+App does not write directly to Google Photos or Apple Photos
+
+Users may output to Google Drive or iCloud Drive if mounted
+
+App prepares files; cloud services ingest them
+
+Focus:
+
+Design screens, layout, UX flow, and interaction states
+
+No backend or Electron runtime logic
+
+Prioritise clarity, trust, and premium feel over speed
+
+Start with the Home Screen, then the Workspace, then Confidence Summary, then Output Selection.

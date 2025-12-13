@@ -1,0 +1,150 @@
+I'll extract the Design DNA from Photo Date Rescue and create a comprehensive guide for your desktop app.
+
+Photo Date Rescue — Design DNA
+1. COLOR PALETTE
+Primary Colors
+Lavender (Primary CTA): #A99CFF — soft, inviting, premium
+Lavender Accent (Secondary, Hover): #8C7BFF — slightly deeper for interaction states
+Lavender Deep (Accent Text/Links): #6b5aff — rich, high contrast
+Supporting Colors
+Lavender Soft (Background/Accents): #efecff — very light, used for step numbers and soft backgrounds
+Gold Accent (Premium/Highlight): #f8c15c — warm accent for best-value pricing badge, ripple effects
+Neutral/Background Colors
+Page Background: #f6f6fb — very subtle purple tint, sophisticated
+Surface (Cards/Containers): #ffffff — clean white
+Text Main (Headlines): #2f2f45 — deep navy-grey
+Text Muted (Subtitle/Secondary): #5b5a75 — medium grey
+Text Soft (Body/Lists): #7a7a96 — lighter grey
+Borders: #e1def7 — subtle lavender border
+2. TYPOGRAPHY
+Font Family
+"System-first stack": system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif
+
+Modern, clean, platform-native feel
+Excellent readability on all devices
+Premium, minimal aesthetic
+Hierarchy
+Level	Size	Weight	Usage
+Hero Title	2.1rem	600	Page main heading
+Section Title	2.2rem	600	Section headings
+Subtitle/Tagline	1.1rem	400	Descriptive text under headers
+Card Heading	1.05rem	500	Pricing plan name, card titles
+Body Text	0.9–0.95rem	400	Main paragraph text
+Small/Label	0.8–0.88rem	500	Captions, footer, labels
+Line Height
+Headlines: 1.1–1.2 (tight, powerful)
+Body: 1.5–1.6 (generous, readable)
+3. BUTTON STYLES
+Primary Button
+Background: Lavender (#A99CFF)
+Text Color: White
+Border Radius: 999px (fully rounded/pill)
+Padding: 8px 18px
+Font Size: 0.88rem, weight 500
+Box Shadow: 0 10px 25px rgba(108, 99, 255, 0.3)
+Hover/Active State:
+
+Background: Lavender Hover (#988BF2)
+Transform: translateY(-2px) scale(1.02) (subtle lift + grow)
+Transition: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)
+Outline Button
+Background: Light white/transparent (rgba(255, 255, 255, 0.9))
+Text Color: Lavender Deep (#6b5aff)
+Border: 1px solid Lavender Accent (#8C7BFF)
+Border Radius: 999px
+Padding: 8px 18px
+Hover/Active State:
+
+Background: Lavender Soft (#efecff)
+Transform: translateY(-2px) scale(1.02)
+Transition: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)
+Key Details
+All buttons: Pill-shaped, rounded corners, generous padding
+Transitions: Smooth, 0.4s easing with bounce-like cubic-bezier
+Disabled: #f1f1fb background, #a9a9c5 text (subtle, not clickable)
+4. SPACING & LAYOUT RHYTHM
+Section Padding
+Large sections: 80px top/bottom, 20px sides
+Generous, breathing room — not tight or cramped
+Container Width
+Max-width: 1120px (narrower, focused content)
+Mobile padding: 20px sides (responsive breathing)
+Spacing Scale (Used Consistently)
+Use	Size
+Micro gaps (inline)	4px
+Small gaps (list items)	10px
+Medium gaps (between sections)	16–18px
+Large gaps (between elements)	24px
+XL gaps (between major sections)	60px
+Layout Type
+Section-based rhythm: Clear separation between hero, why, steps, pricing, guides, FAQ
+Card-based sections: Most content lives in 18px-padded cards
+Two-column layout on desktop: 60px gap between columns, stacks on mobile
+Grid cards: 3-column on desktop (guides), responsive to 2-column, then 1-column on mobile
+5. CARD & SURFACE STYLES
+Card Styling
+Border Radius: 18px (noticeable roundness, approachable)
+Padding: 18–32px (depends on card type)
+Border: 1px solid #e1def7 (subtle, barely noticeable)
+Background: #ffffff (clean white)
+Box Shadow: 0 18px 40px rgba(23, 15, 73, 0.08) (very subtle, premium depth)
+Card Hover State
+Transform: translateY(-4px) scale(1.02) (slight lift, grow)
+Border Color: Changes to Lavender (#A99CFF)
+Transition: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)
+Special Cards
+Pricing Yearly Card: Light cream background (#FFF8E6) with gold-lavender ripple accents
+Pricing Lifetime Card: White with animated ripple rings (gold + lavender rings with shadow depth)
+6. MOTION & TRANSITIONS
+Core Animation Easing
+Primary ease function: cubic-bezier(0.25, 0.46, 0.45, 0.94)
+
+Smooth, slightly springy (bouncy without being playful)
+Used for card hovers, button presses, major interactions
+Timing
+Fast interactions: 0.18s–0.2s (color changes, opacity)
+Medium interactions: 0.4s (card lift, button scale, border transitions)
+Slow/fade transitions: 0.55s (opacity fade-in for rotator text)
+Specific Motions
+Button hover: Lift 2px + scale 1.02 over 0.4s
+Card hover: Lift 2–4px + scale 1.02, border color shift
+Link underline: Gradient underline (lavender→gold) that expands on hover
+Hero rotator text: Fade in/out over 0.55s (subtle, contemplative)
+No jarring animations
+Subtle, professional feel
+Used to guide focus, not distract
+Mostly micro-interactions on hover/click
+7. OVERALL TONE & KEYWORDS
+Visual Tone:
+
+Premium — refined colour palette, generous spacing, subtle shadows
+Calm & Reassuring — soft lavender, smooth transitions, no aggressive reds/oranges
+Trustworthy — clean typography, clear hierarchy, straightforward layout
+Sophisticated — minimal without being stark, purposeful use of colour and space
+Inviting — rounded buttons, soft shadows, approachable spacing
+Design Philosophy:
+
+"Generous spacing" over "compact density"
+"Subtle depth" over "flat design"
+"System fonts" over "custom typefaces" (accessibility, speed)
+"Micro-interactions" over "obvious animations"
+"Lavender-as-primary" — calming, premium, distinctive
+8. RESPONSIVE BEHAVIOR
+Desktop (1120px+): Full two-column layouts, three-column card grids, generous gaps
+Tablet (860px–1119px): Two-column grids, stacked sections
+Mobile (<540px): Single column, full-width cards, reduced padding (20px)
+Anchor scroll margin: calc(70px + 16px) (respects sticky header height)
+9. QUICK REFERENCE FOR DESKTOP APP
+In Figma/Design
+Color palette: Lavender primary (#A99CFF), Gold accent (#f8c15c)
+Buttons: Pill-shaped (999px border-radius), 8px 18px padding
+Cards: 18px radius, subtle shadows, generous padding
+Typography: System fonts, 2.2rem titles, 1.1rem subtitles, 0.9rem body
+Spacing: 80px section padding, 60px gaps between major sections
+Hover state: -2px lift + 1.02 scale, 0.4s ease
+In Code
+Use the CSS variables defined in styles.css as your source of truth
+Implement transitions with cubic-bezier(0.25, 0.46, 0.45, 0.94) for consistency
+Cards should have box-shadow: 0 18px 40px rgba(23, 15, 73, 0.08)
+All text should use system font stack for performance and cohesion
+This Design DNA ensures your desktop app feels like a natural, premium continuation of the Photo Date Rescue brand—professional, trustworthy, and inviting. Use these specs as your north star for all visual and interaction decisions.
