@@ -56,7 +56,7 @@ export default function Home() {
             Welcome to Photo Date Rescue
           </h1>
           <p className="text-[1.1rem] text-muted-foreground max-w-2xl mx-auto font-light">
-            A safe, calm place to restore your photo memories.
+            A safe, calm place to restore and organise your photo memories.
           </p>
         </motion.div>
 
