@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
-import { FolderPlus, FileArchive, HardDrive, ArrowRight, Check } from "lucide-react";
+import { Search, PlayCircle, ShieldCheck, ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/custom-card";
@@ -49,37 +49,43 @@ export default function Home() {
         variants={container}
         initial="hidden"
         animate="show"
-        className="max-w-[1120px] w-full z-10 flex flex-col items-center text-center"
+        className="max-w-[1200px] w-full z-10 flex flex-col items-center text-center"
       >
         <motion.div variants={item} className="mb-12">
           <h1 className="text-[2.2rem] md:text-[3rem] font-semibold text-foreground tracking-tight leading-[1.1] mb-4">
-            Photo Date Rescue
+            Welcome to Photo Date Rescue
           </h1>
           <p className="text-[1.1rem] text-muted-foreground max-w-2xl mx-auto font-light">
-            Safely fix photo and video dates and filenames. <br/>
-            The premium desktop solution for your memories.
+            A safe, calm place to restore your photo memories.
           </p>
         </motion.div>
 
-        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl mb-16">
-          <ActionCard 
-            icon={<FolderPlus className="w-8 h-8 text-primary" />}
-            title="Add Folders"
-            description="Scan folders for media files to repair."
+        <motion.div variants={item} className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full mb-16">
+          
+          {/* Left Secondary Card */}
+          <SecondaryCard 
+            icon={<PlayCircle className="w-6 h-6 text-primary" />}
+            title="Take a Quick Tour"
+            description="See how Photo Date Rescue works in under a minute."
+            onClick={() => {}}
+          />
+
+          {/* Primary Main Card */}
+          <PrimaryCard 
+            icon={<Search className="w-10 h-10 text-white" />}
+            title="Find Your Photos & Videos"
+            description="Add folders, ZIP archives, or drives to get started."
             onClick={handleStart}
           />
-          <ActionCard 
-            icon={<FileArchive className="w-8 h-8 text-primary" />}
-            title="Add ZIP Archives"
-            description="Process Google Takeout or backup archives directly."
-            onClick={handleStart}
+
+          {/* Right Secondary Card */}
+          <SecondaryCard 
+            icon={<ShieldCheck className="w-6 h-6 text-primary" />}
+            title="Best Practices"
+            description="Tips to keep your originals safe and get the best results."
+            onClick={() => {}}
           />
-          <ActionCard 
-            icon={<HardDrive className="w-8 h-8 text-primary" />}
-            title="Add External Drive"
-            description="Scan entire drives for disorganized media."
-            onClick={handleStart}
-          />
+
         </motion.div>
 
         <motion.div variants={item} className="flex flex-col items-center gap-6">
@@ -97,27 +103,47 @@ export default function Home() {
               Skip this screen next time
             </label>
           </div>
-          
-          <Button variant="link" onClick={handleStart} className="text-muted-foreground hover:text-primary transition-colors">
-            Continue to Workspace <ArrowRight className="ml-2 w-4 h-4" />
-          </Button>
         </motion.div>
       </motion.div>
     </div>
   );
 }
 
-function ActionCard({ icon, title, description, onClick }: { icon: React.ReactNode, title: string, description: string, onClick: () => void }) {
+function PrimaryCard({ icon, title, description, onClick }: { icon: React.ReactNode, title: string, description: string, onClick: () => void }) {
   return (
     <Card 
-      className="flex flex-col items-center text-center p-8 cursor-pointer group h-full justify-between"
+      className="flex flex-col items-center text-center p-10 cursor-pointer group w-full max-w-[420px] min-h-[320px] justify-center border-primary/20 hover:border-primary shadow-[0_20px_50px_rgba(169,156,255,0.15)] bg-white relative overflow-hidden"
+      onClick={onClick}
+    >
+      {/* Subtle background gradient for primary card */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-secondary/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      
+      <div className="flex flex-col items-center relative z-10">
+        <div className="mb-8 p-6 rounded-full bg-primary text-white shadow-lg shadow-primary/30 group-hover:scale-110 group-hover:rotate-3 transition-all duration-400 ease-[cubic-bezier(0.25,0.46,0.45,0.94)]">
+          {icon}
+        </div>
+        <h3 className="text-2xl font-semibold text-foreground mb-3">{title}</h3>
+        <p className="text-base text-muted-foreground leading-relaxed max-w-[280px] mx-auto">{description}</p>
+        
+        <div className="mt-8 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-400 delay-100">
+          <Button className="rounded-full px-8">Start Rescue <ArrowRight className="ml-2 w-4 h-4" /></Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function SecondaryCard({ icon, title, description, onClick }: { icon: React.ReactNode, title: string, description: string, onClick: () => void }) {
+  return (
+    <Card 
+      className="flex flex-col items-center text-center p-8 cursor-pointer group w-full max-w-[300px] min-h-[240px] justify-center bg-white/60 hover:bg-white transition-colors"
       onClick={onClick}
     >
       <div className="flex flex-col items-center">
-        <div className="mb-6 p-4 rounded-full bg-secondary text-primary group-hover:scale-110 transition-transform duration-400 ease-[cubic-bezier(0.25,0.46,0.45,0.94)]">
+        <div className="mb-5 p-3 rounded-full bg-secondary text-primary group-hover:scale-105 transition-transform duration-400">
           {icon}
         </div>
-        <h3 className="text-lg font-medium text-foreground mb-3">{title}</h3>
+        <h3 className="text-lg font-medium text-foreground mb-2">{title}</h3>
         <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
       </div>
     </Card>
