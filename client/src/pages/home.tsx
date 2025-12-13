@@ -126,7 +126,7 @@ function PrimaryCard({ icon, title, description, onClick }: { icon: React.ReactN
         <p className="text-base text-muted-foreground leading-relaxed max-w-[280px] mx-auto">{description}</p>
         
         <div className="mt-8 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-400 delay-100">
-          <Button className="rounded-full px-8">Start Rescue <ArrowRight className="ml-2 w-4 h-4" /></Button>
+          <Button className="rounded-full px-8">Get Started <ArrowRight className="ml-2 w-4 h-4" /></Button>
         </div>
       </div>
     </Card>
