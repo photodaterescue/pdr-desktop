@@ -36,11 +36,8 @@ export default function Workspace() {
 function Sidebar() {
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-          <Database className="text-white w-5 h-5" />
-        </div>
-        <span className="font-semibold text-lg text-sidebar-foreground tracking-tight">PDR</span>
+      <div className="p-6 flex items-center">
+        <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-10 w-auto object-contain" />
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
@@ -87,6 +84,12 @@ function SidebarItem({ icon, label, active = false }: { icon: React.ReactNode, l
 }
 
 function MainContent() {
+  const [filter, setFilter] = useState<"High" | "Medium" | "Low" | null>(null);
+
+  const toggleFilter = (level: "High" | "Medium" | "Low") => {
+    setFilter(current => current === level ? null : level);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
       {/* Header */}
@@ -124,6 +127,8 @@ function MainContent() {
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-100"
                 icon={<CheckCircle2 className="w-5 h-5" />}
+                isActive={filter === "High"}
+                onClick={() => toggleFilter("High")}
               />
               <ConfidenceCard 
                 level="Medium" 
@@ -133,6 +138,8 @@ function MainContent() {
                 bgColor="bg-amber-50"
                 borderColor="border-amber-100"
                 icon={<AlertTriangle className="w-5 h-5" />}
+                isActive={filter === "Medium"}
+                onClick={() => toggleFilter("Medium")}
               />
               <ConfidenceCard 
                 level="Low" 
@@ -142,8 +149,16 @@ function MainContent() {
                 bgColor="bg-rose-50"
                 borderColor="border-rose-100"
                 icon={<AlertCircle className="w-5 h-5" />}
+                isActive={filter === "Low"}
+                onClick={() => toggleFilter("Low")}
               />
             </div>
+            {filter && (
+              <div className="mt-4 p-4 bg-background border border-border rounded-lg text-sm text-muted-foreground flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                 <div className={`w-2 h-2 rounded-full ${filter === 'High' ? 'bg-emerald-500' : filter === 'Medium' ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                 Filtering for <strong>{filter} Confidence</strong> files.
+              </div>
+            )}
           </section>
 
           {/* Output Configuration */}
@@ -178,7 +193,7 @@ function MainContent() {
         <div className="flex items-center gap-4">
           <Button variant="outline" size="lg">Preview Changes</Button>
           <Button size="lg" className="px-8 shadow-lg shadow-primary/25">
-            <Play className="w-4 h-4 mr-2 fill-current" /> Run Rescue
+            <Play className="w-4 h-4 mr-2 fill-current" /> Apply Fixes
           </Button>
         </div>
       </div>
@@ -186,19 +201,31 @@ function MainContent() {
   );
 }
 
-function ConfidenceCard({ level, count, description, color, bgColor, borderColor, icon }: any) {
+function ConfidenceCard({ level, count, description, color, bgColor, borderColor, icon, isActive, onClick }: any) {
   return (
-    <Card className={`border ${borderColor} hover:border-opacity-100 transition-colors cursor-default`}>
-      <div className="flex justify-between items-start mb-4">
-        <div className={`p-2 rounded-lg ${bgColor} ${color}`}>
-          {icon}
+    <div onClick={onClick} className="relative group cursor-pointer outline-none">
+       {/* Active Ring */}
+       {isActive && (
+         <motion.div 
+            layoutId="active-ring"
+            className="absolute -inset-[2px] rounded-[20px] border-2 border-primary bg-transparent pointer-events-none z-10"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+         />
+       )}
+      <Card className={`border ${borderColor} hover:border-opacity-100 transition-all duration-300 ${isActive ? 'bg-white shadow-md scale-[1.01]' : 'hover:scale-[1.01]'}`}>
+        <div className="flex justify-between items-start mb-4">
+          <div className={`p-2 rounded-lg ${bgColor} ${color}`}>
+            {icon}
+          </div>
+          <span className={`text-xs font-semibold uppercase tracking-wider ${color} bg-opacity-10 px-2 py-1 rounded-full ${bgColor}`}>
+            {level} Confidence
+          </span>
         </div>
-        <span className={`text-xs font-semibold uppercase tracking-wider ${color} bg-opacity-10 px-2 py-1 rounded-full ${bgColor}`}>
-          {level} Confidence
-        </span>
-      </div>
-      <div className="text-4xl font-bold text-foreground mb-2">{count}</div>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </Card>
+        <div className="text-4xl font-bold text-foreground mb-2">{count}</div>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </Card>
+    </div>
   );
 }
