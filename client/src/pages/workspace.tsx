@@ -70,7 +70,59 @@ export default function Workspace() {
   const zipInputRef = useRef<HTMLInputElement>(null);
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   
-  const [sources, setSources] = useState<Source[]>([]);
+  const [sources, setSources] = useState<Source[]>([
+    {
+      id: "mock-1",
+      icon: <Folder className="w-4 h-4" />,
+      label: "My Vacation Photos",
+      type: "folder",
+      path: "/Users/username/Pictures/My Vacation Photos",
+      active: false,
+      selected: true,
+      confirmed: true,
+      stats: {
+        totalFiles: 1248,
+        photoCount: 892,
+        videoCount: 356,
+        estimatedSizeGB: 4.2,
+        dateRange: { earliest: "Jan 12, 2023", latest: "Aug 15, 2023" }
+      }
+    },
+    {
+      id: "mock-2",
+      icon: <FileArchive className="w-4 h-4" />,
+      label: "Old Backup 2018.zip",
+      type: "zip",
+      path: "/Users/username/Downloads/Old Backup 2018.zip",
+      active: false,
+      selected: false,
+      confirmed: true,
+      stats: {
+        totalFiles: 562,
+        photoCount: 500,
+        videoCount: 62,
+        estimatedSizeGB: 1.8,
+        dateRange: { earliest: "Mar 01, 2018", latest: "Dec 31, 2018" }
+      }
+    },
+    {
+      id: "mock-3",
+      icon: <Folder className="w-4 h-4" />,
+      label: "Camera Uploads",
+      type: "folder",
+      path: "/Users/username/Pictures/Camera Uploads",
+      active: false,
+      selected: true,
+      confirmed: true,
+      stats: {
+        totalFiles: 2105,
+        photoCount: 2000,
+        videoCount: 105,
+        estimatedSizeGB: 8.5,
+        dateRange: { earliest: "Jun 10, 2020", latest: "Nov 22, 2024" }
+      }
+    }
+  ]);
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
