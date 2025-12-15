@@ -72,6 +72,7 @@ export default function Workspace() {
   const [sources, setSources] = useState<Source[]>([]);
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 1248, currentFile: "" });
   const [isComplete, setIsComplete] = useState(false);
@@ -153,12 +154,52 @@ export default function Workspace() {
     return () => clearInterval(interval);
   }, [isAnalysing, isComplete]);
 
-  const handleSourceClick = (id: string) => {
-    // Toggle selection
-    const updatedSources = sources.map(s => s.id === id ? { ...s, selected: !s.selected } : s);
+  const handleSourceClick = (id: string, shiftKey: boolean = false) => {
+    let updatedSources = [...sources];
+    
+    if (shiftKey && lastSelectedId) {
+      const lastIndex = sources.findIndex(s => s.id === lastSelectedId);
+      const currentIndex = sources.findIndex(s => s.id === id);
+      
+      if (lastIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(lastIndex, currentIndex);
+        const end = Math.max(lastIndex, currentIndex);
+        
+        // Determine target state based on the clicked item's new state (inverse of current)
+        // actually, standard behavior is to set all in range to the state of the *last* clicked item?
+        // Usually shift-click selects the range. If the item was unselected, it selects it and the range.
+        // Let's assume we want to select the range.
+        
+        // Wait, standard file system behavior:
+        // Click A (selected)
+        // Shift+Click C -> Selects A, B, C.
+        
+        // If A is unselected:
+        // Click A (selected)
+        // Shift+Click C -> Selects A, B, C.
+        
+        // So we should force select the range.
+        updatedSources = sources.map((s, index) => {
+          if (index >= start && index <= end) {
+            return { ...s, selected: true };
+          }
+          return s;
+        });
+      }
+    } else {
+      // Toggle selection normally
+      updatedSources = sources.map(s => s.id === id ? { ...s, selected: !s.selected } : s);
+    }
+
     setSources(updatedSources);
+    setLastSelectedId(id);
     // Also set as active for detail view if needed, but for now just toggle selection
     setActiveSource(updatedSources.find(s => s.id === id) || null);
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    const updatedSources = sources.map(s => ({ ...s, selected: checked }));
+    setSources(updatedSources);
   };
 
   const handleConfirmSource = () => {
@@ -374,6 +415,7 @@ export default function Workspace() {
       <Sidebar 
         sources={sources} 
         onSourceClick={handleSourceClick} 
+        onSelectAll={handleSelectAll}
         isAnalysing={isAnalysing}
         onAddSource={handleAddSource}
         activePanel={activePanel}
@@ -461,7 +503,10 @@ export default function Workspace() {
   );
 }
 
-function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, onAddSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isAnalysing: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
+  const allSelected = sources.length > 0 && sources.every(s => s.selected);
+  const someSelected = sources.some(s => s.selected) && !allSelected;
+
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
       <div className="px-6 py-8 flex items-center">
@@ -474,7 +519,7 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
           <SidebarItem 
             icon={<LayoutGrid className="w-4 h-4" />} 
             label="Dashboard" 
-            onClick={onDashboardClick}
+            onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
             selectable={false}
             disabled={isAnalysing}
@@ -483,7 +528,26 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
 
         {/* SOURCES SECTION */}
         <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Sources</h3>
+          <div className="flex items-center justify-between mb-3 px-2">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sources</h3>
+            {sources.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  id="select-all"
+                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => onSelectAll(checked === true)}
+                  disabled={isAnalysing}
+                  className="w-3.5 h-3.5 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                />
+                <label 
+                  htmlFor="select-all" 
+                  className="text-[10px] uppercase font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors"
+                >
+                  Select All
+                </label>
+              </div>
+            )}
+          </div>
           <div className="space-y-1">
             {sources.map((source) => (
               <SidebarItem 
@@ -493,7 +557,7 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
                 active={source.active} 
                 selected={source.selected}
                 selectable={true}
-                onClick={() => onSourceClick(source.id)}
+                onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
                 disabled={isAnalysing}
               />
             ))}
@@ -549,7 +613,7 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
   );
 }
 
-function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: () => void, disabled?: boolean }) {
+function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean }) {
   return (
     <div 
       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 cursor-pointer ${
@@ -559,19 +623,22 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
             ? 'bg-secondary text-primary font-medium' 
             : 'text-sidebar-foreground hover:bg-sidebar-accent'
       }`}
-      onClick={!disabled ? onClick : undefined}
+      onClick={(e) => !disabled && onClick && onClick(e)}
     >
       {selectable && (
-        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-center" onClick={(e) => {
+          e.stopPropagation();
+          if (!disabled && onClick) onClick(e);
+        }}>
           <Checkbox 
             checked={selected} 
-            onCheckedChange={() => !disabled && onClick && onClick()}
+            onCheckedChange={() => {}} // Checkbox change is handled by parent div click or explicit handler if needed
             disabled={disabled}
             className="mr-1 w-4 h-4 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
           />
         </div>
       )}
-      <div className="flex items-center gap-2 overflow-hidden">
+      <div className="flex items-center gap-2 overflow-hidden pointer-events-none">
         {icon}
         <span className="truncate">{label}</span>
       </div>
