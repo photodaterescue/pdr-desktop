@@ -162,6 +162,15 @@ export default function SourceSelection() {
             onClick={() => handleSelection('drive')}
           />
         </motion.div>
+
+        <motion.div variants={item} className="mt-12">
+          <button
+            onClick={() => setLocation('/workspace')}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Go to Dashboard
+          </button>
+        </motion.div>
       </motion.div>
     </div>
   );

@@ -162,8 +162,17 @@ export default function Workspace() {
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
     setActiveSource(null);
-    // Open type selector to pick new source type
-    setShowSourceTypeSelector(true);
+    // Open the correct picker based on source type
+    const sourceType = activeSource.type;
+    setTimeout(() => {
+      if (sourceType === 'folder') {
+        folderInputRef.current?.click();
+      } else if (sourceType === 'zip') {
+        zipInputRef.current?.click();
+      } else if (sourceType === 'drive') {
+        driveInputRef.current?.click();
+      }
+    }, 0);
   };
 
   const handleStartAnalysis = () => {
