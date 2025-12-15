@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { motion } from "framer-motion";
 
 interface Source {
@@ -34,6 +35,7 @@ interface Source {
   type: 'folder' | 'zip' | 'drive';
   path?: string;
   active: boolean;
+  selected: boolean;
   confirmed: boolean;
 }
 
@@ -101,6 +103,7 @@ export default function Workspace() {
           type,
           path: path || undefined,
           active: true,
+          selected: true,
           confirmed: false
         };
 
@@ -145,8 +148,10 @@ export default function Workspace() {
   }, [isAnalysing, isComplete]);
 
   const handleSourceClick = (id: string) => {
-    const updatedSources = sources.map(s => ({ ...s, active: s.id === id }));
+    // Toggle selection
+    const updatedSources = sources.map(s => s.id === id ? { ...s, selected: !s.selected } : s);
     setSources(updatedSources);
+    // Also set as active for detail view if needed, but for now just toggle selection
     setActiveSource(updatedSources.find(s => s.id === id) || null);
   };
 
@@ -223,6 +228,7 @@ export default function Workspace() {
         type: sourceType,
         path: fullPath,
         active: true,
+        selected: true,
         confirmed: false
       };
 
@@ -253,6 +259,7 @@ export default function Workspace() {
         type: 'zip',
         path: fullPath,
         active: true,
+        selected: true,
         confirmed: false
       };
 
@@ -460,6 +467,7 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
                 icon={source.icon} 
                 label={source.label} 
                 active={source.active} 
+                selected={source.selected}
                 onClick={() => onSourceClick(source.id)}
                 disabled={isAnalysing}
               />
@@ -516,22 +524,31 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
   );
 }
 
-function SidebarItem({ icon, label, active = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void, disabled?: boolean }) {
+function SidebarItem({ icon, label, active = false, selected = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, onClick?: () => void, disabled?: boolean }) {
   return (
-    <button 
-      onClick={onClick}
-      disabled={disabled}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${
+    <div 
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 cursor-pointer ${
         disabled 
           ? 'text-muted-foreground/50 cursor-not-allowed' 
           : active 
             ? 'bg-secondary text-primary font-medium' 
             : 'text-sidebar-foreground hover:bg-sidebar-accent'
       }`}
+      onClick={!disabled ? onClick : undefined}
     >
-      {icon}
-      <span className="truncate">{label}</span>
-    </button>
+      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <Checkbox 
+          checked={selected} 
+          onCheckedChange={() => !disabled && onClick && onClick()}
+          disabled={disabled}
+          className="mr-1 w-4 h-4 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+        />
+      </div>
+      <div className="flex items-center gap-2 overflow-hidden">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+    </div>
   );
 }
 
@@ -596,55 +613,48 @@ function MainContent({
 }
 
 function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, onAddFolder, onAddZip }: { sources: Source[], activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void }) {
-  const [selectedChip, setSelectedChip] = useState<string>('all');
-  
-  // Sync chip selection with sidebar active source
-  useEffect(() => {
-    if (activeSource) {
-      setSelectedChip(activeSource.id);
-    } else {
-      // If no active source (e.g. cleared selection), default to 'all' if multiple, or single if one
-      if (sources.length > 1) setSelectedChip('all');
-      else if (sources.length === 1) setSelectedChip(sources[0].id);
-    }
-  }, [activeSource, sources.length]);
+  // Use selected sources for aggregation
+  const selectedSources = sources.filter(s => s.selected && s.confirmed);
+  const hasSelection = selectedSources.length > 0;
 
-  // Mock stats generator
-  const getStats = (sourceId: string | 'all') => {
-    if (sourceId === 'all') {
-      const totalFiles = sources.length * 1248;
+  // Mock stats generator based on SELECTED sources
+  const getStats = () => {
+    if (!hasSelection) {
       return {
-        label: "All Sources",
-        path: `${sources.length} sources selected`,
-        totalFiles,
-        photos: sources.length * 892,
-        videos: sources.length * 356,
-        sizeGB: sources.length * 4.2,
-        dateRange: "2018 — 2024"
+        label: "No Sources Selected",
+        path: "Select sources from the sidebar",
+        totalFiles: 0,
+        photos: 0,
+        videos: 0,
+        sizeGB: 0,
+        dateRange: "-",
+        sourceCount: 0
       };
     }
 
-    const source = sources.find(s => s.id === sourceId);
-    if (!source) return null;
+    // Aggregate stats
+    const totalFiles = selectedSources.length * 1248;
+    const photos = selectedSources.length * 892;
+    const videos = selectedSources.length * 356;
+    const sizeGB = selectedSources.length * 4.2;
 
-    // Deterministic mock stats based on label length
-    const seed = source.label.length; 
     return {
-      label: source.label,
-      path: source.path || "Selected Source",
-      totalFiles: 1000 + seed * 50,
-      photos: 800 + seed * 20,
-      videos: 200 + seed * 30,
-      sizeGB: 4 + seed * 0.5,
-      dateRange: "2019 — 2024"
+      label: "Combined Analysis",
+      path: `${selectedSources.length} sources selected`,
+      totalFiles,
+      photos,
+      videos,
+      sizeGB,
+      dateRange: "2018 — 2024",
+      sourceCount: selectedSources.length
     };
   };
 
-  const stats = getStats(selectedChip) || getStats('all')!;
-  const isAllSources = selectedChip === 'all';
+  const stats = getStats();
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC] p-8 items-center justify-center">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -654,27 +664,6 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
            <h2 className="text-2xl font-semibold text-foreground mb-2">Dashboard</h2>
            <p className="text-muted-foreground">Review your sources and start analysis</p>
         </div>
-
-        {/* Source Chips */}
-        {sources.length > 1 && (
-          <div className="flex justify-center gap-3 mb-8">
-            <SourceChip 
-              icon={<LayoutGrid className="w-4 h-4" />}
-              label="All Sources" 
-              isActive={selectedChip === 'all'}
-              onClick={() => setSelectedChip('all')}
-            />
-            {sources.map(source => (
-              <SourceChip 
-                key={source.id}
-                icon={source.icon}
-                label={source.label} 
-                isActive={selectedChip === source.id}
-                onClick={() => setSelectedChip(source.id)}
-              />
-            ))}
-          </div>
-        )}
 
         <div className="flex justify-center gap-4 mb-8">
            <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground">
@@ -688,7 +677,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         <Card className="p-8 mb-8">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
             <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
-              {isAllSources ? <LayoutGrid className="w-8 h-8" /> : <Folder className="w-8 h-8" />}
+              <LayoutGrid className="w-8 h-8" />
             </div>
             <div>
               <h3 className="text-xl font-medium text-foreground mb-1">{stats.label}</h3>
@@ -698,50 +687,59 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-8 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Total Files</div>
-              <div className="text-2xl font-semibold text-foreground">{stats.totalFiles.toLocaleString()}</div>
+              <div className="text-sm text-muted-foreground mb-1">Sources</div>
+              <div className="text-2xl font-semibold text-foreground">{stats.sourceCount}</div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Photos / Videos</div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <FileImage className="w-4 h-4 text-emerald-500" /> {stats.photos.toLocaleString()}
-                </div>
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <FileVideo className="w-4 h-4 text-blue-500" /> {stats.videos.toLocaleString()}
-                </div>
+              <div className="text-sm text-muted-foreground mb-1">Total Photos</div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-emerald-600">
+                <FileImage className="w-4 h-4" /> {stats.photos.toLocaleString()}
               </div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Date Range</div>
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <CalendarRange className="w-4 h-4 text-primary" />
-                {stats.dateRange}
+              <div className="text-sm text-muted-foreground mb-1">Total Videos</div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-blue-600">
+                <FileVideo className="w-4 h-4" /> {stats.videos.toLocaleString()}
               </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Total Size</div>
+              <div className="text-2xl font-semibold text-foreground">{stats.sizeGB.toFixed(1)} GB</div>
             </div>
           </div>
 
           <div className="flex items-center justify-between pt-4">
              <div className="flex gap-4">
-                {!isAllSources && (
-                  <>
-                    <Button variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
-                      <Trash2 className="w-4 h-4 mr-2" /> Remove
-                    </Button>
-                    <Button variant="ghost" className="text-muted-foreground" onClick={onChange}>
-                      <RefreshCw className="w-4 h-4 mr-2" /> Change
-                    </Button>
-                  </>
-                )}
+               {/* Actions hidden for aggregate view as requested, mainly confirmation here */}
              </div>
-             <Button onClick={onConfirm} className="px-8 shadow-lg shadow-primary/20">
+             <Button onClick={onConfirm} disabled={!hasSelection} className="px-8 shadow-lg shadow-primary/20">
                Confirm & Analyze <ChevronRight className="w-4 h-4 ml-2" />
              </Button>
           </div>
         </Card>
+
+        {/* Preview Section */}
+        <section className="pt-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
+            <h2 className="text-lg font-semibold text-foreground mb-4">Output Preview</h2>
+            <Card className="flex flex-col md:flex-row items-center gap-6 p-6">
+              <div className="p-4 bg-secondary/50 rounded-full">
+                <HardDrive className="w-6 h-6 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
+                <p className="text-sm text-muted-foreground mb-2">/Volumes/Photos_Backup/Restored_2024</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">2.4 TB Free</span>
+                  <span className="text-xs text-muted-foreground">Required: {stats.sizeGB.toFixed(1)} GB</span>
+                </div>
+              </div>
+              <Button variant="outline">Change Destination</Button>
+            </Card>
+        </section>
       </motion.div>
+      </div>
     </div>
   );
 }
