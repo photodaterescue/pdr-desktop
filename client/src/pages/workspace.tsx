@@ -52,6 +52,9 @@ export default function Workspace() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+  const driveInputRef = useRef<HTMLInputElement>(null);
+  const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   
   const [sources, setSources] = useState<Source[]>([
     { id: '1', icon: <Folder className="w-4 h-4" />, label: "My Vacation Photos", type: 'folder', active: true, confirmed: true },
@@ -163,8 +166,8 @@ export default function Workspace() {
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
     setActiveSource(null);
-    // Open OS picker directly (no routing through Find Photos screen)
-    folderInputRef.current?.click();
+    // Open type selector to pick new source type
+    setShowSourceTypeSelector(true);
   };
 
   const handleStartAnalysis = () => {
@@ -172,7 +175,18 @@ export default function Workspace() {
   };
 
   const handleAddSource = () => {
-    folderInputRef.current?.click();
+    setShowSourceTypeSelector(true);
+  };
+
+  const handleSelectSourceType = (type: 'folder' | 'zip' | 'drive') => {
+    setShowSourceTypeSelector(false);
+    if (type === 'folder') {
+      folderInputRef.current?.click();
+    } else if (type === 'zip') {
+      zipInputRef.current?.click();
+    } else if (type === 'drive') {
+      driveInputRef.current?.click();
+    }
   };
 
   const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -201,8 +215,55 @@ export default function Workspace() {
     }
   };
 
+  const handleZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      const fileName = file.name;
+      const fullPath = `/Users/username/Downloads/${fileName}`;
+      
+      const newSource: Source = {
+        id: Date.now().toString(),
+        icon: <FileArchive className="w-4 h-4" />,
+        label: fileName,
+        type: 'zip',
+        path: fullPath,
+        active: true,
+        confirmed: false
+      };
+
+      const updatedSources = sources.map(s => ({ ...s, active: false }));
+      setSources([...updatedSources, newSource]);
+      setActiveSource(newSource);
+      
+      e.target.value = '';
+    }
+  };
+
+  const handleDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const driveName = "External Drive (D:)";
+      const fullPath = "D:/";
+      
+      const newSource: Source = {
+        id: Date.now().toString(),
+        icon: <HardDrive className="w-4 h-4" />,
+        label: driveName,
+        type: 'drive',
+        path: fullPath,
+        active: true,
+        confirmed: false
+      };
+
+      const updatedSources = sources.map(s => ({ ...s, active: false }));
+      setSources([...updatedSources, newSource]);
+      setActiveSource(newSource);
+      
+      e.target.value = '';
+    }
+  };
+
   const handleAddAnother = () => {
-    folderInputRef.current?.click();
+    setShowSourceTypeSelector(true);
   };
 
   return (
@@ -212,6 +273,25 @@ export default function Workspace() {
         ref={folderInputRef}
         className="hidden"
         onChange={handleFolderChange}
+        // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
+        webkitdirectory=""
+        directory=""
+        multiple
+      />
+
+      <input
+        type="file"
+        ref={zipInputRef}
+        className="hidden"
+        onChange={handleZipChange}
+        accept=".zip"
+      />
+
+      <input
+        type="file"
+        ref={driveInputRef}
+        className="hidden"
+        onChange={handleDriveChange}
         // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
         webkitdirectory=""
         directory=""
@@ -240,6 +320,53 @@ export default function Workspace() {
       />
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
+      
+      {showSourceTypeSelector && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-96 p-6">
+            <h2 className="text-xl font-semibold text-foreground mb-4">Select Source Type</h2>
+            <div className="space-y-3">
+              <button
+                onClick={() => handleSelectSourceType('folder')}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
+              >
+                <Folder className="w-5 h-5 text-primary" />
+                <div>
+                  <div className="font-medium text-foreground">Folder</div>
+                  <div className="text-xs text-muted-foreground">Select a local folder</div>
+                </div>
+              </button>
+              <button
+                onClick={() => handleSelectSourceType('zip')}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
+              >
+                <FileArchive className="w-5 h-5 text-primary" />
+                <div>
+                  <div className="font-medium text-foreground">ZIP Archive</div>
+                  <div className="text-xs text-muted-foreground">Import a backup archive</div>
+                </div>
+              </button>
+              <button
+                onClick={() => handleSelectSourceType('drive')}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
+              >
+                <HardDrive className="w-5 h-5 text-primary" />
+                <div>
+                  <div className="font-medium text-foreground">Drive</div>
+                  <div className="text-xs text-muted-foreground">Scan an external drive</div>
+                </div>
+              </button>
+            </div>
+            <Button
+              variant="ghost"
+              className="w-full mt-4"
+              onClick={() => setShowSourceTypeSelector(false)}
+            >
+              Cancel
+            </Button>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

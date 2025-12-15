@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/custom-card";
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+  const driveInputRef = useRef<HTMLInputElement>(null);
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -37,12 +39,14 @@ export default function SourceSelection() {
       folderInputRef.current?.click();
       return;
     }
-    
-    let name = "Selected Source";
-    if (type === 'zip') name = "Archive_Backup.zip";
-    if (type === 'drive') name = "External Drive (D:)";
-    
-    setLocation(`/workspace?type=${type}&name=${encodeURIComponent(name)}`);
+    if (type === 'zip') {
+      zipInputRef.current?.click();
+      return;
+    }
+    if (type === 'drive') {
+      driveInputRef.current?.click();
+      return;
+    }
   };
 
   const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -56,6 +60,29 @@ export default function SourceSelection() {
       
       setLocation(`/workspace?type=folder&name=${encodeURIComponent(folderName)}&path=${encodeURIComponent(fullPath)}`);
     }
+    e.target.value = '';
+  };
+
+  const handleZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      const fileName = file.name;
+      const fullPath = `/Users/username/Downloads/${fileName}`;
+      
+      setLocation(`/workspace?type=zip&name=${encodeURIComponent(fileName)}&path=${encodeURIComponent(fullPath)}`);
+    }
+    e.target.value = '';
+  };
+
+  const handleDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      // For drive, simulate using the file system root
+      const driveName = "External Drive (D:)";
+      const fullPath = "D:/";
+      
+      setLocation(`/workspace?type=drive&name=${encodeURIComponent(driveName)}&path=${encodeURIComponent(fullPath)}`);
+    }
+    e.target.value = '';
   };
 
   return (
@@ -66,6 +93,27 @@ export default function SourceSelection() {
         ref={folderInputRef}
         className="hidden"
         onChange={handleFolderChange}
+        // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
+        webkitdirectory=""
+        directory=""
+        multiple
+      />
+
+      {/* Hidden ZIP Input */}
+      <input
+        type="file"
+        ref={zipInputRef}
+        className="hidden"
+        onChange={handleZipChange}
+        accept=".zip"
+      />
+
+      {/* Hidden Drive Input */}
+      <input
+        type="file"
+        ref={driveInputRef}
+        className="hidden"
+        onChange={handleDriveChange}
         // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
         webkitdirectory=""
         directory=""
