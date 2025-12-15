@@ -73,6 +73,7 @@ export default function Workspace() {
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 1248, currentFile: "" });
   const [isComplete, setIsComplete] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
+  const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
@@ -353,22 +354,28 @@ export default function Workspace() {
         onSourceClick={handleSourceClick} 
         isAnalysing={isAnalysing}
         onAddSource={handleAddSource}
+        activePanel={activePanel}
+        onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | null)}
       />
-      <MainContent 
-        sources={sources}
-        activeSource={activeSource} 
-        onConfirm={handleConfirmSource}
-        onRemove={handleRemoveSource}
-        onChange={handleChangeSource}
-        isAnalysing={isAnalysing}
-        analysisProgress={analysisProgress}
-        isComplete={isComplete}
-        analysisResults={analysisResults}
-        onStartAnalysis={handleStartAnalysis}
-        onAddAnother={handleAddAnother}
-        onPreviewChanges={() => setShowPreviewModal(true)}
-        onViewResults={() => setShowResultsModal(true)}
-      />
+      {activePanel ? (
+        <PanelPlaceholder panelType={activePanel} />
+      ) : (
+        <MainContent 
+          sources={sources}
+          activeSource={activeSource} 
+          onConfirm={handleConfirmSource}
+          onRemove={handleRemoveSource}
+          onChange={handleChangeSource}
+          isAnalysing={isAnalysing}
+          analysisProgress={analysisProgress}
+          isComplete={isComplete}
+          analysisResults={analysisResults}
+          onStartAnalysis={handleStartAnalysis}
+          onAddAnother={handleAddAnother}
+          onPreviewChanges={() => setShowPreviewModal(true)}
+          onViewResults={() => setShowResultsModal(true)}
+        />
+      )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       
@@ -422,7 +429,7 @@ export default function Workspace() {
   );
 }
 
-function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean, onAddSource: () => void }) {
+function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel, onPanelChange }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void }) {
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
       <div className="px-6 py-8 flex items-center">
@@ -477,8 +484,9 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource }: { sources
       </div>
 
       <div className="p-4 border-t border-sidebar-border space-y-1">
-        <SidebarItem icon={<Settings className="w-4 h-4" />} label="Settings" disabled={isAnalysing} />
-        <SidebarItem icon={<HelpCircle className="w-4 h-4" />} label="Help & Support" disabled={isAnalysing} />
+        <SidebarItem icon={<AlertCircle className="w-4 h-4" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} disabled={isAnalysing} />
+        <SidebarItem icon={<CheckCircle2 className="w-4 h-4" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} disabled={isAnalysing} />
+        <SidebarItem icon={<RefreshCw className="w-4 h-4" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} disabled={isAnalysing} />
       </div>
     </div>
   );
@@ -1117,6 +1125,39 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
         <Button onClick={onClose} className="w-full mt-6">Close</Button>
       </motion.div>
     </motion.div>
+  );
+}
+
+function PanelPlaceholder({ panelType }: { panelType: string }) {
+  const content = {
+    'getting-started': {
+      title: 'Getting Started',
+      description: 'Learn how Photo Date Rescue works and the steps involved in restoring your photo and video metadata.'
+    },
+    'best-practices': {
+      title: 'Best Practices',
+      description: 'Discover expert-recommended workflows for organizing and preparing your photo library for analysis.'
+    },
+    'what-next': {
+      title: 'What Happens Next',
+      description: 'Understand what the analysis will do, what it will not do, and what to expect from the restoration process.'
+    }
+  };
+
+  const panel = content[panelType as keyof typeof content] || { title: '', description: '' };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="text-center max-w-sm">
+          <h2 className="text-2xl font-semibold text-foreground mb-3">{panel.title}</h2>
+          <p className="text-muted-foreground mb-6">{panel.description}</p>
+          <Card className="p-6 bg-secondary/20 border-primary/10">
+            <p className="text-sm text-muted-foreground">Content coming soon</p>
+          </Card>
+        </div>
+      </div>
+    </div>
   );
 }
 
