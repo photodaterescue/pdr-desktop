@@ -52,7 +52,7 @@ export default function Home() {
         className="max-w-[1200px] w-full z-10 flex flex-col items-center text-center"
       >
         <motion.div variants={item} className="mb-12">
-          <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto mb-8" />
+          <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-24 w-auto mx-auto mb-10" />
           <h1 className="text-[2.2rem] md:text-[3rem] font-semibold text-foreground tracking-tight leading-[1.1] mb-4">
             Welcome to Photo Date Rescue
           </h1>
