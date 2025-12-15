@@ -214,6 +214,7 @@ export default function Workspace() {
         onAddSource={handleAddSource}
       />
       <MainContent 
+        sources={sources}
         activeSource={activeSource} 
         onConfirm={handleConfirmSource}
         onRemove={handleRemoveSource}
@@ -315,6 +316,7 @@ function SidebarItem({ icon, label, active = false, onClick, disabled = false }:
 }
 
 function MainContent({ 
+  sources,
   activeSource, 
   onConfirm, 
   onRemove, 
@@ -328,6 +330,7 @@ function MainContent({
   onPreviewChanges,
   onViewResults
 }: { 
+  sources: Source[],
   activeSource: Source | null,
   onConfirm: () => void,
   onRemove: () => void,
@@ -364,7 +367,7 @@ function MainContent({
     );
   }
 
-  return <Dashboard activeSource={activeSource} onStartAnalysis={onStartAnalysis} onPreviewChanges={onPreviewChanges} />;
+  return <Dashboard sources={sources} activeSource={activeSource} onStartAnalysis={onStartAnalysis} onPreviewChanges={onPreviewChanges} />;
 }
 
 function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: Source, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
@@ -437,8 +440,42 @@ function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: 
   );
 }
 
-function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { activeSource: Source, onStartAnalysis: () => void, onPreviewChanges: () => void }) {
+function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }: { sources: Source[], activeSource: Source, onStartAnalysis: () => void, onPreviewChanges: () => void }) {
   const [filter, setFilter] = useState<"High" | "Medium" | "Low" | null>(null);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+
+  const confirmedSources = sources.filter(s => s.confirmed);
+  
+  // Get stats based on selection
+  const getStats = () => {
+    if (selectedSourceId === null) {
+      // Combined stats
+      return {
+        totalFiles: 1248 * confirmedSources.length,
+        photos: 892 * confirmedSources.length,
+        videos: 356 * confirmedSources.length,
+        dateRange: "2018 — 2024",
+        highConfidence: 892 * confirmedSources.length,
+        mediumConfidence: 312 * confirmedSources.length,
+        lowConfidence: 44 * confirmedSources.length,
+        label: "Combined Analysis (All Sources)"
+      };
+    } else {
+      // Per-source stats
+      return {
+        totalFiles: 1248,
+        photos: 892,
+        videos: 356,
+        dateRange: "2018 — 2024",
+        highConfidence: 892,
+        mediumConfidence: 312,
+        lowConfidence: 44,
+        label: `Analysis (${confirmedSources.find(s => s.id === selectedSourceId)?.label || 'Source'})`
+      };
+    }
+  };
+
+  const stats = getStats();
 
   const toggleFilter = (level: "High" | "Medium" | "Low") => {
     setFilter(current => current === level ? null : level);
@@ -450,7 +487,7 @@ function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { active
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Workspace</span>
           <ChevronRight className="w-4 h-4" />
-          <span className="text-foreground font-medium">{activeSource.label}</span>
+          <span className="text-foreground font-medium">{selectedSourceId === null ? "All Sources" : confirmedSources.find(s => s.id === selectedSourceId)?.label}</span>
         </div>
         <div className="flex items-center gap-4">
            <span className="text-sm text-muted-foreground">Last saved: Just now</span>
@@ -464,10 +501,29 @@ function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { active
             <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Preview – example results</span>
             </div>
+
+            {/* Source Chips */}
+            <div className="flex items-center gap-3 mb-6 pb-6 border-b border-border overflow-x-auto">
+              <SourceChip 
+                label="All Sources" 
+                isActive={selectedSourceId === null}
+                onClick={() => setSelectedSourceId(null)}
+              />
+              {confirmedSources.map(source => (
+                <SourceChip 
+                  key={source.id}
+                  icon={source.icon}
+                  label={source.label} 
+                  isActive={selectedSourceId === source.id}
+                  onClick={() => setSelectedSourceId(source.id)}
+                />
+              ))}
+            </div>
+
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-semibold text-foreground mb-1">Confidence Summary</h2>
-                <p className="text-muted-foreground">Based on metadata signals found in 1,248 files.</p>
+                <p className="text-sm text-muted-foreground">{stats.label}</p>
               </div>
               <Button variant="outline" size="sm">View Detailed Report</Button>
             </div>
@@ -475,7 +531,7 @@ function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { active
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <ConfidenceCard 
                 level="High" 
-                count={892} 
+                count={stats.highConfidence} 
                 description="Strong agreement between EXIF and filename."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
@@ -486,7 +542,7 @@ function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { active
               />
               <ConfidenceCard 
                 level="Medium" 
-                count={312} 
+                count={stats.mediumConfidence} 
                 description="Partial metadata found, some heuristics used."
                 color="text-amber-600"
                 bgColor="bg-amber-50"
@@ -497,7 +553,7 @@ function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { active
               />
               <ConfidenceCard 
                 level="Low" 
-                count={44} 
+                count={stats.lowConfidence} 
                 description="No reliable date found. Review recommended."
                 color="text-rose-600"
                 bgColor="bg-rose-50"
@@ -539,7 +595,7 @@ function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { active
       <div className="h-20 bg-background border-t border-border flex items-center justify-between px-8 shrink-0 z-10 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
         <div className="flex items-center gap-4">
            <div className="text-sm text-muted-foreground">
-             <span className="font-medium text-foreground">1,248</span> files ready to process
+             <span className="font-medium text-foreground">{stats.totalFiles}</span> files ready to process
            </div>
         </div>
         <div className="flex items-center gap-4">
@@ -672,6 +728,24 @@ function CompletionState({ results, onAddAnother, onViewResults }: { results: An
         </motion.div>
       </div>
     </div>
+  );
+}
+
+function SourceChip({ icon, label, isActive, onClick }: { icon?: React.ReactNode, label: string, isActive: boolean, onClick: () => void }) {
+  return (
+    <motion.button
+      onClick={onClick}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-all duration-200 shrink-0 ${
+        isActive
+          ? 'bg-primary text-white shadow-lg shadow-primary/30'
+          : 'bg-background border border-border text-foreground hover:border-primary/50'
+      }`}
+    >
+      {icon && <span className="w-4 h-4">{icon}</span>}
+      {label}
+    </motion.button>
   );
 }
 
