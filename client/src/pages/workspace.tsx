@@ -817,7 +817,7 @@ function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
                 onClick={onAddFirstSource}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                Skip for now
+                Explore the dashboard
               </button>
             </div>
           </div>
