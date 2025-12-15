@@ -3,12 +3,10 @@ import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
 import { FolderPlus, FileArchive, HardDrive, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/custom-card";
 
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
-  const [skipScreen, setSkipScreen] = useState(false);
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -51,16 +49,17 @@ export default function SourceSelection() {
         animate="show"
         className="max-w-[1120px] w-full z-10 flex flex-col items-center text-center"
       >
-        <motion.div variants={item} className="mb-12">
-          <h1 className="text-[2rem] md:text-[2.5rem] font-semibold text-foreground tracking-tight leading-[1.1] mb-4">
+        <motion.div variants={item} className="mb-8">
+          <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-16 w-auto mx-auto mb-6" />
+          <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight leading-[1.1] mb-3">
             Find Your Photos & Videos
           </h1>
-          <p className="text-[1.1rem] text-muted-foreground max-w-2xl mx-auto font-light">
+          <p className="text-base text-muted-foreground max-w-2xl mx-auto font-light">
             Choose where your photos and videos are located. You can add more sources later.
           </p>
         </motion.div>
 
-        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl mb-16">
+        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl">
           <OptionCard 
             icon={<FolderPlus className="w-8 h-8 text-primary" />}
             title="Add Folder"
@@ -80,23 +79,6 @@ export default function SourceSelection() {
             onClick={handleSelection}
           />
         </motion.div>
-
-        <motion.div variants={item} className="flex flex-col items-center gap-6">
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="skip" 
-              checked={skipScreen}
-              onCheckedChange={(checked) => setSkipScreen(checked === true)}
-              className="border-muted-foreground/30 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-            />
-            <label
-              htmlFor="skip"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground"
-            >
-              Skip this screen next time
-            </label>
-          </div>
-        </motion.div>
       </motion.div>
     </div>
   );
@@ -105,17 +87,17 @@ export default function SourceSelection() {
 function OptionCard({ icon, title, description, onClick }: { icon: React.ReactNode, title: string, description: string, onClick: () => void }) {
   return (
     <Card 
-      className="flex flex-col items-center text-center p-8 cursor-pointer group h-full justify-between hover:border-primary transition-colors"
+      className="flex flex-col items-center text-center p-8 cursor-pointer group h-full justify-between hover:border-primary transition-colors min-h-[280px]"
       onClick={onClick}
     >
-      <div className="flex flex-col items-center">
-        <div className="mb-6 p-4 rounded-full bg-secondary text-primary group-hover:scale-110 transition-transform duration-400 ease-[cubic-bezier(0.25,0.46,0.45,0.94)]">
+      <div className="flex flex-col items-center pt-2">
+        <div className="mb-5 p-4 rounded-full bg-secondary text-primary group-hover:scale-110 transition-transform duration-400 ease-[cubic-bezier(0.25,0.46,0.45,0.94)]">
           {icon}
         </div>
-        <h3 className="text-lg font-medium text-foreground mb-3">{title}</h3>
+        <h3 className="text-lg font-medium text-foreground mb-2">{title}</h3>
         <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
       </div>
-      <div className="mt-6 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
+      <div className="mt-4 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
          <ArrowRight className="w-5 h-5 text-primary" />
       </div>
     </Card>
