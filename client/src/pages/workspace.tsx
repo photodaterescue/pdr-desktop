@@ -564,7 +564,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, onAddSource
         <div>
           <SidebarItem 
             icon={<LayoutGrid className="w-4 h-4" />} 
-            label="Dashboard" 
+            label="Workspace" 
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
             selectable={false}
@@ -576,7 +576,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, onAddSource
         <div>
           <div className="flex items-center justify-between mb-3 px-2">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sources</h3>
-            {sources.length > 0 && (
+            {sources.length > 0 && !isAnalysing && (
               <div className="flex items-center gap-2">
                 <Checkbox 
                   id="select-all"
@@ -618,24 +618,27 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, onAddSource
           </Button>
         </div>
 
-        {sources.some(s => s.confirmed) && (
+        {/* ANALYSIS SECTION */}
+        {(isAnalysing || sources.some(s => s.confirmed)) && (
         <div className="pt-2 border-t border-sidebar-border">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Analysis</h3>
-          <div className="px-3 py-3 bg-secondary/50 rounded-xl border border-border">
-            {isAnalysing ? (
-              <>
-                <div className="text-sm font-medium text-foreground mb-2">Analysing your files</div>
-                <Progress value={75} className="h-1.5 bg-background mb-2" />
-                <p className="text-xs text-muted-foreground">Your originals are not modified</p>
-              </>
-            ) : (
-              <>
+          
+          {isAnalysing ? (
+            <div className="mx-2 p-3 bg-secondary/50 rounded-xl border border-border">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-foreground">Scanning...</span>
+                <span className="text-xs font-medium text-primary">84%</span>
+              </div>
+              <Progress value={84} className="h-1.5 bg-background mb-2" />
+              <p className="text-[10px] text-muted-foreground truncate">Processing DSC_9921.jpg</p>
+            </div>
+          ) : (
+             <div className="px-3 py-3 bg-secondary/50 rounded-xl border border-border mx-2">
                 <div className="text-sm font-medium">Preview Mode</div>
                 <Progress value={0} className="h-1.5 bg-background mt-2" />
                 <p className="text-xs text-muted-foreground mt-2">Awaiting analysis...</p>
-              </>
-            )}
-          </div>
+             </div>
+          )}
         </div>
         )}
 
@@ -1100,54 +1103,80 @@ function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
 }
 
 function AnalysingState({ progress }: { progress: AnalysisProgress }) {
-  const percentComplete = Math.round((progress.current / progress.total) * 100);
+  // Use progress to simulate confidence counts growing
+  const percentComplete = Math.min(100, Math.round((progress.current / progress.total) * 100));
+  
+  // Simulated live stats
+  const highConf = Math.floor(892 * (percentComplete / 100));
+  const medConf = Math.floor(312 * (percentComplete / 100));
+  const lowConf = Math.floor(44 * (percentComplete / 100));
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
-      <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center px-8 shrink-0">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <motion.div animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 1.5, repeat: Infinity }}>
-            <div className="w-2 h-2 rounded-full bg-primary" />
-          </motion.div>
-          <span>Analysing your files</span>
-        </div>
-      </header>
+      <div className="flex-1 overflow-y-auto p-8">
+        <div className="max-w-5xl mx-auto space-y-8">
+          
+          <section>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-semibold text-foreground mb-1">Confidence Summary</h2>
+                <p className="text-sm text-muted-foreground">Based on metadata signals found in {progress.current.toLocaleString()} files.</p>
+              </div>
+              <Button variant="outline" size="sm" disabled>View Detailed Report</Button>
+            </div>
 
-      <div className="flex-1 flex items-center justify-center p-8">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-2xl w-full text-center"
-        >
-          <div className="mb-8">
-            <h2 className="text-3xl font-semibold text-foreground mb-3">Analysing your files</h2>
-            <p className="text-muted-foreground mb-6">Your originals are not modified. This usually takes a few minutes.</p>
-            
-            <Card className="p-8 mb-8">
-              <div className="mb-8">
-                <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-sm text-muted-foreground">Progress</span>
-                  <span className="text-2xl font-semibold text-foreground">{progress.current} / {progress.total}</span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <ConfidenceCard 
+                level="High" 
+                count={highConf} 
+                description="Strong agreement between EXIF and filename."
+                color="text-emerald-600"
+                bgColor="bg-emerald-50"
+                borderColor="border-emerald-100"
+                icon={<CheckCircle2 className="w-5 h-5" />}
+                isActive={false}
+              />
+              <ConfidenceCard 
+                level="Medium" 
+                count={medConf} 
+                description="Partial metadata found, some heuristics used."
+                color="text-amber-600"
+                bgColor="bg-amber-50"
+                borderColor="border-amber-100"
+                icon={<AlertTriangle className="w-5 h-5" />}
+                isActive={false}
+              />
+              <ConfidenceCard 
+                level="Low" 
+                count={lowConf} 
+                description="No reliable date found. Review recommended."
+                color="text-rose-600"
+                bgColor="bg-rose-50"
+                borderColor="border-rose-100"
+                icon={<AlertCircle className="w-5 h-5" />}
+                isActive={false}
+              />
+            </div>
+          </section>
+
+          <section className="pt-4">
+            <h2 className="text-2xl font-semibold text-foreground mb-6">Output Selection</h2>
+            <Card className="flex flex-col md:flex-row items-center gap-6 p-6">
+              <div className="p-4 bg-secondary/50 rounded-full">
+                <HardDrive className="w-6 h-6 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
+                <p className="text-sm text-muted-foreground mb-2">/Volumes/Photos_Backup/Restored_2024</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">2.4 TB Free</span>
+                  <span className="text-xs text-muted-foreground">Required: 4.2 GB</span>
                 </div>
-                <Progress value={percentComplete} className="h-2 bg-background" />
               </div>
-
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground mb-1">Processing</p>
-                <motion.p 
-                  key={progress.currentFile}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="font-mono text-xs text-foreground truncate"
-                >
-                  {progress.currentFile}
-                </motion.p>
-              </div>
+              <Button variant="outline">Change Destination</Button>
             </Card>
-
-            <p className="text-xs text-muted-foreground">Do not close this window during analysis</p>
-          </div>
-        </motion.div>
+          </section>
+        </div>
       </div>
     </div>
   );
