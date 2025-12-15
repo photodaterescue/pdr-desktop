@@ -317,6 +317,17 @@ export default function Workspace() {
     }
   };
 
+  const handleCancelSourceSelection = () => {
+    // Remove the pending source and close modal
+    if (pendingSource) {
+      setSources(sources.filter(s => s.id !== pendingSource.id));
+      setShowPreScanConfirm(false);
+      setPreScanStats(null);
+      setPendingSource(null);
+      setActiveSource(null);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
       <input
@@ -367,6 +378,7 @@ export default function Workspace() {
           stats={preScanStats}
           onAddToWorkspace={handleAddToWorkspace}
           onChangeSource={handleChangeSourceFromModal}
+          onCancel={handleCancelSourceSelection}
         />
       )}
       
@@ -1108,13 +1120,13 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource }: { source: Source, stats: PreScanStats, onAddToWorkspace: () => void, onChangeSource: () => void }) {
+function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onCancel }: { source: Source, stats: PreScanStats, onAddToWorkspace: () => void, onChangeSource: () => void, onCancel: () => void }) {
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onAddToWorkspace}
+      onClick={onCancel}
       className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
     >
       <motion.div 
@@ -1146,19 +1158,31 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource }: {
           </div>
         </Card>
 
-        <div className="flex gap-3">
+        <div className="space-y-2">
+          <div className="flex gap-3">
+            <Button 
+              className="flex-1 bg-primary hover:bg-primary/90" 
+              onClick={onAddToWorkspace}
+              data-testid="button-add-to-workspace"
+            >
+              Add to workspace
+            </Button>
+            <Button 
+              variant="outline" 
+              className="flex-1" 
+              onClick={onChangeSource}
+              data-testid="button-change-source"
+            >
+              Change source
+            </Button>
+          </div>
           <Button 
-            variant="outline" 
-            className="flex-1" 
-            onClick={onChangeSource}
+            variant="ghost" 
+            className="w-full text-muted-foreground hover:text-foreground" 
+            onClick={onCancel}
+            data-testid="button-cancel-source"
           >
-            Change source
-          </Button>
-          <Button 
-            className="flex-1 bg-primary hover:bg-primary/90" 
-            onClick={onAddToWorkspace}
-          >
-            Add to workspace
+            Cancel
           </Button>
         </div>
       </motion.div>
