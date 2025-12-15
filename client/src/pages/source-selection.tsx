@@ -146,19 +146,19 @@ export default function SourceSelection() {
           <OptionCard 
             icon={<FolderPlus className="w-8 h-8 text-primary" />}
             title="Add Folder"
-            description="Select one or more folders containing photos and videos."
+            description="Select a folder on your computer (local or external drives). Scans the folder for media files."
             onClick={() => handleSelection('folder')}
           />
           <OptionCard 
             icon={<FileArchive className="w-8 h-8 text-primary" />}
             title="Add ZIP Archive"
-            description="Import backup archives (e.g. phone backups or cloud exports)."
+            description="Import a .zip file. Perfect for phone backups, cloud exports, or compressed archives."
             onClick={() => handleSelection('zip')}
           />
           <OptionCard 
             icon={<HardDrive className="w-8 h-8 text-primary" />}
             title="Add Drive"
-            description="Scan an external or internal drive for media files."
+            description="Scan an entire drive root (internal, external, USB). Searches all folders on the drive."
             onClick={() => handleSelection('drive')}
           />
         </motion.div>
