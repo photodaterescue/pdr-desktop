@@ -48,6 +48,17 @@ interface AnalysisResults {
   skipped: number;
 }
 
+interface PreScanStats {
+  totalFiles: number;
+  photoCount: number;
+  videoCount: number;
+  estimatedSizeGB: number;
+  dateRange: {
+    earliest: string;
+    latest: string;
+  };
+}
+
 export default function Workspace() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
@@ -64,6 +75,9 @@ export default function Workspace() {
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
+  const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
+  const [preScanStats, setPreScanStats] = useState<PreScanStats | null>(null);
+  const [pendingSource, setPendingSource] = useState<Source | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -214,6 +228,12 @@ export default function Workspace() {
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
+      setPendingSource(newSource);
+      
+      // Generate fresh pre-scan stats live
+      const stats = generatePreScanStats();
+      setPreScanStats(stats);
+      setShowPreScanConfirm(true);
       
       e.target.value = '';
     }
@@ -238,6 +258,12 @@ export default function Workspace() {
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
+      setPendingSource(newSource);
+      
+      // Generate fresh pre-scan stats live
+      const stats = generatePreScanStats();
+      setPreScanStats(stats);
+      setShowPreScanConfirm(true);
       
       e.target.value = '';
     }
@@ -245,6 +271,47 @@ export default function Workspace() {
 
   const handleAddAnother = () => {
     setShowSourceTypeSelector(true);
+  };
+
+  const generatePreScanStats = (): PreScanStats => {
+    const totalFiles = Math.floor(Math.random() * 5000) + 500;
+    const photoCount = Math.floor(totalFiles * (Math.random() * 0.4 + 0.4));
+    const videoCount = Math.floor(totalFiles * (Math.random() * 0.3 + 0.1));
+    const estimatedSizeGB = parseFloat((Math.random() * 150 + 10).toFixed(2));
+    
+    const earliest = new Date(2018 + Math.floor(Math.random() * 4), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1);
+    const latest = new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1);
+    
+    return {
+      totalFiles,
+      photoCount,
+      videoCount,
+      estimatedSizeGB,
+      dateRange: {
+        earliest: earliest.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        latest: latest.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      }
+    };
+  };
+
+  const handleConfirmPreScan = () => {
+    if (pendingSource) {
+      setShowPreScanConfirm(false);
+      setPreScanStats(null);
+      setPendingSource(null);
+      // Source is already added to the array
+    }
+  };
+
+  const handleCancelPreScan = () => {
+    if (pendingSource) {
+      // Remove the pending source
+      setSources(sources.filter(s => s.id !== pendingSource.id));
+      setShowPreScanConfirm(false);
+      setPreScanStats(null);
+      setPendingSource(null);
+      setActiveSource(null);
+    }
   };
 
   return (
@@ -290,6 +357,15 @@ export default function Workspace() {
       />
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
+      
+      {showPreScanConfirm && pendingSource && preScanStats && (
+        <PreScanConfirmationModal 
+          source={pendingSource}
+          stats={preScanStats}
+          onConfirm={handleConfirmPreScan}
+          onCancel={handleCancelPreScan}
+        />
+      )}
       
       {showSourceTypeSelector && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1024,6 +1100,104 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <Button onClick={onClose} className="w-full mt-6">Close</Button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function PreScanConfirmationModal({ source, stats, onConfirm, onCancel }: { source: Source, stats: PreScanStats, onConfirm: () => void, onCancel: () => void }) {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onCancel}
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0, y: 10 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 10 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-background rounded-2xl shadow-2xl max-w-lg w-full p-8 border border-border"
+      >
+        <div className="mb-8">
+          <h2 className="text-2xl font-semibold text-foreground mb-2">Ready to scan?</h2>
+          <p className="text-muted-foreground">Here's what we found in your source</p>
+        </div>
+
+        <Card className="p-6 mb-6 bg-gradient-to-br from-primary/5 to-secondary/30 border-primary/20">
+          <div className="mb-4">
+            <h3 className="text-lg font-medium text-foreground mb-1">{source.label}</h3>
+            <p className="text-xs text-muted-foreground font-mono break-all">{source.path}</p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-3 border-b border-border/40">
+              <div className="flex items-center gap-3">
+                <FileImage className="w-4 h-4 text-primary" />
+                <span className="text-sm text-foreground font-medium">Total Files</span>
+              </div>
+              <span className="text-lg font-semibold text-foreground">{stats.totalFiles.toLocaleString()}</span>
+            </div>
+
+            <div className="flex items-center justify-between py-3 border-b border-border/40">
+              <div className="flex items-center gap-3">
+                <FileImage className="w-4 h-4 text-primary" />
+                <span className="text-sm text-foreground font-medium">Photos</span>
+              </div>
+              <span className="text-lg font-semibold text-foreground">{stats.photoCount.toLocaleString()}</span>
+            </div>
+
+            <div className="flex items-center justify-between py-3 border-b border-border/40">
+              <div className="flex items-center gap-3">
+                <FileVideo className="w-4 h-4 text-primary" />
+                <span className="text-sm text-foreground font-medium">Videos</span>
+              </div>
+              <span className="text-lg font-semibold text-foreground">{stats.videoCount.toLocaleString()}</span>
+            </div>
+
+            <div className="flex items-center justify-between py-3 border-b border-border/40">
+              <div className="flex items-center gap-3">
+                <HelpCircle className="w-4 h-4 text-primary" />
+                <span className="text-sm text-foreground font-medium">Estimated Size</span>
+              </div>
+              <span className="text-lg font-semibold text-foreground">{stats.estimatedSizeGB.toFixed(1)} GB</span>
+            </div>
+
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <CalendarRange className="w-4 h-4 text-primary" />
+                <span className="text-sm text-foreground font-medium">Date Range</span>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">{stats.dateRange.earliest}</div>
+                <div className="text-xs text-muted-foreground">to</div>
+                <div className="text-xs text-muted-foreground">{stats.dateRange.latest}</div>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <p className="text-xs text-muted-foreground text-center mb-6">
+          You can remove or change this source before analysis begins.
+        </p>
+
+        <div className="flex gap-3">
+          <Button 
+            variant="outline" 
+            className="flex-1" 
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+          <Button 
+            className="flex-1 bg-primary hover:bg-primary/90" 
+            onClick={onConfirm}
+          >
+            Start Analysis
+          </Button>
+        </div>
       </motion.div>
     </motion.div>
   );
