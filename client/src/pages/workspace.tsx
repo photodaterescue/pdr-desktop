@@ -152,13 +152,19 @@ export default function Workspace() {
       setActiveSource(updatedSources[0]);
     } else {
       setActiveSource(null);
+      // Only route to selection if completely empty (initial state)
       setLocation("/source-selection");
     }
   };
 
   const handleChangeSource = () => {
-    handleRemoveSource();
-    setLocation("/source-selection");
+    if (!activeSource) return;
+    // Remove current unconfirmed source
+    const updatedSources = sources.filter(s => s.id !== activeSource.id);
+    setSources(updatedSources);
+    setActiveSource(null);
+    // Open OS picker directly (no routing through Find Photos screen)
+    folderInputRef.current?.click();
   };
 
   const handleStartAnalysis = () => {
@@ -185,9 +191,13 @@ export default function Workspace() {
         confirmed: false
       };
 
+      // Deactivate all existing sources and add/append new source
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
+      
+      // Reset file input for next use
+      e.target.value = '';
     }
   };
 
