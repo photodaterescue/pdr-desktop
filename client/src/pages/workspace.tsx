@@ -70,7 +70,26 @@ export default function Workspace() {
   const zipInputRef = useRef<HTMLInputElement>(null);
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   
-  const [sources, setSources] = useState<Source[]>([
+  const [sources, setSources] = useState<Source[]>(() => {
+    // Try to load from localStorage
+    const saved = localStorage.getItem('pdr-sources');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Rehydrate icons based on type
+        return parsed.map((s: any) => ({
+          ...s,
+          icon: s.type === 'zip' ? <FileArchive className="w-4 h-4" /> : 
+                s.type === 'drive' ? <HardDrive className="w-4 h-4" /> : 
+                <Folder className="w-4 h-4" />
+        }));
+      } catch (e) {
+        console.error("Failed to parse saved sources", e);
+      }
+    }
+    
+    // Default mock data if no saved data
+    return [
     {
       id: "mock-1",
       icon: <Folder className="w-4 h-4" />,
@@ -122,7 +141,14 @@ export default function Workspace() {
         dateRange: { earliest: "Jun 10, 2020", latest: "Nov 22, 2024" }
       }
     }
-  ]);
+  ]});
+
+  // Save sources to localStorage whenever they change
+  useEffect(() => {
+    // Create a version without the icon property (React Node) for storage
+    const sourcesToSave = sources.map(({ icon, ...rest }) => rest);
+    localStorage.setItem('pdr-sources', JSON.stringify(sourcesToSave));
+  }, [sources]);
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
@@ -721,7 +747,7 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
         disabled 
           ? 'text-muted-foreground/50 cursor-not-allowed' 
           : active 
-            ? 'bg-secondary text-primary font-medium' 
+            ? 'text-primary font-medium bg-sidebar-accent/50' 
             : 'text-sidebar-foreground hover:bg-sidebar-accent'
       }`}
       onClick={(e) => !disabled && onClick && onClick(e)}
