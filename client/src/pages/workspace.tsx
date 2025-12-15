@@ -37,6 +37,7 @@ interface Source {
   active: boolean;
   selected: boolean;
   confirmed: boolean;
+  stats?: PreScanStats;
 }
 
 interface AnalysisProgress {
@@ -268,6 +269,9 @@ export default function Workspace() {
       const sourceType = inferSourceType(fullPath);
       const icon = sourceType === 'drive' ? <HardDrive className="w-4 h-4" /> : <Folder className="w-4 h-4" />;
       
+      // Generate fresh pre-scan stats live
+      const stats = generatePreScanStats();
+      
       const newSource: Source = {
         id: Date.now().toString(),
         icon,
@@ -276,7 +280,8 @@ export default function Workspace() {
         path: fullPath,
         active: true,
         selected: true,
-        confirmed: false
+        confirmed: false,
+        stats: stats
       };
 
       const updatedSources = sources.map(s => ({ ...s, active: false }));
@@ -284,8 +289,6 @@ export default function Workspace() {
       setActiveSource(newSource);
       setPendingSource(newSource);
       
-      // Generate fresh pre-scan stats live
-      const stats = generatePreScanStats();
       setPreScanStats(stats);
       setShowPreScanConfirm(true);
       
@@ -299,6 +302,9 @@ export default function Workspace() {
       const fileName = file.name;
       const fullPath = `/Users/username/Downloads/${fileName}`;
       
+      // Generate fresh pre-scan stats live
+      const stats = generatePreScanStats();
+
       const newSource: Source = {
         id: Date.now().toString(),
         icon: <FileArchive className="w-4 h-4" />,
@@ -307,7 +313,8 @@ export default function Workspace() {
         path: fullPath,
         active: true,
         selected: true,
-        confirmed: false
+        confirmed: false,
+        stats: stats
       };
 
       const updatedSources = sources.map(s => ({ ...s, active: false }));
@@ -315,8 +322,6 @@ export default function Workspace() {
       setActiveSource(newSource);
       setPendingSource(newSource);
       
-      // Generate fresh pre-scan stats live
-      const stats = generatePreScanStats();
       setPreScanStats(stats);
       setShowPreScanConfirm(true);
       
@@ -768,10 +773,10 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
     }
 
     // Aggregate stats
-    const totalFiles = selectedSources.length * 1248;
-    const photos = selectedSources.length * 892;
-    const videos = selectedSources.length * 356;
-    const sizeGB = selectedSources.length * 4.2;
+    const totalFiles = selectedSources.reduce((acc, s) => acc + (s.stats?.totalFiles || 0), 0);
+    const photos = selectedSources.reduce((acc, s) => acc + (s.stats?.photoCount || 0), 0);
+    const videos = selectedSources.reduce((acc, s) => acc + (s.stats?.videoCount || 0), 0);
+    const sizeGB = selectedSources.reduce((acc, s) => acc + (s.stats?.estimatedSizeGB || 0), 0);
 
     return {
       label: "Combined Analysis",
