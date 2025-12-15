@@ -678,7 +678,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, onAddSource
                 key={source.id} 
                 icon={source.icon} 
                 label={source.label} 
-                active={source.active} 
+                active={false} 
                 selected={source.selected}
                 selectable={true}
                 onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
@@ -873,6 +873,11 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
 
   const stats = getStats();
 
+  // Mock confidence stats based on aggregated totals
+  const highConf = Math.floor(stats.photos * 0.65);
+  const medConf = Math.floor(stats.photos * 0.25);
+  const lowConf = Math.floor(stats.photos * 0.10);
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
       <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto">
@@ -882,7 +887,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         className="max-w-2xl w-full"
       >
         <div className="mb-8 text-center">
-           <h2 className="text-2xl font-semibold text-foreground mb-2">Dashboard</h2>
+           <h2 className="text-2xl font-semibold text-foreground mb-2">Workspace</h2>
            <p className="text-muted-foreground">Review your sources and start analysis</p>
         </div>
 
@@ -940,6 +945,47 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
              </Button>
           </div>
         </Card>
+
+        {/* Confidence Summary Section */}
+        {hasSelection && (
+          <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground">Confidence Summary (Estimate)</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <ConfidenceCard 
+                level="High" 
+                count={highConf} 
+                description="Strong agreement between EXIF and filename."
+                color="text-emerald-600"
+                bgColor="bg-emerald-50"
+                borderColor="border-emerald-100"
+                icon={<CheckCircle2 className="w-5 h-5" />}
+                isActive={false}
+              />
+              <ConfidenceCard 
+                level="Medium" 
+                count={medConf} 
+                description="Partial metadata found, some heuristics used."
+                color="text-amber-600"
+                bgColor="bg-amber-50"
+                borderColor="border-amber-100"
+                icon={<AlertTriangle className="w-5 h-5" />}
+                isActive={false}
+              />
+              <ConfidenceCard 
+                level="Low" 
+                count={lowConf} 
+                description="No reliable date found. Review recommended."
+                color="text-rose-600"
+                bgColor="bg-rose-50"
+                borderColor="border-rose-100"
+                icon={<AlertCircle className="w-5 h-5" />}
+                isActive={false}
+              />
+            </div>
+          </section>
+        )}
 
         {/* Preview Section */}
         <section className="pt-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
