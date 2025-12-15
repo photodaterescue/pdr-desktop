@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Plus,
   Play,
-  Database,
   Trash2,
   RefreshCw,
   FileImage,
@@ -146,17 +145,16 @@ function Sidebar({ sources, onSourceClick }: { sources: Source[], onSourceClick:
           </Button>
         </div>
 
-        {/* Only show Analysis if there's at least one confirmed source (mocking global progress or active source progress) */}
+        {/* Only show Analysis if there's at least one confirmed source */}
         {sources.some(s => s.confirmed) && (
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Analysis</h3>
           <div className="px-3 py-3 bg-secondary/50 rounded-xl border border-border">
             <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium">Scanning...</span>
-              <span className="text-xs text-muted-foreground">84%</span>
+              <span className="text-sm font-medium">Preview Mode</span>
             </div>
-            <Progress value={84} className="h-1.5 bg-background" />
-            <p className="text-xs text-muted-foreground mt-2">Processing DSC_9921.jpg</p>
+            <Progress value={0} className="h-1.5 bg-background" />
+            <p className="text-xs text-muted-foreground mt-2">Awaiting analysis...</p>
           </div>
         </div>
         )}
@@ -213,7 +211,7 @@ function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: 
       >
         <div className="mb-8 text-center">
            <h2 className="text-2xl font-semibold text-foreground mb-2">Confirm Source Selection</h2>
-           <p className="text-muted-foreground">Please review the details below before we begin analysis.</p>
+           <p className="text-muted-foreground">These are example results. Your actual analysis will begin after confirmation.</p>
         </div>
 
         <Card className="p-8 mb-8">
@@ -300,6 +298,9 @@ function Dashboard({ activeSource }: { activeSource: Source }) {
           
           {/* Confidence Summary Section */}
           <section>
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Preview – example results</span>
+            </div>
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-semibold text-foreground mb-1">Confidence Summary</h2>
