@@ -942,6 +942,50 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         </div>
 
         <Card className="p-8 mb-8">
+          <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
+            <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
+              <LayoutGrid className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-xl font-medium text-foreground mb-1">{stats.label}</h3>
+              <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
+                {stats.path}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Sources</div>
+              <div className="text-2xl font-semibold text-foreground">{stats.sourceCount}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Total Photos</div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-emerald-600">
+                <FileImage className="w-4 h-4" /> {stats.photos.toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Total Videos</div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-blue-600">
+                <FileVideo className="w-4 h-4" /> {stats.videos.toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Total Size</div>
+              <div className="text-2xl font-semibold text-foreground">{stats.sizeGB.toFixed(1)} GB</div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-4">
+             <div className="flex gap-4">
+               {/* Actions hidden for aggregate view as requested, mainly confirmation here */}
+             </div>
+             <Button onClick={onConfirm} disabled={!hasSelection} className="px-8 shadow-lg shadow-primary/20">
+               Confirm & Analyze <ChevronRight className="w-4 h-4 ml-2" />
+             </Button>
+          </div>
+        </Card>
 
         {/* Preview Section */}
         <section className="pt-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
