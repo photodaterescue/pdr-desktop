@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
 import { FolderPlus, FileArchive, HardDrive, ArrowRight } from "lucide-react";
@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/custom-card";
 
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -32,16 +33,43 @@ export default function SourceSelection() {
   };
 
   const handleSelection = (type: 'folder' | 'zip' | 'drive') => {
+    if (type === 'folder') {
+      folderInputRef.current?.click();
+      return;
+    }
+    
     let name = "Selected Source";
-    if (type === 'folder') name = "New Folder Source";
     if (type === 'zip') name = "Archive_Backup.zip";
     if (type === 'drive') name = "External Drive (D:)";
     
     setLocation(`/workspace?type=${type}&name=${encodeURIComponent(name)}`);
   };
 
+  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      // Get the top-level folder name from the first file's path
+      // e.g., "Vacation/Photo1.jpg" -> "Vacation"
+      const path = e.target.files[0].webkitRelativePath || e.target.files[0].name;
+      const folderName = path.split('/')[0] || "Selected Folder";
+      
+      setLocation(`/workspace?type=folder&name=${encodeURIComponent(folderName)}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      {/* Hidden Folder Input */}
+      <input
+        type="file"
+        ref={folderInputRef}
+        className="hidden"
+        onChange={handleFolderChange}
+        // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
+        webkitdirectory=""
+        directory=""
+        multiple
+      />
+
       {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl" />
