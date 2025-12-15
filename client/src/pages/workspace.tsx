@@ -16,7 +16,10 @@ import {
   RefreshCw,
   FileImage,
   FileVideo,
-  CalendarRange
+  CalendarRange,
+  FolderOpen,
+  Eye,
+  RotateCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
@@ -33,6 +36,18 @@ interface Source {
   confirmed: boolean;
 }
 
+interface AnalysisProgress {
+  current: number;
+  total: number;
+  currentFile: string;
+}
+
+interface AnalysisResults {
+  fixed: number;
+  unchanged: number;
+  skipped: number;
+}
+
 export default function Workspace() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
@@ -44,6 +59,10 @@ export default function Workspace() {
   ]);
 
   const [activeSource, setActiveSource] = useState<Source | null>(sources[0]);
+  const [isAnalysing, setIsAnalysing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 1248, currentFile: "" });
+  const [isComplete, setIsComplete] = useState(false);
+  const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -65,7 +84,7 @@ export default function Workspace() {
           type,
           path: path || undefined,
           active: true,
-          confirmed: false // New sources start unconfirmed
+          confirmed: false
         };
 
         const updatedSources = sources.map(s => ({ ...s, active: false }));
@@ -74,6 +93,39 @@ export default function Workspace() {
       }
     }
   }, [searchString]);
+
+  useEffect(() => {
+    if (!isAnalysing || isComplete) return;
+
+    const fileNames = [
+      "IMG_2024_Vacation_01.jpg",
+      "DSC_9921.jpg",
+      "PHOTO_20180512.png",
+      "video_backup_001.mp4",
+      "Screenshot_20220301.png"
+    ];
+
+    const interval = setInterval(() => {
+      setAnalysisProgress(prev => {
+        const next = prev.current + 1;
+        const randomFile = fileNames[Math.floor(Math.random() * fileNames.length)];
+        
+        if (next >= prev.total) {
+          setAnalysisResults({
+            fixed: Math.floor(prev.total * 0.65),
+            unchanged: Math.floor(prev.total * 0.28),
+            skipped: Math.floor(prev.total * 0.07)
+          });
+          setIsComplete(true);
+          return prev;
+        }
+        
+        return { ...prev, current: next, currentFile: randomFile };
+      });
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [isAnalysing, isComplete]);
 
   const handleSourceClick = (id: string) => {
     const updatedSources = sources.map(s => ({ ...s, active: s.id === id }));
@@ -106,20 +158,37 @@ export default function Workspace() {
     setLocation("/source-selection");
   };
 
+  const handleStartAnalysis = () => {
+    setIsAnalysing(true);
+  };
+
+  const handleAddAnother = () => {
+    setIsAnalysing(false);
+    setIsComplete(false);
+    setAnalysisProgress({ current: 0, total: 1248, currentFile: "" });
+    setLocation("/source-selection");
+  };
+
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
-      <Sidebar sources={sources} onSourceClick={handleSourceClick} />
+      <Sidebar sources={sources} onSourceClick={handleSourceClick} isAnalysing={isAnalysing} />
       <MainContent 
         activeSource={activeSource} 
         onConfirm={handleConfirmSource}
         onRemove={handleRemoveSource}
         onChange={handleChangeSource}
+        isAnalysing={isAnalysing}
+        analysisProgress={analysisProgress}
+        isComplete={isComplete}
+        analysisResults={analysisResults}
+        onStartAnalysis={handleStartAnalysis}
+        onAddAnother={handleAddAnother}
       />
     </div>
   );
 }
 
-function Sidebar({ sources, onSourceClick }: { sources: Source[], onSourceClick: (id: string) => void }) {
+function Sidebar({ sources, onSourceClick, isAnalysing }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean }) {
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
       <div className="px-6 py-8 flex items-center">
@@ -137,42 +206,61 @@ function Sidebar({ sources, onSourceClick }: { sources: Source[], onSourceClick:
                 label={source.label} 
                 active={source.active} 
                 onClick={() => onSourceClick(source.id)}
+                disabled={isAnalysing}
               />
             ))}
           </div>
-          <Button variant="ghost" className="w-full mt-2 justify-start px-2 text-muted-foreground hover:text-primary">
+          <Button 
+            variant="ghost" 
+            className="w-full mt-2 justify-start px-2 text-muted-foreground hover:text-primary"
+            disabled={isAnalysing}
+          >
             <Plus className="w-4 h-4 mr-2" /> Add Source
           </Button>
         </div>
 
-        {/* Only show Analysis if there's at least one confirmed source */}
         {sources.some(s => s.confirmed) && (
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Analysis</h3>
           <div className="px-3 py-3 bg-secondary/50 rounded-xl border border-border">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium">Preview Mode</span>
-            </div>
-            <Progress value={0} className="h-1.5 bg-background" />
-            <p className="text-xs text-muted-foreground mt-2">Awaiting analysis...</p>
+            {isAnalysing ? (
+              <>
+                <div className="text-sm font-medium text-foreground mb-2">Analysing your files</div>
+                <Progress value={75} className="h-1.5 bg-background mb-2" />
+                <p className="text-xs text-muted-foreground">Your originals are not modified</p>
+              </>
+            ) : (
+              <>
+                <div className="text-sm font-medium">Preview Mode</div>
+                <Progress value={0} className="h-1.5 bg-background mt-2" />
+                <p className="text-xs text-muted-foreground mt-2">Awaiting analysis...</p>
+              </>
+            )}
           </div>
         </div>
         )}
       </div>
 
       <div className="p-4 border-t border-sidebar-border space-y-1">
-        <SidebarItem icon={<Settings className="w-4 h-4" />} label="Settings" />
-        <SidebarItem icon={<HelpCircle className="w-4 h-4" />} label="Help & Support" />
+        <SidebarItem icon={<Settings className="w-4 h-4" />} label="Settings" disabled={isAnalysing} />
+        <SidebarItem icon={<HelpCircle className="w-4 h-4" />} label="Help & Support" disabled={isAnalysing} />
       </div>
     </div>
   );
 }
 
-function SidebarItem({ icon, label, active = false, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) {
+function SidebarItem({ icon, label, active = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void, disabled?: boolean }) {
   return (
     <button 
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${active ? 'bg-secondary text-primary font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent'}`}
+      disabled={disabled}
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${
+        disabled 
+          ? 'text-muted-foreground/50 cursor-not-allowed' 
+          : active 
+            ? 'bg-secondary text-primary font-medium' 
+            : 'text-sidebar-foreground hover:bg-sidebar-accent'
+      }`}
     >
       {icon}
       <span className="truncate">{label}</span>
@@ -180,9 +268,41 @@ function SidebarItem({ icon, label, active = false, onClick }: { icon: React.Rea
   );
 }
 
-function MainContent({ activeSource, onConfirm, onRemove, onChange }: { activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
+function MainContent({ 
+  activeSource, 
+  onConfirm, 
+  onRemove, 
+  onChange,
+  isAnalysing,
+  analysisProgress,
+  isComplete,
+  analysisResults,
+  onStartAnalysis,
+  onAddAnother
+}: { 
+  activeSource: Source | null,
+  onConfirm: () => void,
+  onRemove: () => void,
+  onChange: () => void,
+  isAnalysing: boolean,
+  analysisProgress: AnalysisProgress,
+  isComplete: boolean,
+  analysisResults: AnalysisResults,
+  onStartAnalysis: () => void,
+  onAddAnother: () => void
+}) {
   if (!activeSource) {
      return <div className="flex-1 flex items-center justify-center text-muted-foreground">No source selected</div>;
+  }
+
+  // Show completion state
+  if (isComplete) {
+    return <CompletionState results={analysisResults} onAddAnother={onAddAnother} />;
+  }
+
+  // Show analysing state
+  if (isAnalysing) {
+    return <AnalysingState progress={analysisProgress} />;
   }
 
   // If source is not confirmed, show Confirmation Panel
@@ -197,8 +317,8 @@ function MainContent({ activeSource, onConfirm, onRemove, onChange }: { activeSo
     );
   }
 
-  // Otherwise show the standard Workspace Dashboard (Confidence Summary etc.)
-  return <Dashboard activeSource={activeSource} />;
+  // Otherwise show the standard Workspace Dashboard (Preview Mode)
+  return <Dashboard activeSource={activeSource} onStartAnalysis={onStartAnalysis} />;
 }
 
 function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: Source, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
@@ -271,7 +391,7 @@ function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: 
   );
 }
 
-function Dashboard({ activeSource }: { activeSource: Source }) {
+function Dashboard({ activeSource, onStartAnalysis }: { activeSource: Source, onStartAnalysis: () => void }) {
   const [filter, setFilter] = useState<"High" | "Medium" | "Low" | null>(null);
 
   const toggleFilter = (level: "High" | "Medium" | "Low") => {
@@ -280,7 +400,6 @@ function Dashboard({ activeSource }: { activeSource: Source }) {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
-      {/* Header */}
       <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-8 shrink-0">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Workspace</span>
@@ -292,11 +411,9 @@ function Dashboard({ activeSource }: { activeSource: Source }) {
         </div>
       </header>
 
-      {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-5xl mx-auto space-y-8">
           
-          {/* Confidence Summary Section */}
           <section>
             <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">Preview – example results</span>
@@ -352,7 +469,6 @@ function Dashboard({ activeSource }: { activeSource: Source }) {
             )}
           </section>
 
-          {/* Output Configuration */}
           <section className="pt-4">
             <h2 className="text-2xl font-semibold text-foreground mb-6">Output Selection</h2>
             <Card className="flex flex-col md:flex-row items-center gap-6 p-6">
@@ -374,7 +490,6 @@ function Dashboard({ activeSource }: { activeSource: Source }) {
         </div>
       </div>
 
-      {/* Bottom Action Bar */}
       <div className="h-20 bg-background border-t border-border flex items-center justify-between px-8 shrink-0 z-10 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
         <div className="flex items-center gap-4">
            <div className="text-sm text-muted-foreground">
@@ -383,7 +498,7 @@ function Dashboard({ activeSource }: { activeSource: Source }) {
         </div>
         <div className="flex items-center gap-4">
           <Button variant="outline" size="lg">Preview Changes</Button>
-          <Button size="lg" className="px-8 shadow-lg shadow-primary/25">
+          <Button size="lg" className="px-8 shadow-lg shadow-primary/25" onClick={onStartAnalysis}>
             <Play className="w-4 h-4 mr-2 fill-current" /> Apply Fixes
           </Button>
         </div>
@@ -392,10 +507,131 @@ function Dashboard({ activeSource }: { activeSource: Source }) {
   );
 }
 
+function AnalysingState({ progress }: { progress: AnalysisProgress }) {
+  const percentComplete = Math.round((progress.current / progress.total) * 100);
+
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+      <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center px-8 shrink-0">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <motion.div animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 1.5, repeat: Infinity }}>
+            <div className="w-2 h-2 rounded-full bg-primary" />
+          </motion.div>
+          <span>Analysing your files</span>
+        </div>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-8">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-2xl w-full text-center"
+        >
+          <div className="mb-8">
+            <h2 className="text-3xl font-semibold text-foreground mb-3">Analysing your files</h2>
+            <p className="text-muted-foreground mb-6">Your originals are not modified. This usually takes a few minutes.</p>
+            
+            <Card className="p-8 mb-8">
+              <div className="mb-8">
+                <div className="flex items-baseline justify-between mb-3">
+                  <span className="text-sm text-muted-foreground">Progress</span>
+                  <span className="text-2xl font-semibold text-foreground">{progress.current} / {progress.total}</span>
+                </div>
+                <Progress value={percentComplete} className="h-2 bg-background" />
+              </div>
+
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground mb-1">Processing</p>
+                <motion.p 
+                  key={progress.currentFile}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="font-mono text-xs text-foreground truncate"
+                >
+                  {progress.currentFile}
+                </motion.p>
+              </div>
+            </Card>
+
+            <p className="text-xs text-muted-foreground">Do not close this window during analysis</p>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+function CompletionState({ results, onAddAnother }: { results: AnalysisResults, onAddAnother: () => void }) {
+  const total = results.fixed + results.unchanged + results.skipped;
+
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+      <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center px-8 shrink-0">
+        <div className="flex items-center gap-2 text-sm text-foreground font-medium">
+          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          <span>Analysis Complete</span>
+        </div>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-8">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-2xl w-full text-center"
+        >
+          <div className="mb-8">
+            <motion.div 
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2, type: "spring", stiffness: 100 }}
+              className="mb-6 flex justify-center"
+            >
+              <div className="p-4 bg-emerald-50 rounded-full">
+                <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+              </div>
+            </motion.div>
+            
+            <h2 className="text-3xl font-semibold text-foreground mb-3">All done!</h2>
+            <p className="text-muted-foreground mb-8">Your photos and videos have been analysed and organised.</p>
+            
+            <Card className="p-8 mb-8">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between px-4 py-3 bg-background/50 rounded-lg">
+                  <span className="text-muted-foreground">Files fixed</span>
+                  <span className="text-2xl font-semibold text-emerald-600">{results.fixed}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 bg-background/50 rounded-lg">
+                  <span className="text-muted-foreground">Files unchanged</span>
+                  <span className="text-2xl font-semibold text-foreground">{results.unchanged}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 bg-background/50 rounded-lg">
+                  <span className="text-muted-foreground">Files skipped</span>
+                  <span className="text-2xl font-semibold text-amber-600">{results.skipped}</span>
+                </div>
+              </div>
+            </Card>
+
+            <div className="flex items-center gap-4 justify-center">
+              <Button variant="outline" size="lg">
+                <Eye className="w-4 h-4 mr-2" /> View Results
+              </Button>
+              <Button size="lg" className="px-8 shadow-lg shadow-primary/25">
+                <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+              </Button>
+              <Button variant="outline" size="lg" onClick={onAddAnother}>
+                <Plus className="w-4 h-4 mr-2" /> Add Another Source
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
 function ConfidenceCard({ level, count, description, color, bgColor, borderColor, icon, isActive, onClick }: any) {
   return (
     <div onClick={onClick} className="relative group cursor-pointer outline-none">
-       {/* Active Ring */}
        {isActive && (
          <motion.div 
             layoutId="active-ring"
