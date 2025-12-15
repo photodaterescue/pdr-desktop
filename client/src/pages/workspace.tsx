@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
 import { useLocation, useSearch } from "wouter";
 import { 
   Folder, 
@@ -13,56 +12,115 @@ import {
   ChevronRight,
   Plus,
   Play,
-  Database
+  Database,
+  Trash2,
+  RefreshCw,
+  FileImage,
+  FileVideo,
+  CalendarRange
 } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { motion } from "framer-motion";
+
+interface Source {
+  id: string;
+  icon: React.ReactNode;
+  label: string;
+  type: 'folder' | 'zip' | 'drive';
+  path?: string;
+  active: boolean;
+  confirmed: boolean;
+}
 
 export default function Workspace() {
-  const [sources, setSources] = useState([
-    { icon: <Folder className="w-4 h-4" />, label: "My Vacation Photos", active: true },
-    { icon: <FileArchive className="w-4 h-4" />, label: "Google Takeout 2024.zip", active: false },
-    { icon: <HardDrive className="w-4 h-4" />, label: "Samsung Backup", active: false }
-  ]);
+  const [, setLocation] = useLocation();
   const searchString = useSearch();
+  
+  const [sources, setSources] = useState<Source[]>([
+    { id: '1', icon: <Folder className="w-4 h-4" />, label: "My Vacation Photos", type: 'folder', active: true, confirmed: true },
+    { id: '2', icon: <FileArchive className="w-4 h-4" />, label: "Google Takeout 2024.zip", type: 'zip', active: false, confirmed: true },
+    { id: '3', icon: <HardDrive className="w-4 h-4" />, label: "Samsung Backup", type: 'drive', active: false, confirmed: true }
+  ]);
+
+  const [activeSource, setActiveSource] = useState<Source | null>(sources[0]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
-    const type = params.get("type");
+    const type = params.get("type") as 'folder' | 'zip' | 'drive';
     const name = params.get("name");
+    const path = params.get("path");
 
     if (type && name) {
-      // Check if source already exists to avoid duplicates
       const exists = sources.some(s => s.label === name);
       if (!exists) {
         let icon = <Folder className="w-4 h-4" />;
         if (type === 'zip') icon = <FileArchive className="w-4 h-4" />;
         if (type === 'drive') icon = <HardDrive className="w-4 h-4" />;
 
-        setSources(prev => [
-          ...prev.map(s => ({ ...s, active: false })), // Deactivate others
-          { icon, label: name, active: true }
-        ]);
+        const newSource: Source = {
+          id: Date.now().toString(),
+          icon,
+          label: name,
+          type,
+          path: path || undefined,
+          active: true,
+          confirmed: false // New sources start unconfirmed
+        };
+
+        const updatedSources = sources.map(s => ({ ...s, active: false }));
+        setSources([...updatedSources, newSource]);
+        setActiveSource(newSource);
       }
     }
   }, [searchString]);
 
+  const handleSourceClick = (id: string) => {
+    const updatedSources = sources.map(s => ({ ...s, active: s.id === id }));
+    setSources(updatedSources);
+    setActiveSource(updatedSources.find(s => s.id === id) || null);
+  };
+
+  const handleConfirmSource = () => {
+    if (!activeSource) return;
+    const updatedSources = sources.map(s => s.id === activeSource.id ? { ...s, confirmed: true } : s);
+    setSources(updatedSources);
+    setActiveSource({ ...activeSource, confirmed: true });
+  };
+
+  const handleRemoveSource = () => {
+    if (!activeSource) return;
+    const updatedSources = sources.filter(s => s.id !== activeSource.id);
+    setSources(updatedSources);
+    if (updatedSources.length > 0) {
+      updatedSources[0].active = true;
+      setActiveSource(updatedSources[0]);
+    } else {
+      setActiveSource(null);
+      setLocation("/source-selection");
+    }
+  };
+
+  const handleChangeSource = () => {
+    handleRemoveSource();
+    setLocation("/source-selection");
+  };
+
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
-      <Sidebar sources={sources} />
-      <MainContent />
+      <Sidebar sources={sources} onSourceClick={handleSourceClick} />
+      <MainContent 
+        activeSource={activeSource} 
+        onConfirm={handleConfirmSource}
+        onRemove={handleRemoveSource}
+        onChange={handleChangeSource}
+      />
     </div>
   );
 }
 
-function Sidebar({ sources }: { sources: any[] }) {
+function Sidebar({ sources, onSourceClick }: { sources: Source[], onSourceClick: (id: string) => void }) {
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
       <div className="px-6 py-8 flex items-center">
@@ -73,8 +131,14 @@ function Sidebar({ sources }: { sources: any[] }) {
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Sources</h3>
           <div className="space-y-1">
-            {sources.map((source, i) => (
-              <SidebarItem key={i} icon={source.icon} label={source.label} active={source.active} />
+            {sources.map((source) => (
+              <SidebarItem 
+                key={source.id} 
+                icon={source.icon} 
+                label={source.label} 
+                active={source.active} 
+                onClick={() => onSourceClick(source.id)}
+              />
             ))}
           </div>
           <Button variant="ghost" className="w-full mt-2 justify-start px-2 text-muted-foreground hover:text-primary">
@@ -82,6 +146,8 @@ function Sidebar({ sources }: { sources: any[] }) {
           </Button>
         </div>
 
+        {/* Only show Analysis if there's at least one confirmed source (mocking global progress or active source progress) */}
+        {sources.some(s => s.confirmed) && (
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Analysis</h3>
           <div className="px-3 py-3 bg-secondary/50 rounded-xl border border-border">
@@ -93,6 +159,7 @@ function Sidebar({ sources }: { sources: any[] }) {
             <p className="text-xs text-muted-foreground mt-2">Processing DSC_9921.jpg</p>
           </div>
         </div>
+        )}
       </div>
 
       <div className="p-4 border-t border-sidebar-border space-y-1">
@@ -103,16 +170,110 @@ function Sidebar({ sources }: { sources: any[] }) {
   );
 }
 
-function SidebarItem({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) {
+function SidebarItem({ icon, label, active = false, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) {
   return (
-    <button className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${active ? 'bg-secondary text-primary font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent'}`}>
+    <button 
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${active ? 'bg-secondary text-primary font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent'}`}
+    >
       {icon}
       <span className="truncate">{label}</span>
     </button>
   );
 }
 
-function MainContent() {
+function MainContent({ activeSource, onConfirm, onRemove, onChange }: { activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
+  if (!activeSource) {
+     return <div className="flex-1 flex items-center justify-center text-muted-foreground">No source selected</div>;
+  }
+
+  // If source is not confirmed, show Confirmation Panel
+  if (!activeSource.confirmed) {
+    return (
+      <ConfirmationPanel 
+        source={activeSource} 
+        onConfirm={onConfirm} 
+        onRemove={onRemove}
+        onChange={onChange}
+      />
+    );
+  }
+
+  // Otherwise show the standard Workspace Dashboard (Confidence Summary etc.)
+  return <Dashboard activeSource={activeSource} />;
+}
+
+function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: Source, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC] p-8 items-center justify-center">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-2xl w-full"
+      >
+        <div className="mb-8 text-center">
+           <h2 className="text-2xl font-semibold text-foreground mb-2">Confirm Source Selection</h2>
+           <p className="text-muted-foreground">Please review the details below before we begin analysis.</p>
+        </div>
+
+        <Card className="p-8 mb-8">
+          <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
+            <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
+              <Folder className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-xl font-medium text-foreground mb-1">{source.label}</h3>
+              <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
+                {source.path || "/Path/To/Selected/Folder"}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-8 mb-8">
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Total Files</div>
+              <div className="text-2xl font-semibold text-foreground">1,248</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Photos / Videos</div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <FileImage className="w-4 h-4 text-emerald-500" /> 892
+                </div>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <FileVideo className="w-4 h-4 text-blue-500" /> 356
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Date Range</div>
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <CalendarRange className="w-4 h-4 text-primary" />
+                2018 — 2024
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-4">
+             <div className="flex gap-4">
+                <Button variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
+                  <Trash2 className="w-4 h-4 mr-2" /> Remove Source
+                </Button>
+                <Button variant="ghost" className="text-muted-foreground" onClick={onChange}>
+                  <RefreshCw className="w-4 h-4 mr-2" /> Change Source
+                </Button>
+             </div>
+             <Button onClick={onConfirm} className="px-8">
+               Confirm & Analyze <ChevronRight className="w-4 h-4 ml-2" />
+             </Button>
+          </div>
+        </Card>
+      </motion.div>
+    </div>
+  );
+}
+
+function Dashboard({ activeSource }: { activeSource: Source }) {
   const [filter, setFilter] = useState<"High" | "Medium" | "Low" | null>(null);
 
   const toggleFilter = (level: "High" | "Medium" | "Low") => {
@@ -126,7 +287,7 @@ function MainContent() {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Workspace</span>
           <ChevronRight className="w-4 h-4" />
-          <span className="text-foreground font-medium">My Vacation Photos</span>
+          <span className="text-foreground font-medium">{activeSource.label}</span>
         </div>
         <div className="flex items-center gap-4">
            <span className="text-sm text-muted-foreground">Last saved: Just now</span>

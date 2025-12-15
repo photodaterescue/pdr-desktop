@@ -51,8 +51,10 @@ export default function SourceSelection() {
       // e.g., "Vacation/Photo1.jpg" -> "Vacation"
       const path = e.target.files[0].webkitRelativePath || e.target.files[0].name;
       const folderName = path.split('/')[0] || "Selected Folder";
+      // Mock a full path for display purposes
+      const fullPath = `/Users/username/Pictures/${folderName}`;
       
-      setLocation(`/workspace?type=folder&name=${encodeURIComponent(folderName)}`);
+      setLocation(`/workspace?type=folder&name=${encodeURIComponent(folderName)}&path=${encodeURIComponent(fullPath)}`);
     }
   };
 
