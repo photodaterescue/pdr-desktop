@@ -162,17 +162,8 @@ export default function Workspace() {
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
     setActiveSource(null);
-    // Open the correct picker based on source type
-    const sourceType = activeSource.type;
-    setTimeout(() => {
-      if (sourceType === 'folder') {
-        folderInputRef.current?.click();
-      } else if (sourceType === 'zip') {
-        zipInputRef.current?.click();
-      } else if (sourceType === 'drive') {
-        driveInputRef.current?.click();
-      }
-    }, 0);
+    // Show source type selector to pick a new source
+    setShowSourceTypeSelector(true);
   };
 
   const handleStartAnalysis = () => {
@@ -490,7 +481,7 @@ function MainContent({
   onViewResults: () => void
 }) {
   if (!activeSource) {
-     return <div className="flex-1 flex items-center justify-center text-muted-foreground">No source selected</div>;
+     return <EmptyState onAddFirstSource={onAddAnother} />;
   }
 
   if (isComplete) {
@@ -749,6 +740,52 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
             <Play className="w-4 h-4 mr-2 fill-current" /> Apply Fixes
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+      <div className="flex-1 flex items-center justify-center p-8">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-2xl w-full text-center"
+        >
+          <div className="mb-12">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.1, type: "spring", stiffness: 80 }}
+              className="mb-8"
+            >
+              <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto" />
+            </motion.div>
+            
+            <h1 className="text-4xl font-semibold text-foreground mb-4">Your workspace is empty</h1>
+            <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
+              Add a folder, ZIP archive, or drive to begin analysing your photos and videos.
+            </p>
+            
+            <div className="flex flex-col gap-3 justify-center items-center">
+              <Button 
+                size="lg" 
+                className="px-12 h-12 text-base shadow-lg shadow-primary/25"
+                onClick={onAddFirstSource}
+              >
+                Add Your First Source
+              </Button>
+              <button
+                onClick={onAddFirstSource}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Skip for now
+              </button>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </div>
   );
