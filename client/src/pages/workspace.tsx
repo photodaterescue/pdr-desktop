@@ -164,8 +164,7 @@ export default function Workspace() {
       setActiveSource(updatedSources[0]);
     } else {
       setActiveSource(null);
-      // Only route to selection if completely empty (initial state)
-      setLocation("/source-selection");
+      // Stay on dashboard and show empty state
     }
   };
 
