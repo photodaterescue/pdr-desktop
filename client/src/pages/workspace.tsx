@@ -397,6 +397,8 @@ export default function Workspace() {
           onAddToWorkspace={handleAddToWorkspace}
           onChangeSource={handleChangeSourceFromModal}
           onCancel={handleCancelSourceSelection}
+          onAddFolder={() => { handleAddToWorkspace(); handleTriggerFolderPicker(); }}
+          onAddZip={() => { handleAddToWorkspace(); handleTriggerZipPicker(); }}
         />
       )}
       
@@ -1269,7 +1271,7 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
   );
 }
 
-function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onCancel }: { source: Source, stats: PreScanStats, onAddToWorkspace: () => void, onChangeSource: () => void, onCancel: () => void }) {
+function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onCancel, onAddFolder, onAddZip }: { source: Source, stats: PreScanStats, onAddToWorkspace: () => void, onChangeSource: () => void, onCancel: () => void, onAddFolder: () => void, onAddZip: () => void }) {
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -1306,6 +1308,19 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
             </div>
           </div>
         </Card>
+
+        {/* Add more sources section */}
+        <div className="mb-6">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Add another source:</p>
+          <div className="grid grid-cols-2 gap-2">
+             <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-xs h-9">
+               <Plus className="w-3.5 h-3.5" /> Folder / Drive
+             </Button>
+             <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-xs h-9">
+               <FileArchive className="w-3.5 h-3.5" /> ZIP Archive
+             </Button>
+          </div>
+        </div>
 
         <div className="space-y-2">
           <div className="flex gap-3">
