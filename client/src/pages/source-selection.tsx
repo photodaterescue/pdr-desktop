@@ -31,8 +31,13 @@ export default function SourceSelection() {
     }
   };
 
-  const handleSelection = () => {
-    setLocation("/workspace");
+  const handleSelection = (type: 'folder' | 'zip' | 'drive') => {
+    let name = "Selected Source";
+    if (type === 'folder') name = "New Folder Source";
+    if (type === 'zip') name = "Archive_Backup.zip";
+    if (type === 'drive') name = "External Drive (D:)";
+    
+    setLocation(`/workspace?type=${type}&name=${encodeURIComponent(name)}`);
   };
 
   return (
@@ -64,19 +69,19 @@ export default function SourceSelection() {
             icon={<FolderPlus className="w-8 h-8 text-primary" />}
             title="Add Folder"
             description="Select one or more folders containing photos and videos."
-            onClick={handleSelection}
+            onClick={() => handleSelection('folder')}
           />
           <OptionCard 
             icon={<FileArchive className="w-8 h-8 text-primary" />}
             title="Add ZIP Archive"
             description="Import backup archives (e.g. phone backups or cloud exports)."
-            onClick={handleSelection}
+            onClick={() => handleSelection('zip')}
           />
           <OptionCard 
             icon={<HardDrive className="w-8 h-8 text-primary" />}
             title="Add Drive"
             description="Scan an external or internal drive for media files."
-            onClick={handleSelection}
+            onClick={() => handleSelection('drive')}
           />
         </motion.div>
       </motion.div>

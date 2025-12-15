@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useLocation, useSearch } from "wouter";
 import { 
   Folder, 
   FileArchive, 
@@ -25,15 +26,43 @@ import {
 } from "@/components/ui/tooltip";
 
 export default function Workspace() {
+  const [sources, setSources] = useState([
+    { icon: <Folder className="w-4 h-4" />, label: "My Vacation Photos", active: true },
+    { icon: <FileArchive className="w-4 h-4" />, label: "Google Takeout 2024.zip", active: false },
+    { icon: <HardDrive className="w-4 h-4" />, label: "Samsung Backup", active: false }
+  ]);
+  const searchString = useSearch();
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const type = params.get("type");
+    const name = params.get("name");
+
+    if (type && name) {
+      // Check if source already exists to avoid duplicates
+      const exists = sources.some(s => s.label === name);
+      if (!exists) {
+        let icon = <Folder className="w-4 h-4" />;
+        if (type === 'zip') icon = <FileArchive className="w-4 h-4" />;
+        if (type === 'drive') icon = <HardDrive className="w-4 h-4" />;
+
+        setSources(prev => [
+          ...prev.map(s => ({ ...s, active: false })), // Deactivate others
+          { icon, label: name, active: true }
+        ]);
+      }
+    }
+  }, [searchString]);
+
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
-      <Sidebar />
+      <Sidebar sources={sources} />
       <MainContent />
     </div>
   );
 }
 
-function Sidebar() {
+function Sidebar({ sources }: { sources: any[] }) {
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
       <div className="px-6 py-8 flex items-center">
@@ -44,9 +73,9 @@ function Sidebar() {
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Sources</h3>
           <div className="space-y-1">
-            <SidebarItem icon={<Folder className="w-4 h-4" />} label="My Vacation Photos" active />
-            <SidebarItem icon={<FileArchive className="w-4 h-4" />} label="Google Takeout 2024.zip" />
-            <SidebarItem icon={<HardDrive className="w-4 h-4" />} label="Samsung Backup" />
+            {sources.map((source, i) => (
+              <SidebarItem key={i} icon={source.icon} label={source.label} active={source.active} />
+            ))}
           </div>
           <Button variant="ghost" className="w-full mt-2 justify-start px-2 text-muted-foreground hover:text-primary">
             <Plus className="w-4 h-4 mr-2" /> Add Source
@@ -78,7 +107,7 @@ function SidebarItem({ icon, label, active = false }: { icon: React.ReactNode, l
   return (
     <button className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${active ? 'bg-secondary text-primary font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent'}`}>
       {icon}
-      <span>{label}</span>
+      <span className="truncate">{label}</span>
     </button>
   );
 }
