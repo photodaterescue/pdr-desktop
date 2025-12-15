@@ -19,7 +19,8 @@ import {
   CalendarRange,
   FolderOpen,
   Eye,
-  X
+  X,
+  LayoutGrid
 } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
@@ -551,7 +552,8 @@ function MainContent({
   onPreviewChanges: () => void,
   onViewResults: () => void
 }) {
-  if (!activeSource) {
+  // Show Empty State only if no sources exist at all
+  if (sources.length === 0) {
      return <EmptyState onAddFirstSource={onAddAnother} />;
   }
 
@@ -563,21 +565,66 @@ function MainContent({
     return <AnalysingState progress={analysisProgress} />;
   }
 
-  if (!activeSource.confirmed) {
-    return (
-      <ConfirmationPanel 
-        source={activeSource} 
-        onConfirm={onConfirm} 
-        onRemove={onRemove}
-        onChange={onChange}
-      />
-    );
-  }
-
-  return <Dashboard sources={sources} activeSource={activeSource} onStartAnalysis={onStartAnalysis} onPreviewChanges={onPreviewChanges} />;
+  // Unified Dashboard Panel for pre-analysis state (handles both single and multi-source)
+  return (
+    <DashboardPanel 
+      sources={sources}
+      activeSource={activeSource} 
+      onConfirm={onStartAnalysis} // Direct to analysis from dashboard
+      onRemove={onRemove}
+      onChange={onChange}
+    />
+  );
 }
 
-function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: Source, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
+function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange }: { sources: Source[], activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
+  const [selectedChip, setSelectedChip] = useState<string>('all');
+  
+  // Sync chip selection with sidebar active source
+  useEffect(() => {
+    if (activeSource) {
+      setSelectedChip(activeSource.id);
+    } else {
+      // If no active source (e.g. cleared selection), default to 'all' if multiple, or single if one
+      if (sources.length > 1) setSelectedChip('all');
+      else if (sources.length === 1) setSelectedChip(sources[0].id);
+    }
+  }, [activeSource, sources.length]);
+
+  // Mock stats generator
+  const getStats = (sourceId: string | 'all') => {
+    if (sourceId === 'all') {
+      const totalFiles = sources.length * 1248;
+      return {
+        label: "All Sources",
+        path: `${sources.length} sources selected`,
+        totalFiles,
+        photos: sources.length * 892,
+        videos: sources.length * 356,
+        sizeGB: sources.length * 4.2,
+        dateRange: "2018 — 2024"
+      };
+    }
+
+    const source = sources.find(s => s.id === sourceId);
+    if (!source) return null;
+
+    // Deterministic mock stats based on label length
+    const seed = source.label.length; 
+    return {
+      label: source.label,
+      path: source.path || "Selected Source",
+      totalFiles: 1000 + seed * 50,
+      photos: 800 + seed * 20,
+      videos: 200 + seed * 30,
+      sizeGB: 4 + seed * 0.5,
+      dateRange: "2019 — 2024"
+    };
+  };
+
+  const stats = getStats(selectedChip) || getStats('all')!;
+  const isAllSources = selectedChip === 'all';
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC] p-8 items-center justify-center">
       <motion.div 
@@ -586,19 +633,40 @@ function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: 
         className="max-w-2xl w-full"
       >
         <div className="mb-8 text-center">
-           <h2 className="text-2xl font-semibold text-foreground mb-2">Confirm Source Selection</h2>
-           <p className="text-muted-foreground">These are example results. Your actual analysis will begin after confirmation.</p>
+           <h2 className="text-2xl font-semibold text-foreground mb-2">Dashboard</h2>
+           <p className="text-muted-foreground">Review your sources and start analysis</p>
         </div>
+
+        {/* Source Chips */}
+        {sources.length > 1 && (
+          <div className="flex justify-center gap-3 mb-8">
+            <SourceChip 
+              icon={<LayoutGrid className="w-4 h-4" />}
+              label="All Sources" 
+              isActive={selectedChip === 'all'}
+              onClick={() => setSelectedChip('all')}
+            />
+            {sources.map(source => (
+              <SourceChip 
+                key={source.id}
+                icon={source.icon}
+                label={source.label} 
+                isActive={selectedChip === source.id}
+                onClick={() => setSelectedChip(source.id)}
+              />
+            ))}
+          </div>
+        )}
 
         <Card className="p-8 mb-8">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
             <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
-              <Folder className="w-8 h-8" />
+              {isAllSources ? <LayoutGrid className="w-8 h-8" /> : <Folder className="w-8 h-8" />}
             </div>
             <div>
-              <h3 className="text-xl font-medium text-foreground mb-1">{source.label}</h3>
+              <h3 className="text-xl font-medium text-foreground mb-1">{stats.label}</h3>
               <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
-                {source.path || "/Path/To/Selected/Folder"}
+                {stats.path}
               </p>
             </div>
           </div>
@@ -606,16 +674,16 @@ function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: 
           <div className="grid grid-cols-3 gap-8 mb-8">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Total Files</div>
-              <div className="text-2xl font-semibold text-foreground">1,248</div>
+              <div className="text-2xl font-semibold text-foreground">{stats.totalFiles.toLocaleString()}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Photos / Videos</div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <FileImage className="w-4 h-4 text-emerald-500" /> 892
+                  <FileImage className="w-4 h-4 text-emerald-500" /> {stats.photos.toLocaleString()}
                 </div>
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <FileVideo className="w-4 h-4 text-blue-500" /> 356
+                  <FileVideo className="w-4 h-4 text-blue-500" /> {stats.videos.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -623,21 +691,25 @@ function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: 
               <div className="text-sm text-muted-foreground mb-1">Date Range</div>
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <CalendarRange className="w-4 h-4 text-primary" />
-                2018 — 2024
+                {stats.dateRange}
               </div>
             </div>
           </div>
 
           <div className="flex items-center justify-between pt-4">
              <div className="flex gap-4">
-                <Button variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
-                  <Trash2 className="w-4 h-4 mr-2" /> Remove Source
-                </Button>
-                <Button variant="ghost" className="text-muted-foreground" onClick={onChange}>
-                  <RefreshCw className="w-4 h-4 mr-2" /> Change Source
-                </Button>
+                {!isAllSources && (
+                  <>
+                    <Button variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={onRemove}>
+                      <Trash2 className="w-4 h-4 mr-2" /> Remove
+                    </Button>
+                    <Button variant="ghost" className="text-muted-foreground" onClick={onChange}>
+                      <RefreshCw className="w-4 h-4 mr-2" /> Change
+                    </Button>
+                  </>
+                )}
              </div>
-             <Button onClick={onConfirm} className="px-8">
+             <Button onClick={onConfirm} className="px-8 shadow-lg shadow-primary/20">
                Confirm & Analyze <ChevronRight className="w-4 h-4 ml-2" />
              </Button>
           </div>
