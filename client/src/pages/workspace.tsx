@@ -110,6 +110,12 @@ export default function Workspace() {
         const updatedSources = sources.map(s => ({ ...s, active: false }));
         setSources([...updatedSources, newSource]);
         setActiveSource(newSource);
+        setPendingSource(newSource);
+        
+        // Generate fresh pre-scan stats live
+        const stats = generatePreScanStats();
+        setPreScanStats(stats);
+        setShowPreScanConfirm(true);
       }
     }
   }, [searchString]);
@@ -372,6 +378,12 @@ export default function Workspace() {
         onAddSource={handleAddSource}
         activePanel={activePanel}
         onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | null)}
+        onDashboardClick={() => {
+          setActivePanel(null);
+          const updatedSources = sources.map(s => ({ ...s, active: false }));
+          setSources(updatedSources);
+          setActiveSource(null);
+        }}
       />
       {activePanel ? (
         <PanelPlaceholder panelType={activePanel} />
@@ -449,7 +461,7 @@ export default function Workspace() {
   );
 }
 
-function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel, onPanelChange }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void }) {
+function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
       <div className="px-6 py-8 flex items-center">
@@ -457,6 +469,18 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
+        {/* DASHBOARD LINK */}
+        <div>
+          <SidebarItem 
+            icon={<LayoutGrid className="w-4 h-4" />} 
+            label="Dashboard" 
+            onClick={onDashboardClick}
+            active={activePanel === null && !sources.some(s => s.active)}
+            selectable={false}
+            disabled={isAnalysing}
+          />
+        </div>
+
         {/* SOURCES SECTION */}
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Sources</h3>
@@ -468,6 +492,7 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
                 label={source.label} 
                 active={source.active} 
                 selected={source.selected}
+                selectable={true}
                 onClick={() => onSourceClick(source.id)}
                 disabled={isAnalysing}
               />
@@ -524,7 +549,7 @@ function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource, activePanel
   );
 }
 
-function SidebarItem({ icon, label, active = false, selected = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, onClick?: () => void, disabled?: boolean }) {
+function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: () => void, disabled?: boolean }) {
   return (
     <div 
       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 cursor-pointer ${
@@ -536,14 +561,16 @@ function SidebarItem({ icon, label, active = false, selected = false, onClick, d
       }`}
       onClick={!disabled ? onClick : undefined}
     >
-      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-        <Checkbox 
-          checked={selected} 
-          onCheckedChange={() => !disabled && onClick && onClick()}
-          disabled={disabled}
-          className="mr-1 w-4 h-4 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-        />
-      </div>
+      {selectable && (
+        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <Checkbox 
+            checked={selected} 
+            onCheckedChange={() => !disabled && onClick && onClick()}
+            disabled={disabled}
+            className="mr-1 w-4 h-4 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+          />
+        </div>
+      )}
       <div className="flex items-center gap-2 overflow-hidden">
         {icon}
         <span className="truncate">{label}</span>
