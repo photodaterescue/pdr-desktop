@@ -56,13 +56,9 @@ export default function Workspace() {
   const driveInputRef = useRef<HTMLInputElement>(null);
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   
-  const [sources, setSources] = useState<Source[]>([
-    { id: '1', icon: <Folder className="w-4 h-4" />, label: "My Vacation Photos", type: 'folder', active: true, confirmed: true },
-    { id: '2', icon: <FileArchive className="w-4 h-4" />, label: "Google Takeout 2024.zip", type: 'zip', active: false, confirmed: true },
-    { id: '3', icon: <HardDrive className="w-4 h-4" />, label: "Samsung Backup", type: 'drive', active: false, confirmed: true }
-  ]);
+  const [sources, setSources] = useState<Source[]>([]);
 
-  const [activeSource, setActiveSource] = useState<Source | null>(sources[0]);
+  const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 1248, currentFile: "" });
   const [isComplete, setIsComplete] = useState(false);
@@ -180,13 +176,16 @@ export default function Workspace() {
 
   const handleSelectSourceType = (type: 'folder' | 'zip' | 'drive') => {
     setShowSourceTypeSelector(false);
-    if (type === 'folder') {
-      folderInputRef.current?.click();
-    } else if (type === 'zip') {
-      zipInputRef.current?.click();
-    } else if (type === 'drive') {
-      driveInputRef.current?.click();
-    }
+    // Trigger file picker immediately after closing modal
+    setTimeout(() => {
+      if (type === 'folder') {
+        folderInputRef.current?.click();
+      } else if (type === 'zip') {
+        zipInputRef.current?.click();
+      } else if (type === 'drive') {
+        driveInputRef.current?.click();
+      }
+    }, 0);
   };
 
   const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
