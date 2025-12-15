@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { 
   Folder, 
@@ -19,7 +19,7 @@ import {
   CalendarRange,
   FolderOpen,
   Eye,
-  RotateCcw
+  X
 } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
@@ -51,6 +51,7 @@ interface AnalysisResults {
 export default function Workspace() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
+  const folderInputRef = useRef<HTMLInputElement>(null);
   
   const [sources, setSources] = useState<Source[]>([
     { id: '1', icon: <Folder className="w-4 h-4" />, label: "My Vacation Photos", type: 'folder', active: true, confirmed: true },
@@ -63,6 +64,8 @@ export default function Workspace() {
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 1248, currentFile: "" });
   const [isComplete, setIsComplete] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showResultsModal, setShowResultsModal] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -162,16 +165,54 @@ export default function Workspace() {
     setIsAnalysing(true);
   };
 
+  const handleAddSource = () => {
+    folderInputRef.current?.click();
+  };
+
+  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const path = e.target.files[0].webkitRelativePath || e.target.files[0].name;
+      const folderName = path.split('/')[0] || "Selected Folder";
+      const fullPath = `/Users/username/Pictures/${folderName}`;
+      
+      const newSource: Source = {
+        id: Date.now().toString(),
+        icon: <Folder className="w-4 h-4" />,
+        label: folderName,
+        type: 'folder',
+        path: fullPath,
+        active: true,
+        confirmed: false
+      };
+
+      const updatedSources = sources.map(s => ({ ...s, active: false }));
+      setSources([...updatedSources, newSource]);
+      setActiveSource(newSource);
+    }
+  };
+
   const handleAddAnother = () => {
-    setIsAnalysing(false);
-    setIsComplete(false);
-    setAnalysisProgress({ current: 0, total: 1248, currentFile: "" });
-    setLocation("/source-selection");
+    folderInputRef.current?.click();
   };
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
-      <Sidebar sources={sources} onSourceClick={handleSourceClick} isAnalysing={isAnalysing} />
+      <input
+        type="file"
+        ref={folderInputRef}
+        className="hidden"
+        onChange={handleFolderChange}
+        // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
+        webkitdirectory=""
+        directory=""
+        multiple
+      />
+      <Sidebar 
+        sources={sources} 
+        onSourceClick={handleSourceClick} 
+        isAnalysing={isAnalysing}
+        onAddSource={handleAddSource}
+      />
       <MainContent 
         activeSource={activeSource} 
         onConfirm={handleConfirmSource}
@@ -183,12 +224,16 @@ export default function Workspace() {
         analysisResults={analysisResults}
         onStartAnalysis={handleStartAnalysis}
         onAddAnother={handleAddAnother}
+        onPreviewChanges={() => setShowPreviewModal(true)}
+        onViewResults={() => setShowResultsModal(true)}
       />
+      {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} />}
+      {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
     </div>
   );
 }
 
-function Sidebar({ sources, onSourceClick, isAnalysing }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean }) {
+function Sidebar({ sources, onSourceClick, isAnalysing, onAddSource }: { sources: Source[], onSourceClick: (id: string) => void, isAnalysing: boolean, onAddSource: () => void }) {
   return (
     <div className="w-[280px] bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20">
       <div className="px-6 py-8 flex items-center">
@@ -214,6 +259,7 @@ function Sidebar({ sources, onSourceClick, isAnalysing }: { sources: Source[], o
             variant="ghost" 
             className="w-full mt-2 justify-start px-2 text-muted-foreground hover:text-primary"
             disabled={isAnalysing}
+            onClick={onAddSource}
           >
             <Plus className="w-4 h-4 mr-2" /> Add Source
           </Button>
@@ -278,7 +324,9 @@ function MainContent({
   isComplete,
   analysisResults,
   onStartAnalysis,
-  onAddAnother
+  onAddAnother,
+  onPreviewChanges,
+  onViewResults
 }: { 
   activeSource: Source | null,
   onConfirm: () => void,
@@ -289,23 +337,22 @@ function MainContent({
   isComplete: boolean,
   analysisResults: AnalysisResults,
   onStartAnalysis: () => void,
-  onAddAnother: () => void
+  onAddAnother: () => void,
+  onPreviewChanges: () => void,
+  onViewResults: () => void
 }) {
   if (!activeSource) {
      return <div className="flex-1 flex items-center justify-center text-muted-foreground">No source selected</div>;
   }
 
-  // Show completion state
   if (isComplete) {
-    return <CompletionState results={analysisResults} onAddAnother={onAddAnother} />;
+    return <CompletionState results={analysisResults} onAddAnother={onAddAnother} onViewResults={onViewResults} />;
   }
 
-  // Show analysing state
   if (isAnalysing) {
     return <AnalysingState progress={analysisProgress} />;
   }
 
-  // If source is not confirmed, show Confirmation Panel
   if (!activeSource.confirmed) {
     return (
       <ConfirmationPanel 
@@ -317,8 +364,7 @@ function MainContent({
     );
   }
 
-  // Otherwise show the standard Workspace Dashboard (Preview Mode)
-  return <Dashboard activeSource={activeSource} onStartAnalysis={onStartAnalysis} />;
+  return <Dashboard activeSource={activeSource} onStartAnalysis={onStartAnalysis} onPreviewChanges={onPreviewChanges} />;
 }
 
 function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: Source, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
@@ -391,7 +437,7 @@ function ConfirmationPanel({ source, onConfirm, onRemove, onChange }: { source: 
   );
 }
 
-function Dashboard({ activeSource, onStartAnalysis }: { activeSource: Source, onStartAnalysis: () => void }) {
+function Dashboard({ activeSource, onStartAnalysis, onPreviewChanges }: { activeSource: Source, onStartAnalysis: () => void, onPreviewChanges: () => void }) {
   const [filter, setFilter] = useState<"High" | "Medium" | "Low" | null>(null);
 
   const toggleFilter = (level: "High" | "Medium" | "Low") => {
@@ -497,7 +543,7 @@ function Dashboard({ activeSource, onStartAnalysis }: { activeSource: Source, on
            </div>
         </div>
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="lg">Preview Changes</Button>
+          <Button variant="outline" size="lg" onClick={onPreviewChanges}>Preview Changes</Button>
           <Button size="lg" className="px-8 shadow-lg shadow-primary/25" onClick={onStartAnalysis}>
             <Play className="w-4 h-4 mr-2 fill-current" /> Apply Fixes
           </Button>
@@ -561,7 +607,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
   );
 }
 
-function CompletionState({ results, onAddAnother }: { results: AnalysisResults, onAddAnother: () => void }) {
+function CompletionState({ results, onAddAnother, onViewResults }: { results: AnalysisResults, onAddAnother: () => void, onViewResults: () => void }) {
   const total = results.fixed + results.unchanged + results.skipped;
 
   return (
@@ -612,7 +658,7 @@ function CompletionState({ results, onAddAnother }: { results: AnalysisResults, 
             </Card>
 
             <div className="flex items-center gap-4 justify-center">
-              <Button variant="outline" size="lg">
+              <Button variant="outline" size="lg" onClick={onViewResults}>
                 <Eye className="w-4 h-4 mr-2" /> View Results
               </Button>
               <Button size="lg" className="px-8 shadow-lg shadow-primary/25">
@@ -654,5 +700,114 @@ function ConfidenceCard({ level, count, description, color, bgColor, borderColor
         <p className="text-sm text-muted-foreground">{description}</p>
       </Card>
     </div>
+  );
+}
+
+function PreviewModal({ onClose }: { onClose: () => void }) {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-foreground">Preview Changes</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <Card className="p-6 mb-6 bg-secondary/30 border-primary/20">
+          <p className="text-muted-foreground text-center">Preview will be available after analysis is complete.</p>
+        </Card>
+
+        <div className="text-sm text-muted-foreground space-y-3 mb-6">
+          <p>Once analysis finishes, you'll see:</p>
+          <ul className="space-y-2 ml-4">
+            <li>• Example filename changes</li>
+            <li>• Before / After comparisons</li>
+            <li>• Counts per confidence tier</li>
+          </ul>
+        </div>
+
+        <Button onClick={onClose} className="w-full">Got it</Button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ResultsModal({ onClose }: { onClose: () => void }) {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-8"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-foreground">Analysis Results</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-medium text-foreground mb-4">Confidence Summary</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-lg border border-emerald-100">
+                <span className="text-sm font-medium text-emerald-900">High Confidence</span>
+                <span className="text-lg font-semibold text-emerald-600">892 files</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-amber-50 rounded-lg border border-amber-100">
+                <span className="text-sm font-medium text-amber-900">Medium Confidence</span>
+                <span className="text-lg font-semibold text-amber-600">312 files</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-rose-50 rounded-lg border border-rose-100">
+                <span className="text-sm font-medium text-rose-900">Low Confidence</span>
+                <span className="text-lg font-semibold text-rose-600">44 files</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-lg font-medium text-foreground mb-4">File Outcomes</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                <span className="text-sm font-medium text-foreground">Files Fixed</span>
+                <span className="text-lg font-semibold text-emerald-600">810</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                <span className="text-sm font-medium text-foreground">Files Unchanged</span>
+                <span className="text-lg font-semibold text-foreground">349</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                <span className="text-sm font-medium text-foreground">Files Skipped</span>
+                <span className="text-lg font-semibold text-amber-600">89</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Button onClick={onClose} className="w-full mt-6">Close</Button>
+      </motion.div>
+    </motion.div>
   );
 }

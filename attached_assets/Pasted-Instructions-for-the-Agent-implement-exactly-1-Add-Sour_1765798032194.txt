@@ -1,0 +1,115 @@
+Instructions for the Agent (implement exactly)
+1. Add Source button (left sidebar – pre-Apply Fix)
+
+Current problem: Clicking Add Source does nothing.
+
+Fix:
+
+Clicking Add Source should immediately open the OS picker (Folder / ZIP / Drive chooser),
+
+NOT route back through the Welcome or “Find Your Photos & Videos” hub screen.
+
+This action should be available at any time before Apply Fix to allow accumulating sources.
+
+2. Preview Changes button
+
+Current problem: Button appears inert.
+
+Fix (MVP behaviour):
+
+Clicking Preview Changes should open a modal or inline panel showing:
+
+Example filename changes (before → after)
+
+Counts per confidence tier
+
+If preview logic is not wired yet:
+
+Show a clear placeholder state:
+“Preview will be available after analysis is complete.”
+
+Do not silently do nothing.
+
+3. Analysis Complete – Button behaviour
+a) View Results
+
+Current problem: Does nothing.
+
+Fix:
+
+Route to a Results view (even if read-only for now) showing:
+
+Confidence Summary
+
+File outcome counts
+
+Optional expandable lists later
+
+If not implemented, show a modal:
+“Detailed results view coming next.”
+
+b) Add Another Source
+
+Current problem: Sends user back to internal app hub → extra step.
+
+Fix:
+
+Clicking Add Another Source should:
+
+Immediately open OS picker (Folder / ZIP / Drive)
+
+Append the new source to the existing workspace
+
+Do not route through Welcome / Find Photos screens.
+
+4. Design Preview vs Real Data (critical)
+
+Current state: Example numbers appear realistic but conflict with actual selections.
+
+Fix:
+
+Clearly label all mock data with:
+
+PREVIEW — EXAMPLE RESULTS
+
+Once real analysis begins:
+
+Replace all example numbers (file counts, progress %, confidence splits)
+
+No mixing of fake + real data states
+
+Progress indicators must only reflect actual file counts for the selected sources.
+
+Answer to your question: multi-source processing
+
+Yes — it is absolutely possible, but only if designed deliberately.
+
+The correct model:
+
+Each source (Folder / ZIP / Drive) is:
+
+Scanned independently
+
+Counted independently
+
+Before Apply Fix:
+
+App aggregates:
+
+Total file count
+
+Total required output space
+
+Output:
+
+All processed files flow into one destination, preserving source sub-structure
+
+Required safeguards:
+
+Deduplication across sources
+
+Collision-safe naming
+
+Accurate combined space calculation before execution
+
+This is a power feature, not trivial — but it is coherent, valuable, and worth doing properly.
