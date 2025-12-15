@@ -34,7 +34,7 @@ export default function Home() {
   };
 
   const handleStart = () => {
-    setLocation("/workspace");
+    setLocation("/source-selection");
   };
 
   return (

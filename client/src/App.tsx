@@ -6,11 +6,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Workspace from "@/pages/workspace";
+import SourceSelection from "@/pages/source-selection";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/source-selection" component={SourceSelection} />
       <Route path="/workspace" component={Workspace} />
       <Route component={NotFound} />
     </Switch>
