@@ -814,7 +814,7 @@ function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
                 Add Your First Source
               </Button>
               <button
-                onClick={onAddFirstSource}
+                onClick={() => {}}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 Explore the dashboard
