@@ -330,6 +330,14 @@ export default function Workspace() {
     }
   };
 
+  const handleTriggerFolderPicker = () => {
+    folderOrDriveInputRef.current?.click();
+  };
+
+  const handleTriggerZipPicker = () => {
+    zipInputRef.current?.click();
+  };
+
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
       <input
@@ -375,6 +383,8 @@ export default function Workspace() {
           onAddAnother={handleAddAnother}
           onPreviewChanges={() => setShowPreviewModal(true)}
           onViewResults={() => setShowResultsModal(true)}
+          onAddFolder={handleTriggerFolderPicker}
+          onAddZip={handleTriggerZipPicker}
         />
       )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} />}
@@ -536,7 +546,9 @@ function MainContent({
   onStartAnalysis,
   onAddAnother,
   onPreviewChanges,
-  onViewResults
+  onViewResults,
+  onAddFolder,
+  onAddZip
 }: { 
   sources: Source[],
   activeSource: Source | null,
@@ -550,7 +562,9 @@ function MainContent({
   onStartAnalysis: () => void,
   onAddAnother: () => void,
   onPreviewChanges: () => void,
-  onViewResults: () => void
+  onViewResults: () => void,
+  onAddFolder: () => void,
+  onAddZip: () => void
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
@@ -573,11 +587,13 @@ function MainContent({
       onConfirm={onStartAnalysis} // Direct to analysis from dashboard
       onRemove={onRemove}
       onChange={onChange}
+      onAddFolder={onAddFolder}
+      onAddZip={onAddZip}
     />
   );
 }
 
-function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange }: { sources: Source[], activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void }) {
+function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, onAddFolder, onAddZip }: { sources: Source[], activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void }) {
   const [selectedChip, setSelectedChip] = useState<string>('all');
   
   // Sync chip selection with sidebar active source
@@ -657,6 +673,15 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange }
             ))}
           </div>
         )}
+
+        <div className="flex justify-center gap-4 mb-8">
+           <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground">
+             <Plus className="w-4 h-4" /> Add Folder / Drive
+           </Button>
+           <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground">
+             <FileArchive className="w-4 h-4" /> Add ZIP Archive
+           </Button>
+        </div>
 
         <Card className="p-8 mb-8">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
