@@ -1272,6 +1272,63 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
 }
 
 function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onCancel, onAddFolder, onAddZip }: { source: Source, stats: PreScanStats, onAddToWorkspace: () => void, onChangeSource: () => void, onCancel: () => void, onAddFolder: () => void, onAddZip: () => void }) {
+  const [step, setStep] = useState<'review' | 'success'>('review');
+
+  if (step === 'success') {
+    return (
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      >
+        <motion.div 
+          initial={{ scale: 0.95, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border"
+        >
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+            </div>
+            <h2 className="text-xl font-semibold text-foreground mb-2">Source added</h2>
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">{source.label}</span> has been added to your workspace.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider text-center mb-4">What would you like to do next?</p>
+            
+            <Button 
+              className="w-full bg-primary hover:bg-primary/90 h-11" 
+              onClick={onAddToWorkspace}
+            >
+              Go to Workspace
+            </Button>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Button 
+                variant="outline" 
+                onClick={onAddFolder}
+                className="h-11"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Add Folder
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={onAddZip}
+                className="h-11"
+              >
+                <FileArchive className="w-4 h-4 mr-2" /> Add ZIP
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -1309,7 +1366,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
           </div>
         </Card>
 
-        {/* Add more sources section */}
+        {/* Add more sources section - kept as shortcuts */}
         <div className="mb-6">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Add another source:</p>
           <div className="grid grid-cols-2 gap-2">
@@ -1326,7 +1383,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
           <div className="flex gap-3">
             <Button 
               className="flex-1 bg-primary hover:bg-primary/90" 
-              onClick={onAddToWorkspace}
+              onClick={() => setStep('success')}
               data-testid="button-add-to-workspace"
             >
               Add to workspace
