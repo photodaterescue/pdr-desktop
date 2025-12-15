@@ -20,7 +20,9 @@ import {
   FolderOpen,
   Eye,
   X,
-  LayoutGrid
+  LayoutGrid,
+  ArrowRight,
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
@@ -811,15 +813,14 @@ function MainContent({
      return <EmptyState onAddFirstSource={onAddAnother} />;
   }
 
-  if (isComplete) {
-    return <CompletionState results={analysisResults} onAddAnother={onAddAnother} onViewResults={onViewResults} />;
-  }
+  // NOTE: Previous CompletionState component logic is now merged into DashboardPanel
+  // to keep the Workspace view active after analysis.
 
   if (isAnalysing) {
     return <AnalysingState progress={analysisProgress} />;
   }
 
-  // Unified Dashboard Panel for pre-analysis state (handles both single and multi-source)
+  // Unified Dashboard Panel for pre-analysis AND post-analysis state
   return (
     <DashboardPanel 
       sources={sources}
@@ -829,14 +830,19 @@ function MainContent({
       onChange={onChange}
       onAddFolder={onAddFolder}
       onAddZip={onAddZip}
+      isComplete={isComplete}
+      results={analysisResults}
+      onViewResults={onViewResults}
     />
   );
 }
 
-function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, onAddFolder, onAddZip }: { sources: Source[], activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void }) {
+function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults }: { sources: Source[], activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void }) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected && s.confirmed);
   const hasSelection = selectedSources.length > 0;
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showFixModal, setShowFixModal] = useState(false);
 
   // Mock stats generator based on SELECTED sources
   const getStats = () => {
@@ -879,8 +885,20 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
   const lowConf = Math.floor(stats.photos * 0.10);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
-      <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC] relative">
+      {/* Success Banner */}
+      {isComplete && (
+        <motion.div 
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="bg-emerald-600 text-white px-8 py-3 flex items-center justify-center gap-2 shrink-0"
+        >
+          <CheckCircle2 className="w-5 h-5" />
+          <span className="font-medium">Analysis complete</span>
+        </motion.div>
+      )}
+
+      <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto pb-24">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -896,6 +914,11 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
           <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-foreground">Confidence Summary (Estimate)</h2>
+              {isComplete && (
+                <Button variant="ghost" size="sm" onClick={onViewResults} className="text-primary hover:bg-primary/10">
+                  View Detailed Report
+                </Button>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <ConfidenceCard 
@@ -981,9 +1004,17 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
              <div className="flex gap-4">
                {/* Actions hidden for aggregate view as requested, mainly confirmation here */}
              </div>
-             <Button onClick={onConfirm} disabled={!hasSelection} className="px-8 shadow-lg shadow-primary/20">
-               Confirm & Analyze <ChevronRight className="w-4 h-4 ml-2" />
-             </Button>
+             {/* Only show "Confirm & Analyze" if NOT complete */}
+             {!isComplete && (
+               <Button onClick={onConfirm} disabled={!hasSelection} className="px-8 shadow-lg shadow-primary/20">
+                 Confirm & Analyze <ChevronRight className="w-4 h-4 ml-2" />
+               </Button>
+             )}
+             {isComplete && (
+               <div className="flex items-center text-emerald-600 gap-2 font-medium">
+                  <CheckCircle2 className="w-5 h-5" /> Analysis done
+               </div>
+             )}
           </div>
         </Card>
 
@@ -1007,6 +1038,32 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         </section>
       </motion.div>
       </div>
+
+      {/* Sticky Bottom Action Bar for Complete State */}
+      {isComplete && (
+        <motion.div 
+          initial={{ y: 100 }}
+          animate={{ y: 0 }}
+          className="absolute bottom-0 left-0 right-0 bg-background border-t border-border p-4 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)] z-20"
+        >
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
+             <div className="text-sm font-medium text-muted-foreground">
+                <span className="text-foreground font-bold">{results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248}</span> files ready to process
+             </div>
+             <div className="flex items-center gap-4">
+               <Button variant="secondary" onClick={() => setShowPreviewModal(true)}>
+                 Preview Changes
+               </Button>
+               <Button onClick={() => setShowFixModal(true)} className="bg-primary hover:bg-primary/90 px-8 shadow-lg shadow-primary/20">
+                 <Play className="w-4 h-4 mr-2 fill-current" /> Run Rescue
+               </Button>
+             </div>
+          </div>
+        </motion.div>
+      )}
+
+      {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={results} />}
+      {showFixModal && <FixProgressModal onClose={() => setShowFixModal(false)} totalFiles={results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248} />}
     </div>
   );
 }
@@ -1420,7 +1477,17 @@ function ConfidenceCard({ level, count, description, color, bgColor, borderColor
   );
 }
 
-function PreviewModal({ onClose }: { onClose: () => void }) {
+function PreviewModal({ onClose, results }: { onClose: () => void, results?: AnalysisResults }) {
+  const mockChanges = [
+    { original: "IMG_2024_Vacation_01.jpg", new: "2024-01-15_14-30-22_Vacation.jpg", type: "rename" },
+    { original: "DSC_9921.jpg", new: "2023-08-12_09-15-00.jpg", type: "rename" },
+    { original: "PHOTO_20180512.png", new: "2018-05-12_11-20-15.png", type: "rename" },
+    { original: "video_backup_001.mp4", new: "2020-06-10_16-45-30.mp4", type: "rename" },
+    { original: "Screenshot_20220301.png", new: "2022-03-01_10-00-00.png", type: "rename" },
+    { original: "IMG_9999.JPG", new: "IMG_9999.JPG", type: "unchanged" },
+    { original: "System_File.dat", new: "System_File.dat", type: "skipped" },
+  ];
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -1434,29 +1501,177 @@ function PreviewModal({ onClose }: { onClose: () => void }) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8"
+        className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-0 flex flex-col"
       >
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-foreground">Preview Changes</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-5 h-5" />
+        <div className="p-6 border-b border-border flex items-center justify-between bg-background sticky top-0 z-10">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Preview Changes</h2>
+            <p className="text-sm text-muted-foreground">Review the plan before applying changes</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors">
+            <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
         
-        <Card className="p-6 mb-6 bg-secondary/30 border-primary/20">
-          <p className="text-muted-foreground text-center">Preview will be available after analysis is complete.</p>
-        </Card>
+        <div className="p-6 space-y-8">
+          {/* Stats Grid */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+              <div className="text-sm font-medium text-emerald-900 mb-1">To Rename</div>
+              <div className="text-2xl font-bold text-emerald-600">{results?.fixed || 0}</div>
+            </div>
+            <div className="p-4 bg-secondary rounded-xl border border-border">
+              <div className="text-sm font-medium text-foreground mb-1">Unchanged</div>
+              <div className="text-2xl font-bold text-foreground">{results?.unchanged || 0}</div>
+            </div>
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+              <div className="text-sm font-medium text-amber-900 mb-1">Skipped</div>
+              <div className="text-2xl font-bold text-amber-600">{results?.skipped || 0}</div>
+            </div>
+          </div>
 
-        <div className="text-sm text-muted-foreground space-y-3 mb-6">
-          <p>Once analysis finishes, you'll see:</p>
-          <ul className="space-y-2 ml-4">
-            <li>• Example filename changes</li>
-            <li>• Before / After comparisons</li>
-            <li>• Counts per confidence tier</li>
-          </ul>
+          {/* Rename Patterns */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">Rename Patterns</h3>
+            <div className="p-4 bg-secondary/30 rounded-lg border border-border space-y-2">
+               <div className="flex items-center justify-between text-sm">
+                 <div className="flex items-center gap-2">
+                   <code className="px-2 py-1 bg-background rounded border border-border">IMG_YYYY.jpg</code>
+                   <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                   <code className="px-2 py-1 bg-background rounded border border-border">YYYY-MM-DD_HH-mm-ss.jpg</code>
+                 </div>
+                 <span className="text-muted-foreground">~800 files</span>
+               </div>
+               <div className="flex items-center justify-between text-sm">
+                 <div className="flex items-center gap-2">
+                   <code className="px-2 py-1 bg-background rounded border border-border">DSC_####.jpg</code>
+                   <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                   <code className="px-2 py-1 bg-background rounded border border-border">YYYY-MM-DD_HH-mm-ss.jpg</code>
+                 </div>
+                 <span className="text-muted-foreground">~400 files</span>
+               </div>
+            </div>
+          </div>
+
+          {/* File List Sample */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">Sample Changes</h3>
+            <div className="border border-border rounded-xl overflow-hidden">
+              <div className="grid grid-cols-[1fr,auto,1fr] gap-4 p-3 bg-secondary/50 text-xs font-medium text-muted-foreground border-b border-border">
+                <div>Original Filename</div>
+                <div></div>
+                <div>New Filename</div>
+              </div>
+              <div className="divide-y divide-border">
+                {mockChanges.map((change, i) => (
+                  <div key={i} className="grid grid-cols-[1fr,auto,1fr] gap-4 p-3 text-sm hover:bg-secondary/20 transition-colors items-center">
+                    <div className="font-mono text-muted-foreground truncate">{change.original}</div>
+                    <ArrowRight className={`w-4 h-4 ${change.type === 'rename' ? 'text-emerald-500' : 'text-muted-foreground/30'}`} />
+                    <div className={`font-mono truncate ${
+                      change.type === 'rename' ? 'text-emerald-600 font-medium' : 
+                      change.type === 'skipped' ? 'text-amber-600' : 'text-muted-foreground'
+                    }`}>
+                      {change.new}
+                      {change.type === 'skipped' && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Skipped</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
-        <Button onClick={onClose} className="w-full">Got it</Button>
+        <div className="p-6 border-t border-border bg-background sticky bottom-0">
+          <Button onClick={onClose} className="w-full" size="lg">Close Preview</Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function FixProgressModal({ onClose, totalFiles }: { onClose: () => void, totalFiles: number }) {
+  const [progress, setProgress] = useState(0);
+  const [isComplete, setIsComplete] = useState(false);
+  const [processed, setProcessed] = useState(0);
+
+  useEffect(() => {
+    if (isComplete) return;
+    
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        const next = prev + 1;
+        if (next >= 100) {
+          setIsComplete(true);
+          return 100;
+        }
+        return next;
+      });
+      setProcessed(prev => Math.min(Math.floor((progress / 100) * totalFiles), totalFiles));
+    }, 50);
+    
+    return () => clearInterval(interval);
+  }, [isComplete, progress, totalFiles]);
+
+  // Sync processed count exactly at end
+  useEffect(() => {
+    if (isComplete) setProcessed(totalFiles);
+  }, [isComplete, totalFiles]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center"
+      >
+        {!isComplete ? (
+          <>
+            <div className="mb-8">
+              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 relative">
+                 <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              </div>
+              <h2 className="text-2xl font-semibold text-foreground mb-2">Applying Fixes...</h2>
+              <p className="text-muted-foreground">Renaming and organizing your files</p>
+            </div>
+
+            <div className="space-y-2 mb-8">
+              <div className="flex justify-between text-sm font-medium">
+                <span>Processing...</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <Progress value={progress} className="h-2" />
+              <p className="text-xs text-muted-foreground text-left pt-1">
+                {processed} of {totalFiles} files processed
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <motion.div 
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring" }}
+              className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6"
+            >
+              <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+            </motion.div>
+            
+            <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete!</h2>
+            <p className="text-muted-foreground mb-8">All {totalFiles} files have been successfully processed.</p>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <Button variant="outline" onClick={onClose} size="lg">Close</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" size="lg">
+                <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+              </Button>
+            </div>
+          </>
+        )}
       </motion.div>
     </motion.div>
   );
