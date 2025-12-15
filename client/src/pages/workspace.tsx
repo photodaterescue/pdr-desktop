@@ -293,16 +293,14 @@ export default function Workspace() {
     };
   };
 
-  const handleConfirmPreScan = () => {
-    if (pendingSource) {
-      setShowPreScanConfirm(false);
-      setPreScanStats(null);
-      setPendingSource(null);
-      // Source is already added to the array
-    }
+  const handleAddToWorkspace = () => {
+    // Just close the modal, source is already added
+    setShowPreScanConfirm(false);
+    setPreScanStats(null);
+    setPendingSource(null);
   };
 
-  const handleCancelPreScan = () => {
+  const handleChangeSourceFromModal = () => {
     if (pendingSource) {
       // Remove the pending source
       setSources(sources.filter(s => s.id !== pendingSource.id));
@@ -310,6 +308,12 @@ export default function Workspace() {
       setPreScanStats(null);
       setPendingSource(null);
       setActiveSource(null);
+      
+      // Reopen OS picker
+      setTimeout(() => {
+        // Show source type selector first
+        setShowSourceTypeSelector(true);
+      }, 0);
     }
   };
 
@@ -358,11 +362,11 @@ export default function Workspace() {
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       
       {showPreScanConfirm && pendingSource && preScanStats && (
-        <PreScanConfirmationModal 
+        <SourceAddedModal 
           source={pendingSource}
           stats={preScanStats}
-          onConfirm={handleConfirmPreScan}
-          onCancel={handleCancelPreScan}
+          onAddToWorkspace={handleAddToWorkspace}
+          onChangeSource={handleChangeSourceFromModal}
         />
       )}
       
@@ -1104,13 +1108,13 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PreScanConfirmationModal({ source, stats, onConfirm, onCancel }: { source: Source, stats: PreScanStats, onConfirm: () => void, onCancel: () => void }) {
+function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource }: { source: Source, stats: PreScanStats, onAddToWorkspace: () => void, onChangeSource: () => void }) {
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onCancel}
+      onClick={onAddToWorkspace}
       className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
     >
       <motion.div 
@@ -1118,83 +1122,43 @@ function PreScanConfirmationModal({ source, stats, onConfirm, onCancel }: { sour
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: 10 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-lg w-full p-8 border border-border"
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border"
       >
-        <div className="mb-8">
-          <h2 className="text-2xl font-semibold text-foreground mb-2">Ready to scan?</h2>
-          <p className="text-muted-foreground">Here's what we found in your source</p>
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold text-foreground mb-1">Source added</h2>
+          <p className="text-sm text-muted-foreground">Ready to add to workspace</p>
         </div>
 
-        <Card className="p-6 mb-6 bg-gradient-to-br from-primary/5 to-secondary/30 border-primary/20">
-          <div className="mb-4">
-            <h3 className="text-lg font-medium text-foreground mb-1">{source.label}</h3>
+        <Card className="p-4 mb-6 bg-gradient-to-br from-primary/5 to-secondary/30 border-primary/20">
+          <div className="mb-3">
+            <h3 className="text-base font-medium text-foreground mb-1">{source.label}</h3>
             <p className="text-xs text-muted-foreground font-mono break-all">{source.path}</p>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between py-3 border-b border-border/40">
-              <div className="flex items-center gap-3">
-                <FileImage className="w-4 h-4 text-primary" />
-                <span className="text-sm text-foreground font-medium">Total Files</span>
-              </div>
-              <span className="text-lg font-semibold text-foreground">{stats.totalFiles.toLocaleString()}</span>
+          <div className="pt-3 border-t border-border/40 space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{stats.totalFiles.toLocaleString()} files</span>
+              <span className="text-foreground font-medium">{stats.estimatedSizeGB.toFixed(1)} GB</span>
             </div>
-
-            <div className="flex items-center justify-between py-3 border-b border-border/40">
-              <div className="flex items-center gap-3">
-                <FileImage className="w-4 h-4 text-primary" />
-                <span className="text-sm text-foreground font-medium">Photos</span>
-              </div>
-              <span className="text-lg font-semibold text-foreground">{stats.photoCount.toLocaleString()}</span>
-            </div>
-
-            <div className="flex items-center justify-between py-3 border-b border-border/40">
-              <div className="flex items-center gap-3">
-                <FileVideo className="w-4 h-4 text-primary" />
-                <span className="text-sm text-foreground font-medium">Videos</span>
-              </div>
-              <span className="text-lg font-semibold text-foreground">{stats.videoCount.toLocaleString()}</span>
-            </div>
-
-            <div className="flex items-center justify-between py-3 border-b border-border/40">
-              <div className="flex items-center gap-3">
-                <HelpCircle className="w-4 h-4 text-primary" />
-                <span className="text-sm text-foreground font-medium">Estimated Size</span>
-              </div>
-              <span className="text-lg font-semibold text-foreground">{stats.estimatedSizeGB.toFixed(1)} GB</span>
-            </div>
-
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center gap-3">
-                <CalendarRange className="w-4 h-4 text-primary" />
-                <span className="text-sm text-foreground font-medium">Date Range</span>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-muted-foreground">{stats.dateRange.earliest}</div>
-                <div className="text-xs text-muted-foreground">to</div>
-                <div className="text-xs text-muted-foreground">{stats.dateRange.latest}</div>
-              </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{stats.photoCount.toLocaleString()} photos, {stats.videoCount.toLocaleString()} videos</span>
             </div>
           </div>
         </Card>
-
-        <p className="text-xs text-muted-foreground text-center mb-6">
-          You can remove or change this source before analysis begins.
-        </p>
 
         <div className="flex gap-3">
           <Button 
             variant="outline" 
             className="flex-1" 
-            onClick={onCancel}
+            onClick={onChangeSource}
           >
-            Cancel
+            Change source
           </Button>
           <Button 
             className="flex-1 bg-primary hover:bg-primary/90" 
-            onClick={onConfirm}
+            onClick={onAddToWorkspace}
           >
-            Start Analysis
+            Add to workspace
           </Button>
         </div>
       </motion.div>
