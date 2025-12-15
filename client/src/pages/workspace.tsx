@@ -51,9 +51,8 @@ interface AnalysisResults {
 export default function Workspace() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  const folderOrDriveInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
-  const driveInputRef = useRef<HTMLInputElement>(null);
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   
   const [sources, setSources] = useState<Source[]>([]);
@@ -174,42 +173,48 @@ export default function Workspace() {
     setShowSourceTypeSelector(true);
   };
 
-  const handleSelectSourceType = (type: 'folder' | 'zip' | 'drive') => {
+  const handleSelectSourceType = (type: 'folderOrDrive' | 'zip') => {
     setShowSourceTypeSelector(false);
     // Trigger file picker immediately after closing modal
     setTimeout(() => {
-      if (type === 'folder') {
-        folderInputRef.current?.click();
+      if (type === 'folderOrDrive') {
+        folderOrDriveInputRef.current?.click();
       } else if (type === 'zip') {
         zipInputRef.current?.click();
-      } else if (type === 'drive') {
-        driveInputRef.current?.click();
       }
     }, 0);
   };
 
-  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const inferSourceType = (path: string): 'folder' | 'drive' => {
+    // Infer if path is a drive root or a folder
+    const isDriveRoot = /^[A-Z]:\/$/.test(path) || path === 'D:/' || path === 'C:/' || path === 'D:\\' || path === 'C:\\';
+    return isDriveRoot ? 'drive' : 'folder';
+  };
+
+  const handleFolderOrDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const path = e.target.files[0].webkitRelativePath || e.target.files[0].name;
-      const folderName = path.split('/')[0] || "Selected Folder";
-      const fullPath = `/Users/username/Pictures/${folderName}`;
+      const name = path.split('/')[0] || "Selected Folder";
+      const fullPath = `/Users/username/Pictures/${name}`;
+      
+      // Infer source type based on path
+      const sourceType = inferSourceType(fullPath);
+      const icon = sourceType === 'drive' ? <HardDrive className="w-4 h-4" /> : <Folder className="w-4 h-4" />;
       
       const newSource: Source = {
         id: Date.now().toString(),
-        icon: <Folder className="w-4 h-4" />,
-        label: folderName,
-        type: 'folder',
+        icon,
+        label: name,
+        type: sourceType,
         path: fullPath,
         active: true,
         confirmed: false
       };
 
-      // Deactivate all existing sources and add/append new source
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
       
-      // Reset file input for next use
       e.target.value = '';
     }
   };
@@ -238,29 +243,6 @@ export default function Workspace() {
     }
   };
 
-  const handleDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const driveName = "External Drive (D:)";
-      const fullPath = "D:/";
-      
-      const newSource: Source = {
-        id: Date.now().toString(),
-        icon: <HardDrive className="w-4 h-4" />,
-        label: driveName,
-        type: 'drive',
-        path: fullPath,
-        active: true,
-        confirmed: false
-      };
-
-      const updatedSources = sources.map(s => ({ ...s, active: false }));
-      setSources([...updatedSources, newSource]);
-      setActiveSource(newSource);
-      
-      e.target.value = '';
-    }
-  };
-
   const handleAddAnother = () => {
     setShowSourceTypeSelector(true);
   };
@@ -269,9 +251,9 @@ export default function Workspace() {
     <div className="flex h-screen bg-background overflow-hidden font-sans">
       <input
         type="file"
-        ref={folderInputRef}
+        ref={folderOrDriveInputRef}
         className="hidden"
-        onChange={handleFolderChange}
+        onChange={handleFolderOrDriveChange}
         // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
         webkitdirectory=""
         directory=""
@@ -284,17 +266,6 @@ export default function Workspace() {
         className="hidden"
         onChange={handleZipChange}
         accept=".zip"
-      />
-
-      <input
-        type="file"
-        ref={driveInputRef}
-        className="hidden"
-        onChange={handleDriveChange}
-        // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
-        webkitdirectory=""
-        directory=""
-        multiple
       />
       <Sidebar 
         sources={sources} 
@@ -326,13 +297,13 @@ export default function Workspace() {
             <h2 className="text-xl font-semibold text-foreground mb-4">Select Source Type</h2>
             <div className="space-y-3">
               <button
-                onClick={() => handleSelectSourceType('folder')}
+                onClick={() => handleSelectSourceType('folderOrDrive')}
                 className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
               >
                 <Folder className="w-5 h-5 text-primary" />
                 <div>
-                  <div className="font-medium text-foreground">Folder</div>
-                  <div className="text-xs text-muted-foreground">Select a local folder</div>
+                  <div className="font-medium text-foreground">Add Folder or Drive</div>
+                  <div className="text-xs text-muted-foreground">Select a folder or scan a drive</div>
                 </div>
               </button>
               <button
@@ -341,18 +312,8 @@ export default function Workspace() {
               >
                 <FileArchive className="w-5 h-5 text-primary" />
                 <div>
-                  <div className="font-medium text-foreground">ZIP Archive</div>
-                  <div className="text-xs text-muted-foreground">Import a backup archive</div>
-                </div>
-              </button>
-              <button
-                onClick={() => handleSelectSourceType('drive')}
-                className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
-              >
-                <HardDrive className="w-5 h-5 text-primary" />
-                <div>
-                  <div className="font-medium text-foreground">Drive</div>
-                  <div className="text-xs text-muted-foreground">Scan an external drive</div>
+                  <div className="font-medium text-foreground">Add ZIP Archive</div>
+                  <div className="text-xs text-muted-foreground">Import a .zip file</div>
                 </div>
               </button>
             </div>

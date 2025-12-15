@@ -7,9 +7,8 @@ import { Card } from "@/components/ui/custom-card";
 
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  const folderOrDriveInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
-  const driveInputRef = useRef<HTMLInputElement>(null);
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -34,31 +33,34 @@ export default function SourceSelection() {
     }
   };
 
-  const handleSelection = (type: 'folder' | 'zip' | 'drive') => {
-    if (type === 'folder') {
-      folderInputRef.current?.click();
+  const handleSelection = (type: 'folderOrDrive' | 'zip') => {
+    if (type === 'folderOrDrive') {
+      folderOrDriveInputRef.current?.click();
       return;
     }
     if (type === 'zip') {
       zipInputRef.current?.click();
       return;
     }
-    if (type === 'drive') {
-      driveInputRef.current?.click();
-      return;
-    }
   };
 
-  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const inferSourceType = (path: string): 'folder' | 'drive' => {
+    // Infer if path is a drive root (e.g., "D:/", "C:/", etc.) or a folder
+    const isDriveRoot = /^[A-Z]:\/$/.test(path) || path === 'D:/' || path === 'C:/';
+    return isDriveRoot ? 'drive' : 'folder';
+  };
+
+  const handleFolderOrDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       // Get the top-level folder name from the first file's path
-      // e.g., "Vacation/Photo1.jpg" -> "Vacation"
       const path = e.target.files[0].webkitRelativePath || e.target.files[0].name;
       const folderName = path.split('/')[0] || "Selected Folder";
-      // Mock a full path for display purposes
       const fullPath = `/Users/username/Pictures/${folderName}`;
       
-      setLocation(`/workspace?type=folder&name=${encodeURIComponent(folderName)}&path=${encodeURIComponent(fullPath)}`);
+      // Infer source type based on path
+      const sourceType = inferSourceType(fullPath);
+      
+      setLocation(`/workspace?type=${sourceType}&name=${encodeURIComponent(folderName)}&path=${encodeURIComponent(fullPath)}`);
     }
     e.target.value = '';
   };
@@ -74,25 +76,15 @@ export default function SourceSelection() {
     e.target.value = '';
   };
 
-  const handleDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      // For drive, simulate using the file system root
-      const driveName = "External Drive (D:)";
-      const fullPath = "D:/";
-      
-      setLocation(`/workspace?type=drive&name=${encodeURIComponent(driveName)}&path=${encodeURIComponent(fullPath)}`);
-    }
-    e.target.value = '';
-  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      {/* Hidden Folder Input */}
+      {/* Hidden Folder or Drive Input */}
       <input
         type="file"
-        ref={folderInputRef}
+        ref={folderOrDriveInputRef}
         className="hidden"
-        onChange={handleFolderChange}
+        onChange={handleFolderOrDriveChange}
         // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
         webkitdirectory=""
         directory=""
@@ -106,18 +98,6 @@ export default function SourceSelection() {
         className="hidden"
         onChange={handleZipChange}
         accept=".zip"
-      />
-
-      {/* Hidden Drive Input */}
-      <input
-        type="file"
-        ref={driveInputRef}
-        className="hidden"
-        onChange={handleDriveChange}
-        // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
-        webkitdirectory=""
-        directory=""
-        multiple
       />
 
       {/* Background decoration */}
@@ -142,24 +122,18 @@ export default function SourceSelection() {
           </p>
         </motion.div>
 
-        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl">
+        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
           <OptionCard 
             icon={<FolderPlus className="w-8 h-8 text-primary" />}
-            title="Add Folder"
-            description="Select a folder on your computer (local or external drives). Scans the folder for media files."
-            onClick={() => handleSelection('folder')}
+            title="Add Folder or Drive"
+            description="Select a folder on your computer or scan an entire drive (internal, external, USB)."
+            onClick={() => handleSelection('folderOrDrive')}
           />
           <OptionCard 
             icon={<FileArchive className="w-8 h-8 text-primary" />}
             title="Add ZIP Archive"
             description="Import a .zip file. Perfect for phone backups, cloud exports, or compressed archives."
             onClick={() => handleSelection('zip')}
-          />
-          <OptionCard 
-            icon={<HardDrive className="w-8 h-8 text-primary" />}
-            title="Add Drive"
-            description="Scan an entire drive root (internal, external, USB). Searches all folders on the drive."
-            onClick={() => handleSelection('drive')}
           />
         </motion.div>
 
