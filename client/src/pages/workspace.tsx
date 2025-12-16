@@ -1789,7 +1789,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">Source added</h2>
             <p className="text-muted-foreground">
-              <span className="font-medium text-foreground">{source.label}</span> added to Workspace.
+              <span className="font-medium text-foreground">{source.label}</span> has been added to your workspace.
             </p>
           </div>
 
@@ -1800,7 +1800,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               <Button 
                 variant="outline" 
                 onClick={onAddFolder}
-                className="h-11 bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 hover:text-primary"
+                className="h-11"
               >
                 <Plus className="w-4 h-4 mr-2" /> Add Folder / Drive
               </Button>
