@@ -530,7 +530,7 @@ export default function Workspace() {
 
       
       {showSourceTypeSelector && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50">
           <Card className="w-96 p-6">
             <h2 className="text-xl font-semibold text-foreground mb-4">Select Source Type</h2>
             <div className="space-y-3">
