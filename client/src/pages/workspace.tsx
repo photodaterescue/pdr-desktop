@@ -972,7 +972,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
           </section>
         )}
 
-        <Card className="p-6 mb-8">
+        <Card className="p-6 mb-2">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
             <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
               <LayoutGrid className="w-8 h-8" />
@@ -1010,10 +1010,10 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
 
           <div className="flex items-center justify-between pt-4">
              <div className="flex gap-4">
-               <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground">
+               <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
                  <Plus className="w-4 h-4" /> Add Folder / Drive
                </Button>
-               <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground">
+               <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
                  <FileArchive className="w-4 h-4" /> Add ZIP Archive
                </Button>
              </div>
@@ -1032,7 +1032,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         </Card>
 
         {/* Preview Section */}
-        <section className="pt-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
+        <section className="pt-0 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
             <h2 className="text-lg font-semibold text-foreground mb-4">Output Preview</h2>
             <Card className="flex flex-col md:flex-row items-center gap-6 p-5">
               <div className="p-4 bg-secondary/50 rounded-full">
