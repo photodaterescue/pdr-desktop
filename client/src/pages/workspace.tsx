@@ -1215,7 +1215,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
             )}
           </section>
 
-          <section className="pt-4">
+          <section className="pt-1">
             <h2 className="text-2xl font-semibold text-foreground mb-6">Output Selection</h2>
             <Card className="flex flex-col md:flex-row items-center gap-6 p-6">
               <div className="p-4 bg-secondary/50 rounded-full">
@@ -1359,7 +1359,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
             </div>
           </section>
 
-          <section className="pt-4">
+          <section className="pt-1">
             <h2 className="text-2xl font-semibold text-foreground mb-6">Output Selection</h2>
             <Card className="flex flex-col md:flex-row items-center gap-6 p-6">
               <div className="p-4 bg-secondary/50 rounded-full">
@@ -1459,7 +1459,7 @@ function SourceChip({ icon, label, isActive, onClick }: { icon?: React.ReactNode
       className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-all duration-200 shrink-0 ${
         isActive
           ? 'bg-primary text-white shadow-lg shadow-primary/30'
-          : 'bg-background border border-border text-foreground hover:border-primary/50'
+          : 'bg-primary/5 border border-primary/20 text-foreground hover:bg-primary/10 hover:border-primary/40'
       }`}
     >
       {icon && <span className="w-4 h-4">{icon}</span>}
