@@ -1809,14 +1809,14 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
                 onClick={onAddFolder}
                 className="h-11"
               >
-                <Plus className="w-4 h-4 mr-2" /> Add Folder
+                <Plus className="w-4 h-4 mr-2" /> Add Folder / Drive
               </Button>
               <Button 
                 variant="outline" 
                 onClick={onAddZip}
                 className="h-11"
               >
-                <FileArchive className="w-4 h-4 mr-2" /> Add ZIP
+                <FileArchive className="w-4 h-4 mr-2" /> Add ZIP Archive
               </Button>
             </div>
           </div>
@@ -1862,27 +1862,14 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
           </div>
         </Card>
 
-        {/* Add more sources section - kept as shortcuts */}
-        <div className="mb-6">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Add another source:</p>
-          <div className="grid grid-cols-2 gap-2">
-             <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-xs h-9">
-               <Plus className="w-3.5 h-3.5" /> Folder / Drive
-             </Button>
-             <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-xs h-9">
-               <FileArchive className="w-3.5 h-3.5" /> ZIP Archive
-             </Button>
-          </div>
-        </div>
-
         <div className="space-y-2">
           <div className="flex gap-3">
             <Button 
               className="flex-1 bg-primary hover:bg-primary/90" 
               onClick={() => setStep('success')}
-              data-testid="button-add-to-workspace"
+              data-testid="button-keep-source"
             >
-              Add to workspace
+              Keep Source
             </Button>
             <Button 
               variant="outline" 
@@ -1890,16 +1877,16 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               onClick={onChangeSource}
               data-testid="button-change-source"
             >
-              Change source
+              Change Source
             </Button>
           </div>
           <Button 
             variant="ghost" 
             className="w-full text-muted-foreground hover:text-foreground" 
             onClick={onCancel}
-            data-testid="button-cancel-source"
+            data-testid="button-return-to-workspace"
           >
-            Cancel
+            Return to Workspace
           </Button>
         </div>
       </motion.div>
