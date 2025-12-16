@@ -73,7 +73,20 @@ export default function Workspace() {
   const zipInputRef = useRef<HTMLInputElement>(null);
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   
-  const [sources, setSources] = useState<Source[]>([
+  const [sources, setSources] = useState<Source[]>(() => {
+    const saved = sessionStorage.getItem("pdr-sources");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((s: any) => ({
+          ...s,
+          icon: s.type === 'zip' ? <FileArchive className="w-4 h-4" /> : s.type === 'drive' ? <HardDrive className="w-4 h-4" /> : <Folder className="w-4 h-4" />
+        }));
+      } catch (e) {
+        console.error("Failed to parse sources", e);
+      }
+    }
+    return [
     {
       id: "mock-1",
       icon: <Folder className="w-4 h-4" />,
@@ -125,7 +138,11 @@ export default function Workspace() {
         dateRange: { earliest: "Jun 10, 2020", latest: "Nov 22, 2024" }
       }
     }
-  ]);
+  ]});
+
+  useEffect(() => {
+    sessionStorage.setItem("pdr-sources", JSON.stringify(sources));
+  }, [sources]);
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
