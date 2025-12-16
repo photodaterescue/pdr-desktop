@@ -80,7 +80,6 @@ export default function Workspace() {
         const parsed = JSON.parse(saved);
         return parsed.map((s: any) => ({
           ...s,
-          selected: false,
           active: false,
           icon: s.type === 'zip' ? <FileArchive className="w-4 h-4" /> : s.type === 'drive' ? <HardDrive className="w-4 h-4" /> : <Folder className="w-4 h-4" />
         }));
@@ -660,7 +659,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         {/* DASHBOARD LINK */}
         <div>
           <SidebarItem 
-            icon={<LayoutGrid className="w-4 h-4" />} 
+            icon={<LayoutGrid className="w-4 h-4 text-[hsl(246,100%,63%)]" />} 
             label="Workspace" 
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
