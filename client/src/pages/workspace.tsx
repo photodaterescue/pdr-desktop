@@ -80,6 +80,8 @@ export default function Workspace() {
         const parsed = JSON.parse(saved);
         return parsed.map((s: any) => ({
           ...s,
+          selected: false,
+          active: false,
           icon: s.type === 'zip' ? <FileArchive className="w-4 h-4" /> : s.type === 'drive' ? <HardDrive className="w-4 h-4" /> : <Folder className="w-4 h-4" />
         }));
       } catch (e) {
