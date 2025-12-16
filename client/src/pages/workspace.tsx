@@ -1794,7 +1794,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
           </div>
 
           <div className="space-y-3">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider text-center mb-4">Next steps</p>
+            <p className="text-xs font-medium text-muted-foreground text-center mb-4">Next steps</p>
             
             <div className="grid grid-cols-2 gap-3">
               <Button 
