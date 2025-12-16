@@ -1888,7 +1888,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               onClick={onCancel}
               data-testid="button-return-to-workspace"
             >
-              Return to Workspace
+              Back to workspace
             </button>
           </div>
         </div>
