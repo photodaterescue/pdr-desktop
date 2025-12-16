@@ -67,7 +67,7 @@ interface PreScanStats {
 }
 
 export default function Workspace() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const searchString = useSearch();
   const folderOrDriveInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
@@ -173,6 +173,9 @@ export default function Workspace() {
         const stats = generatePreScanStats();
         setPreScanStats(stats);
         setShowPreScanConfirm(true);
+        
+        // Clear URL params to prevent re-triggering modal on refresh
+        setLocation(location);
       }
     }
   }, [searchString]);
