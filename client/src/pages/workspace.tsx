@@ -713,7 +713,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
               disabled={isAnalysing}
               onClick={onAddSource}
             >
-              <Plus className="w-4 h-4" /> Add Source
+              <Plus className="w-4 h-4" /> Source
             </Button>
             <Button 
               variant="outline"
@@ -1016,7 +1016,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
 
         <Card className="p-6 mb-2">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
-            <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
+            <div className="p-4 bg-secondary/50 rounded-2xl text-[var(--color-workspace-purple)]">
               <LayoutGrid className="w-8 h-8" />
             </div>
             <div>

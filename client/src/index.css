@@ -15,6 +15,7 @@
   --color-lavender-deep: hsl(246 100% 63%); /* #6b5aff */
   --color-lavender-soft: hsl(250 100% 96%); /* #efecff */
   --color-gold: hsl(39 92% 67%); /* #f8c15c */
+  --color-workspace-purple: hsl(246 100% 63%); /* Matched to Change Destination button text color (Lavender Deep) */
   
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
