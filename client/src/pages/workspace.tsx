@@ -1484,7 +1484,7 @@ function PreviewModal({ onClose, results }: { onClose: () => void, results?: Ana
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
     >
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
@@ -1674,7 +1674,7 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
     >
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
@@ -1833,7 +1833,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onCancel}
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
     >
       <motion.div 
         initial={{ scale: 0.95, opacity: 0, y: 10 }}
