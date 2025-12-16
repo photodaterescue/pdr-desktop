@@ -972,15 +972,6 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
           </section>
         )}
 
-        <div className="flex justify-center gap-4 mb-8">
-           <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground">
-             <Plus className="w-4 h-4" /> Add Folder / Drive
-           </Button>
-           <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground">
-             <FileArchive className="w-4 h-4" /> Add ZIP Archive
-           </Button>
-        </div>
-
         <Card className="p-6 mb-8">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
             <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
@@ -1019,7 +1010,12 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
 
           <div className="flex items-center justify-between pt-4">
              <div className="flex gap-4">
-               {/* Actions hidden for aggregate view as requested, mainly confirmation here */}
+               <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground">
+                 <Plus className="w-4 h-4" /> Add Folder / Drive
+               </Button>
+               <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground">
+                 <FileArchive className="w-4 h-4" /> Add ZIP Archive
+               </Button>
              </div>
              {/* Only show "Confirm & Analyze" if NOT complete */}
              {!isComplete && (
