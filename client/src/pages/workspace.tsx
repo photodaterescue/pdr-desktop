@@ -1798,9 +1798,8 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
             
             <div className="grid grid-cols-2 gap-3">
               <Button 
-                variant="outline" 
                 onClick={onAddFolder}
-                className="h-11"
+                className="h-11 bg-primary hover:bg-primary/90"
               >
                 <Plus className="w-4 h-4 mr-2" /> Add Folder / Drive
               </Button>
