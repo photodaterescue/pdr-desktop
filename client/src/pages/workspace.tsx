@@ -879,7 +879,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
 
     return {
       label: "Combined Analysis",
-      path: `${selectedSources.length} sources selected`,
+      path: `${selectedSources.length} ${selectedSources.length === 1 ? 'source' : 'sources'} selected`,
       totalFiles,
       photos,
       videos,
@@ -940,7 +940,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                 description="Date confirmed from reliable photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
-                borderColor="border-emerald-100"
+                borderColor="border-emerald-200"
                 icon={<CheckCircle2 className="w-5 h-5" />}
                 isActive={false}
               />
@@ -951,7 +951,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                 description="Date estimated using available signals."
                 color="text-amber-600"
                 bgColor="bg-amber-50"
-                borderColor="border-amber-100"
+                borderColor="border-amber-200"
                 icon={<AlertTriangle className="w-5 h-5" />}
                 isActive={false}
               />
@@ -962,7 +962,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                 description="No reliable date found — review recommended."
                 color="text-rose-600"
                 bgColor="bg-rose-50"
-                borderColor="border-rose-100"
+                borderColor="border-rose-200"
                 icon={<AlertCircle className="w-5 h-5" />}
                 isActive={false}
               />
@@ -1179,7 +1179,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 description="Date confirmed from reliable photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
-                borderColor="border-emerald-100"
+                borderColor="border-emerald-200"
                 icon={<CheckCircle2 className="w-5 h-5" />}
                 isActive={filter === "High"}
                 onClick={() => toggleFilter("High")}
@@ -1191,7 +1191,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 description="Date estimated using available signals."
                 color="text-amber-600"
                 bgColor="bg-amber-50"
-                borderColor="border-amber-100"
+                borderColor="border-amber-200"
                 icon={<AlertTriangle className="w-5 h-5" />}
                 isActive={filter === "Medium"}
                 onClick={() => toggleFilter("Medium")}
@@ -1203,7 +1203,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 description="No reliable date found — review recommended."
                 color="text-rose-600"
                 bgColor="bg-rose-50"
-                borderColor="border-rose-100"
+                borderColor="border-rose-200"
                 icon={<AlertCircle className="w-5 h-5" />}
                 isActive={filter === "Low"}
                 onClick={() => toggleFilter("Low")}
@@ -1332,7 +1332,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 description="Date confirmed from reliable photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
-                borderColor="border-emerald-100"
+                borderColor="border-emerald-200"
                 icon={<CheckCircle2 className="w-5 h-5" />}
                 isActive={false}
               />
@@ -1343,7 +1343,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 description="Date estimated using available signals."
                 color="text-amber-600"
                 bgColor="bg-amber-50"
-                borderColor="border-amber-100"
+                borderColor="border-amber-200"
                 icon={<AlertTriangle className="w-5 h-5" />}
                 isActive={false}
               />
@@ -1354,7 +1354,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 description="No reliable date found — review recommended."
                 color="text-rose-600"
                 bgColor="bg-rose-50"
-                borderColor="border-rose-100"
+                borderColor="border-rose-200"
                 icon={<AlertCircle className="w-5 h-5" />}
                 isActive={false}
               />
