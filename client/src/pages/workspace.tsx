@@ -81,7 +81,7 @@ export default function Workspace() {
       type: "folder",
       path: "/Users/username/Pictures/My Vacation Photos",
       active: false,
-      selected: true,
+      selected: false,
       confirmed: true,
       stats: {
         totalFiles: 1248,
@@ -115,7 +115,7 @@ export default function Workspace() {
       type: "folder",
       path: "/Users/username/Pictures/Camera Uploads",
       active: false,
-      selected: true,
+      selected: false,
       confirmed: true,
       stats: {
         totalFiles: 2105,
