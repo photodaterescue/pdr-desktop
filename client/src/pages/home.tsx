@@ -89,6 +89,16 @@ export default function Home() {
 
         </motion.div>
 
+        {/* Go to Workspace Link */}
+        <motion.div variants={item} className="mb-8 -mt-8">
+          <button
+            onClick={() => setLocation("/workspace")}
+            className="text-muted-foreground/80 hover:text-primary text-sm font-medium flex items-center transition-colors group"
+          >
+            Go to Workspace <ArrowRight className="ml-1.5 w-3 h-3 transition-transform group-hover:translate-x-0.5" />
+          </button>
+        </motion.div>
+
         <motion.div variants={item} className="flex flex-col items-center gap-6">
           <div className="flex items-center space-x-2">
             <Checkbox 
