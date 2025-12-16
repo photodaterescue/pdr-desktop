@@ -787,7 +787,7 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
         disabled 
           ? 'text-muted-foreground/50 cursor-not-allowed' 
           : active 
-            ? 'text-primary font-medium bg-sidebar-accent/50' 
+            ? 'text-secondary-foreground font-medium bg-sidebar-accent/50' 
             : 'text-sidebar-foreground hover:bg-sidebar-accent'
       }`}
       onClick={(e) => !disabled && onClick && onClick(e)}
@@ -1016,7 +1016,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
 
         <Card className="p-6 mb-2">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
-            <div className="p-4 bg-secondary/50 rounded-2xl text-[var(--color-workspace-purple)]">
+            <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
               <LayoutGrid className="w-8 h-8" />
             </div>
             <div>
