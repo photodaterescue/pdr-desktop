@@ -141,7 +141,12 @@ export default function Workspace() {
   ]});
 
   useEffect(() => {
-    sessionStorage.setItem("pdr-sources", JSON.stringify(sources));
+    // Create a version of sources that is safe for JSON stringify (remove React components)
+    const serializableSources = sources.map(s => {
+      const { icon, ...rest } = s;
+      return rest;
+    });
+    sessionStorage.setItem("pdr-sources", JSON.stringify(serializableSources));
   }, [sources]);
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
