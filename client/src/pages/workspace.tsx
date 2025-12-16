@@ -640,7 +640,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         <div className="absolute right-0 top-0 bottom-0 w-4 -mr-2 bg-transparent group-hover:bg-primary/10 transition-colors" />
       </div>
 
-      <div className="px-6 py-8 flex items-center">
+      <div className="px-6 py-8 flex items-center cursor-pointer" onClick={() => onDashboardClick()}>
         <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain" />
       </div>
 
