@@ -1789,7 +1789,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">Source added</h2>
             <p className="text-muted-foreground">
-              <span className="font-medium text-foreground">{source.label}</span> added to Workspace.
+              <span className="font-medium text-foreground">{source.label}</span> added to your workspace.
             </p>
           </div>
 
@@ -1818,7 +1818,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
                 onClick={onAddToWorkspace}
                 data-testid="button-return-to-workspace-success"
               >
-                Return to Workspace
+                Back to workspace
               </button>
             </div>
           </div>
