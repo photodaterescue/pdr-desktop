@@ -24,6 +24,7 @@ import {
   ArrowRight,
   Loader2
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
@@ -342,10 +343,8 @@ export default function Workspace() {
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
-      setPendingSource(newSource);
       
-      setPreScanStats(stats);
-      setShowPreScanConfirm(true);
+      toast.success(`${newSource.label} added to workspace`);
       
       e.target.value = '';
     }
@@ -375,10 +374,8 @@ export default function Workspace() {
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
-      setPendingSource(newSource);
       
-      setPreScanStats(stats);
-      setShowPreScanConfirm(true);
+      toast.success(`${newSource.label} added to workspace`);
       
       e.target.value = '';
     }
@@ -509,20 +506,9 @@ export default function Workspace() {
           onAddZip={handleTriggerZipPicker}
         />
       )}
-      {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} />}
+      {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
-      
-      {showPreScanConfirm && pendingSource && preScanStats && (
-        <SourceAddedModal 
-          source={pendingSource}
-          stats={preScanStats}
-          onAddToWorkspace={handleAddToWorkspace}
-          onChangeSource={handleChangeSourceFromModal}
-          onCancel={handleCancelSourceSelection}
-          onAddFolder={() => { handleAddToWorkspace(); handleTriggerFolderPicker(); }}
-          onAddZip={() => { handleAddToWorkspace(); handleTriggerZipPicker(); }}
-        />
-      )}
+
       
       {showSourceTypeSelector && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
