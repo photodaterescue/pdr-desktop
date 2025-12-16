@@ -178,7 +178,7 @@ export default function Workspace() {
         setLocation(location);
       }
     }
-  }, [searchString]);
+  }, [searchString, sources, location, setLocation]);
 
   useEffect(() => {
     if (!isAnalysing || isComplete) return;
