@@ -1869,7 +1869,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               onClick={() => setStep('success')}
               data-testid="button-keep-source"
             >
-              Keep Source
+              Keep & Add Source
             </Button>
             <Button 
               variant="outline" 
@@ -1880,14 +1880,15 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               Change Source
             </Button>
           </div>
-          <Button 
-            variant="ghost" 
-            className="w-full text-muted-foreground hover:text-foreground" 
-            onClick={onCancel}
-            data-testid="button-return-to-workspace"
-          >
-            Return to Workspace
-          </Button>
+          <div className="flex justify-center mt-2">
+            <button 
+              className="text-sm text-muted-foreground hover:text-foreground hover:underline py-2" 
+              onClick={onCancel}
+              data-testid="button-return-to-workspace"
+            >
+              Return to Workspace
+            </button>
+          </div>
         </div>
       </motion.div>
     </motion.div>
