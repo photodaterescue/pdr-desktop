@@ -199,6 +199,7 @@ export default function Workspace() {
             skipped: Math.floor(prev.total * 0.07)
           });
           setIsComplete(true);
+          setIsAnalysing(false);
           return prev;
         }
         
@@ -476,6 +477,7 @@ export default function Workspace() {
         onSourceClick={handleSourceClick} 
         onSelectAll={handleSelectAll}
         isAnalysing={isAnalysing}
+        isComplete={isComplete}
         onAddSource={handleAddSource}
         activePanel={activePanel}
         onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | null)}
@@ -562,7 +564,7 @@ export default function Workspace() {
   );
 }
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, onAddSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isAnalysing: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete, onAddSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isAnalysing: boolean, isComplete: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
 
@@ -686,6 +688,15 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, onAddSource
               <Progress value={84} className="h-1.5 bg-background mb-2" />
               <p className="text-[10px] text-muted-foreground truncate">Processing DSC_9921.jpg</p>
             </div>
+          ) : isComplete ? (
+             <div className="mx-2 p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                <div className="flex items-center gap-2 mb-2 text-emerald-700">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-sm font-medium">Complete</span>
+                </div>
+                <Progress value={100} className="h-1.5 bg-emerald-200 mb-2" />
+                <p className="text-[10px] text-emerald-600/80">Ready to review</p>
+             </div>
           ) : (
              <div className="px-3 py-3 bg-secondary/50 rounded-xl border border-border mx-2">
                 <div className="text-sm font-medium">Preview Mode</div>
