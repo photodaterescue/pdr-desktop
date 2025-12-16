@@ -1789,7 +1789,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">Source added</h2>
             <p className="text-muted-foreground">
-              <span className="font-medium text-foreground">{source.label}</span> has been added to your workspace.
+              <span className="font-medium text-foreground">{source.label}</span> added to Workspace.
             </p>
           </div>
 
