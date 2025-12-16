@@ -72,26 +72,7 @@ export default function Workspace() {
   const zipInputRef = useRef<HTMLInputElement>(null);
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   
-  const [sources, setSources] = useState<Source[]>(() => {
-    // Try to load from localStorage
-    const saved = localStorage.getItem('pdr-sources');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Rehydrate icons based on type
-        return parsed.map((s: any) => ({
-          ...s,
-          icon: s.type === 'zip' ? <FileArchive className="w-4 h-4" /> : 
-                s.type === 'drive' ? <HardDrive className="w-4 h-4" /> : 
-                <Folder className="w-4 h-4" />
-        }));
-      } catch (e) {
-        console.error("Failed to parse saved sources", e);
-      }
-    }
-    
-    // Default mock data if no saved data
-    return [
+  const [sources, setSources] = useState<Source[]>([
     {
       id: "mock-1",
       icon: <Folder className="w-4 h-4" />,
@@ -143,14 +124,7 @@ export default function Workspace() {
         dateRange: { earliest: "Jun 10, 2020", latest: "Nov 22, 2024" }
       }
     }
-  ]});
-
-  // Save sources to localStorage whenever they change
-  useEffect(() => {
-    // Create a version without the icon property (React Node) for storage
-    const sourcesToSave = sources.map(({ icon, ...rest }) => rest);
-    localStorage.setItem('pdr-sources', JSON.stringify(sourcesToSave));
-  }, [sources]);
+  ]);
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
@@ -898,11 +872,11 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         </motion.div>
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto pb-24">
+      <div className="flex-1 flex flex-col items-center justify-start p-8 overflow-y-auto pb-24">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl w-full"
+        className="max-w-2xl w-full pt-4"
       >
         <div className="mb-8 text-center">
            <h2 className="text-2xl font-semibold text-foreground mb-2">Workspace</h2>
