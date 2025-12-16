@@ -1871,7 +1871,7 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               onClick={() => setStep('success')}
               data-testid="button-keep-source"
             >
-              Keep & Add Source
+              Keep Source
             </Button>
             <Button 
               variant="outline" 
