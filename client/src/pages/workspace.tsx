@@ -509,6 +509,13 @@ export default function Workspace() {
         isAnalysing={isAnalysing}
         isComplete={isComplete}
         onAddSource={handleAddSource}
+        onRemoveSource={() => {
+          // Remove all selected sources
+          const updatedSources = sources.filter(s => !s.selected);
+          setSources(updatedSources);
+          setActiveSource(null);
+          // If no sources left, maybe redirect? Handled by MainContent if empty
+        }}
         activePanel={activePanel}
         onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | null)}
         onDashboardClick={() => {
@@ -597,9 +604,10 @@ export default function Workspace() {
   );
 }
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete, onAddSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isAnalysing: boolean, isComplete: boolean, onAddSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isAnalysing: boolean, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
+  const hasSelectedSources = sources.some(s => s.selected);
 
   const [width, setWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
@@ -697,14 +705,26 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
               />
             ))}
           </div>
-          <Button 
-            variant="ghost" 
-            className="w-full mt-2 justify-start px-2 text-muted-foreground hover:text-primary"
-            disabled={isAnalysing}
-            onClick={onAddSource}
-          >
-            <Plus className="w-4 h-4 mr-2" /> Add Source
-          </Button>
+          <div className="flex gap-2 mt-2 px-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+              disabled={isAnalysing}
+              onClick={onAddSource}
+            >
+              <Plus className="w-4 h-4" /> Add Source
+            </Button>
+            <Button 
+              variant="outline"
+              size="sm" 
+              className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+              disabled={isAnalysing || !hasSelectedSources}
+              onClick={onRemoveSource}
+            >
+              <Trash2 className="w-4 h-4" /> Remove
+            </Button>
+          </div>
         </div>
 
         {/* ANALYSIS SECTION */}
