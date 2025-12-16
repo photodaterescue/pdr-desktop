@@ -914,7 +914,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl w-full pt-4"
+        className="max-w-3xl w-full pt-4"
       >
         <div className="mb-8 text-center">
            <h2 className="text-2xl font-semibold text-foreground mb-2">Workspace</h2>
