@@ -156,6 +156,7 @@ export default function Workspace() {
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 1248, currentFile: "" });
   const [isComplete, setIsComplete] = useState(false);
+  const [showCompletionScreen, setShowCompletionScreen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
   const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -227,6 +228,7 @@ export default function Workspace() {
             skipped: Math.floor(prev.total * 0.07)
           });
           setIsComplete(true);
+          setShowCompletionScreen(true);
           setIsAnalysing(false);
           return prev;
         }
@@ -535,6 +537,8 @@ export default function Workspace() {
           onViewResults={() => setShowResultsModal(true)}
           onAddFolder={handleTriggerFolderPicker}
           onAddZip={handleTriggerZipPicker}
+          showCompletionScreen={showCompletionScreen}
+          onDismissCompletion={() => setShowCompletionScreen(false)}
         />
       )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} />}
@@ -804,7 +808,9 @@ function MainContent({
   onPreviewChanges,
   onViewResults,
   onAddFolder,
-  onAddZip
+  onAddZip,
+  showCompletionScreen,
+  onDismissCompletion
 }: { 
   sources: Source[],
   activeSource: Source | null,
@@ -820,7 +826,9 @@ function MainContent({
   onPreviewChanges: () => void,
   onViewResults: () => void,
   onAddFolder: () => void,
-  onAddZip: () => void
+  onAddZip: () => void,
+  showCompletionScreen: boolean,
+  onDismissCompletion: () => void
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
@@ -832,6 +840,20 @@ function MainContent({
 
   if (isAnalysing) {
     return <AnalysingState progress={analysisProgress} />;
+  }
+
+  if (isComplete && showCompletionScreen) {
+    return (
+      <CompletionState 
+        results={analysisResults} 
+        onAddAnother={() => {
+          onDismissCompletion();
+          onAddAnother();
+        }} 
+        onViewResults={onViewResults}
+        onBackToWorkspace={onDismissCompletion}
+      />
+    );
   }
 
   // Unified Dashboard Panel for pre-analysis AND post-analysis state
@@ -1382,16 +1404,24 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
   );
 }
 
-function CompletionState({ results, onAddAnother, onViewResults }: { results: AnalysisResults, onAddAnother: () => void, onViewResults: () => void }) {
+function CompletionState({ results, onAddAnother, onViewResults, onBackToWorkspace }: { results: AnalysisResults, onAddAnother: () => void, onViewResults: () => void, onBackToWorkspace: () => void }) {
   const total = results.fixed + results.unchanged + results.skipped;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
-      <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center px-8 shrink-0">
+      <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-8 shrink-0">
         <div className="flex items-center gap-2 text-sm text-foreground font-medium">
           <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           <span>Analysis Complete</span>
         </div>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={onBackToWorkspace}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          Back to workspace
+        </Button>
       </header>
 
       <div className="flex-1 flex items-center justify-center p-8">
