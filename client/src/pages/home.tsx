@@ -95,7 +95,7 @@ export default function Home() {
             onClick={() => setLocation("/workspace")}
             className="text-muted-foreground/80 hover:text-primary text-sm font-medium flex items-center transition-colors group"
           >
-            Go to Workspace <ArrowRight className="ml-1.5 w-3 h-3 transition-transform group-hover:translate-x-0.5" />
+            Go to Workspace
           </button>
         </motion.div>
 
