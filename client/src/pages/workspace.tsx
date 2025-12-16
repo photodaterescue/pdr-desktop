@@ -914,7 +914,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-3xl w-full pt-4"
+        className="max-w-4xl w-full pt-4"
       >
         <div className="mb-8 text-center">
            <h2 className="text-2xl font-semibold text-foreground mb-2">Workspace</h2>
@@ -979,7 +979,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
            </Button>
         </div>
 
-        <Card className="p-8 mb-8">
+        <Card className="p-6 mb-8">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
             <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
               <LayoutGrid className="w-8 h-8" />
@@ -1036,7 +1036,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         {/* Preview Section */}
         <section className="pt-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
             <h2 className="text-lg font-semibold text-foreground mb-4">Output Preview</h2>
-            <Card className="flex flex-col md:flex-row items-center gap-6 p-6">
+            <Card className="flex flex-col md:flex-row items-center gap-6 p-5">
               <div className="p-4 bg-secondary/50 rounded-full">
                 <HardDrive className="w-6 h-6 text-primary" />
               </div>
