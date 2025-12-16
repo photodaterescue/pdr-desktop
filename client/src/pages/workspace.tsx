@@ -936,7 +936,8 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
               <ConfidenceCard 
                 level="High" 
                 count={highConf} 
-                description="Strong agreement between EXIF and filename."
+                percentage={Math.round((highConf / (highConf + medConf + lowConf)) * 100) || 0}
+                description="Date confirmed from reliable photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-100"
@@ -946,7 +947,8 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
               <ConfidenceCard 
                 level="Medium" 
                 count={medConf} 
-                description="Partial metadata found, some heuristics used."
+                percentage={Math.round((medConf / (highConf + medConf + lowConf)) * 100) || 0}
+                description="Date estimated using available signals."
                 color="text-amber-600"
                 bgColor="bg-amber-50"
                 borderColor="border-amber-100"
@@ -956,7 +958,8 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
               <ConfidenceCard 
                 level="Low" 
                 count={lowConf} 
-                description="No reliable date found. Review recommended."
+                percentage={Math.round((lowConf / (highConf + medConf + lowConf)) * 100) || 0}
+                description="No reliable date found — review recommended."
                 color="text-rose-600"
                 bgColor="bg-rose-50"
                 borderColor="border-rose-100"
@@ -1172,7 +1175,8 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
               <ConfidenceCard 
                 level="High" 
                 count={stats.highConfidence} 
-                description="Strong agreement between EXIF and filename."
+                percentage={Math.round((stats.highConfidence / (stats.highConfidence + stats.mediumConfidence + stats.lowConfidence)) * 100) || 0}
+                description="Date confirmed from reliable photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-100"
@@ -1183,7 +1187,8 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
               <ConfidenceCard 
                 level="Medium" 
                 count={stats.mediumConfidence} 
-                description="Partial metadata found, some heuristics used."
+                percentage={Math.round((stats.mediumConfidence / (stats.highConfidence + stats.mediumConfidence + stats.lowConfidence)) * 100) || 0}
+                description="Date estimated using available signals."
                 color="text-amber-600"
                 bgColor="bg-amber-50"
                 borderColor="border-amber-100"
@@ -1194,7 +1199,8 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
               <ConfidenceCard 
                 level="Low" 
                 count={stats.lowConfidence} 
-                description="No reliable date found. Review recommended."
+                percentage={Math.round((stats.lowConfidence / (stats.highConfidence + stats.mediumConfidence + stats.lowConfidence)) * 100) || 0}
+                description="No reliable date found — review recommended."
                 color="text-rose-600"
                 bgColor="bg-rose-50"
                 borderColor="border-rose-100"
@@ -1322,7 +1328,8 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
               <ConfidenceCard 
                 level="High" 
                 count={highConf} 
-                description="Strong agreement between EXIF and filename."
+                percentage={Math.round((highConf / (highConf + medConf + lowConf)) * 100) || 0}
+                description="Date confirmed from reliable photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-100"
@@ -1332,7 +1339,8 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
               <ConfidenceCard 
                 level="Medium" 
                 count={medConf} 
-                description="Partial metadata found, some heuristics used."
+                percentage={Math.round((medConf / (highConf + medConf + lowConf)) * 100) || 0}
+                description="Date estimated using available signals."
                 color="text-amber-600"
                 bgColor="bg-amber-50"
                 borderColor="border-amber-100"
@@ -1342,7 +1350,8 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
               <ConfidenceCard 
                 level="Low" 
                 count={lowConf} 
-                description="No reliable date found. Review recommended."
+                percentage={Math.round((lowConf / (highConf + medConf + lowConf)) * 100) || 0}
+                description="No reliable date found — review recommended."
                 color="text-rose-600"
                 bgColor="bg-rose-50"
                 borderColor="border-rose-100"
@@ -1461,7 +1470,7 @@ function SourceChip({ icon, label, isActive, onClick }: { icon?: React.ReactNode
   );
 }
 
-function ConfidenceCard({ level, count, description, color, bgColor, borderColor, icon, isActive, onClick }: any) {
+function ConfidenceCard({ level, count, percentage, description, color, bgColor, borderColor, icon, isActive, onClick }: any) {
   return (
     <div onClick={onClick} className="relative group cursor-pointer outline-none">
        {isActive && (
@@ -1482,7 +1491,10 @@ function ConfidenceCard({ level, count, description, color, bgColor, borderColor
             {level} Confidence
           </span>
         </div>
-        <div className="text-4xl font-bold text-foreground mb-2">{count}</div>
+        <div className="flex items-baseline gap-2 mb-2">
+          <div className="text-4xl font-bold text-foreground">{count}</div>
+          <div className="text-lg font-medium text-muted-foreground">({percentage}%)</div>
+        </div>
         <p className="text-sm text-muted-foreground">{description}</p>
       </Card>
     </div>
