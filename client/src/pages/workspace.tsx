@@ -343,8 +343,10 @@ export default function Workspace() {
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
+      setPendingSource(newSource);
       
-      toast.success(`${newSource.label} added to workspace`);
+      setPreScanStats(stats);
+      setShowPreScanConfirm(true);
       
       e.target.value = '';
     }
@@ -374,8 +376,10 @@ export default function Workspace() {
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
+      setPendingSource(newSource);
       
-      toast.success(`${newSource.label} added to workspace`);
+      setPreScanStats(stats);
+      setShowPreScanConfirm(true);
       
       e.target.value = '';
     }
@@ -508,6 +512,18 @@ export default function Workspace() {
       )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
+      
+      {showPreScanConfirm && pendingSource && preScanStats && (
+        <SourceAddedModal 
+          source={pendingSource}
+          stats={preScanStats}
+          onAddToWorkspace={handleAddToWorkspace}
+          onChangeSource={handleChangeSourceFromModal}
+          onCancel={handleCancelSourceSelection}
+          onAddFolder={() => { handleAddToWorkspace(); handleTriggerFolderPicker(); }}
+          onAddZip={() => { handleAddToWorkspace(); handleTriggerZipPicker(); }}
+        />
+      )}
 
       
       {showSourceTypeSelector && (
