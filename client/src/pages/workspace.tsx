@@ -1796,13 +1796,6 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
           <div className="space-y-3">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider text-center mb-4">What would you like to do next?</p>
             
-            <Button 
-              className="w-full bg-primary hover:bg-primary/90 h-11" 
-              onClick={onAddToWorkspace}
-            >
-              Go to Workspace
-            </Button>
-            
             <div className="grid grid-cols-2 gap-3">
               <Button 
                 variant="outline" 
@@ -1818,6 +1811,16 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               >
                 <FileArchive className="w-4 h-4 mr-2" /> Add ZIP Archive
               </Button>
+            </div>
+
+            <div className="flex justify-center mt-2">
+              <button 
+                className="text-sm text-muted-foreground hover:text-foreground hover:underline py-2" 
+                onClick={onAddToWorkspace}
+                data-testid="button-return-to-workspace-success"
+              >
+                Return to Workspace
+              </button>
             </div>
           </div>
         </motion.div>
