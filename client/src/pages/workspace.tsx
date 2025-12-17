@@ -572,7 +572,7 @@ export default function Workspace() {
                 onClick={() => handleSelectSourceType('folderOrDrive')}
                 className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
               >
-                <Folder className="w-5 h-5 text-primary" />
+                <img src="/Assets/pdr-folder.png" className="w-5 h-5 object-contain" alt="Folder" />
                 <div>
                   <div className="font-medium text-foreground">Add Folder or Drive</div>
                   <div className="text-xs text-muted-foreground">Select a folder or scan a drive</div>
@@ -582,7 +582,7 @@ export default function Workspace() {
                 onClick={() => handleSelectSourceType('zip')}
                 className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
               >
-                <FileArchive className="w-5 h-5 text-primary" />
+                <img src="/Assets/pdr-zip.png" className="w-5 h-5 object-contain" alt="ZIP" />
                 <div>
                   <div className="font-medium text-foreground">Add ZIP Archive</div>
                   <div className="text-xs text-muted-foreground">Import a .zip file</div>
@@ -659,7 +659,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         {/* DASHBOARD LINK */}
         <div>
           <SidebarItem 
-            icon={<LayoutGrid className="w-4 h-4 text-[hsl(246,100%,63%)]" />} 
+            icon={<img src="/Assets/pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
             label="Workspace" 
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
@@ -712,7 +712,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
               disabled={isAnalysing}
               onClick={onAddSource}
             >
-              <Plus className="w-4 h-4" /> Source
+              <img src="/Assets/pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Source
             </Button>
             <Button 
               variant="outline"
@@ -763,17 +763,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         <div className="pt-2 border-t border-sidebar-border">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Guidance</h3>
           <div className="space-y-1">
-            <SidebarItem icon={<AlertCircle className="w-4 h-4" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} disabled={isAnalysing} />
-            <SidebarItem icon={<CheckCircle2 className="w-4 h-4" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} disabled={isAnalysing} />
-            <SidebarItem icon={<RefreshCw className="w-4 h-4" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} disabled={isAnalysing} />
+            <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} disabled={isAnalysing} />
+            <SidebarItem icon={<img src="/Assets/pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} disabled={isAnalysing} />
+            <SidebarItem icon={<img src="/Assets/pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} disabled={isAnalysing} />
           </div>
         </div>
       </div>
 
       {/* UTILITY SECTION - BOTTOM */}
       <div className="p-4 border-t border-sidebar-border space-y-1">
-        <SidebarItem icon={<Settings className="w-4 h-4" />} label="Settings" disabled={isAnalysing} />
-        <SidebarItem icon={<HelpCircle className="w-4 h-4" />} label="Help & Support" disabled={isAnalysing} />
+        <SidebarItem icon={<img src="/Assets/pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" disabled={isAnalysing} />
+        <SidebarItem icon={<img src="/Assets/pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" disabled={isAnalysing} />
       </div>
     </div>
   );
@@ -1016,7 +1016,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         <Card className="p-6 mb-2">
           <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
             <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
-              <LayoutGrid className="w-8 h-8" />
+              <img src="/Assets/pdr-combined-analysis.png" className="w-8 h-8 object-contain" alt="Combined Analysis" />
             </div>
             <div>
               <h3 className="text-xl font-medium text-foreground mb-1">{stats.label}</h3>
@@ -1052,10 +1052,10 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
           <div className="flex items-center justify-between pt-4">
              <div className="flex gap-4">
                <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
-                 <Plus className="w-4 h-4" /> Add Folder / Drive
+                 <img src="/Assets/pdr-folder.png" className="w-4 h-4 object-contain" alt="Folder" /> Add Folder / Drive
                </Button>
                <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
-                 <FileArchive className="w-4 h-4" /> Add ZIP Archive
+                 <img src="/Assets/pdr-zip.png" className="w-4 h-4 object-contain" alt="ZIP" /> Add ZIP Archive
                </Button>
              </div>
              {/* Only show "Confirm & Analyze" if NOT complete */}
@@ -1077,7 +1077,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
             <h2 className="text-lg font-semibold text-foreground mb-4">Output Preview</h2>
             <Card className="flex flex-col md:flex-row items-center gap-6 p-5">
               <div className="p-4 bg-secondary/50 rounded-full">
-                <HardDrive className="w-6 h-6 text-primary" />
+                <img src="/Assets/pdr-destination-drive.png" className="w-6 h-6 object-contain" alt="Destination Drive" />
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
