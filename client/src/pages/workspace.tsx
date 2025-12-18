@@ -995,7 +995,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-200"
                 icon={<ShieldCheck className="w-5 h-5" />}
-                tooltip="Date taken from authoritative embedded metadata such as Google Takeout JSON timestamps, EXIF DateTimeOriginal, or XMP creation dates written by the camera or app at capture time."
+                tooltip="Date taken directly from information saved by the camera, app, or backup at the time the photo or video was created."
                 isActive={false}
               />
               <ConfidenceCard 
@@ -1007,7 +1007,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                 bgColor="bg-indigo-50"
                 borderColor="border-indigo-200"
                 icon={<Sparkles className="w-5 h-5" />}
-                tooltip="Date inferred from recognised filename formats (e.g. WhatsApp, camera, or backup naming patterns). These follow consistent structures but are not embedded metadata."
+                tooltip="Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
                 isActive={false}
               />
               <ConfidenceCard 
@@ -1019,7 +1019,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                 bgColor="bg-slate-100"
                 borderColor="border-slate-200"
                 icon={<Tag className="w-5 h-5" />}
-                tooltip="No usable metadata or filename date was found. The file will still be safely renamed to avoid conflicts and marked for optional later review."
+                tooltip="No reliable date could be found. The file will still be safely renamed using a fallback date to avoid conflicts."
                 isActive={false}
               />
             </div>
@@ -1233,7 +1233,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-200"
                 icon={<ShieldCheck className="w-5 h-5" />}
-                tooltip="Date taken from authoritative embedded metadata such as Google Takeout JSON timestamps, EXIF DateTimeOriginal, or XMP creation dates written by the camera or app at capture time."
+                tooltip="Date taken directly from information saved by the camera, app, or backup at the time the photo or video was created."
                 isActive={filter === "High"}
                 onClick={() => toggleFilter("High")}
               />
@@ -1246,7 +1246,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 bgColor="bg-indigo-50"
                 borderColor="border-indigo-200"
                 icon={<Sparkles className="w-5 h-5" />}
-                tooltip="Date inferred from recognised filename formats (e.g. WhatsApp, camera, or backup naming patterns). These follow consistent structures but are not embedded metadata."
+                tooltip="Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
                 isActive={filter === "Medium"}
                 onClick={() => toggleFilter("Medium")}
               />
@@ -1259,7 +1259,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 bgColor="bg-slate-100"
                 borderColor="border-slate-200"
                 icon={<Tag className="w-5 h-5" />}
-                tooltip="No usable metadata or filename date was found. The file will still be safely renamed to avoid conflicts and marked for optional later review."
+                tooltip="No reliable date could be found. The file will still be safely renamed using a fallback date to avoid conflicts."
                 isActive={filter === "Low"}
                 onClick={() => toggleFilter("Low")}
               />
@@ -1389,7 +1389,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-200"
                 icon={<ShieldCheck className="w-5 h-5" />}
-                tooltip="Date taken from authoritative embedded metadata such as Google Takeout JSON timestamps, EXIF DateTimeOriginal, or XMP creation dates written by the camera or app at capture time."
+                tooltip="Date taken directly from information saved by the camera, app, or backup at the time the photo or video was created."
                 isActive={false}
               />
               <ConfidenceCard 
@@ -1401,7 +1401,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 bgColor="bg-indigo-50"
                 borderColor="border-indigo-200"
                 icon={<Sparkles className="w-5 h-5" />}
-                tooltip="Date inferred from recognised filename formats (e.g. WhatsApp, camera, or backup naming patterns). These follow consistent structures but are not embedded metadata."
+                tooltip="Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
                 isActive={false}
               />
               <ConfidenceCard 
@@ -1413,7 +1413,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 bgColor="bg-slate-100"
                 borderColor="border-slate-200"
                 icon={<Tag className="w-5 h-5" />}
-                tooltip="No usable metadata or filename date was found. The file will still be safely renamed to avoid conflicts and marked for optional later review."
+                tooltip="No reliable date could be found. The file will still be safely renamed using a fallback date to avoid conflicts."
                 isActive={false}
               />
             </div>
