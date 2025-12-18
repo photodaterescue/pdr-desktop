@@ -179,7 +179,7 @@ export default function Workspace() {
 
         const newSource: Source = {
           id: Date.now().toString(),
-          icon,
+          icon: type === 'drive' ? <img src="/Assets/pdr-drive.png" className="w-4 h-4 object-contain" alt="Drive" /> : icon,
           label: name,
           type,
           path: path || undefined,
@@ -659,7 +659,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         {/* DASHBOARD LINK */}
         <div>
           <SidebarItem 
-            icon={<img src="/Assets/pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
+            icon={<img src="/Assets/pdr-dashboard.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
             label="Workspace" 
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
@@ -721,7 +721,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
               disabled={isAnalysing || !hasSelectedSources}
               onClick={onRemoveSource}
             >
-              <Trash2 className="w-4 h-4" /> Remove
+              <img src="/Assets/pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
             </Button>
           </div>
         </div>
@@ -1109,7 +1109,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                  Preview Changes
                </Button>
                <Button onClick={() => setShowFixModal(true)} className="bg-primary hover:bg-primary/90 px-8 shadow-lg shadow-primary/20">
-                 <Play className="w-4 h-4 mr-2 fill-current" /> Run Rescue
+                 <img src="/Assets/pdr-fix.png" className="w-4 h-4 mr-2 object-contain" alt="Fix" /> Run Rescue
                </Button>
              </div>
           </div>
