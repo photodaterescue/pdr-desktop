@@ -22,13 +22,23 @@ import {
   X,
   LayoutGrid,
   ArrowRight,
-  Loader2
+  Loader2,
+  Info,
+  Sparkles,
+  Tag,
+  ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 
 interface Source {
@@ -968,7 +978,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
         {hasSelection && (
           <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-foreground">Confidence Summary (Estimate)</h2>
+              <h2 className="text-lg font-semibold text-foreground">Date Summary</h2>
               {isComplete && (
                 <Button variant="ghost" size="sm" onClick={onViewResults} className="text-primary hover:bg-primary/10">
                   View Detailed Report
@@ -977,36 +987,39 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <ConfidenceCard 
-                level="High" 
+                level="Confirmed" 
                 count={highConf} 
                 percentage={Math.round((highConf / (highConf + medConf + lowConf)) * 100) || 0}
-                description="Date confirmed from reliable photo metadata."
+                description="Date confirmed from embedded photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-200"
-                icon={<CheckCircle2 className="w-5 h-5" />}
+                icon={<ShieldCheck className="w-5 h-5" />}
+                tooltip="Date taken from authoritative embedded metadata such as Google Takeout JSON timestamps, EXIF DateTimeOriginal, or XMP creation dates written by the camera or app at capture time."
                 isActive={false}
               />
               <ConfidenceCard 
-                level="Medium" 
+                level="Recovered" 
                 count={medConf} 
                 percentage={Math.round((medConf / (highConf + medConf + lowConf)) * 100) || 0}
-                description="Date estimated using available signals."
-                color="text-amber-600"
-                bgColor="bg-amber-50"
-                borderColor="border-amber-200"
-                icon={<AlertTriangle className="w-5 h-5" />}
+                description="Date recovered from structured filename patterns."
+                color="text-indigo-600"
+                bgColor="bg-indigo-50"
+                borderColor="border-indigo-200"
+                icon={<Sparkles className="w-5 h-5" />}
+                tooltip="Date inferred from recognised filename formats (e.g. WhatsApp, camera, or backup naming patterns). These follow consistent structures but are not embedded metadata."
                 isActive={false}
               />
               <ConfidenceCard 
-                level="Low" 
+                level="Marked" 
                 count={lowConf} 
                 percentage={Math.round((lowConf / (highConf + medConf + lowConf)) * 100) || 0}
-                description="No reliable date found — review recommended."
-                color="text-rose-600"
-                bgColor="bg-rose-50"
-                borderColor="border-rose-200"
-                icon={<AlertCircle className="w-5 h-5" />}
+                description="No reliable date found — file will be renamed using fallback rules."
+                color="text-slate-600"
+                bgColor="bg-slate-100"
+                borderColor="border-slate-200"
+                icon={<Tag className="w-5 h-5" />}
+                tooltip="No usable metadata or filename date was found. The file will still be safely renamed to avoid conflicts and marked for optional later review."
                 isActive={false}
               />
             </div>
@@ -1204,7 +1217,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
 
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-semibold text-foreground mb-1">Confidence Summary</h2>
+                <h2 className="text-2xl font-semibold text-foreground mb-1">Date Summary</h2>
                 <p className="text-sm text-muted-foreground">{stats.label}</p>
               </div>
               <Button variant="outline" size="sm">View Detailed Report</Button>
@@ -1212,38 +1225,41 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <ConfidenceCard 
-                level="High" 
+                level="Confirmed" 
                 count={stats.highConfidence} 
                 percentage={Math.round((stats.highConfidence / (stats.highConfidence + stats.mediumConfidence + stats.lowConfidence)) * 100) || 0}
-                description="Date confirmed from reliable photo metadata."
+                description="Date confirmed from embedded photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-200"
-                icon={<CheckCircle2 className="w-5 h-5" />}
+                icon={<ShieldCheck className="w-5 h-5" />}
+                tooltip="Date taken from authoritative embedded metadata such as Google Takeout JSON timestamps, EXIF DateTimeOriginal, or XMP creation dates written by the camera or app at capture time."
                 isActive={filter === "High"}
                 onClick={() => toggleFilter("High")}
               />
               <ConfidenceCard 
-                level="Medium" 
+                level="Recovered" 
                 count={stats.mediumConfidence} 
                 percentage={Math.round((stats.mediumConfidence / (stats.highConfidence + stats.mediumConfidence + stats.lowConfidence)) * 100) || 0}
-                description="Date estimated using available signals."
-                color="text-amber-600"
-                bgColor="bg-amber-50"
-                borderColor="border-amber-200"
-                icon={<AlertTriangle className="w-5 h-5" />}
+                description="Date recovered from structured filename patterns."
+                color="text-indigo-600"
+                bgColor="bg-indigo-50"
+                borderColor="border-indigo-200"
+                icon={<Sparkles className="w-5 h-5" />}
+                tooltip="Date inferred from recognised filename formats (e.g. WhatsApp, camera, or backup naming patterns). These follow consistent structures but are not embedded metadata."
                 isActive={filter === "Medium"}
                 onClick={() => toggleFilter("Medium")}
               />
               <ConfidenceCard 
-                level="Low" 
+                level="Marked" 
                 count={stats.lowConfidence} 
                 percentage={Math.round((stats.lowConfidence / (stats.highConfidence + stats.mediumConfidence + stats.lowConfidence)) * 100) || 0}
-                description="No reliable date found — review recommended."
-                color="text-rose-600"
-                bgColor="bg-rose-50"
-                borderColor="border-rose-200"
-                icon={<AlertCircle className="w-5 h-5" />}
+                description="No reliable date found — file will be renamed using fallback rules."
+                color="text-slate-600"
+                bgColor="bg-slate-100"
+                borderColor="border-slate-200"
+                icon={<Tag className="w-5 h-5" />}
+                tooltip="No usable metadata or filename date was found. The file will still be safely renamed to avoid conflicts and marked for optional later review."
                 isActive={filter === "Low"}
                 onClick={() => toggleFilter("Low")}
               />
@@ -1357,7 +1373,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
           <section>
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-semibold text-foreground mb-1">Confidence Summary</h2>
+                <h2 className="text-2xl font-semibold text-foreground mb-1">Date Summary</h2>
                 <p className="text-sm text-muted-foreground">Based on metadata signals found in {progress.current.toLocaleString()} files.</p>
               </div>
               <Button variant="outline" size="sm" disabled>View Detailed Report</Button>
@@ -1365,36 +1381,39 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <ConfidenceCard 
-                level="High" 
+                level="Confirmed" 
                 count={highConf} 
                 percentage={Math.round((highConf / (highConf + medConf + lowConf)) * 100) || 0}
-                description="Date confirmed from reliable photo metadata."
+                description="Date confirmed from embedded photo metadata."
                 color="text-emerald-600"
                 bgColor="bg-emerald-50"
                 borderColor="border-emerald-200"
-                icon={<CheckCircle2 className="w-5 h-5" />}
+                icon={<ShieldCheck className="w-5 h-5" />}
+                tooltip="Date taken from authoritative embedded metadata such as Google Takeout JSON timestamps, EXIF DateTimeOriginal, or XMP creation dates written by the camera or app at capture time."
                 isActive={false}
               />
               <ConfidenceCard 
-                level="Medium" 
+                level="Recovered" 
                 count={medConf} 
                 percentage={Math.round((medConf / (highConf + medConf + lowConf)) * 100) || 0}
-                description="Date estimated using available signals."
-                color="text-amber-600"
-                bgColor="bg-amber-50"
-                borderColor="border-amber-200"
-                icon={<AlertTriangle className="w-5 h-5" />}
+                description="Date recovered from structured filename patterns."
+                color="text-indigo-600"
+                bgColor="bg-indigo-50"
+                borderColor="border-indigo-200"
+                icon={<Sparkles className="w-5 h-5" />}
+                tooltip="Date inferred from recognised filename formats (e.g. WhatsApp, camera, or backup naming patterns). These follow consistent structures but are not embedded metadata."
                 isActive={false}
               />
               <ConfidenceCard 
-                level="Low" 
+                level="Marked" 
                 count={lowConf} 
                 percentage={Math.round((lowConf / (highConf + medConf + lowConf)) * 100) || 0}
-                description="No reliable date found — review recommended."
-                color="text-rose-600"
-                bgColor="bg-rose-50"
-                borderColor="border-rose-200"
-                icon={<AlertCircle className="w-5 h-5" />}
+                description="No reliable date found — file will be renamed using fallback rules."
+                color="text-slate-600"
+                bgColor="bg-slate-100"
+                borderColor="border-slate-200"
+                icon={<Tag className="w-5 h-5" />}
+                tooltip="No usable metadata or filename date was found. The file will still be safely renamed to avoid conflicts and marked for optional later review."
                 isActive={false}
               />
             </div>
@@ -1517,9 +1536,9 @@ function SourceChip({ icon, label, isActive, onClick }: { icon?: React.ReactNode
   );
 }
 
-function ConfidenceCard({ level, count, percentage, description, color, bgColor, borderColor, icon, isActive, onClick }: any) {
+function ConfidenceCard({ level, count, percentage, description, color, bgColor, borderColor, icon, isActive, onClick, tooltip }: any) {
   return (
-    <div onClick={onClick} className="relative group cursor-pointer outline-none">
+    <div onClick={onClick} className="relative group cursor-pointer outline-none h-full">
        {isActive && (
          <motion.div 
             layoutId="active-ring"
@@ -1529,20 +1548,36 @@ function ConfidenceCard({ level, count, percentage, description, color, bgColor,
             exit={{ opacity: 0 }}
          />
        )}
-      <Card className={`border ${borderColor} hover:border-opacity-100 transition-all duration-300 ${isActive ? 'bg-white shadow-md scale-[1.01]' : 'hover:scale-[1.01]'}`}>
+      <Card className={`border ${borderColor} hover:border-opacity-100 transition-all duration-300 h-full flex flex-col ${isActive ? 'bg-white shadow-md scale-[1.01]' : 'hover:scale-[1.01]'}`}>
         <div className="flex justify-between items-start mb-4">
           <div className={`p-2 rounded-lg ${bgColor} ${color}`}>
             {icon}
           </div>
-          <span className={`text-xs font-semibold uppercase tracking-wider ${color} bg-opacity-10 px-2 py-1 rounded-full ${bgColor}`}>
-            {level} Confidence
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-semibold uppercase tracking-wider ${color} bg-opacity-10 px-2 py-1 rounded-full ${bgColor}`}>
+              {level}
+            </span>
+            {tooltip && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="cursor-help opacity-40 hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                      <Info className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[250px] p-3 text-sm">
+                    <p>{tooltip}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
         </div>
         <div className="flex items-baseline gap-2 mb-2">
           <div className="text-4xl font-bold text-foreground">{count}</div>
           <div className="text-lg font-medium text-muted-foreground">({percentage}%)</div>
         </div>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p className="text-sm text-muted-foreground mt-auto">{description}</p>
       </Card>
     </div>
   );
