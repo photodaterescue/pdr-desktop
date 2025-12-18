@@ -659,7 +659,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         {/* DASHBOARD LINK */}
         <div>
           <SidebarItem 
-            icon={<img src="/Assets/pdr-dashboard.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
+            icon={<img src="/Assets/pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
             label="Workspace" 
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
