@@ -308,6 +308,7 @@ export default function Workspace() {
     if (!activeSource) return;
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
+    setIsComplete(false); // Reset analysis on source change
     if (updatedSources.length > 0) {
       updatedSources[0].active = true;
       setActiveSource(updatedSources[0]);
@@ -323,11 +324,13 @@ export default function Workspace() {
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
     setActiveSource(null);
+    setIsComplete(false); // Reset analysis on source change
     // Show source type selector to pick a new source
     setShowSourceTypeSelector(true);
   };
 
   const handleStartAnalysis = () => {
+    setIsComplete(false);
     setIsAnalysing(true);
   };
 
@@ -385,6 +388,7 @@ export default function Workspace() {
       
       setPreScanStats(stats);
       setShowPreScanConfirm(true);
+      setIsComplete(false); // Reset analysis on source change
       
       e.target.value = '';
     }
@@ -418,6 +422,7 @@ export default function Workspace() {
       
       setPreScanStats(stats);
       setShowPreScanConfirm(true);
+      setIsComplete(false); // Reset analysis on source change
       
       e.target.value = '';
     }
@@ -449,6 +454,12 @@ export default function Workspace() {
   };
 
   const handleAddToWorkspace = () => {
+    // Confirm the pending source
+    if (pendingSource) {
+      const updatedSources = sources.map(s => s.id === pendingSource.id ? { ...s, confirmed: true } : s);
+      setSources(updatedSources);
+    }
+    
     // Just close the modal, source is already added
     setShowPreScanConfirm(false);
     setPreScanStats(null);
@@ -522,6 +533,7 @@ export default function Workspace() {
           // Remove all selected sources
           const updatedSources = sources.filter(s => !s.selected);
           setSources(updatedSources);
+          setIsComplete(false); // Reset analysis on source change
           setActiveSource(null);
           // If no sources left, maybe redirect? Handled by MainContent if empty
         }}
