@@ -162,8 +162,6 @@ export default function Workspace() {
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
-  const [isAnalysing, setIsAnalysing] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 1248, currentFile: "" });
   const [isComplete, setIsComplete] = useState(false);
   const [showCompletionScreen, setShowCompletionScreen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
@@ -214,40 +212,27 @@ export default function Workspace() {
     }
   }, [searchString, sources, location, setLocation]);
 
+  // Auto-analyze when sources change
   useEffect(() => {
-    if (!isAnalysing || isComplete) return;
-
-    const fileNames = [
-      "IMG_2024_Vacation_01.jpg",
-      "DSC_9921.jpg",
-      "PHOTO_20180512.png",
-      "video_backup_001.mp4",
-      "Screenshot_20220301.png"
-    ];
-
-    const interval = setInterval(() => {
-      setAnalysisProgress(prev => {
-        const next = prev.current + 1;
-        const randomFile = fileNames[Math.floor(Math.random() * fileNames.length)];
-        
-        if (next >= prev.total) {
-          setAnalysisResults({
-            fixed: Math.floor(prev.total * 0.65),
-            unchanged: Math.floor(prev.total * 0.28),
-            skipped: Math.floor(prev.total * 0.07)
-          });
-          setIsComplete(true);
-          setShowCompletionScreen(true);
-          setIsAnalysing(false);
-          return prev;
-        }
-        
-        return { ...prev, current: next, currentFile: randomFile };
+    const selectedSources = sources.filter(s => s.selected);
+    
+    if (selectedSources.length > 0) {
+      const totalFiles = selectedSources.reduce((acc, s) => acc + (s.stats?.totalFiles || 0), 0);
+      const photoCount = selectedSources.reduce((acc, s) => acc + (s.stats?.photoCount || 0), 0);
+      
+      // Calculate results based on source stats immediately
+      // This mimics the logic that was previously in the fake analysis process
+      setAnalysisResults({
+         fixed: Math.floor(totalFiles * 0.65),
+         unchanged: Math.floor(totalFiles * 0.28),
+         skipped: Math.floor(totalFiles * 0.07)
       });
-    }, 50);
-
-    return () => clearInterval(interval);
-  }, [isAnalysing, isComplete]);
+      setIsComplete(true);
+    } else {
+      setIsComplete(false);
+      setAnalysisResults({ fixed: 0, unchanged: 0, skipped: 0 });
+    }
+  }, [sources]);
 
   const handleSourceClick = (id: string, shiftKey: boolean = false) => {
     let updatedSources = [...sources];
@@ -329,10 +314,6 @@ export default function Workspace() {
     setShowSourceTypeSelector(true);
   };
 
-  const handleStartAnalysis = () => {
-    setIsComplete(false);
-    setIsAnalysing(true);
-  };
 
   const handleAddSource = () => {
     setShowSourceTypeSelector(true);
@@ -526,7 +507,6 @@ export default function Workspace() {
         sources={sources} 
         onSourceClick={handleSourceClick} 
         onSelectAll={handleSelectAll}
-        isAnalysing={isAnalysing}
         isComplete={isComplete}
         onAddSource={handleAddSource}
         onRemoveSource={() => {
@@ -552,14 +532,10 @@ export default function Workspace() {
         <MainContent 
           sources={sources}
           activeSource={activeSource} 
-          onConfirm={handleConfirmSource}
           onRemove={handleRemoveSource}
           onChange={handleChangeSource}
-          isAnalysing={isAnalysing}
-          analysisProgress={analysisProgress}
           isComplete={isComplete}
           analysisResults={analysisResults}
-          onStartAnalysis={handleStartAnalysis}
           onAddAnother={handleAddAnother}
           onPreviewChanges={() => setShowPreviewModal(true)}
           onViewResults={() => setShowResultsModal(true)}
@@ -625,7 +601,7 @@ export default function Workspace() {
   );
 }
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isAnalysing: boolean, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -686,7 +662,6 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
             selectable={false}
-            disabled={isAnalysing}
           />
         </div>
 
@@ -694,13 +669,12 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         <div>
           <div className="flex items-center justify-between mb-3 px-2">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sources</h3>
-            {sources.length > 0 && !isAnalysing && (
+            {sources.length > 0 && (
               <div className="flex items-center gap-2">
                 <Checkbox 
                   id="select-all"
                   checked={allSelected ? true : someSelected ? "indeterminate" : false}
                   onCheckedChange={(checked) => onSelectAll(checked === true)}
-                  disabled={isAnalysing}
                   className="w-3.5 h-3.5 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                 />
                 <label 
@@ -722,7 +696,6 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
                 selected={source.selected}
                 selectable={true}
                 onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
-                disabled={isAnalysing}
               />
             ))}
           </div>
@@ -731,7 +704,6 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
               variant="outline" 
               size="sm"
               className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
-              disabled={isAnalysing}
               onClick={onAddSource}
             >
               <img src="/Assets/pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Source
@@ -740,7 +712,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
               variant="outline"
               size="sm" 
               className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
-              disabled={isAnalysing || !hasSelectedSources}
+              disabled={!hasSelectedSources}
               onClick={onRemoveSource}
             >
               <img src="/Assets/pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
@@ -749,35 +721,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         </div>
 
         {/* ANALYSIS SECTION */}
-        {(isAnalysing || sources.some(s => s.confirmed)) && (
+        {isComplete && (
         <div className="pt-2 border-t border-sidebar-border">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Analysis</h3>
-          
-          {isAnalysing ? (
-            <div className="mx-2 p-3 bg-secondary/50 rounded-xl border border-border">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-foreground">Scanning...</span>
-                <span className="text-xs font-medium text-primary">84%</span>
+           <div className="mx-2 p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+              <div className="flex items-center gap-2 mb-2 text-emerald-700">
+                <CheckCircle2 className="w-4 h-4" />
+                <span className="text-sm font-medium">Complete</span>
               </div>
-              <Progress value={84} className="h-1.5 bg-background mb-2" />
-              <p className="text-[10px] text-muted-foreground truncate">Processing DSC_9921.jpg</p>
-            </div>
-          ) : isComplete ? (
-             <div className="mx-2 p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
-                <div className="flex items-center gap-2 mb-2 text-emerald-700">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span className="text-sm font-medium">Complete</span>
-                </div>
-                <Progress value={100} className="h-1.5 bg-emerald-200 mb-2" />
-                <p className="text-[10px] text-emerald-600/80">Ready to review</p>
-             </div>
-          ) : (
-             <div className="px-3 py-3 bg-secondary/50 rounded-xl border border-border mx-2">
-                <div className="text-sm font-medium">Preview Mode</div>
-                <Progress value={0} className="h-1.5 bg-background mt-2" />
-                <p className="text-xs text-muted-foreground mt-2">Awaiting analysis...</p>
-             </div>
-          )}
+              <Progress value={100} className="h-1.5 bg-emerald-200 mb-2" />
+              <p className="text-[10px] text-emerald-600/80">Ready to review</p>
+           </div>
         </div>
         )}
 
@@ -785,17 +739,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isAnalysing, isComplete,
         <div className="pt-2 border-t border-sidebar-border">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Guidance</h3>
           <div className="space-y-1">
-            <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} disabled={isAnalysing} />
-            <SidebarItem icon={<img src="/Assets/pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} disabled={isAnalysing} />
-            <SidebarItem icon={<img src="/Assets/pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} disabled={isAnalysing} />
+            <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
+            <SidebarItem icon={<img src="/Assets/pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
+            <SidebarItem icon={<img src="/Assets/pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
           </div>
         </div>
       </div>
 
       {/* UTILITY SECTION - BOTTOM */}
       <div className="p-4 border-t border-sidebar-border space-y-1">
-        <SidebarItem icon={<img src="/Assets/pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" disabled={isAnalysing} />
-        <SidebarItem icon={<img src="/Assets/pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" disabled={isAnalysing} />
+        <SidebarItem icon={<img src="/Assets/pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" />
+        <SidebarItem icon={<img src="/Assets/pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" />
       </div>
     </div>
   );
@@ -837,14 +791,10 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
 function MainContent({ 
   sources,
   activeSource, 
-  onConfirm, 
   onRemove, 
   onChange,
-  isAnalysing,
-  analysisProgress,
   isComplete,
   analysisResults,
-  onStartAnalysis,
   onAddAnother,
   onPreviewChanges,
   onViewResults,
@@ -855,14 +805,10 @@ function MainContent({
 }: { 
   sources: Source[],
   activeSource: Source | null,
-  onConfirm: () => void,
   onRemove: () => void,
   onChange: () => void,
-  isAnalysing: boolean,
-  analysisProgress: AnalysisProgress,
   isComplete: boolean,
   analysisResults: AnalysisResults,
-  onStartAnalysis: () => void,
   onAddAnother: () => void,
   onPreviewChanges: () => void,
   onViewResults: () => void,
@@ -878,10 +824,6 @@ function MainContent({
 
   // NOTE: Previous CompletionState component logic is now merged into DashboardPanel
   // to keep the Workspace view active after analysis.
-
-  if (isAnalysing) {
-    return <AnalysingState progress={analysisProgress} />;
-  }
 
   if (isComplete && showCompletionScreen) {
     return (
@@ -902,7 +844,6 @@ function MainContent({
     <DashboardPanel 
       sources={sources}
       activeSource={activeSource} 
-      onConfirm={onStartAnalysis} // Direct to analysis from dashboard
       onRemove={onRemove}
       onChange={onChange}
       onAddFolder={onAddFolder}
@@ -914,7 +855,7 @@ function MainContent({
   );
 }
 
-function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults }: { sources: Source[], activeSource: Source | null, onConfirm: () => void, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void }) {
+function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults }: { sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void }) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected && s.confirmed);
   const hasSelection = selectedSources.length > 0;
@@ -963,18 +904,6 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC] relative">
-      {/* Success Banner */}
-      {isComplete && (
-        <motion.div 
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          className="bg-emerald-600 text-white px-8 py-3 flex items-center justify-center gap-2 shrink-0"
-        >
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="font-medium">Analysis complete</span>
-        </motion.div>
-      )}
-
       <div className="flex-1 flex flex-col items-center justify-start p-8 overflow-y-auto pb-24">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
@@ -1083,12 +1012,7 @@ function DashboardPanel({ sources, activeSource, onConfirm, onRemove, onChange, 
                  <img src="/Assets/pdr-zip.png" className="w-4 h-4 object-contain" alt="ZIP" /> Add ZIP Archive
                </Button>
              </div>
-             {/* Only show "Confirm & Analyze" if NOT complete */}
-             {!isComplete && (
-               <Button onClick={onConfirm} disabled={!hasSelection} className="px-8 shadow-lg shadow-primary/20">
-                 Confirm & Analyze <ChevronRight className="w-4 h-4 ml-2" />
-               </Button>
-             )}
+             {/* Only show "Analysis done" if complete */}
              {isComplete && (
                <div className="flex items-center text-emerald-600 gap-2 font-medium">
                   <CheckCircle2 className="w-5 h-5" /> Analysis done
