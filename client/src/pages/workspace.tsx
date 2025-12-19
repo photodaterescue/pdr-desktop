@@ -1161,8 +1161,14 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
               </div>
             </div>
             
-            <div className="flex items-center gap-8">
-              <div className="flex flex-col items-center gap-7 px-4 py-3 rounded-lg bg-muted/30">
+            <div className="flex items-center gap-6">
+              <div 
+                className={`flex flex-col items-center gap-6 px-5 py-3 rounded-full border transition-colors duration-150 ${
+                  includePhotos 
+                    ? 'border-emerald-300/60 bg-emerald-50/30 dark:border-emerald-600/40 dark:bg-emerald-900/20' 
+                    : 'border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10'
+                } focus-within:border-emerald-400/80 focus-within:bg-emerald-50/50 dark:focus-within:border-emerald-500/60 dark:focus-within:bg-emerald-900/30`}
+              >
                 <span className="text-xs font-medium text-muted-foreground">Photos</span>
                 <Checkbox 
                   checked={includePhotos} 
@@ -1171,7 +1177,13 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                   className="w-5 h-5"
                 />
               </div>
-              <div className="flex flex-col items-center gap-7 px-4 py-3 rounded-lg bg-muted/30">
+              <div 
+                className={`flex flex-col items-center gap-6 px-5 py-3 rounded-full border transition-colors duration-150 ${
+                  includeVideos 
+                    ? 'border-emerald-300/60 bg-emerald-50/30 dark:border-emerald-600/40 dark:bg-emerald-900/20' 
+                    : 'border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10'
+                } focus-within:border-emerald-400/80 focus-within:bg-emerald-50/50 dark:focus-within:border-emerald-500/60 dark:focus-within:bg-emerald-900/30`}
+              >
                 <span className="text-xs font-medium text-muted-foreground">Videos</span>
                 <Checkbox 
                   checked={includeVideos} 
