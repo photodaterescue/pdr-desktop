@@ -821,7 +821,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       <div className="px-6 py-8 flex items-center cursor-pointer" onClick={() => onDashboardClick()}>
-        <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain dark:invert" />
+        <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain" />
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
@@ -1420,7 +1420,7 @@ function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
               transition={{ delay: 0.1, type: "spring", stiffness: 80 }}
               className="mb-8"
             >
-              <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto dark:invert" />
+              <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto" />
             </motion.div>
             
             <h1 className="text-4xl font-semibold text-foreground mb-4">Your workspace is empty</h1>
