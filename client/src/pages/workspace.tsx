@@ -1054,7 +1054,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                  Preview Changes
                </Button>
                <Button onClick={() => setShowFixModal(true)} className="bg-primary hover:bg-primary/90 px-8 shadow-lg shadow-primary/20">
-                 <img src="/Assets/pdr-fix.png" className="w-4 h-4 mr-2 object-contain" alt="Fix" /> Run Rescue
+                 <img src="/Assets/pdr-fix.png" className="w-4 h-4 mr-2 object-contain" alt="Fix" /> Run Fix
                </Button>
              </div>
           </div>
