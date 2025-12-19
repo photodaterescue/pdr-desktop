@@ -1162,7 +1162,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
             </div>
             
             <div className="flex items-center gap-6">
-              <div className="flex flex-col items-center gap-1.5">
+              <div className="flex flex-col items-center gap-2.5">
                 <span className="text-xs font-medium text-muted-foreground">Photos</span>
                 <Checkbox 
                   checked={includePhotos} 
@@ -1171,7 +1171,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                   className="w-5 h-5"
                 />
               </div>
-              <div className="flex flex-col items-center gap-1.5">
+              <div className="flex flex-col items-center gap-2.5">
                 <span className="text-xs font-medium text-muted-foreground">Videos</span>
                 <Checkbox 
                   checked={includeVideos} 
