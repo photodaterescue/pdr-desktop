@@ -527,7 +527,7 @@ export default function Workspace() {
         }}
       />
       {activePanel ? (
-        <PanelPlaceholder panelType={activePanel} />
+        <PanelPlaceholder panelType={activePanel} onPreviewChanges={() => setShowPreviewModal(true)} />
       ) : (
         <MainContent 
           sources={sources}
@@ -719,15 +719,15 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             </Button>
           </div>
         </div>
+      </div>
 
-        {/* EDUCATION SECTION */}
-        <div className="pt-2 border-t border-sidebar-border">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Guidance</h3>
-          <div className="space-y-1">
-            <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
-            <SidebarItem icon={<img src="/Assets/pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
-            <SidebarItem icon={<img src="/Assets/pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
-          </div>
+      {/* EDUCATION SECTION */}
+      <div className="pt-2 border-t border-sidebar-border/0 pb-2">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-6">Guidance</h3>
+        <div className="space-y-1 px-4">
+          <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
+          <SidebarItem icon={<img src="/Assets/pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
+          <SidebarItem icon={<img src="/Assets/pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
         </div>
       </div>
 
@@ -905,11 +905,6 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
           <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-foreground">Date Summary</h2>
-              {isComplete && (
-                <Button variant="ghost" size="sm" onClick={onViewResults} className="text-primary hover:bg-primary/10">
-                  View Detailed Report
-                </Button>
-              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <ConfidenceCard 
@@ -1050,9 +1045,6 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                 <span className="text-foreground font-bold">{results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248}</span> files ready to process
              </div>
              <div className="flex items-center gap-4">
-               <Button variant="secondary" onClick={() => setShowPreviewModal(true)}>
-                 Preview Changes
-               </Button>
                <Button onClick={() => setShowFixModal(true)} className="bg-primary hover:bg-primary/90 px-8 shadow-lg shadow-primary/20">
                  <img src="/Assets/pdr-fix.png" className="w-4 h-4 mr-2 object-contain" alt="Fix" /> Run Fix
                </Button>
@@ -1152,7 +1144,6 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 <h2 className="text-2xl font-semibold text-foreground mb-1">Date Summary</h2>
                 <p className="text-sm text-muted-foreground">{stats.label}</p>
               </div>
-              <Button variant="outline" size="sm">View Detailed Report</Button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1782,7 +1773,7 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PanelPlaceholder({ panelType }: { panelType: string }) {
+function PanelPlaceholder({ panelType, onPreviewChanges }: { panelType: string, onPreviewChanges?: () => void }) {
   const content = {
     'getting-started': {
       title: 'Getting Started',
@@ -1806,9 +1797,16 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
         <div className="text-center max-w-sm">
           <h2 className="text-2xl font-semibold text-foreground mb-3">{panel.title}</h2>
           <p className="text-muted-foreground mb-6">{panel.description}</p>
-          <Card className="p-6 bg-secondary/20 border-primary/10">
-            <p className="text-sm text-muted-foreground">Content coming soon</p>
-          </Card>
+          
+          {panelType === 'what-next' ? (
+            <Button onClick={onPreviewChanges} className="w-full shadow-lg shadow-primary/20">
+              Preview Changes
+            </Button>
+          ) : (
+            <Card className="p-6 bg-secondary/20 border-primary/10">
+              <p className="text-sm text-muted-foreground">Content coming soon</p>
+            </Card>
+          )}
         </div>
       </div>
     </div>
