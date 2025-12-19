@@ -1046,8 +1046,8 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                 <span className="text-foreground font-bold">{(results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248).toLocaleString()}</span> files ready to process
              </div>
              <div className="flex items-center gap-4">
-               <Button onClick={() => setShowFixModal(true)} variant="outline" className="border-2 border-secondary-foreground/20 hover:border-secondary-foreground/50 text-secondary-foreground hover:bg-secondary/50 px-8 shadow-sm">
-                 <Wrench className="w-4 h-4 mr-2" /> Run Fix
+               <Button onClick={() => setShowFixModal(true)} variant="outline" className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold h-11">
+                 <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" /> Run Fix
                </Button>
              </div>
           </div>
