@@ -26,7 +26,8 @@ import {
   Info,
   Sparkles,
   Tag,
-  ShieldCheck
+  ShieldCheck,
+  Wrench
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -973,24 +974,24 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Sources</div>
-              <div className="text-2xl font-semibold text-foreground">{stats.sourceCount}</div>
+              <div className="text-sm text-muted-foreground mb-1 text-primary">Sources</div>
+              <div className="text-2xl font-semibold text-primary">{stats.sourceCount.toLocaleString()}</div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Total Photos</div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-emerald-600">
+              <div className="text-sm text-muted-foreground mb-1 text-primary">Total Photos</div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-primary">
                 <FileImage className="w-4 h-4" /> {stats.photos.toLocaleString()}
               </div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Total Videos</div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-blue-600">
+              <div className="text-sm text-muted-foreground mb-1 text-primary">Total Videos</div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-primary">
                 <FileVideo className="w-4 h-4" /> {stats.videos.toLocaleString()}
               </div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Total Size</div>
-              <div className="text-2xl font-semibold text-foreground">{stats.sizeGB.toFixed(1)} GB</div>
+              <div className="text-sm text-muted-foreground mb-1 text-primary">Total Size</div>
+              <div className="text-2xl font-semibold text-primary">{stats.sizeGB.toFixed(1)} GB</div>
             </div>
           </div>
 
@@ -1042,11 +1043,11 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
         >
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
-                <span className="text-foreground font-bold">{results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248}</span> files ready to process
+                <span className="text-foreground font-bold">{(results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248).toLocaleString()}</span> files ready to process
              </div>
              <div className="flex items-center gap-4">
-               <Button onClick={() => setShowFixModal(true)} className="bg-primary hover:bg-primary/90 px-8 shadow-lg shadow-primary/20">
-                 <img src="/Assets/pdr-fix.png" className="w-4 h-4 mr-2 object-contain" alt="Fix" /> Run Fix
+               <Button onClick={() => setShowFixModal(true)} variant="outline" className="border-primary text-primary hover:bg-primary/10 px-8 shadow-lg shadow-primary/20">
+                 <Wrench className="w-4 h-4 mr-2" /> Run Fix
                </Button>
              </div>
           </div>
@@ -1219,7 +1220,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
       <div className="h-20 bg-background border-t border-border flex items-center justify-between px-8 shrink-0 z-10 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
         <div className="flex items-center gap-4">
            <div className="text-sm text-muted-foreground">
-             <span className="font-medium text-foreground">{stats.totalFiles}</span> files ready to process
+             <span className="font-medium text-foreground">{stats.totalFiles.toLocaleString()}</span> files ready to process
            </div>
         </div>
         <div className="flex items-center gap-4">
