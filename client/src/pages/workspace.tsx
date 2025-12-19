@@ -41,6 +41,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
+import { 
+  isElectron, 
+  openFolderDialog, 
+  openZipDialog, 
+  runAnalysis, 
+  onAnalysisProgress, 
+  removeAnalysisProgressListener,
+  formatBytesToGB 
+} from "@/lib/electron-bridge";
+import type { SourceAnalysisResult } from "../electron";
 
 interface Source {
   id: string;
@@ -172,6 +182,9 @@ export default function Workspace() {
   const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
   const [preScanStats, setPreScanStats] = useState<PreScanStats | null>(null);
   const [pendingSource, setPendingSource] = useState<Source | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 0, currentFile: '' });
+  const [sourceAnalysisResults, setSourceAnalysisResults] = useState<Record<string, SourceAnalysisResult>>({});
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -218,22 +231,35 @@ export default function Workspace() {
     const selectedSources = sources.filter(s => s.selected);
     
     if (selectedSources.length > 0) {
-      const totalFiles = selectedSources.reduce((acc, s) => acc + (s.stats?.totalFiles || 0), 0);
-      const photoCount = selectedSources.reduce((acc, s) => acc + (s.stats?.photoCount || 0), 0);
+      let confirmed = 0;
+      let recovered = 0;
+      let marked = 0;
       
-      // Calculate results based on source stats immediately
-      // This mimics the logic that was previously in the fake analysis process
+      for (const source of selectedSources) {
+        const realResult = sourceAnalysisResults[source.id];
+        if (realResult) {
+          confirmed += realResult.confidenceSummary.confirmed;
+          recovered += realResult.confidenceSummary.recovered;
+          marked += realResult.confidenceSummary.marked;
+        } else if (source.stats) {
+          const total = source.stats.totalFiles;
+          confirmed += Math.floor(total * 0.65);
+          recovered += Math.floor(total * 0.28);
+          marked += Math.floor(total * 0.07);
+        }
+      }
+      
       setAnalysisResults({
-         fixed: Math.floor(totalFiles * 0.65),
-         unchanged: Math.floor(totalFiles * 0.28),
-         skipped: Math.floor(totalFiles * 0.07)
+         fixed: confirmed + recovered,
+         unchanged: marked,
+         skipped: 0
       });
       setIsComplete(true);
     } else {
       setIsComplete(false);
       setAnalysisResults({ fixed: 0, unchanged: 0, skipped: 0 });
     }
-  }, [sources]);
+  }, [sources, sourceAnalysisResults]);
 
   const handleSourceClick = (id: string, shiftKey: boolean = false) => {
     let updatedSources = [...sources];
@@ -320,16 +346,102 @@ export default function Workspace() {
     setShowSourceTypeSelector(true);
   };
 
-  const handleSelectSourceType = (type: 'folderOrDrive' | 'zip') => {
+  const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
     setShowSourceTypeSelector(false);
-    // Trigger file picker immediately after closing modal
-    setTimeout(() => {
+    
+    if (isElectron()) {
+      let selectedPath: string | null = null;
+      
       if (type === 'folderOrDrive') {
-        folderOrDriveInputRef.current?.click();
+        selectedPath = await openFolderDialog();
       } else if (type === 'zip') {
-        zipInputRef.current?.click();
+        selectedPath = await openZipDialog();
       }
-    }, 0);
+      
+      if (selectedPath) {
+        await handleElectronSourceSelected(selectedPath, type === 'zip' ? 'zip' : 'folder');
+      }
+    } else {
+      setTimeout(() => {
+        if (type === 'folderOrDrive') {
+          folderOrDriveInputRef.current?.click();
+        } else if (type === 'zip') {
+          zipInputRef.current?.click();
+        }
+      }, 0);
+    }
+  };
+  
+  const handleElectronSourceSelected = async (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') => {
+    const pathParts = sourcePath.split(/[/\\]/);
+    const name = pathParts[pathParts.length - 1] || "Selected Source";
+    const inferredType = inferSourceType(sourcePath);
+    const finalType = sourceType === 'zip' ? 'zip' : inferredType;
+    
+    const icon = finalType === 'zip' 
+      ? <FileArchive className="w-4 h-4" /> 
+      : finalType === 'drive' 
+        ? <HardDrive className="w-4 h-4" /> 
+        : <Folder className="w-4 h-4" />;
+    
+    setIsAnalyzing(true);
+    setAnalysisProgress({ current: 0, total: 0, currentFile: 'Starting analysis...' });
+    
+    onAnalysisProgress((progress) => {
+      setAnalysisProgress({
+        current: progress.current,
+        total: progress.total,
+        currentFile: progress.currentFile
+      });
+    });
+    
+    const result = await runAnalysis(sourcePath, finalType);
+    
+    removeAnalysisProgressListener();
+    setIsAnalyzing(false);
+    
+    if (result.success && result.data) {
+      const analysisData = result.data;
+      const stats: PreScanStats = {
+        totalFiles: analysisData.totalFiles,
+        photoCount: analysisData.photoCount,
+        videoCount: analysisData.videoCount,
+        estimatedSizeGB: formatBytesToGB(analysisData.totalSizeBytes),
+        dateRange: {
+          earliest: analysisData.dateRange.earliest 
+            ? new Date(analysisData.dateRange.earliest).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+            : 'Unknown',
+          latest: analysisData.dateRange.latest
+            ? new Date(analysisData.dateRange.latest).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+            : 'Unknown'
+        }
+      };
+      
+      const newSource: Source = {
+        id: Date.now().toString(),
+        icon,
+        label: name,
+        type: finalType,
+        path: sourcePath,
+        active: true,
+        selected: true,
+        confirmed: false,
+        stats
+      };
+      
+      setSourceAnalysisResults(prev => ({ ...prev, [newSource.id]: analysisData }));
+      
+      const updatedSources = sources.map(s => ({ ...s, active: false }));
+      setSources([...updatedSources, newSource]);
+      setActiveSource(newSource);
+      setPendingSource(newSource);
+      setPreScanStats(stats);
+      setShowPreScanConfirm(true);
+      
+      toast.success(`Analyzed ${analysisData.totalFiles.toLocaleString()} files`);
+    } else {
+      toast.error(result.error || 'Failed to analyze source');
+    }
   };
 
   const inferSourceType = (path: string): 'folder' | 'drive' => {

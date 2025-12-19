@@ -108,9 +108,17 @@ function isMediaFile(filename: string): 'photo' | 'video' | null {
   return null;
 }
 
-function extractExifDate(filePath: string): Date | null {
+function extractExifDateFromPath(filePath: string): Date | null {
   try {
     const buffer = fs.readFileSync(filePath);
+    return extractExifDateFromBuffer(buffer);
+  } catch (error) {
+  }
+  return null;
+}
+
+function extractExifDateFromBuffer(buffer: Buffer): Date | null {
+  try {
     const parser = exifParser.create(buffer);
     const result = parser.parse();
     
@@ -160,7 +168,7 @@ function formatDateForFilename(date: Date): string {
   return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
 }
 
-async function analyzeFile(filePath: string, filename: string, sizeBytes: number): Promise<FileAnalysisResult | null> {
+async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes: number): Promise<FileAnalysisResult | null> {
   const mediaType = isMediaFile(filename);
   if (!mediaType) return null;
 
@@ -169,7 +177,7 @@ async function analyzeFile(filePath: string, filename: string, sizeBytes: number
   let dateSource = '';
   let dateConfidence: 'confirmed' | 'recovered' | 'marked' = 'marked';
 
-  const exifDate = extractExifDate(filePath);
+  const exifDate = extractExifDateFromPath(filePath);
   if (exifDate) {
     derivedDate = exifDate;
     dateSource = 'EXIF DateTimeOriginal';
@@ -200,6 +208,61 @@ async function analyzeFile(filePath: string, filename: string, sizeBytes: number
 
   return {
     path: filePath,
+    filename,
+    extension,
+    type: mediaType,
+    sizeBytes,
+    dateConfidence,
+    dateSource,
+    derivedDate: derivedDate?.toISOString() || null,
+    originalDate: null,
+    suggestedFilename,
+  };
+}
+
+async function analyzeFileFromBuffer(
+  entryPath: string, 
+  filename: string, 
+  sizeBytes: number, 
+  buffer: Buffer,
+  entryTime: Date | null
+): Promise<FileAnalysisResult | null> {
+  const mediaType = isMediaFile(filename);
+  if (!mediaType) return null;
+
+  const extension = path.extname(filename).toLowerCase();
+  let derivedDate: Date | null = null;
+  let dateSource = '';
+  let dateConfidence: 'confirmed' | 'recovered' | 'marked' = 'marked';
+
+  const exifDate = extractExifDateFromBuffer(buffer);
+  if (exifDate) {
+    derivedDate = exifDate;
+    dateSource = 'EXIF DateTimeOriginal';
+    dateConfidence = 'confirmed';
+  }
+
+  if (!derivedDate) {
+    const filenameResult = extractDateFromFilename(filename);
+    if (filenameResult.date) {
+      derivedDate = filenameResult.date;
+      dateSource = filenameResult.source;
+      dateConfidence = 'recovered';
+    }
+  }
+
+  if (!derivedDate && entryTime) {
+    derivedDate = entryTime;
+    dateSource = 'ZIP entry modification time (fallback)';
+    dateConfidence = 'marked';
+  }
+
+  const suggestedFilename = derivedDate 
+    ? `${formatDateForFilename(derivedDate)}${extension}`
+    : null;
+
+  return {
+    path: entryPath,
     filename,
     extension,
     type: mediaType,
@@ -244,8 +307,16 @@ function scanDirectory(dirPath: string): Array<{ path: string; filename: string;
   return results;
 }
 
-function scanZipFile(zipPath: string): Array<{ path: string; filename: string; size: number }> {
-  const results: Array<{ path: string; filename: string; size: number }> = [];
+interface ZipEntry {
+  path: string;
+  filename: string;
+  size: number;
+  buffer: Buffer;
+  time: Date | null;
+}
+
+function scanZipFile(zipPath: string): ZipEntry[] {
+  const results: ZipEntry[] = [];
   
   try {
     const zip = new AdmZip(zipPath);
@@ -256,10 +327,13 @@ function scanZipFile(zipPath: string): Array<{ path: string; filename: string; s
         const filename = path.basename(entry.entryName);
         const mediaType = isMediaFile(filename);
         if (mediaType) {
+          const time = entry.header.time ? new Date(entry.header.time) : null;
           results.push({
             path: entry.entryName,
             filename,
             size: entry.header.size,
+            buffer: entry.getData(),
+            time,
           });
         }
       }
@@ -284,15 +358,6 @@ export async function analyzeSource(
     phase: 'scanning'
   });
 
-  let fileList: Array<{ path: string; filename: string; size: number }>;
-  
-  if (sourceType === 'zip') {
-    fileList = scanZipFile(sourcePath);
-  } else {
-    fileList = scanDirectory(sourcePath);
-  }
-
-  const totalFiles = fileList.length;
   const analyzedFiles: FileAnalysisResult[] = [];
   let photoCount = 0;
   let videoCount = 0;
@@ -301,40 +366,83 @@ export async function analyzeSource(
   let latestDate: Date | null = null;
   const confidenceCounts = { confirmed: 0, recovered: 0, marked: 0 };
 
-  for (let i = 0; i < fileList.length; i++) {
-    const file = fileList[i];
-    
-    onProgress?.({
-      current: i + 1,
-      total: totalFiles,
-      currentFile: file.filename,
-      phase: 'analyzing'
-    });
+  if (sourceType === 'zip') {
+    const zipEntries = scanZipFile(sourcePath);
+    const totalFiles = zipEntries.length;
 
-    const result = await analyzeFile(file.path, file.filename, file.size);
-    if (result) {
-      analyzedFiles.push(result);
-      totalSizeBytes += result.sizeBytes;
+    for (let i = 0; i < zipEntries.length; i++) {
+      const entry = zipEntries[i];
       
-      if (result.type === 'photo') photoCount++;
-      else if (result.type === 'video') videoCount++;
-      
-      confidenceCounts[result.dateConfidence]++;
-      
-      if (result.derivedDate) {
-        const date = new Date(result.derivedDate);
-        if (!earliestDate || date < earliestDate) earliestDate = date;
-        if (!latestDate || date > latestDate) latestDate = date;
+      onProgress?.({
+        current: i + 1,
+        total: totalFiles,
+        currentFile: entry.filename,
+        phase: 'analyzing'
+      });
+
+      const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, entry.buffer, entry.time);
+      if (result) {
+        analyzedFiles.push(result);
+        totalSizeBytes += result.sizeBytes;
+        
+        if (result.type === 'photo') photoCount++;
+        else if (result.type === 'video') videoCount++;
+        
+        confidenceCounts[result.dateConfidence]++;
+        
+        if (result.derivedDate) {
+          const date = new Date(result.derivedDate);
+          if (!earliestDate || date < earliestDate) earliestDate = date;
+          if (!latestDate || date > latestDate) latestDate = date;
+        }
       }
     }
-  }
 
-  onProgress?.({
-    current: totalFiles,
-    total: totalFiles,
-    currentFile: 'Complete',
-    phase: 'complete'
-  });
+    onProgress?.({
+      current: totalFiles,
+      total: totalFiles,
+      currentFile: 'Complete',
+      phase: 'complete'
+    });
+  } else {
+    const fileList = scanDirectory(sourcePath);
+    const totalFiles = fileList.length;
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      
+      onProgress?.({
+        current: i + 1,
+        total: totalFiles,
+        currentFile: file.filename,
+        phase: 'analyzing'
+      });
+
+      const result = await analyzeFileFromPath(file.path, file.filename, file.size);
+      if (result) {
+        analyzedFiles.push(result);
+        totalSizeBytes += result.sizeBytes;
+        
+        if (result.type === 'photo') photoCount++;
+        else if (result.type === 'video') videoCount++;
+        
+        confidenceCounts[result.dateConfidence]++;
+        
+        if (result.derivedDate) {
+          const date = new Date(result.derivedDate);
+          if (!earliestDate || date < earliestDate) earliestDate = date;
+          if (!latestDate || date > latestDate) latestDate = date;
+        }
+      }
+    }
+
+    onProgress?.({
+      current: totalFiles,
+      total: totalFiles,
+      currentFile: 'Complete',
+      phase: 'complete'
+    });
+  }
 
   return {
     sourcePath,
