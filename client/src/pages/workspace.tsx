@@ -50,6 +50,7 @@ import {
   removeAnalysisProgressListener,
   formatBytesToGB 
 } from "@/lib/electron-bridge";
+import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import type { SourceAnalysisResult } from "../electron";
 
 interface Source {
@@ -185,6 +186,7 @@ export default function Workspace() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 0, currentFile: '' });
   const [sourceAnalysisResults, setSourceAnalysisResults] = useState<Record<string, SourceAnalysisResult>>({});
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -660,6 +662,12 @@ export default function Workspace() {
       )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
+      {showLicenseModal && <LicenseModal onClose={() => setShowLicenseModal(false)} />}
+      
+      {/* Fixed license badge in top-right corner */}
+      <div className="fixed top-4 right-4 z-40">
+        <LicenseStatusBadge onClick={() => setShowLicenseModal(true)} />
+      </div>
       
       {showPreScanConfirm && pendingSource && preScanStats && (
         <SourceAddedModal 
