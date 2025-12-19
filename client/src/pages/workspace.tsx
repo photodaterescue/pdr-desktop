@@ -658,7 +658,7 @@ export default function Workspace() {
           onDismissCompletion={() => setShowCompletionScreen(false)}
         />
       )}
-      {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} />}
+      {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       
       {showPreScanConfirm && pendingSource && preScanStats && (
@@ -1619,16 +1619,65 @@ function ConfidenceCard({ level, count, percentage, description, color, bgColor,
   );
 }
 
-function PreviewModal({ onClose, results }: { onClose: () => void, results?: AnalysisResults }) {
-  const mockChanges = [
-    { original: "IMG_2024_Vacation_01.jpg", new: "2024-01-15_14-30-22_Vacation.jpg", type: "rename" },
-    { original: "DSC_9921.jpg", new: "2023-08-12_09-15-00.jpg", type: "rename" },
-    { original: "PHOTO_20180512.png", new: "2018-05-12_11-20-15.png", type: "rename" },
-    { original: "video_backup_001.mp4", new: "2020-06-10_16-45-30.mp4", type: "rename" },
-    { original: "Screenshot_20220301.png", new: "2022-03-01_10-00-00.png", type: "rename" },
-    { original: "IMG_9999.JPG", new: "IMG_9999.JPG", type: "unchanged" },
-    { original: "System_File.dat", new: "System_File.dat", type: "skipped" },
+function PreviewModal({ onClose, results, fileResults }: { 
+  onClose: () => void, 
+  results?: AnalysisResults,
+  fileResults?: Record<string, SourceAnalysisResult>
+}) {
+  const [filterConfidence, setFilterConfidence] = useState<'all' | 'confirmed' | 'recovered' | 'marked'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const mockFileData = [
+    { filename: "IMG_20240115_143022.jpg", suggestedFilename: "2024-01-15_14-30-22.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 2500000, derivedDate: "2024-01-15T14:30:22.000Z", originalDate: null },
+    { filename: "DSC_9921.jpg", suggestedFilename: "2023-08-12_09-15-00.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 3200000, derivedDate: "2023-08-12T09:15:00.000Z", originalDate: null },
+    { filename: "IMG-20180512-WA0042.jpg", suggestedFilename: "2018-05-12_12-00-00_WA_FN.jpg", dateConfidence: "recovered" as const, dateSource: "WhatsApp filename", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 1800000, derivedDate: "2018-05-12T12:00:00.000Z", originalDate: null },
+    { filename: "VID_20200610_164530.mp4", suggestedFilename: "2020-06-10_16-45-30.mp4", dateConfidence: "recovered" as const, dateSource: "Filename (VID datetime)", path: "", extension: ".mp4", type: "video" as const, sizeBytes: 45000000, derivedDate: "2020-06-10T16:45:30.000Z", originalDate: null },
+    { filename: "Screenshot_2022-03-01_10-00-00.png", suggestedFilename: "2022-03-01_10-00-00_FN.png", dateConfidence: "recovered" as const, dateSource: "Filename (Screenshot)", path: "", extension: ".png", type: "photo" as const, sizeBytes: 850000, derivedDate: "2022-03-01T10:00:00.000Z", originalDate: null },
+    { filename: "vacation_photo.jpg", suggestedFilename: "2024-12-19_08-30-15.jpg", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 2100000, derivedDate: "2024-12-19T08:30:15.000Z", originalDate: null },
+    { filename: "birthday_party.mp4", suggestedFilename: "2023-06-22_19-45-00.mp4", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)", path: "", extension: ".mp4", type: "video" as const, sizeBytes: 120000000, derivedDate: "2023-06-22T19:45:00.000Z", originalDate: null },
+    { filename: "photo_2021_summer.jpg", suggestedFilename: "2021-07-15_12-00-00_FN.jpg", dateConfidence: "recovered" as const, dateSource: "Filename (date with separators)", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 1950000, derivedDate: "2021-07-15T12:00:00.000Z", originalDate: null },
+    { filename: "IMG_1234.HEIC", suggestedFilename: "2022-11-28_14-22-33.heic", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal", path: "", extension: ".heic", type: "photo" as const, sizeBytes: 4200000, derivedDate: "2022-11-28T14:22:33.000Z", originalDate: null },
+    { filename: "sunset_beach.jpg", suggestedFilename: "2024-08-05_18-45-00.jpg", dateConfidence: "confirmed" as const, dateSource: "Google Takeout JSON", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 3800000, derivedDate: "2024-08-05T18:45:00.000Z", originalDate: null },
   ];
+  
+  const realFiles = Object.values(fileResults || {}).flatMap(source => source.files || []);
+  const allFiles = realFiles.length > 0 ? realFiles : mockFileData;
+  
+  const filteredFiles = allFiles.filter(file => {
+    const matchesConfidence = filterConfidence === 'all' || file.dateConfidence === filterConfidence;
+    const matchesSearch = searchTerm === '' || 
+      file.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (file.suggestedFilename?.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesConfidence && matchesSearch;
+  });
+
+  const confidenceCounts = {
+    confirmed: allFiles.filter(f => f.dateConfidence === 'confirmed').length,
+    recovered: allFiles.filter(f => f.dateConfidence === 'recovered').length,
+    marked: allFiles.filter(f => f.dateConfidence === 'marked').length,
+  };
+
+  const getConfidenceBadge = (confidence: string) => {
+    switch (confidence) {
+      case 'confirmed':
+        return <span className="ml-2 text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Confirmed</span>;
+      case 'recovered':
+        return <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Recovered</span>;
+      case 'marked':
+        return <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Fallback</span>;
+      default:
+        return null;
+    }
+  };
+
+  const getConfidenceColor = (confidence: string) => {
+    switch (confidence) {
+      case 'confirmed': return 'text-emerald-600';
+      case 'recovered': return 'text-blue-600';
+      case 'marked': return 'text-amber-600';
+      default: return 'text-muted-foreground';
+    }
+  };
 
   return (
     <motion.div 
@@ -1643,87 +1692,152 @@ function PreviewModal({ onClose, results }: { onClose: () => void, results?: Ana
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-0 flex flex-col"
+        className="bg-background rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col"
       >
-        <div className="p-6 border-b border-border flex items-center justify-between bg-background sticky top-0 z-10">
+        <div className="p-6 border-b border-border flex items-center justify-between bg-background">
           <div>
             <h2 className="text-xl font-semibold text-foreground">Preview Changes</h2>
-            <p className="text-sm text-muted-foreground">Review the plan before applying changes</p>
+            <p className="text-sm text-muted-foreground">
+              {allFiles.length.toLocaleString()} files analyzed - Review proposed renames before applying
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors">
             <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
         
-        <div className="p-6 space-y-8">
-          {/* Stats Grid */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-              <div className="text-sm font-medium text-emerald-900 mb-1">To Rename</div>
-              <div className="text-2xl font-bold text-emerald-600">{results?.fixed || 0}</div>
-            </div>
-            <div className="p-4 bg-secondary rounded-xl border border-border">
-              <div className="text-sm font-medium text-foreground mb-1">Unchanged</div>
-              <div className="text-2xl font-bold text-foreground">{results?.unchanged || 0}</div>
-            </div>
-            <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
-              <div className="text-sm font-medium text-amber-900 mb-1">Skipped</div>
-              <div className="text-2xl font-bold text-amber-600">{results?.skipped || 0}</div>
-            </div>
+        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+          {/* Confidence Filter Tabs */}
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setFilterConfidence('all')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'all' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-secondary text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              All ({allFiles.length.toLocaleString()})
+            </button>
+            <button
+              onClick={() => setFilterConfidence('confirmed')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'confirmed' 
+                  ? 'bg-emerald-600 text-white' 
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              Confirmed ({confidenceCounts.confirmed.toLocaleString()})
+            </button>
+            <button
+              onClick={() => setFilterConfidence('recovered')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'recovered' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+              }`}
+            >
+              Recovered ({confidenceCounts.recovered.toLocaleString()})
+            </button>
+            <button
+              onClick={() => setFilterConfidence('marked')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'marked' 
+                  ? 'bg-amber-600 text-white' 
+                  : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+              }`}
+            >
+              Fallback ({confidenceCounts.marked.toLocaleString()})
+            </button>
           </div>
 
-          {/* Rename Patterns */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">Rename Patterns</h3>
-            <div className="p-4 bg-secondary/30 rounded-lg border border-border space-y-2">
-               <div className="flex items-center justify-between text-sm">
-                 <div className="flex items-center gap-2">
-                   <code className="px-2 py-1 bg-background rounded border border-border">IMG_YYYY.jpg</code>
-                   <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                   <code className="px-2 py-1 bg-background rounded border border-border">YYYY-MM-DD_HH-mm-ss.jpg</code>
-                 </div>
-                 <span className="text-muted-foreground">~800 files</span>
-               </div>
-               <div className="flex items-center justify-between text-sm">
-                 <div className="flex items-center gap-2">
-                   <code className="px-2 py-1 bg-background rounded border border-border">DSC_####.jpg</code>
-                   <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                   <code className="px-2 py-1 bg-background rounded border border-border">YYYY-MM-DD_HH-mm-ss.jpg</code>
-                 </div>
-                 <span className="text-muted-foreground">~400 files</span>
-               </div>
-            </div>
+          {/* Search */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search filenames..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+              data-testid="input-search-files"
+            />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          {/* File List Sample */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">Sample Changes</h3>
-            <div className="border border-border rounded-xl overflow-hidden">
-              <div className="grid grid-cols-[1fr,auto,1fr] gap-4 p-3 bg-secondary/50 text-xs font-medium text-muted-foreground border-b border-border">
-                <div>Original Filename</div>
-                <div></div>
-                <div>New Filename</div>
-              </div>
-              <div className="divide-y divide-border">
-                {mockChanges.map((change, i) => (
-                  <div key={i} className="grid grid-cols-[1fr,auto,1fr] gap-4 p-3 text-sm hover:bg-secondary/20 transition-colors items-center">
-                    <div className="font-mono text-muted-foreground truncate">{change.original}</div>
-                    <ArrowRight className={`w-4 h-4 ${change.type === 'rename' ? 'text-emerald-500' : 'text-muted-foreground/30'}`} />
-                    <div className={`font-mono truncate ${
-                      change.type === 'rename' ? 'text-emerald-600 font-medium' : 
-                      change.type === 'skipped' ? 'text-amber-600' : 'text-muted-foreground'
-                    }`}>
-                      {change.new}
-                      {change.type === 'skipped' && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Skipped</span>}
+          {/* File List */}
+          <div className="border border-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-[1fr,auto,1fr,auto] gap-4 p-3 bg-secondary/50 text-xs font-medium text-muted-foreground border-b border-border">
+              <div>Original Filename</div>
+              <div></div>
+              <div>Proposed Filename</div>
+              <div>Confidence</div>
+            </div>
+            <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+              {filteredFiles.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  {allFiles.length === 0 
+                    ? "No files analyzed yet. Add a source and run analysis."
+                    : "No files match the current filter."}
+                </div>
+              ) : (
+                filteredFiles.slice(0, 100).map((file, i) => {
+                  const willRename = file.suggestedFilename && file.suggestedFilename !== file.filename;
+                  return (
+                    <div 
+                      key={i} 
+                      className="grid grid-cols-[1fr,auto,1fr,auto] gap-4 p-3 text-sm hover:bg-secondary/20 transition-colors items-center"
+                      data-testid={`row-file-${i}`}
+                    >
+                      <div className="font-mono text-muted-foreground truncate text-xs" title={file.filename}>
+                        {file.filename}
+                      </div>
+                      <ArrowRight className={`w-4 h-4 flex-shrink-0 ${willRename ? 'text-emerald-500' : 'text-muted-foreground/30'}`} />
+                      <div 
+                        className={`font-mono truncate text-xs ${willRename ? getConfidenceColor(file.dateConfidence) + ' font-medium' : 'text-muted-foreground'}`}
+                        title={file.suggestedFilename || file.filename}
+                      >
+                        {file.suggestedFilename || file.filename}
+                      </div>
+                      <div className="flex-shrink-0">
+                        {getConfidenceBadge(file.dateConfidence)}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  );
+                })
+              )}
+              {filteredFiles.length > 100 && (
+                <div className="p-3 text-center text-sm text-muted-foreground bg-secondary/30">
+                  Showing first 100 of {filteredFiles.length.toLocaleString()} files
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+              <span><strong>Confirmed:</strong> Date from EXIF, XMP, or Google Takeout</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+              <span><strong>Recovered:</strong> Date extracted from filename pattern</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+              <span><strong>Fallback:</strong> Using file modification time</span>
             </div>
           </div>
         </div>
 
-        <div className="p-6 border-t border-border bg-background sticky bottom-0">
+        <div className="p-6 border-t border-border bg-background">
           <Button onClick={onClose} className="w-full" size="lg">Close Preview</Button>
         </div>
       </motion.div>
