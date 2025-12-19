@@ -2110,10 +2110,11 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
   if (panelType === 'what-next') {
     return (
       <div className="flex flex-col h-full overflow-y-auto">
-        <div className="p-8 w-full">
-          <h2 className="text-2xl font-semibold text-foreground mb-6">What Happens Next</h2>
+        <div className="px-8 py-12 w-full flex justify-center">
+          <div className="max-w-2xl w-full">
+            <h2 className="text-2xl font-semibold text-foreground mb-10">What Happens Next</h2>
           
-          <div className="space-y-8">
+            <div className="space-y-12" style={{ lineHeight: '1.7' }}>
             <section>
               <div className="flex items-start gap-3 mb-3">
                 <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">1</div>
@@ -2180,6 +2181,7 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
                 <p>When finished, you'll be able to review exactly what changed.</p>
               </div>
             </section>
+            </div>
           </div>
         </div>
       </div>
