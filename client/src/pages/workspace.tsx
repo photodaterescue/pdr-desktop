@@ -720,21 +720,6 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           </div>
         </div>
 
-        {/* ANALYSIS SECTION */}
-        {isComplete && (
-        <div className="pt-2 border-t border-sidebar-border">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Analysis</h3>
-           <div className="mx-2 p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
-              <div className="flex items-center gap-2 mb-2 text-emerald-700">
-                <CheckCircle2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Complete</span>
-              </div>
-              <Progress value={100} className="h-1.5 bg-emerald-200 mb-2" />
-              <p className="text-[10px] text-emerald-600/80">Ready to review</p>
-           </div>
-        </div>
-        )}
-
         {/* EDUCATION SECTION */}
         <div className="pt-2 border-t border-sidebar-border">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2">Guidance</h3>
@@ -973,7 +958,18 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
               <img src="/Assets/pdr-combined-analysis.png" className="w-8 h-8 object-contain" alt="Combined Analysis" />
             </div>
             <div>
-              <h3 className="text-xl font-medium text-foreground mb-1">{stats.label}</h3>
+              <div className="flex items-center gap-3 mb-1">
+                <h3 className="text-xl font-medium text-foreground">{stats.label}</h3>
+                {isComplete && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/50 text-emerald-700 border border-emerald-200/50">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="text-xs font-medium">Analysis Ready</span>
+                  </div>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
                 {stats.path}
               </p>
