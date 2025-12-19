@@ -975,23 +975,23 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Sources</div>
-              <div className="text-2xl font-semibold text-primary">{stats.sourceCount.toLocaleString()}</div>
+              <div className="text-2xl font-semibold text-secondary-foreground">{stats.sourceCount.toLocaleString()}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Total Photos</div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-primary">
+              <div className="flex items-center gap-2 text-lg font-semibold text-secondary-foreground">
                 <FileImage className="w-4 h-4" /> {stats.photos.toLocaleString()}
               </div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Total Videos</div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-primary">
+              <div className="flex items-center gap-2 text-lg font-semibold text-secondary-foreground">
                 <FileVideo className="w-4 h-4" /> {stats.videos.toLocaleString()}
               </div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Total Size</div>
-              <div className="text-2xl font-semibold text-primary">{stats.sizeGB.toFixed(1)} GB</div>
+              <div className="text-2xl font-semibold text-secondary-foreground">{stats.sizeGB.toFixed(1)} GB</div>
             </div>
           </div>
 
