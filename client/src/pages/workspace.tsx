@@ -1025,6 +1025,28 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
   const [showFixModal, setShowFixModal] = useState(false);
   const [includePhotos, setIncludePhotos] = useState(true);
   const [includeVideos, setIncludeVideos] = useState(true);
+  
+  const [destinationPath, setDestinationPath] = useState<string | null>(null);
+  const [destinationFreeGB, setDestinationFreeGB] = useState<number>(0);
+  const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
+  
+  const handleChangeDestination = async () => {
+    const { selectDestination, getDiskSpace, isElectron } = await import('@/lib/electron-bridge');
+    
+    if (isElectron()) {
+      const path = await selectDestination();
+      if (path) {
+        setDestinationPath(path);
+        const diskInfo = await getDiskSpace(path);
+        setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
+        setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+      }
+    } else {
+      setDestinationPath('/Volumes/Photos_Backup/Restored_2024');
+      setDestinationFreeGB(2400);
+      setDestinationTotalGB(4000);
+    }
+  };
 
   // Mock stats generator based on SELECTED sources and file type filters
   const getStats = () => {
@@ -1246,13 +1268,24 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
-                <p className="text-sm text-muted-foreground mb-2">/Volumes/Photos_Backup/Restored_2024</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">2.4 TB Free</span>
-                  <span className="text-xs text-muted-foreground">Required: {stats.sizeGB.toFixed(1)} GB</span>
-                </div>
+                {destinationPath ? (
+                  <>
+                    <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block mb-2">{destinationPath}</p>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${destinationFreeGB >= stats.sizeGB ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30' : 'text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/30'}`}>
+                        {destinationFreeGB >= 1000 ? `${(destinationFreeGB / 1000).toFixed(1)} TB` : `${destinationFreeGB.toFixed(1)} GB`} Free
+                      </span>
+                      <span className="text-xs text-muted-foreground">Required: {stats.sizeGB.toFixed(1)} GB</span>
+                      {destinationFreeGB < stats.sizeGB && (
+                        <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No destination selected. Click "Change Destination" to choose where to save fixed files.</p>
+                )}
               </div>
-              <Button variant="outline">Change Destination</Button>
+              <Button variant="outline" onClick={handleChangeDestination} data-testid="button-change-destination">Change Destination</Button>
             </Card>
         </section>
       </motion.div>
@@ -1267,10 +1300,18 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
         >
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
-                <span className="text-foreground font-bold">{(results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248).toLocaleString()}</span> files ready to process
+                <span className="text-foreground font-bold">{(results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : stats.totalFiles).toLocaleString()}</span> files ready to process
+                {!destinationPath && <span className="ml-2 text-amber-600 dark:text-amber-400">— Select a destination to continue</span>}
+                {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
              <div className="flex items-center gap-4">
-               <Button onClick={() => setShowFixModal(true)} variant="outline" className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold h-11">
+               <Button 
+                 onClick={() => setShowFixModal(true)} 
+                 variant="outline" 
+                 disabled={!destinationPath || destinationFreeGB < stats.sizeGB}
+                 className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                 data-testid="button-run-fix"
+               >
                  <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" /> Run Fix
                </Button>
              </div>

@@ -25,6 +25,13 @@ export async function selectDestination(): Promise<string | null> {
   return null;
 }
 
+export async function getDiskSpace(directoryPath: string): Promise<{ freeBytes: number; totalBytes: number }> {
+  if (isElectron()) {
+    return window.electronAPI!.getDiskSpace(directoryPath);
+  }
+  return { freeBytes: 0, totalBytes: 0 };
+}
+
 export async function runAnalysis(
   sourcePath: string, 
   sourceType: 'folder' | 'zip' | 'drive'
