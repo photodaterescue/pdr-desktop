@@ -823,7 +823,10 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       <div className="px-6 py-8 flex items-center cursor-pointer" onClick={() => onDashboardClick()}>
         <>
           <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain dark:hidden" />
-          <img src="/Assets/pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain hidden dark:block" />
+          <div className="hidden dark:flex flex-col items-center">
+            <img src="/Assets/pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-10 w-auto object-contain" />
+            <span className="text-foreground font-semibold text-sm tracking-wide mt-1">PDR</span>
+          </div>
         </>
       </div>
 
@@ -1425,7 +1428,10 @@ function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
             >
               <>
                 <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto dark:hidden" />
-                <img src="/Assets/pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto hidden dark:block" />
+                <div className="hidden dark:flex flex-col items-center">
+                  <img src="/Assets/pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-16 w-auto object-contain" />
+                  <span className="text-foreground font-semibold text-lg tracking-wide mt-1">PDR</span>
+                </div>
               </>
             </motion.div>
             
