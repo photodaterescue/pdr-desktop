@@ -974,23 +974,23 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
             <div>
-              <div className="text-sm text-muted-foreground mb-1 text-primary">Sources</div>
+              <div className="text-sm text-muted-foreground mb-1">Sources</div>
               <div className="text-2xl font-semibold text-primary">{stats.sourceCount.toLocaleString()}</div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1 text-primary">Total Photos</div>
+              <div className="text-sm text-muted-foreground mb-1">Total Photos</div>
               <div className="flex items-center gap-2 text-lg font-semibold text-primary">
                 <FileImage className="w-4 h-4" /> {stats.photos.toLocaleString()}
               </div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1 text-primary">Total Videos</div>
+              <div className="text-sm text-muted-foreground mb-1">Total Videos</div>
               <div className="flex items-center gap-2 text-lg font-semibold text-primary">
                 <FileVideo className="w-4 h-4" /> {stats.videos.toLocaleString()}
               </div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1 text-primary">Total Size</div>
+              <div className="text-sm text-muted-foreground mb-1">Total Size</div>
               <div className="text-2xl font-semibold text-primary">{stats.sizeGB.toFixed(1)} GB</div>
             </div>
           </div>
@@ -1046,7 +1046,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                 <span className="text-foreground font-bold">{(results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248).toLocaleString()}</span> files ready to process
              </div>
              <div className="flex items-center gap-4">
-               <Button onClick={() => setShowFixModal(true)} variant="outline" className="border-2 border-primary text-foreground hover:bg-primary/10 px-8 shadow-lg shadow-primary/20">
+               <Button onClick={() => setShowFixModal(true)} variant="outline" className="border-2 border-primary text-primary hover:bg-primary/10 px-8 shadow-lg shadow-primary/20">
                  <Wrench className="w-4 h-4 mr-2 text-primary" /> Run Fix
                </Button>
              </div>
