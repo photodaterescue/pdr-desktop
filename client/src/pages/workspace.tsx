@@ -1023,8 +1023,10 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
   const hasSelection = selectedSources.length > 0;
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
+  const [includePhotos, setIncludePhotos] = useState(true);
+  const [includeVideos, setIncludeVideos] = useState(true);
 
-  // Mock stats generator based on SELECTED sources
+  // Mock stats generator based on SELECTED sources and file type filters
   const getStats = () => {
     if (!hasSelection) {
       return {
@@ -1040,10 +1042,19 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
     }
 
     // Aggregate stats
-    const totalFiles = selectedSources.reduce((acc, s) => acc + (s.stats?.totalFiles || 0), 0);
-    const photos = selectedSources.reduce((acc, s) => acc + (s.stats?.photoCount || 0), 0);
-    const videos = selectedSources.reduce((acc, s) => acc + (s.stats?.videoCount || 0), 0);
-    const sizeGB = selectedSources.reduce((acc, s) => acc + (s.stats?.estimatedSizeGB || 0), 0);
+    const allPhotos = selectedSources.reduce((acc, s) => acc + (s.stats?.photoCount || 0), 0);
+    const allVideos = selectedSources.reduce((acc, s) => acc + (s.stats?.videoCount || 0), 0);
+    const totalSizeGB = selectedSources.reduce((acc, s) => acc + (s.stats?.estimatedSizeGB || 0), 0);
+    
+    // Apply file type filters
+    const photos = includePhotos ? allPhotos : 0;
+    const videos = includeVideos ? allVideos : 0;
+    const totalFiles = photos + videos;
+    
+    // Estimate size proportionally based on included file types
+    const photoRatio = allPhotos / (allPhotos + allVideos || 1);
+    const videoRatio = allVideos / (allPhotos + allVideos || 1);
+    const sizeGB = (includePhotos ? totalSizeGB * photoRatio : 0) + (includeVideos ? totalSizeGB * videoRatio : 0);
 
     return {
       label: "Combined Analysis",
@@ -1059,10 +1070,11 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
 
   const stats = getStats();
 
-  // Mock confidence stats based on aggregated totals
-  const highConf = Math.floor(stats.photos * 0.65);
-  const medConf = Math.floor(stats.photos * 0.25);
-  const lowConf = Math.floor(stats.photos * 0.10);
+  // Mock confidence stats based on filtered totals
+  const totalMediaFiles = stats.photos + stats.videos;
+  const highConf = Math.floor(totalMediaFiles * 0.65);
+  const medConf = Math.floor(totalMediaFiles * 0.25);
+  const lowConf = Math.floor(totalMediaFiles * 0.10);
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
@@ -1125,26 +1137,49 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
         )}
 
         <Card className="p-6 mb-2">
-          <div className="flex items-start gap-6 mb-8 border-b border-border pb-8">
-            <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
-              <img src="/Assets/pdr-combined-analysis.png" className="w-8 h-8 object-contain" alt="Combined Analysis" />
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h3 className="text-xl font-medium text-foreground">{stats.label}</h3>
-                {isComplete && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <span className="text-xs font-medium">Analysis Ready</span>
-                  </div>
-                )}
+          <div className="flex items-start justify-between gap-6 mb-8 border-b border-border pb-8">
+            <div className="flex items-start gap-6">
+              <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
+                <img src="/Assets/pdr-combined-analysis.png" className="w-8 h-8 object-contain" alt="Combined Analysis" />
               </div>
-              <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
-                {stats.path}
-              </p>
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="text-xl font-medium text-foreground">{stats.label}</h3>
+                  {isComplete && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-xs font-medium">Analysis Ready</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
+                  {stats.path}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Photos</span>
+                <Checkbox 
+                  checked={includePhotos} 
+                  onCheckedChange={(checked) => setIncludePhotos(checked === true)}
+                  data-testid="checkbox-include-photos"
+                  className="w-5 h-5"
+                />
+              </div>
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Videos</span>
+                <Checkbox 
+                  checked={includeVideos} 
+                  onCheckedChange={(checked) => setIncludeVideos(checked === true)}
+                  data-testid="checkbox-include-videos"
+                  className="w-5 h-5"
+                />
+              </div>
             </div>
           </div>
 
