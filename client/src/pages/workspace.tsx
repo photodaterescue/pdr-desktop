@@ -1133,7 +1133,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
               <div className="flex items-center gap-3 mb-1">
                 <h3 className="text-xl font-medium text-foreground">{stats.label}</h3>
                 {isComplete && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/50 text-emerald-700 border border-emerald-200/50">
+                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
