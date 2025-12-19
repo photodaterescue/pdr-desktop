@@ -3,6 +3,15 @@ import * as path from 'path';
 import * as exifParser from 'exif-parser';
 import AdmZip from 'adm-zip';
 import * as mimeTypes from 'mime-types';
+import {
+  extractDateFromFilename,
+  extractXmpMetadataFromBuffer,
+  extractXmpMetadataFromPath,
+  parseGoogleTakeoutJson,
+  parseGoogleTakeoutJsonContent,
+  findGoogleTakeoutSidecar,
+  generateDateBasedFilename,
+} from './date-extraction-engine';
 
 export interface AnalysisProgress {
   current: number;
@@ -47,60 +56,6 @@ export interface SourceAnalysisResult {
 const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif', '.raw', '.cr2', '.nef', '.arw', '.dng']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mts', '.m2ts']);
 
-const FILENAME_DATE_PATTERNS: Array<{ pattern: RegExp; extract: (match: RegExpMatchArray) => Date | null; source: string }> = [
-  {
-    pattern: /IMG[-_]?(\d{4})(\d{2})(\d{2})[-_]?(\d{2})(\d{2})(\d{2})/i,
-    extract: (m) => new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]),
-    source: 'Camera filename pattern (IMG_YYYYMMDD_HHMMSS)'
-  },
-  {
-    pattern: /(\d{4})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/,
-    extract: (m) => new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]),
-    source: 'ISO datetime filename (YYYY-MM-DD_HH-MM-SS)'
-  },
-  {
-    pattern: /(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})/,
-    extract: (m) => new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]),
-    source: 'Compact datetime filename (YYYYMMDD_HHMMSS)'
-  },
-  {
-    pattern: /DSC[-_]?(\d{4})/i,
-    extract: () => null,
-    source: 'Camera sequence number only'
-  },
-  {
-    pattern: /WhatsApp Image (\d{4})-(\d{2})-(\d{2}) at (\d{1,2})\.(\d{2})\.(\d{2})/i,
-    extract: (m) => new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]),
-    source: 'WhatsApp filename pattern'
-  },
-  {
-    pattern: /VID[-_]?(\d{4})(\d{2})(\d{2})[-_]?(\d{2})(\d{2})(\d{2})/i,
-    extract: (m) => new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]),
-    source: 'Video filename pattern (VID_YYYYMMDD_HHMMSS)'
-  },
-  {
-    pattern: /Screenshot[-_ ]?(\d{4})[-_]?(\d{2})[-_]?(\d{2})[-_ ]?(\d{2})[-_]?(\d{2})[-_]?(\d{2})/i,
-    extract: (m) => new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]),
-    source: 'Screenshot filename pattern'
-  },
-  {
-    pattern: /(\d{4})[-_](\d{2})[-_](\d{2})/,
-    extract: (m) => new Date(+m[1], +m[2] - 1, +m[3], 12, 0, 0),
-    source: 'Date-only filename (YYYY-MM-DD)'
-  },
-  {
-    pattern: /(\d{2})[-_](\d{2})[-_](\d{4})/,
-    extract: (m) => {
-      const day = +m[1];
-      const month = +m[2];
-      const year = +m[3];
-      if (day > 31 || month > 12) return null;
-      return new Date(year, month - 1, day, 12, 0, 0);
-    },
-    source: 'Date filename (DD-MM-YYYY)'
-  },
-];
-
 function isMediaFile(filename: string): 'photo' | 'video' | null {
   const ext = path.extname(filename).toLowerCase();
   if (PHOTO_EXTENSIONS.has(ext)) return 'photo';
@@ -136,19 +91,6 @@ function extractExifDateFromBuffer(buffer: Buffer): Date | null {
   return null;
 }
 
-function extractDateFromFilename(filename: string): { date: Date | null; source: string } {
-  for (const { pattern, extract, source } of FILENAME_DATE_PATTERNS) {
-    const match = filename.match(pattern);
-    if (match) {
-      const date = extract(match);
-      if (date && !isNaN(date.getTime()) && date.getFullYear() >= 1990 && date.getFullYear() <= 2030) {
-        return { date, source };
-      }
-    }
-  }
-  return { date: null, source: 'No pattern matched' };
-}
-
 function getFileStat(filePath: string): { mtime: Date; size: number } | null {
   try {
     const stats = fs.statSync(filePath);
@@ -156,16 +98,6 @@ function getFileStat(filePath: string): { mtime: Date; size: number } | null {
   } catch {
     return null;
   }
-}
-
-function formatDateForFilename(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
-  return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
 }
 
 async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes: number): Promise<FileAnalysisResult | null> {
@@ -176,20 +108,43 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
   let derivedDate: Date | null = null;
   let dateSource = '';
   let dateConfidence: 'confirmed' | 'recovered' | 'marked' = 'marked';
+  let isWhatsApp = false;
 
-  const exifDate = extractExifDateFromPath(filePath);
-  if (exifDate) {
-    derivedDate = exifDate;
-    dateSource = 'EXIF DateTimeOriginal';
-    dateConfidence = 'confirmed';
+  const sidecarPath = findGoogleTakeoutSidecar(filePath);
+  if (sidecarPath) {
+    const takeoutData = parseGoogleTakeoutJson(sidecarPath);
+    if (takeoutData?.timestamp) {
+      derivedDate = new Date(takeoutData.timestamp * 1000);
+      dateSource = 'Google Takeout JSON';
+      dateConfidence = 'confirmed';
+    }
+  }
+
+  if (!derivedDate) {
+    const exifDate = extractExifDateFromPath(filePath);
+    if (exifDate) {
+      derivedDate = exifDate;
+      dateSource = 'EXIF DateTimeOriginal';
+      dateConfidence = 'confirmed';
+    }
+  }
+
+  if (!derivedDate) {
+    const xmpData = extractXmpMetadataFromPath(filePath);
+    if (xmpData?.timestamp) {
+      derivedDate = new Date(xmpData.timestamp * 1000);
+      dateSource = 'XMP metadata';
+      dateConfidence = 'confirmed';
+    }
   }
 
   if (!derivedDate) {
     const filenameResult = extractDateFromFilename(filename);
-    if (filenameResult.date) {
-      derivedDate = filenameResult.date;
+    if (filenameResult.timestamp) {
+      derivedDate = new Date(filenameResult.timestamp * 1000);
       dateSource = filenameResult.source;
       dateConfidence = 'recovered';
+      isWhatsApp = filenameResult.isWhatsApp;
     }
   }
 
@@ -203,7 +158,12 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
   }
 
   const suggestedFilename = derivedDate 
-    ? `${formatDateForFilename(derivedDate)}${extension}`
+    ? generateDateBasedFilename(
+        Math.floor(derivedDate.getTime() / 1000),
+        extension,
+        isWhatsApp,
+        dateConfidence === 'recovered'
+      )
     : null;
 
   return {
@@ -225,7 +185,8 @@ async function analyzeFileFromBuffer(
   filename: string, 
   sizeBytes: number, 
   buffer: Buffer,
-  entryTime: Date | null
+  entryTime: Date | null,
+  googleTakeoutJsonContent?: string
 ): Promise<FileAnalysisResult | null> {
   const mediaType = isMediaFile(filename);
   if (!mediaType) return null;
@@ -234,20 +195,42 @@ async function analyzeFileFromBuffer(
   let derivedDate: Date | null = null;
   let dateSource = '';
   let dateConfidence: 'confirmed' | 'recovered' | 'marked' = 'marked';
+  let isWhatsApp = false;
 
-  const exifDate = extractExifDateFromBuffer(buffer);
-  if (exifDate) {
-    derivedDate = exifDate;
-    dateSource = 'EXIF DateTimeOriginal';
-    dateConfidence = 'confirmed';
+  if (googleTakeoutJsonContent) {
+    const takeoutData = parseGoogleTakeoutJsonContent(googleTakeoutJsonContent);
+    if (takeoutData?.timestamp) {
+      derivedDate = new Date(takeoutData.timestamp * 1000);
+      dateSource = 'Google Takeout JSON';
+      dateConfidence = 'confirmed';
+    }
+  }
+
+  if (!derivedDate) {
+    const exifDate = extractExifDateFromBuffer(buffer);
+    if (exifDate) {
+      derivedDate = exifDate;
+      dateSource = 'EXIF DateTimeOriginal';
+      dateConfidence = 'confirmed';
+    }
+  }
+
+  if (!derivedDate) {
+    const xmpData = extractXmpMetadataFromBuffer(buffer);
+    if (xmpData?.timestamp) {
+      derivedDate = new Date(xmpData.timestamp * 1000);
+      dateSource = 'XMP metadata';
+      dateConfidence = 'confirmed';
+    }
   }
 
   if (!derivedDate) {
     const filenameResult = extractDateFromFilename(filename);
-    if (filenameResult.date) {
-      derivedDate = filenameResult.date;
+    if (filenameResult.timestamp) {
+      derivedDate = new Date(filenameResult.timestamp * 1000);
       dateSource = filenameResult.source;
       dateConfidence = 'recovered';
+      isWhatsApp = filenameResult.isWhatsApp;
     }
   }
 
@@ -258,7 +241,12 @@ async function analyzeFileFromBuffer(
   }
 
   const suggestedFilename = derivedDate 
-    ? `${formatDateForFilename(derivedDate)}${extension}`
+    ? generateDateBasedFilename(
+        Math.floor(derivedDate.getTime() / 1000),
+        extension,
+        isWhatsApp,
+        dateConfidence === 'recovered'
+      )
     : null;
 
   return {
@@ -313,14 +301,26 @@ interface ZipEntry {
   size: number;
   buffer: Buffer;
   time: Date | null;
+  googleTakeoutJson?: string;
 }
 
 function scanZipFile(zipPath: string): ZipEntry[] {
   const results: ZipEntry[] = [];
+  const jsonContents: Map<string, string> = new Map();
   
   try {
     const zip = new AdmZip(zipPath);
     const entries = zip.getEntries();
+    
+    for (const entry of entries) {
+      if (!entry.isDirectory && entry.entryName.toLowerCase().endsWith('.json')) {
+        try {
+          const content = entry.getData().toString('utf-8');
+          jsonContents.set(entry.entryName, content);
+        } catch (e) {
+        }
+      }
+    }
     
     for (const entry of entries) {
       if (!entry.isDirectory) {
@@ -328,12 +328,24 @@ function scanZipFile(zipPath: string): ZipEntry[] {
         const mediaType = isMediaFile(filename);
         if (mediaType) {
           const time = entry.header.time ? new Date(entry.header.time) : null;
+          
+          let googleTakeoutJson: string | undefined;
+          const jsonPath1 = entry.entryName + '.json';
+          const jsonPath2 = entry.entryName.replace(/\.[^/.]+$/, '.json');
+          
+          if (jsonContents.has(jsonPath1)) {
+            googleTakeoutJson = jsonContents.get(jsonPath1);
+          } else if (jsonContents.has(jsonPath2)) {
+            googleTakeoutJson = jsonContents.get(jsonPath2);
+          }
+          
           results.push({
             path: entry.entryName,
             filename,
             size: entry.header.size,
             buffer: entry.getData(),
             time,
+            googleTakeoutJson,
           });
         }
       }
@@ -380,7 +392,7 @@ export async function analyzeSource(
         phase: 'analyzing'
       });
 
-      const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, entry.buffer, entry.time);
+      const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, entry.buffer, entry.time, entry.googleTakeoutJson);
       if (result) {
         analyzedFiles.push(result);
         totalSizeBytes += result.sizeBytes;
