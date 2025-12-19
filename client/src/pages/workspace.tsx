@@ -2109,77 +2109,79 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
 function PanelPlaceholder({ panelType }: { panelType: string }) {
   if (panelType === 'what-next') {
     return (
-      <div className="flex flex-col h-full overflow-y-auto">
-        <div className="p-8 w-full">
-          <h2 className="text-2xl font-semibold text-foreground mb-6">What Happens Next</h2>
+      <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+          <div className="w-full max-w-[940px]">
+            <h2 className="text-2xl font-semibold text-foreground mb-10">What Happens Next</h2>
           
-          <div className="space-y-8">
-            <section>
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">1</div>
-                <h3 className="text-lg font-medium text-foreground">Add your sources</h3>
-              </div>
-              <div className="ml-10 space-y-3 text-sm text-muted-foreground">
-                <p>Start by adding the folders or ZIP archives that contain your photos and videos.</p>
-                <p className="font-medium text-foreground">Choose the correct option:</p>
-                <ul className="list-disc ml-5 space-y-1">
-                  <li><span className="font-medium text-foreground">Add Folder / Drive</span> — for folders or entire drives</li>
-                  <li><span className="font-medium text-foreground">Add ZIP Archive</span> — for ZIP files (ZIPs won't appear in the folder picker)</li>
-                </ul>
-                <p>Each source is added one at a time, but you can keep adding as many as you like. The file picker will reopen after each selection until you're finished — Photo Date Rescue then analyses all selected sources together in a single, consistent run.</p>
-              </div>
-            </section>
+            <div className="space-y-12">
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">1</div>
+                  <h3 className="text-lg font-medium text-foreground">Add your sources</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Start by adding the folders or ZIP archives that contain your photos and videos.</p>
+                  <p className="font-medium text-foreground">Choose the correct option:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li><span className="font-medium text-foreground">Add Folder / Drive</span> — for folders or entire drives</li>
+                    <li><span className="font-medium text-foreground">Add ZIP Archive</span> — for ZIP files (ZIPs won't appear in the folder picker)</li>
+                  </ul>
+                  <p>Each source is added one at a time, but you can keep adding as many as you like. The file picker will reopen after each selection until you're finished — Photo Date Rescue then analyses all selected sources together in a single, consistent run.</p>
+                </div>
+              </section>
 
-            <section>
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">2</div>
-                <h3 className="text-lg font-medium text-foreground">Review the Date Summary</h3>
-              </div>
-              <div className="ml-10 space-y-3 text-sm text-muted-foreground">
-                <p>Once your sources are added, analysis runs automatically — there's nothing you need to do at this stage.</p>
-                <p>The Date Summary shows how your files were categorised:</p>
-                <ul className="list-disc ml-5 space-y-1">
-                  <li><span className="font-medium text-foreground">Confirmed</span> — dates taken from embedded metadata</li>
-                  <li><span className="font-medium text-foreground">Recovered</span> — dates inferred from structured filenames</li>
-                  <li><span className="font-medium text-foreground">Marked</span> — files with no reliable date, safely handled using fallback rules</li>
-                </ul>
-                <p>You can hover over the info icon on each card to see more detail about how that category works. This is purely informational — Photo Date Rescue is already prepared to process all files safely and consistently.</p>
-              </div>
-            </section>
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">2</div>
+                  <h3 className="text-lg font-medium text-foreground">Review the Date Summary</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Once your sources are added, analysis runs automatically — there's nothing you need to do at this stage.</p>
+                  <p>The Date Summary shows how your files were categorised:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li><span className="font-medium text-foreground">Confirmed</span> — dates taken from embedded metadata</li>
+                    <li><span className="font-medium text-foreground">Recovered</span> — dates inferred from structured filenames</li>
+                    <li><span className="font-medium text-foreground">Marked</span> — files with no reliable date, safely handled using fallback rules</li>
+                  </ul>
+                  <p>You can hover over the info icon on each card to see more detail about how that category works. This is purely informational — Photo Date Rescue is already prepared to process all files safely and consistently.</p>
+                </div>
+              </section>
 
-            <section>
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">3</div>
-                <h3 className="text-lg font-medium text-foreground">Confirm scope and destination</h3>
-              </div>
-              <div className="ml-10 space-y-3 text-sm text-muted-foreground">
-                <p>Before running the fix, take a moment to confirm the following — in order:</p>
-                <ul className="list-disc ml-5 space-y-2">
-                  <li><span className="font-medium text-foreground">Choose a destination</span> – Select or confirm the destination drive where the fixed files will be written.</li>
-                  <li><span className="font-medium text-foreground">Select your sources</span> – In the left-hand list, make sure the sources you want to process are checked. You can include or exclude any source at this stage.</li>
-                  <li><span className="font-medium text-foreground">Confirm file types</span> – In Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
-                  <li><span className="font-medium text-foreground">Check available space</span> – Review the storage indicator to ensure the destination drive has enough capacity. The Free amount (shown in green) should exceed the Required size shown alongside it.</li>
-                </ul>
-                <p>Once these are confirmed, you're ready to run the fix.</p>
-              </div>
-            </section>
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">3</div>
+                  <h3 className="text-lg font-medium text-foreground">Confirm scope and destination</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Before running the fix, take a moment to confirm the following — in order:</p>
+                  <ul className="list-disc ml-5 space-y-2.5">
+                    <li><span className="font-medium text-foreground">Choose a destination</span> – Select or confirm the destination drive where the fixed files will be written.</li>
+                    <li><span className="font-medium text-foreground">Select your sources</span> – In the left-hand list, make sure the sources you want to process are checked. You can include or exclude any source at this stage.</li>
+                    <li><span className="font-medium text-foreground">Confirm file types</span> – In Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
+                    <li><span className="font-medium text-foreground">Check available space</span> – Review the storage indicator to ensure the destination drive has enough capacity. The Free amount (shown in green) should exceed the Required size shown alongside it.</li>
+                  </ul>
+                  <p>Once these are confirmed, you're ready to run the fix.</p>
+                </div>
+              </section>
 
-            <section>
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">4</div>
-                <h3 className="text-lg font-medium text-foreground">Run the fix</h3>
-              </div>
-              <div className="ml-10 space-y-3 text-sm text-muted-foreground">
-                <p>When everything looks right, click <span className="font-medium text-foreground">Run Fix</span>.</p>
-                <p>Photo Date Rescue will:</p>
-                <ul className="list-disc ml-5 space-y-1">
-                  <li>Apply the correct date logic to every file</li>
-                  <li>Rename files safely and consistently</li>
-                  <li>Preserve chronological order across all sources</li>
-                </ul>
-                <p>When finished, you'll be able to review exactly what changed.</p>
-              </div>
-            </section>
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">4</div>
+                  <h3 className="text-lg font-medium text-foreground">Run the fix</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>When everything looks right, click <span className="font-medium text-foreground">Run Fix</span>.</p>
+                  <p>Photo Date Rescue will:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Apply the correct date logic to every file</li>
+                    <li>Rename files safely and consistently</li>
+                    <li>Preserve chronological order across all sources</li>
+                  </ul>
+                  <p>When finished, you'll be able to review exactly what changed.</p>
+                </div>
+              </section>
+            </div>
           </div>
         </div>
       </div>
