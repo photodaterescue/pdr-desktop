@@ -821,7 +821,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       <div className="px-6 py-8 flex items-center cursor-pointer" onClick={() => onDashboardClick()}>
-        <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain" />
+        <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain dark:invert" />
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
@@ -1059,7 +1059,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
   const lowConf = Math.floor(stats.photos * 0.10);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC] relative">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
       <div className="flex-1 flex flex-col items-center justify-start p-8 overflow-y-auto pb-24">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
@@ -1272,7 +1272,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-8 shrink-0">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Workspace</span>
@@ -1406,7 +1406,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
 
 function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       <div className="flex-1 flex items-center justify-center p-8">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -1420,7 +1420,7 @@ function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
               transition={{ delay: 0.1, type: "spring", stiffness: 80 }}
               className="mb-8"
             >
-              <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto" />
+              <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto dark:invert" />
             </motion.div>
             
             <h1 className="text-4xl font-semibold text-foreground mb-4">Your workspace is empty</h1>
@@ -1460,7 +1460,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
   const lowConf = Math.floor(44 * (percentComplete / 100));
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-5xl mx-auto space-y-8">
           
@@ -1540,7 +1540,7 @@ function CompletionState({ results, onAddAnother, onViewResults, onBackToWorkspa
   const total = results.fixed + results.unchanged + results.skipped;
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F8F9FC]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       <header className="h-16 border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-8 shrink-0">
         <div className="flex items-center gap-2 text-sm text-foreground font-medium">
           <CheckCircle2 className="w-4 h-4 text-emerald-500" />
