@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openZip: () => ipcRenderer.invoke('dialog:openZip'),
   selectDestination: () => ipcRenderer.invoke('dialog:selectDestination'),
   getDiskSpace: (directoryPath: string) => ipcRenderer.invoke('disk:getSpace', directoryPath),
+  openDestinationFolder: (folderPath: string) => ipcRenderer.invoke('shell:openFolder', folderPath),
   runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') => 
     ipcRenderer.invoke('analysis:run', sourcePath, sourceType),
   onAnalysisProgress: (callback: (progress: AnalysisProgress) => void) => {

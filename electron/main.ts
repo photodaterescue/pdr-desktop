@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -89,6 +89,14 @@ ipcMain.handle('dialog:selectDestination', async () => {
   }
   
   return result.filePaths[0];
+});
+
+ipcMain.handle('shell:openFolder', async (_event, folderPath: string) => {
+  try {
+    await shell.openPath(folderPath);
+  } catch (error) {
+    console.error('Error opening folder:', error);
+  }
 });
 
 ipcMain.handle('disk:getSpace', async (_event, directoryPath: string) => {

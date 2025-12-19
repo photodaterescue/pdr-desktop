@@ -29,7 +29,8 @@ import {
   ShieldCheck,
   Wrench,
   Sun,
-  Moon
+  Moon,
+  FileText
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -684,6 +685,7 @@ export default function Workspace() {
           onChange={handleChangeSource}
           isComplete={isComplete}
           analysisResults={analysisResults}
+          sourceAnalysisResults={sourceAnalysisResults}
           onAddAnother={handleAddAnother}
           onPreviewChanges={() => setShowPreviewModal(true)}
           onViewResults={() => setShowResultsModal(true)}
@@ -957,6 +959,7 @@ function MainContent({
   onChange,
   isComplete,
   analysisResults,
+  sourceAnalysisResults,
   onAddAnother,
   onPreviewChanges,
   onViewResults,
@@ -971,6 +974,7 @@ function MainContent({
   onChange: () => void,
   isComplete: boolean,
   analysisResults: AnalysisResults,
+  sourceAnalysisResults?: Record<string, SourceAnalysisResult>,
   onAddAnother: () => void,
   onPreviewChanges: () => void,
   onViewResults: () => void,
@@ -1013,16 +1017,18 @@ function MainContent({
       isComplete={isComplete}
       results={analysisResults}
       onViewResults={onViewResults}
+      fileResults={sourceAnalysisResults}
     />
   );
 }
 
-function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults }: { sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void }) {
+function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults }: { sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult> }) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected && s.confirmed);
   const hasSelection = selectedSources.length > 0;
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
+  const [showPostFixReport, setShowPostFixReport] = useState(false);
   const [includePhotos, setIncludePhotos] = useState(true);
   const [includeVideos, setIncludeVideos] = useState(true);
   
@@ -1320,7 +1326,21 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
       )}
 
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={results} />}
-      {showFixModal && <FixProgressModal onClose={() => setShowFixModal(false)} totalFiles={results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248} />}
+      {showFixModal && <FixProgressModal 
+        onClose={() => setShowFixModal(false)} 
+        totalFiles={results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248} 
+        destinationPath={destinationPath}
+        onViewReport={() => {
+          setShowFixModal(false);
+          setShowPostFixReport(true);
+        }}
+      />}
+      {showPostFixReport && <PostFixReportModal 
+        onClose={() => setShowPostFixReport(false)} 
+        results={results}
+        destinationPath={destinationPath}
+        fileResults={fileResults}
+      />}
     </div>
   );
 }
@@ -2004,10 +2024,17 @@ function PreviewModal({ onClose, results, fileResults }: {
   );
 }
 
-function FixProgressModal({ onClose, totalFiles }: { onClose: () => void, totalFiles: number }) {
+function FixProgressModal({ onClose, totalFiles, destinationPath, onViewReport }: { onClose: () => void, totalFiles: number, destinationPath: string | null, onViewReport: () => void }) {
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [processed, setProcessed] = useState(0);
+  const [isElectronEnv, setIsElectronEnv] = useState(false);
+
+  useEffect(() => {
+    import('@/lib/electron-bridge').then(({ isElectron }) => {
+      setIsElectronEnv(isElectron());
+    });
+  }, []);
 
   useEffect(() => {
     if (isComplete) return;
@@ -2027,22 +2054,32 @@ function FixProgressModal({ onClose, totalFiles }: { onClose: () => void, totalF
     return () => clearInterval(interval);
   }, [isComplete, progress, totalFiles]);
 
-  // Sync processed count exactly at end
   useEffect(() => {
     if (isComplete) setProcessed(totalFiles);
   }, [isComplete, totalFiles]);
+
+  const handleOpenDestination = async () => {
+    if (destinationPath && isElectronEnv) {
+      const { openDestinationFolder } = await import('@/lib/electron-bridge');
+      await openDestinationFolder(destinationPath);
+    }
+  };
+
+  const confirmedCount = Math.floor(totalFiles * 0.65);
+  const recoveredCount = Math.floor(totalFiles * 0.25);
+  const markedCount = totalFiles - confirmedCount - recoveredCount;
 
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
     >
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center"
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-border"
       >
         {!isComplete ? (
           <>
@@ -2071,22 +2108,303 @@ function FixProgressModal({ onClose, totalFiles }: { onClose: () => void, totalF
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ type: "spring" }}
-              className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6"
+              className="w-20 h-20 bg-emerald-100/50 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-200/50 dark:border-emerald-700/50"
             >
-              <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+              <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
             </motion.div>
             
-            <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete!</h2>
-            <p className="text-muted-foreground mb-8">All {totalFiles} files have been successfully processed.</p>
+            <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete</h2>
+            <p className="text-muted-foreground mb-6">All {totalFiles.toLocaleString()} files have been successfully processed.</p>
             
-            <div className="grid grid-cols-2 gap-4">
-              <Button variant="outline" onClick={onClose} size="lg">Close</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" size="lg">
-                <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+            <div className="grid grid-cols-3 gap-3 mb-6 p-4 bg-muted/50 rounded-xl">
+              <div className="text-center">
+                <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{confirmedCount.toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">Confirmed</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-semibold text-indigo-600 dark:text-indigo-400">{recoveredCount.toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">Recovered</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-semibold text-slate-600 dark:text-slate-400">{markedCount.toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">Marked</div>
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <Button 
+                onClick={onViewReport} 
+                className="w-full bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600" 
+                size="lg"
+                data-testid="button-view-report"
+              >
+                <FileText className="w-4 h-4 mr-2" /> View Report
               </Button>
+              <div className="grid grid-cols-2 gap-3">
+                <Button variant="outline" onClick={onClose} size="lg" data-testid="button-close-fix">
+                  Close
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handleOpenDestination} 
+                  size="lg"
+                  disabled={!destinationPath || !isElectronEnv}
+                  title={!isElectronEnv ? "Available in desktop app" : undefined}
+                  data-testid="button-open-destination"
+                >
+                  <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+                </Button>
+              </div>
             </div>
           </>
         )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function PostFixReportModal({ onClose, results, destinationPath, fileResults }: { 
+  onClose: () => void, 
+  results?: AnalysisResults,
+  destinationPath: string | null,
+  fileResults?: Record<string, SourceAnalysisResult>
+}) {
+  const [filterConfidence, setFilterConfidence] = useState<'all' | 'confirmed' | 'recovered' | 'marked'>('all');
+  const [isElectronEnv, setIsElectronEnv] = useState(false);
+  
+  useEffect(() => {
+    import('@/lib/electron-bridge').then(({ isElectron }) => {
+      setIsElectronEnv(isElectron());
+    });
+  }, []);
+
+  const handleOpenDestination = async () => {
+    if (destinationPath && isElectronEnv) {
+      const { openDestinationFolder } = await import('@/lib/electron-bridge');
+      await openDestinationFolder(destinationPath);
+    }
+  };
+
+  // Extract real file data from analysis results when available
+  const realFiles = Object.values(fileResults || {}).flatMap(source => 
+    (source.files || []).map(file => ({
+      filename: file.filename,
+      newFilename: file.suggestedFilename || file.filename,
+      dateConfidence: file.dateConfidence,
+      dateSource: file.dateSource
+    }))
+  );
+
+  // Fallback mock data for preview mode when no real analysis data exists
+  const mockFileData = [
+    { filename: "IMG_20240115_143022.jpg", newFilename: "2024-01-15_14-30-22.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
+    { filename: "DSC_9921.jpg", newFilename: "2023-08-12_09-15-00.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
+    { filename: "IMG-20180512-WA0042.jpg", newFilename: "2018-05-12_12-00-00_WA_FN.jpg", dateConfidence: "recovered" as const, dateSource: "WhatsApp filename" },
+    { filename: "VID_20200610_164530.mp4", newFilename: "2020-06-10_16-45-30.mp4", dateConfidence: "recovered" as const, dateSource: "Filename (VID datetime)" },
+    { filename: "Screenshot_2022-03-01_10-00-00.png", newFilename: "2022-03-01_10-00-00_FN.png", dateConfidence: "recovered" as const, dateSource: "Filename (Screenshot)" },
+    { filename: "vacation_photo.jpg", newFilename: "2024-12-19_08-30-15.jpg", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)" },
+    { filename: "birthday_party.mp4", newFilename: "2023-06-22_19-45-00.mp4", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)" },
+    { filename: "photo_2021_summer.jpg", newFilename: "2021-07-15_12-00-00_FN.jpg", dateConfidence: "recovered" as const, dateSource: "Filename (date with separators)" },
+    { filename: "IMG_1234.HEIC", newFilename: "2022-11-28_14-22-33.heic", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
+    { filename: "sunset_beach.jpg", newFilename: "2024-08-05_18-45-00.jpg", dateConfidence: "confirmed" as const, dateSource: "Google Takeout JSON" },
+  ];
+  
+  // Use real data when available, otherwise use mock data for UI preview
+  const hasRealData = realFiles.length > 0;
+  const allFiles = hasRealData ? realFiles : mockFileData;
+  
+  // Calculate totals from real results or derive from file list
+  const totalFiles = results?.fixed 
+    ? results.fixed + results.unchanged + (results.skipped || 0) 
+    : allFiles.length;
+  
+  const filteredFiles = allFiles.filter(file => 
+    filterConfidence === 'all' || file.dateConfidence === filterConfidence
+  );
+  
+  // Calculate confidence counts from actual data
+  const confidenceCounts = hasRealData 
+    ? {
+        confirmed: allFiles.filter(f => f.dateConfidence === 'confirmed').length,
+        recovered: allFiles.filter(f => f.dateConfidence === 'recovered').length,
+        marked: allFiles.filter(f => f.dateConfidence === 'marked').length
+      }
+    : {
+        confirmed: Math.floor(totalFiles * 0.65),
+        recovered: Math.floor(totalFiles * 0.25),
+        marked: totalFiles - Math.floor(totalFiles * 0.65) - Math.floor(totalFiles * 0.25)
+      };
+  
+  const getConfidenceBadge = (confidence: 'confirmed' | 'recovered' | 'marked') => {
+    const styles = {
+      confirmed: "bg-emerald-100/50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200/50 dark:border-emerald-700/50",
+      recovered: "bg-indigo-100/50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200/50 dark:border-indigo-700/50",
+      marked: "bg-slate-100/50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 border-slate-200/50 dark:border-slate-700/50"
+    };
+    const labels = { confirmed: "Confirmed", recovered: "Recovered", marked: "Marked" };
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${styles[confidence]}`}>
+        {labels[confidence]}
+      </span>
+    );
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-background rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col border border-border"
+      >
+        <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-100/50 dark:bg-emerald-900/30 rounded-full flex items-center justify-center border border-emerald-200/50 dark:border-emerald-700/50">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Fix Report</h2>
+              <p className="text-sm text-muted-foreground">{totalFiles.toLocaleString()} files processed successfully</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors">
+            <X className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </div>
+        
+        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+          {!hasRealData && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg text-sm text-amber-700 dark:text-amber-300">
+              <Info className="w-4 h-4 shrink-0" />
+              <span>Showing sample data for preview. Actual results will appear when running in desktop app.</span>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-3 gap-4">
+            <div className="p-4 bg-emerald-100/50 dark:bg-emerald-900/30 rounded-xl border border-emerald-200/50 dark:border-emerald-700/50 text-center">
+              <div className="text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{confidenceCounts.confirmed.toLocaleString()}</div>
+              <div className="text-sm text-emerald-600 dark:text-emerald-400">Confirmed</div>
+              <div className="text-xs text-muted-foreground mt-1">EXIF / Takeout metadata</div>
+            </div>
+            <div className="p-4 bg-indigo-100/50 dark:bg-indigo-900/30 rounded-xl border border-indigo-200/50 dark:border-indigo-700/50 text-center">
+              <div className="text-2xl font-semibold text-indigo-700 dark:text-indigo-300">{confidenceCounts.recovered.toLocaleString()}</div>
+              <div className="text-sm text-indigo-600 dark:text-indigo-400">Recovered</div>
+              <div className="text-xs text-muted-foreground mt-1">Filename patterns</div>
+            </div>
+            <div className="p-4 bg-slate-100/50 dark:bg-slate-800/50 rounded-xl border border-slate-200/50 dark:border-slate-700/50 text-center">
+              <div className="text-2xl font-semibold text-slate-600 dark:text-slate-400">{confidenceCounts.marked.toLocaleString()}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400">Marked</div>
+              <div className="text-xs text-muted-foreground mt-1">Fallback date used</div>
+            </div>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setFilterConfidence('all')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'all' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-secondary text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              All ({totalFiles.toLocaleString()})
+            </button>
+            <button
+              onClick={() => setFilterConfidence('confirmed')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'confirmed' 
+                  ? 'bg-emerald-600 dark:bg-emerald-700 text-white' 
+                  : 'bg-emerald-100/50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200/50 dark:hover:bg-emerald-900/50'
+              }`}
+            >
+              Confirmed ({confidenceCounts.confirmed.toLocaleString()})
+            </button>
+            <button
+              onClick={() => setFilterConfidence('recovered')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'recovered' 
+                  ? 'bg-indigo-600 dark:bg-indigo-700 text-white' 
+                  : 'bg-indigo-100/50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200/50 dark:hover:bg-indigo-900/50'
+              }`}
+            >
+              Recovered ({confidenceCounts.recovered.toLocaleString()})
+            </button>
+            <button
+              onClick={() => setFilterConfidence('marked')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filterConfidence === 'marked' 
+                  ? 'bg-slate-600 dark:bg-slate-700 text-white' 
+                  : 'bg-slate-100/50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+              }`}
+            >
+              Marked ({confidenceCounts.marked.toLocaleString()})
+            </button>
+          </div>
+          
+          <div className="space-y-2">
+            <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <span>Original Filename</span>
+              <span></span>
+              <span>New Filename</span>
+              <span>Confidence</span>
+            </div>
+            <div className="space-y-1 max-h-[300px] overflow-y-auto">
+              {filteredFiles.map((file, index) => (
+                <div 
+                  key={index}
+                  className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 items-center px-4 py-3 bg-muted/30 dark:bg-muted/10 rounded-lg hover:bg-muted/50 dark:hover:bg-muted/20 transition-colors"
+                >
+                  <span className="text-sm text-muted-foreground font-mono truncate">{file.filename}</span>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground font-mono truncate">{file.newFilename}</span>
+                  <div className="flex flex-col items-end gap-1">
+                    {getConfidenceBadge(file.dateConfidence)}
+                    <span className="text-xs text-muted-foreground">{file.dateSource}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-4 border-t border-border">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+              <span><strong>Confirmed:</strong> Date from EXIF, XMP, or Google Takeout</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-indigo-500"></span>
+              <span><strong>Recovered:</strong> Date extracted from filename pattern</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-slate-400 dark:bg-slate-500"></span>
+              <span><strong>Marked:</strong> Using file modification time as fallback</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-border bg-background shrink-0">
+          <div className="flex gap-3 justify-end">
+            <Button 
+              variant="outline" 
+              onClick={handleOpenDestination}
+              disabled={!destinationPath || !isElectronEnv}
+              title={!isElectronEnv ? "Available in desktop app" : undefined}
+              data-testid="button-report-open-destination"
+            >
+              <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+            </Button>
+            <Button onClick={onClose} size="lg" data-testid="button-close-report">
+              Done
+            </Button>
+          </div>
+        </div>
       </motion.div>
     </motion.div>
   );

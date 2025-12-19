@@ -32,6 +32,12 @@ export async function getDiskSpace(directoryPath: string): Promise<{ freeBytes: 
   return { freeBytes: 0, totalBytes: 0 };
 }
 
+export async function openDestinationFolder(folderPath: string): Promise<void> {
+  if (isElectron()) {
+    return window.electronAPI!.openDestinationFolder(folderPath);
+  }
+}
+
 export async function runAnalysis(
   sourcePath: string, 
   sourceType: 'folder' | 'zip' | 'drive'

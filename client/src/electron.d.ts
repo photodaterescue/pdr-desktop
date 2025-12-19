@@ -43,6 +43,7 @@ export interface ElectronAPI {
   openZip: () => Promise<string | null>;
   selectDestination: () => Promise<string | null>;
   getDiskSpace: (directoryPath: string) => Promise<{ freeBytes: number; totalBytes: number }>;
+  openDestinationFolder: (folderPath: string) => Promise<void>;
   runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') => Promise<{
     success: boolean;
     data?: SourceAnalysisResult;
