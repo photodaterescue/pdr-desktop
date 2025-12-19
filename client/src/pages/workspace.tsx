@@ -2075,7 +2075,7 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
   if (panelType === 'what-next') {
     return (
       <div className="flex flex-col h-full overflow-y-auto">
-        <div className="p-8 max-w-2xl">
+        <div className="p-8 w-full">
           <h2 className="text-2xl font-semibold text-foreground mb-6">What Happens Next</h2>
           
           <div className="space-y-8">
