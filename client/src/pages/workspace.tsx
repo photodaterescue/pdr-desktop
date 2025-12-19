@@ -27,7 +27,9 @@ import {
   Sparkles,
   Tag,
   ShieldCheck,
-  Wrench
+  Wrench,
+  Sun,
+  Moon
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -187,6 +189,36 @@ export default function Workspace() {
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 0, currentFile: '' });
   const [sourceAnalysisResults, setSourceAnalysisResults] = useState<Record<string, SourceAnalysisResult>>({});
   const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return document.documentElement.classList.contains('dark');
+    }
+    return false;
+  });
+  const [folderStructure, setFolderStructure] = useState<'year' | 'year-month' | 'year-month-day'>(() => {
+    const saved = localStorage.getItem('pdr-folder-structure');
+    return (saved as 'year' | 'year-month' | 'year-month-day') || 'year';
+  });
+
+  const toggleDarkMode = () => {
+    const newValue = !isDarkMode;
+    setIsDarkMode(newValue);
+    if (newValue) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('pdr-dark-mode', newValue ? 'true' : 'false');
+  };
+
+  useEffect(() => {
+    const savedDarkMode = localStorage.getItem('pdr-dark-mode');
+    if (savedDarkMode === 'true') {
+      document.documentElement.classList.add('dark');
+      setIsDarkMode(true);
+    }
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -640,6 +672,7 @@ export default function Workspace() {
           setSources(updatedSources);
           setActiveSource(null);
         }}
+        onSettingsClick={() => setShowSettingsModal(true)}
       />
       {activePanel ? (
         <PanelPlaceholder panelType={activePanel} onPreviewChanges={() => setShowPreviewModal(true)} />
@@ -663,9 +696,26 @@ export default function Workspace() {
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       {showLicenseModal && <LicenseModal onClose={() => setShowLicenseModal(false)} />}
+      {showSettingsModal && (
+        <SettingsModal 
+          onClose={() => setShowSettingsModal(false)} 
+          folderStructure={folderStructure}
+          onFolderStructureChange={(value) => {
+            setFolderStructure(value);
+            localStorage.setItem('pdr-folder-structure', value);
+          }}
+        />
+      )}
       
-      {/* Fixed license badge in top-right corner */}
-      <div className="fixed top-4 right-4 z-40">
+      {/* Fixed controls in top-right corner */}
+      <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+        <button
+          onClick={toggleDarkMode}
+          className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground transition-colors"
+          data-testid="button-toggle-dark-mode"
+        >
+          {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
         <LicenseStatusBadge onClick={() => setShowLicenseModal(true)} />
       </div>
       
@@ -722,7 +772,7 @@ export default function Workspace() {
   );
 }
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -854,7 +904,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
       {/* UTILITY SECTION - BOTTOM */}
       <div className="p-4 border-t border-sidebar-border space-y-1">
-        <SidebarItem icon={<img src="/Assets/pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" />
+        <SidebarItem icon={<img src="/Assets/pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
         <SidebarItem icon={<img src="/Assets/pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" />
       </div>
     </div>
@@ -2172,6 +2222,100 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
               Back to workspace
             </button>
           </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: { 
+  onClose: () => void, 
+  folderStructure: 'year' | 'year-month' | 'year-month-day',
+  onFolderStructureChange: (value: 'year' | 'year-month' | 'year-month-day') => void 
+}) {
+  const options = [
+    { value: 'year' as const, label: 'Year', example: '2024/' },
+    { value: 'year-month' as const, label: 'Year / Month', example: '2024/03/' },
+    { value: 'year-month-day' as const, label: 'Year / Month / Day', example: '2024/03/15/' },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-6"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <Settings className="w-5 h-5 text-primary" />
+            </div>
+            <h2 className="text-xl font-semibold text-foreground">Settings</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-secondary rounded-full transition-colors"
+            data-testid="button-close-settings"
+          >
+            <X className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-3">
+              Folder Structure
+            </label>
+            <p className="text-xs text-muted-foreground mb-4">
+              Choose how files are organized in the destination folder.
+            </p>
+            
+            <div className="space-y-2">
+              {options.map((option) => (
+                <label
+                  key={option.value}
+                  className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                    folderStructure === option.value 
+                      ? 'border-primary bg-primary/5' 
+                      : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                  }`}
+                  data-testid={`option-folder-${option.value}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="radio"
+                      name="folderStructure"
+                      value={option.value}
+                      checked={folderStructure === option.value}
+                      onChange={() => onFolderStructureChange(option.value)}
+                      className="w-4 h-4 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm font-medium text-foreground">{option.label}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground font-mono">{option.example}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-border">
+          <Button
+            onClick={onClose}
+            className="w-full"
+            data-testid="button-save-settings"
+          >
+            Done
+          </Button>
         </div>
       </motion.div>
     </motion.div>
