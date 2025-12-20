@@ -2507,9 +2507,8 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
             </Button>
             <Button 
               onClick={handleOpenDestination}
-              disabled={!destinationPath || !isElectronEnv}
-              title={!isElectronEnv ? "Available in desktop app" : undefined}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white"
+              disabled={!destinationPath}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50"
               data-testid="button-report-open-destination"
             >
               <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
