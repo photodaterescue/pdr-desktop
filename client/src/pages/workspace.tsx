@@ -677,7 +677,7 @@ export default function Workspace() {
         onSettingsClick={() => setShowSettingsModal(true)}
       />
       {activePanel ? (
-        <PanelPlaceholder panelType={activePanel} />
+        <PanelPlaceholder panelType={activePanel} onBackToWorkspace={() => setActivePanel(null)} />
       ) : (
         <MainContent 
           sources={sources}
@@ -2577,12 +2577,20 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PanelPlaceholder({ panelType }: { panelType: string }) {
+function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string, onBackToWorkspace: () => void }) {
   if (panelType === 'best-practices') {
     return (
       <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
           <div className="w-full max-w-[940px]">
+            <Button 
+              variant="outline" 
+              onClick={onBackToWorkspace}
+              className="mb-6 text-muted-foreground hover:text-foreground"
+              data-testid="button-back-to-workspace-top"
+            >
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+            </Button>
             <h2 className="text-2xl font-semibold text-foreground mb-10">Best Practices</h2>
           
             <div className="space-y-12">
@@ -2628,6 +2636,17 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
                 </div>
               </section>
             </div>
+            
+            <div className="mt-12 pt-8 border-t border-border">
+              <Button 
+                variant="outline" 
+                onClick={onBackToWorkspace}
+                className="text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-bottom"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -2639,6 +2658,14 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
       <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
           <div className="w-full max-w-[940px]">
+            <Button 
+              variant="outline" 
+              onClick={onBackToWorkspace}
+              className="mb-6 text-muted-foreground hover:text-foreground"
+              data-testid="button-back-to-workspace-top"
+            >
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+            </Button>
             <h2 className="text-2xl font-semibold text-foreground mb-10">What Happens Next</h2>
           
             <div className="space-y-12">
@@ -2709,34 +2736,52 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
                 </div>
               </section>
             </div>
+            
+            <div className="mt-12 pt-8 border-t border-border">
+              <Button 
+                variant="outline" 
+                onClick={onBackToWorkspace}
+                className="text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-bottom"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              </Button>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  const content = {
-    'getting-started': {
-      title: 'Getting Started',
-      description: 'Learn how Photo Date Rescue works and the steps involved in restoring your photo and video metadata.'
-    },
-    'best-practices': {
-      title: 'Best Practices',
-      description: 'Discover expert-recommended workflows for organizing and preparing your photo library for analysis.'
-    }
-  };
-
-  const panel = content[panelType as keyof typeof content] || { title: '', description: '' };
-
+  // Getting Started (placeholder for now)
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-center max-w-sm">
-          <h2 className="text-2xl font-semibold text-foreground mb-3">{panel.title}</h2>
-          <p className="text-muted-foreground mb-6">{panel.description}</p>
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+      <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+        <div className="w-full max-w-[940px]">
+          <Button 
+            variant="outline" 
+            onClick={onBackToWorkspace}
+            className="mb-6 text-muted-foreground hover:text-foreground"
+            data-testid="button-back-to-workspace-top"
+          >
+            <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+          </Button>
+          <h2 className="text-2xl font-semibold text-foreground mb-10">Getting Started</h2>
+          
           <Card className="p-6 bg-secondary/20 border-primary/10">
             <p className="text-sm text-muted-foreground">Content coming soon</p>
           </Card>
+          
+          <div className="mt-12 pt-8 border-t border-border">
+            <Button 
+              variant="outline" 
+              onClick={onBackToWorkspace}
+              className="text-muted-foreground hover:text-foreground"
+              data-testid="button-back-to-workspace-bottom"
+            >
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+            </Button>
+          </div>
         </div>
       </div>
     </div>
