@@ -1029,6 +1029,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
   const [showPostFixReport, setShowPostFixReport] = useState(false);
+  const [hasCompletedFix, setHasCompletedFix] = useState(false);
   const [includePhotos, setIncludePhotos] = useState(true);
   const [includeVideos, setIncludeVideos] = useState(true);
   
@@ -1311,6 +1312,16 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                 {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
              <div className="flex items-center gap-4">
+               {hasCompletedFix && (
+                 <Button 
+                   onClick={() => setShowPostFixReport(true)} 
+                   variant="ghost"
+                   className="text-muted-foreground hover:text-foreground"
+                   data-testid="button-view-last-report"
+                 >
+                   <FileText className="w-4 h-4 mr-2" /> View Last Report
+                 </Button>
+               )}
                <Button 
                  onClick={() => setShowFixModal(true)} 
                  variant="outline" 
@@ -1333,6 +1344,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
         onViewReport={() => {
           setShowFixModal(false);
           setShowPostFixReport(true);
+          setHasCompletedFix(true);
         }}
       />}
       {showPostFixReport && <PostFixReportModal 
@@ -2171,12 +2183,19 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
 }) {
   const [filterConfidence, setFilterConfidence] = useState<'all' | 'confirmed' | 'recovered' | 'marked'>('all');
   const [isElectronEnv, setIsElectronEnv] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 100;
   
   useEffect(() => {
     import('@/lib/electron-bridge').then(({ isElectron }) => {
       setIsElectronEnv(isElectron());
     });
   }, []);
+  
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterConfidence]);
 
   const handleOpenDestination = async () => {
     if (destinationPath && isElectronEnv) {
@@ -2221,6 +2240,11 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
   const filteredFiles = allFiles.filter(file => 
     filterConfidence === 'all' || file.dateConfidence === filterConfidence
   );
+  
+  // Pagination
+  const totalPages = Math.ceil(filteredFiles.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedFiles = filteredFiles.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   
   // Calculate confidence counts from actual data
   const confidenceCounts = hasRealData 
@@ -2283,7 +2307,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
           {!hasRealData && (
             <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg text-sm text-amber-700 dark:text-amber-300">
               <Info className="w-4 h-4 shrink-0" />
-              <span>Showing sample data for preview. Actual results will appear when running in desktop app.</span>
+              <span>You're viewing a preview of the results. The desktop app displays the full report, optimised for large libraries.</span>
             </div>
           )}
           
@@ -2349,16 +2373,46 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
           </div>
           
           <div className="space-y-2">
-            <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="flex items-center justify-between px-4 py-2">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Showing {startIndex + 1}–{Math.min(startIndex + ITEMS_PER_PAGE, filteredFiles.length)} of {filteredFiles.length.toLocaleString()} files
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="h-8 px-3"
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {currentPage} of {totalPages.toLocaleString()}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-8 px-3"
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border">
               <span>Original Filename</span>
               <span></span>
               <span>New Filename</span>
               <span>Confidence</span>
             </div>
             <div className="space-y-1 max-h-[300px] overflow-y-auto">
-              {filteredFiles.map((file, index) => (
+              {paginatedFiles.map((file, index) => (
                 <div 
-                  key={index}
+                  key={startIndex + index}
                   className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 items-center px-4 py-3 bg-muted/30 dark:bg-muted/10 rounded-lg hover:bg-muted/50 dark:hover:bg-muted/20 transition-colors"
                 >
                   <span className="text-sm text-muted-foreground font-mono truncate">{file.filename}</span>

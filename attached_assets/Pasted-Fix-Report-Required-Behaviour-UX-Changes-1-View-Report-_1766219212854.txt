@@ -1,0 +1,128 @@
+Fix Report – Required Behaviour & UX Changes
+1. View Report button colour (too dark on hover)
+
+The hover state of “View Report” is currently too dark (reads as British Racing Green and feels off-brand).
+
+Adjust hover to stay within the same emerald scale used elsewhere:
+
+Use one step darker only than the default button (e.g. bg-emerald-600 → bg-emerald-700 max).
+
+No near-black greens, no dramatic contrast shift.
+
+Goal: clear affordance, not dominance.
+
+2. Fix Report must always be accessible after completion
+
+This is critical.
+
+After the Fix completes:
+
+The Fix Report must remain reachable without re-running the fix.
+
+Implement the following:
+
+Add a “View Last Report” button in the Workspace (recommended location):
+
+Bottom-right area near Run Fix, or
+
+Inside Output Preview as a secondary action.
+
+This button should:
+
+Reopen the most recent Fix Report modal
+
+Be disabled only if no fix has ever been run
+
+Clicking “Done” in the Fix Report:
+
+Should return to Workspace
+
+Must NOT discard report state
+
+Principle:
+
+A user should never lose access to the report for a completed run.
+
+3. Report rendering rules (performance & scale)
+
+The Fix Report must scale to hundreds of thousands of files.
+
+Required behaviour:
+
+On report open:
+
+Load summary counts immediately
+
+Render first N rows only (e.g. 100)
+
+Implement one of:
+
+Pagination OR
+
+Virtualised list (preferred if already available)
+
+Never attempt to render the full dataset at once
+
+No white screen resets
+
+No silent failure
+
+If loading fails:
+
+Show a clear inline error message
+
+Do not auto-close the modal
+
+4. Reword the “sample data” notice (tone matters)
+
+Replace:
+
+“Showing sample data for preview. Actual results will appear when running in desktop app.”
+
+With:
+
+“You’re viewing a preview of the results. The desktop app displays the full report, optimised for large libraries.”
+
+Tone:
+
+Calm
+
+Confident
+
+Intentional
+
+Not apologetic
+
+5. Optional but strongly recommended: Export capability
+
+Do not block release on this, but plan for it.
+
+Guidance:
+
+Add Export Summary (CSV or TXT):
+
+Counts only (Confirmed / Recovered / Marked)
+
+No per-file rows initially
+
+If full export is added later:
+
+Stream or chunk it
+
+Never generate huge files synchronously
+
+This positions PDR as serious, professional software without risking stability.
+
+Non-negotiable principles
+
+Reports are never ephemeral
+
+Success screens must lead somewhere meaningful
+
+No UI action should ever result in:
+
+White screen
+
+Lost context
+
+Forced re-run
