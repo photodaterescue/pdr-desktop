@@ -2588,12 +2588,43 @@ function PanelPlaceholder({ panelType }: { panelType: string }) {
             <div className="space-y-12">
               <section>
                 <div className="flex items-start gap-3 mb-4">
-                  <h3 className="text-lg font-medium text-foreground">How duplicates are handled</h3>
+                  <h3 className="text-lg font-medium text-foreground">How Photo Date Rescue handles duplicates</h3>
                 </div>
-                <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Photo Date Rescue never deletes your original files. When exact duplicates are detected, only one copy is included in the output to keep your library clean and consistent.</p>
-                  <p>The retained file is chosen deliberately — prioritising richer metadata, higher confidence timestamps, and file integrity — so the most complete and reliable version is preserved.</p>
-                  <p>Any additional identical copies are simply excluded from the output, not removed from your source. This approach avoids clutter while ensuring nothing is lost.</p>
+                <div className="space-y-6">
+                  <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                    <p className="font-medium text-foreground">Only true duplicates are treated as duplicates</p>
+                    <p>Photo Date Rescue only considers files to be duplicates when they are exact copies of one another.</p>
+                    <p>To determine this, PDR compares the actual contents of each file, not just the information attached to it. This confirms that two files are genuinely identical — pixel for pixel, byte for byte.</p>
+                  </div>
+                  
+                  <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                    <p className="font-medium text-foreground">Why metadata isn't used for duplicate removal</p>
+                    <p>Many files contain extra information that describes them, such as:</p>
+                    <ul className="list-disc ml-5 space-y-1.5">
+                      <li><span className="font-medium text-foreground">EXIF</span> (camera and capture details)</li>
+                      <li><span className="font-medium text-foreground">XMP</span> (sidecar or embedded metadata used by editing software)</li>
+                      <li><span className="font-medium text-foreground">JSON</span> (used by Google Takeout and other backup systems)</li>
+                      <li>Filenames, timestamps, and folder structure</li>
+                    </ul>
+                    <p>While these formats are extremely useful for restoring dates and organising files, they are not reliable indicators of duplication. Metadata can be missing, edited, regenerated, copied between files, or rewritten by apps and cloud services. Two completely different photos or videos can share identical metadata, even when their contents are not the same.</p>
+                    <p>For this reason, metadata is never used to decide whether a file is a duplicate.</p>
+                  </div>
+                  
+                  <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                    <p className="font-medium text-foreground">What happens when duplicates are found</p>
+                    <p>When exact duplicates are detected:</p>
+                    <ul className="list-disc ml-5 space-y-1.5">
+                      <li>One copy is included in the output</li>
+                      <li>Any additional identical copies are excluded from the result</li>
+                      <li>Original files are never deleted or modified</li>
+                    </ul>
+                    <p>This ensures a clean output without risking accidental data loss.</p>
+                  </div>
+                  
+                  <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                    <p className="font-medium text-foreground">Why this approach matters</p>
+                    <p>By relying on the most reliable method available and avoiding metadata-based guesswork, Photo Date Rescue ensures that only genuinely identical files are treated as duplicates — nothing more, nothing less.</p>
+                  </div>
                 </div>
               </section>
             </div>
