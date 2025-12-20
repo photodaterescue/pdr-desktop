@@ -2455,21 +2455,27 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
               <span>New Filename</span>
               <span>Confidence</span>
             </div>
-            <div className="space-y-1 max-h-[300px] overflow-y-auto">
-              {paginatedFiles.map((file, index) => (
-                <div 
-                  key={startIndex + index}
-                  className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 items-center px-4 py-3 bg-muted/30 dark:bg-muted/10 rounded-lg hover:bg-muted/50 dark:hover:bg-muted/20 transition-colors"
-                >
-                  <span className="text-sm text-muted-foreground font-mono truncate">{file.filename}</span>
-                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground font-mono truncate">{file.newFilename}</span>
-                  <div className="flex flex-col items-end gap-1">
-                    {getConfidenceBadge(file.dateConfidence)}
-                    <span className="text-xs text-muted-foreground">{file.dateSource}</span>
+            <div className="space-y-1 min-h-[300px] max-h-[300px] overflow-y-auto">
+              {paginatedFiles.length > 0 ? (
+                paginatedFiles.map((file, index) => (
+                  <div 
+                    key={startIndex + index}
+                    className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 items-center px-4 py-3 bg-muted/30 dark:bg-muted/10 rounded-lg hover:bg-muted/50 dark:hover:bg-muted/20 transition-colors"
+                  >
+                    <span className="text-sm text-muted-foreground font-mono truncate">{file.filename}</span>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-foreground font-mono truncate">{file.newFilename}</span>
+                    <div className="flex flex-col items-end gap-1">
+                      {getConfidenceBadge(file.dateConfidence)}
+                      <span className="text-xs text-muted-foreground">{file.dateSource}</span>
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                  No files match this filter
                 </div>
-              ))}
+              )}
             </div>
           </div>
           
