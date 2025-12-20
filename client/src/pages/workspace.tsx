@@ -2355,7 +2355,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
                 exit={{ opacity: 0, height: 0 }}
                 className="ml-6 p-4 bg-muted/30 dark:bg-muted/10 rounded-lg border border-border space-y-3"
               >
-                <div className="text-xs font-medium text-muted-foreground tracking-wider">Duplicate detection summary</div>
+                <div className="text-xs font-medium text-muted-foreground tracking-wider">Duplicate Detection Summary</div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">By EXIF signature</span>
@@ -2420,7 +2420,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
             <div className="flex items-center justify-between px-4 py-2">
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 {filteredFiles.length > 0 
-                  ? `Showing ${startIndex + 1}–${Math.min(startIndex + ITEMS_PER_PAGE, filteredFiles.length)} of ${filteredFiles.length.toLocaleString()} files`
+                  ? `Showing first ${Math.min(ITEMS_PER_PAGE, filteredFiles.length)} results`
                   : 'No files match this filter'}
               </div>
               {totalPages > 1 && (
