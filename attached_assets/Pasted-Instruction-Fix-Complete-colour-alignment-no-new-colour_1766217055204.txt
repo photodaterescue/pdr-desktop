@@ -1,0 +1,114 @@
+Instruction: Fix Complete colour alignment (no new colours)
+
+Goal:
+The Fix Complete modal must visually match the Analysis complete badge and the rest of the Workspace success states.
+Do not introduce new greens or stronger emphasis than already exists in the Workspace.
+
+✅ Authoritative source of truth
+
+Use the Analysis complete badge as the single source of truth for success green.
+
+That means:
+
+Emerald 400–500 range only
+
+No emerald-600+
+
+No dark-mode-only greens that don’t exist elsewhere
+
+🎨 Exact colour changes to make
+1️⃣ Success circle (icon at top of Fix Complete)
+
+Replace:
+
+bg-emerald-50
+
+border-emerald-200
+
+bg-emerald-900/30 (dark)
+
+With:
+
+bg-emerald-100
+border-emerald-300
+text-emerald-500
+
+
+Dark mode:
+
+dark:bg-emerald-900/20
+dark:border-emerald-600
+dark:text-emerald-400
+
+
+👉 This matches the subtle, calm success language already used in Workspace.
+
+2️⃣ Confirmed / Recovered / Marked numbers
+
+Replace all:
+
+text-emerald-600
+
+text-emerald-400 (dark)
+
+With:
+
+text-emerald-500
+dark:text-emerald-400
+
+
+No exceptions.
+
+3️⃣ “View Report” primary button (this is the biggest offender)
+
+Replace entirely:
+
+bg-emerald-600
+hover:bg-emerald-500
+
+
+With:
+
+bg-emerald-500
+hover:bg-emerald-400
+text-white
+
+
+Dark mode:
+
+dark:bg-emerald-600
+dark:hover:bg-emerald-500
+
+
+👉 This keeps it primary without overpowering the Workspace.
+
+4️⃣ Remove any unique emerald tokens from Fix Complete
+
+Explicitly forbidden in Fix Complete UI:
+
+emerald-600
+
+emerald-700
+
+emerald-800
+
+emerald-900 (except very low-opacity backgrounds as above)
+
+If it doesn’t exist in the Workspace already, it should not exist in Fix Complete.
+
+🧠 Design intent (important – include this)
+
+The Fix Complete modal should feel calm, resolved, and consistent, not celebratory or louder than the Workspace.
+Success is communicated through clarity, not saturation.
+
+✅ Acceptance check (agent must confirm)
+
+Ask the agent to confirm yes/no to each:
+
+Fix Complete uses no emerald above 500
+
+“View Report” button green matches Workspace success tone
+
+Fix Complete no longer visually dominates the Workspace beneath it
+
+If they can’t answer yes to all three, it’s not done.

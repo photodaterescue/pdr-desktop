@@ -2108,9 +2108,9 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, onViewReport }
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ type: "spring" }}
-              className="w-20 h-20 bg-emerald-50 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-200 dark:border-emerald-800"
+              className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-300 dark:border-emerald-600"
             >
-              <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 dark:text-emerald-400" />
             </motion.div>
             
             <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete</h2>
@@ -2118,15 +2118,15 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, onViewReport }
             
             <div className="grid grid-cols-3 gap-3 mb-6 p-4 bg-muted/50 rounded-xl">
               <div className="text-center">
-                <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{confirmedCount.toLocaleString()}</div>
+                <div className="text-lg font-semibold text-emerald-500 dark:text-emerald-400">{confirmedCount.toLocaleString()}</div>
                 <div className="text-xs text-muted-foreground">Confirmed</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-semibold text-indigo-600 dark:text-indigo-400">{recoveredCount.toLocaleString()}</div>
+                <div className="text-lg font-semibold text-indigo-500 dark:text-indigo-400">{recoveredCount.toLocaleString()}</div>
                 <div className="text-xs text-muted-foreground">Recovered</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-semibold text-slate-600 dark:text-slate-400">{markedCount.toLocaleString()}</div>
+                <div className="text-lg font-semibold text-slate-500 dark:text-slate-400">{markedCount.toLocaleString()}</div>
                 <div className="text-xs text-muted-foreground">Marked</div>
               </div>
             </div>
@@ -2134,7 +2134,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, onViewReport }
             <div className="space-y-3">
               <Button 
                 onClick={onViewReport} 
-                className="w-full bg-emerald-600 hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white" 
+                className="w-full bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white" 
                 size="lg"
                 data-testid="button-view-report"
               >
@@ -2237,9 +2237,9 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
   
   const getConfidenceBadge = (confidence: 'confirmed' | 'recovered' | 'marked') => {
     const styles = {
-      confirmed: "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-      recovered: "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800",
-      marked: "bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+      confirmed: "bg-emerald-100 dark:bg-emerald-900/20 text-emerald-500 dark:text-emerald-400 border-emerald-300 dark:border-emerald-600",
+      recovered: "bg-indigo-100 dark:bg-indigo-900/20 text-indigo-500 dark:text-indigo-400 border-indigo-300 dark:border-indigo-600",
+      marked: "bg-slate-100 dark:bg-slate-800/30 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
     };
     const labels = { confirmed: "Confirmed", recovered: "Recovered", marked: "Marked" };
     return (
@@ -2266,8 +2266,8 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
       >
         <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/30 rounded-full flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/20 rounded-full flex items-center justify-center border border-emerald-300 dark:border-emerald-600">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
             </div>
             <div>
               <h2 className="text-xl font-semibold text-foreground">Fix Report</h2>
@@ -2288,18 +2288,18 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
           )}
           
           <div className="grid grid-cols-3 gap-4">
-            <div className="p-4 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl border border-emerald-200 dark:border-emerald-800 text-center">
-              <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{confidenceCounts.confirmed.toLocaleString()}</div>
-              <div className="text-sm text-emerald-600 dark:text-emerald-400">Confirmed</div>
+            <div className="p-4 bg-emerald-100 dark:bg-emerald-900/20 rounded-xl border border-emerald-300 dark:border-emerald-600 text-center">
+              <div className="text-2xl font-semibold text-emerald-500 dark:text-emerald-400">{confidenceCounts.confirmed.toLocaleString()}</div>
+              <div className="text-sm text-emerald-500 dark:text-emerald-400">Confirmed</div>
               <div className="text-xs text-muted-foreground mt-1">EXIF / Takeout metadata</div>
             </div>
-            <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-200 dark:border-indigo-800 text-center">
-              <div className="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">{confidenceCounts.recovered.toLocaleString()}</div>
-              <div className="text-sm text-indigo-600 dark:text-indigo-400">Recovered</div>
+            <div className="p-4 bg-indigo-100 dark:bg-indigo-900/20 rounded-xl border border-indigo-300 dark:border-indigo-600 text-center">
+              <div className="text-2xl font-semibold text-indigo-500 dark:text-indigo-400">{confidenceCounts.recovered.toLocaleString()}</div>
+              <div className="text-sm text-indigo-500 dark:text-indigo-400">Recovered</div>
               <div className="text-xs text-muted-foreground mt-1">Filename patterns</div>
             </div>
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
-              <div className="text-2xl font-semibold text-slate-600 dark:text-slate-400">{confidenceCounts.marked.toLocaleString()}</div>
+            <div className="p-4 bg-slate-100 dark:bg-slate-800/30 rounded-xl border border-slate-300 dark:border-slate-600 text-center">
+              <div className="text-2xl font-semibold text-slate-500 dark:text-slate-400">{confidenceCounts.marked.toLocaleString()}</div>
               <div className="text-sm text-slate-500 dark:text-slate-400">Marked</div>
               <div className="text-xs text-muted-foreground mt-1">Fallback date used</div>
             </div>
@@ -2320,8 +2320,8 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
               onClick={() => setFilterConfidence('confirmed')}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 filterConfidence === 'confirmed' 
-                  ? 'bg-emerald-600 text-white' 
-                  : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                  ? 'bg-emerald-500 dark:bg-emerald-600 text-white' 
+                  : 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-500 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/40'
               }`}
             >
               Confirmed ({confidenceCounts.confirmed.toLocaleString()})
@@ -2330,8 +2330,8 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
               onClick={() => setFilterConfidence('recovered')}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 filterConfidence === 'recovered' 
-                  ? 'bg-indigo-600 text-white' 
-                  : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+                  ? 'bg-indigo-500 dark:bg-indigo-600 text-white' 
+                  : 'bg-indigo-100 dark:bg-indigo-900/20 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/40'
               }`}
             >
               Recovered ({confidenceCounts.recovered.toLocaleString()})
@@ -2340,8 +2340,8 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
               onClick={() => setFilterConfidence('marked')}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 filterConfidence === 'marked' 
-                  ? 'bg-slate-600 text-white' 
-                  : 'bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                  ? 'bg-slate-500 dark:bg-slate-600 text-white' 
+                  : 'bg-slate-100 dark:bg-slate-800/30 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700/40'
               }`}
             >
               Marked ({confidenceCounts.marked.toLocaleString()})
