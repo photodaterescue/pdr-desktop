@@ -2508,7 +2508,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
             <Button 
               onClick={handleOpenDestination}
               disabled={!destinationPath}
-              className="bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm hover:shadow disabled:opacity-50"
+              className="bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50"
               data-testid="button-report-open-destination"
             >
               <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
