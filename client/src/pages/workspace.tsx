@@ -2498,16 +2498,21 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
         <div className="p-6 border-t border-border bg-background shrink-0">
           <div className="flex gap-3 justify-end">
             <Button 
-              variant="outline" 
+              variant="ghost" 
+              onClick={onClose} 
+              className="text-muted-foreground hover:text-foreground"
+              data-testid="button-close-report"
+            >
+              Done
+            </Button>
+            <Button 
               onClick={handleOpenDestination}
               disabled={!destinationPath || !isElectronEnv}
               title={!isElectronEnv ? "Available in desktop app" : undefined}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white"
               data-testid="button-report-open-destination"
             >
               <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
-            </Button>
-            <Button onClick={onClose} size="lg" data-testid="button-close-report">
-              Done
             </Button>
           </div>
         </div>
