@@ -1056,6 +1056,13 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
     }
   };
 
+  const handleOpenDestination = async () => {
+    if (destinationPath) {
+      const { openDestinationFolder } = await import('@/lib/electron-bridge');
+      await openDestinationFolder(destinationPath);
+    }
+  };
+
   // Mock stats generator based on SELECTED sources and file type filters
   const getStats = () => {
     if (!hasSelection) {
@@ -1293,7 +1300,18 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                   <p className="text-sm text-muted-foreground">No destination selected. Click "Change Destination" to choose where to save fixed files.</p>
                 )}
               </div>
-              <Button variant="outline" onClick={handleChangeDestination} data-testid="button-change-destination">Change Destination</Button>
+              <div className="flex gap-2">
+                {destinationPath && (
+                  <Button 
+                    onClick={handleOpenDestination}
+                    className="bg-emerald-500 hover:bg-primary text-white transition-all duration-300 ease-linear"
+                    data-testid="button-open-destination-card"
+                  >
+                    <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+                  </Button>
+                )}
+                <Button variant="outline" onClick={handleChangeDestination} data-testid="button-change-destination">Change Destination</Button>
+              </div>
             </Card>
         </section>
       </motion.div>
@@ -1316,8 +1334,8 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                {hasCompletedFix && (
                  <Button 
                    onClick={() => setShowPostFixReport(true)} 
-                   variant="ghost"
-                   className="text-muted-foreground hover:text-foreground"
+                   variant="outline"
+                   className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
                    data-testid="button-view-last-report"
                  >
                    <FileText className="w-4 h-4 mr-2" /> View Last Report
