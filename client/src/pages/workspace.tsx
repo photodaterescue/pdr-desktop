@@ -2578,6 +2578,31 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
 }
 
 function PanelPlaceholder({ panelType }: { panelType: string }) {
+  if (panelType === 'best-practices') {
+    return (
+      <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+          <div className="w-full max-w-[940px]">
+            <h2 className="text-2xl font-semibold text-foreground mb-10">Best Practices</h2>
+          
+            <div className="space-y-12">
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <h3 className="text-lg font-medium text-foreground">How duplicates are handled</h3>
+                </div>
+                <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Photo Date Rescue never deletes your original files. When exact duplicates are detected, only one copy is included in the output to keep your library clean and consistent.</p>
+                  <p>The retained file is chosen deliberately — prioritising richer metadata, higher confidence timestamps, and file integrity — so the most complete and reliable version is preserved.</p>
+                  <p>Any additional identical copies are simply excluded from the output, not removed from your source. This approach avoids clutter while ensuring nothing is lost.</p>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
   if (panelType === 'what-next') {
     return (
       <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
