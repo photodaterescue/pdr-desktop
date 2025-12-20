@@ -2375,7 +2375,9 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
           <div className="space-y-2">
             <div className="flex items-center justify-between px-4 py-2">
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Showing {startIndex + 1}–{Math.min(startIndex + ITEMS_PER_PAGE, filteredFiles.length)} of {filteredFiles.length.toLocaleString()} files
+                {filteredFiles.length > 0 
+                  ? `Showing ${startIndex + 1}–${Math.min(startIndex + ITEMS_PER_PAGE, filteredFiles.length)} of ${filteredFiles.length.toLocaleString()} files`
+                  : 'No files match this filter'}
               </div>
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
