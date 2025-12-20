@@ -2187,6 +2187,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
   const [currentPage, setCurrentPage] = useState(1);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showDuplicateDetails, setShowDuplicateDetails] = useState(false);
+  const [previewDismissed, setPreviewDismissed] = useState(false);
   const ITEMS_PER_PAGE = 100;
   
   useEffect(() => {
@@ -2312,10 +2313,17 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
         </div>
         
         <div className="p-6 space-y-6 overflow-y-auto flex-1" onScroll={handleScroll}>
-          {!hasRealData && (
+          {!hasRealData && !previewDismissed && (
             <div className={`flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg text-sm text-amber-700 dark:text-amber-300 transition-opacity duration-300 ${hasScrolled ? 'opacity-40' : 'opacity-100'}`}>
               <Info className="w-4 h-4 shrink-0" />
-              <span>You're viewing a preview of the results. Designed to scale to very large libraries.</span>
+              <span className="flex-1">You're viewing a preview of the results. Designed to scale to very large libraries.</span>
+              <button 
+                onClick={() => setPreviewDismissed(true)}
+                className="text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200 p-0.5"
+                aria-label="Dismiss notice"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
           
@@ -2508,7 +2516,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
             <Button 
               onClick={handleOpenDestination}
               disabled={!destinationPath}
-              className="bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
               data-testid="button-report-open-destination"
             >
               <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
