@@ -2355,7 +2355,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
                 exit={{ opacity: 0, height: 0 }}
                 className="ml-6 p-4 bg-muted/30 dark:bg-muted/10 rounded-lg border border-border space-y-3"
               >
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Duplicate Detection Summary</div>
+                <div className="text-xs font-medium text-muted-foreground tracking-wider">Duplicate detection summary</div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">By EXIF signature</span>
@@ -2367,7 +2367,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground pt-2 border-t border-border">
-                  Duplicates identified using EXIF timestamp + camera model, or exact file content hash. Original files preserved; copies removed from output.
+                  Exact duplicates identified using file size and cryptographic content hash. Original file preserved; duplicate copies excluded from output.
                 </div>
               </motion.div>
             )}
