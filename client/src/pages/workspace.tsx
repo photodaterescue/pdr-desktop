@@ -2376,40 +2376,40 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setFilterConfidence('all')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${
                 filterConfidence === 'all' 
                   ? 'bg-primary text-primary-foreground' 
-                  : 'bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                  : 'bg-secondary text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               All ({totalFiles.toLocaleString()})
             </button>
             <button
               onClick={() => setFilterConfidence('confirmed')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${
                 filterConfidence === 'confirmed' 
                   ? 'bg-emerald-500 text-white' 
-                  : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                  : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 hover:ring-1 hover:ring-emerald-300 dark:hover:bg-emerald-900/50 dark:hover:ring-emerald-700'
               }`}
             >
               Confirmed ({confidenceCounts.confirmed.toLocaleString()})
             </button>
             <button
               onClick={() => setFilterConfidence('recovered')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${
                 filterConfidence === 'recovered' 
                   ? 'bg-indigo-500 text-white' 
-                  : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+                  : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 hover:ring-1 hover:ring-indigo-300 dark:hover:bg-indigo-900/50 dark:hover:ring-indigo-700'
               }`}
             >
               Recovered ({confidenceCounts.recovered.toLocaleString()})
             </button>
             <button
               onClick={() => setFilterConfidence('marked')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${
                 filterConfidence === 'marked' 
                   ? 'bg-slate-500 text-white' 
-                  : 'bg-slate-50 dark:bg-slate-900/30 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
+                  : 'bg-slate-50 dark:bg-slate-900/30 text-slate-600 dark:text-slate-400 hover:bg-slate-100 hover:ring-1 hover:ring-slate-300 dark:hover:bg-slate-800/50 dark:hover:ring-slate-600'
               }`}
             >
               Marked ({confidenceCounts.marked.toLocaleString()})
@@ -2500,7 +2500,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
             <Button 
               variant="outline" 
               onClick={onClose} 
-              className="border-border hover:bg-secondary hover:border-primary/30"
+              className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
               data-testid="button-close-report"
             >
               Done
@@ -2508,7 +2508,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
             <Button 
               onClick={handleOpenDestination}
               disabled={!destinationPath}
-              className="bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm hover:shadow-md disabled:opacity-50"
+              className="bg-emerald-500 hover:bg-emerald-400 hover:ring-2 hover:ring-emerald-300 hover:ring-offset-1 text-white shadow-sm hover:shadow-md disabled:opacity-50"
               data-testid="button-report-open-destination"
             >
               <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
