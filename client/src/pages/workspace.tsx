@@ -1301,7 +1301,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                 )}
               </div>
               <div className="flex gap-2">
-                {destinationPath && (
+                {destinationPath && hasCompletedFix && (
                   <Button 
                     onClick={handleOpenDestination}
                     className="bg-emerald-500 hover:bg-primary text-white transition-all duration-300 ease-linear"
