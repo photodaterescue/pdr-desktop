@@ -2338,7 +2338,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
           {/* Duplicates summary */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            <span>{hasRealData ? Math.floor(totalFiles * 0.03) : 37} exact duplicates safely removed</span>
+            <span>{hasRealData ? Math.floor(totalFiles * 0.03) : 9} exact duplicates safely removed</span>
           </div>
 
           <div className="flex gap-2 flex-wrap">
