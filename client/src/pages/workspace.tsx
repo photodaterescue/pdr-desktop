@@ -2176,11 +2176,11 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, onViewReport }
                   Close
                 </Button>
                 <Button 
-                  variant="outline" 
                   onClick={handleOpenDestination} 
                   size="lg"
                   disabled={!destinationPath || !isElectronEnv}
                   title={!isElectronEnv ? "Available in desktop app" : undefined}
+                  className="bg-emerald-500 hover:bg-primary text-white transition-all duration-300 ease-linear disabled:opacity-50"
                   data-testid="button-open-destination"
                 >
                   <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
