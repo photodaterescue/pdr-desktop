@@ -204,6 +204,13 @@ export default function Workspace() {
     return (saved as 'year' | 'year-month' | 'year-month-day') || 'year';
   });
 
+  // Persistent states that should survive panel navigation
+  const [destinationPath, setDestinationPath] = useState<string | null>(null);
+  const [destinationFreeGB, setDestinationFreeGB] = useState<number>(0);
+  const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
+  const [hasCompletedFix, setHasCompletedFix] = useState(false);
+  const [savedReportId, setSavedReportId] = useState<string | null>(null);
+
   const toggleDarkMode = () => {
     const newValue = !isDarkMode;
     setIsDarkMode(newValue);
@@ -696,6 +703,16 @@ export default function Workspace() {
           showCompletionScreen={showCompletionScreen}
           onDismissCompletion={() => setShowCompletionScreen(false)}
           onNavigateToBestPractices={() => setActivePanel('best-practices')}
+          destinationPath={destinationPath}
+          setDestinationPath={setDestinationPath}
+          destinationFreeGB={destinationFreeGB}
+          setDestinationFreeGB={setDestinationFreeGB}
+          destinationTotalGB={destinationTotalGB}
+          setDestinationTotalGB={setDestinationTotalGB}
+          hasCompletedFix={hasCompletedFix}
+          setHasCompletedFix={setHasCompletedFix}
+          savedReportId={savedReportId}
+          setSavedReportId={setSavedReportId}
         />
       )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
@@ -970,7 +987,17 @@ function MainContent({
   onAddZip,
   showCompletionScreen,
   onDismissCompletion,
-  onNavigateToBestPractices
+  onNavigateToBestPractices,
+  destinationPath,
+  setDestinationPath,
+  destinationFreeGB,
+  setDestinationFreeGB,
+  destinationTotalGB,
+  setDestinationTotalGB,
+  hasCompletedFix,
+  setHasCompletedFix,
+  savedReportId,
+  setSavedReportId
 }: { 
   sources: Source[],
   activeSource: Source | null,
@@ -986,7 +1013,17 @@ function MainContent({
   onAddZip: () => void,
   showCompletionScreen: boolean,
   onDismissCompletion: () => void,
-  onNavigateToBestPractices?: () => void
+  onNavigateToBestPractices?: () => void,
+  destinationPath: string | null,
+  setDestinationPath: (path: string | null) => void,
+  destinationFreeGB: number,
+  setDestinationFreeGB: (gb: number) => void,
+  destinationTotalGB: number,
+  setDestinationTotalGB: (gb: number) => void,
+  hasCompletedFix: boolean,
+  setHasCompletedFix: (value: boolean) => void,
+  savedReportId: string | null,
+  setSavedReportId: (id: string | null) => void
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
@@ -1024,11 +1061,33 @@ function MainContent({
       onViewResults={onViewResults}
       fileResults={sourceAnalysisResults}
       onNavigateToBestPractices={onNavigateToBestPractices}
+      destinationPath={destinationPath}
+      setDestinationPath={setDestinationPath}
+      destinationFreeGB={destinationFreeGB}
+      setDestinationFreeGB={setDestinationFreeGB}
+      destinationTotalGB={destinationTotalGB}
+      setDestinationTotalGB={setDestinationTotalGB}
+      hasCompletedFix={hasCompletedFix}
+      setHasCompletedFix={setHasCompletedFix}
+      savedReportId={savedReportId}
+      setSavedReportId={setSavedReportId}
     />
   );
 }
 
-function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults, onNavigateToBestPractices }: { sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult>, onNavigateToBestPractices?: () => void }) {
+function DashboardPanel({ 
+  sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults, onNavigateToBestPractices,
+  destinationPath, setDestinationPath, destinationFreeGB, setDestinationFreeGB, destinationTotalGB, setDestinationTotalGB,
+  hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId
+}: { 
+  sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, 
+  isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult>, onNavigateToBestPractices?: () => void,
+  destinationPath: string | null, setDestinationPath: (path: string | null) => void,
+  destinationFreeGB: number, setDestinationFreeGB: (gb: number) => void,
+  destinationTotalGB: number, setDestinationTotalGB: (gb: number) => void,
+  hasCompletedFix: boolean, setHasCompletedFix: (value: boolean) => void,
+  savedReportId: string | null, setSavedReportId: (id: string | null) => void
+}) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected && s.confirmed);
   const hasSelection = selectedSources.length > 0;
@@ -1037,15 +1096,9 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
   const [showPostFixReport, setShowPostFixReport] = useState(false);
   const [showReportsList, setShowReportsList] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [hasCompletedFix, setHasCompletedFix] = useState(false);
   const [includePhotos, setIncludePhotos] = useState(true);
   const [includeVideos, setIncludeVideos] = useState(true);
-  const [savedReportId, setSavedReportId] = useState<string | null>(null);
   const [reportSavedMessage, setReportSavedMessage] = useState(false);
-  
-  const [destinationPath, setDestinationPath] = useState<string | null>(null);
-  const [destinationFreeGB, setDestinationFreeGB] = useState<number>(0);
-  const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
   
   const handleChangeDestination = async () => {
     const { selectDestination, getDiskSpace, isElectron } = await import('@/lib/electron-bridge');
