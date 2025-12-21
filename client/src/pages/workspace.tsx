@@ -2410,7 +2410,7 @@ function ReportsListModal({ onClose, onViewReport }: {
               <FileText className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-foreground">Fix Reports</h2>
+              <h2 className="text-xl font-semibold text-foreground">Reports History</h2>
               <p className="text-sm text-muted-foreground">{reports.length} report{reports.length !== 1 ? 's' : ''} saved</p>
             </div>
           </div>
@@ -2434,10 +2434,10 @@ function ReportsListModal({ onClose, onViewReport }: {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {reports.map((report) => (
+              {reports.map((report, index) => (
                 <div 
                   key={report.id} 
-                  className="p-4 hover:bg-secondary/30 transition-colors"
+                  className={`p-4 hover:bg-secondary/30 transition-colors ${index === 0 ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}
                   data-testid={`report-row-${report.id}`}
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -2507,7 +2507,7 @@ function ReportsListModal({ onClose, onViewReport }: {
                         className="h-8"
                         data-testid={`button-view-report-${report.id}`}
                       >
-                        View Report
+                        Report Summary
                       </Button>
                     </div>
                   </div>
