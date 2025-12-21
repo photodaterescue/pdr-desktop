@@ -1303,8 +1303,9 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
               <div className="flex gap-2">
                 {destinationPath && hasCompletedFix && (
                   <Button 
+                    variant="outline"
                     onClick={handleOpenDestination}
-                    className="bg-emerald-500 hover:bg-primary text-white transition-all duration-300 ease-linear"
+                    className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
                     data-testid="button-open-destination-card"
                   >
                     <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
@@ -2182,10 +2183,11 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, onViewReport }
                   Close
                 </Button>
                 <Button 
+                  variant="outline"
                   onClick={handleOpenDestination} 
                   size="lg"
                   disabled={!destinationPath}
-                  className="bg-emerald-500 hover:bg-primary text-white transition-all duration-300 ease-linear"
+                  className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
                   data-testid="button-open-destination"
                 >
                   <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
@@ -2544,9 +2546,10 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
               Done
             </Button>
             <Button 
+              variant="outline"
               onClick={handleOpenDestination}
               disabled={!destinationPath}
-              className="bg-emerald-500 hover:bg-primary text-white transition-all duration-300 ease-linear"
+              className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
               data-testid="button-report-open-destination"
             >
               <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
