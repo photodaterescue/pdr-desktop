@@ -1370,7 +1370,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
         fileResults={fileResults}
         onViewReport={() => {
           setShowFixModal(false);
-          setShowPostFixReport(true);
+          setShowReportsList(true);
           setHasCompletedFix(true);
         }}
         onReportSaved={(reportId) => {
@@ -2437,7 +2437,7 @@ function ReportsListModal({ onClose, onViewReport }: {
               {reports.map((report, index) => (
                 <div 
                   key={report.id} 
-                  className={`p-4 hover:bg-secondary/30 transition-colors ${index === 0 ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}
+                  className={`p-4 hover:bg-secondary/30 transition-colors ${index === 0 ? 'bg-primary/10 border-l-4 border-l-primary ring-1 ring-primary/20' : ''}`}
                   data-testid={`report-row-${report.id}`}
                 >
                   <div className="flex items-start justify-between gap-4">
