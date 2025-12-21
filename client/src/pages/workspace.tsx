@@ -2962,7 +2962,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
               <span className="text-left">Original Filename</span>
               <span></span>
               <span className="text-left">New Filename</span>
-              <span className="text-right">Confidence</span>
+              <span className="text-left">Confidence</span>
             </div>
             <div className="space-y-1 min-h-[300px] max-h-[300px] overflow-y-auto">
               {paginatedFiles.length > 0 ? (
@@ -2989,7 +2989,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                         {file.newFilename}
                       </TooltipContent>
                     </Tooltip>
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <div className="flex flex-col items-start gap-1 flex-shrink-0">
                       {getConfidenceBadge(file.dateConfidence)}
                       <span className="text-xs text-muted-foreground">{file.dateSource}</span>
                     </div>
