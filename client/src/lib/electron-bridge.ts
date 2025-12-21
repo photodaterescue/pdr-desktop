@@ -1,4 +1,6 @@
-import type { AnalysisProgress, SourceAnalysisResult, ElectronAPI } from '../electron';
+import type { AnalysisProgress, SourceAnalysisResult, ElectronAPI, FixReport, ReportSummary, FileChange, SourceInfo } from '../electron';
+
+export type { FixReport, ReportSummary, FileChange, SourceInfo };
 
 export function isElectron(): boolean {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -58,6 +60,48 @@ export function removeAnalysisProgressListener(): void {
   if (isElectron()) {
     window.electronAPI!.removeAnalysisProgressListener();
   }
+}
+
+export async function saveReport(reportData: Omit<FixReport, 'id' | 'timestamp'>): Promise<{ success: boolean; data?: FixReport; error?: string }> {
+  if (isElectron()) {
+    return window.electronAPI!.saveReport(reportData);
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
+export async function loadReport(reportId: string): Promise<{ success: boolean; data?: FixReport | null; error?: string }> {
+  if (isElectron()) {
+    return window.electronAPI!.loadReport(reportId);
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
+export async function loadLatestReport(): Promise<{ success: boolean; data?: FixReport | null; error?: string }> {
+  if (isElectron()) {
+    return window.electronAPI!.loadLatestReport();
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
+export async function listReports(): Promise<{ success: boolean; data?: ReportSummary[]; error?: string }> {
+  if (isElectron()) {
+    return window.electronAPI!.listReports();
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
+export async function exportReportCSV(reportId: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
+  if (isElectron()) {
+    return window.electronAPI!.exportReportCSV(reportId);
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
+export async function exportReportTXT(reportId: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
+  if (isElectron()) {
+    return window.electronAPI!.exportReportTXT(reportId);
+  }
+  return { success: false, error: 'Not running in Electron environment' };
 }
 
 export function formatBytes(bytes: number): string {

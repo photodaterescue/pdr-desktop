@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { analyzeSource } from './analysis-engine';
+import { saveReport, loadReport, loadLatestReport, listReports, exportReportToCSV, exportReportToTXT, FixReport } from './report-storage';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -138,6 +139,90 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
       mainWindow?.webContents.send('analysis:progress', progress);
     });
     return { success: true, data: results };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('report:save', async (_event, reportData: Omit<FixReport, 'id' | 'timestamp'>) => {
+  try {
+    const savedReport = await saveReport(reportData);
+    return { success: true, data: savedReport };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('report:load', async (_event, reportId: string) => {
+  try {
+    const report = await loadReport(reportId);
+    return { success: true, data: report };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('report:loadLatest', async () => {
+  try {
+    const report = await loadLatestReport();
+    return { success: true, data: report };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('report:list', async () => {
+  try {
+    const reports = await listReports();
+    return { success: true, data: reports };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('report:exportCSV', async (_event, reportId: string) => {
+  try {
+    const report = await loadReport(reportId);
+    if (!report) {
+      return { success: false, error: 'Report not found' };
+    }
+    const csv = exportReportToCSV(report);
+    
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export Report as CSV',
+      defaultPath: `fix-report-${new Date(report.timestamp).toISOString().split('T')[0]}.csv`,
+      filters: [{ name: 'CSV Files', extensions: ['csv'] }]
+    });
+    
+    if (!result.canceled && result.filePath) {
+      fs.writeFileSync(result.filePath, csv, 'utf-8');
+      return { success: true, filePath: result.filePath };
+    }
+    return { success: false, error: 'Export cancelled' };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('report:exportTXT', async (_event, reportId: string) => {
+  try {
+    const report = await loadReport(reportId);
+    if (!report) {
+      return { success: false, error: 'Report not found' };
+    }
+    const txt = exportReportToTXT(report);
+    
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export Report as TXT',
+      defaultPath: `fix-report-${new Date(report.timestamp).toISOString().split('T')[0]}.txt`,
+      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+    });
+    
+    if (!result.canceled && result.filePath) {
+      fs.writeFileSync(result.filePath, txt, 'utf-8');
+      return { success: true, filePath: result.filePath };
+    }
+    return { success: false, error: 'Export cancelled' };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }

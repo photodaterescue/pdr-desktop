@@ -40,6 +40,41 @@ export interface SourceAnalysisResult {
   files: FileAnalysisResult[];
 }
 
+export interface FileChange {
+  originalFilename: string;
+  newFilename: string;
+  confidence: 'confirmed' | 'recovered' | 'marked';
+  dateSource: string;
+}
+
+export interface SourceInfo {
+  path: string;
+  type: 'folder' | 'zip' | 'drive';
+  label: string;
+}
+
+export interface FixReport {
+  id: string;
+  timestamp: string;
+  sources: SourceInfo[];
+  destinationPath: string;
+  counts: {
+    confirmed: number;
+    recovered: number;
+    marked: number;
+    total: number;
+  };
+  files: FileChange[];
+}
+
+export interface ReportSummary {
+  id: string;
+  timestamp: string;
+  destinationPath: string;
+  totalFiles: number;
+  sourceCount: number;
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   openZip: () => ipcRenderer.invoke('dialog:openZip'),
@@ -54,4 +89,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeAnalysisProgressListener: () => {
     ipcRenderer.removeAllListeners('analysis:progress');
   },
+  saveReport: (reportData: Omit<FixReport, 'id' | 'timestamp'>) => 
+    ipcRenderer.invoke('report:save', reportData),
+  loadReport: (reportId: string) => 
+    ipcRenderer.invoke('report:load', reportId),
+  loadLatestReport: () => 
+    ipcRenderer.invoke('report:loadLatest'),
+  listReports: () => 
+    ipcRenderer.invoke('report:list'),
+  exportReportCSV: (reportId: string) => 
+    ipcRenderer.invoke('report:exportCSV', reportId),
+  exportReportTXT: (reportId: string) => 
+    ipcRenderer.invoke('report:exportTXT', reportId),
 });
