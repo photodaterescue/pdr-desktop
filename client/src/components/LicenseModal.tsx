@@ -172,7 +172,7 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
                 Don't have a license?
               </p>
               <a
-                href="https://photodaterescue.lemonsqueezy.com"
+                href="https://photodaterescue.com/#pricing"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-primary hover:underline font-medium"
