@@ -2331,19 +2331,26 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults }: 
         </div>
         
         <div className="p-6 space-y-6 overflow-y-auto flex-1" onScroll={handleScroll}>
-          {!hasRealData && !previewDismissed && (
-            <div className={`flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg text-sm text-amber-700 dark:text-amber-300 transition-opacity duration-300 ${hasScrolled ? 'opacity-40' : 'opacity-100'}`}>
-              <Info className="w-4 h-4 shrink-0" />
-              <span className="flex-1">You're viewing a preview of the results. Designed to scale to very large libraries.</span>
-              <button 
-                onClick={() => setPreviewDismissed(true)}
-                className="text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200 p-0.5"
-                aria-label="Dismiss notice"
+          <AnimatePresence>
+            {!hasRealData && !previewDismissed && (
+              <motion.div 
+                initial={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className={`flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg text-sm text-amber-700 dark:text-amber-300 transition-opacity duration-300 ${hasScrolled ? 'opacity-40' : 'opacity-100'}`}
               >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+                <Info className="w-4 h-4 shrink-0" />
+                <span className="flex-1">You're viewing a preview of the results. Designed to scale to very large libraries.</span>
+                <button 
+                  onClick={() => setPreviewDismissed(true)}
+                  className="text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200 p-0.5"
+                  aria-label="Dismiss notice"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
           
           <div className="grid grid-cols-3 gap-4">
             <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-700 text-center">
