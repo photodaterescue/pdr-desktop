@@ -2632,6 +2632,8 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
     counts: { confirmed: number; recovered: number; marked: number; total: number };
   } | null>(null);
   const [isLoadingReport, setIsLoadingReport] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState<{ type: string } | null>(null);
   const ITEMS_PER_PAGE = 100;
   
   useEffect(() => {
@@ -2681,6 +2683,23 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
       const { openDestinationFolder } = await import('@/lib/electron-bridge');
       await openDestinationFolder(destinationPath);
     }
+  };
+
+  const handleExport = async (format: 'csv' | 'txt') => {
+    if (!savedReportId || !isElectronEnv) return;
+    
+    setIsExporting(true);
+    const { exportReportCSV, exportReportTXT } = await import('@/lib/electron-bridge');
+    
+    const result = format === 'csv' 
+      ? await exportReportCSV(savedReportId)
+      : await exportReportTXT(savedReportId);
+    
+    if (result.success) {
+      setExportSuccess({ type: format.toUpperCase() });
+      setTimeout(() => setExportSuccess(null), 3000);
+    }
+    setIsExporting(false);
   };
 
   // Extract real file data from loaded report or analysis results
@@ -3033,7 +3052,35 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                 </Button>
               )}
             </div>
-            <div className="flex gap-3">
+            <div className="flex items-center gap-3">
+              {savedReportId && (
+                <>
+                  {exportSuccess && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {exportSuccess.type} exported
+                    </span>
+                  )}
+                  <div className="flex items-center border border-border rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => handleExport('csv')}
+                      disabled={isExporting}
+                      className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors border-r border-border disabled:opacity-50"
+                      data-testid="button-export-csv-modal"
+                    >
+                      CSV
+                    </button>
+                    <button
+                      onClick={() => handleExport('txt')}
+                      disabled={isExporting}
+                      className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+                      data-testid="button-export-txt-modal"
+                    >
+                      TXT
+                    </button>
+                  </div>
+                </>
+              )}
               <Button 
                 variant="outline" 
                 onClick={onClose} 

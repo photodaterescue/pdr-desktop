@@ -248,6 +248,5 @@ export function exportReportToTXT(report: FixReport): string {
 export function getExportFilename(report: FixReport, extension: 'csv' | 'txt'): string {
   const date = new Date(report.timestamp);
   const dateStr = date.toISOString().split('T')[0];
-  const shortId = report.id.replace('report-', '').substring(0, 8);
-  return `PDR_Report_${dateStr}_${shortId}.${extension}`;
+  return `PDR_Report_${dateStr}_${report.id}.${extension}`;
 }
