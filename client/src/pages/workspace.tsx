@@ -1394,16 +1394,14 @@ function DashboardPanel({
                 {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
              <div className="flex items-center gap-4">
-               {hasCompletedFix && (
-                 <Button 
-                   onClick={() => setShowReportsList(true)} 
-                   variant="outline"
-                   className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
-                   data-testid="button-view-reports"
-                 >
-                   <FileText className="w-4 h-4 mr-2" /> Reports History
-                 </Button>
-               )}
+               <Button 
+                 onClick={() => setShowReportsList(true)} 
+                 variant="outline"
+                 className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                 data-testid="button-view-reports"
+               >
+                 <FileText className="w-4 h-4 mr-2" /> Reports History
+               </Button>
                <Button 
                  onClick={() => setShowFixModal(true)} 
                  variant="outline" 
@@ -2493,9 +2491,12 @@ function ReportsListModal({ onClose, onViewReport }: {
           ) : reports.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center px-6">
               <FileText className="w-12 h-12 text-muted-foreground/40 mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No Reports Yet</h3>
-              <p className="text-muted-foreground text-sm max-w-sm">
-                After you apply fixes to your photos, reports will appear here so you can review and export them later.
+              <h3 className="text-lg font-medium text-foreground mb-2">No reports yet</h3>
+              <p className="text-muted-foreground text-sm max-w-sm mb-2">
+                Run your first Fix to generate a report history.
+              </p>
+              <p className="text-muted-foreground/70 text-xs max-w-sm">
+                Reports are saved automatically after each Fix and can be viewed or exported anytime.
               </p>
             </div>
           ) : (
