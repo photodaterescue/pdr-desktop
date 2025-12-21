@@ -3283,6 +3283,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Run Fix</p>
                     <p className="text-sm text-muted-foreground">PDR analyses your Sources, applies its confidence system, and writes corrected files to the Destination.</p>
+                    <p className="text-xs text-muted-foreground mt-2">Nothing is overwritten — output is always written separately.</p>
                   </div>
                 </div>
               </section>
@@ -3364,7 +3365,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                 <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
                   <p className="text-sm font-medium text-foreground mb-2">Tip</p>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Start small for your first run. One Source, one Destination, one clean result — then scale with confidence.
+                    Start small for your first run. <span className="font-semibold text-foreground">One Source. One Destination.</span> One clean result — then scale with confidence.
                   </p>
                 </div>
               </section>
