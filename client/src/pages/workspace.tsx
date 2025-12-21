@@ -2818,12 +2818,12 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                       onClose();
                       onNavigateToBestPractices();
                     }}
-                    className="text-primary underline hover:text-primary/80"
+                    className="font-bold text-foreground underline hover:text-foreground/80"
                   >
                     Best Practices
                   </button>
                 ) : (
-                  <span>Best Practices</span>
+                  <span className="font-bold">Best Practices</span>
                 )}.
               </TooltipContent>
             </Tooltip>
