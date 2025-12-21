@@ -3014,7 +3014,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-slate-400 dark:bg-slate-500"></span>
-              <span><strong>Marked:</strong> Using file modification time as fallback</span>
+              <span><strong>Marked:</strong> No reliable date found — fallback date used</span>
             </div>
           </div>
         </div>
