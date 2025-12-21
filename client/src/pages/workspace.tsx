@@ -2958,23 +2958,38 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border">
-              <span>Original Filename</span>
+            <div className="grid grid-cols-[minmax(0,2fr)_24px_minmax(0,2fr)_100px] gap-2 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border" style={{ tableLayout: 'fixed' }}>
+              <span className="text-left">Original Filename</span>
               <span></span>
-              <span>New Filename</span>
-              <span>Confidence</span>
+              <span className="text-left">New Filename</span>
+              <span className="text-right">Confidence</span>
             </div>
             <div className="space-y-1 min-h-[300px] max-h-[300px] overflow-y-auto">
               {paginatedFiles.length > 0 ? (
                 paginatedFiles.map((file, index) => (
                   <div 
                     key={startIndex + index}
-                    className="grid grid-cols-[1fr_auto_1fr_auto] gap-4 items-center px-4 py-3 bg-muted/30 dark:bg-muted/10 rounded-lg hover:bg-muted/50 dark:hover:bg-muted/20 transition-colors"
+                    className="grid grid-cols-[minmax(0,2fr)_24px_minmax(0,2fr)_100px] gap-2 items-center px-4 py-3 bg-muted/30 dark:bg-muted/10 rounded-lg hover:bg-muted/50 dark:hover:bg-muted/20 transition-colors"
+                    style={{ tableLayout: 'fixed' }}
                   >
-                    <span className="text-sm text-muted-foreground font-mono truncate">{file.filename}</span>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-foreground font-mono truncate">{file.newFilename}</span>
-                    <div className="flex flex-col items-end gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="text-sm text-muted-foreground font-mono text-left overflow-hidden text-ellipsis whitespace-nowrap block">{file.filename}</span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-md font-mono text-xs break-all">
+                        {file.filename}
+                      </TooltipContent>
+                    </Tooltip>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="text-sm text-foreground font-mono text-left overflow-hidden text-ellipsis whitespace-nowrap block">{file.newFilename}</span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-md font-mono text-xs break-all">
+                        {file.newFilename}
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
                       {getConfidenceBadge(file.dateConfidence)}
                       <span className="text-xs text-muted-foreground">{file.dateSource}</span>
                     </div>
