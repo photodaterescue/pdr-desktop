@@ -71,6 +71,11 @@ export interface ReportSummary {
   destinationPath: string;
   totalFiles: number;
   sourceCount: number;
+  counts: {
+    confirmed: number;
+    recovered: number;
+    marked: number;
+  };
 }
 
 export interface ElectronAPI {

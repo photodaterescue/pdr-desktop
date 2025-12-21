@@ -35,6 +35,11 @@ export interface ReportSummary {
   destinationPath: string;
   totalFiles: number;
   sourceCount: number;
+  counts: {
+    confirmed: number;
+    recovered: number;
+    marked: number;
+  };
 }
 
 function getReportsDirectory(): string {
@@ -116,7 +121,12 @@ export async function listReports(): Promise<ReportSummary[]> {
         timestamp: report.timestamp,
         destinationPath: report.destinationPath,
         totalFiles: report.counts.total,
-        sourceCount: report.sources.length
+        sourceCount: report.sources.length,
+        counts: {
+          confirmed: report.counts.confirmed,
+          recovered: report.counts.recovered,
+          marked: report.counts.marked
+        }
       });
     } catch (e) {
       console.error(`Error reading report ${filePath}:`, e);

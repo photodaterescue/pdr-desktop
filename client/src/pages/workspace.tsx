@@ -23,6 +23,7 @@ import {
   X,
   LayoutGrid,
   ArrowRight,
+  ArrowLeft,
   Loader2,
   Info,
   Sparkles,
@@ -1030,6 +1031,8 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
   const [showPostFixReport, setShowPostFixReport] = useState(false);
+  const [showReportsList, setShowReportsList] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [hasCompletedFix, setHasCompletedFix] = useState(false);
   const [includePhotos, setIncludePhotos] = useState(true);
   const [includeVideos, setIncludeVideos] = useState(true);
@@ -1336,7 +1339,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
              <div className="flex items-center gap-4">
                {hasCompletedFix && (
                  <Button 
-                   onClick={() => setShowPostFixReport(true)} 
+                   onClick={() => setShowReportsList(true)} 
                    variant="outline"
                    className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
                    data-testid="button-view-reports"
@@ -1381,7 +1384,21 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
         results={results}
         destinationPath={destinationPath}
         fileResults={fileResults}
-        savedReportId={savedReportId}
+        savedReportId={selectedReportId || savedReportId}
+        onBackToReports={() => {
+          setShowPostFixReport(false);
+          setSelectedReportId(null);
+          setShowReportsList(true);
+        }}
+      />}
+      
+      {showReportsList && <ReportsListModal 
+        onClose={() => setShowReportsList(false)}
+        onViewReport={(reportId) => {
+          setSelectedReportId(reportId);
+          setShowReportsList(false);
+          setShowPostFixReport(true);
+        }}
       />}
       
       <AnimatePresence>
@@ -2286,6 +2303,235 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   );
 }
 
+function ReportsListModal({ onClose, onViewReport }: { 
+  onClose: () => void,
+  onViewReport: (reportId: string) => void 
+}) {
+  const [reports, setReports] = useState<Array<{
+    id: string;
+    timestamp: string;
+    destinationPath: string;
+    totalFiles: number;
+    sourceCount: number;
+    counts: { confirmed: number; recovered: number; marked: number };
+  }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<{ id: string; type: string } | null>(null);
+
+  useEffect(() => {
+    const loadReports = async () => {
+      const { listReports, isElectron } = await import('@/lib/electron-bridge');
+      
+      if (isElectron()) {
+        const result = await listReports();
+        if (result.success && result.data) {
+          setReports(result.data);
+        }
+      } else {
+        setReports([
+          {
+            id: 'demo-report-1',
+            timestamp: new Date().toISOString(),
+            destinationPath: '/Users/demo/Photos/Fixed',
+            totalFiles: 1248,
+            sourceCount: 2,
+            counts: { confirmed: 812, recovered: 311, marked: 125 }
+          },
+          {
+            id: 'demo-report-2',
+            timestamp: new Date(Date.now() - 86400000).toISOString(),
+            destinationPath: '/Users/demo/Pictures/Organized',
+            totalFiles: 456,
+            sourceCount: 1,
+            counts: { confirmed: 298, recovered: 112, marked: 46 }
+          }
+        ]);
+      }
+      setIsLoading(false);
+    };
+    
+    loadReports();
+  }, []);
+
+  const handleExport = async (reportId: string, format: 'csv' | 'txt') => {
+    setExportingId(reportId);
+    const { exportReportCSV, exportReportTXT, isElectron } = await import('@/lib/electron-bridge');
+    
+    if (isElectron()) {
+      const result = format === 'csv' 
+        ? await exportReportCSV(reportId)
+        : await exportReportTXT(reportId);
+      
+      if (result.success) {
+        setExportSuccess({ id: reportId, type: format.toUpperCase() });
+        setTimeout(() => setExportSuccess(null), 3000);
+      }
+    }
+    setExportingId(null);
+  };
+
+  const formatDate = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString(undefined, { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const truncatePath = (path: string, maxLength = 40) => {
+    if (path.length <= maxLength) return path;
+    const parts = path.split('/');
+    if (parts.length <= 2) return path.slice(0, maxLength - 3) + '...';
+    return parts[0] + '/.../' + parts.slice(-2).join('/');
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-background rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] flex flex-col border border-border"
+      >
+        <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+              <FileText className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Fix Reports</h2>
+              <p className="text-sm text-muted-foreground">{reports.length} report{reports.length !== 1 ? 's' : ''} saved</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors" data-testid="button-close-reports-list">
+            <X className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
+            </div>
+          ) : reports.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center px-6">
+              <FileText className="w-12 h-12 text-muted-foreground/40 mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">No Reports Yet</h3>
+              <p className="text-muted-foreground text-sm max-w-sm">
+                After you apply fixes to your photos, reports will appear here so you can review and export them later.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {reports.map((report) => (
+                <div 
+                  key={report.id} 
+                  className="p-4 hover:bg-secondary/30 transition-colors"
+                  data-testid={`report-row-${report.id}`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-foreground">
+                          {formatDate(report.timestamp)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {report.sourceCount} source{report.sourceCount !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      
+                      <div className="text-sm text-muted-foreground mb-2 truncate" title={report.destinationPath}>
+                        <FolderOpen className="w-3.5 h-3.5 inline mr-1.5 opacity-60" />
+                        {truncatePath(report.destinationPath)}
+                      </div>
+                      
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="font-medium text-foreground">{report.totalFiles.toLocaleString()} files</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          <span className="text-muted-foreground">{report.counts.confirmed.toLocaleString()} Confirmed</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                          <span className="text-muted-foreground">{report.counts.recovered.toLocaleString()} Recovered</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                          <span className="text-muted-foreground">{report.counts.marked.toLocaleString()} Marked</span>
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 shrink-0">
+                      {exportSuccess?.id === report.id && (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {exportSuccess.type} exported
+                        </span>
+                      )}
+                      
+                      <div className="flex items-center border border-border rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => handleExport(report.id, 'csv')}
+                          disabled={exportingId === report.id}
+                          className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors border-r border-border disabled:opacity-50"
+                          data-testid={`button-export-csv-${report.id}`}
+                        >
+                          CSV
+                        </button>
+                        <button
+                          onClick={() => handleExport(report.id, 'txt')}
+                          disabled={exportingId === report.id}
+                          className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+                          data-testid={`button-export-txt-${report.id}`}
+                        >
+                          TXT
+                        </button>
+                      </div>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onViewReport(report.id)}
+                        className="h-8"
+                        data-testid={`button-view-report-${report.id}`}
+                      >
+                        View Report
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        <div className="p-4 border-t border-border shrink-0">
+          <Button 
+            variant="outline" 
+            onClick={onClose}
+            className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+            data-testid="button-back-to-workspace"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" /> Back to Workspace
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function generateMockFiles(totalFiles: number): Array<{originalFilename: string, newFilename: string, confidence: 'confirmed' | 'recovered' | 'marked', dateSource: string}> {
   const files = [];
   const confidences: Array<'confirmed' | 'recovered' | 'marked'> = ['confirmed', 'recovered', 'marked'];
@@ -2308,12 +2554,13 @@ function generateMockFiles(totalFiles: number): Array<{originalFilename: string,
   return files;
 }
 
-function PostFixReportModal({ onClose, results, destinationPath, fileResults, savedReportId }: { 
+function PostFixReportModal({ onClose, results, destinationPath: propDestinationPath, fileResults, savedReportId, onBackToReports }: { 
   onClose: () => void, 
   results?: AnalysisResults,
   destinationPath: string | null,
   fileResults?: Record<string, SourceAnalysisResult>,
-  savedReportId?: string | null
+  savedReportId?: string | null,
+  onBackToReports?: () => void
 }) {
   const [filterConfidence, setFilterConfidence] = useState<'all' | 'confirmed' | 'recovered' | 'marked'>('all');
   const [isElectronEnv, setIsElectronEnv] = useState(false);
@@ -2321,6 +2568,12 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showDuplicateDetails, setShowDuplicateDetails] = useState(false);
   const [previewDismissed, setPreviewDismissed] = useState(false);
+  const [loadedReport, setLoadedReport] = useState<{
+    destinationPath: string;
+    files: Array<{ originalFilename: string; newFilename: string; confidence: 'confirmed' | 'recovered' | 'marked'; dateSource: string }>;
+    counts: { confirmed: number; recovered: number; marked: number; total: number };
+  } | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
   const ITEMS_PER_PAGE = 100;
   
   useEffect(() => {
@@ -2328,6 +2581,25 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
       setIsElectronEnv(isElectron());
     });
   }, []);
+  
+  useEffect(() => {
+    if (savedReportId) {
+      setIsLoadingReport(true);
+      import('@/lib/electron-bridge').then(async ({ loadReport, isElectron }) => {
+        if (isElectron()) {
+          const result = await loadReport(savedReportId);
+          if (result.success && result.data) {
+            setLoadedReport({
+              destinationPath: result.data.destinationPath,
+              files: result.data.files,
+              counts: result.data.counts
+            });
+          }
+        }
+        setIsLoadingReport(false);
+      });
+    }
+  }, [savedReportId]);
   
   // Reset page when filter changes
   useEffect(() => {
@@ -2339,6 +2611,8 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
     setHasScrolled(e.currentTarget.scrollTop > 20);
   };
 
+  const destinationPath = loadedReport?.destinationPath || propDestinationPath;
+  
   const handleOpenDestination = async () => {
     if (destinationPath && isElectronEnv) {
       const { openDestinationFolder } = await import('@/lib/electron-bridge');
@@ -2346,8 +2620,15 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
     }
   };
 
-  // Extract real file data from analysis results when available
-  const realFiles = Object.values(fileResults || {}).flatMap(source => 
+  // Extract real file data from loaded report or analysis results
+  const reportFiles = loadedReport?.files.map(f => ({
+    filename: f.originalFilename,
+    newFilename: f.newFilename,
+    dateConfidence: f.confidence,
+    dateSource: f.dateSource
+  })) || [];
+  
+  const analysisFiles = Object.values(fileResults || {}).flatMap(source => 
     (source.files || []).map(file => ({
       filename: file.filename,
       newFilename: file.suggestedFilename || file.filename,
@@ -2356,7 +2637,7 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
     }))
   );
 
-  // Fallback mock data for preview mode when no real analysis data exists
+  // Fallback mock data for preview mode when no real data exists
   const mockFileData = [
     { filename: "IMG_20240115_143022.jpg", newFilename: "2024-01-15_14-30-22.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
     { filename: "DSC_9921.jpg", newFilename: "2023-08-12_09-15-00.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
@@ -2370,14 +2651,15 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
     { filename: "sunset_beach.jpg", newFilename: "2024-08-05_18-45-00.jpg", dateConfidence: "confirmed" as const, dateSource: "Google Takeout JSON" },
   ];
   
-  // Use real data when available, otherwise use mock data for UI preview
-  const hasRealData = realFiles.length > 0;
-  const allFiles = hasRealData ? realFiles : mockFileData;
+  // Priority: loaded report > analysis results > mock data
+  const hasLoadedReport = reportFiles.length > 0;
+  const hasAnalysisData = analysisFiles.length > 0;
+  const allFiles = hasLoadedReport ? reportFiles : (hasAnalysisData ? analysisFiles : mockFileData);
+  const hasRealData = hasLoadedReport || hasAnalysisData;
   
-  // Calculate totals from real results or derive from file list
-  const totalFiles = results?.fixed 
-    ? results.fixed + results.unchanged + (results.skipped || 0) 
-    : allFiles.length;
+  // Calculate totals from loaded report, results, or file list
+  const totalFiles = loadedReport?.counts.total 
+    || (results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : allFiles.length);
   
   const filteredFiles = allFiles.filter(file => 
     filterConfidence === 'all' || file.dateConfidence === filterConfidence
@@ -2388,18 +2670,24 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const paginatedFiles = filteredFiles.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   
-  // Calculate confidence counts from actual data
-  const confidenceCounts = hasRealData 
+  // Calculate confidence counts from loaded report or actual data
+  const confidenceCounts = loadedReport?.counts 
     ? {
-        confirmed: allFiles.filter(f => f.dateConfidence === 'confirmed').length,
-        recovered: allFiles.filter(f => f.dateConfidence === 'recovered').length,
-        marked: allFiles.filter(f => f.dateConfidence === 'marked').length
+        confirmed: loadedReport.counts.confirmed,
+        recovered: loadedReport.counts.recovered,
+        marked: loadedReport.counts.marked
       }
-    : {
-        confirmed: Math.floor(totalFiles * 0.65),
-        recovered: Math.floor(totalFiles * 0.25),
-        marked: totalFiles - Math.floor(totalFiles * 0.65) - Math.floor(totalFiles * 0.25)
-      };
+    : hasRealData 
+      ? {
+          confirmed: allFiles.filter(f => f.dateConfidence === 'confirmed').length,
+          recovered: allFiles.filter(f => f.dateConfidence === 'recovered').length,
+          marked: allFiles.filter(f => f.dateConfidence === 'marked').length
+        }
+      : {
+          confirmed: Math.floor(totalFiles * 0.65),
+          recovered: Math.floor(totalFiles * 0.25),
+          marked: totalFiles - Math.floor(totalFiles * 0.65) - Math.floor(totalFiles * 0.25)
+        };
   
   const getConfidenceBadge = (confidence: 'confirmed' | 'recovered' | 'marked') => {
     const styles = {
@@ -2414,6 +2702,21 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
       </span>
     );
   };
+  
+  if (isLoadingReport) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+      >
+        <div className="bg-background rounded-2xl shadow-2xl p-8 text-center">
+          <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading report...</p>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div 
@@ -2644,24 +2947,38 @@ function PostFixReportModal({ onClose, results, destinationPath, fileResults, sa
         </div>
 
         <div className="p-6 border-t border-border bg-background shrink-0">
-          <div className="flex gap-3 justify-end">
-            <Button 
-              variant="outline" 
-              onClick={onClose} 
-              className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
-              data-testid="button-close-report"
-            >
-              Done
-            </Button>
-            <Button 
-              variant="outline"
-              onClick={handleOpenDestination}
-              disabled={!destinationPath}
-              className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
-              data-testid="button-report-open-destination"
-            >
-              <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
-            </Button>
+          <div className="flex gap-3 justify-between">
+            <div>
+              {onBackToReports && (
+                <Button 
+                  variant="outline" 
+                  onClick={onBackToReports}
+                  className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                  data-testid="button-back-to-reports"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" /> Back to Reports
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button 
+                variant="outline" 
+                onClick={onClose} 
+                className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                data-testid="button-close-report"
+              >
+                Done
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={handleOpenDestination}
+                disabled={!destinationPath}
+                className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
+                data-testid="button-report-open-destination"
+              >
+                <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+              </Button>
+            </div>
           </div>
         </div>
       </motion.div>
