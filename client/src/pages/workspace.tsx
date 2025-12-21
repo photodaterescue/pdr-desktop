@@ -2547,11 +2547,11 @@ function ReportsListModal({ onClose, onViewReport }: {
                         </span>
                       )}
                       
-                      <div className="flex items-center border border-border rounded-lg overflow-hidden">
+                      <div className="flex items-center border border-muted-foreground/30 rounded-lg overflow-hidden">
                         <button
                           onClick={() => handleExport(report.id, 'csv')}
                           disabled={exportingId === report.id}
-                          className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors border-r border-border disabled:opacity-50"
+                          className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary hover:border-muted-foreground/50 transition-colors border-r border-muted-foreground/30 disabled:opacity-50"
                           data-testid={`button-export-csv-${report.id}`}
                         >
                           CSV
@@ -2559,7 +2559,7 @@ function ReportsListModal({ onClose, onViewReport }: {
                         <button
                           onClick={() => handleExport(report.id, 'txt')}
                           disabled={exportingId === report.id}
-                          className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+                          className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary hover:border-muted-foreground/50 transition-colors disabled:opacity-50"
                           data-testid={`button-export-txt-${report.id}`}
                         >
                           TXT
@@ -3082,11 +3082,11 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                       {exportSuccess.type} exported
                     </span>
                   )}
-                  <div className="flex items-center border border-border rounded-lg overflow-hidden">
+                  <div className="flex items-center border border-muted-foreground/30 rounded-lg overflow-hidden">
                     <button
                       onClick={() => handleExport('csv')}
                       disabled={isExporting}
-                      className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors border-r border-border disabled:opacity-50"
+                      className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary hover:border-muted-foreground/50 transition-colors border-r border-muted-foreground/30 disabled:opacity-50"
                       data-testid="button-export-csv-modal"
                     >
                       CSV
@@ -3094,7 +3094,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                     <button
                       onClick={() => handleExport('txt')}
                       disabled={isExporting}
-                      className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+                      className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary hover:border-muted-foreground/50 transition-colors disabled:opacity-50"
                       data-testid="button-export-txt-modal"
                     >
                       TXT
