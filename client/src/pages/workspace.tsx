@@ -2293,9 +2293,13 @@ function generateMockFiles(totalFiles: number): Array<{originalFilename: string,
   
   for (let i = 0; i < Math.min(totalFiles, 100); i++) {
     const confidence = confidences[i % 3 === 0 ? 0 : i % 3 === 1 ? 1 : 2];
+    const day = String(1 + (i % 28)).padStart(2, '0');
+    const hour = String(i % 24).padStart(2, '0');
+    const minute = String(i % 60).padStart(2, '0');
+    const second = String((i * 7) % 60).padStart(2, '0');
     files.push({
-      originalFilename: `IMG_${20200115 + i}_${143022 + i}.jpg`,
-      newFilename: `2024-01-${String(15 + (i % 28)).padStart(2, '0')}_${String(14 + (i % 10)).padStart(2, '0')}-${String(30 + (i % 30)).padStart(2, '0')}-${String(22 + i).padStart(2, '0')}.jpg`,
+      originalFilename: `IMG_${20200115 + i}_${143022 + (i * 11)}.jpg`,
+      newFilename: `2024-01-${day}_${hour}-${minute}-${second}.jpg`,
       confidence,
       dateSource: sources[i % sources.length]
     });
