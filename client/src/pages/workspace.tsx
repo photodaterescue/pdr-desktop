@@ -2584,16 +2584,21 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
   
   useEffect(() => {
     if (savedReportId) {
+      setLoadedReport(null);
       setIsLoadingReport(true);
       import('@/lib/electron-bridge').then(async ({ loadReport, isElectron }) => {
         if (isElectron()) {
-          const result = await loadReport(savedReportId);
-          if (result.success && result.data) {
-            setLoadedReport({
-              destinationPath: result.data.destinationPath,
-              files: result.data.files,
-              counts: result.data.counts
-            });
+          try {
+            const result = await loadReport(savedReportId);
+            if (result.success && result.data) {
+              setLoadedReport({
+                destinationPath: result.data.destinationPath,
+                files: result.data.files,
+                counts: result.data.counts
+              });
+            }
+          } catch (err) {
+            console.error('Failed to load report:', err);
           }
         }
         setIsLoadingReport(false);
