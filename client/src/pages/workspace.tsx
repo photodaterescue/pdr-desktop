@@ -691,7 +691,11 @@ export default function Workspace() {
         onSettingsClick={() => setShowSettingsModal(true)}
       />
       {activePanel ? (
-        <PanelPlaceholder panelType={activePanel} onBackToWorkspace={() => setActivePanel(null)} />
+        <PanelPlaceholder 
+          panelType={activePanel} 
+          onBackToWorkspace={() => setActivePanel(null)} 
+          onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next')}
+        />
       ) : (
         <MainContent 
           sources={sources}
@@ -3229,7 +3233,159 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string, onBackToWorkspace: () => void }) {
+function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void }) {
+  if (panelType === 'getting-started') {
+    return (
+      <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+          <div className="w-full max-w-[940px]">
+            <Button 
+              variant="outline" 
+              onClick={onBackToWorkspace}
+              className="mb-6 text-muted-foreground hover:text-foreground"
+              data-testid="button-back-to-workspace-top"
+            >
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+            </Button>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">Getting Started</h2>
+            <p className="text-muted-foreground mb-10">Everything you need to run your first clean, safe fix — in minutes.</p>
+          
+            <div className="space-y-10">
+              {/* What PDR Does */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">What Photo Date Rescue Does</h3>
+                <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Photo Date Rescue restores correct dates to photos and videos by analysing trusted metadata, structured filename patterns, and fallback rules — without ever modifying your originals.</p>
+                  <p>It's designed to handle messy, real-world libraries safely and predictably, even at large scale.</p>
+                </div>
+              </section>
+
+              {/* Your First Fix */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">Your First Fix (5 Simple Steps)</h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Add a Source</p>
+                    <p className="text-sm text-muted-foreground">Choose a folder, ZIP archive, or drive that contains the photos or videos you want to fix.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Tick the Checkbox</p>
+                    <p className="text-sm text-muted-foreground">Only checked Sources are included — this is how you tell PDR exactly what to analyse.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Review the Date Summary</p>
+                    <p className="text-sm text-muted-foreground">Check how many files are Confirmed, Recovered, or Marked before running the fix.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Choose a Destination</p>
+                    <p className="text-sm text-muted-foreground">Select a dedicated output folder where the cleaned library will be written.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Run Fix</p>
+                    <p className="text-sm text-muted-foreground">PDR analyses your Sources, applies its confidence system, and writes corrected files to the Destination.</p>
+                  </div>
+                </div>
+              </section>
+
+              {/* What Happens After */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">What Happens After You Run Fix</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <p className="text-sm text-foreground">A clean, organised output folder is created</p>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <p className="text-sm text-foreground">Original files remain untouched</p>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <p className="text-sm text-foreground">A permanent Fix Report is saved</p>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <p className="text-sm text-foreground">You can review, export, or audit the results at any time</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground mt-4 font-medium">Nothing is hidden. Nothing is guessed without being labelled.</p>
+              </section>
+
+              {/* Confidence at a Glance */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">Confidence at a Glance</h3>
+                <div className="space-y-3">
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-1">Confirmed</p>
+                    <p className="text-sm text-muted-foreground">Real capture or backup metadata found (highest trust)</p>
+                  </div>
+                  <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg">
+                    <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Recovered</p>
+                    <p className="text-sm text-muted-foreground">Date reconstructed from consistent filename patterns</p>
+                  </div>
+                  <div className="p-4 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-lg">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Marked</p>
+                    <p className="text-sm text-muted-foreground">No reliable date found; fallback rules used (review recommended)</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground mt-4">Use this summary as your guide before and after each fix.</p>
+              </section>
+
+              {/* Where to Go Next */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">Where to Go Next</h3>
+                <div className="space-y-3">
+                  <button 
+                    onClick={() => onNavigateToPanel?.('best-practices')}
+                    className="w-full p-4 bg-secondary/30 border border-border rounded-lg text-left hover:bg-secondary/50 transition-colors"
+                  >
+                    <p className="font-medium text-foreground mb-1">Best Practices</p>
+                    <p className="text-sm text-muted-foreground">Learn how to get the cleanest, most predictable results</p>
+                  </button>
+                  <button 
+                    onClick={() => onNavigateToPanel?.('best-practices')}
+                    className="w-full p-4 bg-secondary/30 border border-border rounded-lg text-left hover:bg-secondary/50 transition-colors"
+                  >
+                    <p className="font-medium text-foreground mb-1">Reports</p>
+                    <p className="text-sm text-muted-foreground">Understand exactly what changed and why</p>
+                  </button>
+                  <button 
+                    onClick={() => onNavigateToPanel?.('what-next')}
+                    className="w-full p-4 bg-secondary/30 border border-border rounded-lg text-left hover:bg-secondary/50 transition-colors"
+                  >
+                    <p className="font-medium text-foreground mb-1">What Happens Next</p>
+                    <p className="text-sm text-muted-foreground">Tips for follow-up runs, reviews, and long-term use</p>
+                  </button>
+                </div>
+              </section>
+
+              {/* Tip */}
+              <section>
+                <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
+                  <p className="text-sm font-medium text-foreground mb-2">Tip</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    Start small for your first run. One Source, one Destination, one clean result — then scale with confidence.
+                  </p>
+                </div>
+              </section>
+            </div>
+            
+            <div className="mt-12 pt-8 border-t border-border">
+              <Button 
+                variant="outline" 
+                onClick={onBackToWorkspace}
+                className="text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-bottom"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (panelType === 'best-practices') {
     return (
       <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
