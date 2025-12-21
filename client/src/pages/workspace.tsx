@@ -3344,12 +3344,12 @@ function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string,
 
                         <div>
                           <p className="font-medium text-foreground mb-2">Recommended Workflow</p>
-                          <ol className="list-decimal ml-5 space-y-1">
+                          <ul className="list-disc ml-5 space-y-1">
                             <li>Start with one Source</li>
                             <li>Run analysis</li>
                             <li>Check the Date Summary</li>
                             <li>Add Sources gradually if needed</li>
-                          </ol>
+                          </ul>
                         </div>
 
                         <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
@@ -3369,23 +3369,23 @@ function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string,
                         </div>
 
                         <div>
-                          <p className="font-medium text-foreground mb-2">Simple Workflow Checklist</p>
+                          <p className="font-medium text-foreground mb-2">Workflow Checklist</p>
                           <div className="space-y-2">
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
-                              <div className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">1</div>
+                              <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
                               <p className="text-sm">Add one Source and confirm it's correct</p>
                             </div>
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
-                              <div className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">2</div>
+                              <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
                               <p className="text-sm">Tick the checkbox and check Combined Analysis numbers</p>
                             </div>
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
-                              <div className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">3</div>
+                              <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
                               <p className="text-sm">Select Destination Drive (dedicated output folder)</p>
                             </div>
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
-                              <div className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">4</div>
-                              <p className="text-sm">Run Fix → View Report → Use Reports History later</p>
+                              <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                              <p className="text-sm">Run Fix, view Report, use Reports History later</p>
                             </div>
                           </div>
                         </div>
@@ -3401,19 +3401,19 @@ function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string,
                     <AccordionContent className="pt-2 pb-4">
                       <div className="space-y-4">
                         <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                          <p className="font-medium text-foreground mb-2">Mistake #1: Selecting both the ZIP and the extracted folder</p>
+                          <p className="font-medium text-foreground mb-2">Selecting both the ZIP and the extracted folder</p>
                           <p className="text-sm text-muted-foreground mb-2">Example: You include Takeout.zip AND Takeout/ (already extracted). Result: you've included the same files twice.</p>
                           <p className="text-xs text-muted-foreground font-medium">Best practice: Pick one — ZIP or extracted folder — never both.</p>
                         </div>
 
                         <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                          <p className="font-medium text-foreground mb-2">Mistake #2: Including your previous output as a source</p>
+                          <p className="font-medium text-foreground mb-2">Including your previous output as a source</p>
                           <p className="text-sm text-muted-foreground mb-2">Example: Source: Restored_2024/ (which was created by a prior run). Result: recursion, duplicates, and confusion.</p>
                           <p className="text-xs text-muted-foreground font-medium">Best practice: Never include "Fixed" / "Restored" output folders as Sources.</p>
                         </div>
 
                         <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                          <p className="font-medium text-foreground mb-2">Mistake #3: Mixing unrelated libraries in the same fix run</p>
+                          <p className="font-medium text-foreground mb-2">Mixing unrelated libraries in the same fix run</p>
                           <p className="text-sm text-muted-foreground mb-2">Example: iPhone photos + WhatsApp backups + old camera dumps + meme folder. PDR can still handle it — but your report becomes harder to interpret.</p>
                           <p className="text-xs text-muted-foreground font-medium">Best practice: Group Sources by purpose (e.g., "Google Takeout rescue", "WhatsApp library", "Camera uploads / DCIM").</p>
                         </div>
@@ -3534,7 +3534,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string,
                         </div>
                         
                         <div>
-                          <p className="font-medium text-foreground mb-2">Why this approach matters</p>
+                          <p className="font-medium text-foreground mb-2">The result</p>
                           <p>By relying on the most reliable method available and avoiding metadata-based guesswork, Photo Date Rescue ensures that only genuinely identical files are treated as duplicates — nothing more, nothing less.</p>
                         </div>
                       </div>
@@ -3547,7 +3547,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string,
               {/* Closing Statement */}
               <section className="pt-6">
                 <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
-                  <p className="font-medium text-foreground mb-2">Why This Matters</p>
+                  <p className="font-medium text-foreground mb-2">The Bottom Line</p>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     Most tools either blindly rename stuff, or require a huge amount of manual organization first. PDR is different: it handles chaos without lying about certainty, keeps your originals safe, gives you visibility and audit trails, and scales from "my phone dump is a mess" to "multi-TB library rescue".
                   </p>
