@@ -1,0 +1,236 @@
+Best Practices: Reports (Your Audit Trail, Safety Net, and Secret Weapon)
+
+PDR’s reports aren’t just “logs” — they are proof, protection, and power.
+
+They exist so you can:
+
+trust what just happened,
+
+understand why it happened,
+
+and come back months (or years) later knowing exactly how your library was transformed.
+
+Most apps stop at “done”.
+PDR gives you evidence.
+
+1) What a Fix Report Actually Is
+
+Every time you run Run Fix, PDR creates a Fix Report.
+
+That report is a permanent snapshot of:
+
+what was processed,
+
+how dates were determined,
+
+what was renamed,
+
+what was excluded,
+
+and what confidence level each decision had.
+
+Think of it as a receipt for your memories.
+
+2) Report Summary: Your High-Level Story
+
+When a fix completes, you’ll see the Report Summary.
+
+This answers the three most important questions immediately:
+
+✔️ What happened?
+
+Total files processed
+
+How many were Confirmed, Recovered, or Marked
+
+How many exact duplicates were removed from output
+
+✔️ How trustworthy was the result?
+
+Confirmed = strongest confidence
+
+Recovered = intelligent reconstruction
+
+Marked = fallback used (review recommended)
+
+✔️ Is this a preview or the full truth?
+
+The on-screen table is a preview
+
+The full report is always saved and exportable
+
+This lets PDR scale cleanly from hundreds to hundreds of thousands of files without overwhelming you.
+
+3) The File Table: Where the Magic Becomes Concrete
+
+The table inside the report shows a sample of individual file transformations:
+
+Original Filename → New Filename
+
+Confidence method used for each file
+
+This is where many users have their “oh wow” moment.
+
+Why?
+
+Because you can now see things like:
+
+A meaningless name like IMG_2040115_143022.jpg
+
+Cleanly restored to 2024-01-15_14-30-22.jpg
+
+Suddenly:
+
+photos are sortable,
+
+timelines make sense,
+
+and chaos becomes history.
+
+4) One of the Most Powerful (and Unexpected) Uses of Reports
+🔍 “What happened to that photo?”
+
+Reports are incredibly valuable after the fix.
+
+Common real-world use cases:
+
+You remember a photo by its old filename
+→ the report tells you exactly what it became.
+
+You want to locate a specific video that was renamed years ago
+→ search the exported CSV or TXT.
+
+You’re comparing a restored library against an older backup
+→ the report gives you a clean mapping.
+
+You need reassurance nothing was invented or guessed
+→ the confidence column proves the method used.
+
+For people dealing with family memories, legal records, work archives, or investigations, this is gold.
+
+5) Duplicates: Quietly Handled, Clearly Reported
+
+PDR removes exact duplicates from the output using cryptographic file hashes.
+
+Important points:
+
+One original is always preserved
+
+Duplicates are excluded from output, not deleted from source
+
+The report tells you exactly how many were excluded
+
+This gives you:
+
+a cleaner restored library,
+
+without silently discarding anything,
+
+and with full transparency if you ever need to explain what happened.
+
+6) Reports History: Your Long-Term Memory
+
+The Reports History screen is where PDR becomes truly defensible.
+
+Each report entry shows:
+
+Run date & time
+
+Number of sources
+
+Total files processed
+
+Breakdown of Confirmed / Recovered / Marked
+
+Destination path used
+
+From here you can:
+
+reopen any report,
+
+export it again,
+
+or compare runs over time.
+
+Even if your Workspace changes later, reports remain valid.
+
+7) Exporting Reports (CSV & TXT)
+
+You can export reports in two formats:
+
+📄 CSV (Spreadsheet-friendly)
+
+Best for:
+
+Excel / Google Sheets
+
+Sorting, filtering, searching
+
+Comparing against other datasets
+
+Professional or investigative use
+
+📄 TXT (Human-readable)
+
+Best for:
+
+Archiving
+
+Sharing with non-technical users
+
+Attaching to support tickets
+
+Long-term personal records
+
+Exports are generated from saved report data, not your current workspace — so they always reflect what actually happened at the time.
+
+8) Why Reports Are a Must-Have (Not a Nice-to-Have)
+
+Most tools rename files and leave you with:
+
+no record,
+
+no justification,
+
+no way back.
+
+PDR reports give you:
+
+trust — you can see why each decision was made
+
+safety — nothing is hidden or irreversible
+
+control — you can audit, export, and revisit anytime
+
+confidence — especially important when memories matter
+
+They turn PDR from a utility into a system you can rely on.
+
+9) Getting the Most Out of Reports (Best Practices)
+
+Always keep your reports — even if the fix “looks right”
+
+Export CSV if you think you’ll ever need to search or cross-reference
+
+Export TXT if you want a permanent, readable record
+
+Use Reports History instead of rerunning fixes just to “check something”
+
+Treat reports as part of your archive, not temporary output
+
+10) The Big Picture
+
+PDR doesn’t just fix filenames.
+
+It:
+
+restores timelines,
+
+preserves provenance,
+
+and gives you documentation to back it all up.
+
+That’s why the reports matter.
+
+They’re not overhead —
+they’re the proof that your memories were handled properly.

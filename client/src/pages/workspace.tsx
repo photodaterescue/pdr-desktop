@@ -3523,6 +3523,301 @@ function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string,
                 </div>
               </section>
 
+              <div className="pt-8 mt-8 border-t border-border">
+                <h2 className="text-2xl font-semibold text-foreground mb-3">Reports</h2>
+                <p className="text-muted-foreground mb-10">Your Audit Trail, Safety Net, and Secret Weapon</p>
+              </div>
+
+              <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  PDR's reports aren't just "logs" — they are <span className="font-medium text-foreground">proof, protection, and power</span>.
+                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed mt-3">They exist so you can:</p>
+                <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground mt-2">
+                  <li>trust what just happened</li>
+                  <li>understand why it happened</li>
+                  <li>come back months (or years) later knowing exactly how your library was transformed</li>
+                </ul>
+                <p className="text-sm text-foreground font-medium mt-4">Most apps stop at "done". PDR gives you evidence.</p>
+              </div>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">1</div>
+                  <h3 className="text-lg font-medium text-foreground">What a Fix Report Actually Is</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Every time you run <span className="font-medium text-foreground">Run Fix</span>, PDR creates a Fix Report.</p>
+                  <p>That report is a permanent snapshot of:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>what was processed</li>
+                    <li>how dates were determined</li>
+                    <li>what was renamed</li>
+                    <li>what was excluded</li>
+                    <li>and what confidence level each decision had</li>
+                  </ul>
+                  <p className="font-medium text-foreground mt-3">Think of it as a receipt for your memories.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">2</div>
+                  <h3 className="text-lg font-medium text-foreground">Report Summary: Your High-Level Story</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>When a fix completes, you'll see the Report Summary. This answers the three most important questions immediately:</p>
+                  
+                  <div className="space-y-3">
+                    <div className="p-4 bg-secondary/50 rounded-lg">
+                      <p className="font-medium text-foreground mb-2">What happened?</p>
+                      <ul className="list-disc ml-5 space-y-1 text-sm">
+                        <li>Total files processed</li>
+                        <li>How many were Confirmed, Recovered, or Marked</li>
+                        <li>How many exact duplicates were removed from output</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="p-4 bg-secondary/50 rounded-lg">
+                      <p className="font-medium text-foreground mb-2">How trustworthy was the result?</p>
+                      <ul className="list-disc ml-5 space-y-1 text-sm">
+                        <li><span className="font-medium text-emerald-600 dark:text-emerald-400">Confirmed</span> = strongest confidence</li>
+                        <li><span className="font-medium text-indigo-600 dark:text-indigo-400">Recovered</span> = intelligent reconstruction</li>
+                        <li><span className="font-medium text-slate-600 dark:text-slate-400">Marked</span> = fallback used (review recommended)</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="p-4 bg-secondary/50 rounded-lg">
+                      <p className="font-medium text-foreground mb-2">Is this a preview or the full truth?</p>
+                      <ul className="list-disc ml-5 space-y-1 text-sm">
+                        <li>The on-screen table is a preview</li>
+                        <li>The full report is always saved and exportable</li>
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <p>This lets PDR scale cleanly from hundreds to hundreds of thousands of files without overwhelming you.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">3</div>
+                  <h3 className="text-lg font-medium text-foreground">The File Table: Where the Magic Becomes Concrete</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>The table inside the report shows a sample of individual file transformations:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Original Filename → New Filename</li>
+                    <li>Confidence method used for each file</li>
+                  </ul>
+                  <p>This is where many users have their "oh wow" moment.</p>
+                  
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <p className="font-medium text-emerald-700 dark:text-emerald-300 mb-2">Example transformation:</p>
+                    <div className="flex items-center gap-2 text-sm font-mono">
+                      <span className="text-muted-foreground">IMG_2040115_143022.jpg</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">→</span>
+                      <span className="text-emerald-700 dark:text-emerald-300 font-medium">2024-01-15_14-30-22.jpg</span>
+                    </div>
+                  </div>
+                  
+                  <p>Suddenly: photos are sortable, timelines make sense, and chaos becomes history.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">4</div>
+                  <h3 className="text-lg font-medium text-foreground">One of the Most Powerful (and Unexpected) Uses of Reports</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p className="font-medium text-foreground">"What happened to that photo?"</p>
+                  <p>Reports are incredibly valuable after the fix. Common real-world use cases:</p>
+                  
+                  <div className="space-y-3">
+                    <div className="p-3 bg-secondary/30 rounded-lg flex items-start gap-3">
+                      <span className="text-primary font-medium shrink-0">→</span>
+                      <p>You remember a photo by its old filename — the report tells you exactly what it became.</p>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg flex items-start gap-3">
+                      <span className="text-primary font-medium shrink-0">→</span>
+                      <p>You want to locate a specific video that was renamed years ago — search the exported CSV or TXT.</p>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg flex items-start gap-3">
+                      <span className="text-primary font-medium shrink-0">→</span>
+                      <p>You're comparing a restored library against an older backup — the report gives you a clean mapping.</p>
+                    </div>
+                    <div className="p-3 bg-secondary/30 rounded-lg flex items-start gap-3">
+                      <span className="text-primary font-medium shrink-0">→</span>
+                      <p>You need reassurance nothing was invented or guessed — the confidence column proves the method used.</p>
+                    </div>
+                  </div>
+                  
+                  <p className="font-medium text-foreground mt-2">For people dealing with family memories, legal records, work archives, or investigations, this is gold.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">5</div>
+                  <h3 className="text-lg font-medium text-foreground">Duplicates: Quietly Handled, Clearly Reported</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>PDR removes exact duplicates from the output using cryptographic file hashes.</p>
+                  <p className="font-medium text-foreground">Important points:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>One original is always preserved</li>
+                    <li>Duplicates are excluded from output, not deleted from source</li>
+                    <li>The report tells you exactly how many were excluded</li>
+                  </ul>
+                  <p>This gives you a cleaner restored library, without silently discarding anything, and with full transparency if you ever need to explain what happened.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">6</div>
+                  <h3 className="text-lg font-medium text-foreground">Reports History: Your Long-Term Memory</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>The Reports History screen is where PDR becomes truly defensible.</p>
+                  <p className="font-medium text-foreground">Each report entry shows:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Run date & time</li>
+                    <li>Number of sources</li>
+                    <li>Total files processed</li>
+                    <li>Breakdown of Confirmed / Recovered / Marked</li>
+                    <li>Destination path used</li>
+                  </ul>
+                  <p className="font-medium text-foreground mt-3">From here you can:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Reopen any report</li>
+                    <li>Export it again</li>
+                    <li>Compare runs over time</li>
+                  </ul>
+                  <p className="mt-3">Even if your Workspace changes later, reports remain valid.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">7</div>
+                  <h3 className="text-lg font-medium text-foreground">Exporting Reports (CSV & TXT)</h3>
+                </div>
+                <div className="ml-10 space-y-4">
+                  <p className="text-sm text-muted-foreground leading-relaxed">You can export reports in two formats:</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-secondary/50 rounded-lg">
+                      <p className="font-medium text-foreground mb-2">CSV (Spreadsheet-friendly)</p>
+                      <p className="text-xs text-muted-foreground mb-2">Best for:</p>
+                      <ul className="list-disc ml-5 space-y-1 text-xs text-muted-foreground">
+                        <li>Excel / Google Sheets</li>
+                        <li>Sorting, filtering, searching</li>
+                        <li>Comparing against other datasets</li>
+                        <li>Professional or investigative use</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="p-4 bg-secondary/50 rounded-lg">
+                      <p className="font-medium text-foreground mb-2">TXT (Human-readable)</p>
+                      <p className="text-xs text-muted-foreground mb-2">Best for:</p>
+                      <ul className="list-disc ml-5 space-y-1 text-xs text-muted-foreground">
+                        <li>Archiving</li>
+                        <li>Sharing with non-technical users</li>
+                        <li>Attaching to support tickets</li>
+                        <li>Long-term personal records</li>
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <p className="text-sm text-muted-foreground leading-relaxed">Exports are generated from saved report data, not your current workspace — so they always reflect what actually happened at the time.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">8</div>
+                  <h3 className="text-lg font-medium text-foreground">Why Reports Are a Must-Have (Not a Nice-to-Have)</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>Most tools rename files and leave you with no record, no justification, and no way back.</p>
+                  <p className="font-medium text-foreground">PDR reports give you:</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg text-center">
+                      <p className="font-medium text-emerald-700 dark:text-emerald-300 text-sm">Trust</p>
+                      <p className="text-xs text-muted-foreground mt-1">You can see why each decision was made</p>
+                    </div>
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg text-center">
+                      <p className="font-medium text-indigo-700 dark:text-indigo-300 text-sm">Safety</p>
+                      <p className="text-xs text-muted-foreground mt-1">Nothing is hidden or irreversible</p>
+                    </div>
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg text-center">
+                      <p className="font-medium text-amber-700 dark:text-amber-300 text-sm">Control</p>
+                      <p className="text-xs text-muted-foreground mt-1">You can audit, export, and revisit anytime</p>
+                    </div>
+                    <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-700 rounded-lg text-center">
+                      <p className="font-medium text-rose-700 dark:text-rose-300 text-sm">Confidence</p>
+                      <p className="text-xs text-muted-foreground mt-1">Especially important when memories matter</p>
+                    </div>
+                  </div>
+                  <p className="font-medium text-foreground mt-2">They turn PDR from a utility into a system you can rely on.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">9</div>
+                  <h3 className="text-lg font-medium text-foreground">Getting the Most Out of Reports (Best Practices)</h3>
+                </div>
+                <div className="ml-10">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                      <p className="text-sm text-foreground">Always keep your reports — even if the fix "looks right"</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                      <p className="text-sm text-foreground">Export CSV if you think you'll ever need to search or cross-reference</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                      <p className="text-sm text-foreground">Export TXT if you want a permanent, readable record</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                      <p className="text-sm text-foreground">Use Reports History instead of rerunning fixes just to "check something"</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                      <p className="text-sm text-foreground">Treat reports as part of your archive, not temporary output</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">10</div>
+                  <h3 className="text-lg font-medium text-foreground">The Big Picture</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>PDR doesn't just fix filenames. It:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Restores timelines</li>
+                    <li>Preserves provenance</li>
+                    <li>Gives you documentation to back it all up</li>
+                  </ul>
+                  <p className="font-medium text-foreground mt-4">That's why the reports matter.</p>
+                  <p>They're not overhead — they're the proof that your memories were handled properly.</p>
+                </div>
+              </section>
+
+              <div className="pt-8 mt-8 border-t border-border">
+                <h2 className="text-2xl font-semibold text-foreground mb-10">Duplicate Handling</h2>
+              </div>
+
               <section>
                 <div className="flex items-start gap-3 mb-4">
                   <h3 className="text-lg font-medium text-foreground">How Photo Date Rescue handles duplicates</h3>
