@@ -695,6 +695,7 @@ export default function Workspace() {
           onAddZip={handleTriggerZipPicker}
           showCompletionScreen={showCompletionScreen}
           onDismissCompletion={() => setShowCompletionScreen(false)}
+          onNavigateToBestPractices={() => setActivePanel('best-practices')}
         />
       )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
@@ -968,7 +969,8 @@ function MainContent({
   onAddFolder,
   onAddZip,
   showCompletionScreen,
-  onDismissCompletion
+  onDismissCompletion,
+  onNavigateToBestPractices
 }: { 
   sources: Source[],
   activeSource: Source | null,
@@ -983,7 +985,8 @@ function MainContent({
   onAddFolder: () => void,
   onAddZip: () => void,
   showCompletionScreen: boolean,
-  onDismissCompletion: () => void
+  onDismissCompletion: () => void,
+  onNavigateToBestPractices?: () => void
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
@@ -1020,11 +1023,12 @@ function MainContent({
       results={analysisResults}
       onViewResults={onViewResults}
       fileResults={sourceAnalysisResults}
+      onNavigateToBestPractices={onNavigateToBestPractices}
     />
   );
 }
 
-function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults }: { sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult> }) {
+function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults, onNavigateToBestPractices }: { sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult>, onNavigateToBestPractices?: () => void }) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected && s.confirmed);
   const hasSelection = selectedSources.length > 0;
@@ -1390,6 +1394,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
           setSelectedReportId(null);
           setShowReportsList(true);
         }}
+        onNavigateToBestPractices={onNavigateToBestPractices}
       />}
       
       {showReportsList && <ReportsListModal 
@@ -2554,13 +2559,14 @@ function generateMockFiles(totalFiles: number): Array<{originalFilename: string,
   return files;
 }
 
-function PostFixReportModal({ onClose, results, destinationPath: propDestinationPath, fileResults, savedReportId, onBackToReports }: { 
+function PostFixReportModal({ onClose, results, destinationPath: propDestinationPath, fileResults, savedReportId, onBackToReports, onNavigateToBestPractices }: { 
   onClose: () => void, 
   results?: AnalysisResults,
   destinationPath: string | null,
   fileResults?: Record<string, SourceAnalysisResult>,
   savedReportId?: string | null,
-  onBackToReports?: () => void
+  onBackToReports?: () => void,
+  onNavigateToBestPractices?: () => void
 }) {
   const [filterConfidence, setFilterConfidence] = useState<'all' | 'confirmed' | 'recovered' | 'marked'>('all');
   const [isElectronEnv, setIsElectronEnv] = useState(false);
@@ -2805,7 +2811,20 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
-                Duplicates are identified using cryptographic file hashes. One original file is preserved per set. Learn more in Best Practices.
+                Duplicates are identified using cryptographic file hashes. One original file is preserved per set. Learn more in{' '}
+                {onNavigateToBestPractices ? (
+                  <button 
+                    onClick={() => {
+                      onClose();
+                      onNavigateToBestPractices();
+                    }}
+                    className="text-primary underline hover:text-primary/80"
+                  >
+                    Best Practices
+                  </button>
+                ) : (
+                  <span>Best Practices</span>
+                )}.
               </TooltipContent>
             </Tooltip>
           </div>
