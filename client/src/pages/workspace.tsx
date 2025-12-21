@@ -1206,6 +1206,7 @@ function DashboardPanel({
                 icon={<ShieldCheck className="w-5 h-5" />}
                 tooltip="Date taken directly from information saved by the camera, app, or backup at the time the photo or video was created."
                 isActive={false}
+                onNavigateToBestPractices={onNavigateToBestPractices}
               />
               <ConfidenceCard 
                 level="Recovered" 
@@ -1218,6 +1219,7 @@ function DashboardPanel({
                 icon={<Sparkles className="w-5 h-5" />}
                 tooltip="Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
                 isActive={false}
+                onNavigateToBestPractices={onNavigateToBestPractices}
               />
               <ConfidenceCard 
                 level="Marked" 
@@ -1230,6 +1232,7 @@ function DashboardPanel({
                 icon={<Tag className="w-5 h-5" />}
                 tooltip="No reliable date could be found. The file will still be safely renamed using a fallback date to avoid conflicts."
                 isActive={false}
+                onNavigateToBestPractices={onNavigateToBestPractices}
               />
             </div>
           </section>
@@ -1880,7 +1883,7 @@ function SourceChip({ icon, label, isActive, onClick }: { icon?: React.ReactNode
   );
 }
 
-function ConfidenceCard({ level, count, percentage, description, color, bgColor, borderColor, icon, isActive, onClick, tooltip }: any) {
+function ConfidenceCard({ level, count, percentage, description, color, bgColor, borderColor, icon, isActive, onClick, tooltip, onNavigateToBestPractices }: any) {
   return (
     <div onClick={onClick} className="relative group cursor-pointer outline-none h-full">
        {isActive && (
@@ -1909,8 +1912,25 @@ function ConfidenceCard({ level, count, percentage, description, color, bgColor,
                       <Info className="w-4 h-4 text-muted-foreground" />
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[250px] p-3 text-sm">
-                    <p>{tooltip}</p>
+                  <TooltipContent side="top" className="max-w-[280px] p-3 text-sm">
+                    <p>
+                      {tooltip}{' '}
+                      {onNavigateToBestPractices && (
+                        <>
+                          Learn more in{' '}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onNavigateToBestPractices();
+                            }}
+                            className="font-bold text-foreground hover:underline cursor-pointer"
+                          >
+                            Best Practices
+                          </button>
+                          .
+                        </>
+                      )}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
