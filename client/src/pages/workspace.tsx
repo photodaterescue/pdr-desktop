@@ -2172,7 +2172,13 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, onViewReport }
                 <FileText className="w-4 h-4 mr-2" /> View Report
               </Button>
               <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" onClick={onClose} size="lg" data-testid="button-close-fix">
+                <Button 
+                  variant="outline" 
+                  onClick={onClose} 
+                  size="lg" 
+                  className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                  data-testid="button-close-fix"
+                >
                   Close
                 </Button>
                 <Button 
