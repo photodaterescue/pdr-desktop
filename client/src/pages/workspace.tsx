@@ -3237,9 +3237,292 @@ function PanelPlaceholder({ panelType, onBackToWorkspace }: { panelType: string,
             >
               <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
             </Button>
-            <h2 className="text-2xl font-semibold text-foreground mb-10">Best Practices</h2>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">Best Practices: Selecting Sources</h2>
+            <p className="text-muted-foreground mb-10">So Your Fix Is Clean, Complete, and Predictable</p>
           
             <div className="space-y-12">
+              <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  PDR works best when you treat your input as a set of <span className="font-medium text-foreground">Sources</span> and your output as a single <span className="font-medium text-foreground">Destination</span>. 
+                  That structure is what makes it fast, scalable, and safe — even with huge, messy libraries.
+                </p>
+                <p className="text-sm text-foreground font-medium mt-3">The goal: tell PDR exactly what to include, and exactly where fixed files should go, with no surprises.</p>
+              </div>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">1</div>
+                  <h3 className="text-lg font-medium text-foreground">What Counts as a "Source" in PDR?</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>A Source is anything you want PDR to analyze and fix:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li><span className="font-medium text-foreground">Folders</span> (recommended for most photo libraries)</li>
+                    <li><span className="font-medium text-foreground">Drives</span> (useful when your library is split across multiple folders)</li>
+                    <li><span className="font-medium text-foreground">ZIP archives</span> (ideal for exports like Google Takeout, WhatsApp backups, old archives)</li>
+                  </ul>
+                  <p>Each Source becomes part of the Combined Analysis, which then produces one unified Fix Report.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">2</div>
+                  <h3 className="text-lg font-medium text-foreground">Choosing the Right Source Type</h3>
+                </div>
+                <div className="ml-10 space-y-6">
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-2">Use a Folder when...</p>
+                    <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+                      <li>Your photos are already extracted (normal files visible)</li>
+                      <li>You have a library like: Pictures/, Photos Backup/, iPhone Import/, WhatsApp Images/</li>
+                    </ul>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-medium">Why it's ideal: PDR can scan everything cleanly. Fewer edge cases than ZIPs. Great for ongoing personal archives.</p>
+                  </div>
+
+                  <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg">
+                    <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-2">Use a ZIP when...</p>
+                    <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+                      <li>Your content is packaged as an export or archive</li>
+                      <li>Common examples: Google Takeout ZIPs, Messenger/WhatsApp export ZIPs, old backup ZIPs you never extracted</li>
+                    </ul>
+                    <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2 font-medium">Why it's powerful: No manual extraction required. Keeps the original archive untouched. Perfect for "rescue jobs".</p>
+                  </div>
+
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mb-2">Use a Drive when...</p>
+                    <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+                      <li>Your files are spread across multiple folders on the same disk</li>
+                      <li>You want PDR to treat the disk as a "container" source</li>
+                      <li>You're doing a full-scale cleanup (big library on an external drive)</li>
+                    </ul>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 font-medium">Best practice: If you choose a drive, still think in folders — only include what you truly want scanned.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">3</div>
+                  <h3 className="text-lg font-medium text-foreground">How to Select Sources Properly (Checkbox Rules)</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>PDR's checkbox system is your "truth filter". It decides what will be scanned and fixed.</p>
+                  
+                  <div className="p-4 bg-secondary/50 rounded-lg">
+                    <p className="font-medium text-foreground mb-2">Core rule: Only tick what you want included</p>
+                    <ul className="list-disc ml-5 space-y-1">
+                      <li><span className="font-medium text-foreground">Checked Source</span> = included in Combined Analysis</li>
+                      <li><span className="font-medium text-foreground">Unchecked Source</span> = ignored entirely</li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="font-medium text-foreground">Recommended workflow:</p>
+                    <ol className="list-decimal ml-5 space-y-1">
+                      <li>Start with one Source</li>
+                      <li>Run analysis</li>
+                      <li>Check the Date Summary</li>
+                      <li>Add Sources gradually if needed</li>
+                    </ol>
+                  </div>
+
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
+                    <p className="font-medium text-amber-700 dark:text-amber-300 mb-2">"Select All" — when to use it (and when not to)</p>
+                    <p className="text-sm text-muted-foreground mb-2">Use Select All only if every Source listed is meant to be part of the job and you're confident there's no overlap or junk.</p>
+                    <p className="text-sm text-muted-foreground">Avoid Select All if your list includes old backups + newer backups, multiple Takeouts from different years, or prior output folders.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-sm font-semibold shrink-0">4</div>
+                  <h3 className="text-lg font-medium text-foreground">Avoiding the 3 Biggest Source Mistakes</h3>
+                </div>
+                <div className="ml-10 space-y-4">
+                  <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-700 rounded-lg">
+                    <p className="font-medium text-rose-700 dark:text-rose-300 mb-2">Mistake #1: Selecting both the ZIP and the extracted folder</p>
+                    <p className="text-sm text-muted-foreground mb-2">Example: You include Takeout.zip AND Takeout/ (already extracted). Result: you've included the same files twice.</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">Best practice: Pick one — ZIP or extracted folder — never both.</p>
+                  </div>
+
+                  <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-700 rounded-lg">
+                    <p className="font-medium text-rose-700 dark:text-rose-300 mb-2">Mistake #2: Including your previous output as a source</p>
+                    <p className="text-sm text-muted-foreground mb-2">Example: Source: Restored_2024/ (which was created by a prior run). Result: recursion, duplicates, and confusion.</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">Best practice: Never include "Fixed" / "Restored" output folders as Sources.</p>
+                  </div>
+
+                  <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-700 rounded-lg">
+                    <p className="font-medium text-rose-700 dark:text-rose-300 mb-2">Mistake #3: Mixing unrelated libraries in the same fix run</p>
+                    <p className="text-sm text-muted-foreground mb-2">Example: iPhone photos + WhatsApp backups + old camera dumps + meme folder. PDR can still handle it — but your report becomes harder to interpret.</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">Best practice: Group Sources by purpose (e.g., "Google Takeout rescue", "WhatsApp library", "Camera uploads / DCIM").</p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">5</div>
+                  <h3 className="text-lg font-medium text-foreground">Combined Analysis: What It Does and Why It Matters</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Once you select Sources, PDR builds a Combined Analysis. This is where the app becomes "smart" instead of just mechanical.</p>
+                  <p className="font-medium text-foreground">Combined Analysis does three key things:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Unifies all selected Sources into one scan</li>
+                    <li>Detects duplicates across Sources</li>
+                    <li>Generates a single consistent Fix Plan</li>
+                  </ul>
+                  <p>This is why PDR feels premium: it handles chaotic libraries like a system, not a bunch of manual steps.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">6</div>
+                  <h3 className="text-lg font-medium text-foreground">Understanding the Date Summary Cards</h3>
+                </div>
+                <div className="ml-10 space-y-4">
+                  <p className="text-sm text-muted-foreground leading-relaxed">The Date Summary is basically your "truth dashboard".</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                      <p className="font-medium text-emerald-700 dark:text-emerald-300 text-sm">Confirmed</p>
+                      <p className="text-xs text-muted-foreground mt-1">"We found real capture/backup metadata. Highest trust."</p>
+                    </div>
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg">
+                      <p className="font-medium text-indigo-700 dark:text-indigo-300 text-sm">Recovered</p>
+                      <p className="text-xs text-muted-foreground mt-1">"No metadata, but we recovered the date from consistent filename patterns."</p>
+                    </div>
+                    <div className="p-3 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-lg">
+                      <p className="font-medium text-slate-700 dark:text-slate-300 text-sm">Marked</p>
+                      <p className="text-xs text-muted-foreground mt-1">"No reliable date found — fallback rules used (review recommended)."</p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-secondary/50 rounded-lg">
+                    <p className="font-medium text-foreground text-sm mb-2">Let the Date Summary guide your decision</p>
+                    <p className="text-sm text-muted-foreground">If Marked is high, it might be a messy export or a badly stripped library. That's not "bad" — it just means you'll want a review pass after fixing, or you should run smaller grouped jobs to isolate what's happening.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">7</div>
+                  <h3 className="text-lg font-medium text-foreground">Destination Drive: Choosing Where the Fixed Library Goes</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Your Destination is where the cleaned library will be written.</p>
+                  <p className="font-medium text-foreground">Best practice: Pick a destination folder that is:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Empty (or dedicated to this run)</li>
+                    <li>Not inside any Source</li>
+                    <li>Clearly named, like: <span className="font-mono text-foreground bg-muted px-1.5 py-0.5 rounded">Restored_2024</span>, <span className="font-mono text-foreground bg-muted px-1.5 py-0.5 rounded">PDR_Fixed_Output</span>, <span className="font-mono text-foreground bg-muted px-1.5 py-0.5 rounded">Recovered_Library</span></li>
+                  </ul>
+                  <p className="font-medium text-foreground mt-4">Why this matters:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Keeps input and output separate (prevents recursion)</li>
+                    <li>Prevents accidental mixing with the originals</li>
+                    <li>Makes rollback and trust much easier</li>
+                  </ul>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">8</div>
+                  <h3 className="text-lg font-medium text-foreground">How Destination + Combined Analysis Bring It All Together</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>Here's the clean mental model:</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 bg-secondary/50 rounded-lg text-center">
+                      <p className="font-medium text-foreground">Sources</p>
+                      <p className="text-xs text-muted-foreground mt-1">what PDR reads</p>
+                    </div>
+                    <div className="p-3 bg-secondary/50 rounded-lg text-center">
+                      <p className="font-medium text-foreground">Combined Analysis</p>
+                      <p className="text-xs text-muted-foreground mt-1">what PDR understands</p>
+                    </div>
+                    <div className="p-3 bg-secondary/50 rounded-lg text-center">
+                      <p className="font-medium text-foreground">Destination</p>
+                      <p className="text-xs text-muted-foreground mt-1">what PDR writes</p>
+                    </div>
+                  </div>
+                  <p>So when you hit <span className="font-medium text-foreground">Run Fix</span>, you're essentially saying: "Analyze these specific Sources together, apply PDR's rules and confidence system, and write the corrected result to this Destination."</p>
+                  <p className="font-medium text-foreground">That's why the experience is safe:</p>
+                  <ul className="list-disc ml-5 space-y-1">
+                    <li>Originals stay intact</li>
+                    <li>Output is consistent</li>
+                    <li>Reporting is saved</li>
+                    <li>You can export and audit anytime</li>
+                  </ul>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">9</div>
+                  <h3 className="text-lg font-medium text-foreground">A Simple "No Ambiguity" Workflow (Use This Every Time)</h3>
+                </div>
+                <div className="ml-10">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">1</div>
+                      <p className="text-sm text-foreground">Add one Source</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">2</div>
+                      <p className="text-sm text-foreground">Confirm it's the correct folder/ZIP</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">3</div>
+                      <p className="text-sm text-foreground">Tick the checkbox</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">4</div>
+                      <p className="text-sm text-foreground">Check Combined Analysis numbers match what you expect</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">5</div>
+                      <p className="text-sm text-foreground">Select Destination Drive (dedicated output folder)</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">6</div>
+                      <p className="text-sm text-foreground">Run Fix</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">7</div>
+                      <p className="text-sm text-foreground">View Report Summary</p>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-lg">
+                      <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold shrink-0">8</div>
+                      <p className="text-sm text-foreground">Use Reports History later for exports/audits</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">10</div>
+                  <h3 className="text-lg font-medium text-foreground">Why This Is So Wonderful</h3>
+                </div>
+                <div className="ml-10 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>Most tools either blindly rename stuff, or require a huge amount of manual organization first.</p>
+                  <p className="font-medium text-foreground">PDR is different because it:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Handles chaos without lying about certainty</li>
+                    <li>Keeps your originals safe</li>
+                    <li>Gives you visibility and audit trails</li>
+                    <li>Scales from "my phone dump is a mess" to "multi-TB library rescue"</li>
+                  </ul>
+                  <p className="font-medium text-foreground mt-4">It's not just fixing filenames — it's restoring trust in your timeline.</p>
+                </div>
+              </section>
+
               <section>
                 <div className="flex items-start gap-3 mb-4">
                   <h3 className="text-lg font-medium text-foreground">How Photo Date Rescue handles duplicates</h3>

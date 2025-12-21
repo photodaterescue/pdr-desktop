@@ -1,0 +1,309 @@
+Best Practices: Selecting Sources (So Your Fix Is Clean, Complete, and Predictable)
+
+PDR works best when you treat your input as a set of Sources and your output as a single Destination.
+That structure is what makes it fast, scalable, and safe — even with huge, messy libraries.
+
+The goal: tell PDR exactly what to include, and exactly where fixed files should go, with no surprises.
+
+1) What Counts as a “Source” in PDR?
+
+A Source is anything you want PDR to analyze and fix:
+
+Folders (recommended for most photo libraries)
+
+Drives (useful when your library is split across multiple folders)
+
+ZIP archives (ideal for exports like Google Takeout, WhatsApp backups, old archives)
+
+Each Source becomes part of the Combined Analysis, which then produces one unified Fix Report.
+
+2) Choosing the Right Source Type
+✅ Use a Folder when…
+
+Your photos are already extracted (normal files visible)
+
+You have a library like:
+
+Pictures/
+
+Photos Backup/
+
+iPhone Import/
+
+WhatsApp Images/
+
+Why it’s ideal
+
+PDR can scan everything cleanly
+
+Fewer edge cases than ZIPs
+
+Great for ongoing personal archives
+
+✅ Use a ZIP when…
+
+Your content is packaged as an export or archive
+
+Common examples:
+
+Google Takeout ZIPs
+
+Messenger/WhatsApp export ZIPs
+
+Old backup ZIPs you never extracted
+
+Why it’s powerful
+
+No manual extraction required
+
+Keeps the original archive untouched
+
+Perfect for “rescue jobs” where you don’t want to mess with the source
+
+✅ Use a Drive when…
+
+Your files are spread across multiple folders on the same disk
+
+You want PDR to treat the disk as a “container” source
+
+You’re doing a full-scale cleanup (big library on an external drive)
+
+Best practice
+
+If you choose a drive, still think in folders:
+only include what you truly want scanned.
+
+(If your drive is huge and contains unrelated stuff, folder selection is usually better.)
+
+3) How to Select Sources Properly (Checkbox Rules)
+
+PDR’s checkbox system is your “truth filter”. It decides what will be scanned and fixed.
+
+✅ Core rule: Only tick what you want included
+
+Checked Source = included in Combined Analysis
+
+Unchecked Source = ignored entirely
+
+Recommended workflow
+
+Start with one Source
+
+Run analysis
+
+Check the Date Summary
+
+Add Sources gradually if needed
+
+This avoids accidentally including:
+
+Duplicate archives
+
+Old exports you don’t want mixed in
+
+Random folders containing junk
+
+“Select All” — when to use it (and when not to)
+
+Use Select All only if:
+
+Every Source listed is meant to be part of the job
+
+You’re confident there’s no overlap or junk
+
+Avoid Select All if your list includes things like:
+
+Old backups + newer backups
+
+Multiple Takeouts from different years
+
+A “Pre-Fixed” folder
+
+Prior output folders
+
+Because selecting everything can cause:
+
+Repeat content
+
+More duplicates
+
+Messier reporting
+
+Longer processing time
+
+4) Avoiding the 3 Biggest Source Mistakes
+❌ Mistake #1: Selecting both the ZIP and the extracted folder
+
+Example:
+
+You include Takeout.zip
+
+You also include Takeout/ (already extracted)
+
+Result: you’ve included the same files twice.
+
+Best practice
+
+Pick one: ZIP or extracted folder — never both.
+
+❌ Mistake #2: Including your previous output as a source
+
+Example:
+
+Source: Restored_2024/ (which was created by a prior run)
+
+Result: you create recursion, duplicates, and confusion.
+
+Best practice
+
+Never include “Fixed” / “Restored” output folders as Sources.
+
+❌ Mistake #3: Mixing unrelated libraries in the same fix run
+
+Example:
+
+iPhone photos + WhatsApp backups + old camera dumps + meme folder
+
+PDR can still handle it — but your report becomes harder to interpret.
+
+Best practice
+
+Group Sources by purpose:
+
+Run 1: “Google Takeout rescue”
+
+Run 2: “WhatsApp library”
+
+Run 3: “Camera uploads / DCIM”
+
+It keeps results clean and confidence easier to understand.
+
+5) Combined Analysis: What It Does and Why It Matters
+
+Once you select Sources, PDR builds a Combined Analysis.
+
+This is where the app becomes “smart” instead of just mechanical.
+
+Combined Analysis does three key things:
+
+Unifies all selected Sources into one scan
+
+Detects duplicates across Sources
+
+Generates a single consistent Fix Plan
+
+This is why PDR feels premium: it handles chaotic libraries like a system, not a bunch of manual steps.
+
+6) Understanding the Date Summary Cards (and What They’re Telling You)
+
+The Date Summary is basically your “truth dashboard”.
+
+Confirmed
+
+“We found real capture/backup metadata. Highest trust.”
+
+Recovered
+
+“No metadata, but we recovered the date from consistent filename patterns.”
+
+Marked
+
+“No reliable date found — fallback rules used (review recommended).”
+
+Best practice: Let the Date Summary guide your decision
+
+If Marked is high, it might be a messy export or a badly stripped library
+
+That’s not “bad” — it just means:
+
+you’ll want a review pass after fixing
+
+or you should run smaller grouped jobs to isolate what’s happening
+
+7) Destination Drive: Choosing Where the Fixed Library Goes
+
+Your Destination is where the cleaned library will be written.
+
+Best practice: Pick a destination folder that is:
+
+Empty (or dedicated to this run)
+
+Not inside any Source
+
+Clearly named, like:
+
+Restored_2024
+
+PDR_Fixed_Output
+
+Recovered_Library
+
+Why this matters:
+
+Keeps input and output separate (prevents recursion)
+
+Prevents accidental mixing with the originals
+
+Makes rollback and trust much easier
+
+8) How Destination + Combined Analysis Bring It All Together
+
+Here’s the clean mental model:
+
+Sources = what PDR reads
+
+Combined Analysis = what PDR understands
+
+Destination = what PDR writes
+
+So when you hit Run Fix, you’re essentially saying:
+
+“Analyze these specific Sources together, apply PDR’s rules and confidence system, and write the corrected result to this Destination.”
+
+That’s why the experience is safe:
+
+Originals stay intact
+
+Output is consistent
+
+Reporting is saved
+
+You can export and audit anytime
+
+9) A Simple “No Ambiguity” Workflow (Use This Every Time)
+
+Add one Source
+
+✅ Confirm it’s the correct folder/ZIP
+
+Tick the checkbox
+
+Check Combined Analysis numbers match what you expect
+
+Select Destination Drive (dedicated output folder)
+
+Run Fix
+
+View Report Summary
+
+Use Reports History later for exports/audits
+
+10) Why This Is So Wonderful (Yes, Actually)
+
+Most tools either:
+
+blindly rename stuff, or
+
+require a huge amount of manual organization first
+
+PDR is different because it:
+
+handles chaos without lying about certainty
+
+keeps your originals safe
+
+gives you visibility and audit trails
+
+scales from “my phone dump is a mess” to “multi-TB library rescue”
+
+It’s not just fixing filenames — it’s restoring trust in your timeline.
