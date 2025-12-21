@@ -2416,15 +2416,23 @@ function ReportsListModal({ onClose, onViewReport }: {
     setExportingId(reportId);
     const { exportReportCSV, exportReportTXT, isElectron } = await import('@/lib/electron-bridge');
     
-    if (isElectron()) {
-      const result = format === 'csv' 
-        ? await exportReportCSV(reportId)
-        : await exportReportTXT(reportId);
-      
-      if (result.success) {
-        setExportSuccess({ id: reportId, type: format.toUpperCase() });
-        setTimeout(() => setExportSuccess(null), 3000);
-      }
+    if (!isElectron()) {
+      toast.info('Export is available in the desktop app', {
+        description: 'Download the Photo Date Rescue desktop app to export reports.'
+      });
+      setExportingId(null);
+      return;
+    }
+    
+    const result = format === 'csv' 
+      ? await exportReportCSV(reportId)
+      : await exportReportTXT(reportId);
+    
+    if (result.success) {
+      setExportSuccess({ id: reportId, type: format.toUpperCase() });
+      setTimeout(() => setExportSuccess(null), 3000);
+    } else if (result.error && result.error !== 'Export cancelled') {
+      toast.error('Export failed', { description: result.error });
     }
     setExportingId(null);
   };
@@ -2686,10 +2694,21 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
   };
 
   const handleExport = async (format: 'csv' | 'txt') => {
-    if (!savedReportId || !isElectronEnv) return;
+    if (!savedReportId) {
+      toast.error('No report available to export');
+      return;
+    }
     
     setIsExporting(true);
-    const { exportReportCSV, exportReportTXT } = await import('@/lib/electron-bridge');
+    const { exportReportCSV, exportReportTXT, isElectron } = await import('@/lib/electron-bridge');
+    
+    if (!isElectron()) {
+      toast.info('Export is available in the desktop app', {
+        description: 'Download the Photo Date Rescue desktop app to export reports.'
+      });
+      setIsExporting(false);
+      return;
+    }
     
     const result = format === 'csv' 
       ? await exportReportCSV(savedReportId)
@@ -2698,6 +2717,8 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
     if (result.success) {
       setExportSuccess({ type: format.toUpperCase() });
       setTimeout(() => setExportSuccess(null), 3000);
+    } else if (result.error && result.error !== 'Export cancelled') {
+      toast.error('Export failed', { description: result.error });
     }
     setIsExporting(false);
   };
