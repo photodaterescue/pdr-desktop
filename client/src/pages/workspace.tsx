@@ -1344,7 +1344,7 @@ function DashboardPanel({ sources, activeSource, onRemove, onChange, onAddFolder
                    className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
                    data-testid="button-view-reports"
                  >
-                   <FileText className="w-4 h-4 mr-2" /> View Reports
+                   <FileText className="w-4 h-4 mr-2" /> Reports History
                  </Button>
                )}
                <Button 
