@@ -2566,7 +2566,6 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
   const [isElectronEnv, setIsElectronEnv] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasScrolled, setHasScrolled] = useState(false);
-  const [showDuplicateDetails, setShowDuplicateDetails] = useState(false);
   const [previewDismissed, setPreviewDismissed] = useState(false);
   const [loadedReport, setLoadedReport] = useState<{
     destinationPath: string;
@@ -2793,40 +2792,22 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
             </div>
           </div>
           
-          {/* Duplicates summary - expandable */}
-          <div className="space-y-2">
-            <button 
-              onClick={() => setShowDuplicateDetails(!showDuplicateDetails)}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors group"
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              <span>{hasRealData ? Math.floor(totalFiles * 0.03) : 9} exact duplicates safely removed</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${showDuplicateDetails ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {showDuplicateDetails && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="ml-6 p-4 bg-muted/30 dark:bg-muted/10 rounded-lg border border-border space-y-3"
-              >
-                <div className="text-xs font-medium text-muted-foreground tracking-wider">Duplicate Detection Summary</div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">By EXIF signature</span>
-                    <span className="font-medium text-foreground">{hasRealData ? Math.floor(totalFiles * 0.02) : 6}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">By file hash</span>
-                    <span className="font-medium text-foreground">{hasRealData ? Math.floor(totalFiles * 0.01) : 3}</span>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground pt-2 border-t border-border">
-                  Exact duplicates identified using file size and cryptographic content hash. Original file preserved; duplicate copies excluded from output.
-                </div>
-              </motion.div>
-            )}
+          {/* Duplicates summary - static line with tooltip */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 dark:bg-muted/10 border-l-2 border-l-emerald-500 rounded-r-lg">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="text-sm text-muted-foreground">
+              {hasRealData ? Math.floor(totalFiles * 0.03) : 9} exact duplicates removed from output (hash match)
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                Duplicates are identified using cryptographic file hashes. One original file is preserved per set. Learn more in Best Practices.
+              </TooltipContent>
+            </Tooltip>
           </div>
 
           <div className="flex gap-2 flex-wrap">
