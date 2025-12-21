@@ -2763,7 +2763,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                 className={`flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-lg text-sm text-amber-700 dark:text-amber-300 transition-opacity duration-300 ${hasScrolled ? 'opacity-40' : 'opacity-100'}`}
               >
                 <Info className="w-4 h-4 shrink-0" />
-                <span className="flex-1">You're viewing a preview of the results. Designed to scale to very large libraries.</span>
+                <span className="flex-1">Showing a preview of the results. The full report is saved and can be viewed or exported anytime from Reports History.</span>
                 <button 
                   onClick={() => setPreviewDismissed(true)}
                   className="text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200 p-0.5"
