@@ -2744,7 +2744,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
               <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-foreground">Fix Report</h2>
+              <h2 className="text-xl font-semibold text-foreground">Report Summary</h2>
               <p className="text-sm text-muted-foreground">{totalFiles.toLocaleString()} files processed successfully</p>
             </div>
           </div>
@@ -2961,7 +2961,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                   className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
                   data-testid="button-back-to-reports"
                 >
-                  <ArrowLeft className="w-4 h-4 mr-2" /> Back to Reports
+                  <ArrowLeft className="w-4 h-4 mr-2" /> Back to Reports History
                 </Button>
               )}
             </div>
