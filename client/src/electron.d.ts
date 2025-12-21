@@ -43,6 +43,9 @@ export interface FileChange {
   newFilename: string;
   confidence: 'confirmed' | 'recovered' | 'marked';
   dateSource: string;
+  sourcePath?: string;
+  fileType?: string;
+  dateChanged?: boolean;
 }
 
 export interface SourceInfo {

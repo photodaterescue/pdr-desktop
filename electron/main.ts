@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { analyzeSource } from './analysis-engine';
-import { saveReport, loadReport, loadLatestReport, listReports, exportReportToCSV, exportReportToTXT, FixReport } from './report-storage';
+import { saveReport, loadReport, loadLatestReport, listReports, exportReportToCSV, exportReportToTXT, getExportFilename, FixReport } from './report-storage';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -187,10 +187,11 @@ ipcMain.handle('report:exportCSV', async (_event, reportId: string) => {
       return { success: false, error: 'Report not found' };
     }
     const csv = exportReportToCSV(report);
+    const defaultFilename = getExportFilename(report, 'csv');
     
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Export Report as CSV',
-      defaultPath: `fix-report-${new Date(report.timestamp).toISOString().split('T')[0]}.csv`,
+      defaultPath: defaultFilename,
       filters: [{ name: 'CSV Files', extensions: ['csv'] }]
     });
     
@@ -211,10 +212,11 @@ ipcMain.handle('report:exportTXT', async (_event, reportId: string) => {
       return { success: false, error: 'Report not found' };
     }
     const txt = exportReportToTXT(report);
+    const defaultFilename = getExportFilename(report, 'txt');
     
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Export Report as TXT',
-      defaultPath: `fix-report-${new Date(report.timestamp).toISOString().split('T')[0]}.txt`,
+      defaultPath: defaultFilename,
       filters: [{ name: 'Text Files', extensions: ['txt'] }]
     });
     

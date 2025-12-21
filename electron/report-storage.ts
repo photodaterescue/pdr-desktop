@@ -7,6 +7,9 @@ export interface FileChange {
   newFilename: string;
   confidence: 'confirmed' | 'recovered' | 'marked';
   dateSource: string;
+  sourcePath?: string;
+  fileType?: string;
+  dateChanged?: boolean;
 }
 
 export interface SourceInfo {
@@ -139,54 +142,112 @@ export async function listReports(): Promise<ReportSummary[]> {
 }
 
 export function exportReportToCSV(report: FixReport): string {
-  const headers = ['Original Filename', 'New Filename', 'Confidence', 'Date Source'];
-  const rows = report.files.map(f => [
-    `"${f.originalFilename.replace(/"/g, '""')}"`,
-    `"${f.newFilename.replace(/"/g, '""')}"`,
-    f.confidence,
-    `"${f.dateSource.replace(/"/g, '""')}"`
-  ].join(','));
+  const headers = [
+    'run_id',
+    'run_timestamp',
+    'original_filename',
+    'new_filename',
+    'confidence',
+    'confidence_method',
+    'source_path',
+    'destination_path',
+    'file_type',
+    'date_changed'
+  ];
+  
+  const escapeCSV = (val: string | undefined | null): string => {
+    if (val === undefined || val === null) return '""';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+  
+  const rows = report.files.map(f => {
+    const ext = f.originalFilename.split('.').pop()?.toLowerCase() || '';
+    const dateChanged = f.originalFilename !== f.newFilename;
+    
+    return [
+      escapeCSV(report.id),
+      escapeCSV(report.timestamp),
+      escapeCSV(f.originalFilename),
+      escapeCSV(f.newFilename),
+      escapeCSV(f.confidence.charAt(0).toUpperCase() + f.confidence.slice(1)),
+      escapeCSV(f.dateSource),
+      escapeCSV(f.sourcePath || report.sources[0]?.path || ''),
+      escapeCSV(report.destinationPath),
+      escapeCSV(f.fileType || ext),
+      dateChanged ? 'true' : 'false'
+    ].join(',');
+  });
   
   return [headers.join(','), ...rows].join('\n');
 }
 
 export function exportReportToTXT(report: FixReport): string {
   const lines: string[] = [];
+  const timestamp = new Date(report.timestamp);
   
-  lines.push('='.repeat(60));
-  lines.push('FIX REPORT');
-  lines.push('='.repeat(60));
+  lines.push('='.repeat(70));
+  lines.push('PHOTO DATE RESCUE — FIX REPORT');
+  lines.push('='.repeat(70));
   lines.push('');
-  lines.push(`Report ID: ${report.id}`);
-  lines.push(`Generated: ${new Date(report.timestamp).toLocaleString()}`);
-  lines.push(`Destination: ${report.destinationPath}`);
+  lines.push(`Run ID:        ${report.id}`);
+  lines.push(`Timestamp:     ${timestamp.toISOString()}`);
+  lines.push(`               ${timestamp.toLocaleString()}`);
+  lines.push(`Destination:   ${report.destinationPath}`);
   lines.push('');
-  lines.push('-'.repeat(40));
+  lines.push('-'.repeat(70));
   lines.push('SOURCES');
-  lines.push('-'.repeat(40));
+  lines.push('-'.repeat(70));
   report.sources.forEach((s, i) => {
-    lines.push(`${i + 1}. ${s.label} (${s.type})`);
-    lines.push(`   ${s.path}`);
+    lines.push(`  ${i + 1}. ${s.label} (${s.type})`);
+    lines.push(`     Path: ${s.path}`);
   });
   lines.push('');
-  lines.push('-'.repeat(40));
-  lines.push('SUMMARY');
-  lines.push('-'.repeat(40));
-  lines.push(`Confirmed: ${report.counts.confirmed}`);
-  lines.push(`Recovered: ${report.counts.recovered}`);
-  lines.push(`Marked: ${report.counts.marked}`);
-  lines.push(`Total: ${report.counts.total}`);
+  lines.push('-'.repeat(70));
+  lines.push('TOTALS');
+  lines.push('-'.repeat(70));
+  lines.push(`  Confirmed:   ${report.counts.confirmed.toLocaleString()} files`);
+  lines.push(`  Recovered:   ${report.counts.recovered.toLocaleString()} files`);
+  lines.push(`  Marked:      ${report.counts.marked.toLocaleString()} files`);
+  lines.push(`  ─────────────────────`);
+  lines.push(`  Total:       ${report.counts.total.toLocaleString()} files`);
   lines.push('');
-  lines.push('-'.repeat(40));
-  lines.push('FILE CHANGES');
-  lines.push('-'.repeat(40));
+  lines.push('-'.repeat(70));
+  lines.push('FILE DETAILS');
+  lines.push('-'.repeat(70));
+  lines.push('');
   
-  report.files.forEach(f => {
-    lines.push(`[${f.confidence.toUpperCase()}] ${f.originalFilename}`);
-    lines.push(`  -> ${f.newFilename}`);
-    lines.push(`  Source: ${f.dateSource}`);
+  report.files.forEach((f, index) => {
+    const ext = f.originalFilename.split('.').pop()?.toLowerCase() || '';
+    const dateChanged = f.originalFilename !== f.newFilename;
+    const confidenceLabel = f.confidence.charAt(0).toUpperCase() + f.confidence.slice(1);
+    
+    lines.push(`  File ${(index + 1).toString().padStart(5)}:`);
+    lines.push(`    Original:    ${f.originalFilename}`);
+    lines.push(`    New:         ${f.newFilename}`);
+    lines.push(`    Confidence:  ${confidenceLabel}`);
+    lines.push(`    Method:      ${f.dateSource}`);
+    lines.push(`    File Type:   ${f.fileType || ext}`);
+    lines.push(`    Changed:     ${dateChanged ? 'Yes' : 'No'}`);
+    if (f.sourcePath) {
+      lines.push(`    Source:      ${f.sourcePath}`);
+    }
     lines.push('');
   });
   
+  lines.push('='.repeat(70));
+  lines.push('END OF REPORT');
+  lines.push('='.repeat(70));
+  
   return lines.join('\n');
+}
+
+export function getExportFilename(report: FixReport, extension: 'csv' | 'txt'): string {
+  const date = new Date(report.timestamp);
+  const dateStr = date.toISOString().split('T')[0];
+  const shortId = report.id.replace('report-', '').substring(0, 8);
+  return `PDR_Report_${dateStr}_${shortId}.${extension}`;
 }
