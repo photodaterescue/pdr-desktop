@@ -4059,8 +4059,16 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                         <li>A license issue prevents use</li>
                       </ul>
                       
-                      <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
-                        <p className="text-sm text-amber-700 dark:text-amber-300">For setup questions, planning advice, or interpretation — the Guides are faster and clearer than email.</p>
+                      <div className="pt-4 border-t border-border mt-4">
+                        <p className="text-xs text-muted-foreground mb-3">
+                          For setup questions, planning advice, or interpretation of results, please use the Guides first — they're faster and more detailed than email.
+                        </p>
+                        <a 
+                          href="mailto:support@photodaterescue.com"
+                          className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-border bg-secondary/30 text-foreground hover:bg-secondary/50 transition-colors"
+                        >
+                          Contact Support (Technical Issues Only)
+                        </a>
                       </div>
                     </div>
                   </AccordionContent>
