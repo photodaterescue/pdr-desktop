@@ -1,0 +1,145 @@
+Help & Support (Content to Copy & Paste)
+Help & Support
+
+Everything you need to use Photo Date Rescue confidently — without guesswork, fear, or unnecessary emails.
+
+Start Here (Recommended)
+
+If you’re unsure about what to select, why files were marked, or how to plan a clean fix, start with the Guides.
+They answer most questions faster than email support.
+
+Guides: Getting Your Photos In and Out
+👉 https://www.photodaterescue.com/#guides
+
+These guides help you:
+
+Plan large fixes safely
+
+Avoid duplicate scans
+
+Understand what metadata survives exports
+
+Get the best possible results on the first run
+
+Guides by Topic
+
+Use these if your photos came from specific places:
+
+Cloud Services
+Google Photos, iCloud, OneDrive, Dropbox
+👉 https://www.photodaterescue.com/guides/cloud-services
+
+Social & Messaging Apps
+WhatsApp, Messenger, Telegram, Signal, Snapchat
+👉 https://www.photodaterescue.com/guides/social-apps
+
+Hardware & Devices
+Phones, cameras, scanners, external drives
+👉 https://www.photodaterescue.com/guides/hardware-devices
+
+Each guide explains:
+
+How to export correctly
+
+What date data is preserved or lost
+
+How PDR reconstructs timelines safely
+
+Common mistakes to avoid
+
+Understanding Your Results
+
+After you run Fix, PDR shows you exactly what happened.
+
+Confidence labels
+
+Confirmed — date taken from authoritative metadata
+
+Recovered — date reconstructed from reliable filename patterns
+
+Marked — no usable date found; safe fallback rules applied
+
+Nothing is hidden.
+Nothing is silently guessed.
+
+Use Reports History to review or export what happened at any time.
+
+Common Questions (FAQ)
+
+Will this overwrite or damage my original files?
+No. Originals are never modified.
+All changes are written to a new destination you choose.
+
+Why are some files marked Marked?
+Because no reliable date survived export or transfer.
+PDR labels this clearly instead of pretending certainty.
+
+Why don’t all files have the same confidence level?
+Different apps and devices preserve metadata differently.
+PDR reflects reality instead of smoothing it over.
+
+What happens if I run Fix more than once?
+Each run creates its own output and report.
+Nothing is merged or overwritten automatically.
+
+Can I stop a Fix once it starts?
+Yes. Partial output remains safe and usable.
+Completed work is still recorded in Reports History.
+
+Why don’t reports change when I add more files later?
+Reports are snapshots of a specific Fix run.
+This preserves traceability and avoids confusion.
+
+Why don’t I see every duplicate listed?
+Exact duplicates are removed from output, not deleted.
+PDR keeps the best version and explains the method used.
+
+Can I use PDR on very large libraries?
+Yes — it’s designed for scale.
+Reports and UI remain usable even with large runs.
+
+Is this safe to use with cloud backups?
+Yes — if you follow the Guides.
+Cloud services often strip metadata, and the Guides explain how to avoid issues.
+
+Why does PDR feel stricter than other tools?
+Because it’s deterministic and auditable.
+Everything can be reviewed later.
+
+What if something doesn’t look right?
+Check:
+
+Date Summary
+
+Confidence tooltips
+
+Reports History
+
+If it still doesn’t make sense, then contact support.
+
+When to Contact Support
+
+Please contact support only if:
+
+The app fails to launch
+
+A Fix crashes or stops unexpectedly
+
+A license issue prevents use
+
+For setup questions, planning advice, or interpretation — the Guides are faster and clearer than email.
+
+Why This Exists
+
+Photo Date Rescue isn’t just a renaming tool.
+It’s a system for restoring trust in your timeline.
+
+The Help & Guides exist so you can:
+
+Fix once, correctly
+
+Avoid rework
+
+Preserve your archive long-term
+
+Stay in control of your data
