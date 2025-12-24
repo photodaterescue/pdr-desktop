@@ -2188,7 +2188,7 @@ function PreviewModal({ onClose, results, fileResults }: {
 const REVIEW_PROMPT_STORAGE_KEY = 'pdr-review-prompt-dismissed';
 const TRUSTPILOT_URL = 'https://www.trustpilot.com/review/photodaterescue.com';
 
-function ReviewPromptBanner({ 
+function ReviewPromptAccordion({ 
   confirmedCount, 
   recoveredCount, 
   totalFiles,
@@ -2201,8 +2201,10 @@ function ReviewPromptBanner({
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [permanentlyDismissed, setPermanentlyDismissed] = useState(false);
-  const [animationComplete, setAnimationComplete] = useState(false);
-  const [outlinePhase, setOutlinePhase] = useState<'gold' | 'trace' | 'static'>('gold');
+  const [dontAskAgainChecked, setDontAskAgainChecked] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [animationPhase, setAnimationPhase] = useState<'gold' | 'trace' | 'static'>('gold');
+  const [shouldAutoCollapse, setShouldAutoCollapse] = useState(false);
   
   useEffect(() => {
     const stored = localStorage.getItem(REVIEW_PROMPT_STORAGE_KEY);
@@ -2213,23 +2215,40 @@ function ReviewPromptBanner({
   
   useEffect(() => {
     const goldTimer = setTimeout(() => {
-      setOutlinePhase('trace');
-    }, 5500);
+      setAnimationPhase('trace');
+    }, 10500);
     
     const traceTimer = setTimeout(() => {
-      setOutlinePhase('static');
-    }, 8500);
+      setAnimationPhase('static');
+    }, 15500);
     
-    const completeTimer = setTimeout(() => {
-      setAnimationComplete(true);
-    }, 9000);
+    const autoCollapseTimer = setTimeout(() => {
+      setShouldAutoCollapse(true);
+    }, 17000);
     
     return () => {
       clearTimeout(goldTimer);
       clearTimeout(traceTimer);
-      clearTimeout(completeTimer);
+      clearTimeout(autoCollapseTimer);
     };
   }, []);
+  
+  useEffect(() => {
+    if (shouldAutoCollapse && isExpanded) {
+      const collapseTimer = setTimeout(() => {
+        setIsExpanded(false);
+      }, 500);
+      return () => clearTimeout(collapseTimer);
+    }
+  }, [shouldAutoCollapse, isExpanded]);
+  
+  useEffect(() => {
+    if (dontAskAgainChecked) {
+      localStorage.setItem(REVIEW_PROMPT_STORAGE_KEY, 'permanent');
+    } else {
+      localStorage.removeItem(REVIEW_PROMPT_STORAGE_KEY);
+    }
+  }, [dontAskAgainChecked]);
   
   const successRate = totalFiles > 0 ? (confirmedCount + recoveredCount) / totalFiles : 0;
   const successPercent = Math.round(successRate * 100);
@@ -2243,16 +2262,8 @@ function ReviewPromptBanner({
     onDismiss();
   };
   
-  const handleRemindLater = () => {
-    setDismissed(true);
-    onDismiss();
-  };
-  
-  const handleDontAskAgain = () => {
-    localStorage.setItem(REVIEW_PROMPT_STORAGE_KEY, 'permanent');
-    setPermanentlyDismissed(true);
-    setDismissed(true);
-    onDismiss();
+  const handleToggle = () => {
+    setIsExpanded(!isExpanded);
   };
   
   return (
@@ -2263,20 +2274,20 @@ function ReviewPromptBanner({
       transition={{ delay: 0.5, duration: 0.3 }}
       className="mt-6 relative"
     >
-      {outlinePhase === 'gold' && (
+      {animationPhase === 'gold' && (
         <div className="absolute -inset-[1px] rounded-xl overflow-hidden pointer-events-none">
           <div 
             className="absolute inset-0"
             style={{
-              background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212, 175, 55, 0.5) 40deg, rgba(212, 175, 55, 0.7) 90deg, rgba(212, 175, 55, 0.5) 140deg, transparent 180deg)',
-              animation: 'reviewGoldSpin 5s ease-in-out forwards',
+              background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212, 175, 55, 0.6) 30deg, rgba(212, 175, 55, 0.85) 90deg, rgba(212, 175, 55, 0.6) 150deg, transparent 180deg)',
+              animation: 'reviewGoldSpin 10s ease-in-out forwards',
               animationDelay: '0.5s',
             }}
           />
         </div>
       )}
       
-      {outlinePhase === 'trace' && (
+      {animationPhase === 'trace' && (
         <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden">
           <svg className="absolute inset-0 w-full h-full" style={{ transform: 'scale(1.01)' }}>
             <rect
@@ -2292,7 +2303,7 @@ function ReviewPromptBanner({
               strokeDasharray="1000"
               strokeDashoffset="1000"
               style={{
-                animation: 'reviewOutlineTrace 2.5s ease-out forwards',
+                animation: 'reviewOutlineTrace 4.5s ease-out forwards',
               }}
             />
           </svg>
@@ -2302,61 +2313,88 @@ function ReviewPromptBanner({
       <style>{`
         @keyframes reviewGoldSpin {
           0% { transform: rotate(0deg); }
-          100% { transform: rotate(720deg); }
+          100% { transform: rotate(1080deg); }
         }
         @keyframes reviewOutlineTrace {
           0% { stroke-dashoffset: 1000; }
           100% { stroke-dashoffset: 0; }
         }
+        @keyframes reviewCtaGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+          50% { box-shadow: 0 0 12px 2px rgba(212, 175, 55, 0.4); }
+        }
       `}</style>
       
-      <div className={`relative p-4 bg-gradient-to-r from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/15 rounded-xl transition-all duration-500 ${
-        outlinePhase === 'static' || animationComplete 
-          ? 'border-2 border-primary/40' 
-          : 'border border-primary/20'
+      <div className={`relative rounded-xl transition-all duration-500 overflow-hidden ${
+        animationPhase === 'static' 
+          ? 'border-2 border-primary/50' 
+          : 'border border-primary/30'
       }`}>
-        <div className="flex items-start gap-3">
-          <div className="p-1.5 bg-primary/10 rounded-lg shrink-0">
-            <Star className="w-4 h-4 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-sm font-medium text-foreground">
-                This was a strong result for this library
-              </p>
-              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-primary/15 text-primary border border-primary/20">
-                {successPercent}%
+        <button
+          onClick={handleToggle}
+          className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-amber-50/90 to-primary/10 dark:from-amber-950/40 dark:to-primary/15 hover:from-amber-50 hover:to-primary/15 dark:hover:from-amber-950/50 dark:hover:to-primary/20 transition-colors text-left"
+          data-testid="button-review-accordion-toggle"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-amber-100 dark:bg-amber-900/60 rounded-lg shrink-0 shadow-sm">
+              <Star className="w-4 h-4 text-amber-500 dark:text-amber-400" fill="currentColor" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-foreground">
+                {isExpanded ? 'Share your experience' : 'Leave a review?'}
+              </span>
+              <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-sm">
+                {successPercent}% success
               </span>
             </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              If you have a moment, a quick review helps others decide if PDR is right for them.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={handleLeaveReview}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
-                data-testid="button-leave-review"
-              >
-                <ExternalLink className="w-3 h-3" />
-                Leave a Review
-              </button>
-              <button
-                onClick={handleRemindLater}
-                className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-primary/30 bg-background hover:bg-primary/5 text-foreground transition-colors"
-                data-testid="button-remind-later"
-              >
-                Remind Me Later
-              </button>
-              <button
-                onClick={handleDontAskAgain}
-                className="inline-flex items-center px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                data-testid="button-dont-ask-again"
-              >
-                Don't Ask Again
-              </button>
+          </div>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+        </button>
+        
+        <motion.div
+          initial={false}
+          animate={{ 
+            height: isExpanded ? 'auto' : 0,
+            opacity: isExpanded ? 1 : 0
+          }}
+          transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+          className="overflow-hidden"
+        >
+          <div className="p-4 pt-0 bg-gradient-to-r from-amber-50/50 to-primary/5 dark:from-amber-950/20 dark:to-primary/10">
+            <div className="pt-3 border-t border-primary/10">
+              <p className="text-sm text-foreground mb-1">
+                This was a strong result for this library.
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                If you have a moment, a quick review helps others decide if PDR is right for them.
+              </p>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleLeaveReview}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 dark:from-amber-600 dark:to-amber-700 dark:hover:from-amber-500 dark:hover:to-amber-600 text-white shadow-md hover:shadow-lg transition-all duration-200"
+                  style={{ animation: animationPhase === 'static' ? 'reviewCtaGlow 3s ease-in-out infinite' : 'none' }}
+                  data-testid="button-leave-review"
+                >
+                  <Star className="w-4 h-4" fill="currentColor" />
+                  Leave a Review
+                  <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                </button>
+                
+                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={dontAskAgainChecked}
+                    onChange={(e) => setDontAskAgainChecked(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-muted-foreground/30 text-primary focus:ring-primary/30 cursor-pointer"
+                    data-testid="checkbox-dont-ask-again"
+                  />
+                  Don't ask again
+                </label>
+              </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </motion.div>
   );
@@ -2563,7 +2601,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             </div>
             
             <AnimatePresence>
-              <ReviewPromptBanner
+              <ReviewPromptAccordion
                 confirmedCount={confirmedCount}
                 recoveredCount={recoveredCount}
                 totalFiles={totalFiles}

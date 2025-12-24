@@ -1,0 +1,103 @@
+Review Prompt UX Refinements – Please implement all points below
+
+We’re happy with the overall direction, but the review prompt needs refinement to better match PDR’s calm, premium ethos and improve noticeability and conversion without pressure.
+
+1. Percentage visibility
+
+The combined score (currently 88% Confirmed + Recovered) is too subtle.
+
+Lavender-on-lavender makes it hard to see.
+
+Increase contrast and prominence.
+
+Strong suggestion: place the percentage near or over the top-center tick (e.g. a pill badge near the checkmark), so it visually connects the “successful fix” state with the review prompt.
+
+The score must clearly relate to Confirmed + Recovered, not feel arbitrary.
+
+2. Copy tone
+
+Current copy “Looks like PDR did a great job” feels self-praising.
+
+Use neutral, user-affirming language instead, e.g.:
+
+“This was a strong result for this library.”
+
+Keep tone factual, calm, and non-marketing.
+
+3. ‘Don’t ask again’ interaction
+
+Change “Don’t Ask Again” from a button to a checkbox.
+
+This reduces decision pressure and aligns with user intent.
+
+Checkbox state should persist permanently.
+
+4. ‘Leave a Review’ CTA
+
+Currently too forgettable.
+
+Increase visual weight (contrast, icon emphasis, or subtle glow).
+
+It should feel clearly primary within the review card, without competing with the main modal CTAs.
+
+5. Star icon visibility
+
+The star icon has lost presence after animation.
+
+Reintroduce color (gold preferred, ties to logo + “stars” concept).
+
+It should anchor the review section visually even in the collapsed/idle state.
+
+6. Accordion behavior (important)
+
+The review section should be an expandable/collapsible accordion.
+
+Default behavior:
+
+Shows expanded initially (when criteria met).
+
+Allows user to collapse it without making a decision.
+
+Collapsing should be equivalent to “Remind me later” (no permanent dismissal).
+
+This removes forced decision-making and increases future exposure.
+
+7. Animation timing & sequencing (Tron effect)
+
+The gold/lavender “Tron” traveling effect works, but:
+
+Slow it to ~50% current speed.
+
+After first full pass, continue for 2 additional laps.
+
+Purpose: give the user time to notice, absorb, and think.
+
+8. Post-animation collapse behavior
+
+If the accordion auto-collapses:
+
+Do not collapse immediately after animation ends.
+
+Add a short pause, then collapse slowly and deliberately (300–500ms easing).
+
+This teaches the user that:
+
+The section is expandable.
+
+They can reopen it later.
+
+The Tron outline should complete before collapse, not cut off mid-motion.
+
+9. Persistence rules (unchanged, confirming)
+
+Trigger only when Confirmed + Recovered ≥ 88%.
+
+Show on Fix Complete screen.
+
+Respect:
+
+“Remind me later” → session-based
+
+Checkbox “Don’t ask again” → permanent
+
+Goal: premium, non-intrusive, confidence-building UX that invites a review without pressure or self-praise.
