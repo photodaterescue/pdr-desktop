@@ -2210,7 +2210,7 @@ function ReviewPromptBanner({
   }, []);
   
   const successRate = totalFiles > 0 ? (confirmedCount + recoveredCount) / totalFiles : 0;
-  const shouldShow = successRate >= 0.9 && !permanentlyDismissed && !dismissed;
+  const shouldShow = successRate >= 0.88 && !permanentlyDismissed && !dismissed;
   
   if (!shouldShow) return null;
   
