@@ -2556,11 +2556,12 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3, duration: 0.3 }}
-                className="absolute -bottom-2 left-1/2 -translate-x-1/2"
+                className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center"
               >
                 <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-sm">
                   {Math.round(((confirmedCount + recoveredCount) / totalFiles) * 100)}% success
                 </span>
+                <span className="text-[10px] text-muted-foreground mt-0.5">Confirmed + Recovered</span>
               </motion.div>
             </div>
             
