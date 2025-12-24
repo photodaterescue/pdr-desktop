@@ -1,0 +1,104 @@
+Review Prompt – Refinement & UX Fixes (Please Read Carefully)
+
+We like the direction of the in-app review prompt, but it needs refinement to meet PDR’s calm, premium ethos and avoid frustration.
+
+Core Logic (unchanged):
+
+Trigger only when (Confirmed + Recovered) ≥ 88% of total files.
+
+One-time per library unless user explicitly allows future prompts.
+
+Options remain: Leave a Review, Remind Me Later, Don’t Ask Again.
+
+1. Animation & Timing (Critical)
+
+The gold/lavender “Tron / spin-top” effect is working, but it’s too short.
+
+Please:
+
+Slow the animation to ~50% speed
+
+Allow it to complete at least 2 full additional loops
+
+The animation must fully finish and stop before any auto-collapse logic begins.
+
+Purpose: give users time to notice, process, and feel rewarded.
+
+2. Accordion Behaviour (Bug + UX)
+
+The review section should become an expandable accordion after animation.
+
+Once the user manually expands it, auto-collapse must be disabled entirely for that session.
+
+Currently it re-closes shortly after opening — this feels broken and frustrating.
+
+Auto-collapse is allowed only if the user takes no action.
+
+3. Auto-Collapse Behaviour (Teaching Mechanism)
+
+If auto-collapse happens:
+
+It must be delayed
+
+It must be slow and smooth
+
+This subtly teaches the user that the section is reopenable, without forcing a decision.
+
+Collapsing should happen after animation completes, never during.
+
+4. Visual Hierarchy & Clarity
+
+The success percentage (e.g. “90% success”) is currently too subtle.
+
+Lavender-on-lavender makes it easy to miss.
+
+Improvements:
+
+Increase contrast (pill background or outline)
+
+Consider relocating the % near or over the top checkmark as a subtle success pill
+
+It must clearly relate to Confirmed + Recovered (not overall “score” ambiguity)
+
+5. Review Card Styling
+
+The star icon has lost visual impact — it needs colour emphasis again (gold preferred).
+
+“Leave a Review” CTA currently feels forgettable:
+
+Increase visual weight (contrast, glow, or subtle motion)
+
+Keep it calm, not salesy
+
+Replace “Don’t Ask Again” button with a checkbox to reduce decision pressure.
+
+6. Copy Tone (Important)
+
+Avoid self-praise.
+
+Replace:
+
+“Looks like PDR did a great job…”
+
+With something neutral and validating, e.g.:
+
+“This was a strong result for this library.”
+
+Keep tone factual, supportive, and non-marketing.
+
+7. State Ownership Rules (Very Important)
+
+System-driven behaviour ends once the user interacts.
+
+Priority order:
+
+Animation completes
+
+Optional auto-collapse (only if untouched)
+
+User action overrides all automation
+
+Goal:
+The review prompt should feel like a quiet moment of success, not a request.
+If the user engages — great.
+If they don’t — no pressure, no frustration, no broken-feeling UI.

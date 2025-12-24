@@ -2204,7 +2204,8 @@ function ReviewPromptAccordion({
   const [dontAskAgainChecked, setDontAskAgainChecked] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
   const [animationPhase, setAnimationPhase] = useState<'gold' | 'trace' | 'static'>('gold');
-  const [shouldAutoCollapse, setShouldAutoCollapse] = useState(false);
+  const [animationComplete, setAnimationComplete] = useState(false);
+  const [userHasInteracted, setUserHasInteracted] = useState(false);
   
   useEffect(() => {
     const stored = localStorage.getItem(REVIEW_PROMPT_STORAGE_KEY);
@@ -2216,31 +2217,31 @@ function ReviewPromptAccordion({
   useEffect(() => {
     const goldTimer = setTimeout(() => {
       setAnimationPhase('trace');
-    }, 10500);
+    }, 15500);
     
     const traceTimer = setTimeout(() => {
       setAnimationPhase('static');
-    }, 15500);
+    }, 22000);
     
-    const autoCollapseTimer = setTimeout(() => {
-      setShouldAutoCollapse(true);
-    }, 17000);
+    const animationDoneTimer = setTimeout(() => {
+      setAnimationComplete(true);
+    }, 23000);
     
     return () => {
       clearTimeout(goldTimer);
       clearTimeout(traceTimer);
-      clearTimeout(autoCollapseTimer);
+      clearTimeout(animationDoneTimer);
     };
   }, []);
   
   useEffect(() => {
-    if (shouldAutoCollapse && isExpanded) {
+    if (animationComplete && isExpanded && !userHasInteracted) {
       const collapseTimer = setTimeout(() => {
         setIsExpanded(false);
-      }, 500);
+      }, 2000);
       return () => clearTimeout(collapseTimer);
     }
-  }, [shouldAutoCollapse, isExpanded]);
+  }, [animationComplete, isExpanded, userHasInteracted]);
   
   useEffect(() => {
     if (dontAskAgainChecked) {
@@ -2263,6 +2264,7 @@ function ReviewPromptAccordion({
   };
   
   const handleToggle = () => {
+    setUserHasInteracted(true);
     setIsExpanded(!isExpanded);
   };
   
@@ -2279,8 +2281,8 @@ function ReviewPromptAccordion({
           <div 
             className="absolute inset-0"
             style={{
-              background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212, 175, 55, 0.6) 30deg, rgba(212, 175, 55, 0.85) 90deg, rgba(212, 175, 55, 0.6) 150deg, transparent 180deg)',
-              animation: 'reviewGoldSpin 10s ease-in-out forwards',
+              background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212, 175, 55, 0.5) 20deg, rgba(212, 175, 55, 0.8) 60deg, rgba(212, 175, 55, 0.95) 90deg, rgba(212, 175, 55, 0.8) 120deg, rgba(212, 175, 55, 0.5) 160deg, transparent 180deg)',
+              animation: 'reviewGoldSpin 15s linear forwards',
               animationDelay: '0.5s',
             }}
           />
@@ -2299,11 +2301,11 @@ function ReviewPromptAccordion({
               ry="12"
               fill="none"
               stroke="hsl(262, 83%, 68%)"
-              strokeWidth="2"
+              strokeWidth="2.5"
               strokeDasharray="1000"
               strokeDashoffset="1000"
               style={{
-                animation: 'reviewOutlineTrace 4.5s ease-out forwards',
+                animation: 'reviewOutlineTrace 6s ease-out forwards',
               }}
             />
           </svg>
@@ -2313,7 +2315,7 @@ function ReviewPromptAccordion({
       <style>{`
         @keyframes reviewGoldSpin {
           0% { transform: rotate(0deg); }
-          100% { transform: rotate(1080deg); }
+          100% { transform: rotate(1440deg); }
         }
         @keyframes reviewOutlineTrace {
           0% { stroke-dashoffset: 1000; }
@@ -2321,7 +2323,7 @@ function ReviewPromptAccordion({
         }
         @keyframes reviewCtaGlow {
           0%, 100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
-          50% { box-shadow: 0 0 12px 2px rgba(212, 175, 55, 0.4); }
+          50% { box-shadow: 0 0 16px 3px rgba(212, 175, 55, 0.5); }
         }
       `}</style>
       
@@ -2357,7 +2359,7 @@ function ReviewPromptAccordion({
             height: isExpanded ? 'auto' : 0,
             opacity: isExpanded ? 1 : 0
           }}
-          transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+          transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
           className="overflow-hidden"
         >
           <div className="p-4 pt-0 bg-gradient-to-r from-amber-50/50 to-primary/5 dark:from-amber-950/20 dark:to-primary/10">
