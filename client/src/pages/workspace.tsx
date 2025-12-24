@@ -2202,6 +2202,7 @@ function ReviewPromptBanner({
   const [dismissed, setDismissed] = useState(false);
   const [permanentlyDismissed, setPermanentlyDismissed] = useState(false);
   const [animationComplete, setAnimationComplete] = useState(false);
+  const [outlinePhase, setOutlinePhase] = useState<'gold' | 'trace' | 'static'>('gold');
   
   useEffect(() => {
     const stored = localStorage.getItem(REVIEW_PROMPT_STORAGE_KEY);
@@ -2211,13 +2212,27 @@ function ReviewPromptBanner({
   }, []);
   
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const goldTimer = setTimeout(() => {
+      setOutlinePhase('trace');
+    }, 5500);
+    
+    const traceTimer = setTimeout(() => {
+      setOutlinePhase('static');
+    }, 8500);
+    
+    const completeTimer = setTimeout(() => {
       setAnimationComplete(true);
-    }, 3500);
-    return () => clearTimeout(timer);
+    }, 9000);
+    
+    return () => {
+      clearTimeout(goldTimer);
+      clearTimeout(traceTimer);
+      clearTimeout(completeTimer);
+    };
   }, []);
   
   const successRate = totalFiles > 0 ? (confirmedCount + recoveredCount) / totalFiles : 0;
+  const successPercent = Math.round(successRate * 100);
   const shouldShow = successRate >= 0.88 && !permanentlyDismissed && !dismissed;
   
   if (!shouldShow) return null;
@@ -2248,41 +2263,78 @@ function ReviewPromptBanner({
       transition={{ delay: 0.5, duration: 0.3 }}
       className="mt-6 relative"
     >
-      <div 
-        className="absolute -inset-[1px] rounded-xl overflow-hidden"
-        style={{ opacity: animationComplete ? 0 : 1, transition: 'opacity 0.5s ease-out' }}
-      >
-        <div 
-          className="absolute inset-0"
-          style={{
-            background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212, 175, 55, 0.6) 60deg, rgba(212, 175, 55, 0.3) 120deg, transparent 180deg)',
-            animation: 'reviewBorderTrace 2.5s ease-in-out forwards',
-            animationDelay: '0.5s',
-          }}
-        />
-      </div>
+      {outlinePhase === 'gold' && (
+        <div className="absolute -inset-[1px] rounded-xl overflow-hidden pointer-events-none">
+          <div 
+            className="absolute inset-0"
+            style={{
+              background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212, 175, 55, 0.5) 40deg, rgba(212, 175, 55, 0.7) 90deg, rgba(212, 175, 55, 0.5) 140deg, transparent 180deg)',
+              animation: 'reviewGoldSpin 5s ease-in-out forwards',
+              animationDelay: '0.5s',
+            }}
+          />
+        </div>
+      )}
+      
+      {outlinePhase === 'trace' && (
+        <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden">
+          <svg className="absolute inset-0 w-full h-full" style={{ transform: 'scale(1.01)' }}>
+            <rect
+              x="1"
+              y="1"
+              width="calc(100% - 2px)"
+              height="calc(100% - 2px)"
+              rx="12"
+              ry="12"
+              fill="none"
+              stroke="hsl(262, 83%, 68%)"
+              strokeWidth="2"
+              strokeDasharray="1000"
+              strokeDashoffset="1000"
+              style={{
+                animation: 'reviewOutlineTrace 2.5s ease-out forwards',
+              }}
+            />
+          </svg>
+        </div>
+      )}
+      
       <style>{`
-        @keyframes reviewBorderTrace {
+        @keyframes reviewGoldSpin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(720deg); }
         }
+        @keyframes reviewOutlineTrace {
+          0% { stroke-dashoffset: 1000; }
+          100% { stroke-dashoffset: 0; }
+        }
       `}</style>
-      <div className="relative p-4 bg-gradient-to-r from-amber-50/80 to-amber-100/50 dark:from-amber-950/30 dark:to-amber-900/20 border border-amber-200/60 dark:border-amber-700/40 rounded-xl">
+      
+      <div className={`relative p-4 bg-gradient-to-r from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/15 rounded-xl transition-all duration-500 ${
+        outlinePhase === 'static' || animationComplete 
+          ? 'border-2 border-primary/40' 
+          : 'border border-primary/20'
+      }`}>
         <div className="flex items-start gap-3">
-          <div className="p-1.5 bg-amber-100 dark:bg-amber-900/50 rounded-lg shrink-0">
-            <Star className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <div className="p-1.5 bg-primary/10 rounded-lg shrink-0">
+            <Star className="w-4 h-4 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground mb-1">
-              Looks like PDR did a great job with this library
-            </p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-sm font-medium text-foreground">
+                This was a strong result for this library
+              </p>
+              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-primary/15 text-primary border border-primary/20">
+                {successPercent}%
+              </span>
+            </div>
             <p className="text-xs text-muted-foreground mb-3">
-              If you have a moment, a quick review helps others discover PDR.
+              If you have a moment, a quick review helps others decide if PDR is right for them.
             </p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={handleLeaveReview}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 text-white transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
                 data-testid="button-leave-review"
               >
                 <ExternalLink className="w-3 h-3" />
@@ -2290,7 +2342,7 @@ function ReviewPromptBanner({
               </button>
               <button
                 onClick={handleRemindLater}
-                className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-700 bg-white/80 dark:bg-amber-950/50 hover:bg-amber-50 dark:hover:bg-amber-900/50 text-foreground transition-colors"
+                className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-primary/30 bg-background hover:bg-primary/5 text-foreground transition-colors"
                 data-testid="button-remind-later"
               >
                 Remind Me Later
