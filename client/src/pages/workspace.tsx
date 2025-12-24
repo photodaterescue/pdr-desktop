@@ -2201,12 +2201,20 @@ function ReviewPromptBanner({
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [permanentlyDismissed, setPermanentlyDismissed] = useState(false);
+  const [animationComplete, setAnimationComplete] = useState(false);
   
   useEffect(() => {
     const stored = localStorage.getItem(REVIEW_PROMPT_STORAGE_KEY);
     if (stored === 'permanent') {
       setPermanentlyDismissed(true);
     }
+  }, []);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAnimationComplete(true);
+    }, 3500);
+    return () => clearTimeout(timer);
   }, []);
   
   const successRate = totalFiles > 0 ? (confirmedCount + recoveredCount) / totalFiles : 0;
@@ -2231,15 +2239,6 @@ function ReviewPromptBanner({
     setDismissed(true);
     onDismiss();
   };
-  
-  const [animationComplete, setAnimationComplete] = useState(false);
-  
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setAnimationComplete(true);
-    }, 3500);
-    return () => clearTimeout(timer);
-  }, []);
   
   return (
     <motion.div
