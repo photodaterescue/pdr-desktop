@@ -32,7 +32,9 @@ import {
   Wrench,
   Sun,
   Moon,
-  FileText
+  FileText,
+  Star,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -2183,6 +2185,102 @@ function PreviewModal({ onClose, results, fileResults }: {
   );
 }
 
+const REVIEW_PROMPT_STORAGE_KEY = 'pdr-review-prompt-dismissed';
+const TRUSTPILOT_URL = 'https://www.trustpilot.com/review/photodaterescue.com';
+
+function ReviewPromptBanner({ 
+  confirmedCount, 
+  recoveredCount, 
+  totalFiles,
+  onDismiss 
+}: { 
+  confirmedCount: number;
+  recoveredCount: number;
+  totalFiles: number;
+  onDismiss: () => void;
+}) {
+  const [dismissed, setDismissed] = useState(false);
+  const [permanentlyDismissed, setPermanentlyDismissed] = useState(false);
+  
+  useEffect(() => {
+    const stored = localStorage.getItem(REVIEW_PROMPT_STORAGE_KEY);
+    if (stored === 'permanent') {
+      setPermanentlyDismissed(true);
+    }
+  }, []);
+  
+  const successRate = totalFiles > 0 ? (confirmedCount + recoveredCount) / totalFiles : 0;
+  const shouldShow = successRate >= 0.9 && !permanentlyDismissed && !dismissed;
+  
+  if (!shouldShow) return null;
+  
+  const handleLeaveReview = () => {
+    window.open(TRUSTPILOT_URL, '_blank', 'noopener,noreferrer');
+    setDismissed(true);
+    onDismiss();
+  };
+  
+  const handleRemindLater = () => {
+    setDismissed(true);
+    onDismiss();
+  };
+  
+  const handleDontAskAgain = () => {
+    localStorage.setItem(REVIEW_PROMPT_STORAGE_KEY, 'permanent');
+    setPermanentlyDismissed(true);
+    setDismissed(true);
+    onDismiss();
+  };
+  
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ delay: 0.5, duration: 0.3 }}
+      className="mt-6 p-4 bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20 rounded-xl"
+    >
+      <div className="flex items-start gap-3">
+        <div className="p-1.5 bg-primary/10 rounded-lg shrink-0">
+          <Star className="w-4 h-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground mb-1">
+            Looks like PDR did a great job with this library
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            If you have a moment, a quick review helps others discover PDR.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleLeaveReview}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              data-testid="button-leave-review"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Leave a Review
+            </button>
+            <button
+              onClick={handleRemindLater}
+              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-background hover:bg-secondary/50 text-foreground transition-colors"
+              data-testid="button-remind-later"
+            >
+              Remind Me Later
+            </button>
+            <button
+              onClick={handleDontAskAgain}
+              className="inline-flex items-center px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              data-testid="button-dont-ask-again"
+            >
+              Don't Ask Again
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileResults, onViewReport, onReportSaved }: { 
   onClose: () => void, 
   totalFiles: number, 
@@ -2382,6 +2480,15 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                 </Button>
               </div>
             </div>
+            
+            <AnimatePresence>
+              <ReviewPromptBanner
+                confirmedCount={confirmedCount}
+                recoveredCount={recoveredCount}
+                totalFiles={totalFiles}
+                onDismiss={() => {}}
+              />
+            </AnimatePresence>
           </>
         )}
       </motion.div>
