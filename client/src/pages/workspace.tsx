@@ -2210,7 +2210,7 @@ function ReviewPromptBanner({
   }, []);
   
   const successRate = totalFiles > 0 ? (confirmedCount + recoveredCount) / totalFiles : 0;
-  const shouldShow = successRate >= 0.88 && !permanentlyDismissed && !dismissed;
+  const shouldShow = successRate >= 0.9 && !permanentlyDismissed && !dismissed;
   
   if (!shouldShow) return null;
   
@@ -2232,48 +2232,78 @@ function ReviewPromptBanner({
     onDismiss();
   };
   
+  const [animationComplete, setAnimationComplete] = useState(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAnimationComplete(true);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, []);
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ delay: 0.5, duration: 0.3 }}
-      className="mt-6 p-4 bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20 rounded-xl"
+      className="mt-6 relative"
     >
-      <div className="flex items-start gap-3">
-        <div className="p-1.5 bg-primary/10 rounded-lg shrink-0">
-          <Star className="w-4 h-4 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground mb-1">
-            Looks like PDR did a great job with this library
-          </p>
-          <p className="text-xs text-muted-foreground mb-3">
-            If you have a moment, a quick review helps others discover PDR.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleLeaveReview}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-              data-testid="button-leave-review"
-            >
-              <ExternalLink className="w-3 h-3" />
-              Leave a Review
-            </button>
-            <button
-              onClick={handleRemindLater}
-              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-background hover:bg-secondary/50 text-foreground transition-colors"
-              data-testid="button-remind-later"
-            >
-              Remind Me Later
-            </button>
-            <button
-              onClick={handleDontAskAgain}
-              className="inline-flex items-center px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              data-testid="button-dont-ask-again"
-            >
-              Don't Ask Again
-            </button>
+      <div 
+        className="absolute -inset-[1px] rounded-xl overflow-hidden"
+        style={{ opacity: animationComplete ? 0 : 1, transition: 'opacity 0.5s ease-out' }}
+      >
+        <div 
+          className="absolute inset-0"
+          style={{
+            background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212, 175, 55, 0.6) 60deg, rgba(212, 175, 55, 0.3) 120deg, transparent 180deg)',
+            animation: 'reviewBorderTrace 2.5s ease-in-out forwards',
+            animationDelay: '0.5s',
+          }}
+        />
+      </div>
+      <style>{`
+        @keyframes reviewBorderTrace {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(720deg); }
+        }
+      `}</style>
+      <div className="relative p-4 bg-gradient-to-r from-amber-50/80 to-amber-100/50 dark:from-amber-950/30 dark:to-amber-900/20 border border-amber-200/60 dark:border-amber-700/40 rounded-xl">
+        <div className="flex items-start gap-3">
+          <div className="p-1.5 bg-amber-100 dark:bg-amber-900/50 rounded-lg shrink-0">
+            <Star className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground mb-1">
+              Looks like PDR did a great job with this library
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              If you have a moment, a quick review helps others discover PDR.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleLeaveReview}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 text-white transition-colors"
+                data-testid="button-leave-review"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Leave a Review
+              </button>
+              <button
+                onClick={handleRemindLater}
+                className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 dark:border-amber-700 bg-white/80 dark:bg-amber-950/50 hover:bg-amber-50 dark:hover:bg-amber-900/50 text-foreground transition-colors"
+                data-testid="button-remind-later"
+              >
+                Remind Me Later
+              </button>
+              <button
+                onClick={handleDontAskAgain}
+                className="inline-flex items-center px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="button-dont-ask-again"
+              >
+                Don't Ask Again
+              </button>
+            </div>
           </div>
         </div>
       </div>
