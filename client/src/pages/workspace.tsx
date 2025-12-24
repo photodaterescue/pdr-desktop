@@ -2543,14 +2543,26 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
           </>
         ) : (
           <>
-            <motion.div 
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring" }}
-              className="w-20 h-20 bg-emerald-50 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-200 dark:border-emerald-700"
-            >
-              <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
-            </motion.div>
+            <div className="relative mb-6">
+              <motion.div 
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring" }}
+                className="w-20 h-20 bg-emerald-50 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-700"
+              >
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 0.3 }}
+                className="absolute -bottom-2 left-1/2 -translate-x-1/2"
+              >
+                <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-sm">
+                  {Math.round(((confirmedCount + recoveredCount) / totalFiles) * 100)}% success
+                </span>
+              </motion.div>
+            </div>
             
             <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete</h2>
             <p className="text-muted-foreground mb-6">All {totalFiles.toLocaleString()} files have been successfully processed.</p>
