@@ -2552,17 +2552,19 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               >
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
               </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.3 }}
-                className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center"
-              >
-                <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-sm">
-                  {Math.round(((confirmedCount + recoveredCount) / totalFiles) * 100)}% success
-                </span>
-                <span className="text-[10px] text-muted-foreground mt-0.5">Confirmed + Recovered</span>
-              </motion.div>
+              {((confirmedCount + recoveredCount) / totalFiles) >= 0.88 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3, duration: 0.3 }}
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center"
+                >
+                  <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-sm">
+                    {Math.round(((confirmedCount + recoveredCount) / totalFiles) * 100)}% success
+                  </span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Confirmed + Recovered</span>
+                </motion.div>
+              )}
             </div>
             
             <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete</h2>
