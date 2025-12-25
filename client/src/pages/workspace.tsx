@@ -2259,8 +2259,8 @@ function ReviewPromptAccordion({
   
   const handleLeaveReview = () => {
     window.open(TRUSTPILOT_URL, '_blank', 'noopener,noreferrer');
-    setDismissed(true);
-    onDismiss();
+    setUserHasInteracted(true);
+    setIsExpanded(false);
   };
   
   const handleToggle = () => {
