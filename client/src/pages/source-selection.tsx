@@ -142,7 +142,7 @@ export default function SourceSelection() {
             onClick={() => setLocation('/workspace')}
             className="px-8 py-2.5 rounded-lg border border-border bg-background/50 hover:bg-secondary/30 text-foreground font-medium text-sm transition-all duration-300 hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 focus:ring-offset-background"
           >
-            Go to Dashboard
+            Go to Workspace
           </button>
         </motion.div>
       </motion.div>

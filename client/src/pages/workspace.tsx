@@ -240,6 +240,14 @@ export default function Workspace() {
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
+    const panelParam = params.get("panel") as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | null;
+    if (panelParam) {
+      setActivePanel(panelParam);
+      // Clear URL param after setting panel
+      setLocation('/workspace');
+      return;
+    }
+    
     const type = params.get("type") as 'folder' | 'zip' | 'drive';
     const name = params.get("name");
     const path = params.get("path");

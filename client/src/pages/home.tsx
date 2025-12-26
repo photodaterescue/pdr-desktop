@@ -84,7 +84,7 @@ export default function Home() {
             icon={<ShieldCheck className="w-6 h-6 text-primary" />}
             title="Best Practices"
             description="Tips to keep your originals safe and get the best results."
-            onClick={() => {}}
+            onClick={() => setLocation("/workspace?panel=best-practices")}
           />
 
         </motion.div>
