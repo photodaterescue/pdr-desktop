@@ -3732,7 +3732,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                 <Accordion type="multiple" className="space-y-3">
                   
                   {/* Detailed Source Selection */}
-                  <AccordionItem value="source-selection" className="border border-border rounded-lg px-4">
+                  <AccordionItem value="source-selection" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Detailed Source Selection
                     </AccordionTrigger>
@@ -3802,7 +3802,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                   </AccordionItem>
 
                   {/* Common Source Mistakes */}
-                  <AccordionItem value="source-mistakes" className="border border-border rounded-lg px-4">
+                  <AccordionItem value="source-mistakes" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Common Source Mistakes
                     </AccordionTrigger>
@@ -3830,7 +3830,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                   </AccordionItem>
 
                   {/* Reports */}
-                  <AccordionItem value="reports" className="border border-border rounded-lg px-4">
+                  <AccordionItem value="reports" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Reports: Your Audit Trail
                     </AccordionTrigger>
@@ -3908,7 +3908,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                   </AccordionItem>
 
                   {/* Duplicate Handling */}
-                  <AccordionItem value="duplicates" className="border border-border rounded-lg px-4">
+                  <AccordionItem value="duplicates" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Duplicate Handling
                     </AccordionTrigger>
