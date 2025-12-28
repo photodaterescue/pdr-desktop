@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, SkipForward } from 'lucide-react';
 import { Button } from './custom-button';
@@ -43,6 +43,7 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
   const [currentStep, setCurrentStep] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   const step = steps[currentStep];
   const isFirstStep = currentStep === 0;
@@ -74,82 +75,98 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
     setTargetRect(rect);
 
     const padding = step.highlightPadding || 8;
-    const tooltipWidth = 360;
-    const tooltipHeight = 200;
-    const gap = 16;
+    const tooltipEl = tooltipRef.current;
+    const tooltipWidth = tooltipEl?.offsetWidth || 360;
+    const tooltipHeight = tooltipEl?.offsetHeight || 220;
+    const gap = 20;
     const margin = 16;
+
+    const targetPadded = {
+      top: rect.top - padding,
+      left: rect.left - padding,
+      right: rect.right + padding,
+      bottom: rect.bottom + padding
+    };
 
     const getPositionCoords = (pos: 'top' | 'bottom' | 'left' | 'right') => {
       let t = 0, l = 0;
       switch (pos) {
         case 'top':
-          t = rect.top - padding - tooltipHeight - gap;
+          t = targetPadded.top - tooltipHeight - gap;
           l = rect.left + rect.width / 2 - tooltipWidth / 2;
           break;
         case 'bottom':
-          t = rect.bottom + padding + gap;
+          t = targetPadded.bottom + gap;
           l = rect.left + rect.width / 2 - tooltipWidth / 2;
           break;
         case 'left':
           t = rect.top + rect.height / 2 - tooltipHeight / 2;
-          l = rect.left - padding - tooltipWidth - gap;
+          l = targetPadded.left - tooltipWidth - gap;
           break;
         case 'right':
           t = rect.top + rect.height / 2 - tooltipHeight / 2;
-          l = rect.right + padding + gap;
+          l = targetPadded.right + gap;
           break;
       }
       return { top: t, left: l };
     };
 
-    const isValidPosition = (coords: { top: number, left: number }) => {
-      const tooltipRect = {
+    const hasOverlap = (coords: { top: number, left: number }) => {
+      const tr = {
         top: coords.top,
         left: coords.left,
         right: coords.left + tooltipWidth,
         bottom: coords.top + tooltipHeight
       };
-      const targetPadded = {
-        top: rect.top - padding,
-        left: rect.left - padding,
-        right: rect.right + padding,
-        bottom: rect.bottom + padding
-      };
-      const withinBounds = 
-        tooltipRect.top >= margin &&
-        tooltipRect.left >= margin &&
-        tooltipRect.right <= window.innerWidth - margin &&
-        tooltipRect.bottom <= window.innerHeight - margin;
-      const noOverlap = 
-        tooltipRect.right < targetPadded.left ||
-        tooltipRect.left > targetPadded.right ||
-        tooltipRect.bottom < targetPadded.top ||
-        tooltipRect.top > targetPadded.bottom;
-      return withinBounds && noOverlap;
+      const horizontalOverlap = tr.left < targetPadded.right && tr.right > targetPadded.left;
+      const verticalOverlap = tr.top < targetPadded.bottom && tr.bottom > targetPadded.top;
+      return horizontalOverlap && verticalOverlap;
     };
 
-    const defaultPositions: ('top' | 'bottom' | 'left' | 'right')[] = ['bottom', 'top', 'right', 'left'];
+    const fitsInViewport = (coords: { top: number, left: number }) => {
+      return coords.top >= margin &&
+        coords.left >= margin &&
+        coords.left + tooltipWidth <= window.innerWidth - margin &&
+        coords.top + tooltipHeight <= window.innerHeight - margin;
+    };
+
+    const clampToViewport = (coords: { top: number, left: number }) => {
+      return {
+        left: Math.max(margin, Math.min(coords.left, window.innerWidth - tooltipWidth - margin)),
+        top: Math.max(margin, Math.min(coords.top, window.innerHeight - tooltipHeight - margin))
+      };
+    };
+
+    const defaultPositions: ('top' | 'bottom' | 'left' | 'right')[] = ['top', 'bottom', 'left', 'right'];
     let positions = defaultPositions;
     if (step.preferredPositions) {
       positions = step.preferredPositions;
-    } else if (step.position && step.position !== 'center') {
-      const preferred = step.position;
+    } else if (step.position && (step.position as string) !== 'center') {
+      const preferred = step.position as 'top' | 'bottom' | 'left' | 'right';
       positions = [preferred, ...defaultPositions.filter(p => p !== preferred)];
     }
 
-    let bestCoords = getPositionCoords(positions[0]);
+    let finalCoords: { top: number, left: number } | null = null;
+
     for (const pos of positions) {
       const coords = getPositionCoords(pos);
-      if (isValidPosition(coords)) {
-        bestCoords = coords;
+      if (fitsInViewport(coords) && !hasOverlap(coords)) {
+        finalCoords = coords;
+        break;
+      }
+      const clamped = clampToViewport(coords);
+      if (!hasOverlap(clamped)) {
+        finalCoords = clamped;
         break;
       }
     }
 
-    bestCoords.left = Math.max(margin, Math.min(bestCoords.left, window.innerWidth - tooltipWidth - margin));
-    bestCoords.top = Math.max(margin, Math.min(bestCoords.top, window.innerHeight - tooltipHeight - margin));
+    if (!finalCoords) {
+      const topCoords = getPositionCoords('top');
+      finalCoords = clampToViewport(topCoords);
+    }
 
-    setTooltipPosition(bestCoords);
+    setTooltipPosition(finalCoords);
   }, [step]);
 
   useEffect(() => {
@@ -258,6 +275,7 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
         )}
 
         <motion.div
+          ref={tooltipRef}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
