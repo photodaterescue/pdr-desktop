@@ -971,7 +971,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       <div className="pt-2 border-t border-sidebar-border/0 pb-2" data-tour="guides-panel">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-6">Guidance</h3>
         <div className="space-y-1 px-4">
-          <SidebarItem icon={<PlayCircle className="w-4 h-4 text-primary" />} label="Quick Tour" onClick={onStartTour} />
+          <SidebarItem icon={<PlayCircle className="w-4 h-4 opacity-60" />} label="Quick Tour" onClick={onStartTour} />
           <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
           <SidebarItem icon={<img src="/Assets/pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
           <SidebarItem icon={<img src="/Assets/pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
@@ -4573,11 +4573,35 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
   );
 }
 
+const SKIP_WELCOME_KEY = 'pdr-skip-welcome';
+
+export function getSkipWelcomeScreen(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(SKIP_WELCOME_KEY) === 'true';
+}
+
+export function setSkipWelcomeScreen(skip: boolean): void {
+  if (typeof window !== 'undefined') {
+    if (skip) {
+      localStorage.setItem(SKIP_WELCOME_KEY, 'true');
+    } else {
+      localStorage.removeItem(SKIP_WELCOME_KEY);
+    }
+  }
+}
+
 function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: { 
   onClose: () => void, 
   folderStructure: 'year' | 'year-month' | 'year-month-day',
   onFolderStructureChange: (value: 'year' | 'year-month' | 'year-month-day') => void 
 }) {
+  const [showWelcome, setShowWelcome] = useState(!getSkipWelcomeScreen());
+
+  const handleWelcomeToggle = (checked: boolean) => {
+    setShowWelcome(checked);
+    setSkipWelcomeScreen(!checked);
+  };
+
   const options = [
     { value: 'year' as const, label: 'Year', example: '2024/' },
     { value: 'year-month' as const, label: 'Year / Month', example: '2024/03/' },
@@ -4650,6 +4674,23 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: {
                 </label>
               ))}
             </div>
+          </div>
+
+          <div className="pt-4 border-t border-border">
+            <label className="block text-sm font-medium text-foreground mb-3">
+              Welcome Screen
+            </label>
+            <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">Show Welcome Screen on launch</span>
+                <span className="text-xs text-muted-foreground">Display the onboarding screen when the app starts</span>
+              </div>
+              <Checkbox 
+                checked={showWelcome}
+                onCheckedChange={(checked) => handleWelcomeToggle(!!checked)}
+                data-testid="checkbox-show-welcome"
+              />
+            </label>
           </div>
         </div>
 

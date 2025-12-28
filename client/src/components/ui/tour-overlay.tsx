@@ -325,7 +325,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'confidence-cards',
     targetSelector: '[data-tour="confidence-cards"]',
     title: 'Date Confidence Breakdown',
-    description: 'These cards show how dates were determined. Confirmed means the date came from embedded metadata (highest confidence). Recovered means the date was extracted from structured filename patterns. Marked means no reliable date was found — fallback rules will be applied.',
+    description: 'These cards show a preliminary indication of how dates were determined. Confirmed = embedded metadata, Recovered = filename patterns, Marked = fallback rules. Note: These are initial estimates. The final, authoritative results appear in your Fix Report after running the fix.',
     position: 'bottom',
     highlightPadding: 12
   },
@@ -350,7 +350,7 @@ export const TOUR_STEPS: TourStep[] = [
     targetSelector: '[data-tour="apply-fixes"]',
     title: 'Apply Fixes',
     description: 'When you\'re ready, click here to start the fix process. PDR will copy your files to the destination with corrected dates. A detailed report is saved automatically.',
-    position: 'top',
+    position: 'left',
     highlightPadding: 8
   },
   {
@@ -358,7 +358,7 @@ export const TOUR_STEPS: TourStep[] = [
     targetSelector: '[data-tour="guides-panel"]',
     title: 'Guides & Help',
     description: 'Need guidance? The side panel has step-by-step guides, best practices, and answers to common questions. It\'s your go-to resource while working.',
-    position: 'left',
+    position: 'right',
     highlightPadding: 12
   },
   {
@@ -366,7 +366,7 @@ export const TOUR_STEPS: TourStep[] = [
     targetSelector: '[data-tour="reports-history"]',
     title: 'Reports History',
     description: 'Every fix run creates a report. Access your complete history here to review past jobs, export data, or verify what was changed.',
-    position: 'top',
+    position: 'left',
     highlightPadding: 8
   },
   {

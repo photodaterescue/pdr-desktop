@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
 import { Search, PlayCircle, ShieldCheck, ArrowRight, Check } from "lucide-react";
@@ -7,9 +7,30 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/custom-card";
 import { resetTourCompletion } from "@/components/ui/tour-overlay";
 
+const SKIP_WELCOME_KEY = 'pdr-skip-welcome';
+
+function getSkipWelcomeScreen(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(SKIP_WELCOME_KEY) === 'true';
+}
+
+function setSkipWelcomeScreen(skip: boolean): void {
+  if (typeof window !== 'undefined') {
+    if (skip) {
+      localStorage.setItem(SKIP_WELCOME_KEY, 'true');
+    } else {
+      localStorage.removeItem(SKIP_WELCOME_KEY);
+    }
+  }
+}
+
 export default function Home() {
   const [, setLocation] = useLocation();
   const [skipScreen, setSkipScreen] = useState(false);
+
+  useEffect(() => {
+    setSkipScreen(getSkipWelcomeScreen());
+  }, []);
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -105,7 +126,11 @@ export default function Home() {
             <Checkbox 
               id="skip" 
               checked={skipScreen}
-              onCheckedChange={(checked) => setSkipScreen(checked === true)}
+              onCheckedChange={(checked) => {
+                const isChecked = checked === true;
+                setSkipScreen(isChecked);
+                setSkipWelcomeScreen(isChecked);
+              }}
               className="border-muted-foreground/30 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
             />
             <label

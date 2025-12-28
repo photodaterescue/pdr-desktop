@@ -1,0 +1,100 @@
+Task: Final UX Corrections to Quick Tour & Related UI
+
+Please implement the following fixes exactly as described.
+
+1. Fix Tour Steps Overlaying the UI They Describe (Steps 7, 8, 9)
+
+Issue:
+Steps 7 (Apply Fixes), 8 (Guides & Help), and 9 (Reports History) are rendered on top of the UI elements they are meant to highlight, making them partially or fully invisible.
+
+Required fix:
+
+Reposition the tour modal so the highlighted element is fully visible
+
+Or offset the modal to the opposite side of the target
+
+At no point should a tour step obscure the UI it is explaining
+
+This is a hard UX rule for guided tours.
+
+2. Add Welcome Screen Toggle to Settings
+
+Issue:
+If the user disables the Welcome Screen, there is currently no way to re-enable it.
+
+Required fix:
+
+Add a setting in Settings to:
+
+Re-enable / show the Welcome Screen on app launch
+
+This should be a simple toggle or checkbox
+
+This ensures users can recover the original onboarding flow if desired.
+
+3. Quick Tour Entry: Icon Colour Consistency
+
+Issue:
+The Quick Tour item under Guidance is correctly placed, but the icon colour does not match the rest of the Guidance icons.
+
+Required fix:
+
+Update the Quick Tour icon colour to match the existing Guidance icon style
+
+It should visually read as part of the same group (same colour, weight, and opacity rules)
+
+This is a polish / consistency fix.
+
+4. Update Step 4 Copy – Confidence Cards (Clarification)
+
+Current step:
+Step 4 – Date Confidence Breakdown
+
+Required copy change:
+
+Explicitly state that this is a preliminary confidence score
+
+Clarify that:
+
+These cards provide an initial indication of how dates were determined
+
+The final, authoritative results are available in the Fix Reports after running the fix
+
+Intent:
+Prevent users from mistaking these cards as final or audited results.
+
+5. Confirm Step Count and Ordering
+
+After all changes:
+
+Confirm the final number of steps
+
+Confirm the step order, especially:
+
+Confidence Cards step appears before Combined Analysis
+
+No steps reference hidden or obscured UI
+
+6. No Regressions
+
+Please ensure:
+
+Skip / Back / Next / Finish controls remain intact
+
+Tour remains dismissible at any time
+
+Visual style stays consistent with the existing premium UI
+
+No functional behaviour is triggered by the tour (visual guidance only)
+
+Delivery Checklist
+
+When complete, please confirm:
+
+All overlay collisions resolved
+
+Welcome Screen toggle location in Settings
+
+Final step count
+
+Where tour copy/steps are defined for future edits
