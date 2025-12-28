@@ -5,6 +5,7 @@ import { Search, PlayCircle, ShieldCheck, ArrowRight, Check } from "lucide-react
 import { Button } from "@/components/ui/custom-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/custom-card";
+import { resetTourCompletion } from "@/components/ui/tour-overlay";
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -68,7 +69,7 @@ export default function Home() {
             icon={<PlayCircle className="w-6 h-6 text-primary" />}
             title="Take a Quick Tour"
             description="See how Photo Date Rescue works in under a minute."
-            onClick={() => setLocation("/workspace?tour=true")}
+            onClick={() => { resetTourCompletion(); setLocation("/workspace?tour=true"); }}
           />
 
           {/* Primary Main Card */}
