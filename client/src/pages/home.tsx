@@ -68,7 +68,7 @@ export default function Home() {
             icon={<PlayCircle className="w-6 h-6 text-primary" />}
             title="Take a Quick Tour"
             description="See how Photo Date Rescue works in under a minute."
-            onClick={() => {}}
+            onClick={() => setLocation("/workspace?tour=true")}
           />
 
           {/* Primary Main Card */}

@@ -34,7 +34,8 @@ import {
   Moon,
   FileText,
   Star,
-  ExternalLink
+  ExternalLink,
+  PlayCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -64,6 +65,7 @@ import {
   formatBytesToGB 
 } from "@/lib/electron-bridge";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
+import { TourOverlay, TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
 import type { SourceAnalysisResult } from "../electron";
 
 interface Source {
@@ -218,6 +220,7 @@ export default function Workspace() {
   const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
   const [hasCompletedFix, setHasCompletedFix] = useState(false);
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
+  const [showTour, setShowTour] = useState(false);
 
   const toggleDarkMode = () => {
     const newValue = !isDarkMode;
@@ -240,6 +243,20 @@ export default function Workspace() {
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
+    
+    // Handle tour param - only show if not already completed (first-time users)
+    // For explicit replays from Help & Support, resetTourCompletion is called first
+    const tourParam = params.get("tour");
+    if (tourParam === "true" && !hasTourBeenCompleted()) {
+      setShowTour(true);
+      setLocation('/workspace');
+      return;
+    } else if (tourParam === "true") {
+      // Already completed, just clear the param
+      setLocation('/workspace');
+      return;
+    }
+    
     const panelParam = params.get("panel") as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | null;
     if (panelParam) {
       setActivePanel(panelParam);
@@ -705,6 +722,7 @@ export default function Workspace() {
           panelType={activePanel} 
           onBackToWorkspace={() => setActivePanel(null)} 
           onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
+          onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
         />
       ) : (
         <MainContent 
@@ -810,6 +828,13 @@ export default function Workspace() {
           </Card>
         </div>
       )}
+      
+      <TourOverlay 
+        steps={TOUR_STEPS}
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+        onComplete={() => setShowTour(false)}
+      />
     </div>
   );
 }
@@ -885,7 +910,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         </div>
 
         {/* SOURCES SECTION */}
-        <div>
+        <div data-tour="sources-panel">
           <div className="flex items-center justify-between mb-3 px-2">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sources</h3>
             {sources.length > 0 && (
@@ -924,6 +949,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               size="sm"
               className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
               onClick={onAddSource}
+              data-tour="add-source"
             >
               <img src="/Assets/pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Source
             </Button>
@@ -941,7 +967,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       {/* EDUCATION SECTION */}
-      <div className="pt-2 border-t border-sidebar-border/0 pb-2">
+      <div className="pt-2 border-t border-sidebar-border/0 pb-2" data-tour="guides-panel">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-6">Guidance</h3>
         <div className="space-y-1 px-4">
           <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
@@ -1258,7 +1284,7 @@ function DashboardPanel({
           </section>
         )}
 
-        <Card className="p-6 mb-2">
+        <Card className="p-6 mb-2" data-tour="combined-analysis">
           <div className="flex items-start justify-between gap-6 mb-8 border-b border-border pb-8">
             <div className="flex items-start gap-6">
               <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
@@ -1362,7 +1388,7 @@ function DashboardPanel({
         {/* Preview Section */}
         <section className="pt-0 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
             <h2 className="text-lg font-semibold text-foreground mb-4">Output Preview</h2>
-            <Card className="flex flex-col md:flex-row items-center gap-6 p-5">
+            <Card className="flex flex-col md:flex-row items-center gap-6 p-5" data-tour="destination">
               <div className="p-4 bg-secondary/50 rounded-full">
                 <img src="/Assets/pdr-destination-drive.png" className="w-6 h-6 object-contain" alt="Destination Drive" />
               </div>
@@ -1422,6 +1448,7 @@ function DashboardPanel({
                  variant="outline"
                  className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
                  data-testid="button-view-reports"
+                 data-tour="reports-history"
                >
                  <FileText className="w-4 h-4 mr-2" /> Reports History
                </Button>
@@ -1431,6 +1458,7 @@ function DashboardPanel({
                  disabled={!destinationPath || destinationFreeGB < stats.sizeGB}
                  className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                  data-testid="button-run-fix"
+                 data-tour="apply-fixes"
                >
                  <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" /> Run Fix
                </Button>
@@ -3484,7 +3512,7 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void }) {
+function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onStartTour }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void }) {
   if (panelType === 'getting-started') {
     return (
       <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
@@ -4129,6 +4157,27 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel }: {
                           <li>Get the best possible results on the first run</li>
                         </ul>
                       </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                {/* Replay Tour */}
+                <AccordionItem value="replay-tour" className="border border-border rounded-lg px-4">
+                  <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                    Take a Quick Tour
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2 pb-4">
+                    <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
+                      <p>Need a refresher? Walk through the key areas of Photo Date Rescue with a guided tour. It takes less than a minute.</p>
+                      
+                      <Button 
+                        variant="outline" 
+                        onClick={onStartTour}
+                        className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                        data-testid="button-replay-tour"
+                      >
+                        <PlayCircle className="w-4 h-4" /> Start Tour
+                      </Button>
                     </div>
                   </AccordionContent>
                 </AccordionItem>

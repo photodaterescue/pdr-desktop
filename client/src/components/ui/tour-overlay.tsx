@@ -1,0 +1,370 @@
+import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, ChevronLeft, ChevronRight, SkipForward } from 'lucide-react';
+import { Button } from './custom-button';
+
+export interface TourStep {
+  id: string;
+  targetSelector?: string;
+  title: string;
+  description: string;
+  position?: 'top' | 'bottom' | 'left' | 'right' | 'center';
+  highlightPadding?: number;
+}
+
+interface TourOverlayProps {
+  steps: TourStep[];
+  isOpen: boolean;
+  onClose: () => void;
+  onComplete: () => void;
+}
+
+const TOUR_COMPLETED_KEY = 'pdr-tour-completed';
+
+export function hasTourBeenCompleted(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(TOUR_COMPLETED_KEY) === 'true';
+}
+
+export function markTourCompleted(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(TOUR_COMPLETED_KEY, 'true');
+  }
+}
+
+export function resetTourCompletion(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(TOUR_COMPLETED_KEY);
+  }
+}
+
+export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayProps) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
+
+  const step = steps[currentStep];
+  const isFirstStep = currentStep === 0;
+  const isLastStep = currentStep === steps.length - 1;
+
+  const calculatePosition = useCallback(() => {
+    if (!step) return;
+
+    if (!step.targetSelector || step.position === 'center') {
+      setTargetRect(null);
+      setTooltipPosition({
+        top: window.innerHeight / 2,
+        left: window.innerWidth / 2
+      });
+      return;
+    }
+
+    const target = document.querySelector(step.targetSelector);
+    if (!target) {
+      setTargetRect(null);
+      setTooltipPosition({
+        top: window.innerHeight / 2,
+        left: window.innerWidth / 2
+      });
+      return;
+    }
+
+    const rect = target.getBoundingClientRect();
+    setTargetRect(rect);
+
+    const padding = step.highlightPadding || 8;
+    const tooltipWidth = 360;
+    const tooltipHeight = 180;
+    const gap = 16;
+
+    let top = 0;
+    let left = 0;
+
+    switch (step.position || 'bottom') {
+      case 'top':
+        top = rect.top - padding - tooltipHeight - gap;
+        left = rect.left + rect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'bottom':
+        top = rect.bottom + padding + gap;
+        left = rect.left + rect.width / 2 - tooltipWidth / 2;
+        break;
+      case 'left':
+        top = rect.top + rect.height / 2 - tooltipHeight / 2;
+        left = rect.left - padding - tooltipWidth - gap;
+        break;
+      case 'right':
+        top = rect.top + rect.height / 2 - tooltipHeight / 2;
+        left = rect.right + padding + gap;
+        break;
+    }
+
+    left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
+    top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 16));
+
+    setTooltipPosition({ top, left });
+  }, [step]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setCurrentStep(0);
+      return;
+    }
+
+    calculatePosition();
+    
+    const handleResize = () => calculatePosition();
+    window.addEventListener('resize', handleResize);
+    
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isOpen, currentStep, calculatePosition]);
+
+  useEffect(() => {
+    if (isOpen && step?.targetSelector) {
+      const target = document.querySelector(step.targetSelector);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(calculatePosition, 300);
+      }
+    }
+  }, [isOpen, currentStep, step, calculatePosition]);
+
+  const handleNext = () => {
+    if (isLastStep) {
+      markTourCompleted();
+      onComplete();
+    } else {
+      setCurrentStep(prev => prev + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (!isFirstStep) {
+      setCurrentStep(prev => prev - 1);
+    }
+  };
+
+  const handleSkip = () => {
+    markTourCompleted();
+    onClose();
+  };
+
+  if (!isOpen || !step) return null;
+
+  const padding = step.highlightPadding || 8;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[9999]"
+        data-testid="tour-overlay"
+      >
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ mixBlendMode: 'normal' }}
+        >
+          <defs>
+            <mask id="spotlight-mask">
+              <rect x="0" y="0" width="100%" height="100%" fill="white" />
+              {targetRect && (
+                <rect
+                  x={targetRect.left - padding}
+                  y={targetRect.top - padding}
+                  width={targetRect.width + padding * 2}
+                  height={targetRect.height + padding * 2}
+                  rx="8"
+                  fill="black"
+                />
+              )}
+            </mask>
+          </defs>
+          <rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="rgba(0, 0, 0, 0.75)"
+            mask="url(#spotlight-mask)"
+            className="pointer-events-auto"
+            onClick={handleSkip}
+          />
+        </svg>
+
+        {targetRect && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="absolute pointer-events-none"
+            style={{
+              top: targetRect.top - padding,
+              left: targetRect.left - padding,
+              width: targetRect.width + padding * 2,
+              height: targetRect.height + padding * 2,
+            }}
+          >
+            <div className="absolute inset-0 rounded-lg ring-2 ring-primary ring-offset-2 ring-offset-transparent" />
+            <div className="absolute inset-0 rounded-lg animate-pulse bg-primary/10" />
+          </motion.div>
+        )}
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 10 }}
+          transition={{ delay: 0.1 }}
+          className="absolute bg-background border border-border rounded-xl shadow-2xl p-5 w-[360px] pointer-events-auto"
+          style={{
+            top: step.position === 'center' ? '50%' : tooltipPosition.top,
+            left: step.position === 'center' ? '50%' : tooltipPosition.left,
+            transform: step.position === 'center' ? 'translate(-50%, -50%)' : 'none'
+          }}
+          data-testid="tour-tooltip"
+        >
+          <button
+            onClick={handleSkip}
+            className="absolute top-3 right-3 p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            data-testid="tour-close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          <div className="pr-8">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                Step {currentStep + 1} of {steps.length}
+              </span>
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-2">{step.title}</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-5">{step.description}</p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <button
+              onClick={handleSkip}
+              className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              data-testid="tour-skip"
+            >
+              <SkipForward className="w-3.5 h-3.5" />
+              Skip tour
+            </button>
+
+            <div className="flex items-center gap-2">
+              {!isFirstStep && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBack}
+                  className="gap-1"
+                  data-testid="tour-back"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={handleNext}
+                className="gap-1"
+                data-testid="tour-next"
+              >
+                {isLastStep ? 'Finish' : 'Next'}
+                {!isLastStep && <ChevronRight className="w-4 h-4" />}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex justify-center gap-1.5 mt-4 pt-3 border-t border-border">
+            {steps.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setCurrentStep(index)}
+                className={`w-2 h-2 rounded-full transition-all duration-200 ${
+                  index === currentStep 
+                    ? 'bg-primary w-4' 
+                    : index < currentStep 
+                      ? 'bg-primary/50' 
+                      : 'bg-border hover:bg-muted-foreground/30'
+                }`}
+                data-testid={`tour-dot-${index}`}
+              />
+            ))}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+export const TOUR_STEPS: TourStep[] = [
+  {
+    id: 'welcome',
+    title: 'Welcome to Photo Date Rescue',
+    description: 'This quick tour will show you how to safely restore dates on your photos and videos. It only takes a minute, and you can replay it anytime from Help & Support.',
+    position: 'center'
+  },
+  {
+    id: 'sources-panel',
+    targetSelector: '[data-tour="sources-panel"]',
+    title: 'Your Sources',
+    description: 'This is where your photo sources appear. Add folders, ZIP archives, or external drives. Each source can be toggled on/off with the checkbox to include or exclude it from analysis.',
+    position: 'right',
+    highlightPadding: 12
+  },
+  {
+    id: 'add-source',
+    targetSelector: '[data-tour="add-source"]',
+    title: 'Add a Source',
+    description: 'Click here to add folders, drives, or ZIP files containing your photos. You can add multiple sources and analyze them together or separately.',
+    position: 'bottom',
+    highlightPadding: 8
+  },
+  {
+    id: 'combined-analysis',
+    targetSelector: '[data-tour="combined-analysis"]',
+    title: 'Combined Analysis',
+    description: 'After adding sources, this panel shows the combined results. You\'ll see how many files were found and a confidence breakdown: Confirmed (highest trust), Recovered (filename patterns), and Marked (fallback dates).',
+    position: 'left',
+    highlightPadding: 12
+  },
+  {
+    id: 'destination',
+    targetSelector: '[data-tour="destination"]',
+    title: 'Choose Destination',
+    description: 'Select where your fixed files will be saved. We recommend an empty folder — never inside your source folders. Your originals always stay untouched.',
+    position: 'left',
+    highlightPadding: 8
+  },
+  {
+    id: 'apply-fixes',
+    targetSelector: '[data-tour="apply-fixes"]',
+    title: 'Apply Fixes',
+    description: 'When you\'re ready, click here to start the fix process. PDR will copy your files to the destination with corrected dates. A detailed report is saved automatically.',
+    position: 'top',
+    highlightPadding: 8
+  },
+  {
+    id: 'guides-panel',
+    targetSelector: '[data-tour="guides-panel"]',
+    title: 'Guides & Help',
+    description: 'Need guidance? The side panel has step-by-step guides, best practices, and answers to common questions. It\'s your go-to resource while working.',
+    position: 'left',
+    highlightPadding: 12
+  },
+  {
+    id: 'reports-history',
+    targetSelector: '[data-tour="reports-history"]',
+    title: 'Reports History',
+    description: 'Every fix run creates a report. Access your complete history here to review past jobs, export data, or verify what was changed.',
+    position: 'bottom',
+    highlightPadding: 8
+  },
+  {
+    id: 'complete',
+    title: 'You\'re Ready!',
+    description: 'That\'s the essentials! Start by adding a source, review the analysis, choose a destination, and apply fixes. Remember: your originals are always safe. Happy organizing!',
+    position: 'center'
+  }
+];
