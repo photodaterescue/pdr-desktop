@@ -208,7 +208,7 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
           <TooltipTrigger asChild>
             <button
               onClick={onClick}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200 hover:text-emerald-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
               data-testid="badge-license-active"
             >
               <CheckCircle2 className="w-3 h-3" />
@@ -230,7 +230,7 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
           <TooltipTrigger asChild>
             <button
               onClick={onClick}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 hover:text-amber-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
               data-testid="badge-license-expired"
             >
               <AlertCircle className="w-3 h-3" />
@@ -252,7 +252,7 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
           <TooltipTrigger asChild>
             <button
               onClick={onClick}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 hover:text-amber-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
               data-testid="badge-license-error"
             >
               <AlertCircle className="w-3 h-3" />
@@ -273,7 +273,7 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
         <TooltipTrigger asChild>
           <button
             onClick={onClick}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary text-muted-foreground text-xs font-medium hover:bg-secondary/80 transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary text-muted-foreground text-xs font-medium hover:bg-primary/15 hover:text-foreground cursor-pointer transition-all duration-200 hover:scale-[1.02]"
             data-testid="badge-license-inactive"
           >
             <Key className="w-3 h-3" />

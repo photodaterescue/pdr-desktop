@@ -770,7 +770,7 @@ export default function Workspace() {
             <TooltipTrigger asChild>
               <button
                 onClick={toggleDarkMode}
-                className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground transition-colors"
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary hover:bg-primary/15 text-muted-foreground hover:text-foreground cursor-pointer transition-all duration-200 hover:scale-105"
                 data-testid="button-toggle-dark-mode"
               >
                 {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -994,12 +994,12 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean }) {
   return (
     <div 
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 cursor-pointer ${
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
         disabled 
           ? 'text-muted-foreground/50 cursor-not-allowed' 
           : active 
             ? 'text-secondary-foreground font-medium bg-sidebar-accent/50' 
-            : 'text-sidebar-foreground hover:bg-sidebar-accent'
+            : 'text-sidebar-foreground hover:bg-primary/10 hover:text-foreground'
       }`}
       onClick={(e) => !disabled && onClick && onClick(e)}
     >
