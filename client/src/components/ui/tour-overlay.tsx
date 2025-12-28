@@ -9,6 +9,7 @@ export interface TourStep {
   title: string;
   description: string;
   position?: 'top' | 'bottom' | 'left' | 'right' | 'center';
+  preferredPositions?: ('top' | 'bottom' | 'left' | 'right')[];
   highlightPadding?: number;
 }
 
@@ -74,35 +75,81 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
 
     const padding = step.highlightPadding || 8;
     const tooltipWidth = 360;
-    const tooltipHeight = 180;
+    const tooltipHeight = 200;
     const gap = 16;
+    const margin = 16;
 
-    let top = 0;
-    let left = 0;
+    const getPositionCoords = (pos: 'top' | 'bottom' | 'left' | 'right') => {
+      let t = 0, l = 0;
+      switch (pos) {
+        case 'top':
+          t = rect.top - padding - tooltipHeight - gap;
+          l = rect.left + rect.width / 2 - tooltipWidth / 2;
+          break;
+        case 'bottom':
+          t = rect.bottom + padding + gap;
+          l = rect.left + rect.width / 2 - tooltipWidth / 2;
+          break;
+        case 'left':
+          t = rect.top + rect.height / 2 - tooltipHeight / 2;
+          l = rect.left - padding - tooltipWidth - gap;
+          break;
+        case 'right':
+          t = rect.top + rect.height / 2 - tooltipHeight / 2;
+          l = rect.right + padding + gap;
+          break;
+      }
+      return { top: t, left: l };
+    };
 
-    switch (step.position || 'bottom') {
-      case 'top':
-        top = rect.top - padding - tooltipHeight - gap;
-        left = rect.left + rect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'bottom':
-        top = rect.bottom + padding + gap;
-        left = rect.left + rect.width / 2 - tooltipWidth / 2;
-        break;
-      case 'left':
-        top = rect.top + rect.height / 2 - tooltipHeight / 2;
-        left = rect.left - padding - tooltipWidth - gap;
-        break;
-      case 'right':
-        top = rect.top + rect.height / 2 - tooltipHeight / 2;
-        left = rect.right + padding + gap;
-        break;
+    const isValidPosition = (coords: { top: number, left: number }) => {
+      const tooltipRect = {
+        top: coords.top,
+        left: coords.left,
+        right: coords.left + tooltipWidth,
+        bottom: coords.top + tooltipHeight
+      };
+      const targetPadded = {
+        top: rect.top - padding,
+        left: rect.left - padding,
+        right: rect.right + padding,
+        bottom: rect.bottom + padding
+      };
+      const withinBounds = 
+        tooltipRect.top >= margin &&
+        tooltipRect.left >= margin &&
+        tooltipRect.right <= window.innerWidth - margin &&
+        tooltipRect.bottom <= window.innerHeight - margin;
+      const noOverlap = 
+        tooltipRect.right < targetPadded.left ||
+        tooltipRect.left > targetPadded.right ||
+        tooltipRect.bottom < targetPadded.top ||
+        tooltipRect.top > targetPadded.bottom;
+      return withinBounds && noOverlap;
+    };
+
+    const defaultPositions: ('top' | 'bottom' | 'left' | 'right')[] = ['bottom', 'top', 'right', 'left'];
+    let positions = defaultPositions;
+    if (step.preferredPositions) {
+      positions = step.preferredPositions;
+    } else if (step.position && step.position !== 'center') {
+      const preferred = step.position;
+      positions = [preferred, ...defaultPositions.filter(p => p !== preferred)];
     }
 
-    left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
-    top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 16));
+    let bestCoords = getPositionCoords(positions[0]);
+    for (const pos of positions) {
+      const coords = getPositionCoords(pos);
+      if (isValidPosition(coords)) {
+        bestCoords = coords;
+        break;
+      }
+    }
 
-    setTooltipPosition({ top, left });
+    bestCoords.left = Math.max(margin, Math.min(bestCoords.left, window.innerWidth - tooltipWidth - margin));
+    bestCoords.top = Math.max(margin, Math.min(bestCoords.top, window.innerHeight - tooltipHeight - margin));
+
+    setTooltipPosition(bestCoords);
   }, [step]);
 
   useEffect(() => {
@@ -350,7 +397,7 @@ export const TOUR_STEPS: TourStep[] = [
     targetSelector: '[data-tour="apply-fixes"]',
     title: 'Apply Fixes',
     description: 'When you\'re ready, click here to start the fix process. PDR will copy your files to the destination with corrected dates. A detailed report is saved automatically.',
-    position: 'left',
+    preferredPositions: ['top', 'left', 'right', 'bottom'],
     highlightPadding: 8
   },
   {
@@ -358,7 +405,7 @@ export const TOUR_STEPS: TourStep[] = [
     targetSelector: '[data-tour="guides-panel"]',
     title: 'Guides & Help',
     description: 'Need guidance? The side panel has step-by-step guides, best practices, and answers to common questions. It\'s your go-to resource while working.',
-    position: 'right',
+    preferredPositions: ['right', 'left', 'top', 'bottom'],
     highlightPadding: 12
   },
   {
@@ -366,7 +413,7 @@ export const TOUR_STEPS: TourStep[] = [
     targetSelector: '[data-tour="reports-history"]',
     title: 'Reports History',
     description: 'Every fix run creates a report. Access your complete history here to review past jobs, export data, or verify what was changed.',
-    position: 'left',
+    preferredPositions: ['top', 'left', 'right', 'bottom'],
     highlightPadding: 8
   },
   {
