@@ -1236,7 +1236,7 @@ function DashboardPanel({
 
         {/* Confidence Summary Section */}
         {hasSelection && (
-          <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100">
+          <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100" data-tour="confidence-cards">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-foreground">Date Summary</h2>
             </div>

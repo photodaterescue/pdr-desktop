@@ -1,0 +1,110 @@
+Task: Refine and Correct the “Take a Tour / Quick Tour” Experience
+
+Please implement the following specific changes to the existing guided tour based on UX review.
+
+1. Fix Contrast Issue (All Steps)
+
+The “Step X of Y” label currently has insufficient contrast (lavender on lavender).
+
+Update this to meet accessibility standards:
+
+Use a darker neutral text, or
+
+Place it on a solid, higher-contrast pill/background.
+
+This should apply consistently across all tour steps.
+
+2. Insert a New Step for Confidence Cards (Before Combined Analysis)
+New Step (Insert before current Combined Analysis step):
+
+Title: Date Confidence Breakdown
+Focus: The three Confidence Cards (Confirmed / Recovered / Marked)
+
+Copy intent:
+
+Explain that these cards show how dates were determined
+
+Briefly describe:
+
+Confirmed = embedded metadata (highest confidence)
+
+Recovered = structured filename patterns
+
+Marked = fallback rules where no reliable date was found
+
+Do not mention totals here — only confidence logic
+
+This step must visually highlight the Confidence Cards, not the Combined Analysis panel.
+
+3. Correct the Combined Analysis Step Copy (Now Step After Confidence Cards)
+Rework this step to focus on:
+
+Totals across all selected sources combined
+
+Photo / Video toggles (Photos only, Videos only, or both)
+
+The ability to add more folders or ZIP archives directly from this section
+
+Explicitly remove:
+
+Any explanation of confidence logic (now handled in the previous step)
+
+This step should align with what the user is actually seeing on screen.
+
+4. Improve Choose Destination Step (Storage Awareness)
+
+Update the copy to clearly state:
+
+The destination must show a green storage indicator
+
+Green = enough space to safely copy newly fixed files
+
+If insufficient space is shown, the user should choose another destination
+
+This constraint should be explicit to prevent failed fix attempts.
+
+5. Fix Reports History Step Visibility Issue
+
+The tour modal currently obscures the Reports History button.
+
+Adjust positioning or spotlighting so:
+
+The Reports History element is clearly visible
+
+The tour never explains UI elements that are hidden by the tour itself
+
+This is a hard UX requirement.
+
+6. Make the Quick Tour Re-runnable (Critical)
+
+Currently, the tour is only accessible from the Welcome Screen, which users may disable.
+
+Please implement at least one, ideally all, of the following:
+
+Help / Support → Run Quick Tour
+
+Workspace → “Take a Tour” entry point
+
+Settings → Option to re-enable the Welcome Screen
+
+The Quick Tour must always be accessible, even if the Welcome Screen is disabled.
+
+7. General Requirements (No Change)
+
+Tour remains non-destructive
+
+Skip / Back / Next / Finish controls remain
+
+Tour can be dismissed at any time
+
+Visual style and tone must match the existing premium UI
+
+Delivery
+
+Once complete, please confirm:
+
+Final step count
+
+Where the tour steps are defined (for future copy edits)
+
+Where the re-run entry point(s) live in the UI

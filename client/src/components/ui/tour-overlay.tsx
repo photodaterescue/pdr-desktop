@@ -233,7 +233,7 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
 
           <div className="pr-8">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-medium text-foreground bg-secondary border border-border px-2 py-0.5 rounded-full">
                 Step {currentStep + 1} of {steps.length}
               </span>
             </div>
@@ -322,10 +322,18 @@ export const TOUR_STEPS: TourStep[] = [
     highlightPadding: 8
   },
   {
+    id: 'confidence-cards',
+    targetSelector: '[data-tour="confidence-cards"]',
+    title: 'Date Confidence Breakdown',
+    description: 'These cards show how dates were determined. Confirmed means the date came from embedded metadata (highest confidence). Recovered means the date was extracted from structured filename patterns. Marked means no reliable date was found — fallback rules will be applied.',
+    position: 'bottom',
+    highlightPadding: 12
+  },
+  {
     id: 'combined-analysis',
     targetSelector: '[data-tour="combined-analysis"]',
     title: 'Combined Analysis',
-    description: 'After adding sources, this panel shows the combined results. You\'ll see how many files were found and a confidence breakdown: Confirmed (highest trust), Recovered (filename patterns), and Marked (fallback dates).',
+    description: 'This panel shows totals across all selected sources. Use the Photo/Video toggles to filter by media type. You can also add more folders or ZIP archives directly from here.',
     position: 'left',
     highlightPadding: 12
   },
@@ -333,7 +341,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'destination',
     targetSelector: '[data-tour="destination"]',
     title: 'Choose Destination',
-    description: 'Select where your fixed files will be saved. We recommend an empty folder — never inside your source folders. Your originals always stay untouched.',
+    description: 'Select where your fixed files will be saved. Make sure the storage indicator shows green — this means there\'s enough space for your files. If it shows red or orange, choose a location with more available storage.',
     position: 'left',
     highlightPadding: 8
   },
@@ -358,7 +366,7 @@ export const TOUR_STEPS: TourStep[] = [
     targetSelector: '[data-tour="reports-history"]',
     title: 'Reports History',
     description: 'Every fix run creates a report. Access your complete history here to review past jobs, export data, or verify what was changed.',
-    position: 'bottom',
+    position: 'top',
     highlightPadding: 8
   },
   {
