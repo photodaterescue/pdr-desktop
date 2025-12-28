@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLicense } from '@/contexts/LicenseContext';
 
 interface LicenseModalProps {
@@ -202,51 +203,87 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
 
   if (isLicensed) {
     return (
-      <button
-        onClick={onClick}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200 transition-colors"
-        data-testid="badge-license-active"
-      >
-        <CheckCircle2 className="w-3 h-3" />
-        <span>Licensed</span>
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onClick}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200 transition-colors"
+              data-testid="badge-license-active"
+            >
+              <CheckCircle2 className="w-3 h-3" />
+              <span>Licensed</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>Licensed — manage license</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
 
   if (license.status === 'expired') {
     return (
-      <button
-        onClick={onClick}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 transition-colors"
-        data-testid="badge-license-expired"
-      >
-        <AlertCircle className="w-3 h-3" />
-        <span>Expired</span>
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onClick}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 transition-colors"
+              data-testid="badge-license-expired"
+            >
+              <AlertCircle className="w-3 h-3" />
+              <span>Expired</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>License expired — click to renew</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
 
   if (license.status === 'error') {
     return (
-      <button
-        onClick={onClick}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 transition-colors"
-        data-testid="badge-license-error"
-      >
-        <AlertCircle className="w-3 h-3" />
-        <span>Offline</span>
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onClick}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 transition-colors"
+              data-testid="badge-license-error"
+            >
+              <AlertCircle className="w-3 h-3" />
+              <span>Offline</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>Offline — click to check status</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
 
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary text-muted-foreground text-xs font-medium hover:bg-secondary/80 transition-colors"
-      data-testid="badge-license-inactive"
-    >
-      <Key className="w-3 h-3" />
-      <span>Activate</span>
-    </button>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={onClick}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary text-muted-foreground text-xs font-medium hover:bg-secondary/80 transition-colors"
+            data-testid="badge-license-inactive"
+          >
+            <Key className="w-3 h-3" />
+            <span>Activate</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <p>Not activated — click to enter license key</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

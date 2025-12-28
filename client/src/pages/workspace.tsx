@@ -42,12 +42,7 @@ import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Accordion,
   AccordionContent,
@@ -770,13 +765,22 @@ export default function Workspace() {
       
       {/* Fixed controls in top-right corner */}
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
-        <button
-          onClick={toggleDarkMode}
-          className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground transition-colors"
-          data-testid="button-toggle-dark-mode"
-        >
-          {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={toggleDarkMode}
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 text-muted-foreground transition-colors"
+                data-testid="button-toggle-dark-mode"
+              >
+                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>Switch between light and dark mode</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <LicenseStatusBadge onClick={() => setShowLicenseModal(true)} />
       </div>
       
