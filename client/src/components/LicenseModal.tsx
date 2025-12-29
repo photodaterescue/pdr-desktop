@@ -303,7 +303,7 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
         <TooltipTrigger asChild>
           <button
             onClick={onClick}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary text-muted-foreground text-xs font-medium hover:bg-primary/15 hover:text-foreground cursor-pointer transition-all duration-200 hover:scale-[1.02]"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-50 text-rose-600/80 border border-rose-200/50 text-xs font-medium hover:bg-rose-100 hover:text-rose-700 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
             data-testid="badge-license-inactive"
           >
             <Key className="w-3 h-3" />
