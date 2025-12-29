@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail } from 'lucide-react';
+import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLicense } from '@/contexts/LicenseContext';
+import { isTrial, getTrialDaysRemaining } from '@/lib/lemonsqueezy';
 
 interface LicenseModalProps {
   onClose: () => void;
@@ -202,13 +203,42 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
   }
 
   if (isLicensed) {
+    const isTrialLicense = isTrial(license);
+    const daysRemaining = getTrialDaysRemaining(license);
+    
+    if (isTrialLicense) {
+      const tooltipText = daysRemaining !== null 
+        ? `Trial active — ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining`
+        : 'Trial active — click to manage';
+      
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onClick}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60 text-xs font-medium hover:bg-amber-100 hover:text-amber-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
+                data-testid="badge-license-trial"
+              >
+                <Clock className="w-3 h-3" />
+                <span>Trial</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>{tooltipText}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+    
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={onClick}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200 hover:text-emerald-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-xs font-medium hover:bg-emerald-100 hover:text-emerald-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
               data-testid="badge-license-active"
             >
               <CheckCircle2 className="w-3 h-3" />

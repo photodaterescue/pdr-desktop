@@ -59,8 +59,24 @@ export interface LicenseState {
   instanceId: string | null;
   customerEmail: string | null;
   productName: string | null;
+  variantName: string | null;
   expiresAt: string | null;
   errorMessage: string | null;
+}
+
+export function isTrial(state: LicenseState): boolean {
+  if (state.status !== 'valid') return false;
+  const variantLower = state.variantName?.toLowerCase() || '';
+  return variantLower.includes('trial') || variantLower.includes('free');
+}
+
+export function getTrialDaysRemaining(state: LicenseState): number | null {
+  if (!state.expiresAt) return null;
+  const expiresDate = new Date(state.expiresAt);
+  const now = new Date();
+  const diffTime = expiresDate.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays > 0 ? diffDays : 0;
 }
 
 const STORAGE_KEY = 'pdr_license';
@@ -273,6 +289,7 @@ export async function checkStoredLicense(): Promise<LicenseState> {
       instanceId: null,
       customerEmail: null,
       productName: null,
+      variantName: null,
       expiresAt: null,
       errorMessage: null,
     };
@@ -287,6 +304,7 @@ export async function checkStoredLicense(): Promise<LicenseState> {
       instanceId: stored.instanceId,
       customerEmail: result.meta?.customerEmail || null,
       productName: result.meta?.productName || null,
+      variantName: result.meta?.variantName || null,
       expiresAt: result.licenseKey?.expiresAt || null,
       errorMessage: null,
     };
@@ -305,6 +323,7 @@ export async function checkStoredLicense(): Promise<LicenseState> {
       instanceId: stored.instanceId,
       customerEmail: null,
       productName: null,
+      variantName: null,
       expiresAt: null,
       errorMessage: 'Unable to verify license. Check your internet connection.',
     };
@@ -316,6 +335,7 @@ export async function checkStoredLicense(): Promise<LicenseState> {
     instanceId: stored.instanceId,
     customerEmail: null,
     productName: null,
+    variantName: null,
     expiresAt: null,
     errorMessage: result.error,
   };

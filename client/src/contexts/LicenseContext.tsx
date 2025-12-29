@@ -27,6 +27,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
     instanceId: null,
     customerEmail: null,
     productName: null,
+    variantName: null,
     expiresAt: null,
     errorMessage: null,
   });
@@ -72,6 +73,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
           instanceId: result.instance?.id || null,
           customerEmail: result.meta?.customerEmail || null,
           productName: result.meta?.productName || null,
+          variantName: result.meta?.variantName || null,
           expiresAt: result.licenseKey?.expiresAt || null,
           errorMessage: null,
         });
@@ -115,6 +117,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
           instanceId: null,
           customerEmail: null,
           productName: null,
+          variantName: null,
           expiresAt: null,
           errorMessage: null,
         });
