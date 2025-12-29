@@ -998,7 +998,7 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
         disabled 
           ? 'text-muted-foreground/50 cursor-not-allowed' 
           : active 
-            ? 'text-secondary-foreground font-medium bg-sidebar-accent/50' 
+            ? 'text-secondary-foreground font-medium bg-sidebar-accent/50 hover:bg-primary/15' 
             : 'text-sidebar-foreground hover:bg-primary/10 hover:text-foreground'
       }`}
       onClick={(e) => !disabled && onClick && onClick(e)}
