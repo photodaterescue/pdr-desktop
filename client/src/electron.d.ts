@@ -35,6 +35,8 @@ export interface SourceAnalysisResult {
     recovered: number;
     marked: number;
   };
+  duplicatesRemoved: number;
+  duplicateFiles: Array<{ filename: string; duplicateOf: string }>;
   files: FileAnalysisResult[];
 }
 
@@ -65,6 +67,7 @@ export interface FixReport {
     marked: number;
     total: number;
   };
+  duplicatesRemoved: number;
   files: FileChange[];
 }
 
@@ -79,6 +82,7 @@ export interface ReportSummary {
     recovered: number;
     marked: number;
   };
+  duplicatesRemoved: number;  // ADD THIS LINE
 }
 
 export interface ElectronAPI {
@@ -124,6 +128,18 @@ export interface ElectronAPI {
     filePath?: string;
     error?: string;
   }>;
+  copyFiles: (data: {
+    files: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }>;
+    destinationPath: string;
+    zipPaths?: Record<string, string>;
+  }) => Promise<{ success: boolean; copied?: number; failed?: number; error?: string; duplicatesRemoved?: number; duplicateFiles?: Array<{ filename: string; duplicateOf: string }> }>;
+  onCopyProgress: (callback: (progress: { current: number; total: number }) => void) => void;
+
+  pickSource: (mode: 'folder' | 'zip') => Promise<{
+  path: string;
+  type: 'folder' | 'zip';
+  label: string;
+} | null>;
 }
 
 declare global {

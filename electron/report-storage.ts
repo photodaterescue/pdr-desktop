@@ -10,6 +10,8 @@ export interface FileChange {
   sourcePath?: string;
   fileType?: string;
   dateChanged?: boolean;
+  exifWritten?: boolean;
+  exifSource?: string;
 }
 
 export interface SourceInfo {
@@ -29,6 +31,9 @@ export interface FixReport {
     marked: number;
     total: number;
   };
+  duplicatesRemoved: number;
+  duplicateFiles?: Array<{ filename: string; duplicateOf: string; duplicateMethod?: 'hash' | 'heuristic' }>;
+  totalScanned?: number;
   files: FileChange[];
 }
 
@@ -43,6 +48,8 @@ export interface ReportSummary {
     recovered: number;
     marked: number;
   };
+  duplicatesRemoved?: number;
+  totalScanned?: number;
 }
 
 function getReportsDirectory(): string {
@@ -119,6 +126,7 @@ export async function listReports(): Promise<ReportSummary[]> {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       const report = JSON.parse(content) as FixReport;
+      const totalScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
       summaries.push({
         id: report.id,
         timestamp: report.timestamp,
@@ -129,7 +137,9 @@ export async function listReports(): Promise<ReportSummary[]> {
           confirmed: report.counts.confirmed,
           recovered: report.counts.recovered,
           marked: report.counts.marked
-        }
+        },
+        duplicatesRemoved: report.duplicatesRemoved || 0,
+        totalScanned: totalScanned
       });
     } catch (e) {
       console.error(`Error reading report ${filePath}:`, e);
@@ -139,6 +149,18 @@ export async function listReports(): Promise<ReportSummary[]> {
   summaries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   
   return summaries;
+}
+
+export async function deleteReport(reportId: string): Promise<boolean> {
+  const reportsDir = getReportsDirectory();
+  const filePath = path.join(reportsDir, `${reportId}.json`);
+  
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  
+  fs.unlinkSync(filePath);
+  return true;
 }
 
 export function exportReportToCSV(report: FixReport): string {
@@ -152,7 +174,10 @@ export function exportReportToCSV(report: FixReport): string {
     'source_path',
     'destination_path',
     'file_type',
-    'date_changed'
+    'date_changed',
+    'exif_written',
+    'exif_source',
+    'status'
   ];
   
   const escapeCSV = (val: string | undefined | null): string => {
@@ -164,11 +189,14 @@ export function exportReportToCSV(report: FixReport): string {
     return str;
   };
   
-  const rows = report.files.map(f => {
+  const rows: string[] = [];
+  
+  // Add processed files
+  report.files.forEach(f => {
     const ext = f.originalFilename.split('.').pop()?.toLowerCase() || '';
     const dateChanged = f.originalFilename !== f.newFilename;
     
-    return [
+    rows.push([
       escapeCSV(report.id),
       escapeCSV(report.timestamp),
       escapeCSV(f.originalFilename),
@@ -178,16 +206,52 @@ export function exportReportToCSV(report: FixReport): string {
       escapeCSV(f.sourcePath || report.sources[0]?.path || ''),
       escapeCSV(report.destinationPath),
       escapeCSV(f.fileType || ext),
-      dateChanged ? 'true' : 'false'
-    ].join(',');
+      dateChanged ? 'true' : 'false',
+      f.exifWritten ? 'true' : 'false',
+      escapeCSV(f.exifSource || ''),
+      'Processed'
+    ].join(','));
   });
   
-  return [headers.join(','), ...rows].join('\n');
+  // Add duplicate files as rows
+  if (report.duplicateFiles && report.duplicateFiles.length > 0) {
+    report.duplicateFiles.forEach(dup => {
+      const ext = dup.filename.split('.').pop()?.toLowerCase() || '';
+      const retainedFile = report.files.find(f => f.originalFilename === dup.duplicateOf);
+      const retainedNewFilename = retainedFile?.newFilename || dup.duplicateOf;
+      const duplicateConfidence = dup.duplicateMethod === 'heuristic' 
+        ? 'Duplicate – Heuristic' 
+        : 'Duplicate – Hash (SHA-256)';
+      rows.push([
+        escapeCSV(report.id),
+        escapeCSV(report.timestamp),
+        escapeCSV(dup.filename),
+        escapeCSV('(skipped - duplicate)'),
+        escapeCSV(duplicateConfidence),
+        escapeCSV(`Retained as: ${retainedNewFilename}`),
+        escapeCSV(report.sources[0]?.path || ''),
+        escapeCSV(report.destinationPath),
+        escapeCSV(ext),
+        'false',
+        'false',
+        '',
+        'Skipped'
+      ].join(','));
+    });
+  }
+  
+  const totalScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
+  
+  let csvContent = [headers.join(','), ...rows].join('\n');
+  csvContent += '\n\n# Summary: ' + totalScanned + ' files scanned -> ' + report.counts.total + ' output files, ' + (report.duplicatesRemoved || 0) + ' duplicates skipped';
+  
+  return csvContent;
 }
 
 export function exportReportToTXT(report: FixReport): string {
   const lines: string[] = [];
   const timestamp = new Date(report.timestamp);
+  const totalScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
   
   lines.push('='.repeat(70));
   lines.push('PHOTO DATE RESCUE — FIX REPORT');
@@ -209,14 +273,16 @@ export function exportReportToTXT(report: FixReport): string {
   lines.push('-'.repeat(70));
   lines.push('TOTALS');
   lines.push('-'.repeat(70));
-  lines.push(`  Confirmed:   ${report.counts.confirmed.toLocaleString()} files`);
-  lines.push(`  Recovered:   ${report.counts.recovered.toLocaleString()} files`);
-  lines.push(`  Marked:      ${report.counts.marked.toLocaleString()} files`);
-  lines.push(`  ─────────────────────`);
-  lines.push(`  Total:       ${report.counts.total.toLocaleString()} files`);
+  lines.push(`  Confirmed:     ${report.counts.confirmed.toLocaleString()} files`);
+  lines.push(`  Recovered:     ${report.counts.recovered.toLocaleString()} files`);
+  lines.push(`  Marked:        ${report.counts.marked.toLocaleString()} files`);
+  lines.push(`  Duplicates:    ${(report.duplicatesRemoved || 0).toLocaleString()} skipped`);
+  lines.push(`  ─────────────────────────`);
+  lines.push(`  Total Scanned: ${totalScanned.toLocaleString()} files`);
+  lines.push(`  Output Files:  ${report.counts.total.toLocaleString()} files`);
   lines.push('');
   lines.push('-'.repeat(70));
-  lines.push('FILE DETAILS');
+  lines.push('FILE DETAILS (Processed)');
   lines.push('-'.repeat(70));
   lines.push('');
   
@@ -232,11 +298,33 @@ export function exportReportToTXT(report: FixReport): string {
     lines.push(`    Method:      ${f.dateSource}`);
     lines.push(`    File Type:   ${f.fileType || ext}`);
     lines.push(`    Changed:     ${dateChanged ? 'Yes' : 'No'}`);
+    lines.push(`    EXIF Written:${f.exifWritten ? 'Yes' : 'No'}${f.exifSource ? ` (${f.exifSource})` : ''}`);
     if (f.sourcePath) {
       lines.push(`    Source:      ${f.sourcePath}`);
     }
     lines.push('');
   });
+  
+  // Add duplicates section if any
+  if (report.duplicateFiles && report.duplicateFiles.length > 0) {
+    lines.push('-'.repeat(70));
+    lines.push('DUPLICATE FILES (Skipped)');
+    lines.push('-'.repeat(70));
+    lines.push('');
+    
+    report.duplicateFiles.forEach((dup, index) => {
+      const retainedFile = report.files.find(f => f.originalFilename === dup.duplicateOf);
+      const retainedNewFilename = retainedFile?.newFilename || dup.duplicateOf;
+      const methodLabel = dup.duplicateMethod === 'heuristic' 
+        ? 'Heuristic (filename + size)' 
+        : 'Hash (SHA-256)';
+      lines.push(`  Duplicate ${(index + 1).toString().padStart(5)}:`);
+      lines.push(`    Original:    ${dup.filename}`);
+      lines.push(`    Retained as: ${retainedNewFilename}`);
+      lines.push(`    Method:      ${methodLabel}`);
+      lines.push('');
+    });
+  }
   
   lines.push('='.repeat(70));
   lines.push('END OF REPORT');

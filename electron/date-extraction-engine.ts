@@ -228,10 +228,16 @@ export function extractXmpMetadataFromBuffer(buffer: Buffer): XmpMetadata | null
   }
 }
 
-export function extractXmpMetadataFromPath(filePath: string): XmpMetadata | null {
+export async function extractXmpMetadataFromPath(filePath: string): Promise<XmpMetadata | null> {
   try {
-    const buffer = fs.readFileSync(filePath);
-    return extractXmpMetadataFromBuffer(buffer);
+    const fd = await fs.promises.open(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(262144);
+      const { bytesRead } = await fd.read(buffer, 0, 262144, 0);
+      return extractXmpMetadataFromBuffer(buffer.subarray(0, bytesRead));
+    } finally {
+      await fd.close();
+    }
   } catch (error) {
     return null;
   }
@@ -298,18 +304,30 @@ export function parseGoogleTakeoutJsonContent(jsonContent: string): GoogleTakeou
 // Sidecar JSON Detection
 // ============================================================================
 
-export function findGoogleTakeoutSidecar(imagePath: string): string | null {
+export async function findGoogleTakeoutSidecar(imagePath: string): Promise<string | null> {
   const jsonPath1 = imagePath + '.json';
-  if (fs.existsSync(jsonPath1)) {
+  try {
+    await fs.promises.access(jsonPath1);
     return jsonPath1;
-  }
+  } catch {}
   
   const dir = path.dirname(imagePath);
   const baseName = path.basename(imagePath, path.extname(imagePath));
   const jsonPath2 = path.join(dir, baseName + '.json');
-  if (fs.existsSync(jsonPath2)) {
+  try {
+    await fs.promises.access(jsonPath2);
     return jsonPath2;
-  }
+  } catch {}
+  
+  const fullFilename = path.basename(imagePath);
+  try {
+    const dirEntries = await fs.promises.readdir(dir);
+    for (const entry of dirEntries) {
+      if (entry.startsWith(fullFilename) && entry.endsWith('.json') && entry !== fullFilename) {
+        return path.join(dir, entry);
+      }
+    }
+  } catch {}
   
   return null;
 }
@@ -354,8 +372,7 @@ export function detectSourceType(files: string[]): SourceType {
 export function generateDateBasedFilename(
   timestamp: number,
   extension: string,
-  isWhatsApp: boolean = false,
-  isFromFilename: boolean = false
+  confidence: 'confirmed' | 'recovered' | 'marked'
 ): string {
   const dt = new Date(timestamp * 1000);
   
@@ -366,16 +383,11 @@ export function generateDateBasedFilename(
   const minutes = String(dt.getMinutes()).padStart(2, '0');
   const seconds = String(dt.getSeconds()).padStart(2, '0');
   
-  let baseName = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+  const confidenceSuffix = confidence === 'confirmed' ? '_CF' 
+    : confidence === 'recovered' ? '_RC' 
+    : '_MK';
   
-  if (isWhatsApp) {
-    baseName += '_WA';
-  }
-  if (isFromFilename) {
-    baseName += '_FN';
-  }
-  
-  return `${baseName}${extension}`;
+  return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}${confidenceSuffix}${extension}`;
 }
 
 // ============================================================================
@@ -387,16 +399,16 @@ export interface FullExtractionOptions {
   useMtimeFallback?: boolean;
 }
 
-export function extractDateFromFile(
+export async function extractDateFromFile(
   filePath: string,
   filename: string,
   exifTimestamp: number | null,
   options: FullExtractionOptions = {}
-): DateExtractionResult {
+): Promise<DateExtractionResult> {
   const { checkGoogleTakeout = true, useMtimeFallback = true } = options;
   
   if (checkGoogleTakeout) {
-    const sidecarPath = findGoogleTakeoutSidecar(filePath);
+    const sidecarPath = await findGoogleTakeoutSidecar(filePath);
     if (sidecarPath) {
       const takeoutData = parseGoogleTakeoutJson(sidecarPath);
       if (takeoutData?.timestamp) {
@@ -419,7 +431,7 @@ export function extractDateFromFile(
     };
   }
   
-  const xmpData = extractXmpMetadataFromPath(filePath);
+  const xmpData = await extractXmpMetadataFromPath(filePath);
   if (xmpData?.timestamp) {
     return {
       timestamp: xmpData.timestamp,

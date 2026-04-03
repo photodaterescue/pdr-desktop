@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /c/Users/Terry/pdr-desktop/*.md)",
+      "Bash(xargs ls:*)",
+      "Bash(git fetch:*)",
+      "Bash(find release/ -type f -exec ls -lh {})",
+      "Bash(2)",
+      "Bash(sort -k5 -h)",
+      "Bash(git add:*)"
+    ]
+  }
+}

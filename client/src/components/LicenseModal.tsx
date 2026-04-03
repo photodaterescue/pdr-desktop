@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail, Clock } from 'lucide-react';
+import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLicense } from '@/contexts/LicenseContext';
-import { isTrial, getTrialDaysRemaining } from '@/lib/lemonsqueezy';
 
 interface LicenseModalProps {
   onClose: () => void;
 }
 
 export function LicenseModal({ onClose }: LicenseModalProps) {
-  const { license, isLoading, isLicensed, activate, deactivate } = useLicense();
+  const { license, isLoading, isLicensed, activate, deactivate, storedLicenseKey } = useLicense();
   const [licenseKey, setLicenseKey] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +29,11 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
   };
 
   const handleDeactivate = async () => {
-    const result = await deactivate();
+    if (!storedLicenseKey) {
+      setError('No license key found');
+      return;
+    }
+    const result = await deactivate(storedLicenseKey);
     if (!result.success) {
       setError(result.error || 'Deactivation failed');
     }
@@ -40,6 +43,14 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
     if (e.key === 'Enter' && !isLoading) {
       handleActivate();
     }
+  };
+
+  const getPlanLabel = (plan: string | null): string => {
+    if (!plan) return 'Photo Date Rescue';
+    if (plan === 'lifetime') return 'Photo Date Rescue — Lifetime';
+    if (plan === 'yearly') return 'Photo Date Rescue — Yearly';
+    if (plan === 'monthly') return 'Photo Date Rescue — Monthly';
+    return 'Photo Date Rescue';
   };
 
   return (
@@ -75,28 +86,44 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
 
         {isLicensed ? (
           <div className="space-y-6">
-            <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+            {/* Grace period warning banner */}
+            {license.isOfflineGrace && license.daysUntilGraceExpires !== null && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                      Offline Mode — {license.daysUntilGraceExpires} days remaining
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                      Connect to the internet to validate your license and continue using Photo Date Rescue.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
               <div className="flex items-center gap-3 mb-3">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-                <span className="font-semibold text-emerald-900">License Active</span>
+                <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                <span className="font-semibold text-emerald-900 dark:text-emerald-300">License Active</span>
               </div>
               
               <div className="space-y-2 text-sm">
-                {license.productName && (
-                  <div className="flex items-center gap-2 text-emerald-800">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>{license.productName}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>{getPlanLabel(license.plan)}</span>
+                </div>
                 {license.customerEmail && (
-                  <div className="flex items-center gap-2 text-emerald-800">
+                  <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
                     <Mail className="w-4 h-4" />
                     <span>{license.customerEmail}</span>
                   </div>
                 )}
-                {license.expiresAt && (
-                  <div className="text-emerald-700 text-xs mt-2">
-                    Expires: {new Date(license.expiresAt).toLocaleDateString()}
+                {license.isOfflineGrace && license.daysUntilGraceExpires !== null && (
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-xs mt-2">
+                    <Calendar className="w-3 h-3" />
+                    <span>Offline mode — {license.daysUntilGraceExpires} days until verification needed</span>
                   </div>
                 )}
               </div>
@@ -145,10 +172,10 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
               />
             </div>
 
-            {(error || license.errorMessage) && (
-              <div className="flex items-start gap-2 p-3 bg-rose-50 rounded-lg border border-rose-200">
-                <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-rose-800">{error || license.errorMessage}</p>
+            {error && (
+              <div className="flex items-start gap-2 p-3 bg-rose-50 dark:bg-rose-950/30 rounded-lg border border-rose-200 dark:border-rose-800">
+                <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-rose-800 dark:text-rose-300">{error}</p>
               </div>
             )}
 
@@ -173,15 +200,16 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
               <p className="text-sm text-muted-foreground">
                 Don't have a license?
               </p>
-              <a
-                href="https://photodaterescue.com/#pricing"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline font-medium"
+              <button
+                onClick={async () => {
+                  const { openExternalUrl } = await import('@/lib/electron-bridge');
+                  await openExternalUrl('https://photodaterescue.com/#pricing');
+                }}
+                className="text-sm text-primary hover:underline font-medium cursor-pointer bg-transparent border-none"
                 data-testid="link-purchase-license"
               >
                 Purchase Photo Date Rescue
-              </a>
+              </button>
             </div>
           </div>
         )}
@@ -203,14 +231,8 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
   }
 
   if (isLicensed) {
-    const isTrialLicense = isTrial(license);
-    const daysRemaining = getTrialDaysRemaining(license);
-    
-    if (isTrialLicense) {
-      const tooltipText = daysRemaining !== null 
-        ? `Trial active — ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining`
-        : 'Trial active — click to manage';
-      
+    // Check if in offline grace period
+    if (license.isOfflineGrace && license.daysUntilGraceExpires !== null) {
       return (
         <TooltipProvider>
           <Tooltip>
@@ -218,20 +240,20 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
               <button
                 onClick={onClick}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60 text-xs font-medium hover:bg-amber-100 hover:text-amber-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
-                data-testid="badge-license-trial"
+                data-testid="badge-license-grace"
               >
-                <Clock className="w-3 h-3" />
-                <span>Trial</span>
+                <AlertCircle className="w-3 h-3" />
+                <span>Offline ({license.daysUntilGraceExpires}d)</span>
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              <p>{tooltipText}</p>
+              <p>Offline mode — {license.daysUntilGraceExpires} days to validate</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       );
     }
-    
+
     return (
       <TooltipProvider>
         <Tooltip>
@@ -246,7 +268,7 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            <p>Licensed — manage license</p>
+            <p>Licensed — click to manage</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -275,22 +297,22 @@ export function LicenseStatusBadge({ onClick }: { onClick?: () => void }) {
     );
   }
 
-  if (license.status === 'error') {
+  if (license.status === 'invalid') {
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={onClick}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium hover:bg-amber-200 hover:text-amber-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
-              data-testid="badge-license-error"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 text-xs font-medium hover:bg-rose-200 hover:text-rose-800 cursor-pointer transition-all duration-200 hover:scale-[1.02]"
+              data-testid="badge-license-invalid"
             >
               <AlertCircle className="w-3 h-3" />
-              <span>Offline</span>
+              <span>Invalid</span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            <p>Offline — click to check status</p>
+            <p>License invalid — click to re-activate</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

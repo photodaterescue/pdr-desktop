@@ -181,10 +181,17 @@ export function extractXmpMetadataFromBuffer(buffer) {
         return null;
     }
 }
-export function extractXmpMetadataFromPath(filePath) {
+export async function extractXmpMetadataFromPath(filePath) {
     try {
-        const buffer = fs.readFileSync(filePath);
-        return extractXmpMetadataFromBuffer(buffer);
+        const fd = await fs.promises.open(filePath, 'r');
+        try {
+            const buffer = Buffer.alloc(262144);
+            const { bytesRead } = await fd.read(buffer, 0, 262144, 0);
+            return extractXmpMetadataFromBuffer(buffer.subarray(0, bytesRead));
+        }
+        finally {
+            await fd.close();
+        }
     }
     catch (error) {
         return null;
@@ -245,17 +252,31 @@ export function parseGoogleTakeoutJsonContent(jsonContent) {
 // ============================================================================
 // Sidecar JSON Detection
 // ============================================================================
-export function findGoogleTakeoutSidecar(imagePath) {
+export async function findGoogleTakeoutSidecar(imagePath) {
     const jsonPath1 = imagePath + '.json';
-    if (fs.existsSync(jsonPath1)) {
+    try {
+        await fs.promises.access(jsonPath1);
         return jsonPath1;
     }
+    catch { }
     const dir = path.dirname(imagePath);
     const baseName = path.basename(imagePath, path.extname(imagePath));
     const jsonPath2 = path.join(dir, baseName + '.json');
-    if (fs.existsSync(jsonPath2)) {
+    try {
+        await fs.promises.access(jsonPath2);
         return jsonPath2;
     }
+    catch { }
+    const fullFilename = path.basename(imagePath);
+    try {
+        const dirEntries = await fs.promises.readdir(dir);
+        for (const entry of dirEntries) {
+            if (entry.startsWith(fullFilename) && entry.endsWith('.json') && entry !== fullFilename) {
+                return path.join(dir, entry);
+            }
+        }
+    }
+    catch { }
     return null;
 }
 export function detectSourceType(files) {
@@ -282,7 +303,7 @@ export function detectSourceType(files) {
 // ============================================================================
 // Filename Generation
 // ============================================================================
-export function generateDateBasedFilename(timestamp, extension, isWhatsApp = false, isFromFilename = false) {
+export function generateDateBasedFilename(timestamp, extension, confidence) {
     const dt = new Date(timestamp * 1000);
     const year = dt.getFullYear();
     const month = String(dt.getMonth() + 1).padStart(2, '0');
@@ -290,19 +311,15 @@ export function generateDateBasedFilename(timestamp, extension, isWhatsApp = fal
     const hours = String(dt.getHours()).padStart(2, '0');
     const minutes = String(dt.getMinutes()).padStart(2, '0');
     const seconds = String(dt.getSeconds()).padStart(2, '0');
-    let baseName = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-    if (isWhatsApp) {
-        baseName += '_WA';
-    }
-    if (isFromFilename) {
-        baseName += '_FN';
-    }
-    return `${baseName}${extension}`;
+    const confidenceSuffix = confidence === 'confirmed' ? '_CF'
+        : confidence === 'recovered' ? '_RC'
+            : '_MK';
+    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}${confidenceSuffix}${extension}`;
 }
-export function extractDateFromFile(filePath, filename, exifTimestamp, options = {}) {
+export async function extractDateFromFile(filePath, filename, exifTimestamp, options = {}) {
     const { checkGoogleTakeout = true, useMtimeFallback = true } = options;
     if (checkGoogleTakeout) {
-        const sidecarPath = findGoogleTakeoutSidecar(filePath);
+        const sidecarPath = await findGoogleTakeoutSidecar(filePath);
         if (sidecarPath) {
             const takeoutData = parseGoogleTakeoutJson(sidecarPath);
             if (takeoutData?.timestamp) {
@@ -323,7 +340,7 @@ export function extractDateFromFile(filePath, filename, exifTimestamp, options =
             isWhatsApp: false,
         };
     }
-    const xmpData = extractXmpMetadataFromPath(filePath);
+    const xmpData = await extractXmpMetadataFromPath(filePath);
     if (xmpData?.timestamp) {
         return {
             timestamp: xmpData.timestamp,

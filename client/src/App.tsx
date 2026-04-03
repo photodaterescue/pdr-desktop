@@ -1,36 +1,42 @@
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { HashRouter, Routes, Route } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LicenseProvider } from "@/contexts/LicenseContext";
+import { ToastListener } from "@/components/ToastListener";
+import { UpdateNotification } from "@/components/UpdateNotification";
+
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Workspace from "@/pages/workspace";
 import SourceSelection from "@/pages/source-selection";
 
-function Router() {
+const queryClient = new QueryClient();
+
+function AppRouter() {
   return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/source-selection" component={SourceSelection} />
-      <Route path="/workspace" component={Workspace} />
-      <Route component={NotFound} />
-    </Switch>
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/source-selection" element={<SourceSelection />} />
+        <Route path="/workspace" element={<Workspace />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </HashRouter>
   );
 }
 
-function App() {
+export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <LicenseProvider>
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <ToastListener />
+          <UpdateNotification />
+          <AppRouter />
         </TooltipProvider>
       </LicenseProvider>
     </QueryClientProvider>
   );
 }
-
-export default App;

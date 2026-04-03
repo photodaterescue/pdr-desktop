@@ -1,14 +1,19 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
-import { FolderPlus, FileArchive, HardDrive, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/custom-button";
+import { FolderPlus, FileArchive, ArrowRight, Info } from "lucide-react";
 import { Card } from "@/components/ui/custom-card";
+import { openFolderDialog, openZipDialog, isElectron } from "@/lib/electron-bridge";
+import { useLicense } from "@/contexts/LicenseContext";
+import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
+import { LicenseModal } from "@/components/LicenseModal";
 
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
-  const folderOrDriveInputRef = useRef<HTMLInputElement>(null);
-  const zipInputRef = useRef<HTMLInputElement>(null);
+  const { isLicensed, isLoading } = useLicense();
+  const [showLicenseRequired, setShowLicenseRequired] = useState(false);
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [pendingPath, setPendingPath] = useState<{ path: string; type: 'folder' | 'drive' | 'zip'; name: string } | null>(null);
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -33,74 +38,76 @@ export default function SourceSelection() {
     }
   };
 
-  const handleSelection = (type: 'folderOrDrive' | 'zip') => {
-    if (type === 'folderOrDrive') {
-      folderOrDriveInputRef.current?.click();
-      return;
-    }
-    if (type === 'zip') {
-      zipInputRef.current?.click();
-      return;
-    }
-  };
-
   const inferSourceType = (path: string): 'folder' | 'drive' => {
-    // Infer if path is a drive root (e.g., "D:/", "C:/", etc.) or a folder
-    const isDriveRoot = /^[A-Z]:\/$/.test(path) || path === 'D:/' || path === 'C:/';
+    const isDriveRoot = /^[A-Z]:[\\/]?$/.test(path);
     return isDriveRoot ? 'drive' : 'folder';
   };
 
-  const handleFolderOrDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      // Get the top-level folder name from the first file's path
-      const path = e.target.files[0].webkitRelativePath || e.target.files[0].name;
-      const folderName = path.split('/')[0] || "Selected Folder";
-      const fullPath = `/Users/username/Pictures/${folderName}`;
-      
-      // Infer source type based on path
-      const sourceType = inferSourceType(fullPath);
-      
-      setLocation(`/workspace?type=${sourceType}&name=${encodeURIComponent(folderName)}&path=${encodeURIComponent(fullPath)}`);
-    }
-    e.target.value = '';
+  const proceedToWorkspace = (path: string, type: 'folder' | 'drive' | 'zip', name: string) => {
+    // Store pending source in sessionStorage for workspace to pick up
+    sessionStorage.setItem('pdr-pending-source', JSON.stringify({ path, type, name }));
+    setLocation('/workspace');
   };
 
-  const handleZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      const fileName = file.name;
-      const fullPath = `/Users/username/Downloads/${fileName}`;
-      
-      setLocation(`/workspace?type=zip&name=${encodeURIComponent(fileName)}&path=${encodeURIComponent(fullPath)}`);
+  const handleFolderSelection = async () => {
+    if (!isElectron()) {
+      console.log('Not in Electron environment');
+      return;
     }
-    e.target.value = '';
+    
+    const selectedPath = await openFolderDialog();
+    if (selectedPath) {
+      const folderName = selectedPath.split(/[/\\]/).pop() || "Selected Folder";
+      const sourceType = inferSourceType(selectedPath);
+      
+      // Check license after selection
+      if (!isLicensed) {
+        setPendingPath({ path: selectedPath, type: sourceType, name: folderName });
+        setShowLicenseRequired(true);
+        return;
+      }
+      
+      proceedToWorkspace(selectedPath, sourceType, folderName);
+    }
   };
 
+  const handleZipSelection = async () => {
+    if (!isElectron()) {
+      console.log('Not in Electron environment');
+      return;
+    }
+    
+    const selectedPath = await openZipDialog();
+    if (selectedPath) {
+      const fileName = selectedPath.split(/[/\\]/).pop() || "Selected ZIP";
+      
+      // Check license after selection
+      if (!isLicensed) {
+        setPendingPath({ path: selectedPath, type: 'zip', name: fileName });
+        setShowLicenseRequired(true);
+        return;
+      }
+      
+      proceedToWorkspace(selectedPath, 'zip', fileName);
+    }
+  };
+
+  const handleActivateLicense = () => {
+    setShowLicenseRequired(false);
+    setShowLicenseModal(true);
+  };
+
+  const handleLicenseModalClose = () => {
+    setShowLicenseModal(false);
+    // If license was activated and we have a pending path, proceed
+    if (isLicensed && pendingPath) {
+      proceedToWorkspace(pendingPath.path, pendingPath.type, pendingPath.name);
+      setPendingPath(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      {/* Hidden Folder or Drive Input */}
-      <input
-        type="file"
-        ref={folderOrDriveInputRef}
-        className="hidden"
-        onChange={handleFolderOrDriveChange}
-        // @ts-expect-error - webkitdirectory is standard in modern browsers but missing in types
-        webkitdirectory=""
-        directory=""
-        multiple
-      />
-
-      {/* Hidden ZIP Input */}
-      <input
-        type="file"
-        ref={zipInputRef}
-        className="hidden"
-        onChange={handleZipChange}
-        accept=".zip"
-      />
-
-      {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-secondary/40 rounded-full blur-3xl" />
@@ -113,12 +120,13 @@ export default function SourceSelection() {
         className="max-w-[1120px] w-full z-10 flex flex-col items-center text-center"
       >
         <motion.div variants={item} className="mb-8">
-          <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-16 w-auto mx-auto mb-6" />
+          <img src="./assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-16 w-auto mx-auto mb-6" />
           <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight leading-[1.1] mb-3">
             Find Your Photos & Videos
           </h1>
-          <p className="text-base text-muted-foreground max-w-2xl mx-auto font-light">
+          <p className="text-base text-muted-foreground max-w-2xl mx-auto font-light inline-flex items-center justify-center gap-1 flex-wrap">
             Choose where your photos and videos are located. You can add more sources later.
+            <PerformanceNudge type="source" />
           </p>
         </motion.div>
 
@@ -127,13 +135,13 @@ export default function SourceSelection() {
             icon={<FolderPlus className="w-8 h-8 text-primary" />}
             title="Add Folder or Drive"
             description="Select a folder on your computer or scan an entire drive (internal, external, USB)."
-            onClick={() => handleSelection('folderOrDrive')}
+            onClick={handleFolderSelection}
           />
           <OptionCard 
             icon={<FileArchive className="w-8 h-8 text-primary" />}
             title="Add ZIP Archive"
             description="Import a .zip file. Perfect for phone backups, cloud exports, or compressed archives."
-            onClick={() => handleSelection('zip')}
+            onClick={handleZipSelection}
           />
         </motion.div>
 
@@ -146,6 +154,22 @@ export default function SourceSelection() {
           </button>
         </motion.div>
       </motion.div>
+
+      {/* License Required Modal */}
+      <LicenseRequiredModal
+        isOpen={showLicenseRequired}
+        onClose={() => {
+          setShowLicenseRequired(false);
+          setPendingPath(null);
+        }}
+        onActivate={handleActivateLicense}
+        feature="add sources"
+      />
+
+      {/* License Activation Modal */}
+      {showLicenseModal && (
+        <LicenseModal onClose={handleLicenseModalClose} />
+      )}
     </div>
   );
 }
@@ -167,5 +191,34 @@ function OptionCard({ icon, title, description, onClick }: { icon: React.ReactNo
          <ArrowRight className="w-5 h-5 text-primary" />
       </div>
     </Card>
+  );
+}
+
+function PerformanceNudge({ type }: { type: 'source' | 'destination' }) {
+  const [isVisible, setIsVisible] = useState(false);
+  
+  const message = type === 'source' 
+    ? <>For best performance, connect source drives directly via USB, USB-C, or Ethernet.<br /><br />Wi-Fi and personal cloud storage can be slow or unstable when reading large volumes of files.</>
+    : <>For best performance, connect your destination drive directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>;
+  
+  return (
+    <div className="relative inline-flex items-center ml-1">
+      <button
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+        onClick={(e) => { e.stopPropagation(); setIsVisible(!isVisible); }}
+        className="p-0.5 text-[#9b8bb8] hover:text-[#7b6b98] transition-colors"
+        aria-label="Performance tip"
+        type="button"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+      {isVisible && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-background border border-[#9b8bb8]/30 rounded-lg shadow-lg text-xs text-muted-foreground z-[60] pointer-events-none">
+          <div className="font-medium text-foreground mb-1 text-xs">Performance Tip</div>
+          {message}
+        </div>
+      )}
+    </div>
   );
 }

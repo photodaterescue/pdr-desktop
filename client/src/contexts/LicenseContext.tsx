@@ -1,126 +1,160 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
-  LicenseState,
-  validateLicense,
-  activateLicense,
-  deactivateLicense,
-  checkStoredLicense,
-  isValidLicenseKeyFormat,
-} from '@/lib/lemonsqueezy';
+  getLicenseStatus,
+  activateLicense as activateLicenseIPC,
+  refreshLicense,
+  deactivateLicense as deactivateLicenseIPC,
+  LicenseStatus,
+  isElectron,
+} from '@/lib/electron-bridge';
 
 interface LicenseContextType {
-  license: LicenseState;
+  license: LicenseStatus;
   isLoading: boolean;
   isLicensed: boolean;
   activate: (licenseKey: string) => Promise<{ success: boolean; error?: string }>;
-  deactivate: () => Promise<{ success: boolean; error?: string }>;
-  refresh: () => Promise<void>;
+  deactivate: (licenseKey: string) => Promise<{ success: boolean; error?: string }>;
+  refresh: (licenseKey?: string) => Promise<void>;
   clearError: () => void;
+  storedLicenseKey: string | null;
+  setStoredLicenseKey: (key: string | null) => void;
 }
 
 const LicenseContext = createContext<LicenseContextType | null>(null);
 
+const LICENSE_KEY_STORAGE = 'pdr-license-key';
+
+function getStoredLicenseKey(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(LICENSE_KEY_STORAGE);
+}
+
+function setStoredLicenseKeyLocal(key: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (key) {
+    localStorage.setItem(LICENSE_KEY_STORAGE, key);
+  } else {
+    localStorage.removeItem(LICENSE_KEY_STORAGE);
+  }
+}
+
+const defaultLicenseStatus: LicenseStatus = {
+  isValid: false,
+  status: 'none',
+  plan: null,
+  canUsePremiumFeatures: false,
+  isOfflineGrace: false,
+  daysUntilGraceExpires: null,
+  customerEmail: null,
+};
+
 export function LicenseProvider({ children }: { children: ReactNode }) {
-  const [license, setLicense] = useState<LicenseState>({
-    status: 'unchecked',
-    licenseKey: null,
-    instanceId: null,
-    customerEmail: null,
-    productName: null,
-    variantName: null,
-    expiresAt: null,
-    errorMessage: null,
-  });
+  const [license, setLicense] = useState<LicenseStatus>(defaultLicenseStatus);
   const [isLoading, setIsLoading] = useState(true);
+  const [storedLicenseKey, setStoredLicenseKeyState] = useState<string | null>(null);
 
-  const isLicensed = license.status === 'valid';
+  const isLicensed = license.canUsePremiumFeatures;
 
-  const refresh = useCallback(async () => {
+  const setStoredLicenseKey = useCallback((key: string | null) => {
+    setStoredLicenseKeyLocal(key);
+    setStoredLicenseKeyState(key);
+  }, []);
+
+  const refresh = useCallback(async (licenseKey?: string) => {
     setIsLoading(true);
     try {
-      const state = await checkStoredLicense();
-      setLicense(state);
+      if (!isElectron()) {
+        setLicense(defaultLicenseStatus);
+        return;
+      }
+
+      const keyToUse = licenseKey || storedLicenseKey;
+      
+      if (keyToUse) {
+        const result = await refreshLicense(keyToUse);
+        if (result.status) {
+          setLicense(result.status);
+        } else {
+          const status = await getLicenseStatus();
+          setLicense(status);
+        }
+      } else {
+        const status = await getLicenseStatus();
+        setLicense(status);
+      }
     } catch (error) {
-      setLicense(prev => ({
-        ...prev,
-        status: 'error',
-        errorMessage: 'Failed to check license status',
-      }));
+      console.error('Failed to refresh license:', error);
+      setLicense(defaultLicenseStatus);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [storedLicenseKey]);
+
+  // Track if we've shown the grace period toast this session
+  const [hasShownGraceToast, setHasShownGraceToast] = useState(false);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    const savedKey = getStoredLicenseKey();
+    setStoredLicenseKeyState(savedKey);
+    refresh(savedKey || undefined);
+  }, []);
+
+  // Show toast notification when in grace period
+  useEffect(() => {
+    if (!isLoading && license.isOfflineGrace && license.daysUntilGraceExpires !== null && !hasShownGraceToast) {
+      setHasShownGraceToast(true);
+      
+      // Dispatch a custom event that can be caught by a toast component
+      const toastEvent = new CustomEvent('pdr-toast', {
+        detail: {
+          type: 'warning',
+          title: 'Offline Mode',
+          message: `${license.daysUntilGraceExpires} days remaining to validate your license. Connect to the internet to continue using Photo Date Rescue.`,
+          duration: 8000,
+        }
+      });
+      window.dispatchEvent(toastEvent);
+    }
+  }, [isLoading, license.isOfflineGrace, license.daysUntilGraceExpires, hasShownGraceToast]);
 
   const activate = useCallback(async (licenseKey: string): Promise<{ success: boolean; error?: string }> => {
-    if (!isValidLicenseKeyFormat(licenseKey)) {
-      return { success: false, error: 'Invalid license key format' };
+    if (!licenseKey.trim()) {
+      return { success: false, error: 'Please enter a license key' };
     }
 
-    setLicense(prev => ({ ...prev, status: 'checking', errorMessage: null }));
     setIsLoading(true);
 
     try {
-      const result = await activateLicense(licenseKey);
+      const result = await activateLicenseIPC(licenseKey);
       
-      if (result.activated) {
-        setLicense({
-          status: 'valid',
-          licenseKey: licenseKey,
-          instanceId: result.instance?.id || null,
-          customerEmail: result.meta?.customerEmail || null,
-          productName: result.meta?.productName || null,
-          variantName: result.meta?.variantName || null,
-          expiresAt: result.licenseKey?.expiresAt || null,
-          errorMessage: null,
-        });
+      if (result.success && result.status) {
+        setLicense(result.status);
+        setStoredLicenseKey(licenseKey);
         return { success: true };
       } else {
-        const errorMsg = result.error || 'Activation failed';
-        setLicense(prev => ({
-          ...prev,
-          status: 'invalid',
-          errorMessage: errorMsg,
-        }));
-        return { success: false, error: errorMsg };
+        return { success: false, error: result.error || 'Activation failed' };
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Network error';
-      setLicense(prev => ({
-        ...prev,
-        status: 'error',
-        errorMessage: errorMsg,
-      }));
       return { success: false, error: errorMsg };
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setStoredLicenseKey]);
 
-  const deactivate = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
-    if (!license.licenseKey || !license.instanceId) {
-      return { success: false, error: 'No active license' };
+  const deactivate = useCallback(async (licenseKey: string): Promise<{ success: boolean; error?: string }> => {
+    if (!licenseKey) {
+      return { success: false, error: 'No license key provided' };
     }
 
     setIsLoading(true);
 
     try {
-      const result = await deactivateLicense(license.licenseKey, license.instanceId);
+      const result = await deactivateLicenseIPC(licenseKey);
       
-      if (result.deactivated) {
-        setLicense({
-          status: 'unchecked',
-          licenseKey: null,
-          instanceId: null,
-          customerEmail: null,
-          productName: null,
-          variantName: null,
-          expiresAt: null,
-          errorMessage: null,
-        });
+      if (result.success) {
+        setLicense(defaultLicenseStatus);
+        setStoredLicenseKey(null);
         return { success: true };
       } else {
         return { success: false, error: result.error || 'Deactivation failed' };
@@ -130,10 +164,10 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [license.licenseKey, license.instanceId]);
+  }, [setStoredLicenseKey]);
 
   const clearError = useCallback(() => {
-    setLicense(prev => ({ ...prev, errorMessage: null }));
+    // No error state to clear in this implementation
   }, []);
 
   return (
@@ -145,6 +179,8 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
       deactivate,
       refresh,
       clearError,
+      storedLicenseKey,
+      setStoredLicenseKey,
     }}>
       {children}
     </LicenseContext.Provider>

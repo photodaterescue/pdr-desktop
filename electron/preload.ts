@@ -1,107 +1,110 @@
-import { contextBridge, ipcRenderer } from 'electron';
+/* eslint-disable @typescript-eslint/no-var-requires */
 
-export interface AnalysisProgress {
-  current: number;
-  total: number;
-  currentFile: string;
-  phase: 'scanning' | 'analyzing' | 'complete';
-}
+// IMPORTANT:
+// Preload MUST be CommonJS when run by Electron
+const { contextBridge, ipcRenderer } = require('electron');
 
-export interface FileAnalysisResult {
-  path: string;
-  filename: string;
-  extension: string;
-  type: 'photo' | 'video';
-  sizeBytes: number;
-  dateConfidence: 'confirmed' | 'recovered' | 'marked';
-  dateSource: string;
-  derivedDate: string | null;
-  originalDate: string | null;
-  suggestedFilename: string | null;
-}
+contextBridge.exposeInMainWorld('pdr', {
+  runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') =>
+  ipcRenderer.invoke('analysis:run', sourcePath, sourceType),
 
-export interface SourceAnalysisResult {
-  sourcePath: string;
-  sourceType: 'folder' | 'zip' | 'drive';
-  sourceLabel: string;
-  totalFiles: number;
-  photoCount: number;
-  videoCount: number;
-  totalSizeBytes: number;
-  dateRange: {
-    earliest: string | null;
-    latest: string | null;
-  };
-  confidenceSummary: {
-    confirmed: number;
-    recovered: number;
-    marked: number;
-  };
-  files: FileAnalysisResult[];
-}
+  cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
 
-export interface FileChange {
-  originalFilename: string;
-  newFilename: string;
-  confidence: 'confirmed' | 'recovered' | 'marked';
-  dateSource: string;
-  sourcePath?: string;
-  fileType?: string;
-  dateChanged?: boolean;
-}
+  onAnalysisProgress: (callback: (progress: any) => void) => {
+  ipcRenderer.on('analysis:progress', (_: any, data: any) => callback(data));
+},
 
-export interface SourceInfo {
-  path: string;
-  type: 'folder' | 'zip' | 'drive';
-  label: string;
-}
+removeAnalysisProgressListener: () => {
+  ipcRenderer.removeAllListeners('analysis:progress');
+},
 
-export interface FixReport {
-  id: string;
-  timestamp: string;
-  sources: SourceInfo[];
-  destinationPath: string;
-  counts: {
-    confirmed: number;
-    recovered: number;
-    marked: number;
-    total: number;
-  };
-  files: FileChange[];
-}
+copyFiles: (data: { files: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }>; destinationPath: string; zipPaths?: Record<string, string> }) => ipcRenderer.invoke('files:copy', data),
+onCopyProgress: (callback: (progress: { current: number; total: number }) => void) => {
+  ipcRenderer.on('files:copy:progress', (_event: any, progress: any) => callback(progress));
+},
+cancelCopyFiles: () => ipcRenderer.invoke('files:copy:cancel'),
 
-export interface ReportSummary {
-  id: string;
-  timestamp: string;
-  destinationPath: string;
-  totalFiles: number;
-  sourceCount: number;
-}
-
-contextBridge.exposeInMainWorld('electronAPI', {
-  openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
-  openZip: () => ipcRenderer.invoke('dialog:openZip'),
-  selectDestination: () => ipcRenderer.invoke('dialog:selectDestination'),
-  getDiskSpace: (directoryPath: string) => ipcRenderer.invoke('disk:getSpace', directoryPath),
-  openDestinationFolder: (folderPath: string) => ipcRenderer.invoke('shell:openFolder', folderPath),
-  runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') => 
-    ipcRenderer.invoke('analysis:run', sourcePath, sourceType),
-  onAnalysisProgress: (callback: (progress: AnalysisProgress) => void) => {
-    ipcRenderer.on('analysis:progress', (_event, progress) => callback(progress));
-  },
-  removeAnalysisProgressListener: () => {
-    ipcRenderer.removeAllListeners('analysis:progress');
-  },
-  saveReport: (reportData: Omit<FixReport, 'id' | 'timestamp'>) => 
+  saveReport: (reportData: any) =>
     ipcRenderer.invoke('report:save', reportData),
-  loadReport: (reportId: string) => 
+
+  loadReport: (reportId: string) =>
     ipcRenderer.invoke('report:load', reportId),
-  loadLatestReport: () => 
+
+  loadLatestReport: () =>
     ipcRenderer.invoke('report:loadLatest'),
-  listReports: () => 
+
+  listReports: () =>
     ipcRenderer.invoke('report:list'),
+
   exportReportCSV: (reportId: string) => 
     ipcRenderer.invoke('report:exportCSV', reportId),
   exportReportTXT: (reportId: string) => 
     ipcRenderer.invoke('report:exportTXT', reportId),
+  deleteReport: (reportId: string) => ipcRenderer.invoke('report:delete', reportId),
+  
+  setZoom: (zoom: number) => ipcRenderer.invoke('set-zoom', zoom),
+  
+  pickSource: (mode: 'folder' | 'zip') => ipcRenderer.invoke('source:pick', mode),
+  
+  openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+openZip: () => ipcRenderer.invoke('dialog:openZip'),
+
+selectDestination: () => ipcRenderer.invoke('select-destination'),
+
+    prescanDestination: (destinationPath: string) => 
+      ipcRenderer.invoke('destination:prescan', destinationPath),
+    
+    onDestinationPrescanProgress: (callback: (data: { scanned: number }) => void) => {
+      const handler = (_event: any, data: { scanned: number }) => callback(data);
+      ipcRenderer.on('destination:prescan:progress', handler);
+      return () => ipcRenderer.removeListener('destination:prescan:progress', handler);
+    },
+
+getDiskSpace: (directoryPath: string) => ipcRenderer.invoke('disk:getSpace', directoryPath),
+
+showMessage: (title: string, message: string) => ipcRenderer.invoke('show-message', title, message),
+
+openDestinationFolder: (folderPath: string) => ipcRenderer.invoke('shell:openFolder', folderPath),
+
+playCompletionSound: () => ipcRenderer.invoke('play-completion-sound'),
+
+flashTaskbar: () => ipcRenderer.invoke('window:flashFrame'),
+
+openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    set: (key: string, value: any) => ipcRenderer.invoke('settings:set', key, value),
+    setAll: (settings: any) => ipcRenderer.invoke('settings:setAll', settings),
+    resetToDefaults: () => ipcRenderer.invoke('settings:resetToDefaults'),
+  },
+  
+    license: {
+    getStatus: () => ipcRenderer.invoke('license:getStatus'),
+    activate: (key: string) => ipcRenderer.invoke('license:activate', key),
+    refresh: (key: string) => ipcRenderer.invoke('license:refresh', key),
+    deactivate: (key: string) => ipcRenderer.invoke('license:deactivate', key),
+    getMachineId: () => ipcRenderer.invoke('license:getMachineId'),
+  },
+  
+  updates: {
+    check: () => ipcRenderer.invoke('updates:check'),
+    getVersion: () => ipcRenderer.invoke('updates:getVersion'),
+  },
+  
+  storage: {
+    classify: (sourcePath: string) => ipcRenderer.invoke('storage:classify', sourcePath),
+    checkSameDrive: (sourcePath: string, outputPath: string) => ipcRenderer.invoke('storage:checkSameDrive', sourcePath, outputPath),
+  },
+  
+  prescan: {
+    run: (sourcePath: string, sourceType: 'folder' | 'zip', noTimeout: boolean = false) => ipcRenderer.invoke('prescan:run', sourcePath, sourceType, noTimeout),
+    cancel: () => ipcRenderer.invoke('prescan:cancel'),
+    onProgress: (callback: (progress: any) => void) => {
+      ipcRenderer.on('prescan:progress', (_: any, data: any) => callback(data));
+    },
+    removeProgressListener: () => {
+      ipcRenderer.removeAllListeners('prescan:progress');
+    },
+  },
 });

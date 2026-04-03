@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { 
   Folder, 
@@ -15,6 +15,7 @@ import {
   Play,
   Trash2,
   RefreshCw,
+  Download,
   FileImage,
   FileVideo,
   CalendarRange,
@@ -35,7 +36,10 @@ import {
   FileText,
   Star,
   ExternalLink,
-  PlayCircle
+  PlayCircle,
+  Copy,
+  ZoomIn,
+  ZoomOut
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -57,9 +61,18 @@ import {
   runAnalysis, 
   onAnalysisProgress, 
   removeAnalysisProgressListener,
-  formatBytesToGB 
+  getSettings,
+  setSetting,
+  classifyStorage,
+  resetSettingsToDefaults,
+  PDRSettings,
+  formatBytesToGB,
+  PreScanResult
 } from "@/lib/electron-bridge";
+import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
+import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
+import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
 import type { SourceAnalysisResult } from "../electron";
 
@@ -99,11 +112,44 @@ interface PreScanStats {
 }
 
 export default function Workspace() {
+	const [zoomLevel, setZoomLevel] = useState<number>(() => {
+  const saved = localStorage.getItem("pdr-zoom-level");
+  return saved ? Number(saved) : 80;
+});
+const MIN_ZOOM = 60;
+const MAX_ZOOM = 130;
+const ZOOM_STEP = 5;
+
+const applyZoom = (newZoom: number) => {
+  setZoomLevel(newZoom);
+  localStorage.setItem("pdr-zoom-level", String(newZoom));
+  (window as any).pdr?.setZoom(newZoom / 100);
+};
+
+const handleZoomIn = () => {
+  applyZoom(Math.min(MAX_ZOOM, zoomLevel + ZOOM_STEP));
+};
+
+const handleZoomOut = () => {
+  applyZoom(Math.max(MIN_ZOOM, zoomLevel - ZOOM_STEP));
+};
+
+const handleZoomReset = () => {
+  applyZoom(100);
+};
   const [location, setLocation] = useLocation();
-  const searchString = useSearch();
+  // For HashRouter, query params are inside the hash (e.g., #/workspace?tour=true)
+  const hashParts = window.location.hash.split('?');
+  const searchString = hashParts.length > 1 ? '?' + hashParts[1] : '';
+  const searchParams = new URLSearchParams(searchString);
   const folderOrDriveInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState({ message: 'Preparing analysis...', percent: 0 });
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [lastAnalysisElapsed, setLastAnalysisElapsed] = useState<number | null>(null);
+  const analysisStartTimeRef = useRef<number>(0);
   
   const [sources, setSources] = useState<Source[]>(() => {
     const saved = sessionStorage.getItem("pdr-sources");
@@ -119,59 +165,8 @@ export default function Workspace() {
         console.error("Failed to parse sources", e);
       }
     }
-    return [
-    {
-      id: "mock-1",
-      icon: <Folder className="w-4 h-4" />,
-      label: "My Vacation Photos",
-      type: "folder",
-      path: "/Users/username/Pictures/My Vacation Photos",
-      active: false,
-      selected: false,
-      confirmed: true,
-      stats: {
-        totalFiles: 1248,
-        photoCount: 892,
-        videoCount: 356,
-        estimatedSizeGB: 4.2,
-        dateRange: { earliest: "Jan 12, 2023", latest: "Aug 15, 2023" }
-      }
-    },
-    {
-      id: "mock-2",
-      icon: <FileArchive className="w-4 h-4" />,
-      label: "Old Backup 2018.zip",
-      type: "zip",
-      path: "/Users/username/Downloads/Old Backup 2018.zip",
-      active: false,
-      selected: false,
-      confirmed: true,
-      stats: {
-        totalFiles: 562,
-        photoCount: 500,
-        videoCount: 62,
-        estimatedSizeGB: 1.8,
-        dateRange: { earliest: "Mar 01, 2018", latest: "Dec 31, 2018" }
-      }
-    },
-    {
-      id: "mock-3",
-      icon: <Folder className="w-4 h-4" />,
-      label: "Camera Uploads",
-      type: "folder",
-      path: "/Users/username/Pictures/Camera Uploads",
-      active: false,
-      selected: false,
-      confirmed: true,
-      stats: {
-        totalFiles: 2105,
-        photoCount: 2000,
-        videoCount: 105,
-        estimatedSizeGB: 8.5,
-        dateRange: { earliest: "Jun 10, 2020", latest: "Nov 22, 2024" }
-      }
-    }
-  ]});
+    return [];
+  });
 
   useEffect(() => {
     // Create a version of sources that is safe for JSON stringify (remove React components)
@@ -181,6 +176,13 @@ export default function Workspace() {
     });
     sessionStorage.setItem("pdr-sources", JSON.stringify(serializableSources));
   }, [sources]);
+  
+  // Listen for reports history event from EmptyState
+  useEffect(() => {
+    const handleOpenReports = () => setShowReportsList(true);
+    window.addEventListener('open-reports-history', handleOpenReports);
+    return () => window.removeEventListener('open-reports-history', handleOpenReports);
+  }, []);
 
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
@@ -196,8 +198,26 @@ export default function Workspace() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 0, currentFile: '' });
   const [sourceAnalysisResults, setSourceAnalysisResults] = useState<Record<string, SourceAnalysisResult>>({});
-  const [showLicenseModal, setShowLicenseModal] = useState(false);
+const [showLicenseRequired, setShowLicenseRequired] = useState(false);
+const { isLicensed } = useLicense();
+
+const handleLicenseRequired = () => {
+  setShowLicenseRequired(true);
+};
+
+const handleActivateLicense = () => {
+  setShowLicenseRequired(false);
+  setShowLicenseModal(true);
+};
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [showReportsList, setShowReportsList] = useState(false);
+  const [showPostFixReport, setShowPostFixReport] = useState(false);
+  const [showSlowStorageWarning, setShowSlowStorageWarning] = useState(false);
+  const [pendingSlowStoragePath, setPendingSlowStoragePath] = useState<{ path: string; type: 'folder' | 'zip' | 'drive'; storageInfo: { label: string; description: string } } | null>(null);
+  const [showNetworkScanModal, setShowNetworkScanModal] = useState(false);
+  const [networkScanInfo, setNetworkScanInfo] = useState<{ path: string; type: 'folder' | 'zip'; label: string } | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark');
@@ -207,6 +227,10 @@ export default function Workspace() {
   const [folderStructure, setFolderStructure] = useState<'year' | 'year-month' | 'year-month-day'>(() => {
     const saved = localStorage.getItem('pdr-folder-structure');
     return (saved as 'year' | 'year-month' | 'year-month-day') || 'year';
+  });
+  const [playSound, setPlaySound] = useState(() => {
+    const saved = localStorage.getItem('pdr-completion-sound');
+    return saved !== 'false'; // Default to true
   });
 
   // Persistent states that should survive panel navigation
@@ -237,7 +261,25 @@ export default function Workspace() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(searchString);
+    const params = searchParams;
+	
+	    // Check for pending source from source-selection page (sessionStorage method)
+    const pendingSourceRaw = sessionStorage.getItem('pdr-pending-source');
+    if (pendingSourceRaw) {
+      sessionStorage.removeItem('pdr-pending-source');
+      try {
+        const pendingData = JSON.parse(pendingSourceRaw);
+        const pendingPath = pendingData.path;
+        const pendingType = pendingData.type;
+        const exists = sources.some(s => s.path && s.path.toLowerCase() === pendingPath.toLowerCase());
+        if (!exists) {
+          handleElectronSourceSelected(pendingPath, pendingType);
+          return;
+        }
+      } catch (e) {
+        // Failed to parse, continue with URL params check
+      }
+    }
     
     // Handle tour param - only show if not already completed (first-time users)
     // For explicit replays from Help & Support, resetTourCompletion is called first
@@ -264,39 +306,17 @@ export default function Workspace() {
     const name = params.get("name");
     const path = params.get("path");
 
-    if (type && name) {
-      const exists = sources.some(s => s.label === name);
+    if (type && name && path) {
+      const decodedPath = decodeURIComponent(path);
+      const exists = sources.some(s => s.path && s.path.toLowerCase() === decodedPath.toLowerCase());
       if (!exists) {
-        let icon = <Folder className="w-4 h-4" />;
-        if (type === 'zip') icon = <FileArchive className="w-4 h-4" />;
-        if (type === 'drive') icon = <HardDrive className="w-4 h-4" />;
-
-        const newSource: Source = {
-          id: Date.now().toString(),
-          icon: type === 'drive' ? <img src="/Assets/pdr-drive.png" className="w-4 h-4 object-contain" alt="Drive" /> : icon,
-          label: name,
-          type,
-          path: path || undefined,
-          active: true,
-          selected: true,
-          confirmed: false
-        };
-
-        const updatedSources = sources.map(s => ({ ...s, active: false }));
-        setSources([...updatedSources, newSource]);
-        setActiveSource(newSource);
-        setPendingSource(newSource);
-        
-        // Generate fresh pre-scan stats live
-        const stats = generatePreScanStats();
-        setPreScanStats(stats);
-        setShowPreScanConfirm(true);
-        
-        // Clear URL params to prevent re-triggering modal on refresh
-        setLocation(location);
+        // Start analysis first, then clear URL params
+        handleElectronSourceSelected(decodedPath, type);
+        setLocation('/workspace');
       }
     }
-  }, [searchString, sources, location, setLocation]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchString, setLocation]);
 
   // Auto-analyze when sources change
   useEffect(() => {
@@ -388,28 +408,35 @@ export default function Workspace() {
     setActiveSource({ ...activeSource, confirmed: true });
   };
 
-  const handleRemoveSource = () => {
+    const handleRemoveSource = () => {
     if (!activeSource) return;
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
-    setIsComplete(false); // Reset analysis on source change
+    setSourceAnalysisResults(prev => {
+      const updated = { ...prev };
+      delete updated[activeSource.id];
+      return updated;
+    });
+    setIsComplete(false);
     if (updatedSources.length > 0) {
       updatedSources[0].active = true;
       setActiveSource(updatedSources[0]);
     } else {
       setActiveSource(null);
-      // Stay on dashboard and show empty state
     }
   };
 
-  const handleChangeSource = () => {
+    const handleChangeSource = () => {
     if (!activeSource) return;
-    // Remove current unconfirmed source
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
+    setSourceAnalysisResults(prev => {
+      const updated = { ...prev };
+      delete updated[activeSource.id];
+      return updated;
+    });
     setActiveSource(null);
-    setIsComplete(false); // Reset analysis on source change
-    // Show source type selector to pick a new source
+    setIsComplete(false);
     setShowSourceTypeSelector(true);
   };
 
@@ -418,33 +445,103 @@ export default function Workspace() {
     setShowSourceTypeSelector(true);
   };
 
-  const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
-    setShowSourceTypeSelector(false);
-    
-    if (isElectron()) {
-      let selectedPath: string | null = null;
-      
-      if (type === 'folderOrDrive') {
-        selectedPath = await openFolderDialog();
-      } else if (type === 'zip') {
-        selectedPath = await openZipDialog();
-      }
-      
-      if (selectedPath) {
-        await handleElectronSourceSelected(selectedPath, type === 'zip' ? 'zip' : 'folder');
-      }
-    } else {
-      setTimeout(() => {
-        if (type === 'folderOrDrive') {
-          folderOrDriveInputRef.current?.click();
-        } else if (type === 'zip') {
-          zipInputRef.current?.click();
-        }
-      }, 0);
+const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
+  setShowSourceTypeSelector(false);
+
+  if (isElectron()) {
+    let selectedPath: string | null = null;
+
+    if (type === 'folderOrDrive') {
+      selectedPath = await openFolderDialog();
+    } else if (type === 'zip') {
+      selectedPath = await openZipDialog();
     }
-  };
+
+    if (selectedPath) {
+      // Check license AFTER file selection, BEFORE scanning
+      if (!isLicensed) {
+        setShowLicenseRequired(true);
+        return;
+      }
+      
+      // Skip storage check for RAR files (they extract to local temp folder)
+      const isRar = selectedPath.toLowerCase().endsWith('.rar');
+      
+      // Check storage speed BEFORE scanning (wrapped in try-catch)
+      if (!isRar) {
+        try {
+          const settings = await getSettings();
+          if (settings.showStoragePerformanceTips) {
+            const storageResult = await classifyStorage(selectedPath);
+            if (storageResult && !storageResult.isOptimal) {
+              // Use new NetworkScanModal for network/cloud drives
+              setNetworkScanInfo({
+                path: selectedPath,
+                type: type === 'zip' ? 'zip' : 'folder',
+                label: storageResult.label
+              });
+              setShowNetworkScanModal(true);
+              return;
+            }
+          }
+        } catch (e) {
+          // If storage check fails, proceed anyway
+        }
+      }
+      
+      await handleElectronSourceSelected(selectedPath, type === 'zip' ? 'zip' : 'folder');
+    }
+  } else {
+    setTimeout(() => {
+      if (type === 'folderOrDrive') {
+        folderOrDriveInputRef.current?.click();
+      } else if (type === 'zip') {
+        zipInputRef.current?.click();
+      }
+    }, 0);
+  }
+};
   
-  const handleElectronSourceSelected = async (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') => {
+  const handleElectronSourceSelected = async (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', skipStorageCheck: boolean = false) => {
+  // Check storage speed BEFORE scanning (for sources from interim screen)
+  if (sourceType !== 'zip' && !skipStorageCheck) {
+    try {
+      const settings = await getSettings();
+      if (settings.showStoragePerformanceTips) {
+        const storageResult = await classifyStorage(sourcePath);
+        if (storageResult && !storageResult.isOptimal) {
+          setNetworkScanInfo({
+            path: sourcePath,
+            type: 'folder',
+            label: storageResult.label
+          });
+          setShowNetworkScanModal(true);
+          return;
+        }
+      }
+    } catch (e) {
+      // If storage check fails, proceed anyway
+    }
+  }
+  
+  // Show scanning overlay immediately
+  setIsScanning(true);
+  setScanProgress({ message: 'Preparing analysis...', percent: 0 });
+  analysisStartTimeRef.current = Date.now();
+
+  const isDuplicate = sources.some(s =>
+    s.path && s.path.toLowerCase() === sourcePath.toLowerCase()
+  );
+    if (isDuplicate) {
+  setIsScanning(false);
+  if (window.pdr?.showMessage) {
+    await window.pdr.showMessage('Duplicate Source', 'You already have this source in your Sources Menu.');
+  } else {
+    toast.error('You already have this source in your Sources Menu');
+  }
+  return;
+}
+    
     const pathParts = sourcePath.split(/[/\\]/);
     const name = pathParts[pathParts.length - 1] || "Selected Source";
     const inferredType = inferSourceType(sourcePath);
@@ -459,18 +556,67 @@ export default function Workspace() {
     setIsAnalyzing(true);
     setAnalysisProgress({ current: 0, total: 0, currentFile: 'Starting analysis...' });
     
+    let lastPercent = 0;
     onAnalysisProgress((progress) => {
-      setAnalysisProgress({
-        current: progress.current,
-        total: progress.total,
-        currentFile: progress.currentFile
-      });
+      if (progress.total === 0 && progress.current === 0) {
+        // Enumeration phase - show file count, no percentage
+        setAnalysisProgress({
+          current: 0,
+          total: 0,
+          currentFile: progress.currentFile
+        });
+        setScanProgress({ 
+          message: progress.currentFile, 
+          percent: 0 
+        });
+        return;
+      }
+      
+      const percent = Math.round((progress.current / progress.total) * 100);
+      
+      // Extraction phase (scanning with known total) — show real progress bar
+      if (progress.phase === 'scanning' && progress.total > 0) {
+        setAnalysisProgress({
+          current: progress.current,
+          total: progress.total,
+          currentFile: progress.currentFile
+        });
+        setScanProgress({ 
+          message: progress.currentFile, 
+          percent: percent 
+        });
+        return;
+      }
+      
+      // Analysis phase
+      if (percent >= lastPercent) {
+        lastPercent = percent;
+        setAnalysisProgress({
+          current: progress.current,
+          total: progress.total,
+          currentFile: progress.currentFile
+        });
+        setScanProgress({ 
+          message: `Analyzing ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()} files...`, 
+          percent: percent 
+        });
+      }
     });
     
-    const result = await runAnalysis(sourcePath, finalType);
+    let result;
+    try {
+      result = await runAnalysis(sourcePath, finalType);
+      } catch (error) {
+        removeAnalysisProgressListener();
+        setIsAnalyzing(false);
+        setIsScanning(false);
+        toast.error('Analysis failed unexpectedly. Please try again.');
+        return;
+      }
     
     removeAnalysisProgressListener();
     setIsAnalyzing(false);
+    setIsScanning(false);
     
     if (result.success && result.data) {
       const analysisData = result.data;
@@ -508,12 +654,21 @@ export default function Workspace() {
       setActiveSource(newSource);
       setPendingSource(newSource);
       setPreScanStats(stats);
+      setLastAnalysisElapsed(Math.floor((Date.now() - analysisStartTimeRef.current) / 1000));
       setShowPreScanConfirm(true);
       
       toast.success(`Analyzed ${analysisData.totalFiles.toLocaleString()} files`);
-    } else {
-      toast.error(result.error || 'Failed to analyze source');
-    }
+      
+      // Play completion sound and flash taskbar if enabled
+      const soundEnabled = localStorage.getItem('pdr-completion-sound') !== 'false';
+		if (soundEnabled) {
+		  const { playCompletionSound, flashTaskbar } = await import('@/lib/electron-bridge');
+		  await playCompletionSound();
+		  await flashTaskbar();
+		}
+      } else {
+        toast.error(result.error || 'Failed to analyze source');
+      }
   };
 
   const inferSourceType = (path: string): 'folder' | 'drive' => {
@@ -523,100 +678,19 @@ export default function Workspace() {
   };
 
   const handleFolderOrDriveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const path = e.target.files[0].webkitRelativePath || e.target.files[0].name;
-      const name = path.split('/')[0] || "Selected Folder";
-      const fullPath = `/Users/username/Pictures/${name}`;
-      
-      // Infer source type based on path
-      const sourceType = inferSourceType(fullPath);
-      const icon = sourceType === 'drive' ? <HardDrive className="w-4 h-4" /> : <Folder className="w-4 h-4" />;
-      
-      // Generate fresh pre-scan stats live
-      const stats = generatePreScanStats();
-      
-      const newSource: Source = {
-        id: Date.now().toString(),
-        icon,
-        label: name,
-        type: sourceType,
-        path: fullPath,
-        active: true,
-        selected: true,
-        confirmed: false,
-        stats: stats
-      };
-
-      const updatedSources = sources.map(s => ({ ...s, active: false }));
-      setSources([...updatedSources, newSource]);
-      setActiveSource(newSource);
-      setPendingSource(newSource);
-      
-      setPreScanStats(stats);
-      setShowPreScanConfirm(true);
-      setIsComplete(false); // Reset analysis on source change
-      
-      e.target.value = '';
-    }
+    // This is a fallback for non-Electron - should not be used in production
+    toast.error('Source analysis requires the desktop application');
+    e.target.value = '';
   };
 
   const handleZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      const fileName = file.name;
-      const fullPath = `/Users/username/Downloads/${fileName}`;
-      
-      // Generate fresh pre-scan stats live
-      const stats = generatePreScanStats();
-
-      const newSource: Source = {
-        id: Date.now().toString(),
-        icon: <FileArchive className="w-4 h-4" />,
-        label: fileName,
-        type: 'zip',
-        path: fullPath,
-        active: true,
-        selected: true,
-        confirmed: false,
-        stats: stats
-      };
-
-      const updatedSources = sources.map(s => ({ ...s, active: false }));
-      setSources([...updatedSources, newSource]);
-      setActiveSource(newSource);
-      setPendingSource(newSource);
-      
-      setPreScanStats(stats);
-      setShowPreScanConfirm(true);
-      setIsComplete(false); // Reset analysis on source change
-      
-      e.target.value = '';
-    }
+    // This is a fallback for non-Electron - should not be used in production
+    toast.error('Source analysis requires the desktop application');
+    e.target.value = '';
   };
 
   const handleAddAnother = () => {
     setShowSourceTypeSelector(true);
-  };
-
-  const generatePreScanStats = (): PreScanStats => {
-    const totalFiles = Math.floor(Math.random() * 5000) + 500;
-    const photoCount = Math.floor(totalFiles * (Math.random() * 0.4 + 0.4));
-    const videoCount = Math.floor(totalFiles * (Math.random() * 0.3 + 0.1));
-    const estimatedSizeGB = parseFloat((Math.random() * 150 + 10).toFixed(2));
-    
-    const earliest = new Date(2018 + Math.floor(Math.random() * 4), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1);
-    const latest = new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1);
-    
-    return {
-      totalFiles,
-      photoCount,
-      videoCount,
-      estimatedSizeGB,
-      dateRange: {
-        earliest: earliest.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-        latest: latest.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-      }
-    };
   };
 
   const handleAddToWorkspace = () => {
@@ -630,6 +704,7 @@ export default function Workspace() {
     setShowPreScanConfirm(false);
     setPreScanStats(null);
     setPendingSource(null);
+    setActivePanel(null);
   };
 
   const handleChangeSourceFromModal = () => {
@@ -660,16 +735,261 @@ export default function Workspace() {
     }
   };
 
-  const handleTriggerFolderPicker = () => {
+const handleTriggerFolderPicker = async () => {
+  if (isElectron()) {
+    const selectedPath = await openFolderDialog();
+    if (selectedPath) {
+      // Check license first
+      if (!isLicensed) {
+        setShowLicenseRequired(true);
+        return;
+      }
+      
+      // Check storage speed BEFORE scanning (wrapped in try-catch)
+      try {
+        const settings = await getSettings();
+        if (settings.showStoragePerformanceTips) {
+          const storageResult = await classifyStorage(selectedPath);
+          if (storageResult && !storageResult.isOptimal) {
+            setNetworkScanInfo({
+              path: selectedPath,
+              type: 'folder',
+              label: storageResult.label
+            });
+            setShowNetworkScanModal(true);
+            return;
+          }
+        }
+      } catch (e) {
+        // If storage check fails, proceed anyway
+      }
+      
+      await handleElectronSourceSelected(selectedPath, 'folder');
+    }
+  } else {
     folderOrDriveInputRef.current?.click();
-  };
+  }
+};
 
-  const handleTriggerZipPicker = () => {
+const handleTriggerZipPicker = async () => {
+  if (isElectron()) {
+    const selectedPath = await openZipDialog();
+    if (selectedPath) {
+      // Check license first
+      if (!isLicensed) {
+        setShowLicenseRequired(true);
+        return;
+      }
+      
+      // Skip storage check for RAR files (they extract to local temp folder)
+      const isRar = selectedPath.toLowerCase().endsWith('.rar');
+      
+      // Check storage speed BEFORE scanning (wrapped in try-catch)
+      if (!isRar) {
+        try {
+          const settings = await getSettings();
+          if (settings.showStoragePerformanceTips) {
+            const storageResult = await classifyStorage(selectedPath);
+            if (storageResult && !storageResult.isOptimal) {
+              setNetworkScanInfo({
+                path: selectedPath,
+                type: 'zip',
+                label: storageResult.label
+              });
+              setShowNetworkScanModal(true);
+              return;
+            }
+          }
+        } catch (e) {
+          // If storage check fails, proceed anyway
+        }
+      }
+      
+      await handleElectronSourceSelected(selectedPath, 'zip');
+    }
+  } else {
     zipInputRef.current?.click();
-  };
+  }
+};
 
-  return (
+const handleSlowStorageContinue = async () => {
+  setShowSlowStorageWarning(false);
+  if (pendingSlowStoragePath) {
+    await handleElectronSourceSelected(pendingSlowStoragePath.path, pendingSlowStoragePath.type);
+    setPendingSlowStoragePath(null);
+  }
+};
+
+const handleSlowStorageCancel = () => {
+  setShowSlowStorageWarning(false);
+  setPendingSlowStoragePath(null);
+};
+
+const handleNetworkScanComplete = async (result: PreScanResult) => {
+  setShowNetworkScanModal(false);
+  if (networkScanInfo) {
+    await handleElectronSourceSelected(networkScanInfo.path, networkScanInfo.type, true);
+    setNetworkScanInfo(null);
+  }
+};
+
+const handleNetworkScanCancel = () => {
+  setShowNetworkScanModal(false);
+  setNetworkScanInfo(null);
+};
+
+const handleNetworkScanProceedWithoutSize = async () => {
+  setShowNetworkScanModal(false);
+  if (networkScanInfo) {
+    await handleElectronSourceSelected(networkScanInfo.path, networkScanInfo.type, true);
+    setNetworkScanInfo(null);
+  }
+};
+
+const handleCancelAnalysis = () => {
+  setShowCancelConfirm(true);
+};
+
+const handleConfirmCancelAnalysis = async () => {
+  setShowCancelConfirm(false);
+  // Call IPC to cancel analysis if available
+  if (window.pdr?.cancelAnalysis) {
+    await window.pdr.cancelAnalysis();
+  }
+  setIsScanning(false);
+  setIsAnalyzing(false);
+  removeAnalysisProgressListener();
+};
+
+const handleDismissCancelConfirm = () => {
+  setShowCancelConfirm(false);
+};
+
+// Auto-dismiss cancel confirmation if analysis completes while dialog is showing
+useEffect(() => {
+  if (showCancelConfirm && !isAnalyzing && !isScanning) {
+    setShowCancelConfirm(false);
+  }
+}, [isAnalyzing, isScanning, showCancelConfirm]);
+
+const isTourPreview = showTour && sources.length === 0;
+
+const tourPlaceholderSource: Source = {
+  id: 'tour-example',
+  icon: <Folder className="w-4 h-4" />,
+  label: 'Example Source',
+  type: 'folder',
+  path: 'C:/Users/Photos/Family',
+  active: true,
+  selected: true,
+  confirmed: true,
+  stats: {
+    totalFiles: 1348,
+    photoCount: 1206,
+    videoCount: 142,
+    estimatedSizeGB: 8.4,
+    dateRange: { earliest: 'Jan 15, 2019', latest: 'Dec 28, 2024' }
+  }
+};
+
+const tourPlaceholderAnalysisResults: Record<string, SourceAnalysisResult> = {
+  'tour-example': {
+    totalFiles: 1348,
+    photoCount: 1206,
+    videoCount: 142,
+    totalSizeBytes: 9019431321,
+    duplicatesRemoved: 3,
+    duplicateFiles: [],
+    dateRange: { earliest: '2019-01-15T10:30:00Z', latest: '2024-12-28T16:45:00Z' },
+    confidenceSummary: { confirmed: 1247, recovered: 89, marked: 12 },
+    files: [
+      ...Array.from({ length: 1247 }, (_, i) => ({
+        name: `photo_${i + 1}.jpg`, type: 'photo' as const, size: 4500000,
+        dateConfidence: 'confirmed' as const, dateSource: 'EXIF DateTimeOriginal',
+        suggestedDate: '2023-06-15T14:30:00Z', suggestedFilename: `2023-06-15_14-30-00_CF.jpg`,
+        originalPath: `C:/Users/Photos/Family/photo_${i + 1}.jpg`
+      })),
+      ...Array.from({ length: 89 }, (_, i) => ({
+        name: `IMG_${i + 1}.jpg`, type: 'photo' as const, size: 3800000,
+        dateConfidence: 'recovered' as const, dateSource: 'Filename pattern',
+        suggestedDate: '2022-03-10T09:15:00Z', suggestedFilename: `2022-03-10_09-15-00_RC.jpg`,
+        originalPath: `C:/Users/Photos/Family/IMG_${i + 1}.jpg`
+      })),
+      ...Array.from({ length: 12 }, (_, i) => ({
+        name: `file_${i + 1}.jpg`, type: 'photo' as const, size: 3200000,
+        dateConfidence: 'marked' as const, dateSource: 'File modification time',
+        suggestedDate: '2021-11-20T18:00:00Z', suggestedFilename: `2021-11-20_18-00-00_MK.jpg`,
+        originalPath: `C:/Users/Photos/Family/file_${i + 1}.jpg`
+      }))
+    ]
+  } as SourceAnalysisResult
+};
+
+return (
+  <>
+    {/* Zoom controls */}
+    <div className="fixed right-5 bottom-24 z-40 flex flex-col items-center gap-1 bg-background/90 backdrop-blur-sm border border-border/30 rounded-xl p-1.5 shadow-md opacity-80 hover:opacity-100 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 ease-out">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleZoomIn}
+              disabled={zoomLevel >= MAX_ZOOM}
+              className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary/50 hover:bg-primary/15 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all duration-200"
+              data-testid="button-zoom-in"
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            <p>Zoom in</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleZoomReset}
+              className="flex items-center justify-center w-7 h-5 text-[10px] font-medium text-muted-foreground hover:text-foreground cursor-pointer transition-all duration-200"
+              data-testid="button-zoom-reset"
+              aria-label="Reset zoom to 100%"
+            >
+              {zoomLevel}%
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            <p>Reset to 100%</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleZoomOut}
+              disabled={zoomLevel <= MIN_ZOOM}
+              className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary/50 hover:bg-primary/15 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all duration-200"
+              data-testid="button-zoom-out"
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            <p>Zoom out</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+
+	
+    {/* Main workspace layout */}
     <div className="flex h-screen bg-background overflow-hidden font-sans">
+
       <input
         type="file"
         ref={folderOrDriveInputRef}
@@ -688,31 +1008,39 @@ export default function Workspace() {
         onChange={handleZipChange}
         accept=".zip"
       />
-      <Sidebar 
-        sources={sources} 
-        onSourceClick={handleSourceClick} 
-        onSelectAll={handleSelectAll}
-        isComplete={isComplete}
-        onAddSource={handleAddSource}
-        onStartTour={() => { resetTourCompletion(); setShowTour(true); }}
-        onRemoveSource={() => {
-          // Remove all selected sources
-          const updatedSources = sources.filter(s => !s.selected);
-          setSources(updatedSources);
-          setIsComplete(false); // Reset analysis on source change
-          setActiveSource(null);
-          // If no sources left, maybe redirect? Handled by MainContent if empty
-        }}
-        activePanel={activePanel}
-        onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | null)}
-        onDashboardClick={() => {
-          setActivePanel(null);
-          const updatedSources = sources.map(s => ({ ...s, active: false }));
-          setSources(updatedSources);
-          setActiveSource(null);
-        }}
-        onSettingsClick={() => setShowSettingsModal(true)}
-      />
+		<Sidebar 
+		  sources={isTourPreview ? [tourPlaceholderSource] : sources} 
+		  onSourceClick={handleSourceClick} 
+		  onSelectAll={handleSelectAll}
+		  isComplete={isTourPreview ? true : isComplete}
+		  onAddSource={handleAddSource}
+		  onStartTour={() => { resetTourCompletion(); setShowTour(true); }}
+		  onRemoveSource={() => {
+			const selectedIds = sources.filter(s => s.selected).map(s => s.id);
+			const updatedSources = sources.filter(s => !s.selected);
+			setSources(updatedSources);
+			setActiveSource(null);
+			
+			// Clean up analysis results for removed sources
+			setSourceAnalysisResults(prev => {
+			  const updated = { ...prev };
+			  selectedIds.forEach(id => delete updated[id]);
+			  return updated;
+			});
+		  }}
+		  activePanel={activePanel}
+		  onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | null)}
+		  onDashboardClick={() => {
+			setActivePanel(null);
+			const updatedSources = sources.map(s => ({ ...s, active: false }));
+			setSources(updatedSources);
+			setActiveSource(null);
+		  }}
+		  onSettingsClick={() => setShowSettingsModal(true)}
+		  isLicensed={isLicensed}
+		  onLicenseRequired={handleLicenseRequired}
+		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
+		/>
       {activePanel ? (
         <PanelPlaceholder 
           panelType={activePanel} 
@@ -722,13 +1050,13 @@ export default function Workspace() {
         />
       ) : (
         <MainContent 
-          sources={sources}
+          sources={isTourPreview ? [tourPlaceholderSource] : sources}
           activeSource={activeSource} 
           onRemove={handleRemoveSource}
           onChange={handleChangeSource}
-          isComplete={isComplete}
-          analysisResults={analysisResults}
-          sourceAnalysisResults={sourceAnalysisResults}
+          isComplete={isTourPreview ? true : isComplete}
+          analysisResults={isTourPreview ? { fixed: 1336, unchanged: 12, skipped: 0 } : analysisResults}
+          sourceAnalysisResults={isTourPreview ? tourPlaceholderAnalysisResults : sourceAnalysisResults}
           onAddAnother={handleAddAnother}
           onPreviewChanges={() => setShowPreviewModal(true)}
           onViewResults={() => setShowResultsModal(true)}
@@ -747,21 +1075,65 @@ export default function Workspace() {
           setHasCompletedFix={setHasCompletedFix}
           savedReportId={savedReportId}
           setSavedReportId={setSavedReportId}
+          isLicensed={isLicensed}
+          onActivateLicense={handleActivateLicense}
         />
       )}
+	  {isScanning && <ScanningOverlay message={scanProgress.message} percent={scanProgress.percent} onCancel={handleCancelAnalysis} showCancelConfirm={showCancelConfirm} onConfirmCancel={handleConfirmCancelAnalysis} onDismissCancel={handleDismissCancelConfirm} />}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       {showLicenseModal && <LicenseModal onClose={() => setShowLicenseModal(false)} />}
+		<LicenseRequiredModal
+		  isOpen={showLicenseRequired}
+		  onClose={() => setShowLicenseRequired(false)}
+		  onActivate={handleActivateLicense}
+		  feature="add sources"
+		/>
       {showSettingsModal && (
-        <SettingsModal 
-          onClose={() => setShowSettingsModal(false)} 
-          folderStructure={folderStructure}
-          onFolderStructureChange={(value) => {
-            setFolderStructure(value);
-            localStorage.setItem('pdr-folder-structure', value);
-          }}
-        />
+		<SettingsModal 
+		  onClose={() => setShowSettingsModal(false)}
+		  folderStructure={folderStructure}
+		  onFolderStructureChange={(value) => {
+			setFolderStructure(value);
+			localStorage.setItem('pdr-folder-structure', value);
+		  }}
+		  playSound={playSound}
+		  onPlaySoundChange={(value) => {
+			setPlaySound(value);
+			localStorage.setItem('pdr-completion-sound', value ? 'true' : 'false');
+		  }}
+		/>
       )}
+	        
+		{showReportsList && (
+		  <ReportsListModal 
+			onClose={() => setShowReportsList(false)}
+			onViewReport={(reportId) => {
+			  setSelectedReportId(reportId);
+			  setShowReportsList(false);
+			  setShowPostFixReport(true);
+			}}
+		  />
+		)}
+
+		{showPostFixReport && (
+		  <PostFixReportModal 
+			onClose={() => {
+			  setShowPostFixReport(false);
+			  setSelectedReportId(null);
+			}}
+			results={analysisResults}
+			destinationPath={destinationPath}
+			fileResults={sourceAnalysisResults}
+			savedReportId={selectedReportId}
+			onBackToReports={() => {
+			  setShowPostFixReport(false);
+			  setSelectedReportId(null);
+			  setShowReportsList(true);
+			}}
+			onNavigateToBestPractices={() => setActivePanel('best-practices')}
+		  />
+		)}
       
       {/* Fixed controls in top-right corner */}
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
@@ -785,15 +1157,18 @@ export default function Workspace() {
       </div>
       
       {showPreScanConfirm && pendingSource && preScanStats && (
-        <SourceAddedModal 
-          source={pendingSource}
-          stats={preScanStats}
-          onAddToWorkspace={handleAddToWorkspace}
-          onChangeSource={handleChangeSourceFromModal}
-          onCancel={handleCancelSourceSelection}
-          onAddFolder={() => { handleAddToWorkspace(); handleTriggerFolderPicker(); }}
-          onAddZip={() => { handleAddToWorkspace(); handleTriggerZipPicker(); }}
-        />
+		<SourceAddedModal 
+		  source={pendingSource}
+		  stats={preScanStats}
+		  analysisElapsed={lastAnalysisElapsed}
+		  onAddToWorkspace={handleAddToWorkspace}
+		  onChangeSource={handleChangeSourceFromModal}
+		  onCancel={handleCancelSourceSelection}
+		  onAddFolder={() => { handleAddToWorkspace(); handleTriggerFolderPicker(); }}
+		  onAddZip={() => { handleAddToWorkspace(); handleTriggerZipPicker(); }}
+		  isLicensed={isLicensed}
+		  onLicenseRequired={handleLicenseRequired}
+		/>
       )}
 
       
@@ -806,7 +1181,7 @@ export default function Workspace() {
                 onClick={() => handleSelectSourceType('folderOrDrive')}
                 className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
               >
-                <img src="/Assets/pdr-folder.png" className="w-5 h-5 object-contain" alt="Folder" />
+                <img src="./assets//pdr-folder.png" className="w-5 h-5 object-contain" alt="Folder" />
                 <div>
                   <div className="font-medium text-foreground">Add Folder or Drive</div>
                   <div className="text-xs text-muted-foreground">Select a folder or scan a drive</div>
@@ -816,10 +1191,10 @@ export default function Workspace() {
                 onClick={() => handleSelectSourceType('zip')}
                 className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-secondary/30 transition-colors text-left"
               >
-                <img src="/Assets/pdr-zip.png" className="w-5 h-5 object-contain" alt="ZIP" />
+                <img src="./assets//pdr-zip.png" className="w-5 h-5 object-contain" alt="ZIP/RAR" />
                 <div>
-                  <div className="font-medium text-foreground">Add ZIP Archive</div>
-                  <div className="text-xs text-muted-foreground">Import a .zip file</div>
+                  <div className="font-medium text-foreground">Add ZIP/RAR Archive</div>
+                  <div className="text-xs text-muted-foreground">Import a .zip or .rar file</div>
                 </div>
               </button>
             </div>
@@ -833,6 +1208,19 @@ export default function Workspace() {
           </Card>
         </div>
       )}
+
+      {/* Network Scan Modal */}
+      {showNetworkScanModal && networkScanInfo && (
+        <NetworkScanModal
+          sourcePath={networkScanInfo.path}
+          sourceType={networkScanInfo.type}
+          storageLabel={networkScanInfo.label}
+          sourceName={networkScanInfo.path.split(/[/\\]/).pop() || 'Selected Source'}
+          onComplete={handleNetworkScanComplete}
+          onCancel={handleNetworkScanCancel}
+          onProceedWithoutSize={handleNetworkScanProceedWithoutSize}
+        />
+      )}
       
       <TourOverlay 
         steps={TOUR_STEPS}
@@ -841,10 +1229,11 @@ export default function Workspace() {
         onComplete={() => setShowTour(false)}
       />
     </div>
+  </>
   );
 }
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -894,9 +1283,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
       <div className="px-6 py-8 flex items-center cursor-pointer" onClick={() => onDashboardClick()}>
         <>
-          <img src="/Assets/pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain dark:hidden" />
+          <img src="./assets//pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain dark:hidden" />
           <div className="hidden dark:flex flex-col items-center">
-            <img src="/Assets/pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-10 w-auto object-contain" />
+            <img src="./assets//pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-10 w-auto object-contain" />
             <span className="text-foreground font-semibold text-sm tracking-wide mt-1">PDR</span>
           </div>
         </>
@@ -906,7 +1295,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         {/* DASHBOARD LINK */}
         <div>
           <SidebarItem 
-            icon={<img src="/Assets/pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
+            icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
             label="Workspace" 
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
@@ -956,8 +1345,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               onClick={onAddSource}
               data-tour="add-source"
             >
-              <img src="/Assets/pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Source
+              <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Source
             </Button>
+            <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
             <Button 
               variant="outline"
               size="sm" 
@@ -965,7 +1355,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               disabled={!hasSelectedSources}
               onClick={onRemoveSource}
             >
-              <img src="/Assets/pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
+              <img src="./assets//pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
             </Button>
           </div>
         </div>
@@ -976,16 +1366,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-6">Guidance</h3>
         <div className="space-y-1 px-4">
           <SidebarItem icon={<PlayCircle className="w-4 h-4 opacity-60" />} label="Quick Tour" onClick={onStartTour} />
-          <SidebarItem icon={<img src="/Assets/pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
-          <SidebarItem icon={<img src="/Assets/pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
-          <SidebarItem icon={<img src="/Assets/pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
+          <SidebarItem icon={<img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
+          <SidebarItem icon={<img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
+          <SidebarItem icon={<img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
         </div>
       </div>
 
       {/* UTILITY SECTION - BOTTOM */}
       <div className="p-4 border-t border-sidebar-border space-y-1">
-        <SidebarItem icon={<img src="/Assets/pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
-        <SidebarItem icon={<img src="/Assets/pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
+        <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
+        <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
+        <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
       </div>
     </div>
   );
@@ -1049,7 +1440,9 @@ function MainContent({
   hasCompletedFix,
   setHasCompletedFix,
   savedReportId,
-  setSavedReportId
+  setSavedReportId,
+  isLicensed,
+  onActivateLicense
 }: { 
   sources: Source[],
   activeSource: Source | null,
@@ -1075,11 +1468,13 @@ function MainContent({
   hasCompletedFix: boolean,
   setHasCompletedFix: (value: boolean) => void,
   savedReportId: string | null,
-  setSavedReportId: (id: string | null) => void
+  setSavedReportId: (id: string | null) => void,
+  isLicensed: boolean,
+  onActivateLicense: () => void
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
-     return <EmptyState onAddFirstSource={onAddAnother} />;
+     return <EmptyState onAddFirstSource={onAddAnother} isLicensed={isLicensed} onActivateLicense={onActivateLicense} onNavigateToBestPractices={onNavigateToBestPractices} />;
   }
 
   // NOTE: Previous CompletionState component logic is now merged into DashboardPanel
@@ -1141,7 +1536,7 @@ function DashboardPanel({
   savedReportId: string | null, setSavedReportId: (id: string | null) => void
 }) {
   // Use selected sources for aggregation
-  const selectedSources = sources.filter(s => s.selected && s.confirmed);
+  const selectedSources = sources.filter(s => s.selected);
   const hasSelection = selectedSources.length > 0;
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
@@ -1177,7 +1572,7 @@ function DashboardPanel({
     }
   };
 
-  // Mock stats generator based on SELECTED sources and file type filters
+  // Stats generator based on SELECTED sources and file type filters
   const getStats = () => {
     if (!hasSelection) {
       return {
@@ -1221,11 +1616,45 @@ function DashboardPanel({
 
   const stats = getStats();
 
-  // Mock confidence stats based on filtered totals
-  const totalMediaFiles = stats.photos + stats.videos;
-  const highConf = Math.floor(totalMediaFiles * 0.65);
-  const medConf = Math.floor(totalMediaFiles * 0.25);
-  const lowConf = Math.floor(totalMediaFiles * 0.10);
+  // Get real confidence stats from analysis results, filtered by includePhotos/includeVideos
+  let highConf = 0;
+  let medConf = 0;
+  let lowConf = 0;
+  let duplicatesCount = 0;
+  
+  for (const source of selectedSources) {
+    const realResult = fileResults?.[source.id];
+    if (realResult?.files) {
+      for (const file of realResult.files) {
+        // Apply the same photo/video filters as Combined Analysis
+        const isPhoto = file.type === 'photo';
+        const isVideo = file.type === 'video';
+        if ((isPhoto && !includePhotos) || (isVideo && !includeVideos)) {
+          continue; // Skip files that don't match current filters
+        }
+        
+        // Count by confidence level
+        if (file.dateConfidence === 'confirmed') {
+          highConf++;
+        } else if (file.dateConfidence === 'recovered') {
+          medConf++;
+        } else if (file.dateConfidence === 'marked') {
+          lowConf++;
+        }
+      }
+    }
+    // Duplicates must also respect photo/video filters
+    if (realResult?.duplicateFiles) {
+      for (const dup of realResult.duplicateFiles) {
+        const isPhoto = dup.type === 'photo';
+        const isVideo = dup.type === 'video';
+        if ((isPhoto && !includePhotos) || (isVideo && !includeVideos)) {
+          continue;
+        }
+        duplicatesCount++;
+      }
+    }
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
@@ -1246,7 +1675,7 @@ function DashboardPanel({
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-foreground">Date Summary</h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <ConfidenceCard 
                 level="Confirmed" 
                 count={highConf} 
@@ -1286,7 +1715,24 @@ function DashboardPanel({
                 isActive={false}
                 onNavigateToBestPractices={onNavigateToBestPractices}
               />
+			  <ConfidenceCard 
+                level="Duplicates" 
+                count={duplicatesCount} 
+                percentage={0}
+                description="Hash-matched duplicates safely skipped."
+                color="text-amber-600"
+                bgColor="bg-amber-50"
+                borderColor="border-amber-200"
+                icon={<Copy className="w-5 h-5" />}
+                tooltip="Exact duplicate files detected by content hash (SHA-256). These are excluded from the output to avoid redundancy."
+                isActive={false}
+                onNavigateToBestPractices={onNavigateToBestPractices}
+              />
             </div>
+            {/* Total scanned summary line */}
+            <p className="text-sm text-muted-foreground mt-4 text-center">
+              {stats.totalFiles.toLocaleString()} files scanned
+            </p>
           </section>
         )}
 
@@ -1294,7 +1740,7 @@ function DashboardPanel({
           <div className="flex items-start justify-between gap-6 mb-8 border-b border-border pb-8">
             <div className="flex items-start gap-6">
               <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
-                <img src="/Assets/pdr-combined-analysis.png" className="w-8 h-8 object-contain" alt="Combined Analysis" />
+                <img src="./assets//pdr-combined-analysis.png" className="w-8 h-8 object-contain" alt="Combined Analysis" />
               </div>
               <div>
                 <div className="flex items-center gap-3 mb-1">
@@ -1349,7 +1795,7 @@ function DashboardPanel({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6 mb-8">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Sources</div>
               <div className="text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>{stats.sourceCount.toLocaleString()}</div>
@@ -1367,6 +1813,12 @@ function DashboardPanel({
               </div>
             </div>
             <div>
+              <div className="text-sm text-muted-foreground mb-1">Total Files</div>
+              <div className="text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
+                {stats.totalFiles.toLocaleString()}
+              </div>
+            </div>
+            <div>
               <div className="text-sm text-muted-foreground mb-1">Total Size</div>
               <div className="text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>{stats.sizeGB.toFixed(1)} GB</div>
             </div>
@@ -1375,11 +1827,13 @@ function DashboardPanel({
           <div className="flex items-center justify-between pt-4">
              <div className="flex gap-4">
                <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
-                 <img src="/Assets/pdr-folder.png" className="w-4 h-4 object-contain" alt="Folder" /> Add Folder / Drive
+                 <img src="./assets//pdr-folder.png" className="w-4 h-4 object-contain" alt="Folder" /> Add Folder / Drive
                </Button>
+               <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
                <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
-                 <img src="/Assets/pdr-zip.png" className="w-4 h-4 object-contain" alt="ZIP" /> Add ZIP Archive
+                 <img src="./assets//pdr-zip.png" className="w-4 h-4 object-contain" alt="ZIP" /> Add ZIP/RAR Archive
                </Button>
+               <PerformanceNudge type="path" onNavigateToBestPractices={onNavigateToBestPractices} />
              </div>
              {/* Only show "Analysis complete" if complete */}
              {isComplete && (
@@ -1396,7 +1850,7 @@ function DashboardPanel({
             <h2 className="text-lg font-semibold text-foreground mb-4">Output Preview</h2>
             <Card className="flex flex-col md:flex-row items-center gap-6 p-5" data-tour="destination">
               <div className="p-4 bg-secondary/50 rounded-full">
-                <img src="/Assets/pdr-destination-drive.png" className="w-6 h-6 object-contain" alt="Destination Drive" />
+                <img src="./assets//pdr-destination-drive.png" className="w-6 h-6 object-contain" alt="Destination Drive" />
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
@@ -1414,7 +1868,7 @@ function DashboardPanel({
                     </div>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No destination selected. Click "Change Destination" to choose where to save fixed files.</p>
+                  <p className="text-sm text-muted-foreground">No destination selected. Click "Select Destination" to choose where to save fixed files.</p>
                 )}
               </div>
               <div className="flex gap-2">
@@ -1428,7 +1882,15 @@ function DashboardPanel({
                     <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
                   </Button>
                 )}
-                <Button variant="outline" onClick={handleChangeDestination} data-testid="button-change-destination">Change Destination</Button>
+                <Button 
+                  variant={destinationPath ? "outline" : "default"}
+                  onClick={handleChangeDestination} 
+                  data-testid="button-change-destination"
+                  className={!destinationPath ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md" : ""}
+                >
+                  {destinationPath ? "Change Destination" : "Select Destination"}
+                </Button>
+                <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
               </div>
             </Card>
         </section>
@@ -1444,7 +1906,7 @@ function DashboardPanel({
         >
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
-                <span className="text-foreground font-bold">{(results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : stats.totalFiles).toLocaleString()}</span> files ready to process
+                <span className="text-foreground font-bold">{stats.totalFiles.toLocaleString()}</span> files ready to process
                 {!destinationPath && <span className="ml-2 text-amber-600 dark:text-amber-400">— Select a destination to continue</span>}
                 {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
@@ -1468,6 +1930,7 @@ function DashboardPanel({
                >
                  <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" /> Run Fix
                </Button>
+                <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
              </div>
           </div>
         </motion.div>
@@ -1476,7 +1939,7 @@ function DashboardPanel({
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={results} />}
       {showFixModal && <FixProgressModal 
         onClose={() => setShowFixModal(false)} 
-        totalFiles={results?.fixed ? results.fixed + results.unchanged + (results.skipped || 0) : 1248} 
+        totalFiles={stats.totalFiles}
         destinationPath={destinationPath}
         sources={selectedSources}
         fileResults={fileResults}
@@ -1490,6 +1953,8 @@ function DashboardPanel({
           setReportSavedMessage(true);
           setTimeout(() => setReportSavedMessage(false), 5000);
         }}
+        includePhotos={includePhotos}
+        includeVideos={includeVideos}
       />}
       {showPostFixReport && <PostFixReportModal 
         onClose={() => setShowPostFixReport(false)} 
@@ -1705,7 +2170,12 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
   );
 }
 
-function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
+function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigateToBestPractices }: { 
+  onAddFirstSource: () => void;
+  isLicensed: boolean;
+  onActivateLicense: () => void;
+  onNavigateToBestPractices?: () => void;
+}) {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       <div className="flex-1 flex items-center justify-center p-8">
@@ -1722,38 +2192,237 @@ function EmptyState({ onAddFirstSource }: { onAddFirstSource: () => void }) {
               className="mb-8"
             >
               <>
-                <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto dark:hidden" />
+                <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto dark:hidden" />
                 <div className="hidden dark:flex flex-col items-center">
-                  <img src="/Assets/pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-16 w-auto object-contain" />
+                  <img src="./assets//pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-16 w-auto object-contain" />
                   <span className="text-foreground font-semibold text-lg tracking-wide mt-1">PDR</span>
                 </div>
               </>
             </motion.div>
             
             <h1 className="text-4xl font-semibold text-foreground mb-4">Your workspace is empty</h1>
-            <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
-              Add a folder, ZIP archive, or drive to begin analysing your photos and videos.
-            </p>
             
-            <div className="flex flex-col gap-3 justify-center items-center">
-              <Button 
-                size="lg" 
-                className="px-12 h-12 text-base shadow-lg shadow-primary/25"
-                onClick={onAddFirstSource}
-              >
-                Add Your First Source
-              </Button>
-              <button
-                onClick={() => {}}
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Explore the Workspace
-              </button>
-            </div>
+            {isLicensed ? (
+              // Licensed user - show Add Source CTA
+              <>
+                <p className="text-lg text-muted-foreground mb-8 leading-relaxed inline-flex items-center justify-center gap-1 flex-wrap">
+                  Add a folder, ZIP/RAR archive, or drive to begin analysing your photos and videos.
+                  <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
+                </p>
+                
+                <div className="flex flex-col gap-4 justify-center items-center">
+                  <Button 
+                    size="lg" 
+                    className="px-12 h-12 text-base shadow-lg shadow-primary/25"
+                    onClick={onAddFirstSource}
+                  >
+                    Add Your First Source
+                  </Button>
+                  <button
+                    onClick={() => {}}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Explore the Workspace
+                  </button>
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      const event = new CustomEvent('open-reports-history');
+                      window.dispatchEvent(event);
+                    }}
+                    className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50 mt-4"
+                  >
+                    <FileText className="w-4 h-4 mr-2" /> View Reports History
+                  </Button>
+                </div>
+              </>
+            ) : (
+              // Unlicensed user - show Activate CTA
+              <>
+                <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
+                  Ready to rescue your photos? Activate your license to get started.
+                </p>
+                
+                <div className="flex flex-col gap-4 justify-center items-center">
+                  <Button 
+                    size="lg" 
+                    className="px-12 h-12 text-base shadow-lg shadow-primary/25 gap-2"
+                    onClick={onActivateLicense}
+                  >
+                    <Sparkles className="w-5 h-5" />
+                    Activate License
+                  </Button>
+                  
+                  <p className="text-sm text-muted-foreground max-w-md leading-relaxed mb-4">
+                    Already used Photo Date Rescue before? You can still access your past reports.
+                  </p>
+                  
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      const event = new CustomEvent('open-reports-history');
+                      window.dispatchEvent(event);
+                    }}
+                    className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                  >
+                    <FileText className="w-4 h-4 mr-2" /> View Reports History
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </motion.div>
       </div>
     </div>
+  );
+}
+
+function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConfirmCancel, onDismissCancel }: { 
+  message: string; 
+  percent?: number; 
+  onCancel?: () => void;
+  showCancelConfirm?: boolean;
+  onConfirmCancel?: () => void;
+  onDismissCancel?: () => void;
+}) {
+  const [elapsed, setElapsed] = React.useState(0);
+  const startTimeRef = React.useRef(Date.now());
+  const lastPercentRef = React.useRef(0);
+  const lastPercentTimeRef = React.useRef(Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    if (percent !== undefined && percent > lastPercentRef.current) {
+      lastPercentRef.current = percent;
+      lastPercentTimeRef.current = Date.now();
+    }
+  }, [percent]);
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const estimatedRemaining = React.useMemo(() => {
+    if (!percent || percent < 3) return null;
+    const elapsedMs = Date.now() - startTimeRef.current;
+    const totalEstMs = (elapsedMs / percent) * 100;
+    const remainMs = totalEstMs - elapsedMs;
+    return Math.max(0, Math.round(remainMs / 1000));
+  }, [percent, elapsed]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-border"
+      >
+        <div className="mb-8">
+          <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 relative">
+            {showCancelConfirm ? (
+              <img src="./assets/pdr-logo_transparent.png" className="w-10 h-10 object-contain" alt="PDR" />
+            ) : (
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            )}
+          </div>
+          <h2 className="text-2xl font-semibold text-foreground mb-2">
+            {showCancelConfirm ? 'Cancel Analysis?' : 'Analyzing...'}
+          </h2>
+          <p className="text-muted-foreground">
+            {showCancelConfirm ? 'Analysis is still running in the background' : 'Reading metadata from your files'}
+          </p>
+        </div>
+
+        <div className="space-y-2 mb-6">
+          <div className="flex justify-between text-sm font-medium">
+            <span>{percent !== undefined && percent > 0 
+              ? (message.includes('Unpacking') || message.includes('Unpacked') ? 'Unpacking...' : 'Processing...') 
+              : 'Preparing...'}</span>
+            <span>{percent !== undefined && percent > 0 ? `${percent}%` : ''}</span>
+          </div>
+          {percent !== undefined && percent > 0 ? (
+            <Progress value={percent} className="h-2" />
+          ) : (
+            <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+              <div className="h-full bg-primary/50 animate-pulse" style={{ width: '100%' }} />
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground text-left pt-1">
+            {message}
+          </p>
+          <div className="flex justify-between text-xs text-muted-foreground pt-2">
+            <span>Elapsed: {formatTime(elapsed)}</span>
+            {estimatedRemaining !== null && percent !== undefined && percent >= 3 && (
+              <span>~{formatTime(estimatedRemaining)} remaining</span>
+            )}
+          </div>
+        </div>
+
+        {!showCancelConfirm ? (
+          onCancel && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground border-muted-foreground/30 hover:border-muted-foreground/50"
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+          )
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-left space-y-3"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <h4 className="text-sm font-semibold text-foreground">Stop this analysis?</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Any progress will be lost and you'll need to re-analyse this source. Large libraries or network sources can take time — closing other apps may help speed things up.
+                </p>
+                <p className="text-xs text-muted-foreground italic mt-1.5">
+                  Tip: You can open another PDR window from your Start Menu if needed.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="flex-1 border-muted-foreground/30" 
+                onClick={onDismissCancel}
+              >
+                Continue Analysis
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={onConfirmCancel}
+              >
+                Yes, Cancel
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -2009,21 +2678,8 @@ function PreviewModal({ onClose, results, fileResults }: {
   const [filterConfidence, setFilterConfidence] = useState<'all' | 'confirmed' | 'recovered' | 'marked'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   
-  const mockFileData = [
-    { filename: "IMG_20240115_143022.jpg", suggestedFilename: "2024-01-15_14-30-22.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 2500000, derivedDate: "2024-01-15T14:30:22.000Z", originalDate: null },
-    { filename: "DSC_9921.jpg", suggestedFilename: "2023-08-12_09-15-00.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 3200000, derivedDate: "2023-08-12T09:15:00.000Z", originalDate: null },
-    { filename: "IMG-20180512-WA0042.jpg", suggestedFilename: "2018-05-12_12-00-00_WA_FN.jpg", dateConfidence: "recovered" as const, dateSource: "WhatsApp filename", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 1800000, derivedDate: "2018-05-12T12:00:00.000Z", originalDate: null },
-    { filename: "VID_20200610_164530.mp4", suggestedFilename: "2020-06-10_16-45-30.mp4", dateConfidence: "recovered" as const, dateSource: "Filename (VID datetime)", path: "", extension: ".mp4", type: "video" as const, sizeBytes: 45000000, derivedDate: "2020-06-10T16:45:30.000Z", originalDate: null },
-    { filename: "Screenshot_2022-03-01_10-00-00.png", suggestedFilename: "2022-03-01_10-00-00_FN.png", dateConfidence: "recovered" as const, dateSource: "Filename (Screenshot)", path: "", extension: ".png", type: "photo" as const, sizeBytes: 850000, derivedDate: "2022-03-01T10:00:00.000Z", originalDate: null },
-    { filename: "vacation_photo.jpg", suggestedFilename: "2024-12-19_08-30-15.jpg", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 2100000, derivedDate: "2024-12-19T08:30:15.000Z", originalDate: null },
-    { filename: "birthday_party.mp4", suggestedFilename: "2023-06-22_19-45-00.mp4", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)", path: "", extension: ".mp4", type: "video" as const, sizeBytes: 120000000, derivedDate: "2023-06-22T19:45:00.000Z", originalDate: null },
-    { filename: "photo_2021_summer.jpg", suggestedFilename: "2021-07-15_12-00-00_FN.jpg", dateConfidence: "recovered" as const, dateSource: "Filename (date with separators)", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 1950000, derivedDate: "2021-07-15T12:00:00.000Z", originalDate: null },
-    { filename: "IMG_1234.HEIC", suggestedFilename: "2022-11-28_14-22-33.heic", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal", path: "", extension: ".heic", type: "photo" as const, sizeBytes: 4200000, derivedDate: "2022-11-28T14:22:33.000Z", originalDate: null },
-    { filename: "sunset_beach.jpg", suggestedFilename: "2024-08-05_18-45-00.jpg", dateConfidence: "confirmed" as const, dateSource: "Google Takeout JSON", path: "", extension: ".jpg", type: "photo" as const, sizeBytes: 3800000, derivedDate: "2024-08-05T18:45:00.000Z", originalDate: null },
-  ];
-  
   const realFiles = Object.values(fileResults || {}).flatMap(source => source.files || []);
-  const allFiles = realFiles.length > 0 ? realFiles : mockFileData;
+  const allFiles = realFiles;
   
   const filteredFiles = allFiles.filter(file => {
     const matchesConfidence = filterConfidence === 'all' || file.dateConfidence === filterConfidence;
@@ -2233,11 +2889,13 @@ const TRUSTPILOT_URL = 'https://www.trustpilot.com/review/photodaterescue.com';
 function ReviewPromptAccordion({ 
   confirmedCount, 
   recoveredCount, 
+  markedCount,
   totalFiles,
   onDismiss 
 }: { 
   confirmedCount: number;
   recoveredCount: number;
+  markedCount: number;
   totalFiles: number;
   onDismiss: () => void;
 }) {
@@ -2293,17 +2951,24 @@ function ReviewPromptAccordion({
     }
   }, [dontAskAgainChecked]);
   
-  const successRate = totalFiles > 0 ? (confirmedCount + recoveredCount) / totalFiles : 0;
+  const actualTotal = confirmedCount + recoveredCount + markedCount;
+  const successRate = actualTotal > 0 ? (confirmedCount + recoveredCount) / actualTotal : 0;
   const successPercent = Math.round(successRate * 100);
   const shouldShow = successRate >= 0.88 && !permanentlyDismissed && !dismissed;
   
   if (!shouldShow) return null;
   
-  const handleLeaveReview = () => {
+const handleLeaveReview = async () => {
+  try {
+    const { openExternalUrl } = await import('@/lib/electron-bridge');
+    await openExternalUrl(TRUSTPILOT_URL);
+  } catch (error) {
+    // Fallback for non-Electron environment
     window.open(TRUSTPILOT_URL, '_blank', 'noopener,noreferrer');
-    setUserHasInteracted(true);
-    setIsExpanded(false);
-  };
+  }
+  setUserHasInteracted(true);
+  setIsExpanded(false);
+};
   
   const handleToggle = () => {
     setUserHasInteracted(true);
@@ -2444,100 +3109,390 @@ function ReviewPromptAccordion({
   );
 }
 
-function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileResults, onViewReport, onReportSaved }: { 
+function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' | 'destination' | 'path'; onNavigateToBestPractices?: () => void }) {
+  const [isVisible, setIsVisible] = React.useState(false);
+  const hideTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const message = type === 'source'
+    ? <>If your network drive or cloud storage doesn't appear when browsing, try pasting the full path directly into the file picker.<br /><br />For example: <strong>\\MyCloud\Photos\2022</strong><br /><br />This is the most reliable way to access files on a NAS, home cloud, or shared network drive.</>
+    : type === 'destination'
+    ? <>For best performance, connect your destination drive directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>
+    : <>For best results, save your sources (folders and ZIPs) close to the root of your drive.<br /><br />For example, <strong>C:\Photos</strong> rather than <strong>C:\Users\Name\Documents\Backups\Old\Photos</strong>. Shorter paths help PDR read date information more reliably.</>;
+
+  const showTooltip = () => {
+    if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null; }
+    setIsVisible(true);
+  };
+
+  const scheduleHide = () => {
+    hideTimeoutRef.current = setTimeout(() => setIsVisible(false), 250);
+  };
+
+  React.useEffect(() => {
+    return () => { if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current); };
+  }, []);
+
+  return (
+    <div className="relative inline-flex items-center ml-1">
+      <button
+        onMouseEnter={showTooltip}
+        onMouseLeave={scheduleHide}
+        onClick={(e) => { e.stopPropagation(); setIsVisible(!isVisible); }}
+        className="p-0.5 text-[#9b8bb8] hover:text-[#7b6b98] transition-colors"
+        aria-label="Performance tip"
+        type="button"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+      {isVisible && (
+        <div
+          className={`absolute w-72 p-3 bg-background border border-[#9b8bb8]/30 rounded-lg shadow-lg text-xs text-muted-foreground z-[60] ${
+            type === 'source' 
+              ? 'top-full left-1/2 -translate-x-1/2 mt-2' 
+              : 'bottom-full left-1/2 -translate-x-1/2 mb-2'
+          }`}
+          onMouseEnter={showTooltip}
+          onMouseLeave={scheduleHide}
+        >
+          <div className="font-medium text-foreground mb-1 text-xs">Performance Tip</div>
+          <div>{message}</div>
+          {onNavigateToBestPractices && (
+            <div className="mt-2 pt-2 border-t border-[#9b8bb8]/20">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsVisible(false);
+                  onNavigateToBestPractices();
+                }}
+                className="font-bold text-foreground hover:underline cursor-pointer text-xs"
+              >
+                Best Practices
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileResults, onViewReport, onReportSaved, includePhotos, includeVideos }: { 
   onClose: () => void, 
   totalFiles: number, 
   destinationPath: string | null, 
   sources?: Source[],
   fileResults?: Record<string, SourceAnalysisResult>,
   onViewReport: () => void,
-  onReportSaved?: (reportId: string) => void 
+  onReportSaved?: (reportId: string) => void,
+  includePhotos: boolean,
+  includeVideos: boolean 
 }) {
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [processed, setProcessed] = useState(0);
   const [isElectronEnv, setIsElectronEnv] = useState(false);
   const [reportSaved, setReportSaved] = useState(false);
+  const [skippedExisting, setSkippedExisting] = useState(0);
+  const [showCancelFixConfirm, setShowCancelFixConfirm] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [totalTime, setTotalTime] = useState(0);
+  const startTimeRef = React.useRef(Date.now());
+  const fixSnapshotRef = React.useRef<{
+    // Display counts
+    totalScanned: number;
+    confirmed: number;
+    recovered: number;
+    marked: number;
+    duplicatesRemoved: number;
+    skippedExisting: number;
+    duplicateFiles: Array<{ filename: string; duplicateOf: string; duplicateMethod?: 'hash' | 'heuristic' }>;
+    // Full report data for persistence
+    reportData: {
+      sources: Array<{ path: string; type: string; label: string }>;
+      destinationPath: string;
+      counts: { confirmed: number; recovered: number; marked: number; total: number };
+      duplicatesRemoved: number;
+      duplicateFiles: Array<{ filename: string; duplicateOf: string; duplicateMethod?: 'hash' | 'heuristic' }>;
+      totalScanned: number;
+      files: Array<{ originalFilename: string; newFilename: string; confidence: string; dateSource: string; sourcePath: string; exifWritten?: boolean; exifSource?: string }>;
+    };
+  } | null>(null);
 
+    const handleCancelFix = async () => {
+    setIsCancelling(true);
+    const { cancelCopyFiles } = await import('@/lib/electron-bridge');
+    await cancelCopyFiles();
+    onClose();
+  };
+  
   useEffect(() => {
     import('@/lib/electron-bridge').then(({ isElectron }) => {
       setIsElectronEnv(isElectron());
     });
   }, []);
-
+  
   useEffect(() => {
     if (isComplete) return;
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [isComplete]);
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const estimatedRemaining = React.useMemo(() => {
+    if (progress < 3) return null;
+    const elapsedMs = Date.now() - startTimeRef.current;
+    const totalEstMs = (elapsedMs / progress) * 100;
+    const remainMs = totalEstMs - elapsedMs;
+    return Math.max(0, Math.round(remainMs / 1000));
+  }, [progress, elapsed]);
+
+  useEffect(() => {
+    if (isComplete || !destinationPath) return;
     
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        const next = prev + 1;
-        if (next >= 100) {
-          setIsComplete(true);
-          return 100;
+    const copyFilesAsync = async () => {
+      const { copyFiles, onCopyProgress, isElectron } = await import('@/lib/electron-bridge');
+      
+      if (!isElectron()) {
+        // Fake progress for non-Electron
+        const interval = setInterval(() => {
+          setProgress(prev => {
+            const next = prev + 2;
+            if (next >= 100) {
+              setIsComplete(true);
+			  setShowCancelFixConfirm(false);
+              return 100;
+            }
+            return next;
+          });
+          setProcessed(prev => Math.min(prev + Math.ceil(totalFiles / 50), totalFiles));
+        }, 50);
+        return () => clearInterval(interval);
+      }
+      
+      // Build file list for copying (using Set to prevent duplicates)
+      const filesToCopy: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }> = [];
+      const zipPaths: Record<string, string> = {};
+      const addedPaths = new Set<string>();
+      
+      Object.entries(fileResults || {}).forEach(([sourceKey, sourceData]) => {
+        const source = sources?.find(s => s.id === sourceKey || s.path === sourceData.sourcePath);
+        // Skip sources that are not selected
+        if (!source?.selected) return;
+        const sourceType = source?.type || 'folder';
+        
+        if (sourceType === 'zip' && sourceData.sourcePath) {
+          zipPaths[sourceData.sourcePath] = sourceData.sourcePath;
         }
-        return next;
+        
+        sourceData.files.forEach(file => {
+          // Skip if we've already added this file (prevent duplicates)
+          if (addedPaths.has(file.path)) return;
+          
+          // Filter by Photos/Videos toggles
+          if (file.type === 'photo' && !includePhotos) return;
+          if (file.type === 'video' && !includeVideos) return;
+          
+          addedPaths.add(file.path);
+          
+          filesToCopy.push({
+            sourcePath: file.path,
+            newFilename: file.suggestedFilename || file.filename,
+            sourceType: (sourceType === 'zip' && (sourceData as any)._extractedTempDir) ? 'folder' : (sourceType === 'zip' ? 'zip' : 'folder'),
+            derivedDate: file.derivedDate,
+            dateConfidence: file.dateConfidence,
+            dateSource: file.dateSource,
+            isDuplicate: file.isDuplicate,
+            duplicateOf: file.duplicateOf,
+            originSourcePath: sourceData.sourcePath
+          });
+        });
+    });
+      
+      // Listen for progress updates
+      onCopyProgress((prog) => {
+        setProcessed(prog.current);
+        setProgress(Math.round((prog.current / prog.total) * 100));
       });
-      setProcessed(prev => Math.min(Math.floor((progress / 100) * totalFiles), totalFiles));
-    }, 50);
+      
+      // Fetch current settings
+      const { getSettings, prescanDestination } = await import('@/lib/electron-bridge');
+      const settings = await getSettings();
+      
+      // Pre-scan destination for existing files (cross-run duplicate prevention)
+      let existingDestinationHashes: Record<string, string> | undefined;
+      let existingDestinationHeuristics: Record<string, string> | undefined;
+      if (settings.skipDuplicates) {
+        const prescanResult = await prescanDestination(destinationPath);
+        if (prescanResult.success && prescanResult.data) {
+          existingDestinationHashes = prescanResult.data.hashes;
+          existingDestinationHeuristics = prescanResult.data.heuristics;
+        }
+      }
+      
+      // Actually copy files
+      const folderStructure = localStorage.getItem('pdr-folder-structure') as 'year' | 'year-month' | 'year-month-day' || 'year';
+      const result = await copyFiles({
+        files: filesToCopy,
+        destinationPath: destinationPath,
+        zipPaths,
+        folderStructure,
+        settings: {
+          skipDuplicates: settings.skipDuplicates,
+          thoroughDuplicateMatching: settings.thoroughDuplicateMatching,
+          writeExif: settings.writeExif,
+          exifWriteConfirmed: settings.exifWriteConfirmed,
+          exifWriteRecovered: settings.exifWriteRecovered,
+          exifWriteMarked: settings.exifWriteMarked
+        },
+        existingDestinationHashes,
+        existingDestinationHeuristics
+      });
+      
+      setProgress(100);
+      setProcessed(totalFiles);
+      // Build complete snapshot ONCE - this is the single source of truth
+      const writeDuplicatesRemoved = result.duplicatesRemoved || 0;
+      const writeDuplicateFiles = result.duplicateFiles || [];
+      const writeSkippedExisting = result.skippedExisting || 0;
+      
+      // Build EXIF result lookup from copy results
+      const exifResultMap = new Map<string, { exifWritten: boolean; exifSource?: string }>();
+      if (result.results) {
+        for (const r of result.results) {
+          if (r.success && r.sourcePath) {
+            exifResultMap.set(r.sourcePath, {
+              exifWritten: r.exifWritten || false,
+              exifSource: r.exifSource
+            });
+          }
+        }
+      }
+      
+      // Build source info
+      const sourceInfos = (sources || []).filter(s => s.path).map(s => ({
+        path: s.path!,
+        type: s.type,
+        label: s.label
+      }));
+      
+      // Build file list and counts in one pass
+      const allFiles: Array<{ originalFilename: string; newFilename: string; confidence: string; dateSource: string; sourcePath: string }> = [];
+      let confirmedCount = 0;
+      let recoveredCount = 0;
+      let markedCount = 0;
+      
+      Object.values(fileResults || {}).forEach((sourceData, index) => {
+        // Get source key to check selection
+        const sourceKeys = Object.keys(fileResults || {});
+        const sourceKey = sourceKeys[index];
+        const source = sources?.find(s => s.id === sourceKey || s.path === sourceData.sourcePath);
+        if (!source?.selected) return;
+        
+        (sourceData.files || []).forEach(file => {
+          if (file.isDuplicate) return;
+          if (file.type === 'photo' && !includePhotos) return;
+          if (file.type === 'video' && !includeVideos) return;
+          
+          // Count by confidence
+          if (file.dateConfidence === 'confirmed') confirmedCount++;
+          else if (file.dateConfidence === 'recovered') recoveredCount++;
+          else markedCount++;
+          
+          // Build file record with EXIF result from copy operation
+          const exifResult = exifResultMap.get(file.path);
+          allFiles.push({
+            originalFilename: file.filename,
+            newFilename: file.suggestedFilename || file.filename,
+            confidence: file.dateConfidence,
+            dateSource: file.dateSource,
+            sourcePath: sourceData.sourcePath,
+            exifWritten: exifResult?.exifWritten || false,
+            exifSource: exifResult?.exifSource
+          });
+        });
+      });
+      
+      // Set complete snapshot BEFORE triggering re-render
+      fixSnapshotRef.current = {
+        totalScanned: totalFiles,
+        confirmed: confirmedCount,
+        recovered: recoveredCount,
+        marked: markedCount,
+        duplicatesRemoved: writeDuplicatesRemoved,
+        skippedExisting: writeSkippedExisting,
+        duplicateFiles: writeDuplicateFiles,
+        reportData: {
+          sources: sourceInfos,
+          destinationPath: destinationPath,
+          counts: {
+            confirmed: confirmedCount,
+            recovered: recoveredCount,
+            marked: markedCount,
+            total: allFiles.length
+          },
+          duplicatesRemoved: writeDuplicatesRemoved,
+          duplicateFiles: writeDuplicateFiles,
+          totalScanned: totalFiles,
+          files: allFiles
+        }
+      };
+      
+      setSkippedExisting(writeSkippedExisting);
+      setTotalTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      setIsComplete(true);
+      
+      // Play completion sound if enabled
+      const soundEnabled = localStorage.getItem('pdr-completion-sound') !== 'false';
+		if (soundEnabled) {
+		  const { playCompletionSound, flashTaskbar } = await import('@/lib/electron-bridge');
+		  await playCompletionSound();
+		  await flashTaskbar();
+		}
+
+      if (!result.success) {
+        console.error('File copy failed:', result.error);
+      }
+    };
     
-    return () => clearInterval(interval);
-  }, [isComplete, progress, totalFiles]);
+    copyFilesAsync();
+  }, [destinationPath, fileResults, sources, totalFiles, isComplete]);
 
   useEffect(() => {
     if (isComplete) setProcessed(totalFiles);
   }, [isComplete, totalFiles]);
 
   useEffect(() => {
-    if (isComplete && !reportSaved && destinationPath) {
+    if (isComplete && !reportSaved && destinationPath && fixSnapshotRef.current) {
       setReportSaved(true);
       
       const saveReportAsync = async () => {
         const { saveReport, isElectron } = await import('@/lib/electron-bridge');
         
-        const sourceInfos = (sources || []).filter(s => s.path).map(s => ({
-          path: s.path!,
-          type: s.type,
-          label: s.label
-        }));
-        
-        const allFiles = Object.values(fileResults || {}).flatMap(source => 
-          source.files.map(f => ({
-            originalFilename: f.filename,
-            newFilename: f.suggestedFilename || f.filename,
-            confidence: f.dateConfidence,
-            dateSource: f.dateSource
-          }))
-        );
-        
-        const confirmedFiles = allFiles.filter(f => f.confidence === 'confirmed').length;
-        const recoveredFiles = allFiles.filter(f => f.confidence === 'recovered').length;
-        const markedFiles = allFiles.filter(f => f.confidence === 'marked').length;
-        
-        const reportData = {
-          sources: sourceInfos,
-          destinationPath: destinationPath,
-          counts: {
-            confirmed: confirmedFiles || Math.floor(totalFiles * 0.65),
-            recovered: recoveredFiles || Math.floor(totalFiles * 0.25),
-            marked: markedFiles || totalFiles - Math.floor(totalFiles * 0.65) - Math.floor(totalFiles * 0.25),
-            total: allFiles.length || totalFiles
-          },
-          files: allFiles.length > 0 ? allFiles : generateMockFiles(totalFiles)
-        };
-        
+        // Use the pre-built snapshot - no recomputation
+        const reportData = fixSnapshotRef.current!.reportData;
+
         if (isElectron()) {
           const result = await saveReport(reportData);
           if (result.success && result.data && onReportSaved) {
             onReportSaved(result.data.id);
           }
         } else if (onReportSaved) {
-          onReportSaved(`mock-report-${Date.now()}`);
+          onReportSaved(`report-${Date.now()}`);
         }
       };
       
       saveReportAsync();
     }
-  }, [isComplete, reportSaved, destinationPath, sources, fileResults, totalFiles, onReportSaved]);
+  }, [isComplete, reportSaved, destinationPath, onReportSaved]);
 
   const handleOpenDestination = async () => {
     if (destinationPath && isElectronEnv) {
@@ -2546,10 +3501,11 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     }
   };
 
-  const confirmedCount = Math.floor(totalFiles * 0.65);
-  const recoveredCount = Math.floor(totalFiles * 0.25);
-  const markedCount = totalFiles - confirmedCount - recoveredCount;
-
+    // Use snapshot values for consistency
+  const confirmedCount = fixSnapshotRef.current?.confirmed ?? 0;
+  const recoveredCount = fixSnapshotRef.current?.recovered ?? 0;
+  const markedCount = fixSnapshotRef.current?.marked ?? 0;
+  
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -2569,10 +3525,10 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
               </div>
               <h2 className="text-2xl font-semibold text-foreground mb-2">Applying Fixes...</h2>
-              <p className="text-muted-foreground">Renaming and organizing your files</p>
+              <p className="text-muted-foreground">Copying, renaming and organizing your files</p>
             </div>
 
-            <div className="space-y-2 mb-8">
+            <div className="space-y-2 mb-6">
               <div className="flex justify-between text-sm font-medium">
                 <span>Processing...</span>
                 <span>{Math.round(progress)}%</span>
@@ -2581,7 +3537,53 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               <p className="text-xs text-muted-foreground text-left pt-1">
                 {processed} of {totalFiles} files processed
               </p>
+              <div className="flex justify-between text-xs text-muted-foreground pt-2">
+                <span>Elapsed: {formatTime(elapsed)}</span>
+                {estimatedRemaining !== null && progress >= 3 && (
+                  <span>~{formatTime(estimatedRemaining)} remaining</span>
+                )}
+              </div>
             </div>
+            
+            {!showCancelFixConfirm ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground border-muted-foreground/30 hover:border-muted-foreground/50"
+                onClick={() => setShowCancelFixConfirm(true)}
+                data-testid="button-cancel-fix"
+              >
+                Cancel
+              </Button>
+            ) : (
+              <div className="bg-muted/50 border border-border rounded-xl p-4 text-left space-y-3">
+                <h4 className="text-sm font-semibold text-foreground">Cancel Fix?</h4>
+                <p className="text-xs text-muted-foreground">
+                  Files already copied will remain at your destination, but remaining files won't be processed. These operations can take time with large sources or slow connections. Closing other apps may help.
+                </p>
+                <p className="text-xs text-muted-foreground italic">
+                   Start Menu if needed.
+                </p>
+                <div className="flex gap-3">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="flex-1" 
+                    onClick={() => setShowCancelFixConfirm(false)}
+                  >
+                    Continue Fix
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                    onClick={handleCancelFix}
+                    disabled={isCancelling}
+                  >
+                    {isCancelling ? 'Cancelling...' : 'Yes, Cancel'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -2594,38 +3596,62 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               >
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
               </motion.div>
-              {((confirmedCount + recoveredCount) / totalFiles) >= 0.88 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3, duration: 0.3 }}
-                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center"
-                >
-                  <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-sm">
-                    {Math.round(((confirmedCount + recoveredCount) / totalFiles) * 100)}% success
-                  </span>
+              {(() => {
+				  const c = fixSnapshotRef.current?.confirmed ?? 0;
+				  const r = fixSnapshotRef.current?.recovered ?? 0;
+				  const m = fixSnapshotRef.current?.marked ?? 0;
+				  const actualTotal = c + r + m;
+				  const successRate = actualTotal > 0 ? (c + r) / actualTotal : 0;
+				  return successRate >= 0.88;
+				})() && (
+				  <motion.div
+					initial={{ opacity: 0, y: 5 }}
+					animate={{ opacity: 1, y: 0 }}
+					transition={{ delay: 0.3, duration: 0.3 }}
+					className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center"
+				  >
+					<span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 shadow-sm">
+					  {Math.round((((fixSnapshotRef.current?.confirmed ?? 0) + (fixSnapshotRef.current?.recovered ?? 0)) / ((fixSnapshotRef.current?.confirmed ?? 0) + (fixSnapshotRef.current?.recovered ?? 0) + (fixSnapshotRef.current?.marked ?? 0))) * 100)}% success
+					</span>
                   <span className="text-[10px] text-muted-foreground mt-0.5">Confirmed + Recovered</span>
                 </motion.div>
               )}
             </div>
             
             <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete</h2>
-            <p className="text-muted-foreground mb-6">All {totalFiles.toLocaleString()} files have been successfully processed.</p>
+            <p className="text-muted-foreground mb-4">
+              {(fixSnapshotRef.current?.totalScanned ?? 0).toLocaleString()} files scanned → {((fixSnapshotRef.current?.confirmed ?? 0) + (fixSnapshotRef.current?.recovered ?? 0) + (fixSnapshotRef.current?.marked ?? 0)).toLocaleString()} output files
+            </p>
+            {totalTime > 0 && (
+              <p className="text-xs text-muted-foreground mb-6">
+                Completed in {formatTime(totalTime)}
+              </p>
+            )}
             
-            <div className="grid grid-cols-3 gap-3 mb-6 p-4 bg-muted/50 rounded-xl">
-              <div className="text-center">
-                <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{confirmedCount.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Confirmed</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-indigo-600 dark:text-indigo-400">{recoveredCount.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Recovered</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-slate-600 dark:text-slate-400">{markedCount.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Marked</div>
-              </div>
-            </div>
+			<div className={`grid ${(fixSnapshotRef.current?.skippedExisting ?? 0) > 0 ? 'grid-cols-5' : 'grid-cols-4'} gap-3 mb-6 p-4 bg-muted/50 rounded-xl`}>
+			  <div className="text-center">
+				<div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{(fixSnapshotRef.current?.confirmed ?? 0).toLocaleString()}</div>
+				<div className="text-xs text-muted-foreground">Confirmed</div>
+			  </div>
+			  <div className="text-center">
+				<div className="text-lg font-semibold text-indigo-600 dark:text-indigo-400">{(fixSnapshotRef.current?.recovered ?? 0).toLocaleString()}</div>
+				<div className="text-xs text-muted-foreground">Recovered</div>
+			  </div>
+			  <div className="text-center">
+				<div className="text-lg font-semibold text-slate-600 dark:text-slate-400">{(fixSnapshotRef.current?.marked ?? 0).toLocaleString()}</div>
+				<div className="text-xs text-muted-foreground">Marked</div>
+			  </div>
+			  <div className="text-center">
+				<div className="text-lg font-semibold text-amber-600 dark:text-amber-400">{(fixSnapshotRef.current?.duplicatesRemoved ?? 0).toLocaleString()}</div>
+				<div className="text-xs text-muted-foreground">Duplicates</div>
+			  </div>
+			  {(fixSnapshotRef.current?.skippedExisting ?? 0) > 0 && (
+				<div className="text-center">
+				  <div className="text-lg font-semibold text-[#9b8bb8]">{(fixSnapshotRef.current?.skippedExisting ?? 0).toLocaleString()}</div>
+				  <div className="text-xs text-muted-foreground">Already in Output</div>
+				</div>
+			  )}
+			</div>
             
             <div className="space-y-3">
               <Button 
@@ -2661,11 +3687,12 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             
             <AnimatePresence>
               <ReviewPromptAccordion
-                confirmedCount={confirmedCount}
-                recoveredCount={recoveredCount}
-                totalFiles={totalFiles}
-                onDismiss={() => {}}
-              />
+				  confirmedCount={confirmedCount}
+				  recoveredCount={recoveredCount}
+				  markedCount={markedCount}
+				  totalFiles={totalFiles}
+				  onDismiss={() => {}}
+				/>
             </AnimatePresence>
           </>
         )}
@@ -2685,10 +3712,16 @@ function ReportsListModal({ onClose, onViewReport }: {
     totalFiles: number;
     sourceCount: number;
     counts: { confirmed: number; recovered: number; marked: number };
+    duplicatesRemoved?: number;
   }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<{ id: string; type: string } | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [allowReportRemoval] = useState(
+    localStorage.getItem('pdr-allow-report-removal') === 'true'
+  );
 
   useEffect(() => {
     const loadReports = async () => {
@@ -2750,6 +3783,29 @@ function ReportsListModal({ onClose, onViewReport }: {
     setExportingId(null);
   };
 
+  const handleDelete = async (reportId: string) => {
+    setDeletingId(reportId);
+    const { deleteReport, isElectron } = await import('@/lib/electron-bridge');
+    
+    if (!isElectron()) {
+      toast.info('Delete is available in the desktop app');
+      setDeletingId(null);
+      setDeleteConfirmId(null);
+      return;
+    }
+    
+    const result = await deleteReport(reportId);
+    
+    if (result.success) {
+      setReports(prev => prev.filter(r => r.id !== reportId));
+      toast.success('Report deleted');
+    } else {
+      toast.error('Failed to delete report', { description: result.error });
+    }
+    setDeletingId(null);
+    setDeleteConfirmId(null);
+  };
+  
   const formatDate = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleDateString(undefined, { 
@@ -2839,7 +3895,9 @@ function ReportsListModal({ onClose, onViewReport }: {
                       </div>
                       
                       <div className="flex items-center gap-4 text-xs">
-                        <span className="font-medium text-foreground">{report.totalFiles.toLocaleString()} files</span>
+                        <span className="font-medium text-foreground">
+                          {(report.totalScanned ?? (report.totalFiles + (report.duplicatesRemoved || 0))).toLocaleString()} scanned → {report.totalFiles.toLocaleString()} output
+                        </span>
                         <span className="flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                           <span className="text-muted-foreground">{report.counts.confirmed.toLocaleString()} Confirmed</span>
@@ -2851,6 +3909,10 @@ function ReportsListModal({ onClose, onViewReport }: {
                         <span className="flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-slate-400"></span>
                           <span className="text-muted-foreground">{report.counts.marked.toLocaleString()} Marked</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                          <span className="text-muted-foreground">{(report.duplicatesRemoved ?? 0).toLocaleString()} Duplicates</span>
                         </span>
                       </div>
                     </div>
@@ -2895,6 +3957,42 @@ function ReportsListModal({ onClose, onViewReport }: {
                       >
                         Report Summary
                       </Button>
+                      
+                      {allowReportRemoval && (
+                        deleteConfirmId === report.id ? (
+                          <div className="flex items-center gap-1 ml-2">
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDelete(report.id)}
+                              disabled={deletingId === report.id}
+                              className="h-8 px-2 text-xs"
+                              data-testid={`button-confirm-delete-${report.id}`}
+                            >
+                              {deletingId === report.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes'}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="h-8 px-2 text-xs"
+                              data-testid={`button-cancel-delete-${report.id}`}
+                            >
+                              No
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteConfirmId(report.id)}
+                            className="h-8 px-2 text-muted-foreground hover:text-destructive ml-1"
+                            data-testid={`button-delete-${report.id}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2918,28 +4016,6 @@ function ReportsListModal({ onClose, onViewReport }: {
   );
 }
 
-function generateMockFiles(totalFiles: number): Array<{originalFilename: string, newFilename: string, confidence: 'confirmed' | 'recovered' | 'marked', dateSource: string}> {
-  const files = [];
-  const confidences: Array<'confirmed' | 'recovered' | 'marked'> = ['confirmed', 'recovered', 'marked'];
-  const sources = ['EXIF DateTimeOriginal', 'Filename pattern', 'WhatsApp filename', 'File modification date', 'Google Takeout JSON'];
-  
-  for (let i = 0; i < Math.min(totalFiles, 100); i++) {
-    const confidence = confidences[i % 3 === 0 ? 0 : i % 3 === 1 ? 1 : 2];
-    const day = String(1 + (i % 28)).padStart(2, '0');
-    const hour = String(i % 24).padStart(2, '0');
-    const minute = String(i % 60).padStart(2, '0');
-    const second = String((i * 7) % 60).padStart(2, '0');
-    files.push({
-      originalFilename: `IMG_${20200115 + i}_${143022 + (i * 11)}.jpg`,
-      newFilename: `2024-01-${day}_${hour}-${minute}-${second}.jpg`,
-      confidence,
-      dateSource: sources[i % sources.length]
-    });
-  }
-  
-  return files;
-}
-
 function PostFixReportModal({ onClose, results, destinationPath: propDestinationPath, fileResults, savedReportId, onBackToReports, onNavigateToBestPractices }: { 
   onClose: () => void, 
   results?: AnalysisResults,
@@ -2958,6 +4034,8 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
     destinationPath: string;
     files: Array<{ originalFilename: string; newFilename: string; confidence: 'confirmed' | 'recovered' | 'marked'; dateSource: string }>;
     counts: { confirmed: number; recovered: number; marked: number; total: number };
+    duplicatesRemoved: number;
+    totalScanned?: number;
   } | null>(null);
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -2982,7 +4060,9 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
               setLoadedReport({
                 destinationPath: result.data.destinationPath,
                 files: result.data.files,
-                counts: result.data.counts
+                counts: result.data.counts,
+                duplicatesRemoved: result.data.duplicatesRemoved || 0,
+                totalScanned: result.data.totalScanned
               });
             }
           } catch (err) {
@@ -3052,33 +4132,26 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
   })) || [];
   
   const analysisFiles = Object.values(fileResults || {}).flatMap(source => 
-    (source.files || []).map(file => ({
-      filename: file.filename,
-      newFilename: file.suggestedFilename || file.filename,
-      dateConfidence: file.dateConfidence,
-      dateSource: file.dateSource
-    }))
+    (source.files || [])
+      .filter(file => !file.isDuplicate)
+      .map(file => ({
+        filename: file.filename,
+        newFilename: file.suggestedFilename || file.filename,
+        dateConfidence: file.dateConfidence,
+        dateSource: file.dateSource
+      }))
   );
 
-  // Fallback mock data for preview mode when no real data exists
-  const mockFileData = [
-    { filename: "IMG_20240115_143022.jpg", newFilename: "2024-01-15_14-30-22.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
-    { filename: "DSC_9921.jpg", newFilename: "2023-08-12_09-15-00.jpg", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
-    { filename: "IMG-20180512-WA0042.jpg", newFilename: "2018-05-12_12-00-00_WA_FN.jpg", dateConfidence: "recovered" as const, dateSource: "WhatsApp filename" },
-    { filename: "VID_20200610_164530.mp4", newFilename: "2020-06-10_16-45-30.mp4", dateConfidence: "recovered" as const, dateSource: "Filename (VID datetime)" },
-    { filename: "Screenshot_2022-03-01_10-00-00.png", newFilename: "2022-03-01_10-00-00_FN.png", dateConfidence: "recovered" as const, dateSource: "Filename (Screenshot)" },
-    { filename: "vacation_photo.jpg", newFilename: "2024-12-19_08-30-15.jpg", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)" },
-    { filename: "birthday_party.mp4", newFilename: "2023-06-22_19-45-00.mp4", dateConfidence: "marked" as const, dateSource: "File modification time (fallback)" },
-    { filename: "photo_2021_summer.jpg", newFilename: "2021-07-15_12-00-00_FN.jpg", dateConfidence: "recovered" as const, dateSource: "Filename (date with separators)" },
-    { filename: "IMG_1234.HEIC", newFilename: "2022-11-28_14-22-33.heic", dateConfidence: "confirmed" as const, dateSource: "EXIF DateTimeOriginal" },
-    { filename: "sunset_beach.jpg", newFilename: "2024-08-05_18-45-00.jpg", dateConfidence: "confirmed" as const, dateSource: "Google Takeout JSON" },
-  ];
-  
-  // Priority: loaded report > analysis results > mock data
+    // Priority: loaded report > analysis results
   const hasLoadedReport = reportFiles.length > 0;
   const hasAnalysisData = analysisFiles.length > 0;
-  const allFiles = hasLoadedReport ? reportFiles : (hasAnalysisData ? analysisFiles : mockFileData);
+  const allFiles = hasLoadedReport ? reportFiles : analysisFiles;
   const hasRealData = hasLoadedReport || hasAnalysisData;
+  
+  const duplicatesRemoved = loadedReport?.duplicatesRemoved
+    ?? Object.values(fileResults || {}).reduce((sum, source) => sum + (source.duplicatesRemoved || 0), 0);
+	
+  const duplicatesRemovedDisplay = savedReportId ? loadedReport?.duplicatesRemoved ?? 0 : duplicatesRemoved;
   
   // Calculate totals from loaded report, results, or file list
   const totalFiles = loadedReport?.counts.total 
@@ -3106,10 +4179,10 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
           recovered: allFiles.filter(f => f.dateConfidence === 'recovered').length,
           marked: allFiles.filter(f => f.dateConfidence === 'marked').length
         }
-      : {
-          confirmed: Math.floor(totalFiles * 0.65),
-          recovered: Math.floor(totalFiles * 0.25),
-          marked: totalFiles - Math.floor(totalFiles * 0.65) - Math.floor(totalFiles * 0.25)
+            : {
+          confirmed: 0,
+          recovered: 0,
+          marked: 0
         };
   
   const getConfidenceBadge = (confidence: 'confirmed' | 'recovered' | 'marked') => {
@@ -3163,7 +4236,9 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
             </div>
             <div>
               <h2 className="text-xl font-semibold text-foreground">Report Summary</h2>
-              <p className="text-sm text-muted-foreground">{totalFiles.toLocaleString()} files processed successfully</p>
+              <p className="text-sm text-muted-foreground">
+                {(loadedReport?.totalScanned ?? totalFiles).toLocaleString()} files scanned → {totalFiles.toLocaleString()} output files
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors">
@@ -3193,55 +4268,69 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
             )}
           </AnimatePresence>
           
-          <div className="grid grid-cols-3 gap-4">
-            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-700 text-center">
+          <div className="grid grid-cols-4 gap-4">
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-700 text-center relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="absolute top-2 right-2 p-1 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
+                    <Info className="w-3.5 h-3.5 text-emerald-400 dark:text-emerald-500" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-sm">
+                  Date taken directly from information saved by the camera, app, or backup at the time the photo or video was created.
+                </TooltipContent>
+              </Tooltip>
               <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{confidenceCounts.confirmed.toLocaleString()}</div>
               <div className="text-sm text-emerald-600 dark:text-emerald-400">Confirmed</div>
               <div className="text-xs text-muted-foreground mt-1">EXIF / Takeout metadata</div>
             </div>
-            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-700 text-center">
+            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-700 text-center relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="absolute top-2 right-2 p-1 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">
+                    <Info className="w-3.5 h-3.5 text-indigo-400 dark:text-indigo-500" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-sm">
+                  Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures.
+                </TooltipContent>
+              </Tooltip>
               <div className="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">{confidenceCounts.recovered.toLocaleString()}</div>
               <div className="text-sm text-indigo-600 dark:text-indigo-400">Recovered</div>
               <div className="text-xs text-muted-foreground mt-1">Filename patterns</div>
             </div>
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
+            <div className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-200 dark:border-slate-700 text-center relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="absolute top-2 right-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors">
+                    <Info className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-sm">
+                  No reliable date could be found. The file will still be safely renamed using a fallback date to avoid conflicts.
+                </TooltipContent>
+              </Tooltip>
               <div className="text-2xl font-semibold text-slate-600 dark:text-slate-400">{confidenceCounts.marked.toLocaleString()}</div>
               <div className="text-sm text-slate-600 dark:text-slate-400">Marked</div>
               <div className="text-xs text-muted-foreground mt-1">Fallback date used</div>
             </div>
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-700 text-center relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="absolute top-2 right-2 p-1 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors">
+                    <Info className="w-3.5 h-3.5 text-amber-400 dark:text-amber-500" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-sm">
+                  Exact duplicate files detected by content hash (SHA-256). These are excluded from the output to avoid redundancy.
+                </TooltipContent>
+              </Tooltip>
+              <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{(loadedReport?.duplicatesRemoved || 0).toLocaleString()}</div>
+              <div className="text-sm text-amber-600 dark:text-amber-400">Duplicates</div>
+              <div className="text-xs text-muted-foreground mt-1">Hash-matched removed</div>
+            </div>
           </div>
           
-          {/* Duplicates summary - static line with tooltip */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 dark:bg-muted/10 border-l-2 border-l-emerald-500 rounded-r-lg">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span className="text-sm text-muted-foreground">
-              {hasRealData ? Math.floor(totalFiles * 0.03) : 9} exact duplicates removed from output (hash match)
-            </span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
-                  <Info className="w-3.5 h-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-xs">
-                Duplicates are identified using cryptographic file hashes. One original file is preserved per set. Learn more in{' '}
-                {onNavigateToBestPractices ? (
-                  <button 
-                    onClick={() => {
-                      onClose();
-                      onNavigateToBestPractices();
-                    }}
-                    className="font-bold text-foreground underline hover:text-foreground/80"
-                  >
-                    Best Practices
-                  </button>
-                ) : (
-                  <span className="font-bold">Best Practices</span>
-                )}.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setFilterConfidence('all')}
@@ -3519,9 +4608,50 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
 }
 
 function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onStartTour }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void }) {
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  
+  React.useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [panelType]);
+
+  const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1';
+  const [updateStatus, setUpdateStatus] = React.useState<'idle' | 'checking' | 'up-to-date' | 'update-available' | 'error'>('idle');
+  const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
+  const [releaseNotes, setReleaseNotes] = React.useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = React.useState<string | null>(null);
+
+  const checkForUpdates = async () => {
+    setUpdateStatus('checking');
+    try {
+      const response = await fetch('https://www.photodaterescue.com/api/version.json', { cache: 'no-store' });
+      const data = await response.json();
+      const isNewer = (remote: string, local: string) => {
+        const r = remote.split('.').map(Number);
+        const l = local.split('.').map(Number);
+        for (let i = 0; i < Math.max(r.length, l.length); i++) {
+          if ((r[i] || 0) > (l[i] || 0)) return true;
+          if ((r[i] || 0) < (l[i] || 0)) return false;
+        }
+        return false;
+      };
+      if (data.version && isNewer(data.version, appVersion)) {
+        setLatestVersion(data.version);
+        setReleaseNotes(data.releaseNotes || null);
+        setDownloadUrl(data.downloadUrl || null);
+        setUpdateStatus('update-available');
+      } else {
+        setUpdateStatus('up-to-date');
+      }
+    } catch {
+      setUpdateStatus('error');
+    }
+  };
+
   if (panelType === 'getting-started') {
     return (
-      <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+      <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
           <div className="w-full max-w-[940px]">
             <Button 
@@ -3674,7 +4804,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
 
   if (panelType === 'best-practices') {
     return (
-      <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+      <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
           <div className="w-full max-w-[940px]">
             <Button 
@@ -4016,7 +5146,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
   
   if (panelType === 'what-next') {
     return (
-      <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+      <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
           <div className="w-full max-w-[940px]">
             <Button 
@@ -4036,11 +5166,11 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   <h3 className="text-lg font-medium text-foreground">Add your sources</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Start by adding the folders or ZIP archives that contain your photos and videos.</p>
+                  <p>Start by adding the folders or ZIP/RAR archives that contain your photos and videos.</p>
                   <p className="font-medium text-foreground">Choose the correct option:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li><span className="font-medium text-foreground">Add Folder / Drive</span> — for folders or entire drives</li>
-                    <li><span className="font-medium text-foreground">Add ZIP Archive</span> — for ZIP files (ZIPs won't appear in the folder picker)</li>
+                    <li><span className="font-medium text-foreground">Add ZIP/RAR Archive</span> — for ZIP or RAR files (these won't appear in the folder picker)</li>
                   </ul>
                   <p>Each source is added one at a time, but you can keep adding as many as you like. The file picker will reopen after each selection until you're finished — Photo Date Rescue then analyses all selected sources together in a single, consistent run.</p>
                 </div>
@@ -4114,9 +5244,197 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
     );
   }
 
+  if (panelType === 'about-pdr') {
+    return (
+      <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+          <div className="w-full max-w-[940px]">
+            <Button 
+              variant="outline" 
+              onClick={onBackToWorkspace}
+              className="mb-6 text-muted-foreground hover:text-foreground"
+              data-testid="button-back-to-workspace-top"
+            >
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+            </Button>
+
+            <div className="flex items-center gap-4 mb-10">
+              <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-16 w-auto object-contain" />
+              <div>
+                <h2 className="text-2xl font-semibold text-foreground">Photo Date Rescue</h2>
+                <p className="text-sm text-muted-foreground">Version {appVersion}</p>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-3">About</h3>
+                <div className="text-sm text-muted-foreground leading-relaxed space-y-3">
+                  <p>Photo Date Rescue repairs, normalises, and organises photo and video dates from any source — whether that's a Google Takeout export, an iCloud download, a phone backup, or a folder of mixed files.</p>
+                  <p>Every file is analysed for date clues from metadata, filenames, and folder structure. Files are then renamed with confidence-based suffixes so you always know how each date was determined.</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li>Removes duplicates from output automatically</li>
+                    <li>Never deletes originals — copies are always made to a new location</li>
+                    <li>Allows EXIF date to be written to each photo file</li>
+                  </ul>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-3">Details</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-border">
+                    <span className="text-sm text-muted-foreground">Version</span>
+                    <span className="text-sm font-medium text-foreground">{appVersion}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-border">
+                    <span className="text-sm text-muted-foreground">Developer</span>
+                    <span className="text-sm font-medium text-foreground">Photo Date Rescue Ltd</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-border">
+                    <span className="text-sm text-muted-foreground">Website</span>
+                    <button 
+                      onClick={async () => {
+                        const { openExternalUrl } = await import('@/lib/electron-bridge');
+                        await openExternalUrl('https://www.photodaterescue.com');
+                      }}
+                      className="text-sm font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0"
+                    >
+                      photodaterescue.com
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-3">Version History</h3>
+
+                <div className="mb-4">
+                  {updateStatus === 'idle' && (
+                    <Button 
+                      variant="outline"
+                      onClick={checkForUpdates}
+                      className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                      data-testid="button-check-updates"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Check for Updates
+                    </Button>
+                  )}
+                  {updateStatus === 'checking' && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <RefreshCw className="w-4 h-4 animate-spin" /> Checking for updates...
+                    </div>
+                  )}
+                  {updateStatus === 'up-to-date' && (
+                    <div className="flex items-center gap-2 text-sm text-emerald-600">
+                      <CheckCircle2 className="w-4 h-4" /> You're running the latest version.
+                    </div>
+                  )}
+                  {updateStatus === 'error' && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Couldn't check for updates. Please try again later or visit the website.</p>
+                      <Button 
+                        variant="outline"
+                        onClick={checkForUpdates}
+                        className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                      >
+                        <RefreshCw className="w-4 h-4" /> Try Again
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-1.0.1"]} className="space-y-2">
+                  
+                  {updateStatus === 'update-available' && latestVersion && (
+                    <AccordionItem value={`ver-${latestVersion}`} className="border border-primary/30 rounded-lg px-4 bg-primary/5">
+                      <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-primary" />
+                          <span>v{latestVersion}</span>
+                          <span className="text-xs font-normal text-primary ml-1">— Available for download</span>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="pt-2 pb-4">
+                        <div className="space-y-3">
+                          {releaseNotes && (
+                            <p className="text-sm text-muted-foreground">{releaseNotes}</p>
+                          )}
+                          {downloadUrl && (
+                            <Button 
+                              variant="outline"
+                              onClick={async () => {
+                                const { openExternalUrl } = await import('@/lib/electron-bridge');
+                                await openExternalUrl(downloadUrl);
+                              }}
+                              className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                              data-testid="button-download-update"
+                            >
+                              <Download className="w-4 h-4" /> Download Update
+                            </Button>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  )}
+
+                  <AccordionItem value="ver-1.0.1" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v1.0.1</span>
+                        {appVersion === '1.0.1' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li>Fixed Google Takeout archives larger than 2 GB not extracting correctly</li>
+                        <li>Added RAR archive support for Apple Photos exports and other RAR sources</li>
+                        <li>Added "About PDR" panel with version history and update checking</li>
+                        <li>Version number now shown in Settings</li>
+                        <li>Improved performance guidance tooltips for network and cloud drives</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="ver-1.0.0" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v1.0.0</span>
+                        {appVersion === '1.0.0' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground">Initial release of Photo Date Rescue.</p>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                </Accordion>
+              </section>
+            </div>
+            
+            <div className="mt-12 pt-8 border-t border-border">
+              <Button 
+                variant="outline" 
+                onClick={onBackToWorkspace}
+                className="text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-bottom"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
   if (panelType === 'help-support') {
     return (
-      <div className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
+      <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
           <div className="w-full max-w-[940px]">
             <Button 
@@ -4144,14 +5462,15 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       
                       <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
                         <p className="font-medium text-foreground mb-2">Guides: Getting Your Photos In and Out</p>
-                        <a 
-                          href="https://www.photodaterescue.com/#guides" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline text-sm"
-                        >
-                          photodaterescue.com/guides →
-                        </a>
+                      <button 
+                        onClick={async () => {
+                          const { openExternalUrl } = await import('@/lib/electron-bridge');
+                          await openExternalUrl('https://www.photodaterescue.com/#guides');
+                        }}
+                        className="text-primary hover:underline text-sm cursor-pointer bg-transparent border-none p-0 text-left"
+                      >
+                        photodaterescue.com/guides →
+                      </button>
                       </div>
                       
                       <div>
@@ -4201,40 +5520,43 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                         <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                           <p className="font-medium text-foreground mb-1">Cloud Services</p>
                           <p className="text-sm text-muted-foreground mb-2">Google Photos, iCloud, OneDrive, Dropbox</p>
-                          <a 
-                            href="https://www.photodaterescue.com/guides/cloud-services" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline text-xs"
-                          >
-                            View guide →
-                          </a>
+                        <button 
+                          onClick={async () => {
+                            const { openExternalUrl } = await import('@/lib/electron-bridge');
+                            await openExternalUrl('https://www.photodaterescue.com/guides/cloud-services');
+                          }}
+                          className="text-primary hover:underline text-xs cursor-pointer bg-transparent border-none p-0 text-left"
+                        >
+                          View guide →
+                        </button>
                         </div>
                         
                         <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                           <p className="font-medium text-foreground mb-1">Social & Messaging Apps</p>
                           <p className="text-sm text-muted-foreground mb-2">WhatsApp, Messenger, Telegram, Signal, Snapchat</p>
-                          <a 
-                            href="https://www.photodaterescue.com/guides/social-apps" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline text-xs"
-                          >
-                            View guide →
-                          </a>
+                        <button 
+                          onClick={async () => {
+                            const { openExternalUrl } = await import('@/lib/electron-bridge');
+                            await openExternalUrl('https://www.photodaterescue.com/guides/social-apps');
+                          }}
+                          className="text-primary hover:underline text-xs cursor-pointer bg-transparent border-none p-0 text-left"
+                        >
+                          View guide →
+                        </button>
                         </div>
                         
                         <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                           <p className="font-medium text-foreground mb-1">Hardware & Devices</p>
                           <p className="text-sm text-muted-foreground mb-2">Phones, cameras, scanners, external drives</p>
-                          <a 
-                            href="https://www.photodaterescue.com/guides/hardware-devices" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline text-xs"
-                          >
-                            View guide →
-                          </a>
+                        <button 
+                          onClick={async () => {
+                            const { openExternalUrl } = await import('@/lib/electron-bridge');
+                            await openExternalUrl('https://www.photodaterescue.com/guides/hardware-devices');
+                          }}
+                          className="text-primary hover:underline text-xs cursor-pointer bg-transparent border-none p-0 text-left"
+                        >
+                          View guide →
+                        </button>
                         </div>
                       </div>
                       
@@ -4369,12 +5691,15 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                         <p className="text-xs text-muted-foreground mb-3">
                           For setup questions, planning advice, or interpretation of results, please use the Guides first — they're faster and more detailed than email.
                         </p>
-                        <a 
-                          href="mailto:support@photodaterescue.com"
-                          className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-border bg-secondary/30 text-foreground hover:bg-secondary/50 transition-colors"
-                        >
-                          Contact Support (Technical Issues Only)
-                        </a>
+                      <button 
+                        onClick={async () => {
+                          const { openExternalUrl } = await import('@/lib/electron-bridge');
+                          await openExternalUrl('https://www.photodaterescue.com/support?source=app');
+                        }}
+                        className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-border bg-secondary/30 text-foreground hover:bg-secondary/50 transition-colors cursor-pointer"
+                      >
+                        Contact Support (Technical Issues Only)
+                      </button>
                       </div>
                     </div>
                   </AccordionContent>
@@ -4447,8 +5772,38 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
   );
 }
 
-function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onCancel, onAddFolder, onAddZip }: { source: Source, stats: PreScanStats, onAddToWorkspace: () => void, onChangeSource: () => void, onCancel: () => void, onAddFolder: () => void, onAddZip: () => void }) {
+function SourceAddedModal({ source, stats, analysisElapsed, onAddToWorkspace, onChangeSource, onCancel, onAddFolder, onAddZip, isLicensed, onLicenseRequired }: { source: Source, stats: PreScanStats, analysisElapsed?: number | null, onAddToWorkspace: () => void, onChangeSource: () => void, onCancel: () => void, onAddFolder: () => void, onAddZip: () => void, isLicensed: boolean, onLicenseRequired: () => void }) {
   const [step, setStep] = useState<'review' | 'success'>('review');
+  const [storageInfo, setStorageInfo] = useState<{ label: string; description: string; isOptimal: boolean } | null>(null);
+  const [showStorageTips, setShowStorageTips] = useState(true);
+
+  const formatElapsed = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  useEffect(() => {
+    // Load setting and classify storage
+    getSettings().then(settings => {
+      setShowStorageTips(settings.showStoragePerformanceTips);
+    });
+    
+    if (source?.path) {
+      classifyStorage(source.path).then(result => {
+        if (result) {
+          setStorageInfo({
+            label: result.label,
+            description: result.description,
+            isOptimal: result.isOptimal
+          });
+        }
+      });
+    }
+  }, [source?.path]);
 
   if (step === 'success') {
     return (
@@ -4477,19 +5832,19 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
             <p className="text-xs font-medium text-muted-foreground text-center mb-4">Next steps</p>
             
             <div className="grid grid-cols-2 gap-3">
-              <Button 
-                onClick={onAddFolder}
-                className="h-11 bg-primary hover:bg-primary/90"
-              >
-                <Plus className="w-4 h-4 mr-2" /> Add Folder / Drive
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={onAddZip}
-                className="h-11"
-              >
-                <FileArchive className="w-4 h-4 mr-2" /> Add ZIP Archive
-              </Button>
+			<Button 
+			  onClick={() => isLicensed ? onAddFolder() : onLicenseRequired()}
+			  className="h-11 bg-primary hover:bg-primary/90"
+			>
+			  <Plus className="w-4 h-4 mr-2" /> Add Folder / Drive
+			</Button>
+			<Button 
+			  variant="outline" 
+			  onClick={() => isLicensed ? onAddZip() : onLicenseRequired()}
+			  className="h-11"
+			>
+			  <FileArchive className="w-4 h-4 mr-2" /> Add ZIP/RAR Archive
+			</Button>
             </div>
 
             <div className="flex justify-center mt-2">
@@ -4541,7 +5896,26 @@ function SourceAddedModal({ source, stats, onAddToWorkspace, onChangeSource, onC
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">{stats.photoCount.toLocaleString()} photos, {stats.videoCount.toLocaleString()} videos</span>
             </div>
+            {analysisElapsed != null && analysisElapsed > 0 && (
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-muted-foreground">Analysis completed in {formatElapsed(analysisElapsed)}</span>
+              </div>
+            )}
           </div>
+          
+          {/* Storage Performance Indicator */}
+          {showStorageTips && storageInfo && (
+            <div className={`mt-3 pt-3 border-t border-border/40 flex items-center gap-2 text-xs ${
+              storageInfo.isOptimal ? 'text-emerald-600' : 'text-amber-600'
+            }`}>
+              {storageInfo.isOptimal ? (
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              )}
+              <span>{storageInfo.description}</span>
+            </div>
+          )}
         </Card>
 
         <div className="space-y-2">
@@ -4594,16 +5968,105 @@ export function setSkipWelcomeScreen(skip: boolean): void {
   }
 }
 
-function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: { 
-  onClose: () => void, 
+function SettingsModal({ onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange }: {
+  onClose: () => void,
   folderStructure: 'year' | 'year-month' | 'year-month-day',
-  onFolderStructureChange: (value: 'year' | 'year-month' | 'year-month-day') => void 
+  onFolderStructureChange: (value: 'year' | 'year-month' | 'year-month-day') => void,
+  playSound: boolean,
+  onPlaySoundChange: (value: boolean) => void
 }) {
   const [showWelcome, setShowWelcome] = useState(!getSkipWelcomeScreen());
+  const [allowReportRemoval, setAllowReportRemoval] = useState(
+    localStorage.getItem('pdr-allow-report-removal') === 'true'
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  
+    // Advanced settings state
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
+  const [thoroughDuplicateMatching, setThoroughDuplicateMatching] = useState(false);
+  const [writeExif, setWriteExif] = useState(false);
+  const [exifWriteConfirmed, setExifWriteConfirmed] = useState(true);
+  const [exifWriteRecovered, setExifWriteRecovered] = useState(true);
+  const [exifWriteMarked, setExifWriteMarked] = useState(false);
+  const [showStoragePerformanceTips, setShowStoragePerformanceTips] = useState(true);
+
+  // Load settings on mount
+  useEffect(() => {
+    getSettings().then((settings) => {
+      setSkipDuplicates(settings.skipDuplicates);
+      setThoroughDuplicateMatching(settings.thoroughDuplicateMatching);
+      setWriteExif(settings.writeExif);
+      setExifWriteConfirmed(settings.exifWriteConfirmed);
+      setExifWriteRecovered(settings.exifWriteRecovered);
+      setExifWriteMarked(settings.exifWriteMarked);
+      setShowStoragePerformanceTips(settings.showStoragePerformanceTips);
+    });
+  }, []);
+
+  const handleSkipDuplicatesToggle = (checked: boolean) => {
+    setSkipDuplicates(checked);
+    setSetting('skipDuplicates', checked);
+  };
+
+  const handleThoroughDuplicateMatchingToggle = (checked: boolean) => {
+    setThoroughDuplicateMatching(checked);
+    setSetting('thoroughDuplicateMatching', checked);
+  };
+
+  const handleWriteExifToggle = (checked: boolean) => {
+    setWriteExif(checked);
+    setSetting('writeExif', checked);
+  };
+
+  const handleExifWriteConfirmedToggle = (checked: boolean) => {
+    setExifWriteConfirmed(checked);
+    setSetting('exifWriteConfirmed', checked);
+  };
+
+  const handleExifWriteRecoveredToggle = (checked: boolean) => {
+    setExifWriteRecovered(checked);
+    setSetting('exifWriteRecovered', checked);
+  };
+
+  const handleExifWriteMarkedToggle = (checked: boolean) => {
+    setExifWriteMarked(checked);
+    setSetting('exifWriteMarked', checked);
+  };
+  
+  const handleStoragePerformanceTipsToggle = (checked: boolean) => {
+    setShowStoragePerformanceTips(checked);
+    setSetting('showStoragePerformanceTips', checked);
+  };
+
+  const handleReportRemovalToggle = (checked: boolean) => {
+    setAllowReportRemoval(checked);
+    if (checked) {
+      localStorage.setItem('pdr-allow-report-removal', 'true');
+    } else {
+      localStorage.removeItem('pdr-allow-report-removal');
+    }
+  };
 
   const handleWelcomeToggle = (checked: boolean) => {
     setShowWelcome(checked);
     setSkipWelcomeScreen(!checked);
+  };
+  
+  const handleResetToDefaults = async () => {
+    await resetSettingsToDefaults();
+    setSkipDuplicates(true);
+    setThoroughDuplicateMatching(false);
+    setWriteExif(true);
+    setExifWriteConfirmed(true);
+    setExifWriteRecovered(true);
+    setExifWriteMarked(false);
+    setShowStoragePerformanceTips(true);
+    setAllowReportRemoval(false);
+    setShowWelcome(true);
+    setSkipWelcomeScreen(false);
+    onFolderStructureChange('year');
+    onPlaySoundChange(true);
+    localStorage.removeItem('pdr-allow-report-removal');
   };
 
   const options = [
@@ -4625,7 +6088,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-6"
+        className="bg-background rounded-2xl shadow-2xl max-w-lg w-full p-6"
       >
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -4643,7 +6106,10 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: {
           </button>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+          {/* ===== CORE SETTINGS ===== */}
+          
+          {/* Folder Structure */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-3">
               Folder Structure
@@ -4680,6 +6146,25 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: {
             </div>
           </div>
 
+          {/* Notifications */}
+          <div className="pt-4 border-t border-border">
+            <label className="block text-sm font-medium text-foreground mb-3">
+              Notifications
+            </label>
+            <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">Play completion sound</span>
+                <span className="text-xs text-muted-foreground">Play a sound when fixes are complete</span>
+              </div>
+              <Checkbox 
+                checked={playSound}
+                onCheckedChange={(checked) => onPlaySoundChange(!!checked)}
+                data-testid="checkbox-completion-sound"
+              />
+            </label>
+          </div>
+
+          {/* Welcome Screen */}
           <div className="pt-4 border-t border-border">
             <label className="block text-sm font-medium text-foreground mb-3">
               Welcome Screen
@@ -4696,9 +6181,174 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: {
               />
             </label>
           </div>
+
+          {/* ===== ADVANCED SETTINGS (Collapsible) ===== */}
+          <div className="pt-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(!advancedOpen)}
+              className={`w-full flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                advancedOpen 
+                  ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30' 
+                  : 'border-border hover:border-amber-300/50 hover:bg-amber-50/30 dark:hover:border-amber-700/50 dark:hover:bg-amber-950/20'
+              }`}
+              data-testid="button-toggle-advanced"
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+                <span className="text-sm font-medium text-foreground">Advanced Settings</span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50">
+                  ADVANCED
+                </span>
+              </div>
+              <ChevronDown 
+                className={`w-4 h-4 text-amber-500 dark:text-amber-400 transition-transform duration-200 ${advancedOpen ? 'rotate-180' : ''}`} 
+              />
+            </button>
+            
+            {advancedOpen && (
+              <div className="mt-3 p-4 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-start gap-2 mb-4 pb-3 border-b border-amber-200/50 dark:border-amber-800/30">
+                  <Info className="w-4 h-4 text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    Defaults are optimal for most users — change only if needed.
+                  </p>
+                </div>
+                <div className="max-h-[240px] overflow-y-auto pr-2 space-y-4">
+                
+                {/* Report Management */}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-3">
+                    Report Management
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Allow Report Removal</span>
+                      <span className="text-xs text-muted-foreground">Enable the ability to delete saved reports from history</span>
+                    </div>
+                    <Checkbox 
+                      checked={allowReportRemoval}
+                      onCheckedChange={(checked) => handleReportRemovalToggle(!!checked)}
+                      data-testid="checkbox-allow-report-removal"
+                    />
+                  </label>
+                </div>
+
+                {/* Duplicate Handling */}
+                <div className="pt-4 border-t border-border/50">
+                  <label className="block text-sm font-medium text-foreground mb-3">
+                    Duplicate Handling
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors mb-3">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Skip duplicate files (recommended)</span>
+                      <span className="text-xs text-muted-foreground">Duplicate files are detected and skipped during Run Fix</span>
+                    </div>
+                    <Checkbox 
+                      checked={skipDuplicates}
+                      onCheckedChange={(checked) => handleSkipDuplicatesToggle(!!checked)}
+                      data-testid="checkbox-skip-duplicates"
+                    />
+                  </label>
+                  
+                  {skipDuplicates && (
+                    <label className="flex items-center justify-between p-3 rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer transition-colors animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Thorough duplicate matching</span>
+                        <span className="text-xs text-muted-foreground">Use SHA-256 file hash instead of filename + size. More accurate but significantly slower on network/cloud drives.</span>
+                      </div>
+                      <Checkbox 
+                        checked={thoroughDuplicateMatching}
+                        onCheckedChange={(checked) => handleThoroughDuplicateMatchingToggle(!!checked)}
+                        data-testid="checkbox-thorough-duplicates"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {/* EXIF Date Writing */}
+                <div className="pt-4 border-t border-border/50">
+                  <label className="block text-sm font-medium text-foreground mb-3">
+                    EXIF Date Writing
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors mb-3">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Write dates to photo metadata (EXIF)</span>
+                      <span className="text-xs text-muted-foreground">Populate EXIF date fields when copying photos</span>
+                    </div>
+                    <Checkbox 
+                      checked={writeExif}
+                      onCheckedChange={(checked) => handleWriteExifToggle(!!checked)}
+                      data-testid="checkbox-write-exif"
+                    />
+                  </label>
+                  
+                  {writeExif && (
+                    <div className="ml-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50/50 dark:bg-emerald-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Confirmed files</span>
+                          <span className="text-xs text-muted-foreground">Normalise metadata using the trusted EXIF/Takeout date</span>
+                        </div>
+                        <Checkbox 
+                          checked={exifWriteConfirmed}
+                          onCheckedChange={(checked) => handleExifWriteConfirmedToggle(!!checked)}
+                          data-testid="checkbox-exif-confirmed"
+                        />
+                      </label>
+                      
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-indigo-200 dark:border-indigo-700/50 bg-indigo-50/50 dark:bg-indigo-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Recovered files (recommended)</span>
+                          <span className="text-xs text-muted-foreground">Populate EXIF with the date recovered from filename patterns</span>
+                        </div>
+                        <Checkbox 
+                          checked={exifWriteRecovered}
+                          onCheckedChange={(checked) => handleExifWriteRecoveredToggle(!!checked)}
+                          data-testid="checkbox-exif-recovered"
+                        />
+                      </label>
+                      
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-900/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Marked files (advanced)</span>
+                          <span className="text-xs text-muted-foreground">Populate EXIF with fallback date — use with caution</span>
+                        </div>
+                        <Checkbox 
+                          checked={exifWriteMarked}
+                          onCheckedChange={(checked) => handleExifWriteMarkedToggle(!!checked)}
+                          data-testid="checkbox-exif-marked"
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Storage Performance Tips */}
+                <div className="pt-4 border-t border-border/50">
+                  <label className="block text-sm font-medium text-foreground mb-3">
+                    Storage Performance
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Show storage performance tips</span>
+                      <span className="text-xs text-muted-foreground">Display helpful messages about storage speed when selecting sources</span>
+                    </div>
+                    <Checkbox 
+                      checked={showStoragePerformanceTips}
+                      onCheckedChange={(checked) => handleStoragePerformanceTipsToggle(!!checked)}
+                      data-testid="checkbox-storage-tips"
+                    />
+                  </label>
+                </div>
+
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="mt-6 pt-4 border-t border-border">
+        <div className="mt-6 pt-4 border-t border-border space-y-3">
           <Button
             onClick={onClose}
             className="w-full"
@@ -4706,6 +6356,16 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange }: {
           >
             Done
           </Button>
+        <button
+          onClick={handleResetToDefaults}
+          className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+          data-testid="button-reset-defaults"
+        >
+          Reset to Optimised Defaults
+        </button>
+        <p className="text-center text-xs text-muted-foreground mt-4">
+          Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
+        </p>
         </div>
       </motion.div>
     </motion.div>

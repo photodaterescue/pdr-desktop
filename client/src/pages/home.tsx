@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { motion, Variants } from "framer-motion";
 import { Search, PlayCircle, ShieldCheck, ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
@@ -25,12 +25,19 @@ function setSkipWelcomeScreen(skip: boolean): void {
 }
 
 export default function Home() {
-  const [, setLocation] = useLocation();
-  const [skipScreen, setSkipScreen] = useState(false);
+  const navigate = useNavigate();
+  const [skipScreen, setSkipScreen] = useState(getSkipWelcomeScreen());
 
   useEffect(() => {
-    setSkipScreen(getSkipWelcomeScreen());
-  }, []);
+    if (skipScreen) {
+      navigate("/workspace", { replace: true });
+    }
+  }, [skipScreen, navigate]);
+
+  // Don't render anything if we're about to skip
+  if (skipScreen) {
+    return null;
+  }
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -55,8 +62,8 @@ export default function Home() {
     }
   };
 
-  const handleStart = () => {
-    setLocation("/source-selection");
+    const handleStart = () => {
+    navigate("/source-selection");
   };
 
   return (
@@ -74,7 +81,7 @@ export default function Home() {
         className="max-w-[1200px] w-full z-10 flex flex-col items-center text-center"
       >
         <motion.div variants={item} className="mb-12">
-          <img src="/Assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-24 w-auto mx-auto mb-10" />
+          <img src="./assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-24 w-auto mx-auto mb-10" />
           <h1 className="text-[2.2rem] md:text-[3rem] font-semibold text-foreground tracking-tight leading-[1.1] mb-4">
             Welcome to Photo Date Rescue
           </h1>
@@ -90,7 +97,7 @@ export default function Home() {
             icon={<PlayCircle className="w-6 h-6 text-primary" />}
             title="Take a Quick Tour"
             description="See how Photo Date Rescue works in under a minute."
-            onClick={() => { resetTourCompletion(); setLocation("/workspace?tour=true"); }}
+            onClick={() => { resetTourCompletion(); navigate("/workspace?tour=true"); }}
           />
 
           {/* Primary Main Card */}
@@ -106,20 +113,21 @@ export default function Home() {
             icon={<ShieldCheck className="w-6 h-6 text-primary" />}
             title="Best Practices"
             description="Tips to keep your originals safe and get the best results."
-            onClick={() => setLocation("/workspace?panel=best-practices")}
+            onClick={() => navigate("/workspace?panel=best-practices")}
           />
 
         </motion.div>
 
         {/* Go to Workspace Link */}
-        <motion.div variants={item} className="mb-8 -mt-8">
-          <button
-            onClick={() => setLocation("/workspace")}
-            className="text-muted-foreground/80 hover:text-primary text-sm font-medium flex items-center transition-colors group"
-          >
-            Go to Workspace
-          </button>
-        </motion.div>
+		<motion.div variants={item} className="mb-8 -mt-8">
+		  <button
+			onClick={() => navigate("/workspace")}
+			className="text-muted-foreground/80 hover:text-primary text-sm font-medium flex items-center transition-colors group"
+		  >
+			Go to Workspace
+		  </button>
+		</motion.div>
+
 
         <motion.div variants={item} className="flex flex-col items-center gap-6">
           <div className="flex items-center space-x-2">

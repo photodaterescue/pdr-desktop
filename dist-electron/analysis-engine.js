@@ -2,7 +2,35 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as exifParser from 'exif-parser';
 import AdmZip from 'adm-zip';
-import { extractDateFromFilename, extractXmpMetadataFromBuffer, extractXmpMetadataFromPath, parseGoogleTakeoutJson, parseGoogleTakeoutJsonContent, findGoogleTakeoutSidecar, generateDateBasedFilename, } from './date-extraction-engine';
+import { extractDateFromFilename, extractXmpMetadataFromBuffer, extractXmpMetadataFromPath, parseGoogleTakeoutJson, parseGoogleTakeoutJsonContent, findGoogleTakeoutSidecar, generateDateBasedFilename, } from './date-extraction-engine.js';
+import * as crypto from 'crypto';
+// Yield to event loop to keep UI responsive
+function yieldToEventLoop() {
+    return new Promise(resolve => setImmediate(resolve));
+}
+// Analysis cancellation flag
+let analysisCancelled = false;
+export function cancelAnalysis() {
+    analysisCancelled = true;
+}
+function calculateFileHash(filePath) {
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 }); // 64KB chunks
+        stream.on('data', chunk => hash.update(chunk));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', reject);
+    });
+}
+function calculateBufferHash(buffer) {
+    const hash = crypto.createHash('sha256');
+    hash.update(buffer);
+    return hash.digest('hex');
+}
+// Files larger than 500MB use heuristic duplicate detection (filename + size)
+const LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024;
+// Files smaller than 5MB skip duplicate detection if hash fails (too small for reliable heuristic)
+const MIN_HEURISTIC_SIZE_BYTES = 5 * 1024 * 1024;
 const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif', '.raw', '.cr2', '.nef', '.arw', '.dng']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mts', '.m2ts']);
 function isMediaFile(filename) {
@@ -13,10 +41,17 @@ function isMediaFile(filename) {
         return 'video';
     return null;
 }
-function extractExifDateFromPath(filePath) {
+async function extractExifDateFromPath(filePath) {
     try {
-        const buffer = fs.readFileSync(filePath);
-        return extractExifDateFromBuffer(buffer);
+        const fd = await fs.promises.open(filePath, 'r');
+        try {
+            const buffer = Buffer.alloc(65536);
+            const { bytesRead } = await fd.read(buffer, 0, 65536, 0);
+            return extractExifDateFromBuffer(buffer.subarray(0, bytesRead));
+        }
+        finally {
+            await fd.close();
+        }
     }
     catch (error) {
     }
@@ -26,24 +61,41 @@ function extractExifDateFromBuffer(buffer) {
     try {
         const parser = exifParser.create(buffer);
         const result = parser.parse();
+        const validateTimestamp = (timestamp) => {
+            if (!timestamp || timestamp <= 0)
+                return null;
+            const date = new Date(timestamp * 1000);
+            const year = date.getFullYear();
+            const now = Date.now();
+            const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+            if (year < 1970 || date.getTime() > now + twentyFourHoursMs)
+                return null;
+            return date;
+        };
         if (result.tags?.DateTimeOriginal) {
-            return new Date(result.tags.DateTimeOriginal * 1000);
+            const date = validateTimestamp(result.tags.DateTimeOriginal);
+            if (date)
+                return date;
         }
         if (result.tags?.CreateDate) {
-            return new Date(result.tags.CreateDate * 1000);
+            const date = validateTimestamp(result.tags.CreateDate);
+            if (date)
+                return date;
         }
         if (result.tags?.ModifyDate) {
-            return new Date(result.tags.ModifyDate * 1000);
+            const date = validateTimestamp(result.tags.ModifyDate);
+            if (date)
+                return date;
         }
     }
     catch (error) {
     }
     return null;
 }
-function getFileStat(filePath) {
+async function getFileStat(filePath) {
     try {
-        const stats = fs.statSync(filePath);
-        return { mtime: stats.mtime, size: stats.size };
+        const stats = await fs.promises.stat(filePath);
+        return { mtime: stats.mtime, ctime: stats.ctime, size: stats.size };
     }
     catch {
         return null;
@@ -58,7 +110,7 @@ async function analyzeFileFromPath(filePath, filename, sizeBytes) {
     let dateSource = '';
     let dateConfidence = 'marked';
     let isWhatsApp = false;
-    const sidecarPath = findGoogleTakeoutSidecar(filePath);
+    const sidecarPath = await findGoogleTakeoutSidecar(filePath);
     if (sidecarPath) {
         const takeoutData = parseGoogleTakeoutJson(sidecarPath);
         if (takeoutData?.timestamp) {
@@ -68,7 +120,7 @@ async function analyzeFileFromPath(filePath, filename, sizeBytes) {
         }
     }
     if (!derivedDate) {
-        const exifDate = extractExifDateFromPath(filePath);
+        const exifDate = await extractExifDateFromPath(filePath);
         if (exifDate) {
             derivedDate = exifDate;
             dateSource = 'EXIF DateTimeOriginal';
@@ -76,7 +128,7 @@ async function analyzeFileFromPath(filePath, filename, sizeBytes) {
         }
     }
     if (!derivedDate) {
-        const xmpData = extractXmpMetadataFromPath(filePath);
+        const xmpData = await extractXmpMetadataFromPath(filePath);
         if (xmpData?.timestamp) {
             derivedDate = new Date(xmpData.timestamp * 1000);
             dateSource = 'XMP metadata';
@@ -93,15 +145,21 @@ async function analyzeFileFromPath(filePath, filename, sizeBytes) {
         }
     }
     if (!derivedDate) {
-        const stats = getFileStat(filePath);
+        const stats = await getFileStat(filePath);
         if (stats) {
             derivedDate = stats.mtime;
-            dateSource = 'File modification time (fallback)';
-            dateConfidence = 'marked';
+            if (stats.mtime < stats.ctime) {
+                dateSource = 'Preserved file timestamp';
+                dateConfidence = 'recovered';
+            }
+            else {
+                dateSource = 'File modification time';
+                dateConfidence = 'marked';
+            }
         }
     }
-    const suggestedFilename = derivedDate
-        ? generateDateBasedFilename(Math.floor(derivedDate.getTime() / 1000), extension, isWhatsApp, dateConfidence === 'recovered')
+    const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())
+        ? generateDateBasedFilename(Math.floor(derivedDate.getTime() / 1000), extension, dateConfidence)
         : null;
     return {
         path: filePath,
@@ -111,7 +169,7 @@ async function analyzeFileFromPath(filePath, filename, sizeBytes) {
         sizeBytes,
         dateConfidence,
         dateSource,
-        derivedDate: derivedDate?.toISOString() || null,
+        derivedDate: derivedDate && !isNaN(derivedDate.getTime()) ? derivedDate.toISOString() : null,
         originalDate: null,
         suggestedFilename,
     };
@@ -163,8 +221,8 @@ async function analyzeFileFromBuffer(entryPath, filename, sizeBytes, buffer, ent
         dateSource = 'ZIP entry modification time (fallback)';
         dateConfidence = 'marked';
     }
-    const suggestedFilename = derivedDate
-        ? generateDateBasedFilename(Math.floor(derivedDate.getTime() / 1000), extension, isWhatsApp, dateConfidence === 'recovered')
+    const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())
+        ? generateDateBasedFilename(Math.floor(derivedDate.getTime() / 1000), extension, dateConfidence)
         : null;
     return {
         path: entryPath,
@@ -174,32 +232,51 @@ async function analyzeFileFromBuffer(entryPath, filename, sizeBytes, buffer, ent
         sizeBytes,
         dateConfidence,
         dateSource,
-        derivedDate: derivedDate?.toISOString() || null,
+        derivedDate: derivedDate && !isNaN(derivedDate.getTime()) ? derivedDate.toISOString() : null,
         originalDate: null,
         suggestedFilename,
     };
 }
-function scanDirectory(dirPath) {
+async function scanDirectory(dirPath, onProgress) {
     const results = [];
-    function walk(currentPath) {
+    let fileCounter = 0;
+    async function walk(currentPath) {
         try {
-            const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+            const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
+            // Yield after every directory read to prevent "Not Responding"
+            await yieldToEventLoop();
             for (const entry of entries) {
+                if (analysisCancelled)
+                    return;
                 const fullPath = path.join(currentPath, entry.name);
                 if (entry.isDirectory()) {
                     if (!entry.name.startsWith('.') && entry.name !== 'node_modules' && entry.name !== '__MACOSX') {
-                        walk(fullPath);
+                        await walk(fullPath);
                     }
                 }
                 else if (entry.isFile()) {
                     const mediaType = isMediaFile(entry.name);
                     if (mediaType) {
-                        const stats = getFileStat(fullPath);
-                        results.push({
-                            path: fullPath,
-                            filename: entry.name,
-                            size: stats?.size || 0,
-                        });
+                        try {
+                            const stats = await fs.promises.stat(fullPath);
+                            results.push({
+                                path: fullPath,
+                                filename: entry.name,
+                                size: stats.size,
+                            });
+                        }
+                        catch {
+                            results.push({
+                                path: fullPath,
+                                filename: entry.name,
+                                size: 0,
+                            });
+                        }
+                        fileCounter++;
+                        if (fileCounter % 10 === 0) {
+                            onProgress?.(fileCounter);
+                            await yieldToEventLoop();
+                        }
                     }
                 }
             }
@@ -207,7 +284,7 @@ function scanDirectory(dirPath) {
         catch (error) {
         }
     }
-    walk(dirPath);
+    await walk(dirPath);
     return results;
 }
 function scanZipFile(zipPath) {
@@ -223,6 +300,7 @@ function scanZipFile(zipPath) {
                     jsonContents.set(entry.entryName, content);
                 }
                 catch (e) {
+                    console.error('Failed to read JSON sidecar:', entry.entryName, e);
                 }
             }
         }
@@ -241,6 +319,14 @@ function scanZipFile(zipPath) {
                     else if (jsonContents.has(jsonPath2)) {
                         googleTakeoutJson = jsonContents.get(jsonPath2);
                     }
+                    else {
+                        for (const [jsonKey, jsonValue] of jsonContents) {
+                            if (jsonKey.startsWith(entry.entryName + '.') && jsonKey.endsWith('.json')) {
+                                googleTakeoutJson = jsonValue;
+                                break;
+                            }
+                        }
+                    }
                     results.push({
                         path: entry.entryName,
                         filename,
@@ -254,11 +340,15 @@ function scanZipFile(zipPath) {
         }
     }
     catch (error) {
+        console.error('scanZipFile error:', error);
+        throw error;
     }
     return results;
 }
 export async function analyzeSource(sourcePath, sourceType, onProgress) {
     const sourceLabel = path.basename(sourcePath);
+    // Reset cancellation flag at start of new analysis
+    analysisCancelled = false;
     onProgress?.({
         current: 0,
         total: 0,
@@ -272,11 +362,20 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
     let earliestDate = null;
     let latestDate = null;
     const confidenceCounts = { confirmed: 0, recovered: 0, marked: 0 };
+    const seenHashes = new Map(); // hash -> first filename
+    const seenHeuristics = new Map(); // "filename|size" -> first filename
+    const duplicateFiles = [];
+    let duplicatesRemoved = 0;
     if (sourceType === 'zip') {
         const zipEntries = scanZipFile(sourcePath);
         const totalFiles = zipEntries.length;
         for (let i = 0; i < zipEntries.length; i++) {
+            if (analysisCancelled) {
+                throw new Error('ANALYSIS_CANCELLED');
+            }
             const entry = zipEntries[i];
+            // Yield every file to keep window responsive (especially for network sources)
+            await yieldToEventLoop();
             onProgress?.({
                 current: i + 1,
                 total: totalFiles,
@@ -285,6 +384,48 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
             });
             const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, entry.buffer, entry.time, entry.googleTakeoutJson);
             if (result) {
+                // Check for duplicate using hash (small files) or heuristic (large files)
+                let existingFile;
+                let duplicateMethod = 'hash';
+                if (entry.size > LARGE_FILE_THRESHOLD_BYTES) {
+                    // Large file: use heuristic (filename + size)
+                    const heuristicKey = `${entry.filename}|${entry.size}`;
+                    existingFile = seenHeuristics.get(heuristicKey);
+                    duplicateMethod = 'heuristic';
+                    if (!existingFile) {
+                        seenHeuristics.set(heuristicKey, entry.filename);
+                    }
+                }
+                else {
+                    // Small/medium file: try hash, fallback to heuristic if it fails
+                    try {
+                        const hash = calculateBufferHash(entry.buffer);
+                        existingFile = seenHashes.get(hash);
+                        if (!existingFile) {
+                            seenHashes.set(hash, entry.filename);
+                        }
+                    }
+                    catch (hashError) {
+                        // Hash failed - use heuristic fallback for files >= 5MB, skip for smaller
+                        if (entry.size >= MIN_HEURISTIC_SIZE_BYTES) {
+                            const heuristicKey = `${entry.filename}|${entry.size}`;
+                            existingFile = seenHeuristics.get(heuristicKey);
+                            duplicateMethod = 'heuristic';
+                            if (!existingFile) {
+                                seenHeuristics.set(heuristicKey, entry.filename);
+                            }
+                        }
+                        // Files < 5MB: skip duplicate detection entirely (existingFile stays undefined)
+                    }
+                }
+                if (existingFile) {
+                    // It's a duplicate - flag it but still add to output
+                    duplicatesRemoved++;
+                    duplicateFiles.push({ filename: entry.filename, duplicateOf: existingFile, type: result.type, duplicateMethod });
+                    result.isDuplicate = true;
+                    result.duplicateOf = existingFile;
+                }
+                // Always add to output (duplicates are flagged, copy phase decides)
                 analyzedFiles.push(result);
                 totalSizeBytes += result.sizeBytes;
                 if (result.type === 'photo')
@@ -294,10 +435,12 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
                 confidenceCounts[result.dateConfidence]++;
                 if (result.derivedDate) {
                     const date = new Date(result.derivedDate);
-                    if (!earliestDate || date < earliestDate)
-                        earliestDate = date;
-                    if (!latestDate || date > latestDate)
-                        latestDate = date;
+                    if (!isNaN(date.getTime())) {
+                        if (!earliestDate || date < earliestDate)
+                            earliestDate = date;
+                        if (!latestDate || date > latestDate)
+                            latestDate = date;
+                    }
                 }
             }
         }
@@ -309,10 +452,22 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
         });
     }
     else {
-        const fileList = scanDirectory(sourcePath);
+        const fileList = await scanDirectory(sourcePath, (count) => {
+            onProgress?.({
+                current: 0,
+                total: 0,
+                currentFile: `Preparing... ${count.toLocaleString()} files found`,
+                phase: 'scanning'
+            });
+        });
         const totalFiles = fileList.length;
         for (let i = 0; i < fileList.length; i++) {
+            if (analysisCancelled) {
+                throw new Error('ANALYSIS_CANCELLED');
+            }
             const file = fileList[i];
+            // Yield every file to keep window responsive (especially for network sources)
+            await yieldToEventLoop();
             onProgress?.({
                 current: i + 1,
                 total: totalFiles,
@@ -321,6 +476,25 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
             });
             const result = await analyzeFileFromPath(file.path, file.filename, file.size);
             if (result) {
+                // Check for duplicate using hash (small files) or heuristic (large files)
+                let existingFile;
+                let duplicateMethod = 'hash';
+                // Use heuristic (filename + size) for analysis-phase duplicate detection
+                // Avoids reading entire files over network; definitive hash check happens at copy time
+                const heuristicKey = `${file.filename}|${file.size}`;
+                existingFile = seenHeuristics.get(heuristicKey);
+                duplicateMethod = 'heuristic';
+                if (!existingFile) {
+                    seenHeuristics.set(heuristicKey, file.filename);
+                }
+                if (existingFile) {
+                    // It's a duplicate - flag it but still add to output
+                    duplicatesRemoved++;
+                    duplicateFiles.push({ filename: file.filename, duplicateOf: existingFile, type: result.type, duplicateMethod });
+                    result.isDuplicate = true;
+                    result.duplicateOf = existingFile;
+                }
+                // Always add to output (duplicates are flagged, copy phase decides)
                 analyzedFiles.push(result);
                 totalSizeBytes += result.sizeBytes;
                 if (result.type === 'photo')
@@ -330,10 +504,12 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
                 confidenceCounts[result.dateConfidence]++;
                 if (result.derivedDate) {
                     const date = new Date(result.derivedDate);
-                    if (!earliestDate || date < earliestDate)
-                        earliestDate = date;
-                    if (!latestDate || date > latestDate)
-                        latestDate = date;
+                    if (!isNaN(date.getTime())) {
+                        if (!earliestDate || date < earliestDate)
+                            earliestDate = date;
+                        if (!latestDate || date > latestDate)
+                            latestDate = date;
+                    }
                 }
             }
         }
@@ -357,6 +533,8 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
             latest: latestDate?.toISOString() || null,
         },
         confidenceSummary: confidenceCounts,
+        duplicatesRemoved,
+        duplicateFiles,
         files: analyzedFiles,
     };
 }
