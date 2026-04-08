@@ -1894,7 +1894,7 @@ function DashboardPanel({
         {hasSelection && (
           <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100" data-tour="confidence-cards">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-foreground">Source Analysis</h2>
+              <h2 className="text-lg font-semibold text-foreground font-heading">Source Analysis</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <ConfidenceCard 
@@ -2019,23 +2019,23 @@ function DashboardPanel({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Sources</div>
-              <div className="text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>{stats.sourceCount.toLocaleString()}</div>
+              <div className="text-2xl font-semibold text-secondary-foreground font-heading" style={{ filter: "saturate(1.075)" }}>{stats.sourceCount.toLocaleString()}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Photos</div>
-              <div className="flex items-center gap-2 text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
+              <div className="flex items-center gap-2 text-2xl font-semibold text-secondary-foreground font-heading" style={{ filter: "saturate(1.075)" }}>
                 <FileImage className="w-4 h-4" /> {stats.photos.toLocaleString()}
               </div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Videos</div>
-              <div className="flex items-center gap-2 text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
+              <div className="flex items-center gap-2 text-2xl font-semibold text-secondary-foreground font-heading" style={{ filter: "saturate(1.075)" }}>
                 <FileVideo className="w-4 h-4" /> {stats.videos.toLocaleString()}
               </div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Total Size</div>
-              <div className="text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>{stats.sizeGB.toFixed(1)} GB</div>
+              <div className="text-2xl font-semibold text-secondary-foreground font-heading" style={{ filter: "saturate(1.075)" }}>{stats.sizeGB.toFixed(1)} GB</div>
             </div>
           </div>
 
@@ -2051,7 +2051,7 @@ function DashboardPanel({
                   <div className="p-3 bg-secondary/50 rounded-full">
                     <img src="./assets//pdr-destination-drive.png" className="w-5 h-5 object-contain" alt="Destination Drive" />
                   </div>
-                  <h3 className="text-base font-medium">Destination Drive</h3>
+                  <h3 className="text-base font-medium font-heading">Destination Drive</h3>
                 </div>
                 <div className="flex-1">
                   {destinationPath ? (
@@ -2103,7 +2103,7 @@ function DashboardPanel({
                   <div className="p-3 bg-secondary/50 rounded-full">
                     <FileImage className="w-5 h-5 text-primary" />
                   </div>
-                  <h3 className="text-base font-medium">Photo Format</h3>
+                  <h3 className="text-base font-medium font-heading">Photo Format</h3>
                   <div className="relative group ml-auto">
                     <button
                       className="p-1 rounded-full hover:bg-secondary transition-colors"
@@ -2152,7 +2152,7 @@ function DashboardPanel({
         >
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
-                <span className="text-foreground font-bold">{stats.totalFiles.toLocaleString()}</span> files ready to process
+                <span className="text-foreground font-bold font-heading">{stats.totalFiles.toLocaleString()}</span> files ready to process
                 {!destinationPath && <span className="ml-2 text-amber-600 dark:text-amber-400">— Select a destination to continue</span>}
                 {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
@@ -2170,7 +2170,7 @@ function DashboardPanel({
                  onClick={() => setShowFixModal(true)} 
                  variant="outline" 
                  disabled={!destinationPath || destinationFreeGB < stats.sizeGB}
-                 className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                 className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold font-heading h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                  data-testid="button-run-fix"
                  data-tour="apply-fixes"
                >
@@ -2909,15 +2909,15 @@ function CompletionState({ results, onAddAnother, onViewResults, onBackToWorkspa
               <div className="space-y-6">
                 <div className="flex items-center justify-between px-4 py-3 bg-background/50 rounded-lg">
                   <span className="text-muted-foreground">Files fixed</span>
-                  <span className="text-2xl font-semibold text-emerald-600">{results.fixed}</span>
+                  <span className="text-2xl font-semibold text-emerald-600 font-heading">{results.fixed}</span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 bg-background/50 rounded-lg">
                   <span className="text-muted-foreground">Files unchanged</span>
-                  <span className="text-2xl font-semibold text-foreground">{results.unchanged}</span>
+                  <span className="text-2xl font-semibold text-foreground font-heading">{results.unchanged}</span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 bg-background/50 rounded-lg">
                   <span className="text-muted-foreground">Files skipped</span>
-                  <span className="text-2xl font-semibold text-amber-600">{results.skipped}</span>
+                  <span className="text-2xl font-semibold text-amber-600 font-heading">{results.skipped}</span>
                 </div>
               </div>
             </Card>
@@ -3013,7 +3013,7 @@ function ConfidenceCard({ level, count, percentage, description, color, bgColor,
           </div>
         </div>
         <div className="flex items-baseline gap-2 mb-2">
-          <div className="text-4xl font-bold text-foreground">{count.toLocaleString()}</div>
+          <div className="text-4xl font-bold text-foreground font-heading">{count.toLocaleString()}</div>
           <div className="text-lg font-medium text-muted-foreground">({percentage}%)</div>
         </div>
         <p className="text-sm text-muted-foreground mt-auto">{description}</p>
@@ -3991,24 +3991,24 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             
 			<div className={`grid ${(fixSnapshotRef.current?.skippedExisting ?? 0) > 0 ? 'grid-cols-5' : 'grid-cols-4'} gap-3 mb-6 p-4 bg-muted/50 rounded-xl`}>
 			  <div className="text-center">
-				<div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{(fixSnapshotRef.current?.confirmed ?? 0).toLocaleString()}</div>
+				<div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400 font-heading">{(fixSnapshotRef.current?.confirmed ?? 0).toLocaleString()}</div>
 				<div className="text-xs text-muted-foreground">Confirmed</div>
 			  </div>
 			  <div className="text-center">
-				<div className="text-lg font-semibold text-indigo-600 dark:text-indigo-400">{(fixSnapshotRef.current?.recovered ?? 0).toLocaleString()}</div>
+				<div className="text-lg font-semibold text-indigo-600 dark:text-indigo-400 font-heading">{(fixSnapshotRef.current?.recovered ?? 0).toLocaleString()}</div>
 				<div className="text-xs text-muted-foreground">Recovered</div>
 			  </div>
 			  <div className="text-center">
-				<div className="text-lg font-semibold text-slate-600 dark:text-slate-400">{(fixSnapshotRef.current?.marked ?? 0).toLocaleString()}</div>
+				<div className="text-lg font-semibold text-slate-600 dark:text-slate-400 font-heading">{(fixSnapshotRef.current?.marked ?? 0).toLocaleString()}</div>
 				<div className="text-xs text-muted-foreground">Marked</div>
 			  </div>
 			  <div className="text-center">
-				<div className="text-lg font-semibold text-amber-600 dark:text-amber-400">{(fixSnapshotRef.current?.duplicatesRemoved ?? 0).toLocaleString()}</div>
+				<div className="text-lg font-semibold text-amber-600 dark:text-amber-400 font-heading">{(fixSnapshotRef.current?.duplicatesRemoved ?? 0).toLocaleString()}</div>
 				<div className="text-xs text-muted-foreground">Duplicates</div>
 			  </div>
 			  {(fixSnapshotRef.current?.skippedExisting ?? 0) > 0 && (
 				<div className="text-center">
-				  <div className="text-lg font-semibold text-[#9b8bb8]">{(fixSnapshotRef.current?.skippedExisting ?? 0).toLocaleString()}</div>
+				  <div className="text-lg font-semibold text-[#9b8bb8] font-heading">{(fixSnapshotRef.current?.skippedExisting ?? 0).toLocaleString()}</div>
 				  <div className="text-xs text-muted-foreground">Already in Output</div>
 				</div>
 			  )}
@@ -4704,7 +4704,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                   Date taken directly from information saved by the camera, app, or backup at the time the photo or video was created.
                 </TooltipContent>
               </Tooltip>
-              <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{confidenceCounts.confirmed.toLocaleString()}</div>
+              <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 font-heading">{confidenceCounts.confirmed.toLocaleString()}</div>
               <div className="text-sm text-emerald-600 dark:text-emerald-400">Confirmed</div>
               <div className="text-xs text-muted-foreground mt-1">EXIF / Takeout metadata</div>
             </div>
@@ -4719,7 +4719,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                   Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures.
                 </TooltipContent>
               </Tooltip>
-              <div className="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">{confidenceCounts.recovered.toLocaleString()}</div>
+              <div className="text-2xl font-semibold text-indigo-600 dark:text-indigo-400 font-heading">{confidenceCounts.recovered.toLocaleString()}</div>
               <div className="text-sm text-indigo-600 dark:text-indigo-400">Recovered</div>
               <div className="text-xs text-muted-foreground mt-1">Filename patterns</div>
             </div>
@@ -4734,7 +4734,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                   No reliable date could be found. The file will still be safely renamed using a fallback date to avoid conflicts.
                 </TooltipContent>
               </Tooltip>
-              <div className="text-2xl font-semibold text-slate-600 dark:text-slate-400">{confidenceCounts.marked.toLocaleString()}</div>
+              <div className="text-2xl font-semibold text-slate-600 dark:text-slate-400 font-heading">{confidenceCounts.marked.toLocaleString()}</div>
               <div className="text-sm text-slate-600 dark:text-slate-400">Marked</div>
               <div className="text-xs text-muted-foreground mt-1">Fallback date used</div>
             </div>
@@ -4749,7 +4749,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                   Exact duplicate files detected by content hash (SHA-256). These are excluded from the output to avoid redundancy.
                 </TooltipContent>
               </Tooltip>
-              <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{(loadedReport?.duplicatesRemoved || 0).toLocaleString()}</div>
+              <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400 font-heading">{(loadedReport?.duplicatesRemoved || 0).toLocaleString()}</div>
               <div className="text-sm text-amber-600 dark:text-amber-400">Duplicates</div>
               <div className="text-xs text-muted-foreground mt-1">Hash-matched removed</div>
             </div>
@@ -5003,15 +5003,15 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
             <div className="space-y-3">
               <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-lg border border-emerald-100">
                 <span className="text-sm font-medium text-emerald-900">High Confidence</span>
-                <span className="text-lg font-semibold text-emerald-600">892 files</span>
+                <span className="text-lg font-semibold text-emerald-600 font-heading">892 files</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-amber-50 rounded-lg border border-amber-100">
                 <span className="text-sm font-medium text-amber-900">Medium Confidence</span>
-                <span className="text-lg font-semibold text-amber-600">312 files</span>
+                <span className="text-lg font-semibold text-amber-600 font-heading">312 files</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-rose-50 rounded-lg border border-rose-100">
                 <span className="text-sm font-medium text-rose-900">Low Confidence</span>
-                <span className="text-lg font-semibold text-rose-600">44 files</span>
+                <span className="text-lg font-semibold text-rose-600 font-heading">44 files</span>
               </div>
             </div>
           </div>
@@ -5021,15 +5021,15 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
             <div className="space-y-3">
               <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
                 <span className="text-sm font-medium text-foreground">Files Fixed</span>
-                <span className="text-lg font-semibold text-emerald-600">810</span>
+                <span className="text-lg font-semibold text-emerald-600 font-heading">810</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
                 <span className="text-sm font-medium text-foreground">Files Unchanged</span>
-                <span className="text-lg font-semibold text-foreground">349</span>
+                <span className="text-lg font-semibold text-foreground font-heading">349</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
                 <span className="text-sm font-medium text-foreground">Files Skipped</span>
-                <span className="text-lg font-semibold text-amber-600">89</span>
+                <span className="text-lg font-semibold text-amber-600 font-heading">89</span>
               </div>
             </div>
           </div>

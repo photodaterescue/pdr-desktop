@@ -22,7 +22,7 @@ export function TitleBar() {
           className="w-5 h-5 object-contain"
           alt="PDR"
         />
-        <span className="text-[12px] text-foreground font-semibold tracking-wide whitespace-nowrap">
+        <span className="text-[12px] text-foreground font-semibold tracking-wide whitespace-nowrap font-heading">
           Photo Date Rescue
         </span>
       </div>

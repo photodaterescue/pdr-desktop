@@ -2492,7 +2492,7 @@ function IndexManagerModal({ onClose, onRefresh, stats }: { onClose: () => void;
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {
-  return <div className="p-3 rounded-xl border border-border bg-secondary/20 text-center"><p className="text-lg font-semibold text-foreground">{value}</p><p className="text-[10px] text-muted-foreground uppercase font-semibold">{label}</p></div>;
+  return <div className="p-3 rounded-xl border border-border bg-secondary/20 text-center"><p className="text-lg font-semibold text-foreground font-heading">{value}</p><p className="text-[10px] text-muted-foreground uppercase font-semibold">{label}</p></div>;
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
