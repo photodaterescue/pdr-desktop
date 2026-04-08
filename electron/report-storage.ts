@@ -50,6 +50,8 @@ export interface ReportSummary {
   };
   duplicatesRemoved?: number;
   totalScanned?: number;
+  destinationExists?: boolean;
+  destinationStatus?: 'found' | 'drive-missing' | 'folder-missing';
 }
 
 function getReportsDirectory(): string {
@@ -139,7 +141,19 @@ export async function listReports(): Promise<ReportSummary[]> {
           marked: report.counts.marked
         },
         duplicatesRemoved: report.duplicatesRemoved || 0,
-        totalScanned: totalScanned
+        totalScanned: totalScanned,
+        destinationExists: fs.existsSync(report.destinationPath),
+        destinationStatus: fs.existsSync(report.destinationPath)
+          ? 'found'
+          : (() => {
+              // Check if it's the drive that's missing vs just the folder
+              const driveMatch = report.destinationPath.match(/^([A-Za-z]:\\)/);
+              if (driveMatch && !fs.existsSync(driveMatch[1])) return 'drive-missing' as const;
+              // Also handle UNC paths (\\server\share)
+              const uncMatch = report.destinationPath.match(/^(\\\\[^\\]+\\[^\\]+)/);
+              if (uncMatch && !fs.existsSync(uncMatch[1])) return 'drive-missing' as const;
+              return 'folder-missing' as const;
+            })()
       });
     } catch (e) {
       console.error(`Error reading report ${filePath}:`, e);
@@ -338,3 +352,224 @@ export function getExportFilename(report: FixReport, extension: 'csv' | 'txt'): 
   const dateStr = date.toISOString().split('T')[0];
   return `PDR_Report_${dateStr}_${report.id}.${extension}`;
 }
+
+// ─── Auto-Catalogue ────────────────────────────────────────────────────────
+// Generates a dynamic, cumulative PDR_Catalogue.csv and PDR_Catalogue.txt at
+// the destination root.  Includes all reports targeting that destination, but
+// only lists files that still exist on disk — so if someone deletes files from
+// the destination, the catalogue shrinks to match reality on the next fix.
+
+/** Scan a directory tree once and return a Set of all filenames (lowercase) */
+function collectFilenames(dirPath: string, maxDepth: number = 6, currentDepth: number = 0): Set<string> {
+  const names = new Set<string>();
+  if (currentDepth > maxDepth) return names;
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        names.add(entry.name.toLowerCase());
+      } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        const sub = collectFilenames(path.join(dirPath, entry.name), maxDepth, currentDepth + 1);
+        for (const n of sub) names.add(n);
+      }
+    }
+  } catch { /* permission error, etc. */ }
+  return names;
+}
+
+export async function generateCatalogue(destinationPath: string): Promise<{ csv: string; txt: string }> {
+  const reportsDir = getReportsDirectory();
+  if (!fs.existsSync(reportsDir)) return { csv: '', txt: '' };
+
+  // 1. Scan destination ONCE to build a fast lookup of every filename on disk
+  const existingFiles = fs.existsSync(destinationPath)
+    ? collectFilenames(destinationPath)
+    : new Set<string>();
+
+  // 2. Load all reports targeting this destination
+  const reportFiles = fs.readdirSync(reportsDir).filter(f => f.endsWith('.json'));
+  const matchingReports: FixReport[] = [];
+
+  for (const file of reportFiles) {
+    try {
+      const content = fs.readFileSync(path.join(reportsDir, file), 'utf-8');
+      const report = JSON.parse(content) as FixReport;
+      // Normalise paths for comparison (case-insensitive on Windows, trailing slash)
+      const normDest = report.destinationPath.replace(/[\\/]+$/, '').toLowerCase();
+      const normTarget = destinationPath.replace(/[\\/]+$/, '').toLowerCase();
+      if (normDest === normTarget) {
+        matchingReports.push(report);
+      }
+    } catch { /* skip corrupt reports */ }
+  }
+
+  // Sort oldest first so catalogue reads chronologically
+  matchingReports.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  // 3. Build CSV + TXT
+  const csvHeaders = [
+    'run_id', 'run_timestamp', 'original_filename', 'new_filename',
+    'confidence', 'confidence_method', 'source_path', 'destination_path',
+    'file_type', 'date_changed', 'exif_written', 'exif_source', 'status'
+  ];
+
+  const escapeCSV = (val: string | undefined | null): string => {
+    if (val === undefined || val === null) return '""';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const csvRows: string[] = [];
+  const txtLines: string[] = [];
+  let totalProcessed = 0;
+  let totalDuplicates = 0;
+  let totalScanned = 0;
+  let totalRemoved = 0;
+
+  txtLines.push('='.repeat(70));
+  txtLines.push('PHOTO DATE RESCUE — CUMULATIVE CATALOGUE');
+  txtLines.push('='.repeat(70));
+  txtLines.push('');
+  txtLines.push(`Destination:   ${destinationPath}`);
+  txtLines.push(`Generated:     ${new Date().toISOString()}`);
+  txtLines.push(`               ${new Date().toLocaleString()}`);
+  txtLines.push(`Fix runs:      ${matchingReports.length}`);
+  txtLines.push('');
+
+  for (const report of matchingReports) {
+    const runScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
+    totalScanned += runScanned;
+
+    txtLines.push('-'.repeat(70));
+    txtLines.push(`RUN: ${report.id}`);
+    txtLines.push(`  Timestamp:   ${new Date(report.timestamp).toLocaleString()}`);
+    txtLines.push(`  Sources:`);
+    report.sources.forEach((s, i) => {
+      txtLines.push(`    ${i + 1}. ${s.label} (${s.type}) — ${s.path}`);
+    });
+    txtLines.push('');
+
+    // Processed files — only include those still on disk
+    for (const f of report.files) {
+      // Check against the pre-built filename set (fast O(1) lookup)
+      const filenameOnly = path.basename(f.newFilename).toLowerCase();
+      if (!existingFiles.has(filenameOnly)) {
+        totalRemoved++;
+        continue;
+      }
+
+      totalProcessed++;
+      const ext = f.originalFilename.split('.').pop()?.toLowerCase() || '';
+      const dateChanged = f.originalFilename !== f.newFilename;
+
+      csvRows.push([
+        escapeCSV(report.id),
+        escapeCSV(report.timestamp),
+        escapeCSV(f.originalFilename),
+        escapeCSV(f.newFilename),
+        escapeCSV(f.confidence.charAt(0).toUpperCase() + f.confidence.slice(1)),
+        escapeCSV(f.dateSource),
+        escapeCSV(f.sourcePath || report.sources[0]?.path || ''),
+        escapeCSV(report.destinationPath),
+        escapeCSV(f.fileType || ext),
+        dateChanged ? 'true' : 'false',
+        f.exifWritten ? 'true' : 'false',
+        escapeCSV(f.exifSource || ''),
+        'Processed'
+      ].join(','));
+
+      const confidenceLabel = f.confidence.charAt(0).toUpperCase() + f.confidence.slice(1);
+      txtLines.push(`  File ${totalProcessed.toString().padStart(6)}:`);
+      txtLines.push(`    Original:    ${f.originalFilename}`);
+      txtLines.push(`    New:         ${f.newFilename}`);
+      txtLines.push(`    Confidence:  ${confidenceLabel}`);
+      txtLines.push(`    Method:      ${f.dateSource}`);
+      txtLines.push(`    File Type:   ${f.fileType || ext}`);
+      txtLines.push(`    Changed:     ${dateChanged ? 'Yes' : 'No'}`);
+      txtLines.push(`    EXIF Written:${f.exifWritten ? 'Yes' : 'No'}${f.exifSource ? ` (${f.exifSource})` : ''}`);
+      txtLines.push(`    Run:         ${report.id}`);
+      txtLines.push('');
+    }
+
+    // Duplicates (always include — these were never copied so nothing to check)
+    if (report.duplicateFiles && report.duplicateFiles.length > 0) {
+      for (const dup of report.duplicateFiles) {
+        totalDuplicates++;
+        const ext = dup.filename.split('.').pop()?.toLowerCase() || '';
+        const retainedFile = report.files.find(f => f.originalFilename === dup.duplicateOf);
+        const retainedNewFilename = retainedFile?.newFilename || dup.duplicateOf;
+        const duplicateConfidence = dup.duplicateMethod === 'heuristic'
+          ? 'Duplicate – Heuristic'
+          : 'Duplicate – Hash (SHA-256)';
+        csvRows.push([
+          escapeCSV(report.id),
+          escapeCSV(report.timestamp),
+          escapeCSV(dup.filename),
+          escapeCSV('(skipped - duplicate)'),
+          escapeCSV(duplicateConfidence),
+          escapeCSV(`Retained as: ${retainedNewFilename}`),
+          escapeCSV(report.sources[0]?.path || ''),
+          escapeCSV(report.destinationPath),
+          escapeCSV(ext),
+          'false',
+          'false',
+          '',
+          'Skipped'
+        ].join(','));
+      }
+    }
+  }
+
+  // Finalise CSV
+  let csvContent = [csvHeaders.join(','), ...csvRows].join('\n');
+  csvContent += `\n\n# PDR Catalogue — ${totalProcessed} files across ${matchingReports.length} fix runs, ${totalDuplicates} duplicates skipped`;
+  if (totalRemoved > 0) {
+    csvContent += `, ${totalRemoved} files no longer at destination`;
+  }
+
+  // Finalise TXT
+  txtLines.push('');
+  txtLines.push('='.repeat(70));
+  txtLines.push('CATALOGUE SUMMARY');
+  txtLines.push('='.repeat(70));
+  txtLines.push(`  Fix Runs:      ${matchingReports.length}`);
+  txtLines.push(`  Total Scanned: ${totalScanned.toLocaleString()} files`);
+  txtLines.push(`  On Disk:       ${totalProcessed.toLocaleString()} files`);
+  if (totalRemoved > 0) {
+    txtLines.push(`  Removed:       ${totalRemoved.toLocaleString()} files no longer at destination`);
+  }
+  txtLines.push(`  Duplicates:    ${totalDuplicates.toLocaleString()} skipped`);
+  txtLines.push('');
+  txtLines.push('='.repeat(70));
+  txtLines.push('END OF CATALOGUE');
+  txtLines.push('='.repeat(70));
+
+  return { csv: csvContent, txt: txtLines.join('\n') };
+}
+
+/** Write PDR_Catalogue.csv and PDR_Catalogue.txt to destination root */
+export async function writeCatalogue(destinationPath: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!fs.existsSync(destinationPath)) {
+      return { success: false, error: 'Destination folder not found' };
+    }
+
+    const { csv, txt } = await generateCatalogue(destinationPath);
+
+    if (csv) {
+      fs.writeFileSync(path.join(destinationPath, 'PDR_Catalogue.csv'), csv, 'utf-8');
+    }
+    if (txt) {
+      fs.writeFileSync(path.join(destinationPath, 'PDR_Catalogue.txt'), txt, 'utf-8');
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to write catalogue:', error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+

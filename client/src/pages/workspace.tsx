@@ -39,7 +39,8 @@ import {
   PlayCircle,
   Copy,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Search
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -72,6 +73,8 @@ import {
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
+import { FolderBrowserModal } from "@/components/FolderBrowserModal";
+import { SearchRibbon } from "@/components/SearchPanel";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
 import type { SourceAnalysisResult } from "../electron";
@@ -86,6 +89,8 @@ interface Source {
   selected: boolean;
   confirmed: boolean;
   stats?: PreScanStats;
+  confidenceSummary?: { confirmed: number; recovered: number; marked: number };
+  duplicatesRemoved?: number;
 }
 
 interface AnalysisProgress {
@@ -114,16 +119,16 @@ interface PreScanStats {
 export default function Workspace() {
 	const [zoomLevel, setZoomLevel] = useState<number>(() => {
   const saved = localStorage.getItem("pdr-zoom-level");
-  return saved ? Number(saved) : 80;
+  return saved ? Number(saved) : 100;
 });
 const MIN_ZOOM = 60;
-const MAX_ZOOM = 130;
+const MAX_ZOOM = 150;
 const ZOOM_STEP = 5;
 
 const applyZoom = (newZoom: number) => {
   setZoomLevel(newZoom);
   localStorage.setItem("pdr-zoom-level", String(newZoom));
-  (window as any).pdr?.setZoom(newZoom / 100);
+  // Zoom is CSS-only on the content area — no Electron setZoomFactor needed
 };
 
 const handleZoomIn = () => {
@@ -137,6 +142,26 @@ const handleZoomOut = () => {
 const handleZoomReset = () => {
   applyZoom(100);
 };
+
+// Ctrl+scroll wheel zoom (like browsers and Word)
+useEffect(() => {
+  const handleWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault(); // prevent native browser zoom
+    setZoomLevel(prev => {
+      const newZoom = e.deltaY < 0
+        ? Math.min(MAX_ZOOM, prev + ZOOM_STEP)
+        : Math.max(MIN_ZOOM, prev - ZOOM_STEP);
+      if (newZoom !== prev) {
+        localStorage.setItem("pdr-zoom-level", String(newZoom));
+      }
+      return newZoom;
+    });
+  };
+  window.addEventListener('wheel', handleWheel, { passive: false });
+  return () => window.removeEventListener('wheel', handleWheel);
+}, []);
+
   const [location, setLocation] = useLocation();
   // For HashRouter, query params are inside the hash (e.g., #/workspace?tour=true)
   const hashParts = window.location.hash.split('?');
@@ -152,7 +177,8 @@ const handleZoomReset = () => {
   const analysisStartTimeRef = useRef<number>(0);
   
   const [sources, setSources] = useState<Source[]>(() => {
-    const saved = sessionStorage.getItem("pdr-sources");
+    // Try localStorage first (persists across sessions), then sessionStorage (legacy fallback)
+    const saved = localStorage.getItem("pdr-sources") || sessionStorage.getItem("pdr-sources");
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -168,13 +194,25 @@ const handleZoomReset = () => {
     return [];
   });
 
+  // On mount: check rememberSources setting — if OFF, clear persisted sources
   useEffect(() => {
-    // Create a version of sources that is safe for JSON stringify (remove React components)
+    getSettings().then((settings) => {
+      if (!settings.rememberSources) {
+        setSources([]);
+        localStorage.removeItem("pdr-sources");
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    // Persist sources to localStorage (survives app restarts)
     const serializableSources = sources.map(s => {
       const { icon, ...rest } = s;
       return rest;
     });
-    sessionStorage.setItem("pdr-sources", JSON.stringify(serializableSources));
+    localStorage.setItem("pdr-sources", JSON.stringify(serializableSources));
+    // Clean up legacy sessionStorage
+    sessionStorage.removeItem("pdr-sources");
   }, [sources]);
   
   // Listen for reports history event from EmptyState
@@ -184,12 +222,24 @@ const handleZoomReset = () => {
     return () => window.removeEventListener('open-reports-history', handleOpenReports);
   }, []);
 
+  // Listen for clear sources event from post-fix prompt
+  useEffect(() => {
+    const handleClearSources = () => {
+      setSources([]);
+      localStorage.removeItem("pdr-sources");
+      setHasCompletedFix(false);
+      pendingSourceClearRef.current = false;
+    };
+    window.addEventListener('pdr-clear-sources', handleClearSources);
+    return () => window.removeEventListener('pdr-clear-sources', handleClearSources);
+  }, []);
+
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);
   const [showCompletionScreen, setShowCompletionScreen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
-  const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | 'help-support' | null>(null);
+  const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | 'search' | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
@@ -239,7 +289,90 @@ const handleActivateLicense = () => {
   const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
   const [hasCompletedFix, setHasCompletedFix] = useState(false);
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexingProgress, setIndexingProgress] = useState<{ current: number; total: number } | null>(null);
+  const [searchDbReady, setSearchDbReady] = useState(false);
+  const [searchResultsActive, setSearchResultsActive] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const [showDestBrowser, setShowDestBrowser] = useState(false);
+  const [folderBrowserCallback, setFolderBrowserCallback] = useState<((path: string) => void) | null>(null);
+
+  // Auto-index: track which report IDs have already been indexed to avoid re-indexing
+  const autoIndexedReportsRef = useRef<Set<string>>(new Set());
+
+  // Auto-index effect: reacts to savedReportId changes (savedReportId is set elsewhere and properly minified)
+  useEffect(() => {
+    if (!savedReportId) return;
+    if (autoIndexedReportsRef.current.has(savedReportId)) return;
+    autoIndexedReportsRef.current.add(savedReportId);
+
+    const runAutoIndex = async () => {
+      try {
+        const { initSearchDatabase, indexFixRun, onSearchIndexProgress, removeSearchIndexProgressListener } = await import('@/lib/electron-bridge');
+        const initResult = await initSearchDatabase();
+        if (!initResult.success) {
+          toast.error('Search index unavailable', {
+            description: initResult.error || 'Could not initialise search database. You can manually index from the Index Manager.',
+            duration: 8000,
+          });
+          return;
+        }
+        setIsIndexing(true);
+        toast.info('Indexing files for Search & Discovery...', { duration: 3000 });
+        onSearchIndexProgress((progress: any) => {
+          setIndexingProgress({ current: progress.current, total: progress.total });
+          if (progress.phase === 'complete') {
+            setIsIndexing(false);
+            setIndexingProgress(null);
+            removeSearchIndexProgressListener();
+            toast.success('Files indexed for Search & Discovery', {
+              description: `${progress.total.toLocaleString()} files are now searchable.`,
+              duration: 4000,
+            });
+          }
+        });
+        // Small delay to ensure report file is fully written to disk
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const indexResult = await indexFixRun(savedReportId);
+        if (!indexResult.success) {
+          toast.error('Auto-indexing failed', {
+            description: indexResult.error || 'You can manually index from the Index Manager.',
+            duration: 8000,
+          });
+          setIsIndexing(false);
+          setIndexingProgress(null);
+          removeSearchIndexProgressListener();
+        }
+      } catch (err) {
+        toast.error('Auto-indexing error', {
+          description: `${(err as Error).message}. You can manually index from the Index Manager.`,
+          duration: 8000,
+        });
+        setIsIndexing(false);
+        setIndexingProgress(null);
+      }
+    };
+
+    runAutoIndex();
+  }, [savedReportId]);
+
+  // Clear sources after fix completes (when clearSourcesAfterFix setting is ON)
+  // Deferred: we mark it pending and only actually clear when the user starts a new action
+  // (adding a source), NOT while the post-fix dashboard/reports chain is still visible.
+  const clearedForReportRef = useRef<Set<string>>(new Set());
+  const pendingSourceClearRef = useRef(false);
+  useEffect(() => {
+    if (!savedReportId) return;
+    if (clearedForReportRef.current.has(savedReportId)) return;
+    clearedForReportRef.current.add(savedReportId);
+
+    getSettings().then((settings) => {
+      if (settings.clearSourcesAfterFix) {
+        pendingSourceClearRef.current = true;
+      }
+    });
+  }, [savedReportId]);
 
   const toggleDarkMode = () => {
     const newValue = !isDarkMode;
@@ -250,6 +383,8 @@ const handleActivateLicense = () => {
       document.documentElement.classList.remove('dark');
     }
     localStorage.setItem('pdr-dark-mode', newValue ? 'true' : 'false');
+    // Update native title bar colour to match
+    (window as any).pdr?.setTitleBarColor(newValue);
   };
 
   useEffect(() => {
@@ -257,8 +392,24 @@ const handleActivateLicense = () => {
     if (savedDarkMode === 'true') {
       document.documentElement.classList.add('dark');
       setIsDarkMode(true);
+      (window as any).pdr?.setTitleBarColor(true);
     }
   }, []);
+
+  // Background search database init — non-blocking, no UI wait
+  useEffect(() => {
+    const initDb = async () => {
+      try {
+        const { initSearchDatabase } = await import('@/lib/electron-bridge');
+        const result = await initSearchDatabase();
+        if (result.success) setSearchDbReady(true);
+      } catch {
+        // Silent fail — search will init lazily when opened
+      }
+    };
+    initDb();
+  }, []);
+
 
   useEffect(() => {
     const params = searchParams;
@@ -333,6 +484,11 @@ const handleActivateLicense = () => {
           confirmed += realResult.confidenceSummary.confirmed;
           recovered += realResult.confidenceSummary.recovered;
           marked += realResult.confidenceSummary.marked;
+        } else if (source.confidenceSummary) {
+          // Use persisted confidence data (e.g. after app restart)
+          confirmed += source.confidenceSummary.confirmed;
+          recovered += source.confidenceSummary.recovered;
+          marked += source.confidenceSummary.marked;
         } else if (source.stats) {
           const total = source.stats.totalFiles;
           confirmed += Math.floor(total * 0.65);
@@ -442,64 +598,33 @@ const handleActivateLicense = () => {
 
 
   const handleAddSource = () => {
-    setShowSourceTypeSelector(true);
+    // If sources are pending clear from a previous fix, clear them now
+    if (pendingSourceClearRef.current) {
+      pendingSourceClearRef.current = false;
+      setSources([]);
+      localStorage.removeItem("pdr-sources");
+      setHasCompletedFix(false);
+    }
+    if (isElectron()) {
+      // Open unified source browser — handles both folders and archives
+      setFolderBrowserCallback(() => (path: string) => {
+        handleUnifiedSourceSelected(path);
+      });
+      setShowFolderBrowser(true);
+    } else {
+      setShowSourceTypeSelector(true);
+    }
   };
 
 const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   setShowSourceTypeSelector(false);
-
-  if (isElectron()) {
-    let selectedPath: string | null = null;
-
+  setTimeout(() => {
     if (type === 'folderOrDrive') {
-      selectedPath = await openFolderDialog();
+      folderOrDriveInputRef.current?.click();
     } else if (type === 'zip') {
-      selectedPath = await openZipDialog();
+      zipInputRef.current?.click();
     }
-
-    if (selectedPath) {
-      // Check license AFTER file selection, BEFORE scanning
-      if (!isLicensed) {
-        setShowLicenseRequired(true);
-        return;
-      }
-      
-      // Skip storage check for RAR files (they extract to local temp folder)
-      const isRar = selectedPath.toLowerCase().endsWith('.rar');
-      
-      // Check storage speed BEFORE scanning (wrapped in try-catch)
-      if (!isRar) {
-        try {
-          const settings = await getSettings();
-          if (settings.showStoragePerformanceTips) {
-            const storageResult = await classifyStorage(selectedPath);
-            if (storageResult && !storageResult.isOptimal) {
-              // Use new NetworkScanModal for network/cloud drives
-              setNetworkScanInfo({
-                path: selectedPath,
-                type: type === 'zip' ? 'zip' : 'folder',
-                label: storageResult.label
-              });
-              setShowNetworkScanModal(true);
-              return;
-            }
-          }
-        } catch (e) {
-          // If storage check fails, proceed anyway
-        }
-      }
-      
-      await handleElectronSourceSelected(selectedPath, type === 'zip' ? 'zip' : 'folder');
-    }
-  } else {
-    setTimeout(() => {
-      if (type === 'folderOrDrive') {
-        folderOrDriveInputRef.current?.click();
-      } else if (type === 'zip') {
-        zipInputRef.current?.click();
-      }
-    }, 0);
-  }
+  }, 0);
 };
   
   const handleElectronSourceSelected = async (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', skipStorageCheck: boolean = false) => {
@@ -644,7 +769,9 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         active: true,
         selected: true,
         confirmed: false,
-        stats
+        stats,
+        confidenceSummary: analysisData.confidenceSummary,
+        duplicatesRemoved: analysisData.duplicatesRemoved || 0,
       };
       
       setSourceAnalysisResults(prev => ({ ...prev, [newSource.id]: analysisData }));
@@ -690,7 +817,7 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   };
 
   const handleAddAnother = () => {
-    setShowSourceTypeSelector(true);
+    handleAddSource();
   };
 
   const handleAddToWorkspace = () => {
@@ -735,81 +862,114 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
     }
   };
 
+const handleFolderBrowserSourceSelected = async (selectedPath: string) => {
+    setShowFolderBrowser(false);
+    setFolderBrowserCallback(null);
+
+    // Check license first
+    if (!isLicensed) {
+      setShowLicenseRequired(true);
+      return;
+    }
+
+    // Check storage speed BEFORE scanning (wrapped in try-catch)
+    try {
+      const settings = await getSettings();
+      if (settings.showStoragePerformanceTips) {
+        const storageResult = await classifyStorage(selectedPath);
+        if (storageResult && !storageResult.isOptimal) {
+          setNetworkScanInfo({
+            path: selectedPath,
+            type: 'folder',
+            label: storageResult.label
+          });
+          setShowNetworkScanModal(true);
+          return;
+        }
+      }
+    } catch (e) {
+      // If storage check fails, proceed anyway
+    }
+
+    await handleElectronSourceSelected(selectedPath, 'folder');
+  };
+
+  // Unified source handler — detects archive vs folder from the selected path
+  const handleUnifiedSourceSelected = async (selectedPath: string) => {
+    setShowFolderBrowser(false);
+    setFolderBrowserCallback(null);
+
+    const ext = selectedPath.toLowerCase().split('.').pop() || '';
+    const isArchive = ext === 'zip' || ext === 'rar';
+
+    if (isArchive) {
+      // Route through archive handler (license check + storage check + type detection)
+      await handleZipBrowserSelect(selectedPath);
+    } else {
+      // Route through folder handler (license check + storage check)
+      await handleFolderBrowserSourceSelected(selectedPath);
+    }
+  };
+
 const handleTriggerFolderPicker = async () => {
   if (isElectron()) {
-    const selectedPath = await openFolderDialog();
-    if (selectedPath) {
-      // Check license first
-      if (!isLicensed) {
-        setShowLicenseRequired(true);
-        return;
-      }
-      
-      // Check storage speed BEFORE scanning (wrapped in try-catch)
-      try {
-        const settings = await getSettings();
-        if (settings.showStoragePerformanceTips) {
-          const storageResult = await classifyStorage(selectedPath);
-          if (storageResult && !storageResult.isOptimal) {
-            setNetworkScanInfo({
-              path: selectedPath,
-              type: 'folder',
-              label: storageResult.label
-            });
-            setShowNetworkScanModal(true);
-            return;
-          }
-        }
-      } catch (e) {
-        // If storage check fails, proceed anyway
-      }
-      
-      await handleElectronSourceSelected(selectedPath, 'folder');
-    }
+    setFolderBrowserCallback(() => (path: string) => {
+      handleUnifiedSourceSelected(path);
+    });
+    setShowFolderBrowser(true);
   } else {
     folderOrDriveInputRef.current?.click();
   }
 };
 
-const handleTriggerZipPicker = async () => {
+const [showZipBrowser, setShowZipBrowser] = useState(false);
+
+const handleTriggerZipPicker = () => {
   if (isElectron()) {
-    const selectedPath = await openZipDialog();
-    if (selectedPath) {
-      // Check license first
-      if (!isLicensed) {
-        setShowLicenseRequired(true);
-        return;
-      }
-      
-      // Skip storage check for RAR files (they extract to local temp folder)
-      const isRar = selectedPath.toLowerCase().endsWith('.rar');
-      
-      // Check storage speed BEFORE scanning (wrapped in try-catch)
-      if (!isRar) {
-        try {
-          const settings = await getSettings();
-          if (settings.showStoragePerformanceTips) {
-            const storageResult = await classifyStorage(selectedPath);
-            if (storageResult && !storageResult.isOptimal) {
-              setNetworkScanInfo({
-                path: selectedPath,
-                type: 'zip',
-                label: storageResult.label
-              });
-              setShowNetworkScanModal(true);
-              return;
-            }
-          }
-        } catch (e) {
-          // If storage check fails, proceed anyway
-        }
-      }
-      
-      await handleElectronSourceSelected(selectedPath, 'zip');
-    }
+    // Use unified browser
+    setFolderBrowserCallback(() => (path: string) => {
+      handleUnifiedSourceSelected(path);
+    });
+    setShowFolderBrowser(true);
   } else {
     zipInputRef.current?.click();
   }
+};
+
+const handleZipBrowserSelect = async (selectedPath: string) => {
+  setShowZipBrowser(false);
+
+  // Check license first
+  if (!isLicensed) {
+    setShowLicenseRequired(true);
+    return;
+  }
+
+  // Skip storage check for RAR files (they extract to local temp folder)
+  const isRar = selectedPath.toLowerCase().endsWith('.rar');
+
+  // Check storage speed BEFORE scanning (wrapped in try-catch)
+  if (!isRar) {
+    try {
+      const settings = await getSettings();
+      if (settings.showStoragePerformanceTips) {
+        const storageResult = await classifyStorage(selectedPath);
+        if (storageResult && !storageResult.isOptimal) {
+          setNetworkScanInfo({
+            path: selectedPath,
+            type: 'zip',
+            label: storageResult.label
+          });
+          setShowNetworkScanModal(true);
+          return;
+        }
+      }
+    } catch (e) {
+      // If storage check fails, proceed anyway
+    }
+  }
+
+  await handleElectronSourceSelected(selectedPath, 'zip');
 };
 
 const handleSlowStorageContinue = async () => {
@@ -988,7 +1148,8 @@ return (
 
 	
     {/* Main workspace layout */}
-    <div className="flex h-screen bg-background overflow-hidden font-sans">
+    <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
+      <div className="flex flex-1 overflow-hidden">
 
       <input
         type="file"
@@ -1041,44 +1202,69 @@ return (
 		  onLicenseRequired={handleLicenseRequired}
 		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
 		/>
-      {activePanel ? (
-        <PanelPlaceholder 
-          panelType={activePanel} 
-          onBackToWorkspace={() => setActivePanel(null)} 
-          onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
-          onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
-        />
-      ) : (
-        <MainContent 
-          sources={isTourPreview ? [tourPlaceholderSource] : sources}
-          activeSource={activeSource} 
-          onRemove={handleRemoveSource}
-          onChange={handleChangeSource}
-          isComplete={isTourPreview ? true : isComplete}
-          analysisResults={isTourPreview ? { fixed: 1336, unchanged: 12, skipped: 0 } : analysisResults}
-          sourceAnalysisResults={isTourPreview ? tourPlaceholderAnalysisResults : sourceAnalysisResults}
-          onAddAnother={handleAddAnother}
-          onPreviewChanges={() => setShowPreviewModal(true)}
-          onViewResults={() => setShowResultsModal(true)}
-          onAddFolder={handleTriggerFolderPicker}
-          onAddZip={handleTriggerZipPicker}
-          showCompletionScreen={showCompletionScreen}
-          onDismissCompletion={() => setShowCompletionScreen(false)}
-          onNavigateToBestPractices={() => setActivePanel('best-practices')}
-          destinationPath={destinationPath}
-          setDestinationPath={setDestinationPath}
-          destinationFreeGB={destinationFreeGB}
-          setDestinationFreeGB={setDestinationFreeGB}
-          destinationTotalGB={destinationTotalGB}
-          setDestinationTotalGB={setDestinationTotalGB}
-          hasCompletedFix={hasCompletedFix}
-          setHasCompletedFix={setHasCompletedFix}
-          savedReportId={savedReportId}
-          setSavedReportId={setSavedReportId}
-          isLicensed={isLicensed}
-          onActivateLicense={handleActivateLicense}
-        />
-      )}
+      {/* Right-side content area: ribbon + panels */}
+      <div className="flex-1 flex flex-col h-full">
+        {/* Search Ribbon — grows to fill space when results are active */}
+        <div className={`relative z-30 flex flex-col ${searchResultsActive ? 'flex-1 overflow-hidden' : 'shrink-0'}`} style={{ overflow: searchResultsActive ? undefined : 'visible' }}>
+          <SearchRibbon
+            isIndexing={isIndexing}
+            indexingProgress={indexingProgress}
+            searchDbReady={searchDbReady}
+            zoomLevel={100}
+            isDarkMode={isDarkMode}
+            onToggleDarkMode={toggleDarkMode}
+            licenseStatusBadge={<LicenseStatusBadge onClick={() => setShowLicenseModal(true)} />}
+            onSearchActiveChange={setSearchResultsActive}
+          />
+        </div>
+
+        {/* Zoomable content area — only this part scales, hidden when search results are showing */}
+        <div className={`flex-1 overflow-auto relative ${searchResultsActive ? 'hidden' : ''}`} style={{
+          zoom: zoomLevel / 100,
+        }}>
+        {/* Panel content */}
+        {activePanel ? (
+          <PanelPlaceholder
+            panelType={activePanel}
+            onBackToWorkspace={() => setActivePanel(null)}
+            onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
+            onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
+          />
+        ) : (
+          <MainContent
+            sources={isTourPreview ? [tourPlaceholderSource] : sources}
+            activeSource={activeSource}
+            onRemove={handleRemoveSource}
+            onChange={handleChangeSource}
+            isComplete={isTourPreview ? true : isComplete}
+            analysisResults={isTourPreview ? { fixed: 1336, unchanged: 12, skipped: 0 } : analysisResults}
+            sourceAnalysisResults={isTourPreview ? tourPlaceholderAnalysisResults : sourceAnalysisResults}
+            onAddAnother={handleAddAnother}
+            onPreviewChanges={() => setShowPreviewModal(true)}
+            onViewResults={() => setShowResultsModal(true)}
+            onAddFolder={handleTriggerFolderPicker}
+            onAddZip={handleTriggerZipPicker}
+            showCompletionScreen={showCompletionScreen}
+            onDismissCompletion={() => setShowCompletionScreen(false)}
+            onNavigateToBestPractices={() => setActivePanel('best-practices')}
+            destinationPath={destinationPath}
+            setDestinationPath={setDestinationPath}
+            destinationFreeGB={destinationFreeGB}
+            setDestinationFreeGB={setDestinationFreeGB}
+            destinationTotalGB={destinationTotalGB}
+            setDestinationTotalGB={setDestinationTotalGB}
+            hasCompletedFix={hasCompletedFix}
+            setHasCompletedFix={setHasCompletedFix}
+            savedReportId={savedReportId}
+            setSavedReportId={setSavedReportId}
+            isLicensed={isLicensed}
+            onActivateLicense={handleActivateLicense}
+            zoomLevel={zoomLevel}
+          />
+        )}
+        </div>{/* close zoomable content wrapper */}
+      </div>
+      </div>{/* close inner flex row */}
 	  {isScanning && <ScanningOverlay message={scanProgress.message} percent={scanProgress.percent} onCancel={handleCancelAnalysis} showCancelConfirm={showCancelConfirm} onConfirmCancel={handleConfirmCancelAnalysis} onDismissCancel={handleDismissCancelConfirm} />}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
@@ -1089,6 +1275,20 @@ return (
 		  onActivate={handleActivateLicense}
 		  feature="add sources"
 		/>
+      {/* Custom Folder Browser for source selection */}
+      <FolderBrowserModal
+        isOpen={showFolderBrowser}
+        onSelect={(path) => {
+          setShowFolderBrowser(false);
+          if (folderBrowserCallback) {
+            folderBrowserCallback(path);
+            setFolderBrowserCallback(null);
+          }
+        }}
+        onCancel={() => { setShowFolderBrowser(false); setFolderBrowserCallback(null); }}
+        title="Add Source"
+        mode="source"
+      />
       {showSettingsModal && (
 		<SettingsModal 
 		  onClose={() => setShowSettingsModal(false)}
@@ -1135,26 +1335,7 @@ return (
 		  />
 		)}
       
-      {/* Fixed controls in top-right corner */}
-      <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={toggleDarkMode}
-                className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary hover:bg-primary/15 text-muted-foreground hover:text-foreground cursor-pointer transition-all duration-200 hover:scale-105"
-                data-testid="button-toggle-dark-mode"
-              >
-                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p>Switch between light and dark mode</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <LicenseStatusBadge onClick={() => setShowLicenseModal(true)} />
-      </div>
+      {/* Theme toggle and license badge are now in the ribbon tab bar */}
       
       {showPreScanConfirm && pendingSource && preScanStats && (
 		<SourceAddedModal 
@@ -1233,6 +1414,7 @@ return (
   );
 }
 
+
 function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
@@ -1240,6 +1422,11 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
   const [width, setWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
+
+  // Sync sidebar width to CSS custom property so TitleBar can track it
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-width', `${width}px`);
+  }, [width]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -1268,7 +1455,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
   return (
     <div 
-      className="bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 z-20 relative transition-none"
+      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative transition-none sidebar-container"
       style={{ width: `${width}px` }}
     >
       <div 
@@ -1281,14 +1468,11 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         <div className="absolute right-0 top-0 bottom-0 w-4 -mr-2 bg-transparent group-hover:bg-primary/10 transition-colors" />
       </div>
 
-      <div className="px-6 py-8 flex items-center cursor-pointer" onClick={() => onDashboardClick()}>
-        <>
-          <img src="./assets//pdr-logo-stacked_transparent.png" alt="Photo Date Rescue" className="h-14 w-auto object-contain dark:hidden" />
-          <div className="hidden dark:flex flex-col items-center">
-            <img src="./assets//pdr-logo-stacked_transparent_dark_v2.png" alt="Photo Date Rescue" className="h-10 w-auto object-contain" />
-            <span className="text-foreground font-semibold text-sm tracking-wide mt-1">PDR</span>
-          </div>
-        </>
+      <div className="px-6 py-6 flex justify-center cursor-pointer" onClick={() => onDashboardClick()}>
+        <div className="flex flex-col items-center">
+          <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-10 w-auto object-contain" />
+          <span className="text-foreground font-bold text-sm tracking-widest mt-1.5">PDR</span>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
@@ -1296,7 +1480,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         <div>
           <SidebarItem 
             icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
-            label="Workspace" 
+            label={sources.length > 0 ? "Dashboard" : "Workspace"}
             onClick={() => onDashboardClick()}
             active={activePanel === null && !sources.some(s => s.active)}
             selectable={false}
@@ -1306,7 +1490,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         {/* SOURCES SECTION */}
         <div data-tour="sources-panel">
           <div className="flex items-center justify-between mb-3 px-2">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sources</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Source Menu</h3>
             {sources.length > 0 && (
               <div className="flex items-center gap-2">
                 <Checkbox 
@@ -1338,14 +1522,15 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             ))}
           </div>
           <div className="flex gap-2 mt-2 px-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
               onClick={onAddSource}
               data-tour="add-source"
+              style={isLicensed && sources.length === 0 ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
             >
-              <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Source
+              <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Add Source
             </Button>
             <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
             <Button 
@@ -1362,7 +1547,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       {/* EDUCATION SECTION */}
-      <div className="pt-2 border-t border-sidebar-border/0 pb-2" data-tour="guides-panel">
+      <div className="pt-2 border-t pb-2 sidebar-divider" data-tour="guides-panel">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-6">Guidance</h3>
         <div className="space-y-1 px-4">
           <SidebarItem icon={<PlayCircle className="w-4 h-4 opacity-60" />} label="Quick Tour" onClick={onStartTour} />
@@ -1373,7 +1558,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       {/* UTILITY SECTION - BOTTOM */}
-      <div className="p-4 border-t border-sidebar-border space-y-1">
+      <div className="p-4 border-t space-y-1 sidebar-divider">
         <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
         <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
         <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
@@ -1442,8 +1627,9 @@ function MainContent({
   savedReportId,
   setSavedReportId,
   isLicensed,
-  onActivateLicense
-}: { 
+  onActivateLicense,
+  zoomLevel = 100
+}: {
   sources: Source[],
   activeSource: Source | null,
   onRemove: () => void,
@@ -1470,11 +1656,23 @@ function MainContent({
   savedReportId: string | null,
   setSavedReportId: (id: string | null) => void,
   isLicensed: boolean,
-  onActivateLicense: () => void
+  onActivateLicense: () => void,
+  zoomLevel?: number
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
-     return <EmptyState onAddFirstSource={onAddAnother} isLicensed={isLicensed} onActivateLicense={onActivateLicense} onNavigateToBestPractices={onNavigateToBestPractices} />;
+     return <EmptyState
+       onAddFirstSource={onAddAnother}
+       isLicensed={isLicensed}
+       onActivateLicense={onActivateLicense}
+       onNavigateToBestPractices={onNavigateToBestPractices}
+       hasCompletedFix={hasCompletedFix || !!savedReportId}
+       savedReportId={savedReportId}
+       onViewReport={() => {
+         const event = new CustomEvent('open-reports-history');
+         window.dispatchEvent(event);
+       }}
+     />;
   }
 
   // NOTE: Previous CompletionState component logic is now merged into DashboardPanel
@@ -1518,6 +1716,7 @@ function MainContent({
       setHasCompletedFix={setHasCompletedFix}
       savedReportId={savedReportId}
       setSavedReportId={setSavedReportId}
+      zoomLevel={zoomLevel}
     />
   );
 }
@@ -1525,15 +1724,16 @@ function MainContent({
 function DashboardPanel({ 
   sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults, onNavigateToBestPractices,
   destinationPath, setDestinationPath, destinationFreeGB, setDestinationFreeGB, destinationTotalGB, setDestinationTotalGB,
-  hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId
-}: { 
-  sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void, 
+  hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId, zoomLevel = 100
+}: {
+  sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void,
   isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult>, onNavigateToBestPractices?: () => void,
   destinationPath: string | null, setDestinationPath: (path: string | null) => void,
   destinationFreeGB: number, setDestinationFreeGB: (gb: number) => void,
   destinationTotalGB: number, setDestinationTotalGB: (gb: number) => void,
   hasCompletedFix: boolean, setHasCompletedFix: (value: boolean) => void,
-  savedReportId: string | null, setSavedReportId: (id: string | null) => void
+  savedReportId: string | null, setSavedReportId: (id: string | null) => void,
+  zoomLevel?: number
 }) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected);
@@ -1546,24 +1746,39 @@ function DashboardPanel({
   const [includePhotos, setIncludePhotos] = useState(true);
   const [includeVideos, setIncludeVideos] = useState(true);
   const [reportSavedMessage, setReportSavedMessage] = useState(false);
-  
-  const handleChangeDestination = async () => {
-    const { selectDestination, getDiskSpace, isElectron } = await import('@/lib/electron-bridge');
-    
+  const [showDestBrowser, setShowDestBrowser] = useState(false);
+  const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg'>('original');
+
+  // Post-fix flow tracking: true from when fix completes until the clear prompt is answered
+  const [postFixFlowActive, setPostFixFlowActive] = useState(false);
+  const [showClearSourcesPrompt, setShowClearSourcesPrompt] = useState(false);
+
+  const handleChangeDestination = () => {
     if (isElectron()) {
-      const path = await selectDestination();
-      if (path) {
-        setDestinationPath(path);
-        const diskInfo = await getDiskSpace(path);
-        setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
-        setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
-      }
+      setShowDestBrowser(true);
     } else {
       setDestinationPath('/Volumes/Photos_Backup/Restored_2024');
       setDestinationFreeGB(2400);
       setDestinationTotalGB(4000);
     }
   };
+
+  const handleDestBrowserSelect = async (selectedPath: string) => {
+    setShowDestBrowser(false);
+    const { getDiskSpace } = await import('@/lib/electron-bridge');
+    setDestinationPath(selectedPath);
+    const diskInfo = await getDiskSpace(selectedPath);
+    setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
+    setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+  };
+
+  // When all post-fix modals close and we're in the post-fix flow, show the clear prompt
+  useEffect(() => {
+    if (postFixFlowActive && !showFixModal && !showReportsList && !showPostFixReport) {
+      setShowClearSourcesPrompt(true);
+      setPostFixFlowActive(false);
+    }
+  }, [postFixFlowActive, showFixModal, showReportsList, showPostFixReport]);
 
   const handleOpenDestination = async () => {
     if (destinationPath) {
@@ -1632,7 +1847,7 @@ function DashboardPanel({
         if ((isPhoto && !includePhotos) || (isVideo && !includeVideos)) {
           continue; // Skip files that don't match current filters
         }
-        
+
         // Count by confidence level
         if (file.dateConfidence === 'confirmed') {
           highConf++;
@@ -1642,17 +1857,23 @@ function DashboardPanel({
           lowConf++;
         }
       }
-    }
-    // Duplicates must also respect photo/video filters
-    if (realResult?.duplicateFiles) {
-      for (const dup of realResult.duplicateFiles) {
-        const isPhoto = dup.type === 'photo';
-        const isVideo = dup.type === 'video';
-        if ((isPhoto && !includePhotos) || (isVideo && !includeVideos)) {
-          continue;
+      // Duplicates must also respect photo/video filters
+      if (realResult?.duplicateFiles) {
+        for (const dup of realResult.duplicateFiles) {
+          const isPhoto = dup.type === 'photo';
+          const isVideo = dup.type === 'video';
+          if ((isPhoto && !includePhotos) || (isVideo && !includeVideos)) {
+            continue;
+          }
+          duplicatesCount++;
         }
-        duplicatesCount++;
       }
+    } else if (source.confidenceSummary) {
+      // Fallback: use persisted confidence summary (e.g. after app restart)
+      highConf += source.confidenceSummary.confirmed;
+      medConf += source.confidenceSummary.recovered;
+      lowConf += source.confidenceSummary.marked;
+      duplicatesCount += source.duplicatesRemoved || 0;
     }
   }
 
@@ -1665,15 +1886,15 @@ function DashboardPanel({
         className="max-w-4xl w-full pt-4"
       >
         <div className="mb-8 text-center">
-           <h2 className="text-2xl font-semibold text-foreground mb-2">Workspace</h2>
-           <p className="text-muted-foreground">Review your sources and start analysis</p>
+           <h2 className="text-2xl font-semibold text-foreground mb-2">Dashboard</h2>
+           <p className="text-muted-foreground">{isComplete ? 'Analysis complete — review results and run your fix' : 'Review your sources and start analysis'}</p>
         </div>
 
         {/* Confidence Summary Section */}
         {hasSelection && (
           <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100" data-tour="confidence-cards">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-foreground">Date Summary</h2>
+              <h2 className="text-lg font-semibold text-foreground">Source Analysis</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <ConfidenceCard 
@@ -1729,10 +1950,6 @@ function DashboardPanel({
                 onNavigateToBestPractices={onNavigateToBestPractices}
               />
             </div>
-            {/* Total scanned summary line */}
-            <p className="text-sm text-muted-foreground mt-4 text-center">
-              {stats.totalFiles.toLocaleString()} files scanned
-            </p>
           </section>
         )}
 
@@ -1744,20 +1961,24 @@ function DashboardPanel({
               </div>
               <div>
                 <div className="flex items-center gap-3 mb-1">
-                  <h3 className="text-xl font-medium text-foreground">{stats.label}</h3>
+                  <h3 className="text-xl font-semibold text-foreground">{stats.label}</h3>
                   {isComplete && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                      </span>
-                      <span className="text-xs font-medium">Analysis Ready</span>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Analysis complete</span>
                     </div>
                   )}
+                  <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5 ml-auto">
+                    <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Add Source
+                  </Button>
                 </div>
-                <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
-                  {stats.path}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
+                    {stats.path}
+                  </p>
+                  <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
+                  <PerformanceNudge type="path" onNavigateToBestPractices={onNavigateToBestPractices} />
+                </div>
               </div>
             </div>
             
@@ -1795,27 +2016,21 @@ function DashboardPanel({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-6 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Sources</div>
               <div className="text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>{stats.sourceCount.toLocaleString()}</div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Total Photos</div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
+              <div className="text-sm text-muted-foreground mb-1">Photos</div>
+              <div className="flex items-center gap-2 text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
                 <FileImage className="w-4 h-4" /> {stats.photos.toLocaleString()}
               </div>
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Total Videos</div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
+              <div className="text-sm text-muted-foreground mb-1">Videos</div>
+              <div className="flex items-center gap-2 text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
                 <FileVideo className="w-4 h-4" /> {stats.videos.toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground mb-1">Total Files</div>
-              <div className="text-2xl font-semibold text-secondary-foreground" style={{ filter: "saturate(1.075)" }}>
-                {stats.totalFiles.toLocaleString()}
               </div>
             </div>
             <div>
@@ -1824,75 +2039,105 @@ function DashboardPanel({
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-4">
-             <div className="flex gap-4">
-               <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
-                 <img src="./assets//pdr-folder.png" className="w-4 h-4 object-contain" alt="Folder" /> Add Folder / Drive
-               </Button>
-               <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
-               <Button variant="outline" size="sm" onClick={onAddZip} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5">
-                 <img src="./assets//pdr-zip.png" className="w-4 h-4 object-contain" alt="ZIP" /> Add ZIP/RAR Archive
-               </Button>
-               <PerformanceNudge type="path" onNavigateToBestPractices={onNavigateToBestPractices} />
-             </div>
-             {/* Only show "Analysis complete" if complete */}
-             {isComplete && (
-               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span className="text-xs font-medium">Analysis complete</span>
-               </div>
-             )}
-          </div>
         </Card>
 
         {/* Preview Section */}
         <section className="pt-0 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
-            <h2 className="text-lg font-semibold text-foreground mb-4">Output Preview</h2>
-            <Card className="flex flex-col md:flex-row items-center gap-6 p-5" data-tour="destination">
-              <div className="p-4 bg-secondary/50 rounded-full">
-                <img src="./assets//pdr-destination-drive.png" className="w-6 h-6 object-contain" alt="Destination Drive" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
-                {destinationPath ? (
-                  <>
-                    <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block mb-2">{destinationPath}</p>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${destinationFreeGB >= stats.sizeGB ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30' : 'text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/30'}`}>
-                        {destinationFreeGB >= 1000 ? `${(destinationFreeGB / 1000).toFixed(1)} TB` : `${destinationFreeGB.toFixed(1)} GB`} Free
-                      </span>
-                      <span className="text-xs text-muted-foreground">Required: {stats.sizeGB.toFixed(1)} GB</span>
-                      {destinationFreeGB < stats.sizeGB && (
-                        <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No destination selected. Click "Select Destination" to choose where to save fixed files.</p>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {destinationPath && hasCompletedFix && (
-                  <Button 
-                    variant="outline"
-                    onClick={handleOpenDestination}
-                    className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
-                    data-testid="button-open-destination-card"
+            <h2 className="text-lg font-semibold text-foreground mb-4">Output</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-tour="destination">
+              {/* Left: Destination Drive */}
+              <Card className="flex flex-col p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-3 bg-secondary/50 rounded-full">
+                    <img src="./assets//pdr-destination-drive.png" className="w-5 h-5 object-contain" alt="Destination Drive" />
+                  </div>
+                  <h3 className="text-base font-medium">Destination Drive</h3>
+                </div>
+                <div className="flex-1">
+                  {destinationPath ? (
+                    <>
+                      <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block mb-2 break-all">{destinationPath}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${destinationFreeGB >= stats.sizeGB ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30' : 'text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/30'}`}>
+                          {destinationFreeGB >= 1000 ? `${(destinationFreeGB / 1000).toFixed(1)} TB` : `${destinationFreeGB.toFixed(1)} GB`} Free
+                        </span>
+                        <span className="text-xs text-muted-foreground">Required: {stats.sizeGB.toFixed(1)} GB</span>
+                        {destinationFreeGB < stats.sizeGB && (
+                          <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Choose where to save your fixed files.</p>
+                  )}
+                </div>
+                <div className="flex gap-2 mt-4">
+                  {destinationPath && hasCompletedFix && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenDestination}
+                      className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
+                      data-testid="button-open-destination-card"
+                    >
+                      <FolderOpen className="w-4 h-4 mr-2" /> Open
+                    </Button>
+                  )}
+                  <Button
+                    variant={destinationPath ? "outline" : "default"}
+                    size="sm"
+                    onClick={handleChangeDestination}
+                    data-testid="button-change-destination"
+                    className={!destinationPath ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md" : ""}
+                    style={!destinationPath ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
                   >
-                    <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
+                    {destinationPath ? "Change Destination" : "Select Destination"}
                   </Button>
-                )}
-                <Button 
-                  variant={destinationPath ? "outline" : "default"}
-                  onClick={handleChangeDestination} 
-                  data-testid="button-change-destination"
-                  className={!destinationPath ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md" : ""}
-                >
-                  {destinationPath ? "Change Destination" : "Select Destination"}
-                </Button>
-                <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
-              </div>
-            </Card>
+                  <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
+                </div>
+              </Card>
+
+              {/* Right: Photo Format */}
+              <Card className="flex flex-col p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-3 bg-secondary/50 rounded-full">
+                    <FileImage className="w-5 h-5 text-primary" />
+                  </div>
+                  <h3 className="text-base font-medium">Photo Format</h3>
+                  <div className="relative group ml-auto">
+                    <button
+                      className="p-1 rounded-full hover:bg-secondary transition-colors"
+                    >
+                      <Info className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                    <div className="absolute top-full right-0 mt-1 w-64 p-3 rounded-lg bg-popover border border-border shadow-lg text-xs text-muted-foreground space-y-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                      <p><strong className="text-foreground">PNG</strong> preserves every pixel with zero loss — ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
+                      <p><strong className="text-foreground">JPG</strong> compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across all devices and apps.</p>
+                      <p className="text-muted-foreground/70 italic">Files already in your chosen format will not be re-converted.</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="relative">
+                    <select
+                      value={photoFormat}
+                      onChange={(e) => setPhotoFormat(e.target.value as 'original' | 'png' | 'jpg')}
+                      className="w-full appearance-none px-3 py-2.5 pr-8 rounded-lg border border-border bg-background text-sm text-foreground cursor-pointer hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+                    >
+                      <option value="original">Keep Originals — no conversion</option>
+                      <option value="png">PNG — highest quality, lossless</option>
+                      <option value="jpg">JPG — reduced file size, universal</option>
+                    </select>
+                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {photoFormat === 'original' && 'Files stay in their current format. Extensions are normalised (.jpeg → .jpg).'}
+                    {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
+                    {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
+                  </p>
+                </div>
+              </Card>
+            </div>
         </section>
       </motion.div>
       </div>
@@ -1903,6 +2148,7 @@ function DashboardPanel({
           initial={{ y: 100 }}
           animate={{ y: 0 }}
           className="absolute bottom-0 left-0 right-0 bg-background border-t border-border p-4 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)] z-20"
+          style={{ zoom: 100 / zoomLevel }}
         >
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
@@ -1936,9 +2182,21 @@ function DashboardPanel({
         </motion.div>
       )}
 
+      {/* Counter-zoom wrapper: these modals use fixed positioning but are inside the
+          zoomable content div, so CSS zoom from the parent distorts their size.
+          We counter-scale them back to 100% so they match the Add Source modal. */}
+      <div style={{ zoom: 100 / zoomLevel }}>
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={results} />}
-      {showFixModal && <FixProgressModal 
-        onClose={() => setShowFixModal(false)} 
+      {/* Custom Folder Browser for destination selection */}
+      <FolderBrowserModal
+        isOpen={showDestBrowser}
+        onSelect={handleDestBrowserSelect}
+        onCancel={() => setShowDestBrowser(false)}
+        title="Select Destination Folder"
+        mode="folder"
+      />
+      {showFixModal && <FixProgressModal
+        onClose={() => { setShowFixModal(false); setHasCompletedFix(true); setPostFixFlowActive(true); }}
         totalFiles={stats.totalFiles}
         destinationPath={destinationPath}
         sources={selectedSources}
@@ -1947,8 +2205,10 @@ function DashboardPanel({
           setShowFixModal(false);
           setShowReportsList(true);
           setHasCompletedFix(true);
+          setPostFixFlowActive(true);
         }}
         onReportSaved={(reportId) => {
+          console.log('[PDR] Report saved, ID:', reportId, '— starting auto-index...');
           setSavedReportId(reportId);
           setReportSavedMessage(true);
           setTimeout(() => setReportSavedMessage(false), 5000);
@@ -1992,6 +2252,58 @@ function DashboardPanel({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Post-fix "Clear sources?" prompt */}
+      {showClearSourcesPrompt && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+          onClick={() => { setShowClearSourcesPrompt(false); }}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-background rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border border-border"
+          >
+            <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200 dark:border-emerald-700">
+              <CheckCircle2 className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Your fix is complete</h3>
+            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+              Would you like to clear your sources and start fresh?
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 border-border hover:bg-secondary"
+                onClick={() => {
+                  setShowClearSourcesPrompt(false);
+                }}
+              >
+                Keep Sources
+              </Button>
+              <Button
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+                onClick={() => {
+                  setShowClearSourcesPrompt(false);
+                  setHasCompletedFix(false);
+                  // Clear sources — use the parent's pending clear mechanism
+                  // by dispatching a custom event the parent listens for
+                  window.dispatchEvent(new CustomEvent('pdr-clear-sources'));
+                }}
+              >
+                Clear Sources
+              </Button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      </div>{/* close counter-zoom wrapper */}
     </div>
   );
 }
@@ -2078,7 +2390,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
 
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-semibold text-foreground mb-1">Date Summary</h2>
+                <h2 className="text-2xl font-semibold text-foreground mb-1">Source Analysis</h2>
                 <p className="text-sm text-muted-foreground">{stats.label}</p>
               </div>
             </div>
@@ -2170,16 +2482,19 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
   );
 }
 
-function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigateToBestPractices }: { 
+function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigateToBestPractices, hasCompletedFix, savedReportId, onViewReport }: {
   onAddFirstSource: () => void;
   isLicensed: boolean;
   onActivateLicense: () => void;
   onNavigateToBestPractices?: () => void;
+  hasCompletedFix?: boolean;
+  savedReportId?: string | null;
+  onViewReport?: () => void;
 }) {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       <div className="flex-1 flex items-center justify-center p-8">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="max-w-2xl w-full text-center"
@@ -2191,6 +2506,11 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
               transition={{ delay: 0.1, type: "spring", stiffness: 80 }}
               className="mb-8"
             >
+              {hasCompletedFix ? (
+                <div className="flex items-center justify-center">
+                  <CheckCircle2 className="w-16 h-16 text-green-500" />
+                </div>
+              ) : (
               <>
                 <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-20 w-auto mx-auto dark:hidden" />
                 <div className="hidden dark:flex flex-col items-center">
@@ -2198,21 +2518,53 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
                   <span className="text-foreground font-semibold text-lg tracking-wide mt-1">PDR</span>
                 </div>
               </>
+              )}
             </motion.div>
-            
-            <h1 className="text-4xl font-semibold text-foreground mb-4">Your workspace is empty</h1>
-            
-            {isLicensed ? (
+
+            <h1 className="text-4xl font-semibold text-foreground mb-4">
+              {hasCompletedFix ? 'Fix complete' : 'Your workspace is empty'}
+            </h1>
+
+            {hasCompletedFix ? (
+              // Post-fix state — warm, encouraging, with clear next steps
+              <>
+                <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
+                  Your files have been rescued and saved. You can view the report, start a new fix, or explore your indexed files in Search & Discovery.
+                </p>
+
+                <div className="flex flex-col gap-4 justify-center items-center">
+                  <div className="flex gap-3">
+                    <Button
+                      size="lg"
+                      className="px-8 h-12 text-base shadow-lg shadow-primary/25"
+                      onClick={onAddFirstSource}
+                    >
+                      <Plus className="w-5 h-5 mr-2" />
+                      Start New Fix
+                    </Button>
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="px-8 h-12 text-base border-2 border-primary/40 hover:border-primary hover:bg-primary/5"
+                      onClick={onViewReport}
+                    >
+                      <FileText className="w-5 h-5 mr-2" />
+                      Reports History
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : isLicensed ? (
               // Licensed user - show Add Source CTA
               <>
                 <p className="text-lg text-muted-foreground mb-8 leading-relaxed inline-flex items-center justify-center gap-1 flex-wrap">
-                  Add a folder, ZIP/RAR archive, or drive to begin analysing your photos and videos.
+                  Add your photos and videos from any local folder, ZIP/RAR archive, or drive to get started. Cloud storage must be downloaded first.
                   <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
                 </p>
-                
+
                 <div className="flex flex-col gap-4 justify-center items-center">
-                  <Button 
-                    size="lg" 
+                  <Button
+                    size="lg"
                     className="px-12 h-12 text-base shadow-lg shadow-primary/25"
                     onClick={onAddFirstSource}
                   >
@@ -2224,7 +2576,7 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
                   >
                     Explore the Workspace
                   </button>
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={() => {
                       const event = new CustomEvent('open-reports-history');
@@ -2443,7 +2795,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
           <section>
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-semibold text-foreground mb-1">Date Summary</h2>
+                <h2 className="text-2xl font-semibold text-foreground mb-1">Source Analysis</h2>
                 <p className="text-sm text-muted-foreground">Based on metadata signals found in {progress.current.toLocaleString()} files.</p>
               </div>
               <Button variant="outline" size="sm" disabled>View Detailed Report</Button>
@@ -3221,8 +3573,9 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
 
     const handleCancelFix = async () => {
     setIsCancelling(true);
-    const { cancelCopyFiles } = await import('@/lib/electron-bridge');
+    const { cancelCopyFiles, setFixInProgress } = await import('@/lib/electron-bridge');
     await cancelCopyFiles();
+    await setFixInProgress(false);
     onClose();
   };
   
@@ -3255,11 +3608,16 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     return Math.max(0, Math.round(remainMs / 1000));
   }, [progress, elapsed]);
 
+  const copyStartedRef = React.useRef(false);
   useEffect(() => {
-    if (isComplete || !destinationPath) return;
-    
+    if (isComplete || !destinationPath || copyStartedRef.current) return;
+    copyStartedRef.current = true;
+
     const copyFilesAsync = async () => {
-      const { copyFiles, onCopyProgress, isElectron } = await import('@/lib/electron-bridge');
+      const { copyFiles, onCopyProgress, isElectron, setFixInProgress } = await import('@/lib/electron-bridge');
+
+      // Notify main process that a fix is in progress (protects against accidental close)
+      await setFixInProgress(true);
       
       if (!isElectron()) {
         // Fake progress for non-Electron
@@ -3449,7 +3807,10 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       setSkippedExisting(writeSkippedExisting);
       setTotalTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
       setIsComplete(true);
-      
+
+      // Clear fix-in-progress flag (allows window close again)
+      await setFixInProgress(false);
+
       // Play completion sound if enabled
       const soundEnabled = localStorage.getItem('pdr-completion-sound') !== 'false';
 		if (soundEnabled) {
@@ -3722,16 +4083,34 @@ function ReportsListModal({ onClose, onViewReport }: {
   const [allowReportRemoval] = useState(
     localStorage.getItem('pdr-allow-report-removal') === 'true'
   );
+  const [showManualExports, setShowManualExports] = useState(false);
+  // Export folder browser state
+  const [showExportBrowser, setShowExportBrowser] = useState(false);
+  const [pendingExport, setPendingExport] = useState<{ reportId: string; format: 'csv' | 'txt' } | null>(null);
+  const [exportBrowserDefaultPath, setExportBrowserDefaultPath] = useState('');
 
   useEffect(() => {
     const loadReports = async () => {
-      const { listReports, isElectron } = await import('@/lib/electron-bridge');
-      
+      const { listReports, isElectron, getSettings, regenerateCatalogue } = await import('@/lib/electron-bridge');
+
       if (isElectron()) {
         const result = await listReports();
         if (result.success && result.data) {
           setReports(result.data);
+          // Silently regenerate catalogues for all unique destinations
+          const settings = await getSettings();
+          if (settings.autoSaveCatalogue) {
+            const destinations = new Set(result.data.map(r => r.destinationPath));
+            for (const dest of destinations) {
+              regenerateCatalogue(dest).then(res => {
+                  if (!res.success) console.warn('[Catalogue] Regen failed for', dest, res.error);
+                  else console.log('[Catalogue] Regenerated for', dest);
+                }).catch(err => console.warn('[Catalogue] Regen error for', dest, err));
+            }
+          }
         }
+        const settings = await getSettings();
+        setShowManualExports(settings.showManualReportExports);
       } else {
         setReports([
           {
@@ -3754,33 +4133,46 @@ function ReportsListModal({ onClose, onViewReport }: {
       }
       setIsLoading(false);
     };
-    
+
     loadReports();
   }, []);
 
   const handleExport = async (reportId: string, format: 'csv' | 'txt') => {
-    setExportingId(reportId);
-    const { exportReportCSV, exportReportTXT, isElectron } = await import('@/lib/electron-bridge');
-    
+    const { getDefaultExportPath, isElectron } = await import('@/lib/electron-bridge');
+
     if (!isElectron()) {
       toast.info('Export is available in the desktop app', {
         description: 'Download the Photo Date Rescue desktop app to export reports.'
       });
-      setExportingId(null);
       return;
     }
-    
-    const result = format === 'csv' 
-      ? await exportReportCSV(reportId)
-      : await exportReportTXT(reportId);
-    
+
+    // Get default path (destination root) and open folder browser
+    const pathResult = await getDefaultExportPath(reportId);
+    setExportBrowserDefaultPath(pathResult.path || '');
+    setPendingExport({ reportId, format });
+    setShowExportBrowser(true);
+  };
+
+  const handleExportToFolder = async (folderPath: string) => {
+    setShowExportBrowser(false);
+    if (!pendingExport) return;
+
+    setExportingId(pendingExport.reportId);
+    const { exportReportCSV, exportReportTXT } = await import('@/lib/electron-bridge');
+
+    const result = pendingExport.format === 'csv'
+      ? await exportReportCSV(pendingExport.reportId, folderPath)
+      : await exportReportTXT(pendingExport.reportId, folderPath);
+
     if (result.success) {
-      setExportSuccess({ id: reportId, type: format.toUpperCase() });
+      setExportSuccess({ id: pendingExport.reportId, type: pendingExport.format.toUpperCase() });
       setTimeout(() => setExportSuccess(null), 3000);
-    } else if (result.error && result.error !== 'Export cancelled') {
+    } else if (result.error) {
       toast.error('Export failed', { description: result.error });
     }
     setExportingId(null);
+    setPendingExport(null);
   };
 
   const handleDelete = async (reportId: string) => {
@@ -3924,29 +4316,31 @@ function ReportsListModal({ onClose, onViewReport }: {
                           {exportSuccess.type} exported
                         </span>
                       )}
-                      
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleExport(report.id, 'csv')}
-                          disabled={exportingId === report.id}
-                          className="h-8 px-3 text-xs border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
-                          data-testid={`button-export-csv-${report.id}`}
-                        >
-                          CSV
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleExport(report.id, 'txt')}
-                          disabled={exportingId === report.id}
-                          className="h-8 px-3 text-xs border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
-                          data-testid={`button-export-txt-${report.id}`}
-                        >
-                          TXT
-                        </Button>
-                      </div>
+
+                      {showManualExports && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleExport(report.id, 'csv')}
+                            disabled={exportingId === report.id}
+                            className="h-8 px-3 text-xs border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                            data-testid={`button-export-csv-${report.id}`}
+                          >
+                            CSV
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleExport(report.id, 'txt')}
+                            disabled={exportingId === report.id}
+                            className="h-8 px-3 text-xs border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                            data-testid={`button-export-txt-${report.id}`}
+                          >
+                            TXT
+                          </Button>
+                        </div>
+                      )}
                       
                       <Button
                         variant="outline"
@@ -4012,6 +4406,15 @@ function ReportsListModal({ onClose, onViewReport }: {
           </Button>
         </div>
       </motion.div>
+      {/* Folder browser for report export location */}
+      <FolderBrowserModal
+        isOpen={showExportBrowser}
+        onSelect={(path) => handleExportToFolder(path)}
+        onCancel={() => { setShowExportBrowser(false); setPendingExport(null); }}
+        title={`Save ${pendingExport?.format.toUpperCase() || ''} Report`}
+        mode="folder"
+        defaultPath={exportBrowserDefaultPath}
+      />
     </motion.div>
   );
 }
@@ -4040,11 +4443,20 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState<{ type: string } | null>(null);
+  const [showExportBrowser2, setShowExportBrowser2] = useState(false);
+  const [pendingExport2, setPendingExport2] = useState<{ format: 'csv' | 'txt' } | null>(null);
+  const [exportBrowserDefaultPath2, setExportBrowserDefaultPath2] = useState('');
+  const [showManualExports, setShowManualExports] = useState(false);
   const ITEMS_PER_PAGE = 100;
-  
+
   useEffect(() => {
-    import('@/lib/electron-bridge').then(({ isElectron }) => {
+    import('@/lib/electron-bridge').then(({ isElectron, getSettings }) => {
       setIsElectronEnv(isElectron());
+      if (isElectron()) {
+        getSettings().then(settings => {
+          setShowManualExports(settings.showManualReportExports);
+        });
+      }
     });
   }, []);
   
@@ -4098,29 +4510,41 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
       toast.error('No report available to export');
       return;
     }
-    
-    setIsExporting(true);
-    const { exportReportCSV, exportReportTXT, isElectron } = await import('@/lib/electron-bridge');
-    
+
+    const { getDefaultExportPath, isElectron } = await import('@/lib/electron-bridge');
+
     if (!isElectron()) {
       toast.info('Export is available in the desktop app', {
         description: 'Download the Photo Date Rescue desktop app to export reports.'
       });
-      setIsExporting(false);
       return;
     }
-    
-    const result = format === 'csv' 
-      ? await exportReportCSV(savedReportId)
-      : await exportReportTXT(savedReportId);
-    
+
+    const pathResult = await getDefaultExportPath(savedReportId);
+    setExportBrowserDefaultPath2(pathResult.path || '');
+    setPendingExport2({ format });
+    setShowExportBrowser2(true);
+  };
+
+  const handleExportToFolder2 = async (folderPath: string) => {
+    setShowExportBrowser2(false);
+    if (!pendingExport2 || !savedReportId) return;
+
+    setIsExporting(true);
+    const { exportReportCSV, exportReportTXT } = await import('@/lib/electron-bridge');
+
+    const result = pendingExport2.format === 'csv'
+      ? await exportReportCSV(savedReportId, folderPath)
+      : await exportReportTXT(savedReportId, folderPath);
+
     if (result.success) {
-      setExportSuccess({ type: format.toUpperCase() });
+      setExportSuccess({ type: pendingExport2.format.toUpperCase() });
       setTimeout(() => setExportSuccess(null), 3000);
-    } else if (result.error && result.error !== 'Export cancelled') {
+    } else if (result.error) {
       toast.error('Export failed', { description: result.error });
     }
     setIsExporting(false);
+    setPendingExport2(null);
   };
 
   // Extract real file data from loaded report or analysis results
@@ -4483,7 +4907,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
               )}
             </div>
             <div className="flex items-center gap-3">
-              {savedReportId && (
+              {savedReportId && showManualExports && (
                 <>
                   {exportSuccess && (
                     <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
@@ -4492,6 +4916,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                     </span>
                   )}
                   <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground italic hidden sm:inline">Auto-catalogue is active at your destination</span>
                     <Button
                       variant="outline"
                       size="sm"
@@ -4536,6 +4961,15 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
           </div>
         </div>
       </motion.div>
+      {/* Folder browser for report export location */}
+      <FolderBrowserModal
+        isOpen={showExportBrowser2}
+        onSelect={(path) => handleExportToFolder2(path)}
+        onCancel={() => { setShowExportBrowser2(false); setPendingExport2(null); }}
+        title={`Save ${pendingExport2?.format.toUpperCase() || ''} Report`}
+        mode="folder"
+        defaultPath={exportBrowserDefaultPath2}
+      />
     </motion.div>
   );
 }
@@ -4688,7 +5122,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                     <p className="text-sm text-muted-foreground">Only checked Sources are included — this is how you tell PDR exactly what to analyse.</p>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                    <p className="font-medium text-foreground mb-1">Review the Date Summary</p>
+                    <p className="font-medium text-foreground mb-1">Review the Source Analysis</p>
                     <p className="text-sm text-muted-foreground">Check how many files are Confirmed, Recovered, or Marked before running the fix.</p>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
@@ -4870,9 +5304,9 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 </div>
               </section>
 
-              {/* Date Summary Cards - Always Visible */}
+              {/* Source Analysis Cards - Always Visible */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Understanding Date Summary Cards</h3>
+                <h3 className="text-lg font-medium text-foreground mb-4">Understanding Source Analysis Cards</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <p className="font-medium text-emerald-700 dark:text-emerald-300 text-sm">Confirmed</p>
@@ -4919,7 +5353,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                           <ul className="list-disc ml-5 space-y-1">
                             <li>Start with one Source</li>
                             <li>Run analysis</li>
-                            <li>Check the Date Summary</li>
+                            <li>Check the Source Analysis</li>
                             <li>Add Sources gradually if needed</li>
                           </ul>
                         </div>
@@ -5166,24 +5600,24 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   <h3 className="text-lg font-medium text-foreground">Add your sources</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Start by adding the folders or ZIP/RAR archives that contain your photos and videos.</p>
-                  <p className="font-medium text-foreground">Choose the correct option:</p>
+                  <p>Start by adding the folders, drives, or ZIP/RAR archives that contain your photos and videos.</p>
+                  <p className="font-medium text-foreground">How to add sources:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
-                    <li><span className="font-medium text-foreground">Add Folder / Drive</span> — for folders or entire drives</li>
-                    <li><span className="font-medium text-foreground">Add ZIP/RAR Archive</span> — for ZIP or RAR files (these won't appear in the folder picker)</li>
+                    <li>Click <span className="font-medium text-foreground">Add Source</span> to browse your drives and folders</li>
+                    <li>Select a <span className="font-medium text-foreground">folder or drive</span> to scan, or select a <span className="font-medium text-foreground">ZIP/RAR file</span> to import</li>
                   </ul>
-                  <p>Each source is added one at a time, but you can keep adding as many as you like. The file picker will reopen after each selection until you're finished — Photo Date Rescue then analyses all selected sources together in a single, consistent run.</p>
+                  <p>Each source is added one at a time, but you can keep adding as many as you like. Photo Date Rescue then analyses all selected sources together in a single, consistent run.</p>
                 </div>
               </section>
 
               <section>
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">2</div>
-                  <h3 className="text-lg font-medium text-foreground">Review the Date Summary</h3>
+                  <h3 className="text-lg font-medium text-foreground">Review the Source Analysis</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Once your sources are added, analysis runs automatically — there's nothing you need to do at this stage.</p>
-                  <p>The Date Summary shows how your files were categorised:</p>
+                  <p>The Source Analysis shows how your files were categorised:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li><span className="font-medium text-foreground">Confirmed</span> — dates taken from embedded metadata</li>
                     <li><span className="font-medium text-foreground">Recovered</span> — dates inferred from structured filenames</li>
@@ -5667,7 +6101,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       
                       <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                         <p className="font-medium text-foreground text-sm mb-1">What if something doesn't look right?</p>
-                        <p className="text-sm text-muted-foreground">Check Date Summary, Confidence tooltips, and Reports History. If it still doesn't make sense, then contact support.</p>
+                        <p className="text-sm text-muted-foreground">Check Source Analysis, Confidence tooltips, and Reports History. If it still doesn't make sense, then contact support.</p>
                       </div>
                     </div>
                   </AccordionContent>
@@ -5831,19 +6265,12 @@ function SourceAddedModal({ source, stats, analysisElapsed, onAddToWorkspace, on
           <div className="space-y-3">
             <p className="text-xs font-medium text-muted-foreground text-center mb-4">Next steps</p>
             
-            <div className="grid grid-cols-2 gap-3">
-			<Button 
+            <div className="flex justify-center">
+			<Button
 			  onClick={() => isLicensed ? onAddFolder() : onLicenseRequired()}
-			  className="h-11 bg-primary hover:bg-primary/90"
+			  className="h-11 bg-primary hover:bg-primary/90 px-8"
 			>
-			  <Plus className="w-4 h-4 mr-2" /> Add Folder / Drive
-			</Button>
-			<Button 
-			  variant="outline" 
-			  onClick={() => isLicensed ? onAddZip() : onLicenseRequired()}
-			  className="h-11"
-			>
-			  <FileArchive className="w-4 h-4 mr-2" /> Add ZIP/RAR Archive
+			  <Plus className="w-4 h-4 mr-2" /> Add Another Source
 			</Button>
             </div>
 
@@ -5979,6 +6406,9 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   const [allowReportRemoval, setAllowReportRemoval] = useState(
     localStorage.getItem('pdr-allow-report-removal') === 'true'
   );
+  const [allowIndexRemoval, setAllowIndexRemoval] = useState(
+    localStorage.getItem('pdr-allow-index-removal') === 'true'
+  );
   const [advancedOpen, setAdvancedOpen] = useState(false);
   
     // Advanced settings state
@@ -5989,6 +6419,14 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   const [exifWriteRecovered, setExifWriteRecovered] = useState(true);
   const [exifWriteMarked, setExifWriteMarked] = useState(false);
   const [showStoragePerformanceTips, setShowStoragePerformanceTips] = useState(true);
+  const [rememberSources, setRememberSources] = useState(true);
+  const [clearSourcesAfterFix, setClearSourcesAfterFix] = useState(true);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiFaceDetection, setAiFaceDetection] = useState(true);
+  const [aiObjectTagging, setAiObjectTagging] = useState(true);
+  const [aiAutoProcess, setAiAutoProcess] = useState(true);
+  const [autoSaveCatalogue, setAutoSaveCatalogue] = useState(true);
+  const [showManualReportExports, setShowManualReportExports] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -6000,6 +6438,14 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
       setExifWriteRecovered(settings.exifWriteRecovered);
       setExifWriteMarked(settings.exifWriteMarked);
       setShowStoragePerformanceTips(settings.showStoragePerformanceTips);
+      setRememberSources(settings.rememberSources);
+      setClearSourcesAfterFix(settings.clearSourcesAfterFix);
+      setAiEnabled(settings.aiEnabled);
+      setAiFaceDetection(settings.aiFaceDetection);
+      setAiObjectTagging(settings.aiObjectTagging);
+      setAiAutoProcess(settings.aiAutoProcess);
+      setAutoSaveCatalogue(settings.autoSaveCatalogue);
+      setShowManualReportExports(settings.showManualReportExports);
     });
   }, []);
 
@@ -6038,12 +6484,62 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
     setSetting('showStoragePerformanceTips', checked);
   };
 
+  const handleRememberSourcesToggle = (checked: boolean) => {
+    setRememberSources(checked);
+    setSetting('rememberSources', checked);
+    if (!checked) {
+      // When turning off, clear any persisted sources immediately
+      localStorage.removeItem("pdr-sources");
+    }
+  };
+
+  const handleClearSourcesAfterFixToggle = (checked: boolean) => {
+    setClearSourcesAfterFix(checked);
+    setSetting('clearSourcesAfterFix', checked);
+  };
+
+  const handleAiEnabledToggle = (checked: boolean) => {
+    setAiEnabled(checked);
+    setSetting('aiEnabled', checked);
+  };
+  const handleAiFaceDetectionToggle = (checked: boolean) => {
+    setAiFaceDetection(checked);
+    setSetting('aiFaceDetection', checked);
+  };
+  const handleAiObjectTaggingToggle = (checked: boolean) => {
+    setAiObjectTagging(checked);
+    setSetting('aiObjectTagging', checked);
+  };
+  const handleAiAutoProcessToggle = (checked: boolean) => {
+    setAiAutoProcess(checked);
+    setSetting('aiAutoProcess', checked);
+  };
+
+  const handleAutoSaveCatalogueToggle = (checked: boolean) => {
+    setAutoSaveCatalogue(checked);
+    setSetting('autoSaveCatalogue', checked);
+  };
+
+  const handleShowManualReportExportsToggle = (checked: boolean) => {
+    setShowManualReportExports(checked);
+    setSetting('showManualReportExports', checked);
+  };
+
   const handleReportRemovalToggle = (checked: boolean) => {
     setAllowReportRemoval(checked);
     if (checked) {
       localStorage.setItem('pdr-allow-report-removal', 'true');
     } else {
       localStorage.removeItem('pdr-allow-report-removal');
+    }
+  };
+
+  const handleIndexRemovalToggle = (checked: boolean) => {
+    setAllowIndexRemoval(checked);
+    if (checked) {
+      localStorage.setItem('pdr-allow-index-removal', 'true');
+    } else {
+      localStorage.removeItem('pdr-allow-index-removal');
     }
   };
 
@@ -6062,18 +6558,36 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
     setExifWriteMarked(false);
     setShowStoragePerformanceTips(true);
     setAllowReportRemoval(false);
+    setAllowIndexRemoval(false);
     setShowWelcome(true);
     setSkipWelcomeScreen(false);
     onFolderStructureChange('year');
     onPlaySoundChange(true);
+    setAiEnabled(false);
+    setAiFaceDetection(true);
+    setAiObjectTagging(true);
+    setAiAutoProcess(true);
+    setAutoSaveCatalogue(true);
+    setShowManualReportExports(false);
     localStorage.removeItem('pdr-allow-report-removal');
+    localStorage.removeItem('pdr-allow-index-removal');
   };
+
+  const [settingsTab, setSettingsTab] = useState<'general' | 'fix' | 'pro'>('general');
+  const [folderStructureOpen, setFolderStructureOpen] = useState(false);
 
   const options = [
     { value: 'year' as const, label: 'Year', example: '2024/' },
     { value: 'year-month' as const, label: 'Year / Month', example: '2024/03/' },
     { value: 'year-month-day' as const, label: 'Year / Month / Day', example: '2024/03/15/' },
   ];
+
+  const tabClass = (tab: string) =>
+    `px-4 py-2.5 text-sm font-medium cursor-pointer transition-all duration-200 border-b-2 ${
+      settingsTab === tab
+        ? 'border-primary text-primary bg-background'
+        : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30 bg-muted/40'
+    } ${tab === 'general' ? 'rounded-tl-lg' : ''} ${tab === 'pro' ? 'rounded-tr-lg' : ''}`;
 
   return (
     <motion.div
@@ -6088,9 +6602,9 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-lg w-full p-6"
+        className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full p-6"
       >
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
               <Settings className="w-5 h-5 text-primary" />
@@ -6106,246 +6620,429 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
           </button>
         </div>
 
-        <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
-          {/* ===== CORE SETTINGS ===== */}
-          
-          {/* Folder Structure */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-3">
-              Folder Structure
-            </label>
-            <p className="text-xs text-muted-foreground mb-4">
-              Choose how files are organized in the destination folder.
-            </p>
-            
-            <div className="space-y-2">
-              {options.map((option) => (
-                <label
-                  key={option.value}
-                  className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
-                    folderStructure === option.value 
-                      ? 'border-primary bg-primary/5' 
-                      : 'border-border hover:border-primary/50 hover:bg-secondary/50'
-                  }`}
-                  data-testid={`option-folder-${option.value}`}
+        {/* ===== TAB BAR ===== */}
+        <div className="flex border-b border-border mb-0">
+          <button type="button" className={tabClass('general')} onClick={() => setSettingsTab('general')} data-testid="tab-general">
+            General
+          </button>
+          <button type="button" className={tabClass('fix')} onClick={() => setSettingsTab('fix')} data-testid="tab-fix">
+            Fix Engine
+          </button>
+          <button type="button" className={tabClass('pro')} onClick={() => setSettingsTab('pro')} data-testid="tab-pro">
+            <span className="flex items-center gap-1.5">
+              Pro
+              <Sparkles className="w-3.5 h-3.5" />
+            </span>
+          </button>
+        </div>
+
+        <div className="space-y-5 h-[45vh] overflow-y-auto pr-2 pt-5">
+
+          {/* ═══════════════════════════════════════════════════════════════
+              GENERAL TAB
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'general' && (
+            <>
+              {/* Folder Structure — collapsible */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setFolderStructureOpen(!folderStructureOpen)}
+                  className="w-full flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
+                  data-testid="button-toggle-folder-structure"
                 >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="radio"
-                      name="folderStructure"
-                      value={option.value}
-                      checked={folderStructure === option.value}
-                      onChange={() => onFolderStructureChange(option.value)}
-                      className="w-4 h-4 text-primary focus:ring-primary"
-                    />
-                    <span className="text-sm font-medium text-foreground">{option.label}</span>
+                  <div className="flex flex-col text-left">
+                    <span className="text-sm font-medium text-foreground">Folder Structure</span>
+                    <span className="text-xs text-muted-foreground">
+                      {options.find(o => o.value === folderStructure)?.label} <span className="font-mono ml-1 text-muted-foreground/70">{options.find(o => o.value === folderStructure)?.example}</span>
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground font-mono">{option.example}</span>
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${folderStructureOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {folderStructureOpen && (
+                  <div className="mt-2 ml-1 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {options.map((option) => (
+                      <label
+                        key={option.value}
+                        className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                          folderStructure === option.value
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                        }`}
+                        data-testid={`option-folder-${option.value}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="folderStructure"
+                            value={option.value}
+                            checked={folderStructure === option.value}
+                            onChange={() => onFolderStructureChange(option.value)}
+                            className="w-4 h-4 text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm font-medium text-foreground">{option.label}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground font-mono">{option.example}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Notifications */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Play completion sound</span>
+                    <span className="text-xs text-muted-foreground">Play a sound and flash taskbar when fixes complete</span>
+                  </div>
+                  <Checkbox
+                    checked={playSound}
+                    onCheckedChange={(checked) => onPlaySoundChange(!!checked)}
+                    data-testid="checkbox-completion-sound"
+                  />
                 </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Notifications */}
-          <div className="pt-4 border-t border-border">
-            <label className="block text-sm font-medium text-foreground mb-3">
-              Notifications
-            </label>
-            <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-foreground">Play completion sound</span>
-                <span className="text-xs text-muted-foreground">Play a sound when fixes are complete</span>
               </div>
-              <Checkbox 
-                checked={playSound}
-                onCheckedChange={(checked) => onPlaySoundChange(!!checked)}
-                data-testid="checkbox-completion-sound"
-              />
-            </label>
-          </div>
 
-          {/* Welcome Screen */}
-          <div className="pt-4 border-t border-border">
-            <label className="block text-sm font-medium text-foreground mb-3">
-              Welcome Screen
-            </label>
-            <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-foreground">Show Welcome Screen on launch</span>
-                <span className="text-xs text-muted-foreground">Display the onboarding screen when the app starts</span>
+              {/* Welcome Screen */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Show Welcome Screen on launch</span>
+                    <span className="text-xs text-muted-foreground">Display the onboarding screen when the app starts</span>
+                  </div>
+                  <Checkbox
+                    checked={showWelcome}
+                    onCheckedChange={(checked) => handleWelcomeToggle(!!checked)}
+                    data-testid="checkbox-show-welcome"
+                  />
+                </label>
               </div>
-              <Checkbox 
-                checked={showWelcome}
-                onCheckedChange={(checked) => handleWelcomeToggle(!!checked)}
-                data-testid="checkbox-show-welcome"
-              />
-            </label>
-          </div>
 
-          {/* ===== ADVANCED SETTINGS (Collapsible) ===== */}
-          <div className="pt-4 border-t border-border">
-            <button
-              type="button"
-              onClick={() => setAdvancedOpen(!advancedOpen)}
-              className={`w-full flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
-                advancedOpen 
-                  ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30' 
-                  : 'border-border hover:border-amber-300/50 hover:bg-amber-50/30 dark:hover:border-amber-700/50 dark:hover:bg-amber-950/20'
-              }`}
-              data-testid="button-toggle-advanced"
-            >
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-                <span className="text-sm font-medium text-foreground">Advanced Settings</span>
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50">
-                  ADVANCED
-                </span>
+              {/* Sources */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-3">Sources</label>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Remember sources between sessions</span>
+                      <span className="text-xs text-muted-foreground">Keep your added sources if the app restarts or crashes</span>
+                    </div>
+                    <Checkbox
+                      checked={rememberSources}
+                      onCheckedChange={(checked) => handleRememberSourcesToggle(!!checked)}
+                      data-testid="checkbox-remember-sources"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Clear sources after fix</span>
+                      <span className="text-xs text-muted-foreground">Automatically remove sources from the sidebar after a fix completes</span>
+                    </div>
+                    <Checkbox
+                      checked={clearSourcesAfterFix}
+                      onCheckedChange={(checked) => handleClearSourcesAfterFixToggle(!!checked)}
+                      data-testid="checkbox-clear-sources-after-fix"
+                    />
+                  </label>
+                </div>
               </div>
-              <ChevronDown 
-                className={`w-4 h-4 text-amber-500 dark:text-amber-400 transition-transform duration-200 ${advancedOpen ? 'rotate-180' : ''}`} 
-              />
-            </button>
-            
-            {advancedOpen && (
-              <div className="mt-3 p-4 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20 animate-in fade-in slide-in-from-top-2 duration-200">
-                <div className="flex items-start gap-2 mb-4 pb-3 border-b border-amber-200/50 dark:border-amber-800/30">
-                  <Info className="w-4 h-4 text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" />
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    Defaults are optimal for most users — change only if needed.
+            </>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              FIX ENGINE TAB
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'fix' && (
+            <>
+              {/* Duplicate Handling — standard */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-3">
+                  Duplicate Handling
+                </label>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Skip duplicate files (recommended)</span>
+                    <span className="text-xs text-muted-foreground">Duplicate files are detected and skipped during Run Fix</span>
+                  </div>
+                  <Checkbox
+                    checked={skipDuplicates}
+                    onCheckedChange={(checked) => handleSkipDuplicatesToggle(!!checked)}
+                    data-testid="checkbox-skip-duplicates"
+                  />
+                </label>
+              </div>
+
+              {/* Storage Performance — standard */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Show storage performance tips</span>
+                    <span className="text-xs text-muted-foreground">Display helpful messages about storage speed when selecting sources</span>
+                  </div>
+                  <Checkbox
+                    checked={showStoragePerformanceTips}
+                    onCheckedChange={(checked) => handleStoragePerformanceTipsToggle(!!checked)}
+                    data-testid="checkbox-storage-tips"
+                  />
+                </label>
+              </div>
+
+              {/* ===== ADVANCED (collapsible) ===== */}
+              <div className="pt-4 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setAdvancedOpen(!advancedOpen)}
+                  className={`w-full flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all duration-200 ${
+                    advancedOpen
+                      ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30'
+                      : 'border-border hover:border-amber-300/50 hover:bg-amber-50/30 dark:hover:border-amber-700/50 dark:hover:bg-amber-950/20'
+                  }`}
+                  data-testid="button-toggle-advanced"
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+                    <span className="text-sm font-medium text-foreground">Advanced</span>
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50">
+                      ADVANCED
+                    </span>
+                  </div>
+                  <ChevronDown
+                    className={`w-4 h-4 text-amber-500 dark:text-amber-400 transition-transform duration-200 ${advancedOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {advancedOpen && (
+                  <div className="mt-3 p-4 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-start gap-2 mb-4 pb-3 border-b border-amber-200/50 dark:border-amber-800/30">
+                      <Info className="w-4 h-4 text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" />
+                      <p className="text-xs text-amber-700 dark:text-amber-300">
+                        Defaults are optimal for most users — change only if needed.
+                      </p>
+                    </div>
+                    <div className="space-y-4">
+                      {/* Thorough duplicate matching */}
+                      {skipDuplicates && (
+                        <label className="flex items-center justify-between p-3 rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer transition-colors animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Thorough duplicate matching</span>
+                            <span className="text-xs text-muted-foreground">Use SHA-256 file hash instead of filename + size. More accurate but significantly slower on network/cloud drives.</span>
+                          </div>
+                          <Checkbox
+                            checked={thoroughDuplicateMatching}
+                            onCheckedChange={(checked) => handleThoroughDuplicateMatchingToggle(!!checked)}
+                            data-testid="checkbox-thorough-duplicates"
+                          />
+                        </label>
+                      )}
+
+                      {/* EXIF Date Writing */}
+                      <div className="pt-3 border-t border-amber-200/50 dark:border-amber-800/30">
+                        <label className="block text-sm font-medium text-foreground mb-3">EXIF Date Writing</label>
+                        <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors mb-2">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-foreground">Write dates to photo metadata (EXIF)</span>
+                            <span className="text-xs text-muted-foreground">Populate EXIF date fields when copying photos</span>
+                          </div>
+                          <Checkbox
+                            checked={writeExif}
+                            onCheckedChange={(checked) => handleWriteExifToggle(!!checked)}
+                            data-testid="checkbox-write-exif"
+                          />
+                        </label>
+                        {writeExif && (
+                          <div className="ml-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <label className="flex items-center justify-between p-3 rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50/50 dark:bg-emerald-950/20 cursor-pointer transition-colors">
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Confirmed files</span>
+                                <span className="text-xs text-muted-foreground">Normalise metadata using the trusted EXIF/Takeout date</span>
+                              </div>
+                              <Checkbox
+                                checked={exifWriteConfirmed}
+                                onCheckedChange={(checked) => handleExifWriteConfirmedToggle(!!checked)}
+                                data-testid="checkbox-exif-confirmed"
+                              />
+                            </label>
+                            <label className="flex items-center justify-between p-3 rounded-lg border border-indigo-200 dark:border-indigo-700/50 bg-indigo-50/50 dark:bg-indigo-950/20 cursor-pointer transition-colors">
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Recovered files (recommended)</span>
+                                <span className="text-xs text-muted-foreground">Populate EXIF with the date recovered from filename patterns</span>
+                              </div>
+                              <Checkbox
+                                checked={exifWriteRecovered}
+                                onCheckedChange={(checked) => handleExifWriteRecoveredToggle(!!checked)}
+                                data-testid="checkbox-exif-recovered"
+                              />
+                            </label>
+                            <label className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-900/20 cursor-pointer transition-colors">
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Marked files (advanced)</span>
+                                <span className="text-xs text-muted-foreground">Populate EXIF with fallback date — use with caution</span>
+                              </div>
+                              <Checkbox
+                                checked={exifWriteMarked}
+                                onCheckedChange={(checked) => handleExifWriteMarkedToggle(!!checked)}
+                                data-testid="checkbox-exif-marked"
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Report Management */}
+                      <div className="pt-3 border-t border-amber-200/50 dark:border-amber-800/30">
+                        <label className="block text-sm font-medium text-foreground mb-3">Data Management</label>
+                        <div className="space-y-2">
+                          <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-foreground">Allow Report Removal</span>
+                              <span className="text-xs text-muted-foreground">Enable deleting saved reports from history</span>
+                            </div>
+                            <Checkbox
+                              checked={allowReportRemoval}
+                              onCheckedChange={(checked) => handleReportRemovalToggle(!!checked)}
+                              data-testid="checkbox-allow-report-removal"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-foreground">Show CSV/TXT export buttons</span>
+                              <span className="text-xs text-muted-foreground">Manual exports for standalone reports (auditing, sharing). The auto-catalogue already maintains a complete record.</span>
+                            </div>
+                            <Checkbox
+                              checked={showManualReportExports}
+                              onCheckedChange={(checked) => handleShowManualReportExportsToggle(!!checked)}
+                              data-testid="checkbox-show-manual-exports"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              PRO TAB
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'pro' && (
+            <>
+              {/* AI Photo Analysis */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  AI Photo Analysis
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Use on-device AI to detect faces and tag photo content. All processing happens locally — your photos are never uploaded.
+                </p>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-violet-500" />
+                        <span className="text-sm font-medium text-foreground">Enable AI Analysis</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground ml-6">Unlock face recognition and object tagging in Search</span>
+                    </div>
+                    <Checkbox
+                      checked={aiEnabled}
+                      onCheckedChange={(checked) => handleAiEnabledToggle(!!checked)}
+                      data-testid="checkbox-ai-enabled"
+                    />
+                  </label>
+
+                  {aiEnabled && (
+                    <div className="ml-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Face Detection</span>
+                          <span className="text-xs text-muted-foreground">Detect and cluster faces to identify people</span>
+                        </div>
+                        <Checkbox
+                          checked={aiFaceDetection}
+                          onCheckedChange={(checked) => handleAiFaceDetectionToggle(!!checked)}
+                          data-testid="checkbox-ai-face-detection"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Object & Scene Tagging</span>
+                          <span className="text-xs text-muted-foreground">Auto-tag photos with content labels (sunset, beach, pet, etc.)</span>
+                        </div>
+                        <Checkbox
+                          checked={aiObjectTagging}
+                          onCheckedChange={(checked) => handleAiObjectTaggingToggle(!!checked)}
+                          data-testid="checkbox-ai-object-tagging"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Auto-process new photos</span>
+                          <span className="text-xs text-muted-foreground">Automatically analyze photos when new runs are indexed</span>
+                        </div>
+                        <Checkbox
+                          checked={aiAutoProcess}
+                          onCheckedChange={(checked) => handleAiAutoProcessToggle(!!checked)}
+                          data-testid="checkbox-ai-auto-process"
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-start gap-2 p-3 mt-3 rounded-lg bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
+                  <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-violet-700 dark:text-violet-300">
+                    <strong>Privacy:</strong> AI models run entirely on your device — your photos are never uploaded, shared, or sent anywhere. A one-time download (~300 MB) is required the first time you analyze. After that, everything works fully offline.
                   </p>
                 </div>
-                <div className="max-h-[240px] overflow-y-auto pr-2 space-y-4">
-                
-                {/* Report Management */}
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-3">
-                    Report Management
-                  </label>
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Allow Report Removal</span>
-                      <span className="text-xs text-muted-foreground">Enable the ability to delete saved reports from history</span>
-                    </div>
-                    <Checkbox 
-                      checked={allowReportRemoval}
-                      onCheckedChange={(checked) => handleReportRemovalToggle(!!checked)}
-                      data-testid="checkbox-allow-report-removal"
-                    />
-                  </label>
-                </div>
-
-                {/* Duplicate Handling */}
-                <div className="pt-4 border-t border-border/50">
-                  <label className="block text-sm font-medium text-foreground mb-3">
-                    Duplicate Handling
-                  </label>
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors mb-3">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Skip duplicate files (recommended)</span>
-                      <span className="text-xs text-muted-foreground">Duplicate files are detected and skipped during Run Fix</span>
-                    </div>
-                    <Checkbox 
-                      checked={skipDuplicates}
-                      onCheckedChange={(checked) => handleSkipDuplicatesToggle(!!checked)}
-                      data-testid="checkbox-skip-duplicates"
-                    />
-                  </label>
-                  
-                  {skipDuplicates && (
-                    <label className="flex items-center justify-between p-3 rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer transition-colors animate-in fade-in slide-in-from-top-2 duration-200">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Thorough duplicate matching</span>
-                        <span className="text-xs text-muted-foreground">Use SHA-256 file hash instead of filename + size. More accurate but significantly slower on network/cloud drives.</span>
-                      </div>
-                      <Checkbox 
-                        checked={thoroughDuplicateMatching}
-                        onCheckedChange={(checked) => handleThoroughDuplicateMatchingToggle(!!checked)}
-                        data-testid="checkbox-thorough-duplicates"
-                      />
-                    </label>
-                  )}
-                </div>
-
-                {/* EXIF Date Writing */}
-                <div className="pt-4 border-t border-border/50">
-                  <label className="block text-sm font-medium text-foreground mb-3">
-                    EXIF Date Writing
-                  </label>
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors mb-3">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Write dates to photo metadata (EXIF)</span>
-                      <span className="text-xs text-muted-foreground">Populate EXIF date fields when copying photos</span>
-                    </div>
-                    <Checkbox 
-                      checked={writeExif}
-                      onCheckedChange={(checked) => handleWriteExifToggle(!!checked)}
-                      data-testid="checkbox-write-exif"
-                    />
-                  </label>
-                  
-                  {writeExif && (
-                    <div className="ml-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50/50 dark:bg-emerald-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Confirmed files</span>
-                          <span className="text-xs text-muted-foreground">Normalise metadata using the trusted EXIF/Takeout date</span>
-                        </div>
-                        <Checkbox 
-                          checked={exifWriteConfirmed}
-                          onCheckedChange={(checked) => handleExifWriteConfirmedToggle(!!checked)}
-                          data-testid="checkbox-exif-confirmed"
-                        />
-                      </label>
-                      
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-indigo-200 dark:border-indigo-700/50 bg-indigo-50/50 dark:bg-indigo-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Recovered files (recommended)</span>
-                          <span className="text-xs text-muted-foreground">Populate EXIF with the date recovered from filename patterns</span>
-                        </div>
-                        <Checkbox 
-                          checked={exifWriteRecovered}
-                          onCheckedChange={(checked) => handleExifWriteRecoveredToggle(!!checked)}
-                          data-testid="checkbox-exif-recovered"
-                        />
-                      </label>
-                      
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-900/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Marked files (advanced)</span>
-                          <span className="text-xs text-muted-foreground">Populate EXIF with fallback date — use with caution</span>
-                        </div>
-                        <Checkbox 
-                          checked={exifWriteMarked}
-                          onCheckedChange={(checked) => handleExifWriteMarkedToggle(!!checked)}
-                          data-testid="checkbox-exif-marked"
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                {/* Storage Performance Tips */}
-                <div className="pt-4 border-t border-border/50">
-                  <label className="block text-sm font-medium text-foreground mb-3">
-                    Storage Performance
-                  </label>
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Show storage performance tips</span>
-                      <span className="text-xs text-muted-foreground">Display helpful messages about storage speed when selecting sources</span>
-                    </div>
-                    <Checkbox 
-                      checked={showStoragePerformanceTips}
-                      onCheckedChange={(checked) => handleStoragePerformanceTipsToggle(!!checked)}
-                      data-testid="checkbox-storage-tips"
-                    />
-                  </label>
-                </div>
-
-                </div>
               </div>
-            )}
-          </div>
+
+              {/* Catalogue */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Catalogue
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Automatically save a cumulative record of all fixed files to your destination folder.
+                </p>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Save catalogue after each fix</span>
+                    <span className="text-xs text-muted-foreground">Write PDR_Catalogue.csv and .txt to your destination — updates dynamically</span>
+                  </div>
+                  <Checkbox
+                    checked={autoSaveCatalogue}
+                    onCheckedChange={(checked) => handleAutoSaveCatalogueToggle(!!checked)}
+                    data-testid="checkbox-auto-save-catalogue"
+                  />
+                </label>
+              </div>
+
+              {/* Index Management */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Index Management
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Control whether indexed runs can be removed from the Search index.
+                </p>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
+                    <span className="text-xs text-muted-foreground">Enable removing reports from the Index Manager. Re-indexing requires running the fix again.</span>
+                  </div>
+                  <Checkbox
+                    checked={allowIndexRemoval}
+                    onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
+                    data-testid="checkbox-allow-index-removal"
+                  />
+                </label>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="mt-6 pt-4 border-t border-border space-y-3">
@@ -6356,16 +7053,16 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
           >
             Done
           </Button>
-        <button
-          onClick={handleResetToDefaults}
-          className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
-          data-testid="button-reset-defaults"
-        >
-          Reset to Optimised Defaults
-        </button>
-        <p className="text-center text-xs text-muted-foreground mt-4">
-          Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
-        </p>
+          <button
+            onClick={handleResetToDefaults}
+            className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+            data-testid="button-reset-defaults"
+          >
+            Reset to Optimised Defaults
+          </button>
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
+          </p>
         </div>
       </motion.div>
     </motion.div>

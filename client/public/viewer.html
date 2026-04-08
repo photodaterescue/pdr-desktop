@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDR Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: system-ui, -apple-system, "Segoe UI", "Inter", sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: #12122a;
+      border-bottom: 1px solid rgba(169, 156, 255, 0.15);
+      -webkit-app-region: drag;
+      flex-shrink: 0;
+    }
+    .toolbar-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #ccc;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      margin-right: 12px;
+    }
+    .toolbar-actions {
+      display: flex;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+    }
+    .toolbar-btn {
+      padding: 4px 10px;
+      border: 1px solid rgba(169, 156, 255, 0.25);
+      border-radius: 8px;
+      background: rgba(169, 156, 255, 0.08);
+      color: #bbb;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .toolbar-btn:hover {
+      background: rgba(169, 156, 255, 0.18);
+      color: #fff;
+      border-color: rgba(169, 156, 255, 0.4);
+    }
+    .toolbar-counter {
+      font-size: 12px;
+      color: #A99CFF;
+      font-weight: 600;
+      padding: 3px 10px;
+      background: rgba(169, 156, 255, 0.1);
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+    .viewer-container {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    .viewer-container img {
+      position: absolute;
+      transform-origin: 0 0;
+      cursor: grab;
+    }
+    .viewer-container img.dragging {
+      cursor: grabbing;
+    }
+    /* Navigation arrows overlaid on the viewer */
+    .nav-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 10;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(169, 156, 255, 0.3);
+      color: #ddd;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      opacity: 0;
+    }
+    .viewer-container:hover .nav-arrow { opacity: 1; }
+    .nav-arrow:hover { background: rgba(169, 156, 255, 0.3); color: #fff; }
+    .nav-arrow.left { left: 16px; }
+    .nav-arrow.right { right: 16px; }
+    .nav-arrow:disabled { opacity: 0.2 !important; cursor: default; }
+    .info-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 16px;
+      background: #12122a;
+      border-top: 1px solid rgba(169, 156, 255, 0.15);
+      font-size: 11px;
+      color: #888;
+      flex-shrink: 0;
+    }
+    .zoom-level { font-weight: 500; color: #A99CFF; }
+    .no-image {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #555;
+      font-size: 14px;
+      gap: 8px;
+      height: 100%;
+    }
+    .filmstrip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      background: #12122a;
+      border-top: 1px solid rgba(169, 156, 255, 0.15);
+      overflow-x: auto;
+      flex-shrink: 0;
+      min-height: 80px;
+    }
+    .filmstrip::-webkit-scrollbar { height: 4px; }
+    .filmstrip::-webkit-scrollbar-thumb { background: rgba(169,156,255,0.3); border-radius: 2px; }
+    .filmstrip img {
+      height: 60px;
+      width: auto;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      opacity: 0.6;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .filmstrip img:hover { opacity: 0.9; border-color: rgba(169,156,255,0.4); }
+    .filmstrip img.active { opacity: 1; border-color: #A99CFF; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="toolbar-title" id="filename">PDR Viewer</span>
+    <div class="toolbar-actions">
+      <span class="toolbar-counter" id="counter" style="display:none"></span>
+      <button class="toolbar-btn" id="btn-fit" title="Fit to window (F)">Fit</button>
+      <button class="toolbar-btn" id="btn-100" title="Actual size (0)">100%</button>
+      <button class="toolbar-btn" id="btn-zoomIn" title="Zoom in (+)">+</button>
+      <button class="toolbar-btn" id="btn-zoomOut" title="Zoom out (-)">−</button>
+    </div>
+  </div>
+  <div class="viewer-container" id="container">
+    <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
+    <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
+    <div class="no-image" id="placeholder">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+        <polyline points="21 15 16 10 5 21"></polyline>
+      </svg>
+      <span>No image loaded</span>
+    </div>
+  </div>
+  <div id="filmstrip" class="filmstrip" style="display:none"></div>
+  <div class="info-bar">
+    <span id="dimensions"></span>
+    <span class="zoom-level" id="zoomLabel">100%</span>
+  </div>
+
+  <script>
+    const container = document.getElementById('container');
+    const placeholder = document.getElementById('placeholder');
+    const filenameEl = document.getElementById('filename');
+    const dimensionsEl = document.getElementById('dimensions');
+    const zoomLabelEl = document.getElementById('zoomLabel');
+    const filmstripEl = document.getElementById('filmstrip');
+    const counterEl = document.getElementById('counter');
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+
+    let img = null;
+    let zoom = 1;
+    let panX = 0, panY = 0;
+    let isDragging = false;
+    let dragStartX = 0, dragStartY = 0;
+    let panStartX = 0, panStartY = 0;
+    let fitZoom = 1;
+
+    // Multi-file support
+    let files = [];
+    let currentIndex = 0;
+
+    // Parse file paths from URL params
+    const params = new URLSearchParams(window.location.search);
+    const filesParam = params.get('files');
+    const legacyFile = params.get('file'); // backwards compat
+
+    if (filesParam) {
+      try { files = JSON.parse(filesParam); } catch { files = []; }
+    } else if (legacyFile) {
+      files = [legacyFile];
+    }
+
+    function getImageSrc(filePath) {
+      return 'pdr-file://' + encodeURI(filePath.replace(/\\/g, '/'));
+    }
+    function getImageSrcFallback(filePath) {
+      return 'file:///' + encodeURI(filePath.replace(/\\/g, '/'));
+    }
+    function getFilename(filePath) {
+      return filePath.split(/[/\\]/).pop() || 'Viewer';
+    }
+
+    function loadImage(index) {
+      if (index < 0 || index >= files.length) return;
+      currentIndex = index;
+      const filePath = files[currentIndex];
+
+      // Remove old image
+      if (img) { img.remove(); img = null; }
+      placeholder.style.display = 'none';
+
+      img = document.createElement('img');
+      img.src = getImageSrc(filePath);
+      img.onload = () => {
+        dimensionsEl.textContent = img.naturalWidth + ' \u00d7 ' + img.naturalHeight + ' px';
+        fitToWindow();
+      };
+      let retried = false;
+      img.onerror = () => {
+        if (!retried) {
+          retried = true;
+          img.src = getImageSrcFallback(filePath);
+        } else {
+          img.remove();
+          img = null;
+          placeholder.innerHTML = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#c44" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg><span style="color:#c44">File not found</span><span style="color:#666;font-size:11px;max-width:80%;word-break:break-all;text-align:center">' + filePath + '</span>';
+          placeholder.style.display = 'flex';
+        }
+      };
+      container.appendChild(img);
+
+      const name = getFilename(filePath);
+      filenameEl.textContent = name;
+      document.title = name + ' \u2014 PDR Viewer';
+
+      // Update counter
+      if (files.length > 1) {
+        counterEl.style.display = '';
+        counterEl.textContent = (currentIndex + 1) + ' / ' + files.length;
+      }
+
+      // Update nav arrows
+      btnPrev.disabled = currentIndex === 0;
+      btnNext.disabled = currentIndex === files.length - 1;
+
+      // Update filmstrip active state
+      updateFilmstripActive();
+    }
+
+    function updateFilmstripActive() {
+      const thumbs = filmstripEl.querySelectorAll('img');
+      thumbs.forEach((t, i) => {
+        t.classList.toggle('active', i === currentIndex);
+      });
+      // Scroll active thumb into view
+      const active = filmstripEl.querySelector('img.active');
+      if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+
+    // Build filmstrip for multi-file
+    if (files.length > 1) {
+      filmstripEl.style.display = 'flex';
+      files.forEach((fp, idx) => {
+        const thumb = document.createElement('img');
+        thumb.src = getImageSrc(fp);
+        thumb.onerror = () => { thumb.src = getImageSrcFallback(fp); };
+        thumb.title = getFilename(fp);
+        thumb.addEventListener('click', () => loadImage(idx));
+        filmstripEl.appendChild(thumb);
+      });
+      // Show nav arrows
+      btnPrev.style.display = 'flex';
+      btnNext.style.display = 'flex';
+    } else {
+      // Single file — hide nav arrows
+      btnPrev.style.display = 'none';
+      btnNext.style.display = 'none';
+    }
+
+    // Load first image
+    if (files.length > 0) {
+      loadImage(0);
+    }
+
+    // Navigation
+    btnPrev.addEventListener('click', (e) => { e.stopPropagation(); loadImage(currentIndex - 1); });
+    btnNext.addEventListener('click', (e) => { e.stopPropagation(); loadImage(currentIndex + 1); });
+
+    function fitToWindow() {
+      if (!img) return;
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      const iw = img.naturalWidth;
+      const ih = img.naturalHeight;
+      fitZoom = Math.min(cw / iw, ch / ih, 1);
+      zoom = fitZoom;
+      panX = (cw - iw * zoom) / 2;
+      panY = (ch - ih * zoom) / 2;
+      applyTransform();
+    }
+
+    function zoomTo(newZoom, centreX, centreY) {
+      if (!img) return;
+      newZoom = Math.max(0.05, Math.min(newZoom, 20));
+      const imgX = (centreX - panX) / zoom;
+      const imgY = (centreY - panY) / zoom;
+      zoom = newZoom;
+      panX = centreX - imgX * zoom;
+      panY = centreY - imgY * zoom;
+      applyTransform();
+    }
+
+    function zoomToCenter(newZoom) {
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      zoomTo(newZoom, cw / 2, ch / 2);
+    }
+
+    function applyTransform() {
+      if (!img) return;
+      img.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + zoom + ')';
+      zoomLabelEl.textContent = Math.round(zoom * 100) + '%';
+    }
+
+    function clampPan() {
+      if (!img) return;
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      const iw = img.naturalWidth * zoom;
+      const ih = img.naturalHeight * zoom;
+
+      if (iw <= cw) { panX = (cw - iw) / 2; }
+      else { panX = Math.min(0, Math.max(cw - iw, panX)); }
+      if (ih <= ch) { panY = (ch - ih) / 2; }
+      else { panY = Math.min(0, Math.max(ch - ih, panY)); }
+      applyTransform();
+    }
+
+    document.getElementById('btn-fit').addEventListener('click', fitToWindow);
+    document.getElementById('btn-100').addEventListener('click', () => zoomToCenter(1));
+    document.getElementById('btn-zoomIn').addEventListener('click', () => zoomToCenter(zoom * 1.25));
+    document.getElementById('btn-zoomOut').addEventListener('click', () => zoomToCenter(zoom / 1.25));
+
+    // Mouse wheel zoom
+    container.addEventListener('wheel', (e) => {
+      if (!img) return;
+      e.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const factor = e.deltaY > 0 ? 0.92 : 1.08;
+      zoomTo(zoom * factor, mouseX, mouseY);
+    }, { passive: false });
+
+    // Pan with mouse drag
+    container.addEventListener('mousedown', (e) => {
+      if (!img || e.target.classList.contains('nav-arrow')) return;
+      isDragging = true;
+      img.classList.add('dragging');
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      panStartX = panX;
+      panStartY = panY;
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      panX = panStartX + (e.clientX - dragStartX);
+      panY = panStartY + (e.clientY - dragStartY);
+      applyTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        if (img) img.classList.remove('dragging');
+        clampPan();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      if (!img) return;
+      if (zoom <= fitZoom + 0.01) fitToWindow();
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '+' || e.key === '=') zoomToCenter(zoom * 1.25);
+      else if (e.key === '-') zoomToCenter(zoom / 1.25);
+      else if (e.key === '0') zoomToCenter(1);
+      else if (e.key === 'f' || e.key === 'F') fitToWindow();
+      else if (e.key === 'ArrowLeft') loadImage(currentIndex - 1);
+      else if (e.key === 'ArrowRight') loadImage(currentIndex + 1);
+      else if (e.key === 'Escape') window.close();
+    });
+  </script>
+</body>
+</html>

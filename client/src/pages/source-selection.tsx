@@ -1,18 +1,20 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
-import { FolderPlus, FileArchive, ArrowRight, Info } from "lucide-react";
+import { FolderPlus, ArrowRight, Info } from "lucide-react";
 import { Card } from "@/components/ui/custom-card";
-import { openFolderDialog, openZipDialog, isElectron } from "@/lib/electron-bridge";
+import { openZipDialog, isElectron } from "@/lib/electron-bridge";
 import { useLicense } from "@/contexts/LicenseContext";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { LicenseModal } from "@/components/LicenseModal";
+import { FolderBrowserModal } from "@/components/FolderBrowserModal";
 
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
   const { isLicensed, isLoading } = useLicense();
   const [showLicenseRequired, setShowLicenseRequired] = useState(false);
   const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [pendingPath, setPendingPath] = useState<{ path: string; type: 'folder' | 'drive' | 'zip'; name: string } | null>(null);
 
   const container: Variants = {
@@ -49,46 +51,36 @@ export default function SourceSelection() {
     setLocation('/workspace');
   };
 
-  const handleFolderSelection = async () => {
+  const handleAddSource = () => {
     if (!isElectron()) {
       console.log('Not in Electron environment');
       return;
     }
-    
-    const selectedPath = await openFolderDialog();
-    if (selectedPath) {
-      const folderName = selectedPath.split(/[/\\]/).pop() || "Selected Folder";
-      const sourceType = inferSourceType(selectedPath);
-      
-      // Check license after selection
-      if (!isLicensed) {
-        setPendingPath({ path: selectedPath, type: sourceType, name: folderName });
-        setShowLicenseRequired(true);
-        return;
-      }
-      
-      proceedToWorkspace(selectedPath, sourceType, folderName);
-    }
+    setShowFolderBrowser(true);
   };
 
-  const handleZipSelection = async () => {
-    if (!isElectron()) {
-      console.log('Not in Electron environment');
-      return;
-    }
-    
-    const selectedPath = await openZipDialog();
-    if (selectedPath) {
-      const fileName = selectedPath.split(/[/\\]/).pop() || "Selected ZIP";
-      
-      // Check license after selection
+  const handleUnifiedSourceSelect = (selectedPath: string) => {
+    setShowFolderBrowser(false);
+    const ext = selectedPath.toLowerCase().split('.').pop() || '';
+    const isArchive = ext === 'zip' || ext === 'rar';
+
+    if (isArchive) {
+      const fileName = selectedPath.split(/[/\\]/).pop() || "Selected Archive";
       if (!isLicensed) {
         setPendingPath({ path: selectedPath, type: 'zip', name: fileName });
         setShowLicenseRequired(true);
         return;
       }
-      
       proceedToWorkspace(selectedPath, 'zip', fileName);
+    } else {
+      const folderName = selectedPath.split(/[/\\]/).pop() || "Selected Folder";
+      const sourceType = inferSourceType(selectedPath);
+      if (!isLicensed) {
+        setPendingPath({ path: selectedPath, type: sourceType, name: folderName });
+        setShowLicenseRequired(true);
+        return;
+      }
+      proceedToWorkspace(selectedPath, sourceType, folderName);
     }
   };
 
@@ -107,7 +99,7 @@ export default function SourceSelection() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="h-full bg-background flex flex-col items-center justify-center p-6 relative overflow-auto">
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-secondary/40 rounded-full blur-3xl" />
@@ -130,18 +122,12 @@ export default function SourceSelection() {
           </p>
         </motion.div>
 
-        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
-          <OptionCard 
+        <motion.div variants={item} className="w-full max-w-md">
+          <OptionCard
             icon={<FolderPlus className="w-8 h-8 text-primary" />}
-            title="Add Folder or Drive"
-            description="Select a folder on your computer or scan an entire drive (internal, external, USB)."
-            onClick={handleFolderSelection}
-          />
-          <OptionCard 
-            icon={<FileArchive className="w-8 h-8 text-primary" />}
-            title="Add ZIP Archive"
-            description="Import a .zip file. Perfect for phone backups, cloud exports, or compressed archives."
-            onClick={handleZipSelection}
+            title="Add Source"
+            description="Select a folder, drive, or ZIP/RAR archive containing your photos and videos."
+            onClick={handleAddSource}
           />
         </motion.div>
 
@@ -154,6 +140,15 @@ export default function SourceSelection() {
           </button>
         </motion.div>
       </motion.div>
+
+      {/* Unified Source Browser */}
+      <FolderBrowserModal
+        isOpen={showFolderBrowser}
+        onSelect={handleUnifiedSourceSelect}
+        onCancel={() => setShowFolderBrowser(false)}
+        title="Add Source"
+        mode="source"
+      />
 
       {/* License Required Modal */}
       <LicenseRequiredModal

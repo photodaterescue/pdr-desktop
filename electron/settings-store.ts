@@ -15,6 +15,22 @@ export interface PDRSettings {
   
   // Storage performance tips
   showStoragePerformanceTips: boolean;
+
+  // Source persistence
+  rememberSources: boolean;
+  clearSourcesAfterFix: boolean;
+
+  // AI Photo Analysis
+  aiEnabled: boolean;
+  aiFaceDetection: boolean;
+  aiObjectTagging: boolean;
+  aiAutoProcess: boolean;
+  aiMinFaceConfidence: number;
+  aiMinTagConfidence: number;
+
+  // Auto-catalogue
+  autoSaveCatalogue: boolean;
+  showManualReportExports: boolean;
 }
 
 // Optimised defaults - safe configuration for most users
@@ -26,6 +42,18 @@ export const optimisedDefaults: PDRSettings = {
   exifWriteRecovered: true,
   exifWriteMarked: false,
   showStoragePerformanceTips: true,
+  rememberSources: true,
+  clearSourcesAfterFix: true,
+  // AI defaults — disabled until user opts in
+  aiEnabled: false,
+  aiFaceDetection: true,
+  aiObjectTagging: true,
+  aiAutoProcess: true,
+  aiMinFaceConfidence: 0.7,
+  aiMinTagConfidence: 0.3,
+  // Auto-catalogue — cumulative CSV/TXT at destination root
+  autoSaveCatalogue: true,
+  showManualReportExports: false,
 };
 
 const store = new Store<PDRSettings>({
@@ -42,6 +70,16 @@ export function getSettings(): PDRSettings {
     exifWriteRecovered: store.get('exifWriteRecovered', optimisedDefaults.exifWriteRecovered),
     exifWriteMarked: store.get('exifWriteMarked', optimisedDefaults.exifWriteMarked),
     showStoragePerformanceTips: store.get('showStoragePerformanceTips', optimisedDefaults.showStoragePerformanceTips),
+    rememberSources: store.get('rememberSources', optimisedDefaults.rememberSources),
+    clearSourcesAfterFix: store.get('clearSourcesAfterFix', optimisedDefaults.clearSourcesAfterFix),
+    aiEnabled: store.get('aiEnabled', optimisedDefaults.aiEnabled),
+    aiFaceDetection: store.get('aiFaceDetection', optimisedDefaults.aiFaceDetection),
+    aiObjectTagging: store.get('aiObjectTagging', optimisedDefaults.aiObjectTagging),
+    aiAutoProcess: store.get('aiAutoProcess', optimisedDefaults.aiAutoProcess),
+    aiMinFaceConfidence: store.get('aiMinFaceConfidence', optimisedDefaults.aiMinFaceConfidence),
+    aiMinTagConfidence: store.get('aiMinTagConfidence', optimisedDefaults.aiMinTagConfidence),
+    autoSaveCatalogue: store.get('autoSaveCatalogue', optimisedDefaults.autoSaveCatalogue),
+    showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
   };
 }
 

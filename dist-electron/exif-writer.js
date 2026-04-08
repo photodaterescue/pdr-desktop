@@ -1,6 +1,9 @@
 import { ExifTool } from 'exiftool-vendored';
 import { app } from 'electron';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 // Create ExifTool instance with correct path for packaged/dev
 function getExifToolPath() {
     if (app.isPackaged) {
@@ -14,7 +17,13 @@ function getExifToolPath() {
 }
 // Create ExifTool instance with explicit path
 const exiftool = new ExifTool({ exiftoolPath: getExifToolPath() });
-const PHOTO_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.heic', '.heif', '.webp', '.dng', '.cr2', '.nef', '.arw'];
+const PHOTO_EXTENSIONS = [
+    '.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+    '.heic', '.heif', '.avif', '.jp2', '.j2k',
+    '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef',
+    '.sr2', '.srf', '.raf', '.3fr', '.rwl', '.x3f', '.dcr', '.kdc', '.mrw', '.erf',
+    '.psd',
+];
 function isPhotoFile(filePath) {
     const ext = path.extname(filePath).toLowerCase();
     return PHOTO_EXTENSIONS.includes(ext);

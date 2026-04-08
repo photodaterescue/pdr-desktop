@@ -17,14 +17,18 @@ contextBridge.exposeInMainWorld('pdr', {
         ipcRenderer.on('files:copy:progress', (_event, progress) => callback(progress));
     },
     cancelCopyFiles: () => ipcRenderer.invoke('files:copy:cancel'),
+    setFixInProgress: (inProgress) => ipcRenderer.invoke('fix:setInProgress', inProgress),
     saveReport: (reportData) => ipcRenderer.invoke('report:save', reportData),
     loadReport: (reportId) => ipcRenderer.invoke('report:load', reportId),
     loadLatestReport: () => ipcRenderer.invoke('report:loadLatest'),
     listReports: () => ipcRenderer.invoke('report:list'),
-    exportReportCSV: (reportId) => ipcRenderer.invoke('report:exportCSV', reportId),
-    exportReportTXT: (reportId) => ipcRenderer.invoke('report:exportTXT', reportId),
+    exportReportCSV: (reportId, folderPath) => ipcRenderer.invoke('report:exportCSV', reportId, folderPath),
+    exportReportTXT: (reportId, folderPath) => ipcRenderer.invoke('report:exportTXT', reportId, folderPath),
+    getDefaultExportPath: (reportId) => ipcRenderer.invoke('report:getDefaultExportPath', reportId),
+    regenerateCatalogue: (destinationPath) => ipcRenderer.invoke('report:regenerateCatalogue', destinationPath),
     deleteReport: (reportId) => ipcRenderer.invoke('report:delete', reportId),
     setZoom: (zoom) => ipcRenderer.invoke('set-zoom', zoom),
+    setTitleBarColor: (isDark) => ipcRenderer.invoke('set-title-bar-color', isDark),
     pickSource: (mode) => ipcRenderer.invoke('source:pick', mode),
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     openZip: () => ipcRenderer.invoke('dialog:openZip'),
@@ -61,6 +65,57 @@ contextBridge.exposeInMainWorld('pdr', {
     storage: {
         classify: (sourcePath) => ipcRenderer.invoke('storage:classify', sourcePath),
         checkSameDrive: (sourcePath, outputPath) => ipcRenderer.invoke('storage:checkSameDrive', sourcePath, outputPath),
+    },
+    browser: {
+        listDrives: () => ipcRenderer.invoke('browser:listDrives'),
+        readDirectory: (dirPath, fileFilter) => ipcRenderer.invoke('browser:readDirectory', dirPath, fileFilter),
+        createDirectory: (dirPath) => ipcRenderer.invoke('browser:createDirectory', dirPath),
+        thumbnail: (filePath, size) => ipcRenderer.invoke('browser:thumbnail', filePath, size),
+    },
+    search: {
+        init: () => ipcRenderer.invoke('search:init'),
+        indexRun: (reportId) => ipcRenderer.invoke('search:indexRun', reportId),
+        cancelIndex: () => ipcRenderer.invoke('search:cancelIndex'),
+        removeRun: (runId) => ipcRenderer.invoke('search:removeRun', runId),
+        removeRunByReport: (reportId) => ipcRenderer.invoke('search:removeRunByReport', reportId),
+        listRuns: () => ipcRenderer.invoke('search:listRuns'),
+        query: (query) => ipcRenderer.invoke('search:query', query),
+        filterOptions: () => ipcRenderer.invoke('search:filterOptions'),
+        stats: () => ipcRenderer.invoke('search:stats'),
+        rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
+        onIndexProgress: (callback) => {
+            ipcRenderer.on('search:indexProgress', (_, data) => callback(data));
+        },
+        removeIndexProgressListener: () => {
+            ipcRenderer.removeAllListeners('search:indexProgress');
+        },
+        favourites: {
+            list: () => ipcRenderer.invoke('search:favourites:list'),
+            save: (name, query) => ipcRenderer.invoke('search:favourites:save', name, query),
+            delete: (id) => ipcRenderer.invoke('search:favourites:delete', id),
+            rename: (id, name) => ipcRenderer.invoke('search:favourites:rename', id, name),
+        },
+        openViewer: (filePaths, fileNames) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames),
+        checkPathsExist: (paths) => ipcRenderer.invoke('search:checkPathsExist', paths),
+    },
+    ai: {
+        start: () => ipcRenderer.invoke('ai:start'),
+        cancel: () => ipcRenderer.invoke('ai:cancel'),
+        status: () => ipcRenderer.invoke('ai:status'),
+        stats: () => ipcRenderer.invoke('ai:stats'),
+        listPersons: () => ipcRenderer.invoke('ai:listPersons'),
+        namePerson: (name, clusterId, avatarData) => ipcRenderer.invoke('ai:namePerson', name, clusterId, avatarData),
+        assignFace: (faceId, personId) => ipcRenderer.invoke('ai:assignFace', faceId, personId),
+        getFaces: (fileId) => ipcRenderer.invoke('ai:getFaces', fileId),
+        getTags: (fileId) => ipcRenderer.invoke('ai:getTags', fileId),
+        tagOptions: () => ipcRenderer.invoke('ai:tagOptions'),
+        clearAll: () => ipcRenderer.invoke('ai:clearAll'),
+        onProgress: (callback) => {
+            ipcRenderer.on('ai:progress', (_, data) => callback(data));
+        },
+        removeProgressListener: () => {
+            ipcRenderer.removeAllListeners('ai:progress');
+        },
     },
     prescan: {
         run: (sourcePath, sourceType, noTimeout = false) => ipcRenderer.invoke('prescan:run', sourcePath, sourceType, noTimeout),

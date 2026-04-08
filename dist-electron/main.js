@@ -1,18 +1,24 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { execSync, execFile } from 'child_process';
+import sharp from 'sharp';
 import { analyzeSource, cancelAnalysis } from './analysis-engine.js';
 import AdmZip from 'adm-zip';
 import * as unzipper from 'unzipper';
 import crypto from 'crypto';
-import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, exportReportToCSV, exportReportToTXT, getExportFilename } from './report-storage.js';
+import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, exportReportToCSV, exportReportToTXT, getExportFilename, writeCatalogue } from './report-storage.js';
 import { getSettings, setSetting, setSettings, resetCriticalSettings } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import { getLicenseStatus, activateLicense, refreshLicense, deactivateLicense, getMachineFingerprint } from './license-manager.js';
 import { checkForUpdates } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
+import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, } from './search-database.js';
+import { indexFixRun, cancelIndexing, shutdownIndexerExiftool } from './search-indexer.js';
+import { loadReport as loadReportForIndex } from './report-storage.js';
+import { startAiProcessing, cancelAiProcessing, shutdownAiWorker, isAiProcessing, setMainWindow as setAiMainWindow, } from './ai-manager.js';
+import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, rebuildAiFts, } from './search-database.js';
 // Update checking
 ipcMain.handle('updates:check', async () => {
     return await checkForUpdates();
@@ -52,7 +58,15 @@ function createWindow() {
         minWidth: 1100,
         minHeight: 700,
         backgroundColor: '#f6f6fb',
-        titleBarStyle: 'hiddenInset',
+        titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
+        thickFrame: true,
+        ...(process.platform === 'win32' ? {
+            titleBarOverlay: {
+                color: '#a99cff', // Primary lavender — matches ribbon tab bar
+                symbolColor: '#ffffff', // White window controls
+                height: 32,
+            },
+        } : {}),
         icon: app.isPackaged
             ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
             : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
@@ -63,21 +77,59 @@ function createWindow() {
             zoomFactor: 1.0,
         },
     });
-    if (!app.isPackaged) {
-        mainWindow.loadURL('http://localhost:5000');
-        mainWindow.webContents.openDevTools();
-    }
-    else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
-    }
-    // Apply zoom AFTER the renderer finishes loading
+    mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
+    // Register main window with AI manager for progress IPC
+    setAiMainWindow(mainWindow);
+    // Zoom is handled purely via CSS transform on the content area — keep Electron at 1.0
     mainWindow.webContents.on('did-finish-load', () => {
-        mainWindow.webContents.setZoomFactor(0.8);
+        mainWindow.webContents.setZoomFactor(1.0);
     });
-    mainWindow.on('close', () => {
-        // Cancel any running operations before window closes
-        preScanCancelled = true;
-        copyFilesCancelled = true;
+    // Block Electron's native zoom shortcuts — our renderer handles zoom via IPC
+    // Allow F12 and Ctrl+Shift+I to open DevTools
+    mainWindow.webContents.on('before-input-event', (_event, input) => {
+        if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
+            mainWindow?.webContents.toggleDevTools();
+            return;
+        }
+        if (input.control && (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0')) {
+            _event.preventDefault();
+        }
+    });
+    // Track whether a fix operation is in progress
+    let fixInProgress = false;
+    ipcMain.handle('fix:setInProgress', (_event, inProgress) => {
+        fixInProgress = inProgress;
+    });
+    mainWindow.on('close', (e) => {
+        if (fixInProgress && mainWindow) {
+            e.preventDefault();
+            dialog.showMessageBox(mainWindow, {
+                type: 'warning',
+                buttons: ['Keep Running', 'Close Anyway'],
+                defaultId: 0,
+                cancelId: 0,
+                title: 'Fix in Progress',
+                message: 'PDR is currently copying and renaming your files.',
+                detail: 'Closing now may leave your files in an incomplete state. Are you sure you want to close?',
+            }).then(({ response }) => {
+                if (response === 1) {
+                    fixInProgress = false;
+                    preScanCancelled = true;
+                    copyFilesCancelled = true;
+                    mainWindow?.destroy();
+                }
+            });
+        }
+        else {
+            // Cancel any running operations before window closes
+            preScanCancelled = true;
+            copyFilesCancelled = true;
+            // Close viewer window if open
+            if (viewerWindow && !viewerWindow.isDestroyed()) {
+                viewerWindow.destroy();
+                viewerWindow = null;
+            }
+        }
     });
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -205,11 +257,24 @@ async function extractLargeZip(zipPath, tempDir, onProgress) {
 }
 // Track active temp dirs so we can clean up on cancel/quit
 const activeTempDirs = new Set();
+// Register custom protocol for serving local files to viewer
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'pdr-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+]);
 app.whenReady().then(() => {
-    // Remove default Electron menus in production
-    if (app.isPackaged) {
-        Menu.setApplicationMenu(null);
-    }
+    // Handle pdr-file:// protocol — serves local files to the viewer window
+    protocol.handle('pdr-file', (request) => {
+        const url = new URL(request.url);
+        // Decode the path — pdr-file://C:/Users/... or pdr-file:///C:/Users/...
+        let filePath = decodeURI(url.pathname);
+        // Remove leading slash on Windows paths (e.g., /C:/Users → C:/Users)
+        if (process.platform === 'win32' && filePath.startsWith('/')) {
+            filePath = filePath.substring(1);
+        }
+        return net.fetch('file:///' + filePath);
+    });
+    // Remove default Electron menus — custom title bar replaces them
+    Menu.setApplicationMenu(null);
     createWindow();
     resetCriticalSettings();
     cleanupOrphanedTempDirs();
@@ -221,6 +286,12 @@ app.whenReady().then(() => {
 });
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
+        // Close viewer window if still open
+        if (viewerWindow && !viewerWindow.isDestroyed()) {
+            viewerWindow.destroy();
+            viewerWindow = null;
+        }
+        shutdownAiWorker();
         app.quit();
     }
 });
@@ -234,6 +305,8 @@ app.on('before-quit', async () => {
     }
     activeTempDirs.clear();
     await shutdownExiftool();
+    await shutdownIndexerExiftool();
+    closeDatabase();
 });
 ipcMain.handle('dialog:openFolder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -373,8 +446,214 @@ ipcMain.handle('disk:getSpace', async (_event, directoryPath) => {
         return { freeBytes: 0, totalBytes: 0 };
     }
 });
-const PHOTO_EXTENSIONS_PRESCAN = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif', '.raw', '.cr2', '.nef', '.arw', '.dng']);
-const VIDEO_EXTENSIONS_PRESCAN = new Set(['.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mts', '.m2ts']);
+// ── Custom Folder Browser IPC handlers ──
+const IMAGE_EXTENSIONS_BROWSER = new Set([
+    '.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+    '.heic', '.heif', '.avif', '.jp2', '.j2k', '.svg', '.ico', '.psd',
+    '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef',
+    '.sr2', '.srf', '.raf', '.3fr', '.rwl', '.x3f', '.dcr', '.kdc', '.mrw', '.erf',
+]);
+ipcMain.handle('browser:listDrives', async () => {
+    try {
+        if (process.platform === 'win32') {
+            // Use PowerShell asynchronously instead of wmic (which is deprecated and blocks the main process)
+            const output = await new Promise((resolve, reject) => {
+                execFile('powershell.exe', [
+                    '-NoProfile', '-NonInteractive', '-Command',
+                    `Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,VolumeName,DriveType,Size,FreeSpace | ConvertTo-Csv -NoTypeInformation`
+                ], { encoding: 'utf8', timeout: 10000 }, (error, stdout) => {
+                    if (error)
+                        reject(error);
+                    else
+                        resolve(stdout);
+                });
+            });
+            const lines = output.trim().split('\n').filter(l => l.trim());
+            if (lines.length < 2)
+                return [];
+            // Parse CSV: header line + data lines
+            return lines.slice(1).map(line => {
+                // CSV values may be quoted
+                const parts = line.split(',').map(p => p.replace(/^"|"$/g, '').trim());
+                const deviceId = parts[0] || '';
+                const volumeName = parts[1] || '';
+                const driveType = parseInt(parts[2], 10);
+                const size = parseInt(parts[3], 10) || 0;
+                const freeSpace = parseInt(parts[4], 10) || 0;
+                const typeLabel = driveType === 2 ? 'Removable' : driveType === 3 ? 'Local Disk' : driveType === 4 ? 'Network' : driveType === 5 ? 'CD/DVD' : 'Drive';
+                return {
+                    letter: deviceId,
+                    label: volumeName || typeLabel,
+                    type: typeLabel,
+                    totalBytes: size,
+                    freeBytes: freeSpace,
+                };
+            }).filter(d => d.letter);
+        }
+        return [];
+    }
+    catch (error) {
+        console.error('Error listing drives:', error);
+        return [];
+    }
+});
+// Thumbnail cache directory
+const thumbCacheDir = path.join(app.getPath('userData'), 'thumb-cache');
+fs.mkdirSync(thumbCacheDir, { recursive: true });
+ipcMain.handle('browser:thumbnail', async (_event, filePath, size) => {
+    try {
+        // Check disk cache first
+        const cacheKey = crypto.createHash('md5').update(`${filePath}:${size}`).digest('hex');
+        const cachePath = path.join(thumbCacheDir, `${cacheKey}.jpg`);
+        if (fs.existsSync(cachePath)) {
+            const cached = await fs.promises.readFile(cachePath);
+            return { success: true, dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}` };
+        }
+        // Check file exists
+        if (!fs.existsSync(filePath)) {
+            return { success: false, dataUrl: '' };
+        }
+        let jpegBuffer = null;
+        const ext = path.extname(filePath).toLowerCase();
+        // Use sharp for robust thumbnail generation (handles TIF, large files, RAW formats)
+        try {
+            jpegBuffer = await sharp(filePath, { failOnError: false })
+                .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 80 })
+                .toBuffer();
+        }
+        catch {
+            // Sharp failed — fall back to nativeImage
+        }
+        // Fallback: nativeImage (good for standard JPEG/PNG/BMP)
+        if (!jpegBuffer) {
+            const img = nativeImage.createFromPath(filePath);
+            if (!img.isEmpty()) {
+                // For BMP and other formats sharp can't handle, convert via nativeImage → PNG → sharp
+                if (ext === '.bmp') {
+                    try {
+                        const pngBuf = img.toPNG();
+                        jpegBuffer = await sharp(pngBuf)
+                            .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+                            .jpeg({ quality: 80 })
+                            .toBuffer();
+                    }
+                    catch {
+                        // Final fallback: direct JPEG from nativeImage
+                    }
+                }
+                if (!jpegBuffer) {
+                    const origSize = img.getSize();
+                    const scale = Math.min(size / origSize.width, size / origSize.height, 1);
+                    const newWidth = Math.round(origSize.width * scale);
+                    const newHeight = Math.round(origSize.height * scale);
+                    const resized = img.resize({ width: newWidth, height: newHeight, quality: 'good' });
+                    jpegBuffer = Buffer.from(resized.toJPEG(80));
+                }
+            }
+        }
+        if (!jpegBuffer) {
+            return { success: false, dataUrl: '' };
+        }
+        // Save to disk cache (fire and forget)
+        fs.promises.writeFile(cachePath, jpegBuffer).catch(() => { });
+        return { success: true, dataUrl: `data:image/jpeg;base64,${jpegBuffer.toString('base64')}` };
+    }
+    catch {
+        return { success: false, dataUrl: '' };
+    }
+});
+const ARCHIVE_EXTENSIONS = new Set(['.zip', '.rar']);
+ipcMain.handle('browser:readDirectory', async (_event, dirPath, fileFilter) => {
+    try {
+        const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+        const items = [];
+        for (const entry of entries) {
+            // Skip hidden/system files
+            if (entry.name.startsWith('.') || entry.name.startsWith('$'))
+                continue;
+            const fullPath = path.join(dirPath, entry.name);
+            const isDir = entry.isDirectory();
+            const ext = path.extname(entry.name).toLowerCase();
+            const isImage = !isDir && IMAGE_EXTENSIONS_BROWSER.has(ext);
+            const isArchive = !isDir && ARCHIVE_EXTENSIONS.has(ext);
+            // Quick peek: does this folder contain subfolders?
+            let hasSubfolders = false;
+            if (isDir) {
+                try {
+                    const children = await fs.promises.readdir(fullPath, { withFileTypes: true });
+                    hasSubfolders = children.some(c => c.isDirectory() && !c.name.startsWith('.') && !c.name.startsWith('$'));
+                }
+                catch {
+                    // Access denied or other error — just leave as false
+                }
+            }
+            if (fileFilter === 'archives') {
+                // In archive mode: show folders + archive files only
+                if (isDir || isArchive) {
+                    let sizeBytes = 0;
+                    if (isArchive) {
+                        try {
+                            sizeBytes = (await fs.promises.stat(fullPath)).size;
+                        }
+                        catch { }
+                    }
+                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage: false, isArchive, sizeBytes, hasSubfolders });
+                }
+            }
+            else if (fileFilter === 'source') {
+                // Source mode: show folders + images + archives
+                if (isDir || isImage || isArchive) {
+                    let sizeBytes = 0;
+                    if (isArchive || isImage) {
+                        try {
+                            sizeBytes = (await fs.promises.stat(fullPath)).size;
+                        }
+                        catch { }
+                    }
+                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive, sizeBytes, hasSubfolders });
+                }
+            }
+            else {
+                // Default mode: show folders + image files
+                if (isDir || isImage) {
+                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive: false, sizeBytes: 0, hasSubfolders });
+                }
+            }
+        }
+        // Folders first, then files, both alphabetical
+        items.sort((a, b) => {
+            if (a.isDirectory !== b.isDirectory)
+                return a.isDirectory ? -1 : 1;
+            return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        });
+        return { success: true, items };
+    }
+    catch (error) {
+        return { success: false, items: [], error: error.code === 'EPERM' || error.code === 'EACCES' ? 'Access denied — you don\'t have permission to view this folder.' : `Unable to read this folder: ${error.message}` };
+    }
+});
+ipcMain.handle('browser:createDirectory', async (_event, dirPath) => {
+    try {
+        fs.mkdirSync(dirPath, { recursive: true });
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+const PHOTO_EXTENSIONS_PRESCAN = new Set([
+    '.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+    '.heic', '.heif', '.avif', '.jp2', '.j2k',
+    '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef',
+    '.sr2', '.srf', '.raf', '.3fr', '.rwl', '.x3f', '.dcr', '.kdc', '.mrw', '.erf',
+    '.ico', '.svg', '.psd',
+]);
+const VIDEO_EXTENSIONS_PRESCAN = new Set([
+    '.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v',
+    '.3gp', '.3g2', '.mts', '.m2ts', '.ts', '.vob',
+    '.mpg', '.mpeg', '.asf', '.divx', '.ogv', '.rm', '.rmvb', '.swf',
+]);
 function isMediaFileForPreScan(filename) {
     const ext = path.extname(filename).toLowerCase();
     if (PHOTO_EXTENSIONS_PRESCAN.has(ext))
@@ -625,6 +904,21 @@ function calculateBufferHash(buffer) {
 ipcMain.handle('report:save', async (_event, reportData) => {
     try {
         const savedReport = await saveReport(reportData);
+        // Auto-catalogue: write cumulative PDR_Catalogue.csv/txt to destination root
+        const settings = getSettings();
+        console.log('[Catalogue] autoSaveCatalogue:', settings.autoSaveCatalogue, 'destinationPath:', savedReport.destinationPath);
+        if (settings.autoSaveCatalogue && savedReport.destinationPath) {
+            try {
+                const catResult = await writeCatalogue(savedReport.destinationPath);
+                console.log('[Catalogue] Write result:', catResult);
+            }
+            catch (catErr) {
+                console.error('[Catalogue] Write failed (non-fatal):', catErr);
+            }
+        }
+        else {
+            console.log('[Catalogue] Skipped — setting off or no destination');
+        }
         return { success: true, data: savedReport };
     }
     catch (error) {
@@ -1024,7 +1318,7 @@ ipcMain.handle('report:list', async () => {
         return { success: false, error: error.message };
     }
 });
-ipcMain.handle('report:exportCSV', async (_event, reportId) => {
+ipcMain.handle('report:exportCSV', async (_event, reportId, folderPath) => {
     try {
         const report = await loadReport(reportId);
         if (!report) {
@@ -1032,6 +1326,13 @@ ipcMain.handle('report:exportCSV', async (_event, reportId) => {
         }
         const csv = exportReportToCSV(report);
         const defaultFilename = getExportFilename(report, 'csv');
+        if (folderPath) {
+            // New mode: save directly to specified folder (from FolderBrowserModal)
+            const filePath = path.join(folderPath, defaultFilename);
+            fs.writeFileSync(filePath, csv, 'utf-8');
+            return { success: true, filePath };
+        }
+        // Legacy fallback: native dialog
         const defaultDir = report.destinationPath || app.getPath('documents');
         const result = await dialog.showSaveDialog(mainWindow, {
             title: 'Export Report as CSV',
@@ -1048,7 +1349,7 @@ ipcMain.handle('report:exportCSV', async (_event, reportId) => {
         return { success: false, error: error.message };
     }
 });
-ipcMain.handle('report:exportTXT', async (_event, reportId) => {
+ipcMain.handle('report:exportTXT', async (_event, reportId, folderPath) => {
     try {
         const report = await loadReport(reportId);
         if (!report) {
@@ -1056,6 +1357,13 @@ ipcMain.handle('report:exportTXT', async (_event, reportId) => {
         }
         const txt = exportReportToTXT(report);
         const defaultFilename = getExportFilename(report, 'txt');
+        if (folderPath) {
+            // New mode: save directly to specified folder (from FolderBrowserModal)
+            const filePath = path.join(folderPath, defaultFilename);
+            fs.writeFileSync(filePath, txt, 'utf-8');
+            return { success: true, filePath };
+        }
+        // Legacy fallback: native dialog
         const defaultDir = report.destinationPath || app.getPath('documents');
         const result = await dialog.showSaveDialog(mainWindow, {
             title: 'Export Report as TXT',
@@ -1072,9 +1380,40 @@ ipcMain.handle('report:exportTXT', async (_event, reportId) => {
         return { success: false, error: error.message };
     }
 });
+// Regenerate the catalogue on demand for a given destination
+ipcMain.handle('report:regenerateCatalogue', async (_event, destinationPath) => {
+    try {
+        const settings = getSettings();
+        if (!settings.autoSaveCatalogue) {
+            return { success: false, error: 'Auto-catalogue is disabled' };
+        }
+        const result = await writeCatalogue(destinationPath);
+        return result;
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+// Get the default export folder for manual report exports (Documents folder)
+ipcMain.handle('report:getDefaultExportPath', async (_event, reportId) => {
+    try {
+        return { success: true, path: app.getPath('documents') };
+    }
+    catch {
+        return { success: false, path: '' };
+    }
+});
 ipcMain.handle('set-zoom', (_event, zoomFactor) => {
     if (mainWindow) {
         mainWindow.webContents.setZoomFactor(zoomFactor);
+    }
+});
+ipcMain.handle('set-title-bar-color', (_event, isDark) => {
+    if (mainWindow && process.platform === 'win32') {
+        mainWindow.setTitleBarOverlay({
+            color: isDark ? '#2d2453' : '#a99cff',
+            symbolColor: '#ffffff',
+        });
     }
 });
 // Settings IPC handlers
@@ -1109,4 +1448,281 @@ ipcMain.handle('license:deactivate', async (_event, licenseKey) => {
 });
 ipcMain.handle('license:getMachineId', async () => {
     return getMachineFingerprint();
+});
+// ─── Search & Discovery IPC handlers ─────────────────────────────────────────
+ipcMain.handle('search:init', async () => {
+    return initDatabase();
+});
+ipcMain.handle('search:indexRun', async (_event, reportId) => {
+    try {
+        const report = await loadReportForIndex(reportId);
+        if (!report) {
+            return { success: false, error: 'Report not found' };
+        }
+        const result = await indexFixRun(report, (progress) => {
+            mainWindow?.webContents.send('search:indexProgress', progress);
+        });
+        return result;
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:cancelIndex', async () => {
+    cancelIndexing();
+    return { success: true };
+});
+ipcMain.handle('search:removeRun', async (_event, runId) => {
+    try {
+        removeRun(runId);
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:removeRunByReport', async (_event, reportId) => {
+    try {
+        removeRunByReportId(reportId);
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:listRuns', async () => {
+    try {
+        return { success: true, data: listRuns() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:query', async (_event, query) => {
+    try {
+        const result = searchFiles(query);
+        return { success: true, data: result };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:filterOptions', async () => {
+    try {
+        return { success: true, data: getFilterOptions() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:stats', async () => {
+    try {
+        return { success: true, data: getIndexStats() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:rebuildIndex', async () => {
+    try {
+        clearAllIndexData();
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// Favourite filters
+ipcMain.handle('search:favourites:list', async () => {
+    try {
+        return { success: true, data: listFavouriteFilters() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:favourites:save', async (_event, name, query) => {
+    try {
+        const fav = saveFavouriteFilter(name, query);
+        return { success: true, data: fav };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:favourites:delete', async (_event, id) => {
+    try {
+        deleteFavouriteFilter(id);
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:favourites:rename', async (_event, id, name) => {
+    try {
+        renameFavouriteFilter(id, name);
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// Detached viewer window
+// Check if paths exist (for destination drive availability)
+ipcMain.handle('search:checkPathsExist', async (_event, paths) => {
+    const result = {};
+    for (const p of paths) {
+        try {
+            result[p] = fs.existsSync(p);
+        }
+        catch {
+            result[p] = false;
+        }
+    }
+    return { success: true, data: result };
+});
+let viewerWindow = null;
+ipcMain.handle('search:openViewer', async (_event, filePaths, fileNames) => {
+    try {
+        // Support single or multiple files — pass as JSON-encoded array in query param
+        const filesParam = JSON.stringify(filePaths);
+        const title = filePaths.length === 1
+            ? fileNames[0] + ' — PDR Viewer'
+            : `${filePaths.length} photos — PDR Viewer`;
+        // If viewer already open, reuse it
+        if (viewerWindow && !viewerWindow.isDestroyed()) {
+            const viewerHtml = app.isPackaged
+                ? path.join(process.resourcesPath, 'dist/public/viewer.html')
+                : path.join(__dirname, '../dist/public/viewer.html');
+            viewerWindow.loadFile(viewerHtml, { query: { files: filesParam } });
+            viewerWindow.setTitle(title);
+            viewerWindow.focus();
+            return { success: true };
+        }
+        viewerWindow = new BrowserWindow({
+            width: 1000,
+            height: 750,
+            minWidth: 500,
+            minHeight: 400,
+            backgroundColor: '#1a1a2e',
+            title,
+            icon: app.isPackaged
+                ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
+                : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
+            webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false,
+            },
+        });
+        const viewerHtml = app.isPackaged
+            ? path.join(process.resourcesPath, 'dist/public/viewer.html')
+            : path.join(__dirname, '../dist/public/viewer.html');
+        viewerWindow.loadFile(viewerHtml, { query: { files: filesParam } });
+        viewerWindow.on('closed', () => {
+            viewerWindow = null;
+        });
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// ═══ AI Recognition IPC Handlers ═══════════════════════════════════════════
+ipcMain.handle('ai:start', async () => {
+    try {
+        startAiProcessing(); // non-blocking — fires and returns
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:cancel', async () => {
+    cancelAiProcessing();
+    return { success: true };
+});
+ipcMain.handle('ai:status', async () => {
+    return { success: true, data: { isProcessing: isAiProcessing() } };
+});
+ipcMain.handle('ai:stats', async () => {
+    try {
+        const stats = getAiStats();
+        return { success: true, data: stats };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:listPersons', async () => {
+    try {
+        return { success: true, data: listPersons() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:namePerson', async (_event, name, clusterId, avatarData) => {
+    try {
+        const personId = upsertPerson(name, avatarData);
+        if (clusterId != null) {
+            assignPersonToCluster(clusterId, personId);
+            // Rebuild FTS for all files in the cluster
+            const { getDb } = await import('./search-database.js');
+            const database = getDb();
+            const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE cluster_id = ?`).all(clusterId);
+            for (const f of files)
+                rebuildAiFts(f.file_id);
+        }
+        return { success: true, data: { personId } };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:assignFace', async (_event, faceId, personId) => {
+    try {
+        assignPersonToFace(faceId, personId);
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:getFaces', async (_event, fileId) => {
+    try {
+        return { success: true, data: getFacesForFile(fileId) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:getTags', async (_event, fileId) => {
+    try {
+        return { success: true, data: getAiTagsForFile(fileId) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:tagOptions', async () => {
+    try {
+        return { success: true, data: getAiTagOptions() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:clearAll', async () => {
+    try {
+        clearAllAiData();
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// Shutdown AI worker on app quit
+app.on('before-quit', () => {
+    shutdownAiWorker();
 });

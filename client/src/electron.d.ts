@@ -82,7 +82,9 @@ export interface ReportSummary {
     recovered: number;
     marked: number;
   };
-  duplicatesRemoved: number;  // ADD THIS LINE
+  duplicatesRemoved: number;
+  destinationExists?: boolean;
+  destinationStatus?: 'found' | 'drive-missing' | 'folder-missing';
 }
 
 export interface ElectronAPI {

@@ -67,6 +67,11 @@
     from { height: var(--radix-accordion-content-height) }
     to { height: 0 }
   }
+  @keyframes outline-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(169, 156, 255, 0.5); }
+    50% { box-shadow: 0 0 0 4px rgba(169, 156, 255, 0.3); }
+  }
+  --animate-outline-pulse: outline-pulse 2s ease-in-out infinite;
 }
 
 @layer base {
@@ -105,9 +110,9 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    /* Border: #e1def7 -> 247 56% 92% */
-    --border: 247 56% 92%;
-    --input: 247 56% 92%;
+    /* Border: strengthened for visibility */
+    --border: 247 46% 84%;
+    --input: 247 46% 84%;
     --ring: 249 100% 81%; /* Lavender */
 
     --radius: 1.125rem; /* 18px per spec */
@@ -176,6 +181,64 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* ── Ribbon high-contrast separators & borders ─────────────────────── */
+  .ribbon-separator {
+    background-color: hsl(247 46% 78%);
+  }
+  .dark .ribbon-separator {
+    background-color: hsl(240 5% 30%);
+  }
+  .ribbon-group-border {
+    border-color: hsl(247 46% 80%);
+  }
+  .dark .ribbon-group-border {
+    border-color: hsl(240 5% 28%);
+  }
+  .ribbon-outer-border {
+    border-bottom-color: hsl(247 46% 74%);
+  }
+  .dark .ribbon-outer-border {
+    border-bottom-color: hsl(240 5% 25%);
+  }
+  .ribbon-tab-bar {
+    background-color: hsl(249 100% 81%);
+    border-bottom: 1px solid hsl(249 100% 72%);
+  }
+  .dark .ribbon-tab-bar {
+    background-color: hsl(249 60% 30%);
+    border-bottom: 1px solid hsl(249 50% 25%);
+  }
+  .ribbon-tab-inactive:hover {
+    background-color: hsl(249 100% 76%);
+  }
+  .dark .ribbon-tab-inactive:hover {
+    background-color: hsl(249 50% 35%);
+  }
+
+  /* ── Custom title bar — matches ribbon tab bar lavender ──────────── */
+  .custom-title-bar {
+    background-color: hsl(249 100% 81%);
+    height: 32px;
+    min-height: 32px;
+  }
+  .dark .custom-title-bar {
+    background-color: hsl(249 60% 30%);
+  }
+
+  /* ── Sidebar high-contrast borders ─────────────────────────────────── */
+  .sidebar-container {
+    border-right-color: hsl(247 46% 80%);
+  }
+  .dark .sidebar-container {
+    border-right-color: hsl(240 5% 25%);
+  }
+  .sidebar-divider {
+    border-top-color: hsl(247 46% 83%);
+  }
+  .dark .sidebar-divider {
+    border-top-color: hsl(240 5% 22%);
   }
   
   /* Custom Animations from Spec */

@@ -91,8 +91,18 @@ export interface SourceAnalysisResult {
   files: FileAnalysisResult[];
 }
 
-const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif', '.raw', '.cr2', '.nef', '.arw', '.dng']);
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mts', '.m2ts']);
+const PHOTO_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+  '.heic', '.heif', '.avif', '.jp2', '.j2k',
+  '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef',
+  '.sr2', '.srf', '.raf', '.3fr', '.rwl', '.x3f', '.dcr', '.kdc', '.mrw', '.erf',
+  '.ico', '.svg', '.psd',
+]);
+const VIDEO_EXTENSIONS = new Set([
+  '.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v',
+  '.3gp', '.3g2', '.mts', '.m2ts', '.ts', '.vob',
+  '.mpg', '.mpeg', '.asf', '.divx', '.ogv', '.rm', '.rmvb', '.swf',
+]);
 
 function isMediaFile(filename: string): 'photo' | 'video' | null {
   const ext = path.extname(filename).toLowerCase();

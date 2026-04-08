@@ -117,6 +117,12 @@ export async function cancelCopyFiles(): Promise<{ success: boolean }> {
   return { success: false };
 }
 
+export async function setFixInProgress(inProgress: boolean): Promise<void> {
+  if (isElectron() && (window as any).pdr?.setFixInProgress) {
+    await (window as any).pdr.setFixInProgress(inProgress);
+  }
+}
+
 export async function playCompletionSound(): Promise<void> {
   if (isElectron() && (window as any).pdr?.playCompletionSound) {
     try {
@@ -154,16 +160,30 @@ export async function listReports(): Promise<{ success: boolean; data?: ReportSu
   return { success: false, error: 'Not running in Electron environment' };
 }
 
-export async function exportReportCSV(reportId: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
+export async function exportReportCSV(reportId: string, folderPath?: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
   if (isElectron()) {
-    return (window as any).pdr.exportReportCSV(reportId);
+    return (window as any).pdr.exportReportCSV(reportId, folderPath);
   }
   return { success: false, error: 'Not running in Electron environment' };
 }
 
-export async function exportReportTXT(reportId: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
+export async function exportReportTXT(reportId: string, folderPath?: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
   if (isElectron()) {
-    return (window as any).pdr.exportReportTXT(reportId);
+    return (window as any).pdr.exportReportTXT(reportId, folderPath);
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
+export async function getDefaultExportPath(reportId: string): Promise<{ success: boolean; path: string }> {
+  if (isElectron()) {
+    return (window as any).pdr.getDefaultExportPath(reportId);
+  }
+  return { success: false, path: '' };
+}
+
+export async function regenerateCatalogue(destinationPath: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron()) {
+    return (window as any).pdr.regenerateCatalogue(destinationPath);
   }
   return { success: false, error: 'Not running in Electron environment' };
 }
@@ -184,6 +204,28 @@ export function formatBytes(bytes: number): string {
 }
 
 // Settings types and functions
+export interface PDRSettings {
+  skipDuplicates: boolean;
+  thoroughDuplicateMatching?: boolean;
+  writeExif: boolean;
+  exifWriteConfirmed: boolean;
+  exifWriteRecovered: boolean;
+  exifWriteMarked: boolean;
+  showStoragePerformanceTips: boolean;
+  rememberSources: boolean;
+  clearSourcesAfterFix: boolean;
+  // AI Photo Analysis
+  aiEnabled: boolean;
+  aiFaceDetection: boolean;
+  aiObjectTagging: boolean;
+  aiAutoProcess: boolean;
+  aiMinFaceConfidence: number;
+  aiMinTagConfidence: number;
+  // Auto-catalogue
+  autoSaveCatalogue: boolean;
+  showManualReportExports: boolean;
+}
+
 const defaultSettings: PDRSettings = {
   skipDuplicates: true,
   writeExif: false,
@@ -191,6 +233,16 @@ const defaultSettings: PDRSettings = {
   exifWriteRecovered: true,
   exifWriteMarked: false,
   showStoragePerformanceTips: true,
+  rememberSources: true,
+  clearSourcesAfterFix: true,
+  aiEnabled: false,
+  aiFaceDetection: true,
+  aiObjectTagging: true,
+  aiAutoProcess: true,
+  aiMinFaceConfidence: 0.7,
+  aiMinTagConfidence: 0.3,
+  autoSaveCatalogue: true,
+  showManualReportExports: false,
 };
 
 export async function getSettings(): Promise<PDRSettings> {
@@ -348,6 +400,53 @@ export async function checkSameDriveWarning(sourcePath: string, outputPath: stri
   return null;
 }
 
+// Folder browser types and functions
+export interface DriveInfo {
+  letter: string;
+  label: string;
+  type: string;
+  totalBytes: number;
+  freeBytes: number;
+}
+
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  isImage: boolean;
+  isArchive: boolean;
+  sizeBytes: number;
+  hasSubfolders: boolean;
+}
+
+export async function listDrives(): Promise<DriveInfo[]> {
+  if (isElectron() && (window as any).pdr?.browser) {
+    return (window as any).pdr.browser.listDrives();
+  }
+  return [];
+}
+
+export async function readDirectory(dirPath: string, fileFilter?: string): Promise<{ success: boolean; items: DirectoryEntry[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.browser) {
+    return (window as any).pdr.browser.readDirectory(dirPath, fileFilter);
+  }
+  return { success: false, items: [], error: 'Not running in Electron' };
+}
+
+export async function createDirectory(dirPath: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.browser) {
+    return (window as any).pdr.browser.createDirectory(dirPath);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function getThumbnail(filePath: string, size: number): Promise<{ success: boolean; dataUrl: string }> {
+  if (isElectron() && (window as any).pdr?.browser) {
+    return (window as any).pdr.browser.thumbnail(filePath, size);
+  }
+  return { success: false, dataUrl: '' };
+}
+
 // Pre-scan types and functions
 export interface PreScanProgress {
   fileCount: number;
@@ -398,5 +497,408 @@ export function onPreScanProgress(callback: (progress: PreScanProgress) => void)
 export function removePreScanProgressListener(): void {
   if (isElectron() && (window as any).pdr?.prescan) {
     (window as any).pdr.prescan.removeProgressListener();
+  }
+}
+
+// ─── Search & Discovery types and functions ──────────────────────────────────
+
+export interface SearchQuery {
+  text?: string;
+  confidence?: string[];
+  fileType?: string[];
+  dateSource?: string[];
+  yearFrom?: number;
+  yearTo?: number;
+  monthFrom?: number;
+  monthTo?: number;
+  cameraMake?: string[];
+  cameraModel?: string[];
+  hasGps?: boolean;
+  country?: string[];
+  city?: string[];
+  runId?: number;
+  destinationPath?: string[];
+  extension?: string[];
+  // AI filters
+  personId?: number[];
+  aiTag?: string[];
+  hasFaces?: boolean;
+  hasUnnamedFaces?: boolean;
+  sortBy?: 'derived_date' | 'filename' | 'size_bytes' | 'confidence' | 'camera_model';
+  sortDir?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+export interface IndexedFile {
+  id: number;
+  run_id: number;
+  file_path: string;
+  filename: string;
+  extension: string;
+  file_type: string;
+  size_bytes: number;
+  hash: string | null;
+  confidence: string;
+  date_source: string;
+  original_filename: string;
+  derived_date: string | null;
+  year: number | null;
+  month: number | null;
+  day: number | null;
+  camera_make: string | null;
+  camera_model: string | null;
+  lens_model: string | null;
+  width: number | null;
+  height: number | null;
+  megapixels: number | null;
+  iso: number | null;
+  shutter_speed: string | null;
+  aperture: number | null;
+  focal_length: number | null;
+  flash_fired: number | null;
+  gps_lat: number | null;
+  gps_lon: number | null;
+  gps_alt: number | null;
+  geo_country: string | null;
+  geo_country_code: string | null;
+  geo_city: string | null;
+  exif_read_ok: number;
+  indexed_at: string;
+}
+
+export interface SearchResult {
+  files: IndexedFile[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface FilterOptions {
+  confidences: string[];
+  fileTypes: string[];
+  dateSources: string[];
+  years: number[];
+  cameraMakes: string[];
+  cameraModels: string[];
+  extensions: string[];
+  lensModels?: string[];
+  sceneCaptureTypes?: string[];
+  exposurePrograms?: string[];
+  whiteBalances?: string[];
+  cameraPositions?: string[];
+  orientations?: string[];
+  countries?: string[];
+  cities?: string[];
+  destinations: string[];
+  runs: Array<{ id: number; report_id: string; destination_path: string; indexed_at: string; file_count: number }>;
+}
+
+export interface IndexStats {
+  totalFiles: number;
+  totalRuns: number;
+  totalPhotos: number;
+  totalVideos: number;
+  totalSizeBytes: number;
+  oldestDate: string | null;
+  newestDate: string | null;
+  dbSizeBytes: number;
+}
+
+export interface IndexProgress {
+  phase: 'reading-exif' | 'inserting' | 'complete';
+  current: number;
+  total: number;
+  currentFile: string;
+}
+
+export interface IndexedRun {
+  id: number;
+  report_id: string;
+  destination_path: string;
+  indexed_at: string;
+  file_count: number;
+  source_labels: string;
+}
+
+export interface FavouriteFilter {
+  id: number;
+  name: string;
+  query_json: string;
+  created_at: string;
+}
+
+// Search database init
+export async function initSearchDatabase(): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.init();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Index a fix run by report ID
+export async function indexFixRun(reportId: string): Promise<{ success: boolean; runId?: number; fileCount?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.indexRun(reportId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Cancel ongoing indexing
+export async function cancelSearchIndexing(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.cancelIndex();
+  }
+  return { success: false };
+}
+
+// Remove an indexed run
+export async function removeSearchRun(runId: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.removeRun(runId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Remove an indexed run by report ID
+export async function removeSearchRunByReport(reportId: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.removeRunByReport(reportId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// List all indexed runs
+export async function listSearchRuns(): Promise<{ success: boolean; data?: IndexedRun[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.listRuns();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Search files
+export async function searchFiles(query: SearchQuery): Promise<{ success: boolean; data?: SearchResult; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.query(query);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Get filter options for dropdowns
+export async function getSearchFilterOptions(): Promise<{ success: boolean; data?: FilterOptions; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.filterOptions();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Get index statistics
+export async function getSearchStats(): Promise<{ success: boolean; data?: IndexStats; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.stats();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Rebuild entire index (clear all data)
+export async function rebuildSearchIndex(): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.rebuildIndex();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Index progress listener
+export function onSearchIndexProgress(callback: (progress: IndexProgress) => void): void {
+  if (isElectron() && (window as any).pdr?.search) {
+    (window as any).pdr.search.onIndexProgress(callback);
+  }
+}
+
+export function removeSearchIndexProgressListener(): void {
+  if (isElectron() && (window as any).pdr?.search) {
+    (window as any).pdr.search.removeIndexProgressListener();
+  }
+}
+
+// Favourite filters
+export async function listFavouriteFilters(): Promise<{ success: boolean; data?: FavouriteFilter[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.favourites.list();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function saveFavouriteFilter(name: string, query: SearchQuery): Promise<{ success: boolean; data?: FavouriteFilter; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.favourites.save(name, query);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function deleteFavouriteFilter(id: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.favourites.delete(id);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function renameFavouriteFilter(id: number, name: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.favourites.rename(id, name);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Open detached viewer window — supports single or multiple files
+// Check if destination paths exist (drive availability)
+export async function checkPathsExist(paths: string[]): Promise<Record<string, boolean>> {
+  if (isElectron() && (window as any).pdr?.search) {
+    const result = await (window as any).pdr.search.checkPathsExist(paths);
+    if (result.success) return result.data;
+  }
+  return {};
+}
+
+export async function openSearchViewer(filePath: string | string[], filename: string | string[]): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    // Normalise to arrays for the IPC call
+    const paths = Array.isArray(filePath) ? filePath : [filePath];
+    const names = Array.isArray(filename) ? filename : [filename];
+    return (window as any).pdr.search.openViewer(paths, names);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// ─── AI Recognition ────────────────────────────────────────────────────────
+
+export interface AiProgress {
+  phase: 'downloading-models' | 'processing' | 'clustering' | 'complete' | 'error';
+  current: number;
+  total: number;
+  currentFile: string;
+  facesFound: number;
+  tagsApplied: number;
+  modelDownloadProgress?: { model: string; percent: number };
+}
+
+export interface PersonRecord {
+  id: number;
+  name: string;
+  avatar_data: string | null;
+  photo_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiTagRecord {
+  id: number;
+  file_id: number;
+  tag: string;
+  confidence: number;
+  source: string;
+  model_ver: string | null;
+}
+
+export interface FaceRecord {
+  id: number;
+  file_id: number;
+  person_id: number | null;
+  person_name?: string;
+  box_x: number;
+  box_y: number;
+  box_w: number;
+  box_h: number;
+  confidence: number;
+  cluster_id: number | null;
+}
+
+export interface AiStats {
+  totalProcessed: number;
+  totalFaces: number;
+  totalPersons: number;
+  totalTags: number;
+  unprocessed: number;
+}
+
+export async function startAiProcessing(): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.start();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function cancelAi(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.cancel();
+  }
+  return { success: false };
+}
+
+export async function getAiStatus(): Promise<{ success: boolean; data?: { isProcessing: boolean } }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.status();
+  }
+  return { success: false };
+}
+
+export async function getAiStats(): Promise<{ success: boolean; data?: AiStats }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.stats();
+  }
+  return { success: false };
+}
+
+export async function listPersons(): Promise<{ success: boolean; data?: PersonRecord[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.listPersons();
+  }
+  return { success: false };
+}
+
+export async function namePerson(name: string, clusterId?: number, avatarData?: string): Promise<{ success: boolean; data?: { personId: number } }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.namePerson(name, clusterId, avatarData);
+  }
+  return { success: false };
+}
+
+export async function getAiFaces(fileId: number): Promise<{ success: boolean; data?: FaceRecord[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.getFaces(fileId);
+  }
+  return { success: false };
+}
+
+export async function getAiFileTags(fileId: number): Promise<{ success: boolean; data?: AiTagRecord[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.getTags(fileId);
+  }
+  return { success: false };
+}
+
+export async function getAiTagOptions(): Promise<{ success: boolean; data?: { tag: string; count: number }[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.tagOptions();
+  }
+  return { success: false };
+}
+
+export async function clearAllAiData(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.clearAll();
+  }
+  return { success: false };
+}
+
+export function onAiProgress(callback: (progress: AiProgress) => void): void {
+  if (isElectron() && (window as any).pdr?.ai) {
+    (window as any).pdr.ai.onProgress(callback);
+  }
+}
+
+export function removeAiProgressListener(): void {
+  if (isElectron() && (window as any).pdr?.ai) {
+    (window as any).pdr.ai.removeProgressListener();
   }
 }

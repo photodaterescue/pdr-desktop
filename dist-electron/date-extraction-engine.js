@@ -282,7 +282,13 @@ export async function findGoogleTakeoutSidecar(imagePath) {
 export function detectSourceType(files) {
     let hasJsonFiles = false;
     let hasPhotos = false;
-    const photoExtensions = new Set(['.jpg', '.jpeg', '.png', '.heic', '.heif', '.gif', '.bmp', '.webp']);
+    const photoExtensions = new Set([
+        '.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+        '.heic', '.heif', '.avif', '.jp2', '.j2k',
+        '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef',
+        '.sr2', '.srf', '.raf', '.3fr', '.rwl', '.x3f', '.dcr', '.kdc', '.mrw', '.erf',
+        '.ico', '.svg', '.psd',
+    ]);
     for (const file of files) {
         const ext = path.extname(file).toLowerCase();
         if (ext === '.json') {
