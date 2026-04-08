@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { 
   Folder, 
@@ -1356,7 +1357,7 @@ return (
       {showSourceTypeSelector && (
         <div className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50">
           <Card className="w-96 p-6">
-            <h2 className="text-xl font-semibold text-foreground mb-4">Select Source Type</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-4 text-center">Select Source Type</h2>
             <div className="space-y-3">
               <button
                 onClick={() => handleSelectSourceType('folderOrDrive')}
@@ -1523,14 +1524,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           </div>
           <div className="flex gap-2 mt-2 px-2">
             <Button
-              variant="outline"
               size="sm"
-              className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+              className="flex-1 justify-center gap-2 shadow-md shadow-primary/20"
               onClick={onAddSource}
               data-tour="add-source"
-              style={isLicensed && sources.length === 0 ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+              style={isLicensed ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
             >
-              <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Add Source
+              <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
             </Button>
             <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
             <Button 
@@ -1953,7 +1953,11 @@ function DashboardPanel({
           </section>
         )}
 
-        <Card className="p-6 mb-2" data-tour="combined-analysis">
+        <Card className="p-6 mb-2 relative" data-tour="combined-analysis">
+          <div className="absolute top-3 right-3 flex items-center gap-1">
+            <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
+            <PerformanceNudge type="path" onNavigateToBestPractices={onNavigateToBestPractices} />
+          </div>
           <div className="flex items-start justify-between gap-6 mb-8 border-b border-border pb-8">
             <div className="flex items-start gap-6">
               <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
@@ -1972,13 +1976,9 @@ function DashboardPanel({
                     <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Add Source
                   </Button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
-                    {stats.path}
-                  </p>
-                  <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
-                  <PerformanceNudge type="path" onNavigateToBestPractices={onNavigateToBestPractices} />
-                </div>
+                <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
+                  {stats.path}
+                </p>
               </div>
             </div>
             
@@ -2046,7 +2046,10 @@ function DashboardPanel({
             <h2 className="text-lg font-semibold text-foreground mb-4">Output</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-tour="destination">
               {/* Left: Destination Drive */}
-              <Card className="flex flex-col p-5">
+              <Card className="flex flex-col p-5 relative">
+                <div className="absolute top-3 right-3">
+                  <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
+                </div>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="p-3 bg-secondary/50 rounded-full">
                     <img src="./assets//pdr-destination-drive.png" className="w-5 h-5 object-contain" alt="Destination Drive" />
@@ -2093,7 +2096,6 @@ function DashboardPanel({
                   >
                     {destinationPath ? "Change Destination" : "Select Destination"}
                   </Button>
-                  <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
                 </div>
               </Card>
 
@@ -2104,18 +2106,7 @@ function DashboardPanel({
                     <FileImage className="w-5 h-5 text-primary" />
                   </div>
                   <h3 className="text-base font-medium font-heading">Photo Format</h3>
-                  <div className="relative group ml-auto">
-                    <button
-                      className="p-1 rounded-full hover:bg-secondary transition-colors"
-                    >
-                      <Info className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                    <div className="absolute top-full right-0 mt-1 w-64 p-3 rounded-lg bg-popover border border-border shadow-lg text-xs text-muted-foreground space-y-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                      <p><strong className="text-foreground">PNG</strong> preserves every pixel with zero loss — ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
-                      <p><strong className="text-foreground">JPG</strong> compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across all devices and apps.</p>
-                      <p className="text-muted-foreground/70 italic">Files already in your chosen format will not be re-converted.</p>
-                    </div>
-                  </div>
+                  <FormatInfoTooltip />
                 </div>
                 <div className="flex-1">
                   <div className="relative">
@@ -2176,7 +2167,6 @@ function DashboardPanel({
                >
                  <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" /> Run Fix
                </Button>
-                <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
              </div>
           </div>
         </motion.div>
@@ -2567,6 +2557,7 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
                     size="lg"
                     className="px-12 h-12 text-base shadow-lg shadow-primary/25"
                     onClick={onAddFirstSource}
+                    style={{ animation: 'outline-pulse 2s ease-in-out infinite' }}
                   >
                     Add Your First Source
                   </Button>
@@ -3084,14 +3075,12 @@ function PreviewModal({ onClose, results, fileResults }: {
         onClick={(e) => e.stopPropagation()}
         className="bg-background rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col"
       >
-        <div className="p-6 border-b border-border flex items-center justify-between bg-background">
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">Preview Changes</h2>
-            <p className="text-sm text-muted-foreground">
-              {allFiles.length.toLocaleString()} files analyzed - Review proposed renames before applying
-            </p>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors">
+        <div className="p-6 border-b border-border relative bg-background text-center">
+          <h2 className="text-xl font-semibold text-foreground">Preview Changes</h2>
+          <p className="text-sm text-muted-foreground">
+            {allFiles.length.toLocaleString()} files analyzed — review proposed renames before applying
+          </p>
+          <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full transition-colors">
             <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
@@ -3461,6 +3450,43 @@ const handleLeaveReview = async () => {
   );
 }
 
+function FormatInfoTooltip() {
+  const [isVisible, setIsVisible] = React.useState(false);
+  const btnRef = React.useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const hideTimer = React.useRef<ReturnType<typeof setTimeout>>();
+
+  const show = () => { clearTimeout(hideTimer.current); setIsVisible(true); };
+  const hide = () => { hideTimer.current = setTimeout(() => setIsVisible(false), 150); };
+
+  React.useEffect(() => {
+    if (isVisible && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const w = 272;
+      setPos({ top: rect.top - 8, left: Math.max(8, Math.min(rect.right - w, window.innerWidth - w - 8)) });
+    }
+  }, [isVisible]);
+
+  return (
+    <div className="inline-flex items-center ml-auto">
+      <button ref={btnRef} onMouseEnter={show} onMouseLeave={hide} className="p-1 rounded-full hover:bg-secondary transition-colors" type="button">
+        <Info className="w-4 h-4 text-muted-foreground" />
+      </button>
+      {isVisible && pos && ReactDOM.createPortal(
+        <div className="fixed w-[272px] p-3 rounded-lg bg-popover border border-border shadow-lg text-xs text-muted-foreground space-y-2 z-[9999]"
+          style={{ bottom: `${window.innerHeight - pos.top}px`, left: pos.left }}
+          onMouseEnter={show} onMouseLeave={hide}
+        >
+          <p><strong className="text-foreground">PNG</strong> preserves every pixel with zero loss — ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
+          <p><strong className="text-foreground">JPG</strong> compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across all devices and apps.</p>
+          <p className="text-muted-foreground/70 italic">Files already in your chosen format will not be re-converted.</p>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' | 'destination' | 'path'; onNavigateToBestPractices?: () => void }) {
   const [isVisible, setIsVisible] = React.useState(false);
   const hideTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3484,9 +3510,30 @@ function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' 
     return () => { if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current); };
   }, []);
 
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const [tooltipPos, setTooltipPos] = React.useState<{ top: number; left: number } | null>(null);
+
+  React.useEffect(() => {
+    if (isVisible && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const tooltipW = 288; // w-72
+      if (type === 'source') {
+        // Open below, aligned left but clamped to viewport
+        setTooltipPos({ top: rect.bottom + 8, left: Math.max(8, Math.min(rect.left, window.innerWidth - tooltipW - 8)) });
+      } else if (type === 'destination') {
+        // Open above, aligned right
+        setTooltipPos({ top: rect.top - 8, left: Math.max(8, Math.min(rect.right - tooltipW, window.innerWidth - tooltipW - 8)) });
+      } else {
+        // Open above, aligned left
+        setTooltipPos({ top: rect.top - 8, left: Math.max(8, Math.min(rect.left, window.innerWidth - tooltipW - 8)) });
+      }
+    }
+  }, [isVisible, type]);
+
   return (
     <div className="relative inline-flex items-center ml-1">
       <button
+        ref={buttonRef}
         onMouseEnter={showTooltip}
         onMouseLeave={scheduleHide}
         onClick={(e) => { e.stopPropagation(); setIsVisible(!isVisible); }}
@@ -3496,13 +3543,14 @@ function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' 
       >
         <Info className="w-3.5 h-3.5" />
       </button>
-      {isVisible && (
+      {isVisible && tooltipPos && ReactDOM.createPortal(
         <div
-          className={`absolute w-72 p-3 bg-background border border-[#9b8bb8]/30 rounded-lg shadow-lg text-xs text-muted-foreground z-[60] ${
-            type === 'source' 
-              ? 'top-full left-1/2 -translate-x-1/2 mt-2' 
-              : 'bottom-full left-1/2 -translate-x-1/2 mb-2'
-          }`}
+          className="fixed w-72 p-3 bg-background border border-[#9b8bb8]/30 rounded-lg shadow-lg text-xs text-muted-foreground z-[9999]"
+          style={{
+            top: type === 'source' ? tooltipPos.top : undefined,
+            bottom: type !== 'source' ? `${window.innerHeight - tooltipPos.top}px` : undefined,
+            left: tooltipPos.left,
+          }}
           onMouseEnter={showTooltip}
           onMouseLeave={scheduleHide}
         >
@@ -3522,7 +3570,8 @@ function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' 
               </button>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -4231,17 +4280,17 @@ function ReportsListModal({ onClose, onViewReport }: {
         onClick={(e) => e.stopPropagation()}
         className="bg-background rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] flex flex-col border border-border"
       >
-        <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="p-6 border-b border-border relative shrink-0 text-center">
+          <div className="flex items-center justify-center gap-3">
             <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
               <FileText className="w-5 h-5 text-primary" />
             </div>
-            <div>
+            <div className="text-center">
               <h2 className="text-xl font-semibold text-foreground">Reports History</h2>
               <p className="text-sm text-muted-foreground">{reports.length} report{reports.length !== 1 ? 's' : ''} saved</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors" data-testid="button-close-reports-list">
+          <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full transition-colors" data-testid="button-close-reports-list">
             <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
@@ -4653,19 +4702,19 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
         onClick={(e) => e.stopPropagation()}
         className="bg-background rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col border border-border"
       >
-        <div className="p-6 border-b border-border flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="p-6 border-b border-border relative shrink-0 text-center">
+          <div className="flex items-center justify-center gap-3">
             <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-950/30 rounded-full flex items-center justify-center border border-emerald-200 dark:border-emerald-700">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             </div>
-            <div>
+            <div className="text-center">
               <h2 className="text-xl font-semibold text-foreground">Report Summary</h2>
               <p className="text-sm text-muted-foreground">
                 {(loadedReport?.totalScanned ?? totalFiles).toLocaleString()} files scanned → {totalFiles.toLocaleString()} output files
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors">
+          <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full transition-colors">
             <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
@@ -4990,9 +5039,9 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
         className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-8"
       >
-        <div className="flex items-center justify-between mb-6">
+        <div className="relative mb-6 text-center">
           <h2 className="text-xl font-semibold text-foreground">Analysis Results</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -6604,8 +6653,8 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
         onClick={(e) => e.stopPropagation()}
         className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full p-6"
       >
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
+        <div className="relative mb-5 text-center">
+          <div className="flex items-center justify-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
               <Settings className="w-5 h-5 text-primary" />
             </div>
@@ -6613,7 +6662,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-secondary rounded-full transition-colors"
+            className="absolute right-0 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full transition-colors"
             data-testid="button-close-settings"
           >
             <X className="w-5 h-5 text-muted-foreground" />

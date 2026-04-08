@@ -68,11 +68,6 @@
     from { height: var(--radix-accordion-content-height) }
     to { height: 0 }
   }
-  @keyframes outline-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(169, 156, 255, 0.5); }
-    50% { box-shadow: 0 0 0 4px rgba(169, 156, 255, 0.3); }
-  }
-  --animate-outline-pulse: outline-pulse 2s ease-in-out infinite;
 }
 
 @layer base {
@@ -182,6 +177,11 @@
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-heading);
   }
+}
+
+@keyframes outline-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(169, 156, 255, 0.5); }
+  50% { box-shadow: 0 0 0 5px rgba(169, 156, 255, 0.35); }
 }
 
 @layer utilities {

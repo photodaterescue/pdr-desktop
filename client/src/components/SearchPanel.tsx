@@ -639,6 +639,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     onClick={() => startAiProcessing()}
                     className="text-xs text-white font-medium flex items-center gap-1 bg-purple-500/40 hover:bg-purple-500/60 px-2.5 py-1 rounded-full transition-colors"
                     title={`Analyze ${aiStats.unprocessed} unprocessed photos with AI`}
+                    style={{ animation: 'outline-pulse 2s ease-in-out infinite' }}
                   >
                     <Scan className="w-3 h-3" />Analyze {aiStats.unprocessed}
                   </button>
@@ -2239,6 +2240,14 @@ function IndexManagerModal({ onClose, onRefresh, stats }: { onClose: () => void;
     setIsIndexingRun(null);
     await loadData();
     onRefresh();
+    // Auto-trigger AI analysis if enabled
+    if (aiEnabled) {
+      const freshStats = await getAiStats();
+      if (freshStats.success && freshStats.data && freshStats.data.unprocessed > 0) {
+        setAiProcessing(true);
+        startAiProcessing();
+      }
+    }
   };
 
   const [isIndexingBulk, setIsIndexingBulk] = useState(false);
@@ -2262,6 +2271,15 @@ function IndexManagerModal({ onClose, onRefresh, stats }: { onClose: () => void;
     setSelectedReports(new Set());
     await loadData();
     onRefresh();
+    // Auto-trigger AI analysis if enabled
+    if (aiEnabled) {
+      const freshStats = await getAiStats();
+      if (freshStats.success && freshStats.data && freshStats.data.unprocessed > 0) {
+        await startAiProcessing();
+        const updatedStats = await getAiStats();
+        if (updatedStats.success && updatedStats.data) setAiStatsState(updatedStats.data);
+      }
+    }
   };
   const handleDeleteReports = async (reportIds: string[]) => {
     for (const id of reportIds) await deleteReport(id);
@@ -2296,7 +2314,7 @@ function IndexManagerModal({ onClose, onRefresh, stats }: { onClose: () => void;
   return (
     <div className="fixed inset-0 bg-black/25 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-background rounded-2xl shadow-2xl max-w-lg w-full border border-border overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="relative flex items-center justify-center px-6 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Database className="w-5 h-5 text-primary" />
             <h3 className="text-base font-semibold text-foreground">Index Manager</h3>
@@ -2325,7 +2343,7 @@ function IndexManagerModal({ onClose, onRefresh, stats }: { onClose: () => void;
               </Tooltip>
             </TooltipProvider>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"><X className="w-4 h-4" /></button>
         </div>
         <div className="px-6 py-4 max-h-[60vh] overflow-y-auto space-y-5">
           {stats && <div className="grid grid-cols-3 gap-3">
