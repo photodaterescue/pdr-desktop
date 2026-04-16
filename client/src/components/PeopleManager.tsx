@@ -1427,11 +1427,11 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                             {targetCount} faces selected
                           </div>
                         )}
+                        {targetCount <= 1 && (
                         <p className="text-xs text-muted-foreground text-center">
-                          {targetCount > 1
-                            ? `Choose an action for ${targetCount} selected faces`
-                            : 'Choose an action for this face'}
+                          Choose an action for this face
                         </p>
+                        )}
                         <div className="relative">
                         <input
                           ref={reassignInputRef}
