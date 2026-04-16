@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail, Calendar } from 'lucide-react';
+import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail, Calendar, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLicense } from '@/contexts/LicenseContext';
@@ -10,7 +10,8 @@ interface LicenseModalProps {
 }
 
 export function LicenseModal({ onClose }: LicenseModalProps) {
-  const { license, isLoading, isLicensed, activate, deactivate, storedLicenseKey } = useLicense();
+  const { license, isLoading, isLicensed, activate, deactivate, refresh, storedLicenseKey } = useLicense();
+  const [isRetrying, setIsRetrying] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -91,13 +92,25 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
               <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
                       Offline Mode — {license.daysUntilGraceExpires} days remaining
                     </p>
                     <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
                       Connect to the internet to validate your license and continue using Photo Date Rescue.
                     </p>
+                    <button
+                      onClick={async () => {
+                        setIsRetrying(true);
+                        await refresh(storedLicenseKey || undefined);
+                        setIsRetrying(false);
+                      }}
+                      disabled={isRetrying}
+                      className="mt-2 flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-200 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRetrying ? 'animate-spin' : ''}`} />
+                      {isRetrying ? 'Checking...' : 'Retry now'}
+                    </button>
                   </div>
                 </div>
               </div>

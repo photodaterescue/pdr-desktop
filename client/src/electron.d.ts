@@ -16,12 +16,14 @@ export interface FileAnalysisResult {
   derivedDate: string | null;
   originalDate: string | null;
   suggestedFilename: string | null;
+  isDuplicate?: boolean;
+  duplicateOf?: string;
 }
 
 export interface SourceAnalysisResult {
-  sourcePath: string;
-  sourceType: 'folder' | 'zip' | 'drive';
-  sourceLabel: string;
+  sourcePath?: string;
+  sourceType?: 'folder' | 'zip' | 'drive';
+  sourceLabel?: string;
   totalFiles: number;
   photoCount: number;
   videoCount: number;
@@ -36,7 +38,7 @@ export interface SourceAnalysisResult {
     marked: number;
   };
   duplicatesRemoved: number;
-  duplicateFiles: Array<{ filename: string; duplicateOf: string }>;
+  duplicateFiles: Array<{ filename: string; duplicateOf: string; type?: string }>;
   files: FileAnalysisResult[];
 }
 
@@ -48,6 +50,8 @@ export interface FileChange {
   sourcePath?: string;
   fileType?: string;
   dateChanged?: boolean;
+  exifWritten?: boolean;
+  exifSource?: string;
 }
 
 export interface SourceInfo {
@@ -68,6 +72,8 @@ export interface FixReport {
     total: number;
   };
   duplicatesRemoved: number;
+  duplicateFiles?: Array<{ filename: string; duplicateOf: string; duplicateMethod?: 'hash' | 'heuristic' }>;
+  totalScanned?: number;
   files: FileChange[];
 }
 
@@ -83,6 +89,7 @@ export interface ReportSummary {
     marked: number;
   };
   duplicatesRemoved: number;
+  totalScanned?: number;
   destinationExists?: boolean;
   destinationStatus?: 'found' | 'drive-missing' | 'folder-missing';
 }
@@ -147,7 +154,14 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI?: ElectronAPI;
+    pdr?: {
+      showMessage?: (title: string, message: string) => Promise<void>;
+      cancelAnalysis?: () => Promise<void>;
+      [key: string]: any;
+    };
   }
+  // eslint-disable-next-line no-var
+  var __APP_VERSION__: string;
 }
 
 export {};

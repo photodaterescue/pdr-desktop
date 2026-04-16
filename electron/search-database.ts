@@ -108,6 +108,12 @@ export interface SearchQuery {
   aiTag?: string[];
   hasFaces?: boolean;
   hasUnnamedFaces?: boolean;
+  hasAiTags?: boolean;
+  hasNamedPeople?: boolean;
+  aiProcessed?: 'all' | 'unprocessed' | 'faces_only' | 'tags_only' | 'both';
+  faceCountMin?: number;
+  faceCountMax?: number;
+  personTogetherIds?: number[];
   sortBy?: 'derived_date' | 'filename' | 'size_bytes' | 'confidence' | 'camera_model' | 'iso' | 'aperture' | 'focal_length' | 'megapixels';
   sortDir?: 'asc' | 'desc';
   limit?: number;
@@ -323,6 +329,7 @@ export function initDatabase(): { success: boolean; error?: string } {
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
         name            TEXT NOT NULL,
         avatar_data     TEXT,
+        discarded_at    TEXT,
         created_at      TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
       );
@@ -366,6 +373,25 @@ export function initDatabase(): { success: boolean; error?: string } {
       if (!colNames.has(col.name)) {
         db.exec(`ALTER TABLE indexed_files ADD COLUMN ${col.name} ${col.type}`);
       }
+    }
+
+    // Migrate persons table — add discarded_at column if missing
+    const personCols = db.prepare(`PRAGMA table_info(persons)`).all() as { name: string }[];
+    const personColNames = new Set(personCols.map(c => c.name));
+    if (!personColNames.has('discarded_at')) {
+      try { db.exec(`ALTER TABLE persons ADD COLUMN discarded_at TEXT`); } catch {}
+    }
+
+    // Migrate persons — add representative_face_id if missing (user-chosen avatar)
+    if (!personColNames.has('representative_face_id')) {
+      try { db.exec(`ALTER TABLE persons ADD COLUMN representative_face_id INTEGER`); } catch {}
+    }
+
+    // Migrate face_detections — add verified column if missing
+    const faceCols = db.prepare(`PRAGMA table_info(face_detections)`).all() as { name: string }[];
+    const faceColNames = new Set(faceCols.map(c => c.name));
+    if (!faceColNames.has('verified')) {
+      try { db.exec(`ALTER TABLE face_detections ADD COLUMN verified INTEGER NOT NULL DEFAULT 0`); } catch {}
     }
 
     // Normalise any legacy double-backslash destination paths
@@ -508,15 +534,21 @@ export function searchFiles(query: SearchQuery): SearchResult {
   const conditions: string[] = [];
   const params: any[] = [];
 
-  // Full-text search — queries both filename FTS and AI tags/person names FTS
+  // Full-text search — queries filename FTS, AI tags FTS, and direct AI tag match
   if (query.text && query.text.trim()) {
-    const searchTerm = query.text.trim().replace(/['"]/g, '').split(/\s+/).map(t => `"${t}"*`).join(' ');
+    const rawText = query.text.trim().replace(/['"]/g, '');
+    const searchTerm = rawText.split(/\s+/).map(t => `"${t}"*`).join(' ');
+    const likePattern = `%${rawText.toLowerCase()}%`;
     conditions.push(`f.id IN (
       SELECT rowid FROM files_fts WHERE files_fts MATCH ?
       UNION
       SELECT rowid FROM files_ai_fts WHERE files_ai_fts MATCH ?
+      UNION
+      SELECT file_id FROM ai_tags WHERE LOWER(tag) LIKE ?
+      UNION
+      SELECT fd.file_id FROM face_detections fd JOIN persons p ON fd.person_id = p.id WHERE LOWER(p.name) LIKE ?
     )`);
-    params.push(searchTerm, searchTerm);
+    params.push(searchTerm, searchTerm, likePattern, likePattern);
   }
 
   // Confidence filter
@@ -708,6 +740,56 @@ export function searchFiles(query: SearchQuery): SearchResult {
     conditions.push(`f.id IN (SELECT file_id FROM face_detections WHERE person_id IS NULL)`);
   }
 
+  // AI: Has AI tags
+  if (query.hasAiTags === true) {
+    conditions.push(`f.id IN (SELECT file_id FROM ai_tags)`);
+  }
+
+  // AI: Has named people (at least one face with a person assigned)
+  if (query.hasNamedPeople === true) {
+    conditions.push(`f.id IN (SELECT file_id FROM face_detections WHERE person_id IS NOT NULL)`);
+  }
+
+  // AI: Processed filter (analyzed status)
+  if (query.aiProcessed) {
+    switch (query.aiProcessed) {
+      case 'all':
+        conditions.push(`f.id IN (SELECT file_id FROM ai_processing_status)`);
+        break;
+      case 'unprocessed':
+        conditions.push(`f.id NOT IN (SELECT file_id FROM ai_processing_status)`);
+        conditions.push(`f.file_type = 'photo'`);
+        break;
+      case 'faces_only':
+        conditions.push(`f.id IN (SELECT file_id FROM face_detections)`);
+        conditions.push(`f.id NOT IN (SELECT file_id FROM ai_tags)`);
+        break;
+      case 'tags_only':
+        conditions.push(`f.id NOT IN (SELECT file_id FROM face_detections)`);
+        conditions.push(`f.id IN (SELECT file_id FROM ai_tags)`);
+        break;
+      case 'both':
+        conditions.push(`f.id IN (SELECT file_id FROM face_detections)`);
+        conditions.push(`f.id IN (SELECT file_id FROM ai_tags)`);
+        break;
+    }
+  }
+
+  // AI: Face count range
+  if (query.faceCountMin !== undefined || query.faceCountMax !== undefined) {
+    const min = query.faceCountMin ?? 0;
+    const max = query.faceCountMax ?? 999999;
+    conditions.push(`f.id IN (SELECT file_id FROM face_detections GROUP BY file_id HAVING COUNT(*) >= ? AND COUNT(*) <= ?)`);
+    params.push(min, max);
+  }
+
+  // AI: Person together (AND logic — photos containing ALL selected persons)
+  if (query.personTogetherIds && query.personTogetherIds.length > 0) {
+    const placeholders = query.personTogetherIds.map(() => '?').join(',');
+    conditions.push(`f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${placeholders}) GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`);
+    params.push(...query.personTogetherIds, query.personTogetherIds.length);
+  }
+
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   // Sort
@@ -889,6 +971,7 @@ export function getUnprocessedFileIds(task: 'faces' | 'tags', limit = 100): numb
     SELECT f.id FROM indexed_files f
     LEFT JOIN ai_processing_status s ON f.id = s.file_id
     WHERE f.file_type = 'photo' AND (s.file_id IS NULL OR s.${col} = 0)
+      AND f.id = (SELECT MAX(f2.id) FROM indexed_files f2 WHERE f2.file_path = f.file_path)
     ORDER BY f.derived_date DESC
     LIMIT ?
   `).all(limit) as { id: number }[];
@@ -928,19 +1011,24 @@ export function insertFaceDetections(faces: FaceDetectionRecord[]): void {
   insertMany(faces);
 }
 
-/** Insert AI tags for a file */
+/** Insert AI tags for a file (replaces any existing tags for the same file) */
 export function insertAiTags(tags: AiTagRecord[]): void {
   const database = getDb();
-  const stmt = database.prepare(`
+  const deleteStmt = database.prepare(`DELETE FROM ai_tags WHERE file_id = ?`);
+  const insertStmt = database.prepare(`
     INSERT INTO ai_tags (file_id, tag, confidence, source, model_ver)
     VALUES (?, ?, ?, ?, ?)
   `);
-  const insertMany = database.transaction((items: AiTagRecord[]) => {
+  const replaceAll = database.transaction((items: AiTagRecord[]) => {
+    // Delete existing tags for this file first to avoid duplicates
+    if (items.length > 0) {
+      deleteStmt.run(items[0].file_id);
+    }
     for (const t of items) {
-      stmt.run(t.file_id, t.tag, t.confidence, t.source, t.model_ver);
+      insertStmt.run(t.file_id, t.tag, t.confidence, t.source, t.model_ver);
     }
   });
-  insertMany(tags);
+  replaceAll(tags);
 }
 
 /** Rebuild AI FTS entry for a specific file */
@@ -981,16 +1069,67 @@ export function getAiTagsForFile(fileId: number): AiTagRecord[] {
   return database.prepare(`SELECT * FROM ai_tags WHERE file_id = ? ORDER BY confidence DESC`).all(fileId) as AiTagRecord[];
 }
 
-/** List all persons with photo counts */
+/** List all active (non-discarded) persons with photo counts */
 export function listPersons(): PersonRecord[] {
   const database = getDb();
   return database.prepare(`
     SELECT p.*, COUNT(DISTINCT fd.file_id) as photo_count
     FROM persons p
     LEFT JOIN face_detections fd ON fd.person_id = p.id
+    WHERE p.discarded_at IS NULL AND p.name != '__ignored__' AND p.name != '__unsure__'
     GROUP BY p.id
     ORDER BY photo_count DESC
   `).all() as PersonRecord[];
+}
+
+/**
+ * Get persons with co-occurrence counts: given a set of already-selected person IDs,
+ * return all other persons with the count of photos they share with ALL selected persons.
+ * If no persons selected, returns the regular photo_count for each person.
+ */
+export function getPersonsWithCooccurrence(selectedPersonIds: number[]): { id: number; name: string; photo_count: number; avatar_data: string | null }[] {
+  const database = getDb();
+  if (selectedPersonIds.length === 0) {
+    return listPersons().map(p => ({ id: p.id, name: p.name, photo_count: p.photo_count ?? 0, avatar_data: p.avatar_data }));
+  }
+  // Find file_ids that contain ALL selected persons
+  // Then for each remaining person, count how many of those files they also appear in
+  const placeholders = selectedPersonIds.map(() => '?').join(',');
+  const query = `
+    WITH shared_files AS (
+      SELECT fd.file_id
+      FROM face_detections fd
+      WHERE fd.person_id IN (${placeholders})
+      GROUP BY fd.file_id
+      HAVING COUNT(DISTINCT fd.person_id) = ${selectedPersonIds.length}
+    )
+    SELECT p.id, p.name, p.avatar_data,
+      COUNT(DISTINCT fd.file_id) as photo_count
+    FROM persons p
+    INNER JOIN face_detections fd ON fd.person_id = p.id
+    INNER JOIN shared_files sf ON fd.file_id = sf.file_id
+    WHERE p.discarded_at IS NULL
+      AND p.name != '__ignored__'
+      AND p.name != '__unsure__'
+      AND p.id NOT IN (${placeholders})
+    GROUP BY p.id
+    ORDER BY photo_count DESC
+  `;
+  return database.prepare(query).all(...selectedPersonIds, ...selectedPersonIds) as any[];
+}
+
+/** Remove person records that have no face detections pointing to them (orphaned leftovers) */
+export function cleanupOrphanedPersons(): number {
+  const database = getDb();
+  const result = database.prepare(`
+    DELETE FROM persons
+    WHERE id NOT IN (SELECT DISTINCT person_id FROM face_detections WHERE person_id IS NOT NULL)
+      AND discarded_at IS NULL
+  `).run();
+  if (result.changes > 0) {
+    console.log(`[AI] Cleaned up ${result.changes} orphaned person record(s) with no face detections`);
+  }
+  return result.changes;
 }
 
 /** Create or get a person by name */
@@ -1009,9 +1148,237 @@ export function assignPersonToCluster(clusterId: number, personId: number): void
 }
 
 /** Assign a person to a single face detection */
-export function assignPersonToFace(faceId: number, personId: number): void {
+export function assignPersonToFace(faceId: number, personId: number, verified: boolean = false): void {
   const database = getDb();
-  database.prepare(`UPDATE face_detections SET person_id = ? WHERE id = ?`).run(personId, faceId);
+  if (verified) {
+    database.prepare(`UPDATE face_detections SET person_id = ?, verified = 1 WHERE id = ?`).run(personId, faceId);
+  } else {
+    database.prepare(`UPDATE face_detections SET person_id = ? WHERE id = ?`).run(personId, faceId);
+  }
+}
+
+export function setPersonRepresentativeFace(personId: number, faceId: number): void {
+  const database = getDb();
+  database.prepare(`UPDATE persons SET representative_face_id = ? WHERE id = ?`).run(faceId, personId);
+}
+
+export function verifyFace(faceId: number): void {
+  const database = getDb();
+  database.prepare(`UPDATE face_detections SET verified = 1 WHERE id = ?`).run(faceId);
+}
+
+/** Get all faces for a person or unnamed cluster, paginated, sorted by confidence ASC (lowest first) */
+export function getClusterFaces(clusterId: number, page: number = 0, perPage: number = 40, personId?: number): { faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[]; total: number; page: number; perPage: number; totalPages: number } {
+  const database = getDb();
+  // If personId is provided, query by person (handles reassigned faces correctly)
+  if (personId) {
+    const total = (database.prepare(`SELECT COUNT(*) as cnt FROM face_detections WHERE person_id = ?`).get(personId) as any).cnt;
+    const faces = database.prepare(`
+      SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
+      FROM face_detections fd
+      INNER JOIN indexed_files f ON fd.file_id = f.id
+      WHERE fd.person_id = ?
+      ORDER BY fd.confidence ASC
+      LIMIT ? OFFSET ?
+    `).all(personId, perPage, page * perPage) as any[];
+    return { faces, total, page, perPage, totalPages: Math.ceil(total / perPage) };
+  }
+  // For unnamed clusters: only show faces with no person_id
+  const total = (database.prepare(`SELECT COUNT(*) as cnt FROM face_detections WHERE cluster_id = ? AND person_id IS NULL`).get(clusterId) as any).cnt;
+  const faces = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.cluster_id = ? AND fd.person_id IS NULL
+    ORDER BY fd.confidence ASC
+    LIMIT ? OFFSET ?
+  `).all(clusterId, perPage, page * perPage) as any[];
+  return { faces, total, page, perPage, totalPages: Math.ceil(total / perPage) };
+}
+
+/** Get count of faces for a person or unnamed cluster */
+export function getClusterFaceCount(clusterId: number, personId?: number): { faceCount: number; photoCount: number } {
+  const database = getDb();
+  if (personId) {
+    const result = database.prepare(`
+      SELECT COUNT(*) as face_count, COUNT(DISTINCT file_id) as photo_count
+      FROM face_detections WHERE person_id = ?
+    `).get(personId) as { face_count: number; photo_count: number };
+    return { faceCount: result.face_count, photoCount: result.photo_count };
+  }
+  const result = database.prepare(`
+    SELECT COUNT(*) as face_count, COUNT(DISTINCT file_id) as photo_count
+    FROM face_detections WHERE cluster_id = ? AND person_id IS NULL
+  `).get(clusterId) as { face_count: number; photo_count: number };
+  return { faceCount: result.face_count, photoCount: result.photo_count };
+}
+
+/**
+ * Get visual similarity suggestions for a face — compare its embedding against
+ * all named faces and return ranked matches by cosine similarity.
+ */
+export function getVisualSuggestions(faceId: number, limit = 5): { personId: number; personName: string; similarity: number }[] {
+  const database = getDb();
+
+  // Get the target face's embedding
+  const targetFace = database.prepare(`SELECT embedding FROM face_detections WHERE id = ?`).get(faceId) as { embedding: Buffer } | undefined;
+  if (!targetFace?.embedding) return [];
+
+  const targetVec = new Float32Array(targetFace.embedding.buffer, targetFace.embedding.byteOffset, targetFace.embedding.byteLength / 4);
+
+  // Get all named faces with embeddings (one representative per person for speed)
+  const namedFaces = database.prepare(`
+    SELECT fd.embedding, p.id as person_id, p.name as person_name
+    FROM face_detections fd
+    JOIN persons p ON fd.person_id = p.id
+    WHERE fd.embedding IS NOT NULL AND fd.id != ?
+  `).all(faceId) as { embedding: Buffer; person_id: number; person_name: string }[];
+
+  if (namedFaces.length === 0) return [];
+
+  // Calculate cosine similarity for each and aggregate by person (best match per person)
+  const personBest = new Map<number, { personName: string; similarity: number }>();
+
+  for (const nf of namedFaces) {
+    const vec = new Float32Array(nf.embedding.buffer, nf.embedding.byteOffset, nf.embedding.byteLength / 4);
+    if (vec.length !== targetVec.length) continue;
+
+    let dot = 0, magA = 0, magB = 0;
+    for (let i = 0; i < vec.length; i++) {
+      dot += targetVec[i] * vec[i];
+      magA += targetVec[i] * targetVec[i];
+      magB += vec[i] * vec[i];
+    }
+    const mag = Math.sqrt(magA) * Math.sqrt(magB);
+    const sim = mag === 0 ? 0 : dot / mag;
+
+    const existing = personBest.get(nf.person_id);
+    if (!existing || sim > existing.similarity) {
+      personBest.set(nf.person_id, { personName: nf.person_name, similarity: sim });
+    }
+  }
+
+  // Sort by similarity descending, return top matches above a minimum threshold
+  return Array.from(personBest.entries())
+    .map(([personId, { personName, similarity }]) => ({ personId, personName, similarity }))
+    .filter(s => s.similarity > 0.35) // Only show if there's meaningful similarity
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
+
+/** Remove the person name from a single face detection (un-name it) */
+export function unnameFace(faceId: number): void {
+  const database = getDb();
+  database.prepare(`UPDATE face_detections SET person_id = NULL, verified = 0 WHERE id = ?`).run(faceId);
+}
+
+/** Rename a person — updates the name everywhere it appears */
+export function renamePerson(personId: number, newName: string): void {
+  const database = getDb();
+  // Check if the new name already exists as a different person
+  const existing = database.prepare(`SELECT id FROM persons WHERE name = ? COLLATE NOCASE AND id != ?`).get(newName, personId) as { id: number } | undefined;
+  if (existing) {
+    // Merge into the existing person with that name
+    mergePersons(existing.id, personId);
+  } else {
+    database.prepare(`UPDATE persons SET name = ? WHERE id = ?`).run(newName, personId);
+  }
+}
+
+/**
+ * Merge sourcePersonId into targetPersonId.
+ * All faces assigned to source get reassigned to target, then source is deleted.
+ * Returns the number of faces reassigned.
+ */
+export function mergePersons(targetPersonId: number, sourcePersonId: number): number {
+  const database = getDb();
+  const result = database.prepare(`UPDATE face_detections SET person_id = ? WHERE person_id = ?`).run(targetPersonId, sourcePersonId);
+  database.prepare(`DELETE FROM persons WHERE id = ?`).run(sourcePersonId);
+  return result.changes;
+}
+
+/**
+ * Soft-delete (discard) a person — unlinks all their faces and marks the person as discarded.
+ * The person record is kept so the name can be restored or permanently deleted later.
+ */
+export function discardPerson(personId: number): { facesUnlinked: number; photosAffected: number } {
+  const database = getDb();
+  const photosAffected = (database.prepare(
+    `SELECT COUNT(DISTINCT file_id) as cnt FROM face_detections WHERE person_id = ?`
+  ).get(personId) as { cnt: number }).cnt;
+  const result = database.prepare(`UPDATE face_detections SET person_id = NULL WHERE person_id = ?`).run(personId);
+  database.prepare(`UPDATE persons SET discarded_at = datetime('now') WHERE id = ?`).run(personId);
+  return { facesUnlinked: result.changes, photosAffected };
+}
+
+/**
+ * Permanently delete a discarded person — removes the person record entirely.
+ * Only works on persons that have already been discarded.
+ */
+export function permanentlyDeletePerson(personId: number): boolean {
+  const database = getDb();
+  const result = database.prepare(`DELETE FROM persons WHERE id = ? AND discarded_at IS NOT NULL`).run(personId);
+  return result.changes > 0;
+}
+
+/**
+ * Delete face detections for a specific person by their person_id.
+ * Used for permanently removing ignored/unsure faces — deletes the actual face records
+ * and the person record if no faces remain.
+ */
+export function deleteFacesByPerson(personId: number): { facesDeleted: number } {
+  const database = getDb();
+  // Get affected file IDs before deleting (for FTS rebuild)
+  const affectedFiles = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(personId) as { file_id: number }[];
+  // Delete face detection records
+  const result = database.prepare(`DELETE FROM face_detections WHERE person_id = ?`).run(personId);
+  // Clean up the person record if no faces remain
+  const remaining = (database.prepare(`SELECT COUNT(*) as cnt FROM face_detections WHERE person_id = ?`).get(personId) as { cnt: number }).cnt;
+  if (remaining === 0) {
+    database.prepare(`DELETE FROM persons WHERE id = ?`).run(personId);
+  }
+  return { facesDeleted: result.changes };
+}
+
+/**
+ * Restore a discarded person — clears the discarded_at timestamp.
+ * Note: faces must be re-assigned manually since they were unlinked on discard.
+ */
+export function restorePerson(personId: number): boolean {
+  const database = getDb();
+  const result = database.prepare(`UPDATE persons SET discarded_at = NULL WHERE id = ?`).run(personId);
+  return result.changes > 0;
+}
+
+/** List discarded persons */
+export function listDiscardedPersons(): PersonRecord[] {
+  const database = getDb();
+  return database.prepare(`
+    SELECT p.*, 0 as photo_count
+    FROM persons p
+    WHERE p.discarded_at IS NOT NULL
+    ORDER BY p.discarded_at DESC
+  `).all() as PersonRecord[];
+}
+
+/**
+ * Legacy alias — soft-deletes (discards) a person.
+ */
+export function deletePerson(personId: number): { facesUnlinked: number; photosAffected: number } {
+  return discardPerson(personId);
+}
+
+/** Get a person by ID */
+export function getPersonById(personId: number): PersonRecord | null {
+  const database = getDb();
+  const row = database.prepare(`
+    SELECT p.*, COUNT(DISTINCT fd.file_id) as photo_count
+    FROM persons p
+    LEFT JOIN face_detections fd ON fd.person_id = p.id
+    WHERE p.id = ?
+    GROUP BY p.id
+  `).get(personId) as PersonRecord | undefined;
+  return row ?? null;
 }
 
 /** Get all face embeddings for clustering */
@@ -1026,27 +1393,189 @@ export function updateFaceCluster(faceId: number, clusterId: number): void {
   database.prepare(`UPDATE face_detections SET cluster_id = ? WHERE id = ?`).run(clusterId, faceId);
 }
 
-/** Get distinct AI tags with counts for filter options */
+/** Get all face clusters with representative face data for the People management view */
+export function getPersonClusters(): { cluster_id: number; person_id: number | null; person_name: string | null; face_count: number; photo_count: number; representative_face_id: number; representative_file_id: number; representative_file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; sample_faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[] }[] {
+  const database = getDb();
+
+  // Named clusters: group by person_id (so individually reassigned faces appear under their new person)
+  const namedClusters = database.prepare(`
+    SELECT
+      fd.cluster_id,
+      p.id as person_id,
+      p.name as person_name,
+      COUNT(fd.id) as face_count,
+      COUNT(DISTINCT fd.file_id) as photo_count,
+      MIN(fd.id) as representative_face_id
+    FROM face_detections fd
+    INNER JOIN persons p ON fd.person_id = p.id
+    WHERE fd.cluster_id IS NOT NULL AND fd.person_id IS NOT NULL AND p.discarded_at IS NULL
+    GROUP BY fd.person_id
+    ORDER BY face_count DESC
+  `).all() as any[];
+
+  // Unnamed clusters: faces with no person assigned, grouped by cluster_id
+  const unnamedClusters = database.prepare(`
+    SELECT
+      fd.cluster_id,
+      NULL as person_id,
+      NULL as person_name,
+      COUNT(fd.id) as face_count,
+      COUNT(DISTINCT fd.file_id) as photo_count,
+      MIN(fd.id) as representative_face_id
+    FROM face_detections fd
+    WHERE fd.cluster_id IS NOT NULL AND fd.person_id IS NULL
+    GROUP BY fd.cluster_id
+    ORDER BY face_count DESC
+  `).all() as any[];
+
+  const clusters = [...namedClusters, ...unnamedClusters];
+
+  // For named: prefer user-chosen representative, fall back to highest confidence
+  const repByPersonChosenStmt = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    INNER JOIN persons p ON p.id = ?
+    WHERE fd.id = p.representative_face_id
+    LIMIT 1
+  `);
+  const repByPersonAutoStmt = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.person_id = ?
+    ORDER BY fd.confidence DESC
+    LIMIT 1
+  `);
+  // For unnamed: representative face is the highest confidence face in that cluster (with no person)
+  const repByClusterStmt = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.cluster_id = ? AND fd.person_id IS NULL
+    ORDER BY fd.confidence DESC
+    LIMIT 1
+  `);
+  // Sample faces for named: by person_id
+  const facesByPersonStmt = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.person_id = ?
+    ORDER BY fd.confidence ASC
+    LIMIT 20
+  `);
+  // Sample faces for unnamed: by cluster_id (only unassigned)
+  const facesByClusterStmt = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.cluster_id = ? AND fd.person_id IS NULL
+    ORDER BY fd.confidence ASC
+    LIMIT 20
+  `);
+
+  return clusters.map((c: any) => {
+    const isNamed = c.person_id != null;
+    const rep = isNamed
+      ? ((repByPersonChosenStmt.get(c.person_id) as any) || (repByPersonAutoStmt.get(c.person_id) as any) || {})
+      : (repByClusterStmt.get(c.cluster_id) as any || {});
+    const samples = isNamed
+      ? (facesByPersonStmt.all(c.person_id) as any[])
+      : (facesByClusterStmt.all(c.cluster_id) as any[]);
+    return {
+      cluster_id: c.cluster_id,
+      person_id: c.person_id,
+      person_name: c.person_name,
+      face_count: c.face_count,
+      photo_count: c.photo_count,
+      representative_face_id: c.representative_face_id,
+      representative_file_id: rep.file_id,
+      representative_file_path: rep.file_path || '',
+      box_x: rep.box_x || 0,
+      box_y: rep.box_y || 0,
+      box_w: rep.box_w || 0,
+      box_h: rep.box_h || 0,
+      sample_faces: samples,
+    };
+  });
+}
+
+/** Get distinct AI tags with counts for filter options (only for current/valid files) */
 export function getAiTagOptions(): { tag: string; count: number }[] {
   const database = getDb();
   return database.prepare(`
-    SELECT tag, COUNT(DISTINCT file_id) as count
-    FROM ai_tags
-    WHERE confidence >= 0.3
-    GROUP BY tag
+    SELECT t.tag, COUNT(DISTINCT t.file_id) as count
+    FROM ai_tags t
+    INNER JOIN indexed_files f ON t.file_id = f.id
+    WHERE t.confidence >= 0.3
+      AND f.id = (SELECT MAX(f2.id) FROM indexed_files f2 WHERE f2.file_path = f.file_path)
+    GROUP BY t.tag
     ORDER BY count DESC
   `).all() as any[];
 }
 
-/** Get AI processing stats */
+/** Get AI processing stats (scoped to current/valid files only) */
 export function getAiStats(): { totalProcessed: number; totalFaces: number; totalPersons: number; totalTags: number; unprocessed: number } {
   const database = getDb();
-  const processed = (database.prepare(`SELECT COUNT(*) as cnt FROM ai_processing_status WHERE face_processed = 1 OR tags_processed = 1`).get() as any).cnt;
-  const faces = (database.prepare(`SELECT COUNT(*) as cnt FROM face_detections`).get() as any).cnt;
-  const persons = (database.prepare(`SELECT COUNT(*) as cnt FROM persons`).get() as any).cnt;
-  const tags = (database.prepare(`SELECT COUNT(DISTINCT tag) as cnt FROM ai_tags`).get() as any).cnt;
-  const totalPhotos = (database.prepare(`SELECT COUNT(*) as cnt FROM indexed_files f INNER JOIN indexed_runs r ON f.run_id = r.id WHERE f.file_type = 'photo'`).get() as any).cnt;
+  // Only count AI data for files that are the latest per path (not stale duplicates)
+  const processed = (database.prepare(`
+    SELECT COUNT(*) as cnt FROM ai_processing_status s
+    INNER JOIN indexed_files f ON s.file_id = f.id
+    WHERE (s.face_processed = 1 OR s.tags_processed = 1)
+      AND f.id = (SELECT MAX(f2.id) FROM indexed_files f2 WHERE f2.file_path = f.file_path)
+  `).get() as any).cnt;
+  const faces = (database.prepare(`
+    SELECT COUNT(*) as cnt FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE f.id = (SELECT MAX(f2.id) FROM indexed_files f2 WHERE f2.file_path = f.file_path)
+  `).get() as any).cnt;
+  const persons = (database.prepare(`SELECT COUNT(*) as cnt FROM persons WHERE discarded_at IS NULL AND name != '__ignored__' AND name != '__unsure__'`).get() as any).cnt;
+  const tags = (database.prepare(`
+    SELECT COUNT(DISTINCT t.tag) as cnt FROM ai_tags t
+    INNER JOIN indexed_files f ON t.file_id = f.id
+    WHERE f.id = (SELECT MAX(f2.id) FROM indexed_files f2 WHERE f2.file_path = f.file_path)
+  `).get() as any).cnt;
+  const totalPhotos = (database.prepare(`SELECT COUNT(*) as cnt FROM indexed_files f WHERE f.file_type = 'photo' AND f.id = (SELECT MAX(f2.id) FROM indexed_files f2 WHERE f2.file_path = f.file_path)`).get() as any).cnt;
   return { totalProcessed: processed, totalFaces: faces, totalPersons: persons, totalTags: tags, unprocessed: Math.max(0, totalPhotos - processed) };
+}
+
+/** Clear old face data from a previous model so faces get re-processed */
+export function clearFaceDataForModelUpgrade(): void {
+  const database = getDb();
+  // Check if any faces were processed with the old model (transformers-v1 = DETR)
+  const oldFaces = database.prepare(
+    `SELECT COUNT(*) as cnt FROM ai_processing_status WHERE face_processed = 1 AND (face_model_ver = 'transformers-v1' OR face_model_ver IS NULL)`
+  ).get() as { cnt: number };
+  if (oldFaces.cnt > 0) {
+    console.log(`[AI] Clearing ${oldFaces.cnt} old DETR face detections for model upgrade to @vladmandic/human`);
+    database.exec(`
+      DELETE FROM face_detections;
+      DELETE FROM persons;
+      UPDATE ai_processing_status SET face_processed = 0, face_model_ver = NULL WHERE face_processed = 1 AND (face_model_ver = 'transformers-v1' OR face_model_ver IS NULL);
+    `);
+    // Rebuild FTS for affected files
+    const affectedFiles = database.prepare(`SELECT file_id FROM ai_processing_status WHERE face_processed = 0`).all() as { file_id: number }[];
+    for (const f of affectedFiles) {
+      rebuildAiFts(f.file_id);
+    }
+  }
+
+  // Also reset files that were marked as human-v1 processed but have zero face detections
+  // (this happens if the face model failed to load but files were still marked as processed)
+  const brokenProcessed = database.prepare(
+    `SELECT COUNT(*) as cnt FROM ai_processing_status aps
+     WHERE aps.face_processed = 1 AND aps.face_model_ver = 'human-v1'
+     AND NOT EXISTS (SELECT 1 FROM face_detections fd WHERE fd.file_id = aps.file_id)`
+  ).get() as { cnt: number };
+  if (brokenProcessed.cnt > 0) {
+    console.log(`[AI] Resetting ${brokenProcessed.cnt} files marked face-processed but with 0 detections (previous failed run)`);
+    database.exec(`
+      UPDATE ai_processing_status SET face_processed = 0, face_model_ver = NULL
+      WHERE face_processed = 1 AND face_model_ver = 'human-v1'
+      AND NOT EXISTS (SELECT 1 FROM face_detections fd WHERE fd.file_id = ai_processing_status.file_id);
+    `);
+  }
 }
 
 /** Clear all AI data (faces, tags, processing status) */
@@ -1065,4 +1594,246 @@ export function clearAllAiData(): void {
 export function clearAllIndexAndAiData(): void {
   clearAllAiData();
   clearAllIndexData();
+}
+
+// ─── Data integrity / cleanup ───────────────────────────────────────────────
+
+/**
+ * Purge duplicate indexed_runs pointing to the same destination_path.
+ * Keeps only the newest run (MAX id) per destination_path.
+ * Older duplicate runs and their associated files/AI data are CASCADE-deleted.
+ * This handles the scenario where a user deletes a destination, recreates it, and re-indexes —
+ * the old run record would otherwise persist forever as a zombie.
+ * Returns the number of duplicate runs removed.
+ */
+export function purgeDuplicateRuns(): number {
+  const database = getDb();
+
+  // Find run IDs to delete: for each destination_path with multiple runs, keep only the newest
+  const duplicateRuns = database.prepare(`
+    SELECT id FROM indexed_runs
+    WHERE id NOT IN (
+      SELECT MAX(id) FROM indexed_runs GROUP BY destination_path
+    )
+  `).all() as { id: number }[];
+
+  if (duplicateRuns.length === 0) return 0;
+
+  // Delete each duplicate run — CASCADE will clean up indexed_files and AI data
+  const deleteStmt = database.prepare(`DELETE FROM indexed_runs WHERE id = ?`);
+  const deleteTx = database.transaction(() => {
+    for (const run of duplicateRuns) {
+      deleteStmt.run(run.id);
+    }
+  });
+  deleteTx();
+
+  console.log(`[DB Cleanup] Purged ${duplicateRuns.length} duplicate indexed_runs (kept newest per destination_path)`);
+  return duplicateRuns.length;
+}
+
+/**
+ * Purge duplicate indexed_files rows — keeps only the latest (MAX id) per file_path.
+ * Also removes AI data that references the deleted duplicates (via CASCADE).
+ * Returns the number of rows removed.
+ */
+export function purgeDuplicateIndexedFiles(): number {
+  const database = getDb();
+  // Find IDs to keep (latest per file_path)
+  const result = database.prepare(`
+    DELETE FROM indexed_files
+    WHERE id NOT IN (
+      SELECT MAX(id) FROM indexed_files GROUP BY file_path
+    )
+  `).run();
+  console.log(`[DB Cleanup] Purged ${result.changes} duplicate indexed_files rows`);
+  return result.changes;
+}
+
+/**
+ * Remove indexed_files where the file no longer exists on disk.
+ * Returns { removed: number, checked: number }.
+ */
+export function purgeStaleIndexedFiles(): { removed: number; checked: number } {
+  const database = getDb();
+
+  // Get all unique file paths
+  const rows = database.prepare(`SELECT id, file_path FROM indexed_files`).all() as { id: number; file_path: string }[];
+  const staleIds: number[] = [];
+
+  for (const row of rows) {
+    if (!fs.existsSync(row.file_path)) {
+      staleIds.push(row.id);
+    }
+  }
+
+  if (staleIds.length > 0) {
+    // Delete in batches of 500 to avoid SQLite variable limits
+    const batchSize = 500;
+    for (let i = 0; i < staleIds.length; i += batchSize) {
+      const batch = staleIds.slice(i, i + batchSize);
+      const placeholders = batch.map(() => '?').join(',');
+      database.prepare(`DELETE FROM indexed_files WHERE id IN (${placeholders})`).run(...batch);
+    }
+  }
+
+  console.log(`[DB Cleanup] Checked ${rows.length} files, removed ${staleIds.length} stale entries`);
+  return { removed: staleIds.length, checked: rows.length };
+}
+
+/**
+ * Remove orphaned indexed_runs that have zero remaining indexed_files.
+ * Returns the number of orphan runs removed.
+ */
+export function purgeOrphanRuns(): number {
+  const database = getDb();
+  const result = database.prepare(`
+    DELETE FROM indexed_runs
+    WHERE id NOT IN (SELECT DISTINCT run_id FROM indexed_files)
+  `).run();
+  if (result.changes > 0) {
+    console.log(`[DB Cleanup] Removed ${result.changes} orphan run(s) with zero files`);
+  }
+  return result.changes;
+}
+
+/**
+ * Directly remove indexed_runs whose destination folder no longer exists on disk.
+ * This is the "belt and suspenders" approach — rather than relying on stale file
+ * cleanup to eventually orphan these runs, we check the destination path directly.
+ * CASCADE will clean up associated indexed_files, AI data, etc.
+ * Returns { autoRemoved: number, promptUser: IndexedRun[] }.
+ *   - autoRemoved: runs where folder AND all files are gone (safe to auto-delete)
+ *   - promptUser: runs where folder is gone but some files may still exist elsewhere
+ */
+export function purgeGhostRuns(): { autoRemoved: number; promptUser: IndexedRun[] } {
+  const database = getDb();
+  const runs = database.prepare(`SELECT * FROM indexed_runs`).all() as IndexedRun[];
+  const autoRemoveIds: number[] = [];
+  const promptUser: IndexedRun[] = [];
+
+  for (const run of runs) {
+    if (!fs.existsSync(run.destination_path)) {
+      // Check if ANY files from this run still exist on disk
+      const files = database.prepare(
+        `SELECT file_path FROM indexed_files WHERE run_id = ? LIMIT 100`
+      ).all(run.id) as { file_path: string }[];
+
+      const hasLiveFiles = files.some(f => fs.existsSync(f.file_path));
+
+      if (hasLiveFiles) {
+        // Folder gone but files exist somewhere — user may want to Relocate
+        promptUser.push(run);
+      } else {
+        // Folder AND files are all gone — nothing to preserve, auto-delete
+        autoRemoveIds.push(run.id);
+      }
+    }
+  }
+
+  if (autoRemoveIds.length > 0) {
+    const deleteStmt = database.prepare(`DELETE FROM indexed_runs WHERE id = ?`);
+    const deleteTx = database.transaction(() => {
+      for (const id of autoRemoveIds) {
+        deleteStmt.run(id);
+      }
+    });
+    deleteTx();
+    console.log(`[DB Cleanup] Auto-removed ${autoRemoveIds.length} ghost run(s) — destination folder and all files gone`);
+  }
+
+  if (promptUser.length > 0) {
+    console.log(`[DB] ${promptUser.length} run(s) have missing destination but some files still exist — prompting user`);
+  }
+
+  return { autoRemoved: autoRemoveIds.length, promptUser };
+}
+
+/**
+ * Relocate an indexed run to a new destination path.
+ * Updates the run's destination_path and all associated indexed_files' file_path values.
+ * Returns the number of file paths updated.
+ */
+export function relocateRun(runId: number, newDestinationPath: string): number {
+  const database = getDb();
+  const run = database.prepare(`SELECT * FROM indexed_runs WHERE id = ?`).get(runId) as IndexedRun | undefined;
+  if (!run) throw new Error(`Run #${runId} not found`);
+
+  const oldPath = run.destination_path;
+  // Normalise both paths for consistent replacement
+  const oldNorm = oldPath.replace(/\\/g, '/');
+  const newNorm = newDestinationPath.replace(/\\/g, '/');
+
+  // Update the run's destination path
+  database.prepare(`UPDATE indexed_runs SET destination_path = ? WHERE id = ?`).run(newDestinationPath, runId);
+
+  // Update all file paths: replace the old destination prefix with the new one
+  const files = database.prepare(`SELECT id, file_path FROM indexed_files WHERE run_id = ?`).all(runId) as { id: number; file_path: string }[];
+  const updateStmt = database.prepare(`UPDATE indexed_files SET file_path = ? WHERE id = ?`);
+
+  let updated = 0;
+  const updateTx = database.transaction(() => {
+    for (const file of files) {
+      const fileNorm = file.file_path.replace(/\\/g, '/');
+      if (fileNorm.startsWith(oldNorm)) {
+        const newFilePath = newDestinationPath + file.file_path.substring(oldPath.length);
+        updateStmt.run(newFilePath, file.id);
+        updated++;
+      }
+    }
+  });
+  updateTx();
+
+  console.log(`[DB] Relocated run #${runId}: ${oldPath} → ${newDestinationPath} (${updated} file paths updated)`);
+  return updated;
+}
+
+/**
+ * Full database cleanup — executed on every startup to keep the index healthy.
+ *
+ * Cleanup order (each step feeds the next):
+ *   1. Purge duplicate runs (same destination_path → keep newest)
+ *   2. Purge duplicate files (same file_path → keep newest)
+ *   3. Purge stale files (file no longer exists on disk)
+ *   4. Purge orphan runs (runs with zero remaining files)
+ *   5. Purge ghost runs (destination folder gone AND all files gone → auto-delete)
+ *      Runs where folder is gone but files exist → returned for StaleRunsModal
+ *
+ * Returns cleanup stats + any runs needing user attention.
+ */
+export function runDatabaseCleanup(): {
+  staleRuns: IndexedRun[];
+  duplicateRunsRemoved: number;
+  duplicatesRemoved: number;
+  staleRemoved: number;
+  totalChecked: number;
+  orphanRunsRemoved: number;
+  ghostRunsRemoved: number;
+} {
+  // Step 1: Remove duplicate runs for the same destination_path (keeps newest)
+  const dupeRuns = purgeDuplicateRuns();
+
+  // Step 2: Remove duplicate file entries (same file_path across runs, keeps newest)
+  const dupes = purgeDuplicateIndexedFiles();
+
+  // Step 3: Remove file entries where the actual file no longer exists on disk
+  const stale = purgeStaleIndexedFiles();
+
+  // Step 4: Remove runs that now have zero files (orphaned by steps 2-3)
+  const orphans = purgeOrphanRuns();
+
+  // Step 5: Direct ghost-run cleanup — destination folder doesn't exist
+  //   Auto-removes runs where folder AND all files are gone (nothing to preserve)
+  //   Returns runs for StaleRunsModal where folder is gone but files may be relocatable
+  const ghosts = purgeGhostRuns();
+
+  return {
+    staleRuns: ghosts.promptUser,
+    duplicateRunsRemoved: dupeRuns,
+    duplicatesRemoved: dupes,
+    staleRemoved: stale.removed,
+    totalChecked: stale.checked,
+    orphanRunsRemoved: orphans,
+    ghostRunsRemoved: ghosts.autoRemoved,
+  };
 }

@@ -3,10 +3,56 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, HardDrive, Folder, FolderOpen, FolderPlus, ChevronRight, ChevronLeft, ChevronDown,
   Image, ArrowLeft, ArrowRight, AlertCircle, Loader2, Monitor, ZoomIn, ZoomOut, Pencil,
-  FileArchive, LayoutGrid, List, Table2
+  FileArchive, LayoutGrid, List, Table2, CheckCircle2, AlertTriangle, Info, Zap, Wifi, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { listDrives, readDirectory, getThumbnail, createDirectory, DriveInfo, DirectoryEntry } from '@/lib/electron-bridge';
+
+// Drive scoring for colour coding (mirrors DestinationAdvisorModal logic)
+type DriveRating = 'good' | 'warning' | 'poor';
+function rateDrive(drive: DriveInfo, requiredGB?: number | null): { rating: DriveRating; badge: string | null; isSystemDrive: boolean } {
+  const freeGB = drive.freeBytes / (1024 * 1024 * 1024);
+  const totalGB = drive.totalBytes / (1024 * 1024 * 1024);
+  const isSystemDrive = drive.letter.toUpperCase().startsWith('C');
+
+  // Poor: CD/DVD, no space, system drive (always red)
+  if (drive.type === 'CD/DVD') return { rating: 'poor', badge: 'Not suitable', isSystemDrive };
+  if (totalGB < 16) return { rating: 'poor', badge: 'Too small', isSystemDrive };
+  if (isSystemDrive) return { rating: 'poor', badge: 'System drive', isSystemDrive };
+  if (freeGB < 10) return { rating: 'poor', badge: 'Low space', isSystemDrive };
+
+  // Network drives: always warning (slow & reliability concerns)
+  if (drive.type === 'Network') return { rating: 'warning', badge: 'Network — slow', isSystemDrive };
+
+  // If user has stated a collection size, check if this drive can hold it
+  if (requiredGB && requiredGB > 0) {
+    // Total capacity too small for the collection (even if currently empty)
+    if (totalGB < requiredGB * 0.8) return { rating: 'poor', badge: 'Too small for library', isSystemDrive };
+    // Not enough free space to hold the collection
+    if (freeGB < requiredGB * 0.5) return { rating: 'poor', badge: 'Not enough space', isSystemDrive };
+    if (freeGB < requiredGB) return { rating: 'warning', badge: 'May not fit library', isSystemDrive };
+    // Drive has enough free space but is tight (less than 10% headroom after collection)
+    if (freeGB < requiredGB * 1.1) return { rating: 'warning', badge: 'Tight fit', isSystemDrive };
+  }
+
+  // Warning: low-ish space or removable
+  if (freeGB < 50) return { rating: 'warning', badge: 'Low space', isSystemDrive };
+  if (drive.type === 'Removable') return { rating: 'warning', badge: 'External', isSystemDrive };
+
+  // Good
+  return { rating: 'good', badge: null, isSystemDrive };
+}
+
+const ratingStyles = {
+  good: 'border-emerald-400/50 hover:border-emerald-500/70 bg-emerald-50/30 dark:bg-emerald-900/10',
+  warning: 'border-amber-400/50 hover:border-amber-500/70 bg-amber-50/30 dark:bg-amber-900/10',
+  poor: 'border-red-300/50 hover:border-red-400/70 bg-red-50/30 dark:bg-red-900/10',
+};
+const ratingDotStyles = {
+  good: 'bg-emerald-500',
+  warning: 'bg-amber-500',
+  poor: 'bg-red-500',
+};
 
 interface FolderBrowserModalProps {
   isOpen: boolean;
@@ -15,6 +61,36 @@ interface FolderBrowserModalProps {
   title?: string;
   mode?: 'folder' | 'source' | 'archives';
   defaultPath?: string;
+  onOpenDriveAdvisor?: () => void;
+  plannedCollectionSizeGB?: number | null;
+  enableSavedLocations?: boolean;
+  showDriveRatings?: boolean;
+}
+
+const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
+const MAX_SAVED_DESTINATIONS = 3;
+
+function loadSavedDestinations(): string[] {
+  try {
+    const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_SAVED_DESTINATIONS) : [];
+  } catch { return []; }
+}
+
+function saveDestionationToRecents(path: string) {
+  const existing = loadSavedDestinations();
+  // Move to front if already saved, otherwise prepend
+  const filtered = existing.filter(p => p.toLowerCase() !== path.toLowerCase());
+  const updated = [path, ...filtered].slice(0, MAX_SAVED_DESTINATIONS);
+  localStorage.setItem(SAVED_DESTINATIONS_KEY, JSON.stringify(updated));
+}
+
+function removeFromSavedDestinations(path: string) {
+  const existing = loadSavedDestinations();
+  const updated = existing.filter(p => p.toLowerCase() !== path.toLowerCase());
+  localStorage.setItem(SAVED_DESTINATIONS_KEY, JSON.stringify(updated));
 }
 
 interface TreeNode {
@@ -26,7 +102,7 @@ interface TreeNode {
   hasSubfolders?: boolean;
 }
 
-export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select Folder', mode = 'folder', defaultPath }: FolderBrowserModalProps) {
+export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select Folder', mode = 'folder', defaultPath, onOpenDriveAdvisor, plannedCollectionSizeGB, enableSavedLocations, showDriveRatings = false }: FolderBrowserModalProps) {
   const mouseDownOnBackdropRef = useRef(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
@@ -42,6 +118,8 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   const [fileViewMode, setFileViewMode] = useState<'grid' | 'list' | 'details'>('grid');
   const [selectedFile, setSelectedFile] = useState<string>('');
   const isArchiveMode = mode === 'archives';
+  const [driveWarning, setDriveWarning] = useState<{ reasons: string[]; suggestions: string[]; path: string } | null>(null);
+  const [savedDestinations, setSavedDestinations] = useState<string[]>([]);
   const [isEditingPath, setIsEditingPath] = useState(false);
   const [editPathValue, setEditPathValue] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -92,6 +170,10 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
     setThumbnails({});
     setIsEditingPath(false);
     setSelectedFile('');
+    setDriveWarning(null);
+    if (enableSavedLocations) {
+      setSavedDestinations(loadSavedDestinations());
+    }
     // Navigate to defaultPath after a tick (so navigateTo is available)
     if (defaultPath) {
       pendingDefaultPathRef.current = defaultPath;
@@ -286,12 +368,76 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   }, [onSelect]);
 
   const handleConfirm = useCallback(() => {
-    if (selectedFile) {
-      onSelect(selectedFile);
-    } else if (selectedPath) {
-      onSelect(selectedPath);
+    const pathToConfirm = selectedFile || selectedPath;
+    if (!pathToConfirm) return;
+
+    // Only check drive suitability for folder mode with a planned collection size
+    if (!selectedFile && plannedCollectionSizeGB && plannedCollectionSizeGB > 0) {
+      const driveLetter = pathToConfirm.substring(0, 2).toUpperCase();
+      const drive = drives.find(d => d.letter.toUpperCase() === driveLetter.replace(':', '') + ':' || d.letter.toUpperCase() + ':' === driveLetter);
+      // Also try matching just the letter
+      const matchedDrive = drive || drives.find(d => pathToConfirm.toUpperCase().startsWith(d.letter.toUpperCase()));
+
+      if (matchedDrive) {
+        const freeGB = matchedDrive.freeBytes / (1024 * 1024 * 1024);
+        const isSystemDrive = matchedDrive.letter.toUpperCase().startsWith('C');
+        const isNetwork = matchedDrive.type === 'Network';
+        const reasons: string[] = [];
+        const suggestions: string[] = [];
+
+        if (freeGB < plannedCollectionSizeGB) {
+          const shortfall = plannedCollectionSizeGB - freeGB;
+          reasons.push(`This drive has ${freeGB.toFixed(0)} GB free, but your estimated library needs ${plannedCollectionSizeGB >= 1000 ? `${(plannedCollectionSizeGB / 1024).toFixed(1)} TB` : `${plannedCollectionSizeGB.toFixed(0)} GB`}  — you're short by approximately ${shortfall >= 1000 ? `${(shortfall / 1024).toFixed(1)} TB` : `${shortfall.toFixed(0)} GB`}.`);
+        }
+        if (isSystemDrive) {
+          reasons.push('This is your system drive (C:). Storing a large library here risks filling your boot drive, which can cause system instability, crashes, and failed Windows updates.');
+        }
+        if (isNetwork) {
+          reasons.push('This is a network drive. Processing large photo libraries over WiFi or network connections can be unreliable, significantly slower, and prone to interruptions.');
+        }
+
+        if (reasons.length > 0) {
+          // Generate intelligent suggestions based on the shortfall
+          const neededTB = plannedCollectionSizeGB / 1024;
+          if (neededTB <= 1) {
+            suggestions.push('A 1 TB external SSD with USB-C or USB 3.1/3.2 would comfortably hold your library with excellent speed. An NVMe M.2 internal SSD is even faster if your PC has a spare slot.');
+          } else if (neededTB <= 2) {
+            suggestions.push('A 2 TB external SSD (USB-C/Thunderbolt) or internal NVMe/SATA SSD would give you room for your library with space to grow.');
+          } else if (neededTB <= 4) {
+            suggestions.push('A 4 TB external SSD or internal SATA/NVMe drive would handle your library well. For external, choose USB 3.1+ or Thunderbolt over basic USB 3.0.');
+          } else {
+            suggestions.push('For a library this size, consider a large internal NVMe/SATA drive, a Thunderbolt external drive, or a multi-bay NAS connected via Ethernet (not Wi-Fi).');
+          }
+
+          if (isSystemDrive && !isNetwork) {
+            suggestions.push('Any dedicated drive — even a basic external SSD — is safer than your system drive for photo storage.');
+          }
+
+          // Check if better drives exist
+          const betterDrives = drives.filter(d =>
+            !d.letter.toUpperCase().startsWith('C') &&
+            d.type !== 'Network' &&
+            d.type !== 'CD/DVD' &&
+            (d.freeBytes / (1024 * 1024 * 1024)) >= plannedCollectionSizeGB
+          );
+          if (betterDrives.length > 0) {
+            const best = betterDrives[0];
+            suggestions.push(`Drive ${best.letter} (${best.label}) has ${(best.freeBytes / (1024 * 1024 * 1024)).toFixed(0)} GB free and would be a better fit.`);
+          }
+
+          suggestions.push('Visit the PDR Guides section on our website for drive recommendations and setup advice.');
+
+          setDriveWarning({ reasons, suggestions, path: pathToConfirm });
+          return;
+        }
+      }
     }
-  }, [selectedPath, selectedFile, onSelect]);
+
+    if (enableSavedLocations && !selectedFile) {
+      saveDestionationToRecents(pathToConfirm);
+    }
+    onSelect(pathToConfirm);
+  }, [selectedPath, selectedFile, onSelect, plannedCollectionSizeGB, drives, enableSavedLocations]);
 
   const startCreatingFolder = useCallback(() => {
     if (!currentPath) return;
@@ -536,6 +682,8 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                     drive={drive}
                     isSelected={currentPath.startsWith(drive.letter)}
                     onClick={() => navigateTo(drive.letter + '\\')}
+                    requiredGB={plannedCollectionSizeGB}
+                    showRating={showDriveRatings}
                   />
                 ))}
 
@@ -578,26 +726,114 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                   </Button>
                 </div>
               ) : !currentPath ? (
-                <div className="p-4 grid grid-cols-2 gap-3">
-                  {drives.map(drive => (
+                <div className="p-4 space-y-3">
+                  {/* Saved destinations — quick-pick for previously used locations */}
+                  {enableSavedLocations && savedDestinations.length > 0 && (
+                    <div>
+                      <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-1 mb-2">
+                        Saved Destinations
+                      </div>
+                      <div className="space-y-1.5 mb-3">
+                        {savedDestinations.map(dest => {
+                          const driveLetter = dest.substring(0, 1).toUpperCase();
+                          const matchedDrive = drives.find(d => d.letter.toUpperCase().startsWith(driveLetter));
+                          const folderName = dest.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || dest;
+                          return (
+                            <div
+                              key={dest}
+                              className="flex items-center gap-3 p-3 rounded-xl bg-card border border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all group cursor-pointer"
+                              onClick={() => {
+                                setSelectedPath(dest);
+                                navigateTo(dest);
+                              }}
+                            >
+                              <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+                                <FolderOpen className="w-4 h-4 text-primary" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium text-foreground truncate">{folderName}</div>
+                                <div className="text-xs text-muted-foreground font-mono truncate">{dest}</div>
+                              </div>
+                              {matchedDrive && (
+                                <span className="text-[10px] text-muted-foreground shrink-0">
+                                  {(matchedDrive.freeBytes / (1024 * 1024 * 1024)).toFixed(0)} GB free
+                                </span>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeFromSavedDestinations(dest);
+                                  setSavedDestinations(prev => prev.filter(p => p.toLowerCase() !== dest.toLowerCase()));
+                                }}
+                                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-secondary rounded transition-all shrink-0"
+                                title="Remove saved destination"
+                              >
+                                <X className="w-3 h-3 text-muted-foreground" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-1 mb-2">
+                        All Drives
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                  {drives.map(drive => {
+                    const driveRating = showDriveRatings ? rateDrive(drive, plannedCollectionSizeGB) : null;
+                    return (
+                      <button
+                        key={drive.letter}
+                        onClick={() => navigateTo(drive.letter + '\\')}
+                        className={`flex items-center gap-3 p-4 rounded-xl bg-card border-2 transition-all text-left group ${
+                          driveRating ? ratingStyles[driveRating.rating] : 'border-border hover:border-primary/40 hover:bg-primary/5'
+                        }`}
+                      >
+                        <div className="p-2.5 rounded-lg bg-secondary group-hover:bg-primary/10 transition-colors relative">
+                          <HardDrive className="w-5 h-5 text-primary" />
+                          {driveRating && (
+                            <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ${ratingDotStyles[driveRating.rating]}`} />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base font-medium text-foreground truncate">
+                              {drive.label} ({drive.letter})
+                            </span>
+                            {driveRating?.badge && (
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+                                driveRating.rating === 'good' ? 'text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/40' :
+                                driveRating.rating === 'warning' ? 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/40' :
+                                'text-red-500 bg-red-100 dark:text-red-400 dark:bg-red-900/40'
+                              }`}>
+                                {driveRating.badge}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {drive.type}{drive.freeBytes > 0 ? ` \u2022 ${formatSize(drive.freeBytes)} free of ${formatSize(drive.totalBytes)}` : ''}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {/* Drive Advisor link */}
+                  {onOpenDriveAdvisor && (
                     <button
-                      key={drive.letter}
-                      onClick={() => navigateTo(drive.letter + '\\')}
-                      className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border hover:border-primary/50 hover:bg-secondary/30 transition-all text-left group"
+                      onClick={onOpenDriveAdvisor}
+                      className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border-2 border-dashed border-primary/30 hover:border-primary/50 hover:bg-primary/10 transition-all text-left group col-span-2"
                     >
-                      <div className="p-2.5 rounded-lg bg-secondary group-hover:bg-primary/10 transition-colors">
-                        <HardDrive className="w-5 h-5 text-primary" />
+                      <div className="p-2.5 rounded-lg bg-primary/10">
+                        <Info className="w-5 h-5 text-primary" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-base font-medium text-foreground truncate">
-                          {drive.label} ({drive.letter})
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {drive.type}{drive.freeBytes > 0 ? ` \u2022 ${formatSize(drive.freeBytes)} free of ${formatSize(drive.totalBytes)}` : ''}
-                        </div>
+                        <div className="text-sm font-medium text-primary">Not sure which drive? Open Drive Advisor</div>
+                        <div className="text-xs text-muted-foreground">Get personalised guidance on which drive is best for your library</div>
                       </div>
                     </button>
-                  ))}
+                  )}
+                  </div>
                 </div>
               ) : entries.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
@@ -818,13 +1054,124 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
             }}
             title="Drag to resize"
           />
+
+          {/* Drive suitability warning overlay */}
+          <AnimatePresence>
+            {driveWarning && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-20 rounded-2xl"
+              >
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0, y: 8 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  transition={{ type: "spring", duration: 0.4, bounce: 0.2 }}
+                  className="bg-background rounded-xl border border-border shadow-2xl mx-6 max-w-[480px] w-full overflow-hidden"
+                >
+                  {/* Warning header */}
+                  <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-amber-50/50 dark:bg-amber-950/20">
+                    <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/40">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">
+                        {/* Check if ANY non-system, non-network drive has enough space */}
+                        {drives.filter(d =>
+                          !d.letter.toUpperCase().startsWith('C') &&
+                          d.type !== 'Network' &&
+                          d.type !== 'CD/DVD' &&
+                          plannedCollectionSizeGB &&
+                          (d.freeBytes / (1024 * 1024 * 1024)) >= plannedCollectionSizeGB
+                        ).length === 0
+                          ? 'No connected drives are suitable for your library'
+                          : 'This drive may not be suitable'}
+                      </h3>
+                      <p className="text-xs text-foreground/60 mt-0.5">Based on your library plan, we've identified some concerns</p>
+                    </div>
+                  </div>
+
+                  <div className="px-5 py-4 space-y-4 max-h-[50vh] overflow-y-auto">
+                    {/* Reasons */}
+                    <div className="space-y-2.5">
+                      {driveWarning.reasons.map((reason, i) => (
+                        <div key={i} className="flex gap-2.5 text-sm">
+                          <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                          <p className="text-foreground/80 leading-relaxed">{reason}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Suggestions */}
+                    <div className="bg-secondary/50 rounded-lg p-4 space-y-2.5">
+                      <p className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">What we'd suggest</p>
+                      {driveWarning.suggestions.map((suggestion, i) => {
+                        const isGuideLink = suggestion.includes('PDR Guides');
+                        return (
+                          <div key={i} className="flex gap-2.5 text-sm">
+                            {isGuideLink ? (
+                              <ExternalLink className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                            ) : (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                            )}
+                            {isGuideLink ? (
+                              <p className="text-foreground/80 leading-relaxed">
+                                <button
+                                  onClick={() => window.open('https://www.photodaterescue.com/guides/tools-recommendations', '_blank')}
+                                  className="text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                                >
+                                  Visit our Guides section
+                                </button>
+                                {' '}for drive recommendations and setup advice tailored to photo libraries.
+                              </p>
+                            ) : (
+                              <p className="text-foreground/80 leading-relaxed">{suggestion}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between px-5 py-3.5 border-t border-border bg-card">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDriveWarning(null)}
+                      className="gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      Choose a different drive
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const path = driveWarning.path;
+                        setDriveWarning(null);
+                        if (enableSavedLocations) saveDestionationToRecents(path);
+                        onSelect(path);
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      Use this drive anyway
+                    </Button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </motion.div>
     </AnimatePresence>
   );
 }
 
-function DriveItem({ drive, isSelected, onClick }: { drive: DriveInfo; isSelected: boolean; onClick: () => void }) {
+function DriveItem({ drive, isSelected, onClick, requiredGB, showRating }: { drive: DriveInfo; isSelected: boolean; onClick: () => void; requiredGB?: number | null; showRating?: boolean }) {
+  const driveRating = showRating ? rateDrive(drive, requiredGB) : null;
   return (
     <button
       onClick={onClick}
@@ -832,7 +1179,12 @@ function DriveItem({ drive, isSelected, onClick }: { drive: DriveInfo; isSelecte
         isSelected ? 'bg-secondary text-foreground' : 'hover:bg-secondary/50 text-muted-foreground'
       }`}
     >
-      <HardDrive className={`w-4 h-4 shrink-0 ${isSelected ? 'text-primary' : ''}`} />
+      <div className="relative shrink-0">
+        <HardDrive className={`w-4 h-4 ${isSelected ? 'text-primary' : ''}`} />
+        {driveRating && (
+          <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${ratingDotStyles[driveRating.rating]}`} />
+        )}
+      </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium truncate">{drive.label} ({drive.letter})</div>
       </div>

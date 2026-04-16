@@ -30,6 +30,7 @@ import {
   Info,
   Sparkles,
   Tag,
+  Shield,
   ShieldCheck,
   Wrench,
   Sun,
@@ -75,6 +76,8 @@ import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FolderBrowserModal } from "@/components/FolderBrowserModal";
+import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
+import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
 import { SearchRibbon } from "@/components/SearchPanel";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
@@ -201,6 +204,10 @@ useEffect(() => {
       if (!settings.rememberSources) {
         setSources([]);
         localStorage.removeItem("pdr-sources");
+        localStorage.removeItem("pdr-source-analysis-results");
+        setDestinationPath(null);
+        setDestinationFreeGB(0);
+        setDestinationTotalGB(0);
       }
     });
   }, []);
@@ -215,7 +222,7 @@ useEffect(() => {
     // Clean up legacy sessionStorage
     sessionStorage.removeItem("pdr-sources");
   }, [sources]);
-  
+
   // Listen for reports history event from EmptyState
   useEffect(() => {
     const handleOpenReports = () => setShowReportsList(true);
@@ -228,8 +235,12 @@ useEffect(() => {
     const handleClearSources = () => {
       setSources([]);
       localStorage.removeItem("pdr-sources");
+      localStorage.removeItem("pdr-source-analysis-results");
       setHasCompletedFix(false);
       pendingSourceClearRef.current = false;
+      setDestinationPath(null);
+      setDestinationFreeGB(0);
+      setDestinationTotalGB(0);
     };
     window.addEventListener('pdr-clear-sources', handleClearSources);
     return () => window.removeEventListener('pdr-clear-sources', handleClearSources);
@@ -249,6 +260,32 @@ useEffect(() => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 0, currentFile: '' });
   const [sourceAnalysisResults, setSourceAnalysisResults] = useState<Record<string, SourceAnalysisResult>>({});
+
+  // On mount: restore cached analysis results from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("pdr-source-analysis-results");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          setSourceAnalysisResults(parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse cached analysis results", e);
+        localStorage.removeItem("pdr-source-analysis-results");
+      }
+    }
+  }, []);
+
+  // Persist analysis results to localStorage (so Run Fix works after restart)
+  useEffect(() => {
+    if (Object.keys(sourceAnalysisResults).length > 0) {
+      localStorage.setItem("pdr-source-analysis-results", JSON.stringify(sourceAnalysisResults));
+    } else {
+      localStorage.removeItem("pdr-source-analysis-results");
+    }
+  }, [sourceAnalysisResults]);
+
 const [showLicenseRequired, setShowLicenseRequired] = useState(false);
 const { isLicensed } = useLicense();
 
@@ -294,6 +331,7 @@ const handleActivateLicense = () => {
   const [indexingProgress, setIndexingProgress] = useState<{ current: number; total: number } | null>(null);
   const [searchDbReady, setSearchDbReady] = useState(false);
   const [searchResultsActive, setSearchResultsActive] = useState(false);
+  const [requestSearchClose, setRequestSearchClose] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [showDestBrowser, setShowDestBrowser] = useState(false);
@@ -301,27 +339,34 @@ const handleActivateLicense = () => {
 
   // Auto-index: track which report IDs have already been indexed to avoid re-indexing
   const autoIndexedReportsRef = useRef<Set<string>>(new Set());
+  // Whether the current fix run should be added to Search & Discovery
+  const addToSDRef = useRef<boolean>(false);
 
-  // Auto-index effect: reacts to savedReportId changes (savedReportId is set elsewhere and properly minified)
+  // Auto-index effect: reacts to savedReportId changes — only indexes if user opted in via S&D prompt
   useEffect(() => {
     if (!savedReportId) return;
     if (autoIndexedReportsRef.current.has(savedReportId)) return;
     autoIndexedReportsRef.current.add(savedReportId);
+    // Respect the user's S&D preference — skip indexing if they declined
+    if (!addToSDRef.current) {
+      console.log('[PDR] Skipping auto-index — user declined S&D for this run');
+      return;
+    }
 
     const runAutoIndex = async () => {
       try {
-        const { initSearchDatabase, indexFixRun, onSearchIndexProgress, removeSearchIndexProgressListener } = await import('@/lib/electron-bridge');
+        const { initSearchDatabase, indexFixRun, onSearchIndexProgress, removeSearchIndexProgressListener, startAiProcessing, getAiStats } = await import('@/lib/electron-bridge');
         const initResult = await initSearchDatabase();
         if (!initResult.success) {
           toast.error('Search index unavailable', {
-            description: initResult.error || 'Could not initialise search database. You can manually index from the Index Manager.',
+            description: initResult.error || 'Could not initialise search database. You can manually index from the Library Manager.',
             duration: 8000,
           });
           return;
         }
         setIsIndexing(true);
         toast.info('Indexing files for Search & Discovery...', { duration: 3000 });
-        onSearchIndexProgress((progress: any) => {
+        onSearchIndexProgress(async (progress: any) => {
           setIndexingProgress({ current: progress.current, total: progress.total });
           if (progress.phase === 'complete') {
             setIsIndexing(false);
@@ -331,6 +376,19 @@ const handleActivateLicense = () => {
               description: `${progress.total.toLocaleString()} files are now searchable.`,
               duration: 4000,
             });
+            // Auto-trigger AI tagging if enabled
+            try {
+              const settings = await getSettings();
+              if (settings.aiObjectTagging) {
+                const aiStats = await getAiStats();
+                if (aiStats.success && aiStats.data && aiStats.data.unprocessed > 0) {
+                  console.log('[PDR] Auto-triggering AI tagging for', aiStats.data.unprocessed, 'unprocessed files');
+                  startAiProcessing();
+                }
+              }
+            } catch (aiErr) {
+              console.warn('[PDR] AI auto-tag check failed:', aiErr);
+            }
           }
         });
         // Small delay to ensure report file is fully written to disk
@@ -338,7 +396,7 @@ const handleActivateLicense = () => {
         const indexResult = await indexFixRun(savedReportId);
         if (!indexResult.success) {
           toast.error('Auto-indexing failed', {
-            description: indexResult.error || 'You can manually index from the Index Manager.',
+            description: indexResult.error || 'You can manually index from the Library Manager.',
             duration: 8000,
           });
           setIsIndexing(false);
@@ -347,7 +405,7 @@ const handleActivateLicense = () => {
         }
       } catch (err) {
         toast.error('Auto-indexing error', {
-          description: `${(err as Error).message}. You can manually index from the Index Manager.`,
+          description: `${(err as Error).message}. You can manually index from the Library Manager.`,
           duration: 8000,
         });
         setIsIndexing(false);
@@ -580,6 +638,10 @@ const handleActivateLicense = () => {
       setActiveSource(updatedSources[0]);
     } else {
       setActiveSource(null);
+      // Clear destination when all sources are removed
+      setDestinationPath(null);
+      setDestinationFreeGB(0);
+      setDestinationTotalGB(0);
     }
   };
 
@@ -595,6 +657,12 @@ const handleActivateLicense = () => {
     setActiveSource(null);
     setIsComplete(false);
     setShowSourceTypeSelector(true);
+    // Clear destination when all sources are removed
+    if (updatedSources.length === 0) {
+      setDestinationPath(null);
+      setDestinationFreeGB(0);
+      setDestinationTotalGB(0);
+    }
   };
 
 
@@ -604,7 +672,11 @@ const handleActivateLicense = () => {
       pendingSourceClearRef.current = false;
       setSources([]);
       localStorage.removeItem("pdr-sources");
+      setSourceAnalysisResults({});
       setHasCompletedFix(false);
+      setDestinationPath(null);
+      setDestinationFreeGB(0);
+      setDestinationTotalGB(0);
     }
     if (isElectron()) {
       // Open unified source browser — handles both folders and archives
@@ -1083,7 +1155,7 @@ const tourPlaceholderAnalysisResults: Record<string, SourceAnalysisResult> = {
         originalPath: `C:/Users/Photos/Family/file_${i + 1}.jpg`
       }))
     ]
-  } as SourceAnalysisResult
+  } as unknown as SourceAnalysisResult
 };
 
 return (
@@ -1197,6 +1269,11 @@ return (
 			const updatedSources = sources.map(s => ({ ...s, active: false }));
 			setSources(updatedSources);
 			setActiveSource(null);
+			// Close S&D search results if active
+			if (searchResultsActive) {
+			  setRequestSearchClose(true);
+			  setTimeout(() => setRequestSearchClose(false), 100);
+			}
 		  }}
 		  onSettingsClick={() => setShowSettingsModal(true)}
 		  isLicensed={isLicensed}
@@ -1216,6 +1293,9 @@ return (
             onToggleDarkMode={toggleDarkMode}
             licenseStatusBadge={<LicenseStatusBadge onClick={() => setShowLicenseModal(true)} />}
             onSearchActiveChange={setSearchResultsActive}
+            requestClose={requestSearchClose}
+            hasSources={sources.length > 0}
+            showLibraryManager={localStorage.getItem('pdr-show-library-manager') === 'true'}
           />
         </div>
 
@@ -1258,6 +1338,7 @@ return (
             setHasCompletedFix={setHasCompletedFix}
             savedReportId={savedReportId}
             setSavedReportId={setSavedReportId}
+            addToSDRef={addToSDRef}
             isLicensed={isLicensed}
             onActivateLicense={handleActivateLicense}
             zoomLevel={zoomLevel}
@@ -1528,7 +1609,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               className="flex-1 justify-center gap-2 shadow-md shadow-primary/20"
               onClick={onAddSource}
               data-tour="add-source"
-              style={isLicensed ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+              style={isLicensed && sources.length === 0 ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
             >
               <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
             </Button>
@@ -1626,6 +1707,7 @@ function MainContent({
   setHasCompletedFix,
   savedReportId,
   setSavedReportId,
+  addToSDRef,
   isLicensed,
   onActivateLicense,
   zoomLevel = 100
@@ -1655,6 +1737,7 @@ function MainContent({
   setHasCompletedFix: (value: boolean) => void,
   savedReportId: string | null,
   setSavedReportId: (id: string | null) => void,
+  addToSDRef: React.MutableRefObject<boolean>,
   isLicensed: boolean,
   onActivateLicense: () => void,
   zoomLevel?: number
@@ -1694,9 +1777,9 @@ function MainContent({
 
   // Unified Dashboard Panel for pre-analysis AND post-analysis state
   return (
-    <DashboardPanel 
+    <DashboardPanel
       sources={sources}
-      activeSource={activeSource} 
+      activeSource={activeSource}
       onRemove={onRemove}
       onChange={onChange}
       onAddFolder={onAddFolder}
@@ -1716,15 +1799,16 @@ function MainContent({
       setHasCompletedFix={setHasCompletedFix}
       savedReportId={savedReportId}
       setSavedReportId={setSavedReportId}
+      addToSDRef={addToSDRef}
       zoomLevel={zoomLevel}
     />
   );
 }
 
-function DashboardPanel({ 
+function DashboardPanel({
   sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults, onNavigateToBestPractices,
   destinationPath, setDestinationPath, destinationFreeGB, setDestinationFreeGB, destinationTotalGB, setDestinationTotalGB,
-  hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId, zoomLevel = 100
+  hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId, addToSDRef, zoomLevel = 100
 }: {
   sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void,
   isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult>, onNavigateToBestPractices?: () => void,
@@ -1733,6 +1817,7 @@ function DashboardPanel({
   destinationTotalGB: number, setDestinationTotalGB: (gb: number) => void,
   hasCompletedFix: boolean, setHasCompletedFix: (value: boolean) => void,
   savedReportId: string | null, setSavedReportId: (id: string | null) => void,
+  addToSDRef: React.MutableRefObject<boolean>,
   zoomLevel?: number
 }) {
   // Use selected sources for aggregation
@@ -1740,6 +1825,8 @@ function DashboardPanel({
   const hasSelection = selectedSources.length > 0;
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
+  const [showSDPrompt, setShowSDPrompt] = useState(false);
+  const [addToSDThisRun, setAddToSDThisRun] = useState(false);
   const [showPostFixReport, setShowPostFixReport] = useState(false);
   const [showReportsList, setShowReportsList] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -1747,7 +1834,23 @@ function DashboardPanel({
   const [includeVideos, setIncludeVideos] = useState(true);
   const [reportSavedMessage, setReportSavedMessage] = useState(false);
   const [showDestBrowser, setShowDestBrowser] = useState(false);
+  const [showDestAdvisor, setShowDestAdvisor] = useState(false);
+  const [showLibraryPlanner, setShowLibraryPlanner] = useState(false);
+  const [libraryPlannerAnswers, setLibraryPlannerAnswers] = useState<LibraryPlannerAnswers | null>(() => {
+    // Restore from localStorage if previously completed
+    const saved = localStorage.getItem('pdr-library-planner-size');
+    const multi = localStorage.getItem('pdr-library-planner-multi');
+    if (saved && multi) {
+      return {
+        collectionSizeGB: parseInt(saved, 10),
+        multipleSourcesPlanned: multi as 'yes' | 'no' | 'not-sure',
+      };
+    }
+    return null;
+  });
   const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg'>('original');
+  const [photoFormatOpen, setPhotoFormatOpen] = useState(false);
+  const photoFormatBtnRef = React.useRef<HTMLButtonElement>(null);
 
   // Post-fix flow tracking: true from when fix completes until the clear prompt is answered
   const [postFixFlowActive, setPostFixFlowActive] = useState(false);
@@ -1755,7 +1858,20 @@ function DashboardPanel({
 
   const handleChangeDestination = () => {
     if (isElectron()) {
-      setShowDestBrowser(true);
+      // First ever destination selection: Library Planner → DDA → Folder Browser
+      // Subsequent selections: straight to folder browser
+      const plannerDone = localStorage.getItem('pdr-library-planner-complete') === 'true';
+      const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
+
+      if (!destinationPath && !plannerDone) {
+        // First time ever — show the planner first
+        setShowLibraryPlanner(true);
+      } else if (!destinationPath && !skipAdvisor) {
+        // Planner done but first destination selection — show DDA
+        setShowDestAdvisor(true);
+      } else {
+        setShowDestBrowser(true);
+      }
     } else {
       setDestinationPath('/Volumes/Photos_Backup/Restored_2024');
       setDestinationFreeGB(2400);
@@ -1812,10 +1928,54 @@ function DashboardPanel({
     const videos = includeVideos ? allVideos : 0;
     const totalFiles = photos + videos;
     
-    // Estimate size proportionally based on included file types
-    const photoRatio = allPhotos / (allPhotos + allVideos || 1);
-    const videoRatio = allVideos / (allPhotos + allVideos || 1);
-    const sizeGB = (includePhotos ? totalSizeGB * photoRatio : 0) + (includeVideos ? totalSizeGB * videoRatio : 0);
+    // Estimate output size based on included file types AND format conversion
+    // Use per-file data from analysis results for accurate format-aware estimation
+    let estimatedBytes = 0;
+    const PNG_EXPANSION = 1.6; // JPG→PNG typically expands ~1.1-1.5x; using 1.6 to avoid underestimating
+    const JPG_COMPRESSION = 0.2; // PNG→JPG typically shrinks to ~20%
+
+    for (const source of selectedSources) {
+      const analysisData = fileResults?.[source.id];
+      if (analysisData?.files) {
+        for (const file of analysisData.files) {
+          if (file.type === 'photo' && !includePhotos) continue;
+          if (file.type === 'video' && !includeVideos) continue;
+
+          if (file.type === 'video' || photoFormat === 'original') {
+            // Videos are never converted; originals stay as-is
+            estimatedBytes += file.sizeBytes;
+          } else if (photoFormat === 'png') {
+            const ext = file.extension?.toLowerCase() || '';
+            if (ext === '.png') {
+              estimatedBytes += file.sizeBytes; // Already PNG — no change
+            } else {
+              estimatedBytes += file.sizeBytes * PNG_EXPANSION;
+            }
+          } else if (photoFormat === 'jpg') {
+            const ext = file.extension?.toLowerCase() || '';
+            if (ext === '.jpg' || ext === '.jpeg') {
+              estimatedBytes += file.sizeBytes; // Already JPG — no change
+            } else if (ext === '.png') {
+              estimatedBytes += file.sizeBytes * JPG_COMPRESSION;
+            } else {
+              estimatedBytes += file.sizeBytes; // Other formats → JPG, roughly similar
+            }
+          }
+        }
+      } else {
+        // Fallback: no per-file data, use proportional estimate
+        const srcSizeGB = source.stats?.estimatedSizeGB || 0;
+        const pCount = source.stats?.photoCount || 0;
+        const vCount = source.stats?.videoCount || 0;
+        const pRatio = pCount / (pCount + vCount || 1);
+        const vRatio = vCount / (pCount + vCount || 1);
+        const photoGB = includePhotos ? srcSizeGB * pRatio : 0;
+        const videoGB = includeVideos ? srcSizeGB * vRatio : 0;
+        const formatMultiplier = photoFormat === 'png' ? PNG_EXPANSION : photoFormat === 'jpg' ? JPG_COMPRESSION : 1;
+        estimatedBytes += (photoGB * formatMultiplier + videoGB) * 1024 * 1024 * 1024;
+      }
+    }
+    const sizeGB = estimatedBytes / (1024 * 1024 * 1024);
 
     return {
       label: "Combined Analysis",
@@ -1953,12 +2113,8 @@ function DashboardPanel({
           </section>
         )}
 
-        <Card className="p-6 mb-2 relative" data-tour="combined-analysis">
-          <div className="absolute top-3 right-3 flex items-center gap-1">
-            <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
-            <PerformanceNudge type="path" onNavigateToBestPractices={onNavigateToBestPractices} />
-          </div>
-          <div className="flex items-start justify-between gap-6 mb-8 border-b border-border pb-8">
+        <Card className="p-6 mb-2" data-tour="combined-analysis">
+          <div className="flex items-start justify-between gap-6 mb-5 border-b border-border pb-5">
             <div className="flex items-start gap-6">
               <div className="p-4 bg-secondary/50 rounded-2xl text-primary">
                 <img src="./assets//pdr-combined-analysis.png" className="w-8 h-8 object-contain" alt="Combined Analysis" />
@@ -1972,51 +2128,50 @@ function DashboardPanel({
                       <span className="text-xs font-medium">Analysis complete</span>
                     </div>
                   )}
-                  <Button variant="outline" size="sm" onClick={onAddFolder} className="gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5 ml-auto">
-                    <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain" alt="Add Source" /> Add Source
+                  <Button size="sm" onClick={onAddFolder} className="gap-2 shadow-md shadow-primary/20 ml-auto">
+                    <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
                   </Button>
                 </div>
-                <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
-                  {stats.path}
-                </p>
+                <div className="flex items-center gap-1">
+                  <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
+                    {stats.path}
+                  </p>
+                  <PerformanceNudge type="path" onNavigateToBestPractices={onNavigateToBestPractices} />
+                </div>
               </div>
             </div>
             
-            <div className="flex items-center gap-6">
-              <div 
-                className={`flex flex-col items-center gap-6 px-5 py-3 rounded-full border transition-colors duration-150 ${
-                  includePhotos 
-                    ? 'border-emerald-300/60 bg-emerald-50/30 dark:border-emerald-600/40 dark:bg-emerald-900/20' 
-                    : 'border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10'
-                } focus-within:border-emerald-400/80 focus-within:bg-emerald-50/50 dark:focus-within:border-emerald-500/60 dark:focus-within:bg-emerald-900/30`}
-              >
-                <span className="text-xs font-medium text-muted-foreground">Photos</span>
-                <Checkbox 
-                  checked={includePhotos} 
+            <div className="flex items-center gap-2">
+              <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium cursor-pointer transition-all duration-150 select-none ${
+                includePhotos
+                  ? 'border-emerald-300/60 bg-emerald-50/40 text-emerald-700 dark:border-emerald-600/40 dark:bg-emerald-900/20 dark:text-emerald-300'
+                  : 'border-border bg-muted/30 text-muted-foreground'
+              }`}>
+                <Checkbox
+                  checked={includePhotos}
                   onCheckedChange={(checked) => setIncludePhotos(checked === true)}
                   data-testid="checkbox-include-photos"
-                  className="w-5 h-5"
+                  className="w-3.5 h-3.5"
                 />
-              </div>
-              <div 
-                className={`flex flex-col items-center gap-6 px-5 py-3 rounded-full border transition-colors duration-150 ${
-                  includeVideos 
-                    ? 'border-emerald-300/60 bg-emerald-50/30 dark:border-emerald-600/40 dark:bg-emerald-900/20' 
-                    : 'border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10'
-                } focus-within:border-emerald-400/80 focus-within:bg-emerald-50/50 dark:focus-within:border-emerald-500/60 dark:focus-within:bg-emerald-900/30`}
-              >
-                <span className="text-xs font-medium text-muted-foreground">Videos</span>
-                <Checkbox 
-                  checked={includeVideos} 
+                Photos
+              </label>
+              <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium cursor-pointer transition-all duration-150 select-none ${
+                includeVideos
+                  ? 'border-emerald-300/60 bg-emerald-50/40 text-emerald-700 dark:border-emerald-600/40 dark:bg-emerald-900/20 dark:text-emerald-300'
+                  : 'border-border bg-muted/30 text-muted-foreground'
+              }`}>
+                <Checkbox
+                  checked={includeVideos}
                   onCheckedChange={(checked) => setIncludeVideos(checked === true)}
                   data-testid="checkbox-include-videos"
-                  className="w-5 h-5"
+                  className="w-3.5 h-3.5"
                 />
-              </div>
+                Videos
+              </label>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Sources</div>
               <div className="text-2xl font-semibold text-secondary-foreground font-heading" style={{ filter: "saturate(1.075)" }}>{stats.sourceCount.toLocaleString()}</div>
@@ -2046,87 +2201,193 @@ function DashboardPanel({
             <h2 className="text-lg font-semibold text-foreground mb-4">Output</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-tour="destination">
               {/* Left: Destination Drive */}
-              <Card className="flex flex-col p-5 relative">
-                <div className="absolute top-3 right-3">
-                  <PerformanceNudge type="destination" onNavigateToBestPractices={onNavigateToBestPractices} />
-                </div>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-3 bg-secondary/50 rounded-full">
-                    <img src="./assets//pdr-destination-drive.png" className="w-5 h-5 object-contain" alt="Destination Drive" />
-                  </div>
-                  <h3 className="text-base font-medium font-heading">Destination Drive</h3>
-                </div>
-                <div className="flex-1">
-                  {destinationPath ? (
-                    <>
-                      <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block mb-2 break-all">{destinationPath}</p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${destinationFreeGB >= stats.sizeGB ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30' : 'text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/30'}`}>
-                          {destinationFreeGB >= 1000 ? `${(destinationFreeGB / 1000).toFixed(1)} TB` : `${destinationFreeGB.toFixed(1)} GB`} Free
-                        </span>
-                        <span className="text-xs text-muted-foreground">Required: {stats.sizeGB.toFixed(1)} GB</span>
-                        {destinationFreeGB < stats.sizeGB && (
-                          <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Choose where to save your fixed files.</p>
-                  )}
-                </div>
-                <div className="flex gap-2 mt-4">
-                  {destinationPath && hasCompletedFix && (
+              <Card className="flex flex-col p-5">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    onClick={handleChangeDestination}
+                    className="justify-center gap-2 shadow-md shadow-primary/20"
+                    data-testid="button-change-destination"
+                    style={!destinationPath ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                  >
+                    <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain brightness-200" alt="Destination" />
+                    {destinationPath ? 'Change Destination' : 'Select Destination'}
+                  </Button>
+                  {destinationPath && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={handleOpenDestination}
-                      className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
+                      className="gap-1.5 border-emerald-400/60 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-500 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:border-emerald-600/40 shrink-0"
                       data-testid="button-open-destination-card"
                     >
-                      <FolderOpen className="w-4 h-4 mr-2" /> Open
+                      <FolderOpen className="w-3.5 h-3.5" /> Open
                     </Button>
                   )}
                   <Button
-                    variant={destinationPath ? "outline" : "default"}
+                    variant="outline"
                     size="sm"
-                    onClick={handleChangeDestination}
-                    data-testid="button-change-destination"
-                    className={!destinationPath ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md" : ""}
-                    style={!destinationPath ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                    onClick={() => setShowDestAdvisor(true)}
+                    className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5 shrink-0"
+                    title="Destination Advisor — recommendations and guidance"
                   >
-                    {destinationPath ? "Change Destination" : "Select Destination"}
+                    <Info className="w-3.5 h-3.5" /> {destinationPath ? 'DA' : 'Drive Advisor'}
                   </Button>
+                </div>
+                <div className="flex-1">
+                  {destinationPath ? (
+                    <>
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded truncate max-w-full" title={destinationPath}>{destinationPath}</p>
+                        <button
+                          onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
+                          className="p-1 text-muted-foreground/50 hover:text-rose-500 transition-colors shrink-0"
+                          title="Clear destination"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {/* Visual space bar */}
+                      {destinationTotalGB > 0 && (
+                        <div className="mb-2">
+                          <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden">
+                            {(() => {
+                              const usedGB = destinationTotalGB - destinationFreeGB;
+                              const usedPercent = Math.round((usedGB / destinationTotalGB) * 100);
+                              const requiredPercent = Math.min(100 - usedPercent, Math.round((stats.sizeGB / destinationTotalGB) * 100));
+                              return (
+                                <>
+                                  <div className="h-full flex">
+                                    <div className="h-full bg-muted-foreground/30 rounded-l-full" style={{ width: `${usedPercent}%` }} />
+                                    <div className={`h-full ${destinationFreeGB >= stats.sizeGB ? 'bg-primary/60' : 'bg-rose-500/60'}`} style={{ width: `${requiredPercent}%` }} />
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                          <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
+                            <span>{(destinationTotalGB - destinationFreeGB).toFixed(1)} GB used</span>
+                            <span>{destinationFreeGB >= 1000 ? `${(destinationFreeGB / 1000).toFixed(1)} TB` : `${destinationFreeGB.toFixed(1)} GB`} free of {destinationTotalGB >= 1000 ? `${(destinationTotalGB / 1000).toFixed(1)} TB` : `${destinationTotalGB.toFixed(0)} GB`}</span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${destinationFreeGB >= stats.sizeGB ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30' : 'text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/30'}`}>
+                          Required: {stats.sizeGB.toFixed(1)} GB
+                        </span>
+                        {destinationFreeGB < stats.sizeGB && (
+                          <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
+                        )}
+                      </div>
+                      {destinationFreeGB >= stats.sizeGB && stats.sizeGB > 0 && (
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1.5">
+                          {(destinationFreeGB - stats.sizeGB) >= 1000
+                            ? `${((destinationFreeGB - stats.sizeGB) / 1000).toFixed(1)} TB`
+                            : `${(destinationFreeGB - stats.sizeGB).toFixed(1)} GB`
+                          } free after this fix
+                        </p>
+                      )}
+                      {/* Review library plan link */}
+                      <button
+                        onClick={() => setShowLibraryPlanner(true)}
+                        className="text-[10px] text-primary/60 hover:text-primary transition-colors mt-1.5 flex items-center gap-1"
+                      >
+                        <Settings className="w-2.5 h-2.5" />
+                        {libraryPlannerAnswers ? 'Review library plan' : 'Plan your library'}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Choose the location where your new library structure will go.</p>
+                  )}
                 </div>
               </Card>
 
               {/* Right: Photo Format */}
               <Card className="flex flex-col p-5">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="p-3 bg-secondary/50 rounded-full">
-                    <FileImage className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="text-base font-medium font-heading">Photo Format</h3>
-                  <FormatInfoTooltip />
-                </div>
-                <div className="flex-1">
-                  <div className="relative">
-                    <select
-                      value={photoFormat}
-                      onChange={(e) => setPhotoFormat(e.target.value as 'original' | 'png' | 'jpg')}
-                      className="w-full appearance-none px-3 py-2.5 pr-8 rounded-lg border border-border bg-background text-sm text-foreground cursor-pointer hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+                  <div className="flex-1">
+                    <Button
+                      ref={photoFormatBtnRef}
+                      size="sm"
+                      onClick={() => setPhotoFormatOpen(!photoFormatOpen)}
+                      className="w-full justify-center gap-2 shadow-md shadow-primary/20"
                     >
-                      <option value="original">Keep Originals — no conversion</option>
-                      <option value="png">PNG — highest quality, lossless</option>
-                      <option value="jpg">JPG — reduced file size, universal</option>
-                    </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      <FileImage className="w-4 h-4 brightness-200" />
+                      {photoFormat === 'original' ? 'Select Photo Format' : photoFormat === 'png' ? 'PNG Selected' : 'JPG Selected'}
+                      <ChevronDown className={`w-3.5 h-3.5 brightness-200 transition-transform duration-200 ${photoFormatOpen ? 'rotate-180' : ''}`} />
+                    </Button>
+                    {photoFormatOpen && ReactDOM.createPortal(
+                      <>
+                        <div className="fixed inset-0 z-[9998]" onClick={() => setPhotoFormatOpen(false)} />
+                        <div
+                          className="fixed bg-background border border-border rounded-lg shadow-lg z-[9999] overflow-hidden"
+                          style={(() => {
+                            const rect = photoFormatBtnRef.current?.getBoundingClientRect();
+                            if (!rect) return {};
+                            const dropdownH = 3 * 44; // 3 options ~44px each
+                            const spaceBelow = window.innerHeight - rect.bottom - 8;
+                            if (spaceBelow >= dropdownH) {
+                              return { top: rect.bottom + 4, left: rect.left, width: rect.width };
+                            }
+                            return { bottom: window.innerHeight - rect.top + 4, left: rect.left, width: rect.width };
+                          })()}
+                        >
+                          {([
+                            { value: 'original' as const, label: 'Keep Originals', desc: 'No conversion' },
+                            { value: 'png' as const, label: 'PNG', desc: 'Highest quality, lossless' },
+                            { value: 'jpg' as const, label: 'JPG', desc: 'Reduced file size, universal' },
+                          ]).map(opt => {
+                            // Compute estimated output size for this format option
+                            const estGB = (() => {
+                              if (stats.photos === 0 && stats.videos === 0) return 0;
+                              let bytes = 0;
+                              const PNG_X = 1.6, JPG_X = 0.2;
+                              for (const source of selectedSources) {
+                                const ad = fileResults?.[source.id];
+                                if (ad?.files) {
+                                  for (const f of ad.files) {
+                                    if (f.type === 'photo' && !includePhotos) continue;
+                                    if (f.type === 'video' && !includeVideos) continue;
+                                    if (f.type === 'video' || opt.value === 'original') { bytes += f.sizeBytes; continue; }
+                                    const ext = f.extension?.toLowerCase() || '';
+                                    if (opt.value === 'png') {
+                                      bytes += ext === '.png' ? f.sizeBytes : f.sizeBytes * PNG_X;
+                                    } else {
+                                      bytes += (ext === '.jpg' || ext === '.jpeg') ? f.sizeBytes : ext === '.png' ? f.sizeBytes * JPG_X : f.sizeBytes;
+                                    }
+                                  }
+                                }
+                              }
+                              return bytes / (1024 * 1024 * 1024);
+                            })();
+                            const sizeLabel = estGB >= 1 ? `~${estGB.toFixed(1)} GB` : estGB > 0 ? `~${(estGB * 1024).toFixed(0)} MB` : '';
+                            return (
+                            <button
+                              key={opt.value}
+                              onClick={() => { setPhotoFormat(opt.value); setPhotoFormatOpen(false); }}
+                              className={`w-full text-left px-3 py-2.5 text-sm hover:bg-primary/5 transition-colors flex items-center justify-between ${photoFormat === opt.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
+                            >
+                              <span>{opt.label}</span>
+                              <span className="text-xs text-muted-foreground">{opt.desc}{sizeLabel ? ` · ${sizeLabel}` : ''}</span>
+                            </button>
+                            );
+                          })}
+                        </div>
+                      </>,
+                      document.body
+                    )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {photoFormat === 'original' && 'Files stay in their current format. Extensions are normalised (.jpeg → .jpg).'}
-                    {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
-                    {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
-                  </p>
+                  <CardInfoTooltip onNavigateToBestPractices={onNavigateToBestPractices}>
+                    <p><strong className="text-foreground">PNG</strong> preserves every pixel with zero loss — ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
+                    <p className="mt-1.5"><strong className="text-foreground">JPG</strong> compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across all devices and apps.</p>
+                    <p className="mt-1.5 text-muted-foreground/70 italic">Files already in your chosen format will not be re-converted.</p>
+                  </CardInfoTooltip>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalised (.jpeg → .jpg).'}
+                  {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
+                  {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
+                </p>
               </Card>
             </div>
         </section>
@@ -2157,9 +2418,19 @@ function DashboardPanel({
                >
                  <FileText className="w-4 h-4 mr-2" /> Reports History
                </Button>
-               <Button 
-                 onClick={() => setShowFixModal(true)} 
-                 variant="outline" 
+               <Button
+                 onClick={() => {
+                   const pref = localStorage.getItem('pdr-auto-add-to-sd') || 'ask';
+                   if (pref === 'always') {
+                     setAddToSDThisRun(true);
+                     addToSDRef.current = true;
+                     setShowFixModal(true);
+                   } else {
+                     // 'ask' — show the pre-fix S&D prompt
+                     setShowSDPrompt(true);
+                   }
+                 }}
+                 variant="outline"
                  disabled={!destinationPath || destinationFreeGB < stats.sizeGB}
                  className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold font-heading h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                  data-testid="button-run-fix"
@@ -2177,14 +2448,118 @@ function DashboardPanel({
           We counter-scale them back to 100% so they match the Add Source modal. */}
       <div style={{ zoom: 100 / zoomLevel }}>
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={results} />}
+      {/* Library Planner — shown on first destination selection or when user reviews their plan */}
+      <LibraryPlannerModal
+        isOpen={showLibraryPlanner}
+        previousAnswers={libraryPlannerAnswers}
+        onComplete={(answers) => {
+          const isReview = !!destinationPath;
+          setLibraryPlannerAnswers(answers);
+          setShowLibraryPlanner(false);
+          // If reviewing (destination already set), just close — don't re-trigger the flow
+          if (isReview) return;
+          // First-time flow continues to DDA (unless skipped)
+          const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
+          if (!skipAdvisor) {
+            setShowDestAdvisor(true);
+          } else {
+            setShowDestBrowser(true);
+          }
+        }}
+        onSkip={() => {
+          const isReview = !!destinationPath;
+          setShowLibraryPlanner(false);
+          if (isReview) return;
+          const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
+          if (!skipAdvisor) {
+            setShowDestAdvisor(true);
+          } else {
+            setShowDestBrowser(true);
+          }
+        }}
+      />
+      {/* Destination Drive Advisor — shown before first destination selection */}
+      <DestinationAdvisorModal
+        isOpen={showDestAdvisor}
+        onClose={() => setShowDestAdvisor(false)}
+        onContinue={() => { setShowDestAdvisor(false); setShowDestBrowser(true); }}
+        currentSourceSizeGB={stats.sizeGB}
+        plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
+      />
       {/* Custom Folder Browser for destination selection */}
       <FolderBrowserModal
         isOpen={showDestBrowser}
         onSelect={handleDestBrowserSelect}
         onCancel={() => setShowDestBrowser(false)}
-        title="Select Destination Folder"
+        title="Select Destination"
         mode="folder"
+        onOpenDriveAdvisor={() => { setShowDestBrowser(false); setShowDestAdvisor(true); }}
+        plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
+        enableSavedLocations
+        showDriveRatings
       />
+      {/* Pre-fix S&D prompt — shown when user clicks Run Fix and preference is 'ask' */}
+      {showSDPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-card border border-border rounded-xl shadow-2xl w-[440px] p-6"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Search className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold font-heading">Search & Discovery</h3>
+                <p className="text-xs text-muted-foreground">Make fixed files searchable</p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mb-5">
+              Would you like the output of this fix to be added to Search & Discovery? This lets you search, filter, and browse your files after the fix completes.
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={() => {
+                  setAddToSDThisRun(true);
+                  addToSDRef.current = true;
+                  setShowSDPrompt(false);
+                  setShowFixModal(true);
+                }}
+                className="w-full justify-start h-11"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" /> Yes, one time only
+              </Button>
+              <Button
+                onClick={() => {
+                  setAddToSDThisRun(true);
+                  addToSDRef.current = true;
+                  localStorage.setItem('pdr-auto-add-to-sd', 'always');
+                  setShowSDPrompt(false);
+                  setShowFixModal(true);
+                }}
+                variant="outline"
+                className="w-full justify-start h-11"
+              >
+                <Sparkles className="w-4 h-4 mr-2" /> Yes, and always add for future fixes
+              </Button>
+              <Button
+                onClick={() => {
+                  setAddToSDThisRun(false);
+                  addToSDRef.current = false;
+                  setShowSDPrompt(false);
+                  setShowFixModal(true);
+                }}
+                variant="ghost"
+                className="w-full justify-start h-11 text-muted-foreground"
+              >
+                <X className="w-4 h-4 mr-2" /> No thanks
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
       {showFixModal && <FixProgressModal
         onClose={() => { setShowFixModal(false); setHasCompletedFix(true); setPostFixFlowActive(true); }}
         totalFiles={stats.totalFiles}
@@ -2205,6 +2580,7 @@ function DashboardPanel({
         }}
         includePhotos={includePhotos}
         includeVideos={includeVideos}
+        photoFormat={photoFormat}
       />}
       {showPostFixReport && <PostFixReportModal 
         onClose={() => setShowPostFixReport(false)} 
@@ -2441,7 +2817,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 <HardDrive className="w-6 h-6 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
+                <h3 className="text-lg font-medium mb-1">Destination</h3>
                 <p className="text-sm text-muted-foreground mb-2">/Volumes/Photos_Backup/Restored_2024</p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">2.4 TB Free</span>
@@ -2519,7 +2895,7 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
               // Post-fix state — warm, encouraging, with clear next steps
               <>
                 <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
-                  Your files have been rescued and saved. You can view the report, start a new fix, or explore your indexed files in Search & Discovery.
+                  Your files have been rescued and saved. You can view the report, start a new fix, or explore your library in Search & Discovery.
                 </p>
 
                 <div className="flex flex-col gap-4 justify-center items-center">
@@ -2528,6 +2904,7 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
                       size="lg"
                       className="px-8 h-12 text-base shadow-lg shadow-primary/25"
                       onClick={onAddFirstSource}
+                      style={{ animation: 'outline-pulse 2s ease-in-out infinite' }}
                     >
                       <Plus className="w-5 h-5 mr-2" />
                       Start New Fix
@@ -2548,7 +2925,7 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
               // Licensed user - show Add Source CTA
               <>
                 <p className="text-lg text-muted-foreground mb-8 leading-relaxed inline-flex items-center justify-center gap-1 flex-wrap">
-                  Add your photos and videos from any local folder, ZIP/RAR archive, or drive to get started. Cloud storage must be downloaded first.
+                  Add your photos and videos from any local folder, NAS, network drive, ZIP/RAR archive, or external drive to get started. Cloud storage must be downloaded first.
                   <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
                 </p>
 
@@ -2709,10 +3086,17 @@ function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConf
           </p>
           <div className="flex justify-between text-xs text-muted-foreground pt-2">
             <span>Elapsed: {formatTime(elapsed)}</span>
-            {estimatedRemaining !== null && percent !== undefined && percent >= 3 && (
+            {estimatedRemaining !== null && percent !== undefined && percent >= 3 ? (
               <span>~{formatTime(estimatedRemaining)} remaining</span>
-            )}
+            ) : percent !== undefined && percent > 0 && percent < 3 ? (
+              <span className="text-muted-foreground/60">Estimating time...</span>
+            ) : null}
           </div>
+          {elapsed > 15 && (
+            <p className="text-[10px] text-muted-foreground/50 mt-1 italic">
+              Tip: Close other apps and avoid running intensive tasks on your PC to speed this up.
+            </p>
+          )}
         </div>
 
         {!showCancelConfirm ? (
@@ -2839,7 +3223,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 <HardDrive className="w-6 h-6 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-medium mb-1">Destination Drive</h3>
+                <h3 className="text-lg font-medium mb-1">Destination</h3>
                 <p className="text-sm text-muted-foreground mb-2">/Volumes/Photos_Backup/Restored_2024</p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">2.4 TB Free</span>
@@ -3450,40 +3834,47 @@ const handleLeaveReview = async () => {
   );
 }
 
-function FormatInfoTooltip() {
+function CardInfoTooltip({ onNavigateToBestPractices, children }: { onNavigateToBestPractices?: () => void; children: React.ReactNode }) {
   const [isVisible, setIsVisible] = React.useState(false);
   const btnRef = React.useRef<HTMLButtonElement>(null);
   const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
-  const hideTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const hideTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const show = () => { clearTimeout(hideTimer.current); setIsVisible(true); };
-  const hide = () => { hideTimer.current = setTimeout(() => setIsVisible(false), 150); };
+  const hide = () => { hideTimer.current = setTimeout(() => setIsVisible(false), 250); };
 
   React.useEffect(() => {
     if (isVisible && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
-      const w = 272;
+      const w = 288;
       setPos({ top: rect.top - 8, left: Math.max(8, Math.min(rect.right - w, window.innerWidth - w - 8)) });
     }
   }, [isVisible]);
 
   return (
-    <div className="inline-flex items-center ml-auto">
-      <button ref={btnRef} onMouseEnter={show} onMouseLeave={hide} className="p-1 rounded-full hover:bg-secondary transition-colors" type="button">
-        <Info className="w-4 h-4 text-muted-foreground" />
+    <>
+      <button ref={btnRef} onMouseEnter={show} onMouseLeave={hide} onClick={(e) => { e.stopPropagation(); setIsVisible(!isVisible); }}
+        className="p-0.5 text-[#9b8bb8] hover:text-[#7b6b98] transition-colors" type="button">
+        <Info className="w-3.5 h-3.5" />
       </button>
       {isVisible && pos && ReactDOM.createPortal(
-        <div className="fixed w-[272px] p-3 rounded-lg bg-popover border border-border shadow-lg text-xs text-muted-foreground space-y-2 z-[9999]"
+        <div className="fixed w-72 p-3 bg-background border border-[#9b8bb8]/30 rounded-lg shadow-lg text-xs text-muted-foreground z-[9999]"
           style={{ bottom: `${window.innerHeight - pos.top}px`, left: pos.left }}
           onMouseEnter={show} onMouseLeave={hide}
         >
-          <p><strong className="text-foreground">PNG</strong> preserves every pixel with zero loss — ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
-          <p><strong className="text-foreground">JPG</strong> compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across all devices and apps.</p>
-          <p className="text-muted-foreground/70 italic">Files already in your chosen format will not be re-converted.</p>
+          {children}
+          {onNavigateToBestPractices && (
+            <div className="mt-2 pt-2 border-t border-[#9b8bb8]/20">
+              <button onClick={(e) => { e.stopPropagation(); setIsVisible(false); onNavigateToBestPractices(); }}
+                className="font-bold text-foreground hover:underline cursor-pointer text-xs">
+                Best Practices
+              </button>
+            </div>
+          )}
         </div>,
         document.body
       )}
-    </div>
+    </>
   );
 }
 
@@ -3494,7 +3885,7 @@ function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' 
   const message = type === 'source'
     ? <>If your network drive or cloud storage doesn't appear when browsing, try pasting the full path directly into the file picker.<br /><br />For example: <strong>\\MyCloud\Photos\2022</strong><br /><br />This is the most reliable way to access files on a NAS, home cloud, or shared network drive.</>
     : type === 'destination'
-    ? <>For best performance, connect your destination drive directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>
+    ? <>For best performance, connect your destination directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>
     : <>For best results, save your sources (folders and ZIPs) close to the root of your drive.<br /><br />For example, <strong>C:\Photos</strong> rather than <strong>C:\Users\Name\Documents\Backups\Old\Photos</strong>. Shorter paths help PDR read date information more reliably.</>;
 
   const showTooltip = () => {
@@ -3545,8 +3936,10 @@ function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' 
       </button>
       {isVisible && tooltipPos && ReactDOM.createPortal(
         <div
-          className="fixed w-72 p-3 bg-background border border-[#9b8bb8]/30 rounded-lg shadow-lg text-xs text-muted-foreground z-[9999]"
+          className="fixed w-72 p-3 bg-background border border-[#9b8bb8]/30 rounded-lg shadow-lg text-xs text-muted-foreground z-[9999] overflow-hidden"
           style={{
+            overflowWrap: 'break-word',
+            wordBreak: 'break-word',
             top: type === 'source' ? tooltipPos.top : undefined,
             bottom: type !== 'source' ? `${window.innerHeight - tooltipPos.top}px` : undefined,
             left: tooltipPos.left,
@@ -3577,16 +3970,17 @@ function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' 
   );
 }
 
-function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileResults, onViewReport, onReportSaved, includePhotos, includeVideos }: { 
-  onClose: () => void, 
-  totalFiles: number, 
-  destinationPath: string | null, 
+function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileResults, onViewReport, onReportSaved, includePhotos, includeVideos, photoFormat }: {
+  onClose: () => void,
+  totalFiles: number,
+  destinationPath: string | null,
   sources?: Source[],
   fileResults?: Record<string, SourceAnalysisResult>,
   onViewReport: () => void,
   onReportSaved?: (reportId: string) => void,
   includePhotos: boolean,
-  includeVideos: boolean 
+  includeVideos: boolean,
+  photoFormat: 'original' | 'png' | 'jpg'
 }) {
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
@@ -3596,8 +3990,14 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const [skippedExisting, setSkippedExisting] = useState(0);
   const [showCancelFixConfirm, setShowCancelFixConfirm] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [showMasterLibMsg, setShowMasterLibMsg] = useState(() => {
+    return localStorage.getItem('pdr-master-lib-dismissed') !== 'true';
+  });
+  const masterLibCountedRef = React.useRef(false);
   const [elapsed, setElapsed] = useState(0);
   const [totalTime, setTotalTime] = useState(0);
+  const [isPrescanning, setIsPrescanning] = useState(true);
+  const [prescanCount, setPrescanCount] = useState(0);
   const startTimeRef = React.useRef(Date.now());
   const fixSnapshotRef = React.useRef<{
     // Display counts
@@ -3610,13 +4010,13 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     duplicateFiles: Array<{ filename: string; duplicateOf: string; duplicateMethod?: 'hash' | 'heuristic' }>;
     // Full report data for persistence
     reportData: {
-      sources: Array<{ path: string; type: string; label: string }>;
+      sources: Array<{ path: string; type: 'folder' | 'zip' | 'drive'; label: string }>;
       destinationPath: string;
       counts: { confirmed: number; recovered: number; marked: number; total: number };
       duplicatesRemoved: number;
       duplicateFiles: Array<{ filename: string; duplicateOf: string; duplicateMethod?: 'hash' | 'heuristic' }>;
       totalScanned: number;
-      files: Array<{ originalFilename: string; newFilename: string; confidence: string; dateSource: string; sourcePath: string; exifWritten?: boolean; exifSource?: string }>;
+      files: Array<{ originalFilename: string; newFilename: string; confidence: 'confirmed' | 'recovered' | 'marked'; dateSource: string; sourcePath?: string; exifWritten?: boolean; exifSource?: string }>;
     };
   } | null>(null);
 
@@ -3633,6 +4033,14 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       setIsElectronEnv(isElectron());
     });
   }, []);
+
+  // Increment master library message seen count when fix completes
+  useEffect(() => {
+    if (!isComplete || masterLibCountedRef.current) return;
+    masterLibCountedRef.current = true;
+    const count = parseInt(localStorage.getItem('pdr-master-lib-seen-count') || '0', 10);
+    localStorage.setItem('pdr-master-lib-seen-count', String(count + 1));
+  }, [isComplete]);
   
   useEffect(() => {
     if (isComplete) return;
@@ -3686,12 +4094,15 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       }
       
       // Build file list for copying (using Set to prevent duplicates)
-      const filesToCopy: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }> = [];
+      const filesToCopy: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip'; derivedDate?: string | null; dateConfidence?: string; dateSource?: string; isDuplicate?: boolean; duplicateOf?: string; originSourcePath?: string }> = [];
       const zipPaths: Record<string, string> = {};
       const addedPaths = new Set<string>();
       
+      console.log('[Fix] fileResults keys:', Object.keys(fileResults || {}));
+      console.log('[Fix] sources:', sources?.map(s => ({ id: s.id, path: s.path, selected: s.selected })));
       Object.entries(fileResults || {}).forEach(([sourceKey, sourceData]) => {
         const source = sources?.find(s => s.id === sourceKey || s.path === sourceData.sourcePath);
+        console.log(`[Fix] sourceKey=${sourceKey}, sourcePath=${sourceData.sourcePath}, matched=${!!source}, selected=${source?.selected}, files=${sourceData.files?.length}`);
         // Skip sources that are not selected
         if (!source?.selected) return;
         const sourceType = source?.type || 'folder';
@@ -3723,27 +4134,39 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
           });
         });
     });
-      
+
+      console.log(`[Fix] filesToCopy: ${filesToCopy.length} files`);
+      if (filesToCopy.length === 0) {
+        console.warn('[Fix] WARNING: No files to copy! Check source matching above.');
+      }
+
       // Listen for progress updates
       onCopyProgress((prog) => {
         setProcessed(prog.current);
         setProgress(Math.round((prog.current / prog.total) * 100));
       });
-      
+
       // Fetch current settings
-      const { getSettings, prescanDestination } = await import('@/lib/electron-bridge');
+      const { getSettings, prescanDestination, onDestinationPrescanProgress } = await import('@/lib/electron-bridge');
       const settings = await getSettings();
-      
+
       // Pre-scan destination for existing files (cross-run duplicate prevention)
       let existingDestinationHashes: Record<string, string> | undefined;
       let existingDestinationHeuristics: Record<string, string> | undefined;
       if (settings.skipDuplicates) {
+        setIsPrescanning(true);
+        // Listen for prescan progress
+        const removePrescanListener = onDestinationPrescanProgress((data) => {
+          setPrescanCount(data.scanned);
+        });
         const prescanResult = await prescanDestination(destinationPath);
+        removePrescanListener?.();
         if (prescanResult.success && prescanResult.data) {
           existingDestinationHashes = prescanResult.data.hashes;
           existingDestinationHeuristics = prescanResult.data.heuristics;
         }
       }
+      setIsPrescanning(false);
       
       // Actually copy files
       const folderStructure = localStorage.getItem('pdr-folder-structure') as 'year' | 'year-month' | 'year-month-day' || 'year';
@@ -3761,9 +4184,12 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
           exifWriteMarked: settings.exifWriteMarked
         },
         existingDestinationHashes,
-        existingDestinationHeuristics
+        existingDestinationHeuristics,
+        photoFormat,
       });
       
+      console.log(`[Fix] Copy result:`, { success: result.success, copied: result.copied, failed: result.failed, duplicatesRemoved: result.duplicatesRemoved, skippedExisting: result.skippedExisting, resultsCount: result.results?.length });
+
       setProgress(100);
       setProcessed(totalFiles);
       // Build complete snapshot ONCE - this is the single source of truth
@@ -3792,7 +4218,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       }));
       
       // Build file list and counts in one pass
-      const allFiles: Array<{ originalFilename: string; newFilename: string; confidence: string; dateSource: string; sourcePath: string }> = [];
+      const allFiles: Array<{ originalFilename: string; newFilename: string; confidence: 'confirmed' | 'recovered' | 'marked'; dateSource: string; sourcePath?: string; exifWritten?: boolean; exifSource?: string }> = [];
       let confirmedCount = 0;
       let recoveredCount = 0;
       let markedCount = 0;
@@ -3821,7 +4247,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             newFilename: file.suggestedFilename || file.filename,
             confidence: file.dateConfidence,
             dateSource: file.dateSource,
-            sourcePath: sourceData.sourcePath,
+            sourcePath: sourceData.sourcePath || '',
             exifWritten: exifResult?.exifWritten || false,
             exifSource: exifResult?.exifSource
           });
@@ -3934,8 +4360,8 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 relative">
                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
               </div>
-              <h2 className="text-2xl font-semibold text-foreground mb-2">Applying Fixes...</h2>
-              <p className="text-muted-foreground">Copying, renaming and organizing your files</p>
+              <h2 className="text-2xl font-semibold text-foreground mb-2">{isPrescanning ? 'Preparing...' : 'Applying Fixes...'}</h2>
+              <p className="text-muted-foreground">{isPrescanning ? 'Scanning destination for existing files' : 'Copying, renaming and organizing your files'}</p>
             </div>
 
             <div className="space-y-2 mb-6">
@@ -3945,7 +4371,10 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               </div>
               <Progress value={progress} className="h-2" />
               <p className="text-xs text-muted-foreground text-left pt-1">
-                {processed} of {totalFiles} files processed
+                {isPrescanning
+                  ? `Scanning destination${prescanCount > 0 ? ` (${prescanCount.toLocaleString()} files checked)` : ''}...`
+                  : `${processed} of ${totalFiles} files processed`
+                }
               </p>
               <div className="flex justify-between text-xs text-muted-foreground pt-2">
                 <span>Elapsed: {formatTime(elapsed)}</span>
@@ -4029,14 +4458,50 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             </div>
             
             <h2 className="text-2xl font-semibold text-foreground mb-2">Fix Complete</h2>
-            <p className="text-muted-foreground mb-4">
+            <p className="text-muted-foreground mb-1">
               {(fixSnapshotRef.current?.totalScanned ?? 0).toLocaleString()} files scanned → {((fixSnapshotRef.current?.confirmed ?? 0) + (fixSnapshotRef.current?.recovered ?? 0) + (fixSnapshotRef.current?.marked ?? 0)).toLocaleString()} output files
             </p>
             {totalTime > 0 && (
-              <p className="text-xs text-muted-foreground mb-6">
+              <p className="text-xs text-muted-foreground mb-1">
                 Completed in {formatTime(totalTime)}
               </p>
             )}
+            {photoFormat !== 'original' && (() => {
+              // Estimate output size for the report
+              let srcBytes = 0, outBytes = 0;
+              const PNG_X = 1.6, JPG_X = 0.2;
+              const sourceIds = new Set((sources || []).map(s => s.id));
+              Object.entries(fileResults || {}).forEach(([sourceId, sd]) => {
+                if (!sourceIds.has(sourceId)) return; // Only count selected sources
+                sd.files?.forEach((f) => {
+                  if (f.type === 'photo' && !includePhotos) return;
+                  if (f.type === 'video' && !includeVideos) return;
+                  srcBytes += f.sizeBytes;
+                  if (f.type === 'video') { outBytes += f.sizeBytes; return; }
+                  const ext = f.extension?.toLowerCase() || '';
+                  if (photoFormat === 'png') {
+                    outBytes += ext === '.png' ? f.sizeBytes : f.sizeBytes * PNG_X;
+                  } else {
+                    outBytes += (ext === '.jpg' || ext === '.jpeg') ? f.sizeBytes : ext === '.png' ? f.sizeBytes * JPG_X : f.sizeBytes;
+                  }
+                });
+              });
+              const srcGB = srcBytes / (1024*1024*1024);
+              const outGB = outBytes / (1024*1024*1024);
+              const fmtSize = (gb: number) => gb >= 1 ? `${gb.toFixed(1)} GB` : `${(gb * 1024).toFixed(0)} MB`;
+              return (
+                <>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Estimated output: {fmtSize(outGB)}{outGB > srcGB * 1.5 ? ` (source: ${fmtSize(srcGB)})` : ''}
+                    {photoFormat === 'png' && ' · PNG conversion increases file sizes'}
+                  </p>
+                  <p className="text-xs text-muted-foreground/60 mb-1">
+                    Conversion speed depends on your hardware — faster CPUs will significantly reduce this time.
+                  </p>
+                </>
+              );
+            })()}
+            <div className="mb-6" />
             
 			<div className={`grid ${(fixSnapshotRef.current?.skippedExisting ?? 0) > 0 ? 'grid-cols-5' : 'grid-cols-4'} gap-3 mb-6 p-4 bg-muted/50 rounded-xl`}>
 			  <div className="text-center">
@@ -4063,10 +4528,37 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
 			  )}
 			</div>
             
+            {/* Destination permanence warning — shown first 3 times without dismiss option, then dismissable */}
+            {showMasterLibMsg && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-4">
+                <div className="flex items-start gap-2.5">
+                  <Shield className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mb-0.5">Your destination is now your master library</p>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Moving, renaming, or deleting this folder will break Search & Discovery indexing and AI analysis.
+                      Use the same destination for all future fixes to build a single, organised library.
+                    </p>
+                    {parseInt(localStorage.getItem('pdr-master-lib-seen-count') || '0', 10) >= 3 && (
+                      <button
+                        onClick={() => {
+                          localStorage.setItem('pdr-master-lib-dismissed', 'true');
+                          setShowMasterLibMsg(false);
+                        }}
+                        className="text-[10px] text-amber-600/60 dark:text-amber-400/60 hover:text-amber-600 dark:hover:text-amber-400 mt-1.5 underline transition-colors"
+                      >
+                        Don't show this again
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
-              <Button 
-                onClick={onViewReport} 
-                className="w-full bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white" 
+              <Button
+                onClick={onViewReport}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
                 size="lg"
                 data-testid="button-view-report"
               >
@@ -4123,6 +4615,7 @@ function ReportsListModal({ onClose, onViewReport }: {
     sourceCount: number;
     counts: { confirmed: number; recovered: number; marked: number };
     duplicatesRemoved?: number;
+    totalScanned?: number;
   }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [exportingId, setExportingId] = useState<string | null>(null);
@@ -4150,7 +4643,7 @@ function ReportsListModal({ onClose, onViewReport }: {
           const settings = await getSettings();
           if (settings.autoSaveCatalogue) {
             const destinations = new Set(result.data.map(r => r.destinationPath));
-            for (const dest of destinations) {
+            for (const dest of Array.from(destinations)) {
               regenerateCatalogue(dest).then(res => {
                   if (!res.success) console.warn('[Catalogue] Regen failed for', dest, res.error);
                   else console.log('[Catalogue] Regenerated for', dest);
@@ -5415,7 +5908,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
 
                         <div>
                           <p className="font-medium text-foreground mb-2">Destination Best Practices</p>
-                          <p className="mb-2">Pick a destination folder that is:</p>
+                          <p className="mb-2">Pick a destination that is:</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li>Empty (or dedicated to this run)</li>
                             <li>Not inside any Source</li>
@@ -5436,7 +5929,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                             </div>
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
                               <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                              <p className="text-sm">Select Destination Drive (dedicated output folder)</p>
+                              <p className="text-sm">Select Destination (dedicated output folder)</p>
                             </div>
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
                               <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
@@ -5684,10 +6177,10 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Before running the fix, take a moment to confirm the following — in order:</p>
                   <ul className="list-disc ml-5 space-y-2.5">
-                    <li><span className="font-medium text-foreground">Choose a destination</span> – Select or confirm the destination drive where the fixed files will be written.</li>
+                    <li><span className="font-medium text-foreground">Choose a destination</span> – Select or confirm the destination where the fixed files will be written.</li>
                     <li><span className="font-medium text-foreground">Select your sources</span> – In the left-hand list, make sure the sources you want to process are checked. You can include or exclude any source at this stage.</li>
                     <li><span className="font-medium text-foreground">Confirm file types</span> – In Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
-                    <li><span className="font-medium text-foreground">Check available space</span> – Review the storage indicator to ensure the destination drive has enough capacity. The Free amount (shown in green) should exceed the Required size shown alongside it.</li>
+                    <li><span className="font-medium text-foreground">Check available space</span> – Review the storage indicator to ensure the destination has enough capacity. The Free amount (shown in green) should exceed the Required size shown alongside it.</li>
                   </ul>
                   <p>Once these are confirmed, you're ready to run the fix.</p>
                 </div>
@@ -6458,6 +6951,12 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   const [allowIndexRemoval, setAllowIndexRemoval] = useState(
     localStorage.getItem('pdr-allow-index-removal') === 'true'
   );
+  const [showLibraryManager, setShowLibraryManager] = useState(
+    localStorage.getItem('pdr-show-library-manager') === 'true'
+  );
+  const [autoAddToSD, setAutoAddToSD] = useState<'ask' | 'always'>(
+    (localStorage.getItem('pdr-auto-add-to-sd') as 'ask' | 'always') === 'always' ? 'always' : 'ask'
+  );
   const [advancedOpen, setAdvancedOpen] = useState(false);
   
     // Advanced settings state
@@ -6474,6 +6973,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   const [aiFaceDetection, setAiFaceDetection] = useState(true);
   const [aiObjectTagging, setAiObjectTagging] = useState(true);
   const [aiAutoProcess, setAiAutoProcess] = useState(true);
+  const [aiVisualSuggestions, setAiVisualSuggestions] = useState(true);
   const [autoSaveCatalogue, setAutoSaveCatalogue] = useState(true);
   const [showManualReportExports, setShowManualReportExports] = useState(false);
 
@@ -6481,7 +6981,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   useEffect(() => {
     getSettings().then((settings) => {
       setSkipDuplicates(settings.skipDuplicates);
-      setThoroughDuplicateMatching(settings.thoroughDuplicateMatching);
+      setThoroughDuplicateMatching(settings.thoroughDuplicateMatching ?? false);
       setWriteExif(settings.writeExif);
       setExifWriteConfirmed(settings.exifWriteConfirmed);
       setExifWriteRecovered(settings.exifWriteRecovered);
@@ -6493,6 +6993,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
       setAiFaceDetection(settings.aiFaceDetection);
       setAiObjectTagging(settings.aiObjectTagging);
       setAiAutoProcess(settings.aiAutoProcess);
+      setAiVisualSuggestions(settings.aiVisualSuggestions ?? true);
       setAutoSaveCatalogue(settings.autoSaveCatalogue);
       setShowManualReportExports(settings.showManualReportExports);
     });
@@ -6539,6 +7040,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
     if (!checked) {
       // When turning off, clear any persisted sources immediately
       localStorage.removeItem("pdr-sources");
+      localStorage.removeItem("pdr-source-analysis-results");
     }
   };
 
@@ -6562,6 +7064,10 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   const handleAiAutoProcessToggle = (checked: boolean) => {
     setAiAutoProcess(checked);
     setSetting('aiAutoProcess', checked);
+  };
+  const handleAiVisualSuggestionsToggle = (checked: boolean) => {
+    setAiVisualSuggestions(checked);
+    setSetting('aiVisualSuggestions', checked);
   };
 
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
@@ -6592,6 +7098,20 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
     }
   };
 
+  const handleShowLibraryManagerToggle = (checked: boolean) => {
+    setShowLibraryManager(checked);
+    if (checked) {
+      localStorage.setItem('pdr-show-library-manager', 'true');
+    } else {
+      localStorage.removeItem('pdr-show-library-manager');
+    }
+  };
+
+  const handleAutoAddToSDChange = (value: 'ask' | 'always') => {
+    setAutoAddToSD(value);
+    localStorage.setItem('pdr-auto-add-to-sd', value);
+  };
+
   const handleWelcomeToggle = (checked: boolean) => {
     setShowWelcome(checked);
     setSkipWelcomeScreen(!checked);
@@ -6620,6 +7140,16 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
     setShowManualReportExports(false);
     localStorage.removeItem('pdr-allow-report-removal');
     localStorage.removeItem('pdr-allow-index-removal');
+    localStorage.removeItem('pdr-show-library-manager');
+    localStorage.removeItem('pdr-master-lib-dismissed');
+    localStorage.removeItem('pdr-master-lib-seen-count');
+    localStorage.removeItem('pdr-library-planner-complete');
+    localStorage.removeItem('pdr-library-planner-size');
+    localStorage.removeItem('pdr-library-planner-multi');
+    localStorage.setItem('pdr-auto-add-to-sd', 'ask');
+    localStorage.removeItem('pdr-saved-destinations');
+    setShowLibraryManager(false);
+    setAutoAddToSD('ask');
   };
 
   const [settingsTab, setSettingsTab] = useState<'general' | 'fix' | 'pro'>('general');
@@ -6984,7 +7514,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                   AI Photo Analysis
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Use on-device AI to detect faces and tag photo content. All processing happens locally — your photos are never uploaded.
+                  Use on-device AI to detect faces and tag content in your photos. Videos are not included — AI analysis applies to photos only. All processing happens locally — nothing is ever uploaded.
                 </p>
                 <div className="space-y-2">
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
@@ -6993,7 +7523,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                         <Sparkles className="w-4 h-4 text-violet-500" />
                         <span className="text-sm font-medium text-foreground">Enable AI Analysis</span>
                       </div>
-                      <span className="text-xs text-muted-foreground ml-6">Unlock face recognition and object tagging in Search</span>
+                      <span className="text-xs text-muted-foreground ml-6">Unlock face recognition and object tagging in Search (photos only)</span>
                     </div>
                     <Checkbox
                       checked={aiEnabled}
@@ -7007,7 +7537,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                       <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
                         <div className="flex flex-col">
                           <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Face Detection</span>
-                          <span className="text-xs text-muted-foreground">Detect and cluster faces to identify people</span>
+                          <span className="text-xs text-muted-foreground">Detect and cluster faces to identify people in photos</span>
                         </div>
                         <Checkbox
                           checked={aiFaceDetection}
@@ -7029,12 +7559,23 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                       <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
                         <div className="flex flex-col">
                           <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Auto-process new photos</span>
-                          <span className="text-xs text-muted-foreground">Automatically analyze photos when new runs are indexed</span>
+                          <span className="text-xs text-muted-foreground">Automatically analyze photos when new files are added to the library</span>
                         </div>
                         <Checkbox
                           checked={aiAutoProcess}
                           onCheckedChange={(checked) => handleAiAutoProcessToggle(!!checked)}
                           data-testid="checkbox-ai-auto-process"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Visual face suggestions</span>
+                          <span className="text-xs text-muted-foreground">When naming a face, suggest visually similar people from your library</span>
+                        </div>
+                        <Checkbox
+                          checked={aiVisualSuggestions}
+                          onCheckedChange={(checked) => handleAiVisualSuggestionsToggle(!!checked)}
+                          data-testid="checkbox-ai-visual-suggestions"
                         />
                       </label>
                     </div>
@@ -7044,7 +7585,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                 <div className="flex items-start gap-2 p-3 mt-3 rounded-lg bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
                   <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
                   <p className="text-xs text-violet-700 dark:text-violet-300">
-                    <strong>Privacy:</strong> AI models run entirely on your device — your photos are never uploaded, shared, or sent anywhere. A one-time download (~300 MB) is required the first time you analyze. After that, everything works fully offline.
+                    <strong>Privacy:</strong> AI models run entirely on your device — your photos are never uploaded, shared, or sent anywhere. AI analysis applies to photos only (not videos). A one-time download (~300 MB) is required the first time you analyze. After that, everything works fully offline.
                   </p>
                 </div>
               </div>
@@ -7055,7 +7596,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                   Catalogue
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Automatically save a cumulative record of all fixed files to your destination folder.
+                  Automatically save a cumulative record of all fixed files to your destination.
                 </p>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
@@ -7070,18 +7611,44 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                 </label>
               </div>
 
-              {/* Index Management */}
-              <div className="pt-4 border-t border-border">
+              {/* Search & Discovery */}
+              <div className="pt-4 border-t border-border space-y-3">
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Index Management
+                  Search & Discovery
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Control whether indexed runs can be removed from the Search index.
+                  Control how fixed files are added to your search library.
                 </p>
+
+                {/* Auto-add preference */}
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Always add fixes to Search & Discovery</span>
+                    <span className="text-xs text-muted-foreground">Skip the prompt and automatically index every fix. When off, you'll be asked each time.</span>
+                  </div>
+                  <Checkbox
+                    checked={autoAddToSD === 'always'}
+                    onCheckedChange={(checked) => handleAutoAddToSDChange(checked ? 'always' : 'ask')}
+                  />
+                </label>
+
+                {/* Show Library Manager */}
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Show Library Manager</span>
+                    <span className="text-xs text-muted-foreground">Show the Library Manager button in Search & Discovery for advanced index management.</span>
+                  </div>
+                  <Checkbox
+                    checked={showLibraryManager}
+                    onCheckedChange={(checked) => handleShowLibraryManagerToggle(!!checked)}
+                  />
+                </label>
+
+                {/* Allow Index Removal */}
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
-                    <span className="text-xs text-muted-foreground">Enable removing reports from the Index Manager. Re-indexing requires running the fix again.</span>
+                    <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-indexing requires running the fix again.</span>
                   </div>
                   <Checkbox
                     checked={allowIndexRemoval}

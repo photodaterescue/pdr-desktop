@@ -10,7 +10,7 @@
     "dev:client": "vite dev --port 5000",
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
-    "build:electron": "tsc -p electron/tsconfig.json --outDir dist-electron && node -e \"const fs=require('fs');fs.mkdirSync('dist-electron/geodata',{recursive:true});fs.copyFileSync('electron/geodata/cities.json','dist-electron/geodata/cities.json')\"",
+    "build:electron": "tsc -p electron/tsconfig.json --outDir dist-electron && tsc -p electron/tsconfig.worker.json --outDir dist-electron && node -e \"const fs=require('fs');fs.renameSync('dist-electron/ai-worker.js','dist-electron/ai-worker.cjs');fs.mkdirSync('dist-electron/geodata',{recursive:true});fs.copyFileSync('electron/geodata/cities.json','dist-electron/geodata/cities.json')\"",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push"
@@ -54,6 +54,18 @@
         "to": "bin",
         "filter": [
           "UnRAR.exe"
+        ]
+      },
+      {
+        "from": "node_modules/@vladmandic/human/models",
+        "to": "human-models",
+        "filter": [
+          "blazeface.json",
+          "blazeface.bin",
+          "facemesh.json",
+          "facemesh.bin",
+          "faceres.json",
+          "faceres.bin"
         ]
       }
     ],
@@ -105,8 +117,13 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.60.5",
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@tensorflow/tfjs-converter": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
     "@types/adm-zip": "^0.5.7",
     "@types/mime-types": "^3.0.1",
+    "@vladmandic/human": "^3.3.6",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",

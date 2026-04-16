@@ -449,7 +449,7 @@ export async function generateCatalogue(destinationPath) {
 export async function writeCatalogue(destinationPath) {
     try {
         if (!fs.existsSync(destinationPath)) {
-            return { success: false, error: 'Destination folder not found' };
+            return { success: false, error: 'Destination not found' };
         }
         const { csv, txt } = await generateCatalogue(destinationPath);
         if (csv) {

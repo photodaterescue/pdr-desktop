@@ -554,7 +554,7 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
 export async function writeCatalogue(destinationPath: string): Promise<{ success: boolean; error?: string }> {
   try {
     if (!fs.existsSync(destinationPath)) {
-      return { success: false, error: 'Destination folder not found' };
+      return { success: false, error: 'Destination not found' };
     }
 
     const { csv, txt } = await generateCatalogue(destinationPath);

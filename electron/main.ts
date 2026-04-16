@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { execSync, execFile } from 'child_process';
 import sharp from 'sharp';
+
+// Let sharp use default thread pool (number of CPU cores) for fast encoding
 import { analyzeSource, cancelAnalysis } from './analysis-engine.js';
 import AdmZip from 'adm-zip';
 import * as unzipper from 'unzipper';
@@ -42,21 +44,42 @@ import { loadReport as loadReportForIndex } from './report-storage.js';
 import {
   startAiProcessing,
   cancelAiProcessing,
+  pauseAiProcessing,
+  resumeAiProcessing,
+  isAiPaused,
   shutdownAiWorker,
   isAiProcessing,
+  areModelsDownloaded,
   setMainWindow as setAiMainWindow,
+  runFaceClustering,
 } from './ai-manager.js';
 import {
   listPersons,
   upsertPerson,
   assignPersonToCluster,
   assignPersonToFace,
+  unnameFace,
+  renamePerson,
+  mergePersons,
+  deletePerson,
+  permanentlyDeletePerson,
+  restorePerson,
+  listDiscardedPersons,
+  getPersonById,
+  getVisualSuggestions,
+  getClusterFaceCount,
   getFacesForFile,
   getAiTagsForFile,
   getAiTagOptions,
   getAiStats,
   clearAllAiData,
   rebuildAiFts,
+  getPersonClusters,
+  getClusterFaces,
+  getPersonsWithCooccurrence,
+  cleanupOrphanedPersons,
+  runDatabaseCleanup,
+  relocateRun,
 } from './search-database.js';
 
 // Update checking
@@ -88,16 +111,23 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
 }
 
-// Streaming copy for large files - yields during copy
-async function streamCopyFile(src: string, dest: string): Promise<void> {
+// Streaming copy that optionally computes hash during copy (single read from disk)
+async function streamCopyFile(src: string, dest: string, computeHash = false): Promise<string | null> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      readStream.destroy();
+      writeStream.destroy();
+      reject(new Error(`Copy timeout: ${path.basename(src)}`));
+    }, 120000); // 2 min timeout per file
     const readStream = fs.createReadStream(src, { highWaterMark: 64 * 1024 });
     const writeStream = fs.createWriteStream(dest);
-    
-    readStream.on('error', reject);
-    writeStream.on('error', reject);
-    writeStream.on('finish', resolve);
-    
+    const hashObj = computeHash ? crypto.createHash('sha256') : null;
+
+    readStream.on('data', (chunk) => { if (hashObj) hashObj.update(chunk); });
+    readStream.on('error', (err) => { clearTimeout(timer); reject(err); });
+    writeStream.on('error', (err) => { clearTimeout(timer); reject(err); });
+    writeStream.on('finish', () => { clearTimeout(timer); resolve(hashObj ? hashObj.digest('hex') : null); });
+
     readStream.pipe(writeStream);
   });
 }
@@ -137,6 +167,23 @@ function createWindow() {
 	// Zoom is handled purely via CSS transform on the content area — keep Electron at 1.0
 	mainWindow!.webContents.on('did-finish-load', () => {
 	  mainWindow!.webContents.setZoomFactor(1.0);
+
+	  // Auto-start AI processing on launch if enabled AND models already downloaded
+	  const settings = getSettings();
+	  console.log(`[AI] Launch check: aiEnabled=${settings.aiEnabled}, modelsReady=${areModelsDownloaded()}`);
+	  if (settings.aiEnabled && areModelsDownloaded()) {
+	    setTimeout(async () => {
+	      try {
+	        console.log('[AI] Auto-starting AI processing (models already downloaded)...');
+	        await startAiProcessing();
+	        console.log('[AI] Auto-start completed or in progress');
+	      } catch (err) {
+	        console.error('[AI] Auto-start FAILED:', err);
+	      }
+	    }, 3000);
+	  } else if (settings.aiEnabled && !areModelsDownloaded()) {
+	    console.log('[AI] AI enabled but models not downloaded — waiting for user to trigger download');
+	  }
 	});
 
 	// Block Electron's native zoom shortcuts — our renderer handles zoom via IPC
@@ -384,10 +431,14 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    // Close viewer window if still open
+    // Close child windows if still open
     if (viewerWindow && !viewerWindow.isDestroyed()) {
       viewerWindow.destroy();
       viewerWindow = null;
+    }
+    if (peopleWindow && !peopleWindow.isDestroyed()) {
+      peopleWindow.destroy();
+      peopleWindow = null;
     }
     shutdownAiWorker();
     app.quit();
@@ -470,7 +521,7 @@ ipcMain.handle('source:pick', async (_event, mode: 'folder' | 'zip') => {
 ipcMain.handle('dialog:selectDestination', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory', 'createDirectory'],
-    title: 'Select Destination Folder',
+    title: 'Select Destination',
     defaultPath: 'C:\\'
   });
   
@@ -484,7 +535,7 @@ ipcMain.handle('dialog:selectDestination', async () => {
 ipcMain.handle('select-destination', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],
-    title: 'Select Destination Folder',
+    title: 'Select Destination',
     defaultPath: 'C:\\'
   });
   if (result.canceled || result.filePaths.length === 0) {
@@ -504,7 +555,8 @@ ipcMain.handle('show-message', async (event, title: string, message: string) => 
 
 ipcMain.handle('shell:openFolder', async (_event, folderPath: string) => {
   try {
-    await shell.openPath(folderPath);
+    const normalizedPath = path.normalize(folderPath);
+    await shell.openPath(normalizedPath);
   } catch (error) {
     console.error('Error opening folder:', error);
   }
@@ -546,15 +598,33 @@ ipcMain.handle('disk:getSpace', async (_event, directoryPath: string) => {
         };
       }
     } else if (process.platform === 'win32') {
-      const driveLetter = path.parse(directoryPath).root;
-      const output = execSync(`wmic logicaldisk where "DeviceID='${driveLetter.replace('\\', '')}'" get FreeSpace,Size /format:csv`, { encoding: 'utf8' });
-      const lines = output.trim().split('\n').filter(l => l.trim());
-      if (lines.length >= 2) {
-        const parts = lines[1].split(',');
-        return {
-          freeBytes: parseInt(parts[1], 10),
-          totalBytes: parseInt(parts[2], 10),
-        };
+      const driveLetter = path.parse(directoryPath).root.replace('\\', '');
+      // Use PowerShell (always available) instead of wmic (deprecated/removed in newer Windows 11)
+      try {
+        const psCmd = `powershell -NoProfile -Command "(Get-PSDrive -Name '${driveLetter.replace(':', '')}' -PSProvider FileSystem | Select-Object Free,Used,@{N='Total';E={$_.Free+$_.Used}}) | ConvertTo-Json"`;
+        const psOutput = execSync(psCmd, { encoding: 'utf8', timeout: 10000 });
+        const driveInfo = JSON.parse(psOutput.trim());
+        if (driveInfo && driveInfo.Free != null && driveInfo.Total != null) {
+          return {
+            freeBytes: driveInfo.Free,
+            totalBytes: driveInfo.Total,
+          };
+        }
+      } catch {
+        // PowerShell failed — fall back to wmic for older Windows versions
+        try {
+          const output = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}'" get FreeSpace,Size /format:csv`, { encoding: 'utf8' });
+          const lines = output.trim().split('\n').filter(l => l.trim());
+          if (lines.length >= 2) {
+            const parts = lines[1].split(',');
+            return {
+              freeBytes: parseInt(parts[1], 10),
+              totalBytes: parseInt(parts[2], 10),
+            };
+          }
+        } catch {
+          console.error('[Disk] Both PowerShell and wmic failed for drive', driveLetter);
+        }
       }
     }
     return { freeBytes: 0, totalBytes: 0 };
@@ -1019,23 +1089,19 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
   }
 });
 
-function calculateFileHashSync(filePath: string): string | null {
-  try {
+function calculateFileHashAsync(filePath: string, timeoutMs = 30000): Promise<string | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.warn(`[Hash] Timeout hashing ${path.basename(filePath)} after ${timeoutMs}ms`);
+      stream.destroy();
+      resolve(null);
+    }, timeoutMs);
     const hash = crypto.createHash('sha256');
-    const fd = fs.openSync(filePath, 'r');
-    const bufferSize = 64 * 1024;
-    const buffer = Buffer.alloc(bufferSize);
-    let bytesRead: number;
-    
-    while ((bytesRead = fs.readSync(fd, buffer, 0, bufferSize, null)) > 0) {
-      hash.update(buffer.subarray(0, bytesRead));
-    }
-    
-    fs.closeSync(fd);
-    return hash.digest('hex');
-  } catch {
-    return null;
-  }
+    const stream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => { clearTimeout(timer); resolve(hash.digest('hex')); });
+    stream.on('error', () => { clearTimeout(timer); resolve(null); });
+  });
 }
 
 function calculateBufferHash(buffer: Buffer): string {
@@ -1069,8 +1135,11 @@ ipcMain.handle('report:save', async (_event, reportData: Omit<FixReport, 'id' | 
 // Scan destination for existing files and their hashes (for cross-run duplicate detection)
 ipcMain.handle('destination:prescan', async (_event, destinationPath: string) => {
   try {
+    console.log(`[Prescan] Starting destination prescan: ${destinationPath}`);
+    const prescanStart = Date.now();
     const settings = getSettings();
     const useHash = settings.thoroughDuplicateMatching;
+    console.log(`[Prescan] thoroughDuplicateMatching=${useHash}`);
     
     const existingHashes = new Map<string, string>(); // hash -> filename
     const existingHeuristics = new Map<string, string>(); // "filename|size" -> filename
@@ -1110,8 +1179,8 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
               const heuristicKey = `${entry.name}|${stats.size}`;
               existingHeuristics.set(heuristicKey, entry.name);
             } else {
-              // Hash mode: compute SHA-256
-              const hash = calculateFileHashSync(fullPath);
+              // Hash mode: compute SHA-256 (async with timeout)
+              const hash = await calculateFileHashAsync(fullPath);
               if (hash) {
                 existingHashes.set(hash, entry.name);
               }
@@ -1132,7 +1201,8 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
     if (fs.existsSync(destinationPath)) {
       await scanDir(destinationPath);
     }
-    
+
+    console.log(`[Prescan] Complete: ${totalFiles} files scanned in ${((Date.now() - prescanStart) / 1000).toFixed(1)}s (${existingHashes.size} hashes, ${existingHeuristics.size} heuristics)`);
     return {
       success: true,
       data: {
@@ -1178,8 +1248,10 @@ ipcMain.handle('files:copy', async (_event, data: {
   };
   existingDestinationHashes?: Record<string, string>;
   existingDestinationHeuristics?: Record<string, string>;
+  photoFormat?: 'original' | 'png' | 'jpg';
 }) => {
-  const { files, destinationPath, zipPaths = {} } = data;
+  const { files, destinationPath, zipPaths = {}, photoFormat = 'original' } = data;
+  console.log(`[Fix] Starting copy: ${files.length} files to ${destinationPath}, format=${photoFormat}`);
   copyFilesCancelled = false;
   const results: Array<{ 
     success: boolean; 
@@ -1234,18 +1306,128 @@ ipcMain.handle('files:copy', async (_event, data: {
       } catch {}
     };
     await scanForExisting(destinationPath);
-    
+    console.log(`[Fix] Destination scan complete: ${preExistingFiles.size} existing files found`);
+
+    // Cache source classifications to avoid running 'net use' subprocess per file
+    const sourceClassificationCache = new Map<string, ReturnType<typeof classifySource>>();
+    const getSourceClassification = (sourcePath: string) => {
+      if (!sourceClassificationCache.has(sourcePath)) {
+        try {
+          sourceClassificationCache.set(sourcePath, classifySource(sourcePath));
+        } catch {
+          sourceClassificationCache.set(sourcePath, { type: 'unknown', speed: 'medium', label: 'Unknown', description: '', isOptimal: false });
+        }
+      }
+      return sourceClassificationCache.get(sourcePath)!;
+    };
+
+    // Queue for parallel PNG/JPG conversions
+    const CONVERSION_BATCH_SIZE = 6;
+    const pendingConversions: Array<{
+      sourceInput: string | Buffer;
+      convertedPath: string;
+      format: 'jpg' | 'png';
+      fileIndex: number;
+      destPath: string;
+      subfolderPath: string;
+      file: typeof files[0];
+      finalFilename: string;
+    }> = [];
+
+    // Track actual completed files for accurate progress
+    let completedFiles = 0;
+
+    // Flush pending conversions in parallel batches
+    const flushConversions = async () => {
+      if (pendingConversions.length === 0) return;
+      const batch = pendingConversions.splice(0, pendingConversions.length);
+      console.log(`[Convert] Flushing batch of ${batch.length} conversions in parallel`);
+
+      const batchResults = await Promise.allSettled(
+        batch.map(async (task) => {
+          const conversionPromise = task.format === 'jpg'
+            ? sharp(task.sourceInput).jpeg({ quality: 92 }).toFile(task.convertedPath)
+            : sharp(task.sourceInput).png({ compressionLevel: 6, effort: 1 }).toFile(task.convertedPath);
+          await Promise.race([
+            conversionPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Conversion timeout')), 60000))
+          ]);
+        })
+      );
+
+      // Process results + EXIF + push to results
+      for (let b = 0; b < batch.length; b++) {
+        const task = batch[b];
+        const result = batchResults[b];
+        if (result.status === 'fulfilled') {
+          console.log(`[Convert] Done: ${path.basename(task.convertedPath)}`);
+
+          const targetExt = task.format === 'jpg' ? '.jpg' : '.png';
+          task.file.newFilename = task.finalFilename.replace(/\.[^.]+$/, targetExt);
+          usedFilenames.delete(path.join(task.subfolderPath, path.basename(task.destPath)).toLowerCase());
+          usedFilenames.add(path.join(task.subfolderPath, task.file.newFilename).toLowerCase());
+
+          // EXIF write immediately after writing to disk
+          let exifWritten = false;
+          let exifSource: string | undefined;
+          let exifError: string | undefined;
+          if (data.settings?.writeExif && task.file.derivedDate && task.file.dateConfidence) {
+            const derivedDate = new Date(task.file.derivedDate);
+            const exifResult = await writeExifDate(
+              task.convertedPath,
+              derivedDate,
+              task.file.dateConfidence,
+              task.file.dateSource || 'Unknown',
+              {
+                writeExif: data.settings.writeExif,
+                exifWriteConfirmed: data.settings.exifWriteConfirmed ?? true,
+                exifWriteRecovered: data.settings.exifWriteRecovered ?? true,
+                exifWriteMarked: data.settings.exifWriteMarked ?? false,
+              }
+            );
+            exifWritten = exifResult.written;
+            exifSource = exifResult.source;
+            if (!exifResult.success) exifError = exifResult.error;
+          }
+
+          results.push({
+            success: true,
+            sourcePath: task.file.sourcePath,
+            destPath: task.convertedPath,
+            finalFilename: task.file.newFilename,
+            exifWritten,
+            exifSource,
+            exifError
+          });
+        } else {
+          console.warn(`[Convert] Failed: ${path.basename(task.destPath)}:`, (result as PromiseRejectedResult).reason);
+          results.push({
+            success: false,
+            sourcePath: task.file.sourcePath,
+            destPath: task.destPath,
+            finalFilename: task.finalFilename,
+            error: (result as PromiseRejectedResult).reason?.message || 'Conversion failed'
+          });
+        }
+        // Update progress for each completed conversion
+        completedFiles++;
+        if (mainWindow) {
+          mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+        }
+      }
+
+      await yieldToEventLoop();
+    };
+
 	for (let i = 0; i < files.length; i++) {
 	  const file = files[i];
-	  
+
 	  // Yield every file to keep window responsive
 	  await yieldToEventLoop();
-	  
-	  // Send progress every file
-	  if (mainWindow) {
-	    mainWindow.webContents.send('files:copy:progress', { current: i + 1, total: files.length });
-	  }
-	  
+
+	  const fileStartTime = Date.now();
+	  console.log(`[Fix] Processing file ${i + 1}/${files.length}: ${path.basename(file.sourcePath)}`);
+
 	  // Check for cancellation
 	  if (copyFilesCancelled) {
 	    return { success: true, cancelled: true, results, copied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, duplicatesRemoved, duplicateFiles, skippedExisting };
@@ -1275,102 +1457,46 @@ ipcMain.handle('files:copy', async (_event, data: {
           fileSize = stats.size;
         } catch {
           results.push({ success: false, sourcePath: file.sourcePath, destPath: '', finalFilename: file.newFilename, error: 'File not found' });
+          completedFiles++;
+          if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
           continue;
         }
       }
       
-      // GLOBAL duplicate check at write-time (ignores analysis isDuplicate flag)
+      // Pre-copy duplicate check: heuristic mode (filename + size, no file read needed)
+      // Hash-based duplicate check happens DURING copy to avoid reading the file twice
+      let useHashForThisFile = false;
       if (skipDuplicates) {
-        let existingFile: string | undefined;
-        let duplicateMethod: 'hash' | 'heuristic' = 'hash';
         const forceHash = data.settings?.thoroughDuplicateMatching ?? false;
-        
-        // Smart per-source logic: local sources use hash, network/cloud use heuristic
-        // Settings toggle overrides: when ON, forces hash for everything
-        let useHashForThisFile = forceHash;
+        useHashForThisFile = forceHash;
         if (!forceHash) {
-          // Determine source type from originSourcePath or sourcePath
           const sourcePathToClassify = file.originSourcePath || file.sourcePath;
-          try {
-            const classification = classifySource(sourcePathToClassify);
-            // Local sources (internal, usb, direct-attached) → hash
-            // Network/cloud sources (network, cloud) → heuristic
-            useHashForThisFile = classification.type !== 'network' && classification.type !== 'cloud-sync';
-          } catch {
-            // If classification fails, default to heuristic (safer/faster)
-            useHashForThisFile = false;
-          }
+          const classification = getSourceClassification(sourcePathToClassify);
+          useHashForThisFile = classification.type !== 'network' && classification.type !== 'cloud-sync';
         }
-        
-        if (!useHashForThisFile) {
-          // HEURISTIC MODE: match by original filename + file size
-          // Much faster — no need to read file contents
+
+        // For non-hash mode or large files, do heuristic check now (instant, no I/O)
+        if (!useHashForThisFile || fileSize > LARGE_FILE_THRESHOLD) {
           const heuristicKey = `${path.basename(file.sourcePath)}|${fileSize}`;
-          existingFile = writtenHeuristics.get(heuristicKey);
-          duplicateMethod = 'heuristic';
-          if (!existingFile) {
-            writtenHeuristics.set(heuristicKey, file.newFilename);
+          const existingFile = writtenHeuristics.get(heuristicKey);
+          if (existingFile) {
+            const wasExisting = existingFile.startsWith('[existing] ');
+            duplicatesRemoved++;
+            duplicateFiles.push({
+              filename: path.basename(file.sourcePath),
+              duplicateOf: existingFile.replace('[existing] ', ''),
+              duplicateMethod: 'heuristic',
+              wasExisting
+            });
+            completedFiles++;
+            if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+            continue; // Skip — duplicate found via heuristic
           }
-        } else if (fileSize > LARGE_FILE_THRESHOLD) {
-          // HASH MODE but file too large: heuristic fallback
-          const heuristicKey = `${path.basename(file.sourcePath)}|${fileSize}`;
-          existingFile = writtenHeuristics.get(heuristicKey);
-          duplicateMethod = 'heuristic';
-          if (!existingFile) {
-            writtenHeuristics.set(heuristicKey, file.newFilename);
-          }
-        } else {
-          // HASH MODE: compute SHA-256 hash
-          try {
-            let hash: string;
-            if (fileBuffer) {
-              hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-            } else {
-              // Read file for hashing (async streaming)
-              hash = await new Promise<string>((resolve, reject) => {
-                const hashObj = crypto.createHash('sha256');
-                const stream = fs.createReadStream(file.sourcePath, { highWaterMark: 64 * 1024 });
-                stream.on('data', (chunk) => hashObj.update(chunk));
-                stream.on('end', () => resolve(hashObj.digest('hex')));
-                stream.on('error', reject);
-              });
-            }
-            
-            existingFile = writtenHashes.get(hash);
-            if (!existingFile) {
-              writtenHashes.set(hash, file.newFilename);
-            }
-          } catch (hashError) {
-            // Hash failed - fallback to heuristic for files >= 5MB
-            if (fileSize >= MIN_HEURISTIC_SIZE) {
-              const heuristicKey = `${path.basename(file.sourcePath)}|${fileSize}`;
-              existingFile = writtenHeuristics.get(heuristicKey);
-              duplicateMethod = 'heuristic';
-              if (!existingFile) {
-                writtenHeuristics.set(heuristicKey, file.newFilename);
-              }
-            }
-          }
-        }
-        
-        if (existingFile) {
-          const wasExisting = existingFile.startsWith('[existing] ');
-          duplicatesRemoved++;
-          duplicateFiles.push({ 
-            filename: path.basename(file.sourcePath), 
-            duplicateOf: existingFile.replace('[existing] ', ''),
-            duplicateMethod,
-            wasExisting
-          });
-          continue; // Skip writing this file
+          writtenHeuristics.set(heuristicKey, file.newFilename);
+          useHashForThisFile = false; // Already handled
         }
       }
-      
-      // Read file buffer for folder files (if not already loaded for hash)
-      if (!fileBuffer && file.sourceType !== 'zip') {
-        // We'll use copyFileSync below, no need to load buffer
-      }
-      
+
       // Collision handling: generate unique filename
       let finalFilename = file.newFilename;
       const ext = path.extname(finalFilename);
@@ -1408,29 +1534,130 @@ ipcMain.handle('files:copy', async (_event, data: {
           wasExisting: true
         });
         usedFilenames.add(path.join(subfolderPath, finalFilename).toLowerCase());
+        completedFiles++;
+        if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
         continue;
       }
-      
+
+      // When converting formats, also check for collisions against the target extension
+      // e.g., IMG_001.jpg and IMG_001.tif would both become IMG_001.png
+      const willConvert = photoFormat !== 'original' && (() => {
+        const srcExt = path.extname(finalFilename).toLowerCase();
+        const photoExts = new Set(['.jpg','.jpeg','.png','.bmp','.tiff','.tif','.webp','.heic','.heif','.gif','.avif']);
+        const targetExt = photoFormat === 'jpg' ? '.jpg' : '.png';
+        return photoExts.has(srcExt) && srcExt !== targetExt && !(srcExt === '.jpeg' && targetExt === '.jpg');
+      })();
+      const convertedExt = willConvert ? (photoFormat === 'jpg' ? '.jpg' : '.png') : null;
+
       let counter = 1;
-      while (usedFilenames.has(path.join(subfolderPath, finalFilename).toLowerCase()) || 
-             fs.existsSync(path.join(targetDir, finalFilename))) {
+      while (usedFilenames.has(path.join(subfolderPath, finalFilename).toLowerCase()) ||
+             fs.existsSync(path.join(targetDir, finalFilename)) ||
+             (convertedExt && usedFilenames.has(path.join(subfolderPath, baseName + convertedExt).toLowerCase())) ||
+             (convertedExt && counter === 1 && fs.existsSync(path.join(targetDir, baseName + convertedExt)))) {
         finalFilename = `${baseName}_${String(counter).padStart(3, '0')}${ext}`;
         counter++;
       }
       usedFilenames.add(path.join(subfolderPath, finalFilename).toLowerCase());
+      // Also reserve the converted filename to prevent future collisions
+      if (convertedExt) {
+        const convertedName = finalFilename.replace(/\.[^.]+$/, convertedExt);
+        usedFilenames.add(path.join(subfolderPath, convertedName).toLowerCase());
+      }
       
       const destPath = path.join(targetDir, finalFilename);
       
       try {
-        if (file.sourceType === 'zip' && fileBuffer) {
-          fs.writeFileSync(destPath, fileBuffer);
-        } else if (file.sourceType === 'zip') {
+        // Determine the source data for this file
+        const isZipWithBuffer = file.sourceType === 'zip' && fileBuffer;
+        const isZipWithoutBuffer = file.sourceType === 'zip' && !fileBuffer;
+
+        if (isZipWithoutBuffer) {
           results.push({ success: false, sourcePath: file.sourcePath, destPath, finalFilename, error: 'Entry not found in zip' });
+          completedFiles++;
+          if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+          continue;
+        }
+
+        // If converting format, go directly from source → converted destination
+        if (willConvert) {
+          const targetExt = photoFormat === 'jpg' ? '.jpg' : '.png';
+          const convertedPath = destPath.replace(/\.[^.]+$/, targetExt);
+          console.log(`[Convert] Queuing ${path.basename(file.sourcePath)} → ${path.basename(convertedPath)}`);
+
+          const sourceInput = isZipWithBuffer ? fileBuffer! : file.sourcePath;
+          pendingConversions.push({
+            sourceInput,
+            convertedPath,
+            format: photoFormat as 'jpg' | 'png',
+            fileIndex: i,
+            destPath,
+            subfolderPath,
+            file,
+            finalFilename,
+          });
+
+          // Flush when batch is full
+          if (pendingConversions.length >= CONVERSION_BATCH_SIZE) {
+            await flushConversions();
+          }
+
+          // Skip EXIF and results for now — handled after loop for converted files
           continue;
         } else {
-          await streamCopyFile(file.sourcePath, destPath);
+          // No conversion needed — straight copy (compute hash during copy if needed)
+          let copyHash: string | null = null;
+          if (isZipWithBuffer) {
+            if (skipDuplicates && useHashForThisFile) {
+              copyHash = crypto.createHash('sha256').update(fileBuffer!).digest('hex');
+            }
+            fs.writeFileSync(destPath, fileBuffer!);
+          } else {
+            copyHash = await streamCopyFile(file.sourcePath, destPath, skipDuplicates && useHashForThisFile);
+          }
+
+          // Post-copy hash-based duplicate check (hash was computed during copy, zero extra I/O)
+          if (skipDuplicates && useHashForThisFile && copyHash) {
+            const existingFile = writtenHashes.get(copyHash);
+            if (existingFile) {
+              // Duplicate found — remove the just-written file
+              try { await fs.promises.unlink(destPath); } catch {}
+              const wasExisting = existingFile.startsWith('[existing] ');
+              duplicatesRemoved++;
+              duplicateFiles.push({
+                filename: path.basename(file.sourcePath),
+                duplicateOf: existingFile.replace('[existing] ', ''),
+                duplicateMethod: 'hash',
+                wasExisting
+              });
+              completedFiles++;
+              if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+              continue;
+            }
+            writtenHashes.set(copyHash, file.newFilename);
+          }
         }
-        
+
+        console.log(`[Fix] File ${i + 1} copy+hash took ${Date.now() - fileStartTime}ms`);
+
+        // Normalise extension (.jpeg → .jpg, .tiff → .tif) even if no format conversion
+        if (photoFormat === 'original') {
+          const srcExt = path.extname(destPath).toLowerCase();
+          const normMap: Record<string, string> = { '.jpeg': '.jpg', '.tiff': '.tif' };
+          if (normMap[srcExt]) {
+            const normPath = destPath.replace(/\.[^.]+$/, normMap[srcExt]);
+            try {
+              await fs.promises.rename(destPath, normPath);
+              finalFilename = finalFilename.replace(/\.[^.]+$/, normMap[srcExt]);
+              usedFilenames.delete(path.join(subfolderPath, path.basename(destPath)).toLowerCase());
+              usedFilenames.add(path.join(subfolderPath, finalFilename).toLowerCase());
+              Object.defineProperty(file, '_convertedPath', { value: normPath });
+            } catch {}
+          }
+        }
+
+        // Resolve actual destPath for EXIF and results
+        const actualDestPath = (file as any)._convertedPath || destPath;
+
         // Attempt EXIF write if enabled
         let exifWritten = false;
         let exifSource: string | undefined;
@@ -1439,7 +1666,7 @@ ipcMain.handle('files:copy', async (_event, data: {
         if (data.settings?.writeExif && file.derivedDate && file.dateConfidence) {
           const derivedDate = new Date(file.derivedDate);
           const exifResult = await writeExifDate(
-            destPath,
+            actualDestPath,
             derivedDate,
             file.dateConfidence,
             file.dateSource || 'Unknown',
@@ -1457,21 +1684,34 @@ ipcMain.handle('files:copy', async (_event, data: {
           }
         }
         
-        results.push({ 
-          success: true, 
-          sourcePath: file.sourcePath, 
-          destPath, 
+        console.log(`[Fix] File ${i + 1} total took ${Date.now() - fileStartTime}ms (exif=${exifWritten})`);
+        results.push({
+          success: true,
+          sourcePath: file.sourcePath,
+          destPath: actualDestPath,
           finalFilename,
           exifWritten,
           exifSource,
           exifError
         });
+        // Update progress for non-converted files
+        completedFiles++;
+        if (mainWindow) {
+          mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+        }
       } catch (err) {
         results.push({ success: false, sourcePath: file.sourcePath, destPath, finalFilename, error: (err as Error).message });
+        completedFiles++;
+        if (mainWindow) {
+          mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+        }
       }
       
     }
-    
+
+    // Flush any remaining queued conversions (EXIF is written inside flushConversions)
+    await flushConversions();
+
     return { success: true, results, copied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, duplicatesRemoved, duplicateFiles, skippedExisting };
   } catch (error) {
     return { success: false, error: (error as Error).message, results, duplicatesRemoved, duplicateFiles };
@@ -1628,6 +1868,10 @@ ipcMain.handle('set-title-bar-color', (_event, isDark: boolean) => {
       symbolColor: '#ffffff',
     });
   }
+  // Sync theme to People window if open
+  if (peopleWindow && !peopleWindow.isDestroyed()) {
+    peopleWindow.webContents.send('people:themeChange', isDark);
+  }
 });
 
 // Settings IPC handlers
@@ -1675,7 +1919,27 @@ ipcMain.handle('license:getMachineId', async () => {
 // ─── Search & Discovery IPC handlers ─────────────────────────────────────────
 
 ipcMain.handle('search:init', async () => {
-  return initDatabase();
+  const result = initDatabase();
+  // Run data integrity cleanup after database is ready
+  if (result.success) {
+    try {
+      const cleanup = runDatabaseCleanup();
+      if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
+        console.log(`[Startup Cleanup] Removed: ${cleanup.duplicateRunsRemoved} duplicate runs, ${cleanup.ghostRunsRemoved} ghost runs, ${cleanup.orphanRunsRemoved} orphan runs, ${cleanup.duplicatesRemoved} duplicate files, ${cleanup.staleRemoved} stale files (checked ${cleanup.totalChecked} total)`);
+      }
+      // Send stale runs to renderer for user decision (relocate/reconnect/remove)
+      if (cleanup.staleRuns.length > 0) {
+        console.log(`[Startup] ${cleanup.staleRuns.length} indexed run(s) have missing destination folders — prompting user`);
+        // Delay slightly to ensure window is ready
+        setTimeout(() => {
+          mainWindow?.webContents.send('search:staleRuns', cleanup.staleRuns);
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('[Startup Cleanup] Error:', (err as Error).message);
+    }
+  }
+  return result;
 });
 
 ipcMain.handle('search:indexRun', async (_event, reportId: string) => {
@@ -1755,6 +2019,24 @@ ipcMain.handle('search:rebuildIndex', async () => {
   try {
     clearAllIndexData();
     return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('search:cleanup', async () => {
+  try {
+    const result = runDatabaseCleanup();
+    return { success: true, data: result };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('search:relocateRun', async (_event, runId: number, newPath: string) => {
+  try {
+    const updated = relocateRun(runId, newPath);
+    return { success: true, data: { filesUpdated: updated } };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -1863,6 +2145,68 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
   }
 });
 
+// ═══ People Manager Window ═══════════════════════════════════════════════════
+
+let peopleWindow: BrowserWindow | null = null;
+
+ipcMain.handle('people:open', async () => {
+  try {
+    // If already open, focus it
+    if (peopleWindow && !peopleWindow.isDestroyed()) {
+      peopleWindow.focus();
+      return { success: true };
+    }
+
+    // Detect dark mode from main window's document class
+    const isDark = await mainWindow?.webContents.executeJavaScript(
+      'document.documentElement.classList.contains("dark")'
+    ).catch(() => false) ?? false;
+
+    peopleWindow = new BrowserWindow({
+      width: 1120,
+      height: 780,
+      minWidth: 700,
+      minHeight: 500,
+      backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
+      title: 'People — Photo Date Rescue',
+      parent: mainWindow ?? undefined,
+      roundedCorners: true,
+      thickFrame: true,
+      icon: app.isPackaged
+        ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
+        : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        zoomFactor: 1.0,
+      },
+    });
+
+    const peoplePage = path.join(__dirname, '../dist/public/people.html');
+
+    peopleWindow.loadFile(peoplePage, {
+      query: { dark: isDark ? '1' : '0' },
+    });
+
+    peopleWindow.on('closed', () => {
+      peopleWindow = null;
+    });
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// People window notifies main window that data changed
+ipcMain.handle('people:changed', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('people:dataChanged');
+  }
+  return { success: true };
+});
+
 // ═══ AI Recognition IPC Handlers ═══════════════════════════════════════════
 
 ipcMain.handle('ai:start', async () => {
@@ -1874,13 +2218,32 @@ ipcMain.handle('ai:start', async () => {
   }
 });
 
+ipcMain.handle('ai:modelsReady', async () => {
+  return { success: true, data: areModelsDownloaded() };
+});
+
 ipcMain.handle('ai:cancel', async () => {
   cancelAiProcessing();
   return { success: true };
 });
 
+ipcMain.handle('ai:pause', async () => {
+  pauseAiProcessing();
+  return { success: true };
+});
+
+ipcMain.handle('ai:resume', async () => {
+  resumeAiProcessing();
+  return { success: true };
+});
+
 ipcMain.handle('ai:status', async () => {
-  return { success: true, data: { isProcessing: isAiProcessing() } };
+  return { success: true, data: { isProcessing: isAiProcessing(), isPaused: isAiPaused() } };
+});
+
+ipcMain.handle('ai:replayLogs', async () => {
+  const { replayWorkerLogs } = await import('./ai-manager.js');
+  return { success: true, data: replayWorkerLogs() };
 });
 
 ipcMain.handle('ai:stats', async () => {
@@ -1895,6 +2258,14 @@ ipcMain.handle('ai:stats', async () => {
 ipcMain.handle('ai:listPersons', async () => {
   try {
     return { success: true, data: listPersons() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:personsCooccurrence', async (_event, selectedPersonIds: number[]) => {
+  try {
+    return { success: true, data: getPersonsWithCooccurrence(selectedPersonIds) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -1917,10 +2288,160 @@ ipcMain.handle('ai:namePerson', async (_event, name: string, clusterId?: number,
   }
 });
 
-ipcMain.handle('ai:assignFace', async (_event, faceId: number, personId: number) => {
+ipcMain.handle('ai:assignFace', async (_event, faceId: number, personId: number, verified: boolean = false) => {
   try {
-    assignPersonToFace(faceId, personId);
+    assignPersonToFace(faceId, personId, verified);
+    // Rebuild FTS for the affected file so search reflects the reassignment
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    const face = database.prepare(`SELECT file_id FROM face_detections WHERE id = ?`).get(faceId) as { file_id: number } | undefined;
+    if (face) rebuildAiFts(face.file_id);
     return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:batchVerify', async (_event, personIds: number[]) => {
+  try {
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    const stmt = database.prepare('UPDATE face_detections SET verified = 1 WHERE person_id = ? AND verified = 0');
+    const fileStmt = database.prepare('SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?');
+    const affectedFiles = new Set<number>();
+    for (const personId of personIds) {
+      stmt.run(personId);
+      const files = fileStmt.all(personId) as { file_id: number }[];
+      for (const f of files) affectedFiles.add(f.file_id);
+    }
+    for (const fileId of affectedFiles) rebuildAiFts(fileId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:unnameFace', async (_event, faceId: number) => {
+  try {
+    unnameFace(faceId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:renamePerson', async (_event, personId: number, newName: string) => {
+  try {
+    renamePerson(personId, newName);
+    // Rebuild FTS for all affected files
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(personId) as { file_id: number }[];
+    for (const f of files) rebuildAiFts(f.file_id);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:setRepresentativeFace', async (_event, personId: number, faceId: number) => {
+  try {
+    const { setPersonRepresentativeFace } = await import('./search-database.js');
+    setPersonRepresentativeFace(personId, faceId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:mergePersons', async (_event, targetPersonId: number, sourcePersonId: number) => {
+  try {
+    const facesReassigned = mergePersons(targetPersonId, sourcePersonId);
+    // Rebuild FTS for all affected files
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(targetPersonId) as { file_id: number }[];
+    for (const f of files) rebuildAiFts(f.file_id);
+    return { success: true, data: { facesReassigned } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:deletePerson', async (_event, personId: number) => {
+  try {
+    // Get the person info first for the response
+    const person = getPersonById(personId);
+    if (!person) return { success: false, error: 'Person not found' };
+    // Get affected file IDs before deletion (for FTS rebuild)
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    const affectedFiles = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(personId) as { file_id: number }[];
+    // Delete the person
+    const result = deletePerson(personId);
+    // Rebuild FTS for affected files
+    for (const f of affectedFiles) rebuildAiFts(f.file_id);
+    return { success: true, data: { ...result, personName: person.name } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:getPersonInfo', async (_event, personId: number) => {
+  try {
+    const person = getPersonById(personId);
+    return { success: true, data: person };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:permanentlyDeletePerson', async (_event, personId: number) => {
+  try {
+    // Check if this is a special marker person (__ignored__ / __unsure__)
+    const person = getPersonById(personId);
+    if (person && (person.name === '__ignored__' || person.name === '__unsure__')) {
+      // Delete the face detection records entirely and clean up
+      const { deleteFacesByPerson } = await import('./search-database.js');
+      deleteFacesByPerson(personId);
+      return { success: true };
+    }
+    // Normal flow: only delete discarded persons
+    const success = permanentlyDeletePerson(personId);
+    return { success };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:restorePerson', async (_event, personId: number) => {
+  try {
+    const success = restorePerson(personId);
+    return { success };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:listDiscardedPersons', async () => {
+  try {
+    return { success: true, data: listDiscardedPersons() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:visualSuggestions', async (_event, faceId: number) => {
+  try {
+    return { success: true, data: getVisualSuggestions(faceId) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:clusterFaceCount', async (_event, clusterId: number, personId?: number) => {
+  try {
+    return { success: true, data: getClusterFaceCount(clusterId, personId) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -1957,6 +2478,360 @@ ipcMain.handle('ai:clearAll', async () => {
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
+});
+
+ipcMain.handle('ai:personClusters', async () => {
+  try {
+    cleanupOrphanedPersons();
+    return { success: true, data: getPersonClusters() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:clusterFaces', async (_event, clusterId: number, page: number = 0, perPage: number = 40, personId?: number) => {
+  try {
+    return { success: true, data: getClusterFaces(clusterId, page, perPage, personId) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:recluster', async (_event, threshold: number) => {
+  try {
+    runFaceClustering(threshold);
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+
+    // ── STEP 1: Find core cluster for each named person ──
+    // For each person_id, find which new cluster_id holds the most of their
+    // named faces (including verified). That cluster is the "core".
+    const allNamedFaces = database.prepare(`
+      SELECT id, cluster_id, person_id, verified FROM face_detections WHERE person_id IS NOT NULL
+    `).all() as { id: number; cluster_id: number; person_id: number; verified: number }[];
+
+    // Group by person_id → cluster_id → face IDs
+    const personClusters = new Map<number, Map<number, number[]>>();
+    for (const f of allNamedFaces) {
+      if (!personClusters.has(f.person_id)) personClusters.set(f.person_id, new Map());
+      const clusterMap = personClusters.get(f.person_id)!;
+      if (!clusterMap.has(f.cluster_id)) clusterMap.set(f.cluster_id, []);
+      clusterMap.get(f.cluster_id)!.push(f.id);
+    }
+
+    // Determine core cluster for each person (the one with the most faces)
+    const personCoreCluster = new Map<number, number>(); // person_id → core cluster_id
+    const resetStmt = database.prepare('UPDATE face_detections SET person_id = NULL, verified = 0 WHERE id = ?');
+    for (const [personId, clusterMap] of personClusters) {
+      let maxCount = 0;
+      let coreClusterId = 0;
+      for (const [clusterId, faceIds] of clusterMap) {
+        if (faceIds.length > maxCount) { maxCount = faceIds.length; coreClusterId = clusterId; }
+      }
+      personCoreCluster.set(personId, coreClusterId);
+
+      // Split: reset person_id on unverified faces NOT in the core cluster
+      for (const [clusterId, faceIds] of clusterMap) {
+        if (clusterId !== coreClusterId) {
+          for (const faceId of faceIds) {
+            // Only unname unverified faces — verified stay locked
+            const face = allNamedFaces.find(f => f.id === faceId);
+            if (face && !face.verified) {
+              resetStmt.run(faceId);
+            }
+          }
+        }
+      }
+    }
+
+    // ── STEP 2: Re-merge — assign unnamed faces in a core cluster back to the person ──
+    // When going from strict to loose, faces that were previously split off may now be
+    // back in the same cluster as a named person. Re-assign them.
+    const assignStmt = database.prepare('UPDATE face_detections SET person_id = ? WHERE id = ? AND person_id IS NULL');
+    for (const [personId, coreClusterId] of personCoreCluster) {
+      // Find all unnamed, unverified faces in this person's core cluster
+      const unnamedInCore = database.prepare(`
+        SELECT id FROM face_detections WHERE cluster_id = ? AND person_id IS NULL
+      `).all(coreClusterId) as { id: number }[];
+      for (const { id } of unnamedInCore) {
+        assignStmt.run(personId, id);
+      }
+    }
+
+    const faceFileIds = database.prepare('SELECT DISTINCT file_id FROM face_detections').all() as { file_id: number }[];
+    for (const { file_id } of faceFileIds) rebuildAiFts(file_id);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:faceCrop', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 96) => {
+  try {
+    const sharp = (await import('sharp')).default;
+    const metadata = await sharp(filePath, { failOnError: false }).metadata();
+    if (!metadata.width || !metadata.height) return { success: false, error: 'Could not read image' };
+
+    const imgW = metadata.width;
+    const imgH = metadata.height;
+
+    // Convert normalised coords to pixels
+    let px = Math.round(boxX * imgW);
+    let py = Math.round(boxY * imgH);
+    let pw = Math.round(boxW * imgW);
+    let ph = Math.round(boxH * imgH);
+
+    // Expand crop area slightly and make it square for nicer thumbnails
+    const padding = Math.round(Math.max(pw, ph) * 0.25);
+    const sideLen = Math.max(pw, ph) + padding * 2;
+    const cx = px + pw / 2;
+    const cy = py + ph / 2;
+    px = Math.round(cx - sideLen / 2);
+    py = Math.round(cy - sideLen / 2);
+    pw = sideLen;
+    ph = sideLen;
+
+    // Clamp to image bounds
+    px = Math.max(0, px);
+    py = Math.max(0, py);
+    pw = Math.min(pw, imgW - px);
+    ph = Math.min(ph, imgH - py);
+
+    if (pw <= 0 || ph <= 0) return { success: false, error: 'Invalid crop area' };
+
+    const buffer = await sharp(filePath, { failOnError: false })
+      .extract({ left: px, top: py, width: pw, height: ph })
+      .resize(size, size, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const dataUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+    return { success: true, dataUrl };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:faceContext', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240) => {
+  try {
+    const sharp = (await import('sharp')).default;
+    const metadata = await sharp(filePath, { failOnError: false }).metadata();
+    if (!metadata.width || !metadata.height) return { success: false, error: 'Could not read image' };
+
+    const imgW = metadata.width;
+    const imgH = metadata.height;
+
+    // Convert normalised coords to pixels
+    const faceX = Math.round(boxX * imgW);
+    const faceY = Math.round(boxY * imgH);
+    const faceW = Math.round(boxW * imgW);
+    const faceH = Math.round(boxH * imgH);
+
+    // Create a wider crop area (3x the face size) for context
+    const expand = 1.5;
+    const contextW = Math.round(Math.max(faceW, faceH) * (1 + expand * 2));
+    const cx = faceX + faceW / 2;
+    const cy = faceY + faceH / 2;
+    let cropX = Math.round(cx - contextW / 2);
+    let cropY = Math.round(cy - contextW / 2);
+    let cropW = contextW;
+    let cropH = contextW;
+
+    // Clamp to image bounds
+    cropX = Math.max(0, cropX);
+    cropY = Math.max(0, cropY);
+    cropW = Math.min(cropW, imgW - cropX);
+    cropH = Math.min(cropH, imgH - cropY);
+    if (cropW <= 0 || cropH <= 0) return { success: false, error: 'Invalid crop' };
+
+    // Calculate face box position relative to the crop
+    const relX = faceX - cropX;
+    const relY = faceY - cropY;
+
+    // Scale factor from crop to output size
+    const scale = size / Math.max(cropW, cropH);
+    const boxPx = { x: Math.round(relX * scale), y: Math.round(relY * scale), w: Math.round(faceW * scale), h: Math.round(faceH * scale) };
+
+    // Create the crop
+    const cropped = await sharp(filePath, { failOnError: false })
+      .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
+      .resize(size, size, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    // Draw a face indicator box using SVG overlay
+    const strokeW = 2;
+    const svgBox = Buffer.from(`<svg width="${size}" height="${size}">
+      <rect x="${boxPx.x}" y="${boxPx.y}" width="${boxPx.w}" height="${boxPx.h}"
+            fill="none" stroke="#a855f7" stroke-width="${strokeW}" rx="3" opacity="0.85"/>
+    </svg>`);
+
+    const final = await sharp(cropped)
+      .composite([{ input: svgBox, top: 0, left: 0 }])
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const dataUrl = `data:image/jpeg;base64,${final.toString('base64')}`;
+    return { success: true, dataUrl };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ═══ Parallel Structure IPC Handlers ═════════════════════════════════════════
+
+let structureCopyCancelled = false;
+
+ipcMain.handle('structure:copy:cancel', async () => {
+  structureCopyCancelled = true;
+  return { success: true };
+});
+
+ipcMain.handle('structure:copy', async (_event, data: {
+  files: Array<{
+    sourcePath: string;
+    filename: string;
+    derivedDate: string | null;
+    sizeBytes: number;
+  }>;
+  destinationPath: string;
+  folderStructure: 'year' | 'year-month' | 'year-month-day';
+  mode: 'copy' | 'move';
+  skipDuplicates: boolean;
+}) => {
+  structureCopyCancelled = false;
+  const { files, destinationPath, folderStructure, mode, skipDuplicates } = data;
+  const results: Array<{ success: boolean; sourcePath: string; destPath: string; error?: string; originalDeleted?: boolean }> = [];
+  let copied = 0, failed = 0, skipped = 0, movedAndDeleted = 0;
+  const usedFilenames = new Set<string>();
+  const writtenHashes = new Map<string, string>(); // hash → destPath
+
+  // Scan pre-existing files at destination to skip duplicates
+  const preExisting = new Set<string>();
+  if (skipDuplicates) {
+    try {
+      const scanDir = async (dir: string, base: string) => {
+        const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile()) {
+            preExisting.add(path.join(base, entry.name).toLowerCase());
+          } else if (entry.isDirectory()) {
+            await scanDir(path.join(dir, entry.name), path.join(base, entry.name));
+          }
+        }
+      };
+      if (fs.existsSync(destinationPath)) await scanDir(destinationPath, '');
+    } catch (err) {
+      console.error('[Structure] Error scanning destination:', (err as Error).message);
+    }
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    if (structureCopyCancelled) {
+      return { success: true, results, copied, failed, skipped, movedAndDeleted, cancelled: true };
+    }
+
+    const file = files[i];
+    await yieldToEventLoop();
+
+    try {
+      // Build subfolder from derived date
+      let subfolderPath = '';
+      if (file.derivedDate) {
+        const date = new Date(file.derivedDate);
+        const year = date.getFullYear().toString();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+
+        if (folderStructure === 'year') subfolderPath = year;
+        else if (folderStructure === 'year-month') subfolderPath = path.join(year, month);
+        else if (folderStructure === 'year-month-day') subfolderPath = path.join(year, month, day);
+      } else {
+        subfolderPath = 'Undated';
+      }
+
+      const targetDir = path.join(destinationPath, subfolderPath);
+      await fs.promises.mkdir(targetDir, { recursive: true });
+
+      let finalFilename = file.filename;
+      const ext = path.extname(finalFilename);
+      const baseName = path.basename(finalFilename, ext);
+
+      // Skip pre-existing files by name
+      if (skipDuplicates && preExisting.has(path.join(subfolderPath, finalFilename).toLowerCase())) {
+        skipped++;
+        results.push({ success: true, sourcePath: file.sourcePath, destPath: '', error: 'Skipped: already exists at destination' });
+        mainWindow?.webContents.send('structure:copy:progress', { current: i + 1, total: files.length, currentFile: file.filename, phase: 'copying' });
+        continue;
+      }
+
+      // Handle filename collisions
+      let counter = 1;
+      while (usedFilenames.has(path.join(subfolderPath, finalFilename).toLowerCase()) ||
+             fs.existsSync(path.join(targetDir, finalFilename))) {
+        finalFilename = `${baseName}_${String(counter).padStart(3, '0')}${ext}`;
+        counter++;
+      }
+      usedFilenames.add(path.join(subfolderPath, finalFilename).toLowerCase());
+
+      const destPath = path.join(targetDir, finalFilename);
+
+      // Check source exists
+      if (!fs.existsSync(file.sourcePath)) {
+        failed++;
+        results.push({ success: false, sourcePath: file.sourcePath, destPath, error: 'Source file not found' });
+        mainWindow?.webContents.send('structure:copy:progress', { current: i + 1, total: files.length, currentFile: file.filename, phase: 'copying' });
+        continue;
+      }
+
+      // Copy with hash verification
+      mainWindow?.webContents.send('structure:copy:progress', { current: i + 1, total: files.length, currentFile: file.filename, phase: 'copying' });
+      const hash = await streamCopyFile(file.sourcePath, destPath, true) as string;
+
+      // Content-based dedup check
+      if (skipDuplicates && hash && writtenHashes.has(hash)) {
+        // Same content already written — remove this copy and skip
+        await fs.promises.unlink(destPath);
+        skipped++;
+        results.push({ success: true, sourcePath: file.sourcePath, destPath: '', error: `Skipped: duplicate of ${path.basename(writtenHashes.get(hash)!)}` });
+        mainWindow?.webContents.send('structure:copy:progress', { current: i + 1, total: files.length, currentFile: file.filename, phase: 'copying' });
+        continue;
+      }
+
+      if (hash) writtenHashes.set(hash, destPath);
+
+      // For move mode: verify hash match then delete original
+      if (mode === 'move') {
+        mainWindow?.webContents.send('structure:copy:progress', { current: i + 1, total: files.length, currentFile: file.filename, phase: 'verifying' });
+        // Verify by reading the destination file hash
+        const verifyHash = await streamCopyFile(destPath, destPath + '.verify_tmp', true) as string;
+        await fs.promises.unlink(destPath + '.verify_tmp'); // Remove the verify temp file
+
+        if (hash === verifyHash) {
+          mainWindow?.webContents.send('structure:copy:progress', { current: i + 1, total: files.length, currentFile: file.filename, phase: 'deleting' });
+          await fs.promises.unlink(file.sourcePath);
+          movedAndDeleted++;
+          results.push({ success: true, sourcePath: file.sourcePath, destPath, originalDeleted: true });
+        } else {
+          // Hash mismatch — keep both files, report error
+          results.push({ success: true, sourcePath: file.sourcePath, destPath, error: 'Copy verified but hash mismatch — original preserved', originalDeleted: false });
+        }
+      } else {
+        results.push({ success: true, sourcePath: file.sourcePath, destPath });
+      }
+
+      copied++;
+    } catch (err) {
+      failed++;
+      results.push({ success: false, sourcePath: file.sourcePath, destPath: '', error: (err as Error).message });
+    }
+
+    mainWindow?.webContents.send('structure:copy:progress', { current: i + 1, total: files.length, currentFile: file.filename, phase: 'copying' });
+  }
+
+  mainWindow?.webContents.send('structure:copy:progress', { current: files.length, total: files.length, currentFile: '', phase: 'complete' });
+  console.log(`[Structure] Complete: ${copied} copied, ${skipped} skipped, ${failed} failed${mode === 'move' ? `, ${movedAndDeleted} originals deleted` : ''}`);
+  return { success: true, results, copied, failed, skipped, movedAndDeleted, cancelled: false };
 });
 
 // Shutdown AI worker on app quit

@@ -17,9 +17,11 @@ export const optimisedDefaults = {
     aiAutoProcess: true,
     aiMinFaceConfidence: 0.7,
     aiMinTagConfidence: 0.3,
+    aiVisualSuggestions: true,
     // Auto-catalogue — cumulative CSV/TXT at destination root
     autoSaveCatalogue: true,
     showManualReportExports: false,
+    matchThreshold: 0.72,
 };
 const store = new Store({
     name: 'pdr-settings',
@@ -42,8 +44,10 @@ export function getSettings() {
         aiAutoProcess: store.get('aiAutoProcess', optimisedDefaults.aiAutoProcess),
         aiMinFaceConfidence: store.get('aiMinFaceConfidence', optimisedDefaults.aiMinFaceConfidence),
         aiMinTagConfidence: store.get('aiMinTagConfidence', optimisedDefaults.aiMinTagConfidence),
+        aiVisualSuggestions: store.get('aiVisualSuggestions', optimisedDefaults.aiVisualSuggestions),
         autoSaveCatalogue: store.get('autoSaveCatalogue', optimisedDefaults.autoSaveCatalogue),
         showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
+        matchThreshold: store.get('matchThreshold', optimisedDefaults.matchThreshold),
     };
 }
 export function setSetting(key, value) {

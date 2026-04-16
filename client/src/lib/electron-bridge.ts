@@ -92,12 +92,22 @@ export async function saveReport(reportData: Omit<FixReport, 'id' | 'timestamp'>
 }
 
 export async function copyFiles(data: {
-  files: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }>;
+  files: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip'; derivedDate?: string | null; dateConfidence?: string; dateSource?: string; isDuplicate?: boolean; duplicateOf?: string; originSourcePath?: string }>;
   destinationPath: string;
   zipPaths?: Record<string, string>;
+  folderStructure?: 'year' | 'year-month' | 'year-month-day';
+  settings?: {
+    skipDuplicates?: boolean;
+    thoroughDuplicateMatching?: boolean;
+    writeExif?: boolean;
+    exifWriteConfirmed?: boolean;
+    exifWriteRecovered?: boolean;
+    exifWriteMarked?: boolean;
+  };
   existingDestinationHashes?: Record<string, string>;
   existingDestinationHeuristics?: Record<string, string>;
-}): Promise<{ success: boolean; copied?: number; failed?: number; error?: string; skippedExisting?: number }> {
+  photoFormat?: 'original' | 'png' | 'jpg';
+}): Promise<{ success: boolean; copied?: number; failed?: number; error?: string; skippedExisting?: number; duplicatesRemoved?: number; duplicateFiles?: Array<{ filename: string; duplicateOf: string }>; results?: Array<{ success: boolean; sourcePath?: string; exifWritten?: boolean; exifSource?: string }> }> {
   if (isElectron()) {
     return (window as any).pdr.copyFiles(data);
   }
@@ -221,9 +231,12 @@ export interface PDRSettings {
   aiAutoProcess: boolean;
   aiMinFaceConfidence: number;
   aiMinTagConfidence: number;
+  aiVisualSuggestions: boolean;
   // Auto-catalogue
   autoSaveCatalogue: boolean;
   showManualReportExports: boolean;
+  // Face matching
+  matchThreshold: number;
 }
 
 const defaultSettings: PDRSettings = {
@@ -241,8 +254,10 @@ const defaultSettings: PDRSettings = {
   aiAutoProcess: true,
   aiMinFaceConfidence: 0.7,
   aiMinTagConfidence: 0.3,
+  aiVisualSuggestions: true,
   autoSaveCatalogue: true,
   showManualReportExports: false,
+  matchThreshold: 0.72,
 };
 
 export async function getSettings(): Promise<PDRSettings> {
@@ -513,17 +528,42 @@ export interface SearchQuery {
   monthTo?: number;
   cameraMake?: string[];
   cameraModel?: string[];
+  lensModel?: string[];
   hasGps?: boolean;
   country?: string[];
   city?: string[];
   runId?: number;
   destinationPath?: string[];
   extension?: string[];
+  dateFrom?: string;
+  dateTo?: string;
+  isoFrom?: number;
+  isoTo?: number;
+  apertureFrom?: number;
+  apertureTo?: number;
+  focalLengthFrom?: number;
+  focalLengthTo?: number;
+  flashFired?: boolean;
+  megapixelsFrom?: number;
+  megapixelsTo?: number;
+  sizeFrom?: number;
+  sizeTo?: number;
+  sceneCaptureType?: string[];
+  exposureProgram?: string[];
+  whiteBalance?: string[];
+  cameraPosition?: string[];
+  orientation?: string[];
   // AI filters
   personId?: number[];
   aiTag?: string[];
   hasFaces?: boolean;
   hasUnnamedFaces?: boolean;
+  hasAiTags?: boolean;
+  hasNamedPeople?: boolean;
+  aiProcessed?: 'all' | 'unprocessed' | 'faces_only' | 'tags_only' | 'both';
+  faceCountMin?: number;
+  faceCountMax?: number;
+  personTogetherIds?: number[];
   sortBy?: 'derived_date' | 'filename' | 'size_bytes' | 'confidence' | 'camera_model';
   sortDir?: 'asc' | 'desc';
   limit?: number;
@@ -708,6 +748,30 @@ export async function rebuildSearchIndex(): Promise<{ success: boolean; error?: 
   return { success: false, error: 'Not running in Electron' };
 }
 
+// Run database cleanup (remove duplicate files, stale files — returns stale runs for user decision)
+export async function runSearchCleanup(): Promise<{ success: boolean; data?: { staleRuns: any[]; duplicatesRemoved: number; staleRemoved: number; totalChecked: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.cleanup();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Relocate an indexed run to a new destination path
+export async function relocateSearchRun(runId: number, newPath: string): Promise<{ success: boolean; data?: { filesUpdated: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.relocateRun(runId, newPath);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Listen for stale runs detected on startup
+export function onStaleRuns(callback: (runs: IndexedRun[]) => void): () => void {
+  if (isElectron() && (window as any).pdr?.search?.onStaleRuns) {
+    return (window as any).pdr.search.onStaleRuns(callback);
+  }
+  return () => {};
+}
+
 // Index progress listener
 export function onSearchIndexProgress(callback: (progress: IndexProgress) => void): void {
   if (isElectron() && (window as any).pdr?.search) {
@@ -773,7 +837,7 @@ export async function openSearchViewer(filePath: string | string[], filename: st
 // ─── AI Recognition ────────────────────────────────────────────────────────
 
 export interface AiProgress {
-  phase: 'downloading-models' | 'processing' | 'clustering' | 'complete' | 'error';
+  phase: 'downloading-models' | 'processing' | 'clustering' | 'paused' | 'complete' | 'error';
   current: number;
   total: number;
   currentFile: string;
@@ -835,6 +899,42 @@ export async function cancelAi(): Promise<{ success: boolean }> {
   return { success: false };
 }
 
+export async function pauseAi(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.pause();
+  }
+  return { success: false };
+}
+
+export async function resumeAi(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.resume();
+  }
+  return { success: false };
+}
+
+export async function getVisualSuggestions(faceId: number): Promise<{ success: boolean; data?: { personId: number; personName: string; similarity: number }[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.visualSuggestions(faceId);
+  }
+  return { success: false };
+}
+
+export async function getClusterFaceCount(clusterId: number, personId?: number): Promise<{ success: boolean; data?: { faceCount: number; photoCount: number } }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.clusterFaceCount(clusterId, personId);
+  }
+  return { success: false };
+}
+
+export async function checkAiModelsReady(): Promise<boolean> {
+  if (isElectron() && (window as any).pdr?.ai?.modelsReady) {
+    const result = await (window as any).pdr.ai.modelsReady();
+    return result?.data === true;
+  }
+  return false;
+}
+
 export async function getAiStatus(): Promise<{ success: boolean; data?: { isProcessing: boolean } }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.status();
@@ -859,6 +959,106 @@ export async function listPersons(): Promise<{ success: boolean; data?: PersonRe
 export async function namePerson(name: string, clusterId?: number, avatarData?: string): Promise<{ success: boolean; data?: { personId: number } }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.namePerson(name, clusterId, avatarData);
+  }
+  return { success: false };
+}
+
+export async function unnameFace(faceId: number): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.unnameFace(faceId);
+  }
+  return { success: false };
+}
+
+export async function assignFace(faceId: number, personId: number, verified: boolean = false): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.assignFace(faceId, personId, verified);
+  }
+  return { success: false };
+}
+
+export async function batchVerifyPersons(personIds: number[]): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.batchVerify(personIds);
+  }
+  return { success: false };
+}
+
+export interface ClusterFacesResult {
+  faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+}
+
+export async function getPersonsCooccurrence(selectedPersonIds: number[]): Promise<{ success: boolean; data?: { id: number; name: string; photo_count: number; avatar_data: string | null }[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.personsCooccurrence(selectedPersonIds);
+  }
+  return { success: false };
+}
+
+export async function getClusterFaces(clusterId: number, page: number = 0, perPage: number = 40, personId?: number): Promise<{ success: boolean; data?: ClusterFacesResult }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.clusterFaces(clusterId, page, perPage, personId);
+  }
+  return { success: false };
+}
+
+export async function renamePerson(personId: number, newName: string): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.renamePerson(personId, newName);
+  }
+  return { success: false };
+}
+
+export async function setRepresentativeFace(personId: number, faceId: number): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.setRepresentativeFace(personId, faceId);
+  }
+  return { success: false };
+}
+
+export async function mergePersons(targetPersonId: number, sourcePersonId: number): Promise<{ success: boolean; data?: { facesReassigned: number } }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.mergePersons(targetPersonId, sourcePersonId);
+  }
+  return { success: false };
+}
+
+export async function deletePersonRecord(personId: number): Promise<{ success: boolean; data?: { facesUnlinked: number; photosAffected: number; personName: string } }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.deletePerson(personId);
+  }
+  return { success: false };
+}
+
+export async function permanentlyDeletePerson(personId: number): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.permanentlyDeletePerson(personId);
+  }
+  return { success: false };
+}
+
+export async function restorePerson(personId: number): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.restorePerson(personId);
+  }
+  return { success: false };
+}
+
+export interface DiscardedPerson {
+  id: number;
+  name: string;
+  avatar_data: string | null;
+  discarded_at: string;
+  created_at: string;
+}
+
+export async function listDiscardedPersons(): Promise<{ success: boolean; data?: DiscardedPerson[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.listDiscardedPersons();
   }
   return { success: false };
 }
@@ -891,6 +1091,60 @@ export async function clearAllAiData(): Promise<{ success: boolean }> {
   return { success: false };
 }
 
+export interface PersonCluster {
+  cluster_id: number;
+  person_id: number | null;
+  person_name: string | null;
+  face_count: number;
+  photo_count: number;
+  representative_face_id: number;
+  representative_file_id: number;
+  representative_file_path: string;
+  box_x: number;
+  box_y: number;
+  box_w: number;
+  box_h: number;
+  sample_faces: {
+    face_id: number;
+    file_id: number;
+    file_path: string;
+    box_x: number;
+    box_y: number;
+    box_w: number;
+    box_h: number;
+    confidence: number;
+    verified: number;
+  }[];
+}
+
+export async function getPersonClusters(): Promise<{ success: boolean; data?: PersonCluster[] }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.personClusters();
+  }
+  return { success: false };
+}
+
+export async function getFaceCrop(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 96): Promise<{ success: boolean; dataUrl?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.faceCrop(filePath, boxX, boxY, boxW, boxH, size);
+  }
+  return { success: false };
+}
+
+export async function reclusterFaces(threshold: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.recluster(threshold);
+  }
+  return { success: false };
+}
+
+export async function getFaceContext(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240): Promise<{ success: boolean; dataUrl?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.faceContext(filePath, boxX, boxY, boxW, boxH, size);
+  }
+  return { success: false };
+}
+
 export function onAiProgress(callback: (progress: AiProgress) => void): void {
   if (isElectron() && (window as any).pdr?.ai) {
     (window as any).pdr.ai.onProgress(callback);
@@ -901,4 +1155,92 @@ export function removeAiProgressListener(): void {
   if (isElectron() && (window as any).pdr?.ai) {
     (window as any).pdr.ai.removeProgressListener();
   }
+}
+
+// ─── People Window ──────────────────────────────────────────────────────────
+
+export async function openPeopleWindow(): Promise<void> {
+  if (isElectron() && (window as any).pdr?.people) {
+    return (window as any).pdr.people.open();
+  }
+}
+
+export function onPeopleDataChanged(callback: () => void): () => void {
+  if (isElectron() && (window as any).pdr?.people?.onDataChanged) {
+    return (window as any).pdr.people.onDataChanged(callback);
+  }
+  return () => {};
+}
+
+// ─── Parallel Structure ──────────────────────────────────────────────────────
+
+export interface StructureCopyRequest {
+  files: Array<{
+    sourcePath: string;
+    filename: string;
+    derivedDate: string | null;
+    sizeBytes: number;
+  }>;
+  destinationPath: string;
+  folderStructure: 'year' | 'year-month' | 'year-month-day';
+  mode: 'copy' | 'move';
+  skipDuplicates: boolean;
+}
+
+export interface StructureCopyResult {
+  success: boolean;
+  copied: number;
+  failed: number;
+  skipped: number;
+  movedAndDeleted?: number;
+  cancelled?: boolean;
+  error?: string;
+  results?: Array<{
+    success: boolean;
+    sourcePath: string;
+    destPath: string;
+    error?: string;
+    originalDeleted?: boolean;
+  }>;
+}
+
+export interface StructureProgress {
+  current: number;
+  total: number;
+  currentFile: string;
+  phase: 'copying' | 'verifying' | 'deleting' | 'complete';
+}
+
+export async function copyToStructure(data: StructureCopyRequest): Promise<StructureCopyResult> {
+  if (isElectron() && (window as any).pdr?.structure) {
+    return (window as any).pdr.structure.copyToStructure(data);
+  }
+  return { success: false, copied: 0, failed: 0, skipped: 0, error: 'Not in Electron' };
+}
+
+export async function cancelStructureCopy(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.structure) {
+    return (window as any).pdr.structure.cancel();
+  }
+  return { success: false };
+}
+
+export function onStructureProgress(callback: (progress: StructureProgress) => void): () => void {
+  if (isElectron() && (window as any).pdr?.structure) {
+    (window as any).pdr.structure.onProgress(callback);
+    return () => (window as any).pdr.structure.removeProgressListener();
+  }
+  return () => {};
+}
+
+export async function getDiskSpaceBridge(directoryPath: string): Promise<{ success: boolean; data?: { free: number; total: number } }> {
+  if (isElectron() && (window as any).pdr?.getDiskSpace) {
+    try {
+      const result = await (window as any).pdr.getDiskSpace(directoryPath);
+      return { success: true, data: result };
+    } catch {
+      return { success: false };
+    }
+  }
+  return { success: false };
 }

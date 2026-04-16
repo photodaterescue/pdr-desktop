@@ -27,10 +27,14 @@ export interface PDRSettings {
   aiAutoProcess: boolean;
   aiMinFaceConfidence: number;
   aiMinTagConfidence: number;
+  aiVisualSuggestions: boolean;
 
   // Auto-catalogue
   autoSaveCatalogue: boolean;
   showManualReportExports: boolean;
+
+  // People Manager
+  matchThreshold: number;
 }
 
 // Optimised defaults - safe configuration for most users
@@ -51,9 +55,11 @@ export const optimisedDefaults: PDRSettings = {
   aiAutoProcess: true,
   aiMinFaceConfidence: 0.7,
   aiMinTagConfidence: 0.3,
+  aiVisualSuggestions: true,
   // Auto-catalogue — cumulative CSV/TXT at destination root
   autoSaveCatalogue: true,
   showManualReportExports: false,
+  matchThreshold: 0.72,
 };
 
 const store = new Store<PDRSettings>({
@@ -78,8 +84,10 @@ export function getSettings(): PDRSettings {
     aiAutoProcess: store.get('aiAutoProcess', optimisedDefaults.aiAutoProcess),
     aiMinFaceConfidence: store.get('aiMinFaceConfidence', optimisedDefaults.aiMinFaceConfidence),
     aiMinTagConfidence: store.get('aiMinTagConfidence', optimisedDefaults.aiMinTagConfidence),
+    aiVisualSuggestions: store.get('aiVisualSuggestions', optimisedDefaults.aiVisualSuggestions),
     autoSaveCatalogue: store.get('autoSaveCatalogue', optimisedDefaults.autoSaveCatalogue),
     showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
+    matchThreshold: store.get('matchThreshold', optimisedDefaults.matchThreshold),
   };
 }
 

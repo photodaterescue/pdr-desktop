@@ -270,4 +270,14 @@
   .button-shadow {
     box-shadow: 0 10px 25px rgba(108, 99, 255, 0.3);
   }
+
+  /* ── Face action modal — fixed at top center of People page ────────── */
+  .fixed-action-modal {
+    position: fixed !important;
+    top: 120px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+  }
 }

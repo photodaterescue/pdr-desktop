@@ -18,7 +18,7 @@ removeAnalysisProgressListener: () => {
   ipcRenderer.removeAllListeners('analysis:progress');
 },
 
-copyFiles: (data: { files: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }>; destinationPath: string; zipPaths?: Record<string, string> }) => ipcRenderer.invoke('files:copy', data),
+copyFiles: (data: { files: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }>; destinationPath: string; zipPaths?: Record<string, string>; photoFormat?: 'original' | 'png' | 'jpg' }) => ipcRenderer.invoke('files:copy', data),
 onCopyProgress: (callback: (progress: { current: number; total: number }) => void) => {
   ipcRenderer.on('files:copy:progress', (_event: any, progress: any) => callback(progress));
 },
@@ -121,6 +121,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     filterOptions: () => ipcRenderer.invoke('search:filterOptions'),
     stats: () => ipcRenderer.invoke('search:stats'),
     rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
+    cleanup: () => ipcRenderer.invoke('search:cleanup'),
+    relocateRun: (runId: number, newPath: string) => ipcRenderer.invoke('search:relocateRun', runId, newPath),
+    onStaleRuns: (callback: (runs: any[]) => void) => {
+      const handler = (_event: any, runs: any[]) => callback(runs);
+      ipcRenderer.on('search:staleRuns', handler);
+      return () => ipcRenderer.removeListener('search:staleRuns', handler);
+    },
     onIndexProgress: (callback: (progress: any) => void) => {
       ipcRenderer.on('search:indexProgress', (_: any, data: any) => callback(data));
     },
@@ -140,20 +147,62 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   ai: {
     start: () => ipcRenderer.invoke('ai:start'),
     cancel: () => ipcRenderer.invoke('ai:cancel'),
+    pause: () => ipcRenderer.invoke('ai:pause'),
+    resume: () => ipcRenderer.invoke('ai:resume'),
     status: () => ipcRenderer.invoke('ai:status'),
     stats: () => ipcRenderer.invoke('ai:stats'),
     listPersons: () => ipcRenderer.invoke('ai:listPersons'),
     namePerson: (name: string, clusterId?: number, avatarData?: string) => ipcRenderer.invoke('ai:namePerson', name, clusterId, avatarData),
-    assignFace: (faceId: number, personId: number) => ipcRenderer.invoke('ai:assignFace', faceId, personId),
+    assignFace: (faceId: number, personId: number, verified?: boolean) => ipcRenderer.invoke('ai:assignFace', faceId, personId, verified ?? false),
+    batchVerify: (personIds: number[]) => ipcRenderer.invoke('ai:batchVerify', personIds),
+    unnameFace: (faceId: number) => ipcRenderer.invoke('ai:unnameFace', faceId),
+    renamePerson: (personId: number, newName: string) => ipcRenderer.invoke('ai:renamePerson', personId, newName),
+    setRepresentativeFace: (personId: number, faceId: number) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
+    mergePersons: (targetPersonId: number, sourcePersonId: number) => ipcRenderer.invoke('ai:mergePersons', targetPersonId, sourcePersonId),
+    deletePerson: (personId: number) => ipcRenderer.invoke('ai:deletePerson', personId),
+    permanentlyDeletePerson: (personId: number) => ipcRenderer.invoke('ai:permanentlyDeletePerson', personId),
+    restorePerson: (personId: number) => ipcRenderer.invoke('ai:restorePerson', personId),
+    listDiscardedPersons: () => ipcRenderer.invoke('ai:listDiscardedPersons'),
+    getPersonInfo: (personId: number) => ipcRenderer.invoke('ai:getPersonInfo', personId),
+    visualSuggestions: (faceId: number) => ipcRenderer.invoke('ai:visualSuggestions', faceId),
+    clusterFaceCount: (clusterId: number, personId?: number) => ipcRenderer.invoke('ai:clusterFaceCount', clusterId, personId),
     getFaces: (fileId: number) => ipcRenderer.invoke('ai:getFaces', fileId),
     getTags: (fileId: number) => ipcRenderer.invoke('ai:getTags', fileId),
     tagOptions: () => ipcRenderer.invoke('ai:tagOptions'),
     clearAll: () => ipcRenderer.invoke('ai:clearAll'),
+    personClusters: () => ipcRenderer.invoke('ai:personClusters'),
+    personsCooccurrence: (selectedPersonIds: number[]) => ipcRenderer.invoke('ai:personsCooccurrence', selectedPersonIds),
+    clusterFaces: (clusterId: number, page?: number, perPage?: number, personId?: number) => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId),
+    recluster: (threshold: number) => ipcRenderer.invoke('ai:recluster', threshold),
+    faceCrop: (filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size?: number) =>
+      ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),
+    faceContext: (filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size?: number) =>
+      ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
+    modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),
     onProgress: (callback: (progress: any) => void) => {
       ipcRenderer.on('ai:progress', (_: any, data: any) => callback(data));
     },
     removeProgressListener: () => {
       ipcRenderer.removeAllListeners('ai:progress');
+    },
+    onLog: (callback: (msg: string) => void) => {
+      ipcRenderer.on('ai:log', (_: any, msg: string) => callback(msg));
+    },
+    replayLogs: () => ipcRenderer.invoke('ai:replayLogs'),
+  },
+
+  people: {
+    open: () => ipcRenderer.invoke('people:open'),
+    notifyChange: () => ipcRenderer.invoke('people:changed'),
+    onThemeChange: (callback: (isDark: boolean) => void) => {
+      const handler = (_event: any, isDark: boolean) => callback(isDark);
+      ipcRenderer.on('people:themeChange', handler);
+      return () => ipcRenderer.removeListener('people:themeChange', handler);
+    },
+    onDataChanged: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('people:dataChanged', handler);
+      return () => ipcRenderer.removeListener('people:dataChanged', handler);
     },
   },
 
@@ -165,6 +214,17 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
     removeProgressListener: () => {
       ipcRenderer.removeAllListeners('prescan:progress');
+    },
+  },
+
+  structure: {
+    copyToStructure: (data: any) => ipcRenderer.invoke('structure:copy', data),
+    cancel: () => ipcRenderer.invoke('structure:copy:cancel'),
+    onProgress: (callback: (progress: any) => void) => {
+      ipcRenderer.on('structure:copy:progress', (_: any, data: any) => callback(data));
+    },
+    removeProgressListener: () => {
+      ipcRenderer.removeAllListeners('structure:copy:progress');
     },
   },
 });

@@ -8,23 +8,74 @@
  * - Results stored in SQLite via search-database.ts helpers
  */
 import { Worker } from 'worker_threads';
+import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
-import { getUnprocessedFileIds, getFileById, markAiProcessed, insertFaceDetections, insertAiTags, rebuildAiFts, getAllFaceEmbeddings, updateFaceCluster, } from './search-database.js';
+import { fileURLToPath } from 'url';
+import { app, powerSaveBlocker } from 'electron';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import { getUnprocessedFileIds, getFileById, markAiProcessed, insertFaceDetections, insertAiTags, rebuildAiFts, getAllFaceEmbeddings, updateFaceCluster, clearFaceDataForModelUpgrade, } from './search-database.js';
 import { getSettings } from './settings-store.js';
 // ─── State ───────────────────────────────────────────────────────────────────
 let worker = null;
 let isProcessing = false;
 let shouldCancel = false;
+let isPaused = false;
 let mainWindow = null;
 let totalFacesFound = 0;
 let totalTagsApplied = 0;
+let workerFacesAvailable = false;
+let workerTagsAvailable = false;
+let powerSaveBlockerId = null;
+// Buffer worker log messages so they can be replayed when the renderer connects
+const workerLogBuffer = [];
+const MAX_LOG_BUFFER = 200;
+function bufferAndSendLog(message) {
+    console.log(message);
+    workerLogBuffer.push(message);
+    if (workerLogBuffer.length > MAX_LOG_BUFFER)
+        workerLogBuffer.shift();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai:log', message);
+    }
+}
+/** Replay buffered log messages to the renderer (called when renderer requests them) */
+export function replayWorkerLogs() {
+    return [...workerLogBuffer];
+}
 // ─── Public API ──────────────────────────────────────────────────────────────
 export function setMainWindow(win) {
     mainWindow = win;
 }
 export function isAiProcessing() {
     return isProcessing;
+}
+/**
+ * Check whether AI models have been downloaded.
+ * Looks for ONNX model files in the cache directory.
+ */
+export function areModelsDownloaded() {
+    // Face models (@vladmandic/human) are bundled — always available
+    // Check if CLIP tagging model has been downloaded (ONNX file in cache)
+    const modelsDir = path.join(app.getPath('userData'), 'ai-models');
+    if (!fs.existsSync(modelsDir))
+        return false;
+    const findOnnx = (dir) => {
+        let count = 0;
+        try {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (entry.isDirectory())
+                    count += findOnnx(path.join(dir, entry.name));
+                else if (entry.name.endsWith('.onnx'))
+                    count++;
+                if (count >= 1)
+                    return count;
+            }
+        }
+        catch { }
+        return count;
+    };
+    return findOnnx(modelsDir) >= 1;
 }
 /**
  * Start processing all unprocessed photos.
@@ -42,6 +93,7 @@ export async function startAiProcessing() {
     }
     const enableFaces = settings.aiFaceDetection;
     const enableTags = settings.aiObjectTagging;
+    console.log(`[AI] Settings — enableFaces: ${enableFaces}, enableTags: ${enableTags}, aiEnabled: ${settings.aiEnabled}`);
     if (!enableFaces && !enableTags) {
         console.log('[AI] Both face detection and object tagging are disabled');
         return;
@@ -50,7 +102,16 @@ export async function startAiProcessing() {
     shouldCancel = false;
     totalFacesFound = 0;
     totalTagsApplied = 0;
+    // Prevent the system from sleeping while AI processing is running
+    if (powerSaveBlockerId === null) {
+        powerSaveBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+        console.log('[AI] Power save blocker started — system will stay awake during processing');
+    }
     try {
+        // Migrate old DETR face data to new model if needed
+        if (enableFaces) {
+            clearFaceDataForModelUpgrade();
+        }
         // Get unprocessed file IDs
         const task = enableFaces ? 'faces' : 'tags';
         const fileIds = getUnprocessedFileIds(task, 10000);
@@ -69,6 +130,20 @@ export async function startAiProcessing() {
                 console.log('[AI] Processing cancelled');
                 break;
             }
+            // Wait while paused
+            while (isPaused && !shouldCancel) {
+                sendProgress({
+                    phase: 'paused',
+                    current: i,
+                    total: fileIds.length,
+                    currentFile: 'Paused — click resume to continue',
+                    facesFound: totalFacesFound,
+                    tagsApplied: totalTagsApplied,
+                });
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            if (shouldCancel)
+                break;
             const file = getFileById(fileIds[i]);
             if (!file)
                 continue;
@@ -82,6 +157,7 @@ export async function startAiProcessing() {
             });
             try {
                 const result = await processFileInWorker(file.id, file.file_path);
+                bufferAndSendLog(`[AI] File ${file.id} (${file.filename}): result=${result ? 'OK' : 'null'}, faces=${result?.faces?.length ?? 0}, tags=${result?.tags?.length ?? 0}`);
                 if (result) {
                     // Store face detections
                     if (result.faces && result.faces.length > 0) {
@@ -111,10 +187,10 @@ export async function startAiProcessing() {
                         insertAiTags(tagRecords);
                         totalTagsApplied += result.tags.length;
                     }
-                    // Mark as processed
-                    if (enableFaces)
-                        markAiProcessed(file.id, 'faces', 'transformers-v1');
-                    if (enableTags)
+                    // Mark as processed — only for features that are actually working
+                    if (enableFaces && workerFacesAvailable)
+                        markAiProcessed(file.id, 'faces', 'human-v1');
+                    if (enableTags && workerTagsAvailable)
                         markAiProcessed(file.id, 'tags', 'transformers-v1');
                     // Update AI FTS
                     rebuildAiFts(file.id);
@@ -163,10 +239,38 @@ export async function startAiProcessing() {
     finally {
         isProcessing = false;
         shouldCancel = false;
+        // Release power save blocker
+        if (powerSaveBlockerId !== null) {
+            powerSaveBlocker.stop(powerSaveBlockerId);
+            powerSaveBlockerId = null;
+            console.log('[AI] Power save blocker released — system can sleep again');
+        }
     }
 }
 export function cancelAiProcessing() {
     shouldCancel = true;
+    isPaused = false; // Ensure cancel overrides pause
+}
+export function pauseAiProcessing() {
+    if (isProcessing && !isPaused) {
+        isPaused = true;
+        console.log('[AI] Processing paused by user');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ai:paused', true);
+        }
+    }
+}
+export function resumeAiProcessing() {
+    if (isProcessing && isPaused) {
+        isPaused = false;
+        console.log('[AI] Processing resumed by user');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ai:paused', false);
+        }
+    }
+}
+export function isAiPaused() {
+    return isPaused;
 }
 export function shutdownAiWorker() {
     if (worker) {
@@ -182,8 +286,18 @@ async function ensureWorker(settings) {
     const modelsDir = path.join(app.getPath('userData'), 'ai-models');
     return new Promise((resolve, reject) => {
         const workerPath = app.isPackaged
-            ? path.join(process.resourcesPath, 'dist-electron/ai-worker.js')
-            : path.join(__dirname, 'ai-worker.js');
+            ? path.join(process.resourcesPath, 'dist-electron/ai-worker.cjs')
+            : path.join(__dirname, 'ai-worker.cjs');
+        // Resolve the @vladmandic/human models path
+        let humanModelsPath;
+        if (app.isPackaged) {
+            // In production, models are bundled in extraResources
+            humanModelsPath = path.join(process.resourcesPath, 'human-models');
+        }
+        else {
+            // In development, use the models from node_modules
+            humanModelsPath = path.join(__dirname, '..', 'node_modules', '@vladmandic', 'human', 'models');
+        }
         worker = new Worker(workerPath, {
             workerData: {
                 modelsDir,
@@ -191,11 +305,14 @@ async function ensureWorker(settings) {
                 minTagConfidence: settings.aiMinTagConfidence,
                 enableFaces: settings.aiFaceDetection,
                 enableTags: settings.aiObjectTagging,
+                humanModelsPath,
             },
         });
         const onReady = (msg) => {
             if (msg.type === 'ready') {
-                console.log('[AI] Worker ready');
+                workerFacesAvailable = msg.facesAvailable ?? false;
+                workerTagsAvailable = msg.tagsAvailable ?? false;
+                bufferAndSendLog(`[AI] Worker ready — face detection: ${workerFacesAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}, tagging: ${workerTagsAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}`);
                 resolve();
             }
             else if (msg.type === 'model-progress') {
@@ -213,7 +330,7 @@ async function ensureWorker(settings) {
                 reject(new Error(msg.error || 'Worker initialization failed'));
             }
             else if (msg.type === 'log') {
-                console.log(`[AI Worker] ${msg.message}`);
+                bufferAndSendLog(`[AI Worker] ${msg.message}`);
             }
         };
         worker.on('message', onReady);
@@ -255,7 +372,7 @@ function processFileInWorker(fileId, filePath) {
     });
 }
 // ─── Face clustering (DBSCAN-like) ─────────────────────────────────────────
-function runFaceClustering() {
+export function runFaceClustering(customThreshold) {
     console.log('[AI] Running face clustering...');
     const faces = getAllFaceEmbeddings();
     if (faces.length === 0)
@@ -269,8 +386,11 @@ function runFaceClustering() {
     }));
     if (embeddings.length === 0)
         return;
-    // Simple clustering: cosine similarity threshold
-    const SIMILARITY_THRESHOLD = 0.55;
+    // Centroid-linkage clustering with seed anchor: each new face must be similar
+    // to both the cluster centroid AND the seed face. This prevents centroid drift
+    // from gradually pulling in unrelated people.
+    const SIMILARITY_THRESHOLD = customThreshold ?? 0.72;
+    const SEED_THRESHOLD = Math.max(0.55, SIMILARITY_THRESHOLD - 0.07); // slightly below centroid threshold
     const visited = new Set();
     let nextClusterId = 1;
     for (let i = 0; i < embeddings.length; i++) {
@@ -278,17 +398,29 @@ function runFaceClustering() {
             continue;
         visited.add(i);
         const cluster = [i];
-        const queue = [i];
-        while (queue.length > 0) {
-            const current = queue.shift();
+        const seed = embeddings[i].vec; // anchor — never changes
+        const dim = seed.length;
+        const centroid = new Float32Array(dim);
+        for (let d = 0; d < dim; d++)
+            centroid[d] = seed[d];
+        // Iteratively add faces that match both centroid and seed
+        let changed = true;
+        while (changed) {
+            changed = false;
             for (let j = 0; j < embeddings.length; j++) {
                 if (visited.has(j))
                     continue;
-                const sim = cosineSimilarity(embeddings[current].vec, embeddings[j].vec);
-                if (sim >= SIMILARITY_THRESHOLD) {
+                const simCentroid = cosineSimilarity(centroid, embeddings[j].vec);
+                const simSeed = cosineSimilarity(seed, embeddings[j].vec);
+                if (simCentroid >= SIMILARITY_THRESHOLD && simSeed >= SEED_THRESHOLD) {
                     visited.add(j);
                     cluster.push(j);
-                    queue.push(j);
+                    // Update centroid incrementally
+                    const n = cluster.length;
+                    for (let d = 0; d < dim; d++) {
+                        centroid[d] = centroid[d] * ((n - 1) / n) + embeddings[j].vec[d] / n;
+                    }
+                    changed = true;
                 }
             }
         }

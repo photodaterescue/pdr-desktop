@@ -83,6 +83,13 @@ contextBridge.exposeInMainWorld('pdr', {
         filterOptions: () => ipcRenderer.invoke('search:filterOptions'),
         stats: () => ipcRenderer.invoke('search:stats'),
         rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
+        cleanup: () => ipcRenderer.invoke('search:cleanup'),
+        relocateRun: (runId, newPath) => ipcRenderer.invoke('search:relocateRun', runId, newPath),
+        onStaleRuns: (callback) => {
+            const handler = (_event, runs) => callback(runs);
+            ipcRenderer.on('search:staleRuns', handler);
+            return () => ipcRenderer.removeListener('search:staleRuns', handler);
+        },
         onIndexProgress: (callback) => {
             ipcRenderer.on('search:indexProgress', (_, data) => callback(data));
         },
@@ -101,20 +108,59 @@ contextBridge.exposeInMainWorld('pdr', {
     ai: {
         start: () => ipcRenderer.invoke('ai:start'),
         cancel: () => ipcRenderer.invoke('ai:cancel'),
+        pause: () => ipcRenderer.invoke('ai:pause'),
+        resume: () => ipcRenderer.invoke('ai:resume'),
         status: () => ipcRenderer.invoke('ai:status'),
         stats: () => ipcRenderer.invoke('ai:stats'),
         listPersons: () => ipcRenderer.invoke('ai:listPersons'),
         namePerson: (name, clusterId, avatarData) => ipcRenderer.invoke('ai:namePerson', name, clusterId, avatarData),
-        assignFace: (faceId, personId) => ipcRenderer.invoke('ai:assignFace', faceId, personId),
+        assignFace: (faceId, personId, verified) => ipcRenderer.invoke('ai:assignFace', faceId, personId, verified ?? false),
+        batchVerify: (personIds) => ipcRenderer.invoke('ai:batchVerify', personIds),
+        unnameFace: (faceId) => ipcRenderer.invoke('ai:unnameFace', faceId),
+        renamePerson: (personId, newName) => ipcRenderer.invoke('ai:renamePerson', personId, newName),
+        setRepresentativeFace: (personId, faceId) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
+        mergePersons: (targetPersonId, sourcePersonId) => ipcRenderer.invoke('ai:mergePersons', targetPersonId, sourcePersonId),
+        deletePerson: (personId) => ipcRenderer.invoke('ai:deletePerson', personId),
+        permanentlyDeletePerson: (personId) => ipcRenderer.invoke('ai:permanentlyDeletePerson', personId),
+        restorePerson: (personId) => ipcRenderer.invoke('ai:restorePerson', personId),
+        listDiscardedPersons: () => ipcRenderer.invoke('ai:listDiscardedPersons'),
+        getPersonInfo: (personId) => ipcRenderer.invoke('ai:getPersonInfo', personId),
+        visualSuggestions: (faceId) => ipcRenderer.invoke('ai:visualSuggestions', faceId),
+        clusterFaceCount: (clusterId, personId) => ipcRenderer.invoke('ai:clusterFaceCount', clusterId, personId),
         getFaces: (fileId) => ipcRenderer.invoke('ai:getFaces', fileId),
         getTags: (fileId) => ipcRenderer.invoke('ai:getTags', fileId),
         tagOptions: () => ipcRenderer.invoke('ai:tagOptions'),
         clearAll: () => ipcRenderer.invoke('ai:clearAll'),
+        personClusters: () => ipcRenderer.invoke('ai:personClusters'),
+        personsCooccurrence: (selectedPersonIds) => ipcRenderer.invoke('ai:personsCooccurrence', selectedPersonIds),
+        clusterFaces: (clusterId, page, perPage, personId) => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId),
+        recluster: (threshold) => ipcRenderer.invoke('ai:recluster', threshold),
+        faceCrop: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),
+        faceContext: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
+        modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),
         onProgress: (callback) => {
             ipcRenderer.on('ai:progress', (_, data) => callback(data));
         },
         removeProgressListener: () => {
             ipcRenderer.removeAllListeners('ai:progress');
+        },
+        onLog: (callback) => {
+            ipcRenderer.on('ai:log', (_, msg) => callback(msg));
+        },
+        replayLogs: () => ipcRenderer.invoke('ai:replayLogs'),
+    },
+    people: {
+        open: () => ipcRenderer.invoke('people:open'),
+        notifyChange: () => ipcRenderer.invoke('people:changed'),
+        onThemeChange: (callback) => {
+            const handler = (_event, isDark) => callback(isDark);
+            ipcRenderer.on('people:themeChange', handler);
+            return () => ipcRenderer.removeListener('people:themeChange', handler);
+        },
+        onDataChanged: (callback) => {
+            const handler = () => callback();
+            ipcRenderer.on('people:dataChanged', handler);
+            return () => ipcRenderer.removeListener('people:dataChanged', handler);
         },
     },
     prescan: {
@@ -125,6 +171,16 @@ contextBridge.exposeInMainWorld('pdr', {
         },
         removeProgressListener: () => {
             ipcRenderer.removeAllListeners('prescan:progress');
+        },
+    },
+    structure: {
+        copyToStructure: (data) => ipcRenderer.invoke('structure:copy', data),
+        cancel: () => ipcRenderer.invoke('structure:copy:cancel'),
+        onProgress: (callback) => {
+            ipcRenderer.on('structure:copy:progress', (_, data) => callback(data));
+        },
+        removeProgressListener: () => {
+            ipcRenderer.removeAllListeners('structure:copy:progress');
         },
     },
 });
