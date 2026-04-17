@@ -383,6 +383,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [searchSuggestionIdx, setSearchSuggestionIdx] = useState(-1);
 
+  const [searchSuggestionPersons, setSearchSuggestionPersons] = useState<PersonRecord[]>([]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Compute operator-aware suggestion list for keyboard navigation
   const currentSuggestions = useMemo(() => {
     if (!searchText.trim()) return { items: [] as Array<{ type: 'person'; name: string; prefix: string; isOperator: boolean } | { type: 'tag'; name: string }>, prefix: '', isOperatorContext: false };
@@ -404,10 +409,6 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     ];
     return { items, prefix, isOperatorContext };
   }, [searchText, searchSuggestionPersons, aiTagOptions]);
-  const [searchSuggestionPersons, setSearchSuggestionPersons] = useState<PersonRecord[]>([]);
-
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
   // ─── Navigation helpers ──────────────────────────────────────────────────
