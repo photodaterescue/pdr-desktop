@@ -652,6 +652,43 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setSearchActive(true);
   }, [buildQuery]);
 
+  // Prevent infinite loop between ribbon ↔ filter sync
+  const syncDirectionRef = useRef<'none' | 'textToFilter' | 'filterToText'>('none');
+
+  // Sync ribbon search text → People filter selection
+  useEffect(() => {
+    if (syncDirectionRef.current === 'filterToText') return;
+    const parsed = parsePeopleOperators(searchText);
+    if (parsed) {
+      syncDirectionRef.current = 'textToFilter';
+      setSelectedPersonIds(parsed.personIds);
+      setMultiModeActive(parsed.mode === 'and');
+      if (parsed.personIds.length > 0) {
+        getPersonsCooccurrence(parsed.personIds).then(r => {
+          if (r.success && r.data) setTogetherCounts(r.data);
+        });
+      }
+      setTimeout(() => { syncDirectionRef.current = 'none'; }, 0);
+    }
+  }, [searchText, parsePeopleOperators]);
+
+  // Sync People filter selection → ribbon search text
+  useEffect(() => {
+    if (syncDirectionRef.current === 'textToFilter') return;
+    if (selectedPersonIds.length === 0) return;
+    const names = selectedPersonIds
+      .map(id => peopleList.find(p => p.id === id)?.name)
+      .filter((n): n is string => !!n);
+    if (names.length < 2) return; // Operators only make sense with 2+ names
+    const separator = multiModeActive ? ' + ' : ', ';
+    const newText = names.join(separator);
+    if (newText !== searchText) {
+      syncDirectionRef.current = 'filterToText';
+      setSearchText(newText);
+      setTimeout(() => { syncDirectionRef.current = 'none'; }, 0);
+    }
+  }, [selectedPersonIds, multiModeActive, peopleList]);
+
   const loadMore = async () => {
     if (!results || results.files.length >= results.total) return;
     setIsLoading(true);
