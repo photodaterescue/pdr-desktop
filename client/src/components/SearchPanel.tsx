@@ -1494,33 +1494,39 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     >
                                       {peopleSortMode === 'freq' ? '#' : peopleSortMode === 'az' ? 'AZ' : 'New'}
                                     </button>
-                                    {/* Column header icons */}
-                                    <TooltipProvider delayDuration={200}>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="shrink-0 w-8 flex items-center justify-center text-muted-foreground">
-                                            <User className="w-3.5 h-3.5" />
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top">Photos with just this person</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                    <TooltipProvider delayDuration={200}>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="shrink-0 w-8 flex items-center justify-center text-muted-foreground">
-                                            <Users className="w-3.5 h-3.5" />
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top">Photos shared with checked people</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
                                   </div>
                                   <p className="text-[10px] text-muted-foreground mt-1.5 px-1">
                                     {selectedPersonIds.length === 0
                                       ? 'Select people to find shared photos'
                                       : 'Counts update to show shared photos'}
                                   </p>
+                                </div>
+                                {/* Column header icons — aligned directly above the list columns */}
+                                <div className="flex items-center gap-2.5 px-2.5 py-1 border-b border-border/60">
+                                  {/* Checkbox spacer */}
+                                  <span className="shrink-0 w-4" />
+                                  {/* Name column spacer */}
+                                  <span className="flex-1" />
+                                  <TooltipProvider delayDuration={200}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="shrink-0 w-8 flex items-center justify-end text-muted-foreground/70">
+                                          <User className="w-3.5 h-3.5" />
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">Photos with just this person</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider delayDuration={200}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="shrink-0 w-8 flex items-center justify-end text-muted-foreground/70">
+                                          <Users className="w-3.5 h-3.5" />
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">Photos shared with checked people</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                 </div>
                                 {/* People list */}
                                 <div className="max-h-[240px] overflow-y-auto p-1">
