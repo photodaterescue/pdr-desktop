@@ -279,7 +279,7 @@ export default function PeopleManager() {
             <div className="relative flex-1">
               <input
                 type="range"
-                min="0.60"
+                min="0.55"
                 max="0.90"
                 step="0.01"
                 value={clusterThreshold}
@@ -287,7 +287,7 @@ export default function PeopleManager() {
                 onMouseUp={() => handleRecluster(clusterThreshold)}
                 onTouchEnd={() => handleRecluster(clusterThreshold)}
                 className="w-full h-1 accent-purple-500 cursor-pointer relative z-10"
-                title={`Match: ${Math.round(((clusterThreshold - 0.60) / 0.30) * 100)}%`}
+                title={`Match: ${Math.round(((clusterThreshold - 0.55) / 0.35) * 100)}%`}
                 disabled={isReclustering}
               />
               {/* Tick marks at 25%, 50%, 75% */}
@@ -441,6 +441,7 @@ export default function PeopleManager() {
                   <div className="space-y-2">
                     {filteredNamed.map((cluster, idx) => (
                       <PersonCardRow
+                        rowIndex={idx}
                         key={clusterKey(cluster)}
                         cluster={cluster}
                         cropUrl={faceCropsMap[clusterKey(cluster)]}
@@ -505,8 +506,9 @@ export default function PeopleManager() {
                     </div>
                     {viewMode === 'card' ? (
                       <div className="space-y-2">
-                        {unnamedClusters.map((cluster) => (
+                        {unnamedClusters.map((cluster, idx) => (
                           <PersonCardRow
+                            rowIndex={idx}
                             key={clusterKey(cluster)}
                             cluster={cluster}
                             cropUrl={faceCropsMap[clusterKey(cluster)]}
@@ -587,8 +589,9 @@ export default function PeopleManager() {
                       </p>
                     </div>
                     <div className="space-y-2">
-                      {unsureClusters.map((cluster) => (
+                      {unsureClusters.map((cluster, idx) => (
                         <PersonCardRow
+                          rowIndex={idx}
                           key={clusterKey(cluster)}
                           cluster={cluster}
                           cropUrl={faceCropsMap[clusterKey(cluster)]}
@@ -643,8 +646,9 @@ export default function PeopleManager() {
                       </p>
                     </div>
                     <div className="space-y-2">
-                      {ignoredClusters.map((cluster) => (
+                      {ignoredClusters.map((cluster, idx) => (
                         <PersonCardRow
+                          rowIndex={idx}
                           key={clusterKey(cluster)}
                           cluster={cluster}
                           cropUrl={faceCropsMap[clusterKey(cluster)]}
@@ -987,7 +991,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 
 /* ─── Card Row — name LEFT, scrollable thumbnails RIGHT ─────────────────── */
 
-function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, existingPersons, onSelectPerson, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, currentTab }: {
+function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, existingPersons, onSelectPerson, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, currentTab, rowIndex }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
@@ -1021,6 +1025,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   globalReassignName: string;
   onGlobalReassignNameChange: (name: string) => void;
   currentTab?: 'named' | 'unnamed' | 'unsure' | 'ignored';
+  rowIndex?: number;
 }) {
   // Ring colour for verified faces based on which category the cluster belongs to
   const getVerifiedBorderClass = (): string => {
@@ -1362,6 +1367,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   {displayName || (cluster.person_name && !cluster.person_name.startsWith('__') ? cluster.person_name : 'Unknown person')}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {rowIndex != null && <span className="text-muted-foreground/50 mr-1">#{rowIndex + 1}</span>}
                   {cluster.face_count} {cluster.face_count === 1 ? 'face' : 'faces'} · {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
                 </p>
               </>
