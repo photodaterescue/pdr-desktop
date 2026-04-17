@@ -1136,7 +1136,11 @@ export function cleanupOrphanedPersons(): number {
 export function upsertPerson(name: string, avatarData?: string): number {
   const database = getDb();
   const existing = database.prepare(`SELECT id FROM persons WHERE name = ? COLLATE NOCASE`).get(name) as { id: number } | undefined;
-  if (existing) return existing.id;
+  if (existing) {
+    // Clear discarded_at in case this person was previously discarded
+    database.prepare(`UPDATE persons SET discarded_at = NULL WHERE id = ? AND discarded_at IS NOT NULL`).run(existing.id);
+    return existing.id;
+  }
   const result = database.prepare(`INSERT INTO persons (name, avatar_data) VALUES (?, ?)`).run(name, avatarData ?? null);
   return result.lastInsertRowid as number;
 }
