@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -381,6 +381,29 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   // Search suggestions state
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [searchSuggestionIdx, setSearchSuggestionIdx] = useState(-1);
+
+  // Compute operator-aware suggestion list for keyboard navigation
+  const currentSuggestions = useMemo(() => {
+    if (!searchText.trim()) return { items: [] as Array<{ type: 'person'; name: string; prefix: string; isOperator: boolean } | { type: 'tag'; name: string }>, prefix: '', isOperatorContext: false };
+    const opRegex = /(\s*(?:,|\+|&|\band\b)\s*)/gi;
+    let lastOpEnd = 0;
+    let m: RegExpExecArray | null;
+    while ((m = opRegex.exec(searchText)) !== null) {
+      lastOpEnd = m.index + m[0].length;
+    }
+    const prefix = lastOpEnd > 0 ? searchText.slice(0, lastOpEnd) : '';
+    const fragment = searchText.slice(lastOpEnd).trim();
+    const isOperatorContext = lastOpEnd > 0;
+    const matchLower = (isOperatorContext ? fragment : searchText).toLowerCase();
+    const peopleMatches = searchSuggestionPersons.filter(p => p.name.toLowerCase().includes(matchLower)).slice(0, 5);
+    const tagMatches = !isOperatorContext ? aiTagOptions.filter(t => t.tag.toLowerCase().includes(matchLower)).slice(0, 5) : [];
+    const items = [
+      ...peopleMatches.map(p => ({ type: 'person' as const, name: p.name, prefix, isOperator: isOperatorContext })),
+      ...tagMatches.map(t => ({ type: 'tag' as const, name: t.tag })),
+    ];
+    return { items, prefix, isOperatorContext };
+  }, [searchText, searchSuggestionPersons, aiTagOptions]);
   const [searchSuggestionPersons, setSearchSuggestionPersons] = useState<PersonRecord[]>([]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -944,9 +967,32 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         type="text"
                         placeholder={dbReady ? 'Search photos, people, tags...' : 'Initialising...'}
                         value={searchText}
-                        onChange={(e) => setSearchText(e.target.value)}
+                        onChange={(e) => { setSearchText(e.target.value); setSearchSuggestionIdx(-1); }}
                         onFocus={() => { if (searchText.trim().length > 0) setShowSearchSuggestions(true); }}
                         onBlur={() => { setTimeout(() => setShowSearchSuggestions(false), 200); }}
+                        onKeyDown={(e) => {
+                          if (!showSearchSuggestions || currentSuggestions.items.length === 0) return;
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setSearchSuggestionIdx(prev => Math.min(prev + 1, currentSuggestions.items.length - 1));
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setSearchSuggestionIdx(prev => Math.max(prev - 1, -1));
+                          } else if (e.key === 'Enter' && searchSuggestionIdx >= 0) {
+                            e.preventDefault();
+                            const chosen = currentSuggestions.items[searchSuggestionIdx];
+                            if (chosen.type === 'person' && chosen.isOperator) {
+                              setSearchText(`${chosen.prefix}${chosen.name}`);
+                            } else {
+                              setSearchText(chosen.name);
+                            }
+                            setShowSearchSuggestions(false);
+                            setSearchSuggestionIdx(-1);
+                          } else if (e.key === 'Escape') {
+                            setShowSearchSuggestions(false);
+                            setSearchSuggestionIdx(-1);
+                          }
+                        }}
                         disabled={!dbReady}
                         className={`w-full pl-10 pr-8 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all ${!dbReady ? 'placeholder:text-foreground/50 placeholder:font-medium opacity-80' : 'placeholder:text-muted-foreground disabled:opacity-50'}`}
                       />
@@ -981,35 +1027,46 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               <p className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-medium">
                                 {isOperatorContext ? 'People — click to add' : 'People'}
                               </p>
-                              {peopleMatches.slice(0, 5).map(p => (
+                              {peopleMatches.slice(0, 5).map((p, pIdx) => {
+                                const idx = pIdx;
+                                const isHighlighted = idx === searchSuggestionIdx;
+                                return (
                                 <button key={p.id}
+                                  onMouseEnter={() => setSearchSuggestionIdx(idx)}
                                   onMouseDown={(e) => {
                                     e.preventDefault();
                                     const newText = isOperatorContext ? `${prefix}${p.name}` : p.name;
                                     setSearchText(newText);
                                     setShowSearchSuggestions(false);
+                                    setSearchSuggestionIdx(-1);
                                   }}
-                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left">
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left ${isHighlighted ? 'bg-purple-100 dark:bg-purple-900/40' : 'hover:bg-purple-50 dark:hover:bg-purple-900/20'}`}>
                                   <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                                   <span className="truncate text-foreground">{p.name}</span>
                                   <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{p.photo_count ?? 0} photos</span>
                                 </button>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                           {/* Tag matches — only shown when not in operator context */}
                           {tagMatches.length > 0 && (
                             <div className="p-1.5 border-t border-border">
                               <p className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-medium">Tags</p>
-                              {tagMatches.slice(0, 5).map(t => (
+                              {tagMatches.slice(0, 5).map((t, tIdx) => {
+                                const idx = peopleMatches.slice(0, 5).length + tIdx;
+                                const isHighlighted = idx === searchSuggestionIdx;
+                                return (
                                 <button key={t.tag}
-                                  onMouseDown={(e) => { e.preventDefault(); setSearchText(t.tag); setShowSearchSuggestions(false); }}
-                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/50 transition-colors text-left">
+                                  onMouseEnter={() => setSearchSuggestionIdx(idx)}
+                                  onMouseDown={(e) => { e.preventDefault(); setSearchText(t.tag); setShowSearchSuggestions(false); setSearchSuggestionIdx(-1); }}
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left ${isHighlighted ? 'bg-purple-100 dark:bg-purple-900/40' : 'hover:bg-secondary/50'}`}>
                                   <Tag className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                                   <span className="truncate text-foreground">{t.tag}</span>
                                   <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{t.count} photos</span>
                                 </button>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                           {/* No matches */}
