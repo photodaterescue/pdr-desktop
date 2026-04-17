@@ -736,8 +736,14 @@ export default function PeopleManager() {
             )}
             <div className="relative">
               {(() => {
-                const panelSuggestions = globalReassignName.trim().length > 0
-                  ? existingPersons.filter(p => p.name.toLowerCase().includes(globalReassignName.toLowerCase()) && (p.photo_count ?? 0) > 0).slice(0, 5)
+                const typed = globalReassignName.trim().toLowerCase();
+                const panelSuggestions = typed.length > 0
+                  ? existingPersons.filter(p => {
+                      const name = p.name.toLowerCase();
+                      // Hide suggestion if user has typed the exact full name
+                      if (name === typed) return false;
+                      return name.includes(typed) && (p.photo_count ?? 0) > 0;
+                    }).slice(0, 5)
                   : [];
                 return (
                   <>
