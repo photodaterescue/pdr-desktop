@@ -1507,19 +1507,27 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
             }}>
               <TooltipTrigger asChild>
                 <div className={`shrink-0 ${(!isEditing && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'cursor-pointer' : ''}`} onClick={() => { if (!isEditing && cluster.person_name && !cluster.person_name.startsWith('__')) onStartEdit(); }}>
-                  {(cropUrl || (cluster.sample_faces?.[0] && sampleCrops[cluster.sample_faces[0].face_id])) ? (
-                    <img src={sampleCrops[cluster.sample_faces?.[0]?.face_id] || cropUrl} alt="" className={`w-14 h-14 rounded-full object-cover shrink-0 border-2 ${
+                  {(() => {
+                    // For Named clusters, prefer user-chosen representative if set
+                    const isNamed = cluster.person_name && !cluster.person_name.startsWith('__');
+                    const repFaceId = isNamed ? cluster.representative_face_id : null;
+                    const firstFaceId = cluster.sample_faces?.[0]?.face_id;
+                    const displayFaceId = (repFaceId && sampleCrops[repFaceId]) ? repFaceId : firstFaceId;
+                    const mainCrop = displayFaceId ? sampleCrops[displayFaceId] : cropUrl;
+                    return mainCrop ? (
+                    <img src={mainCrop} alt="" className={`w-14 h-14 rounded-full object-cover shrink-0 border-2 ${
                       cluster.person_name === '__ignored__' ? 'border-[#76899F]'
                       : cluster.person_name === '__unsure__' ? 'border-blue-400'
                       : !cluster.person_name ? 'border-amber-400'
                       : cluster.person_name.startsWith('__') ? 'border-purple-400/40'
                       : 'border-indigo-500'
                     }`} />
-                  ) : (
+                    ) : (
                     <div className="w-14 h-14 rounded-full bg-purple-500/15 flex items-center justify-center shrink-0">
                       <Users className="w-6 h-6 text-purple-400" />
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </TooltipTrigger>
               {(cropUrl || cluster.sample_faces?.[0]) && (
