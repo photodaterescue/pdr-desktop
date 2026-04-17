@@ -1421,7 +1421,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
-                  {cluster.sample_faces && (() => {
+                  {currentTab === 'named' && cluster.sample_faces && (() => {
                     const verifiedCount = cluster.sample_faces.filter(f => f.verified).length;
                     const totalCount = cluster.sample_faces.length;
                     return verifiedCount > 0 ? <span className="text-purple-500 ml-1">· {verifiedCount}/{totalCount} verified</span> : null;
