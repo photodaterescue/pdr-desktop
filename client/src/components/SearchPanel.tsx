@@ -1720,7 +1720,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                             onClick={toggleSingle}
                                             className={`shrink-0 w-8 text-right text-[10px] tabular-nums rounded px-1 py-0.5 transition-colors ${
                                               isSelected && !multiModeActive
-                                                ? 'bg-[hsl(249_100%_81%)] text-foreground font-semibold'
+                                                ? 'ring-2 ring-purple-400/50 bg-purple-50/50 dark:bg-purple-900/20 text-foreground font-semibold'
                                                 : 'text-muted-foreground hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-foreground'
                                             }`}
                                           >
@@ -1735,7 +1735,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                                 disabled={noSelection && !isSelected}
                                                 className={`shrink-0 w-8 text-right text-[10px] tabular-nums rounded px-1 py-0.5 transition-colors ${
                                                   isSelected && multiModeActive
-                                                    ? 'bg-[hsl(250_100%_92%)] text-foreground font-semibold'
+                                                    ? 'ring-2 ring-purple-400/50 bg-purple-50/50 dark:bg-purple-900/20 text-foreground font-semibold'
                                                     : noSelection
                                                       ? 'text-muted-foreground cursor-default'
                                                       : 'text-muted-foreground hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-foreground'
