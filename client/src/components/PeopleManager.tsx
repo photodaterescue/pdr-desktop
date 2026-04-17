@@ -321,11 +321,11 @@ export default function PeopleManager() {
                   }
                 }}
                 disabled={isRefining}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
                   aiRefineEnabled
-                    ? 'bg-purple-500 hover:bg-purple-600 text-white'
-                    : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/60'
-                } ${isRefining ? 'opacity-60 cursor-wait' : ''}`}
+                    ? 'bg-purple-500 hover:bg-purple-600 text-white border-purple-600 shadow-sm'
+                    : 'bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10'
+                } ${isRefining ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
               >
                 {isRefining ? (
                   <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Improving...</>
