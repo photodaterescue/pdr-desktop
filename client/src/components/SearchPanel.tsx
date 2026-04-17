@@ -575,8 +575,46 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   // ─── Query / Search ───────────────────────────────────────────────────────
 
-  const buildQuery = useCallback((): SearchQuery => ({
-    text: searchText.trim() || undefined,
+  // Parse search text for people operators: "Terry + Mel", "Terry & Mel", "Terry and Mel" → AND; "Terry, Mel" → OR
+  const parsePeopleOperators = useCallback((text: string): { personIds: number[]; mode: 'and' | 'or' } | null => {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    // Detect operator type: AND operators first (+, &, " and "), then OR (,)
+    const andPattern = /\s*(?:\+|&|\band\b)\s*/i;
+    const orPattern = /\s*,\s*/;
+    let parts: string[] = [];
+    let mode: 'and' | 'or' = 'or';
+    if (andPattern.test(trimmed)) {
+      parts = trimmed.split(andPattern).filter(Boolean);
+      mode = 'and';
+    } else if (orPattern.test(trimmed)) {
+      parts = trimmed.split(orPattern).filter(Boolean);
+      mode = 'or';
+    } else {
+      return null;
+    }
+    // Try to match each part to a person name (case-insensitive, exact or prefix match)
+    const ids: number[] = [];
+    for (const part of parts) {
+      const q = part.trim().toLowerCase();
+      if (!q) continue;
+      // Prefer exact name match, fall back to prefix match
+      const exact = peopleList.find(p => p.name.toLowerCase() === q);
+      const prefix = exact || peopleList.find(p => p.name.toLowerCase().startsWith(q));
+      const match = prefix || peopleList.find(p => p.name.toLowerCase().includes(q));
+      if (match) ids.push(match.id);
+      else return null; // If any part can't be matched to a person, bail out (fall back to text search)
+    }
+    if (ids.length < 2) return null; // Need at least 2 names for operators to make sense
+    return { personIds: Array.from(new Set(ids)), mode };
+  }, [peopleList]);
+
+  const buildQuery = useCallback((): SearchQuery => {
+    const peopleParsed = parsePeopleOperators(searchText);
+    return ({
+    text: peopleParsed ? undefined : (searchText.trim() || undefined),
+    personId: peopleParsed ? peopleParsed.personIds : undefined,
+    personIdMode: peopleParsed ? peopleParsed.mode : undefined,
     confidence: selectedConfidence.length > 0 ? selectedConfidence : undefined,
     fileType: selectedFileType.length > 0 ? selectedFileType : undefined,
     dateSource: selectedDateSource.length > 0 ? selectedDateSource : undefined,
@@ -601,7 +639,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     aiTag: selectedAiTags.filter(t => !t.startsWith('__')).length > 0 ? selectedAiTags.filter(t => !t.startsWith('__')) : undefined,
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
-  }), [searchText, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
+    } as SearchQuery);
+  }, [searchText, parsePeopleOperators, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery) => {
     setIsLoading(true);
