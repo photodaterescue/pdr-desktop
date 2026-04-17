@@ -1350,8 +1350,8 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               </div>
             ) : (
               <>
-                <p className={`text-sm font-medium truncate ${(cluster.person_name && !displayName) ? 'text-foreground' : 'text-muted-foreground italic'}`}>
-                  {displayName || cluster.person_name || 'Unknown person'}
+                <p className={`text-sm font-medium truncate ${(cluster.person_name && !cluster.person_name.startsWith('__') && !displayName) ? 'text-foreground' : 'text-muted-foreground italic'}`}>
+                  {displayName || (cluster.person_name && !cluster.person_name.startsWith('__') ? cluster.person_name : 'Unknown person')}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
                   {cluster.face_count} {cluster.face_count === 1 ? 'face' : 'faces'} · {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}

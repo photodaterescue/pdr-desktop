@@ -1534,7 +1534,7 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       person_name: c.person_name,
       face_count: c.face_count,
       photo_count: c.photo_count,
-      representative_face_id: c.representative_face_id,
+      representative_face_id: rep.face_id || c.representative_face_id,
       representative_file_id: rep.file_id,
       representative_file_path: rep.file_path || '',
       box_x: rep.box_x || 0,
