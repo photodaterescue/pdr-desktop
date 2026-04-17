@@ -121,7 +121,7 @@ export default function PeopleManager() {
           }
         }
         if (cluster.sample_faces) {
-          for (const face of cluster.sample_faces.slice(0, 20)) {
+          for (const face of cluster.sample_faces) {
             const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
             if (crop.success && crop.dataUrl) crops[face.face_id] = crop.dataUrl;
           }
@@ -173,7 +173,6 @@ export default function PeopleManager() {
     await deletePersonRecord(personId);
     setConfirmDiscard(null);
     await loadClusters(); notifyChange();
-    setActiveTab('unnamed'); // Faces go back to unnamed, show that tab
   };
 
   const handleRecluster = async (threshold: number) => {
@@ -417,7 +416,7 @@ export default function PeopleManager() {
                   <div>
                     <h4 className="text-sm font-semibold text-foreground mb-1">Discard "{confirmDiscard.personName}"?</h4>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      This will remove the name from <strong>{confirmDiscard.photoCount} photo{confirmDiscard.photoCount !== 1 ? 's' : ''}</strong>.
+                      This will remove the name from <strong>{confirmDiscard.photoCount} photo{confirmDiscard.photoCount !== 1 ? 's' : ''}</strong> and send {confirmDiscard.photoCount === 1 ? 'it' : 'them'} to the Unnamed tab.
                       Face detections are kept — you can re-name faces later.
                     </p>
                   </div>
@@ -1038,11 +1037,11 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
 }) {
   // Ring colour for verified faces based on which category the cluster belongs to
   const getVerifiedBorderClass = (): string => {
-    if (!cluster.person_name) return 'border-2 border-amber-400'; // Unnamed (user chose Unnamed)
-    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-[#76899F]';
-    if (cluster.person_name.startsWith('__')) return ''; // Other special names
-    return 'border-2 border-purple-500'; // Named (real name)
+    if (!cluster.person_name) return 'border-[3px] border-amber-400'; // Unnamed
+    if (cluster.person_name === '__unsure__') return 'border-[3px] border-blue-400';
+    if (cluster.person_name === '__ignored__') return 'border-[3px] border-[#76899F]';
+    if (cluster.person_name.startsWith('__')) return '';
+    return 'border-[3px] border-purple-500'; // Named (real name)
   };
   const verifiedBorder = getVerifiedBorderClass();
 
@@ -1669,11 +1668,11 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   onCancelUnsure?: () => void;
 }) {
   const getVerifiedBorderClass = (): string => {
-    if (!cluster.person_name) return 'border-2 border-amber-400';
-    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-[#76899F]';
+    if (!cluster.person_name) return 'border-[3px] border-amber-400';
+    if (cluster.person_name === '__unsure__') return 'border-[3px] border-blue-400';
+    if (cluster.person_name === '__ignored__') return 'border-[3px] border-[#76899F]';
     if (cluster.person_name.startsWith('__')) return '';
-    return 'border-2 border-purple-500';
+    return 'border-[3px] border-purple-500';
   };
   const verifiedBorder = getVerifiedBorderClass();
 

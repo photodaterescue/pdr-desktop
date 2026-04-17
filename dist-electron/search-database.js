@@ -1189,7 +1189,6 @@ export function getPersonClusters() {
     INNER JOIN indexed_files f ON fd.file_id = f.id
     WHERE fd.person_id = ?
     ORDER BY fd.confidence ASC
-    LIMIT 20
   `);
     // Sample faces for unnamed: by cluster_id (only unassigned)
     const facesByClusterStmt = database.prepare(`
@@ -1198,7 +1197,6 @@ export function getPersonClusters() {
     INNER JOIN indexed_files f ON fd.file_id = f.id
     WHERE fd.cluster_id = ? AND fd.person_id IS NULL
     ORDER BY fd.confidence ASC
-    LIMIT 20
   `);
     // Sample faces for special categories: by cluster_id AND person_id
     const facesByClusterWithPersonStmt = database.prepare(`
@@ -1207,7 +1205,6 @@ export function getPersonClusters() {
     INNER JOIN indexed_files f ON fd.file_id = f.id
     WHERE fd.cluster_id = ? AND fd.person_id = ?
     ORDER BY fd.confidence ASC
-    LIMIT 20
   `);
     // Representative for special categories: by cluster_id AND person_id
     const repByClusterWithPersonStmt = database.prepare(`
