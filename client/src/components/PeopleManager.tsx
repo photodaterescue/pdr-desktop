@@ -805,33 +805,44 @@ export default function PeopleManager() {
                 );
               })()}
             </div>
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => {
-                  const targets = Array.from(globalSelectedFaces);
-                  if (targets.length === 0 || !globalReassignName.trim()) return;
-                  (async () => {
-                    for (let i = 0; i < targets.length; i++) {
-                      const isLast = i === targets.length - 1;
-                      await handleReassignFace(targets[i], globalReassignName.trim(), true, !isLast);
-                    }
-                    setGlobalReassignFaceId(null);
-                    setGlobalReassignName('');
-                    setGlobalSelectedFaces(new Set());
-                  })();
-                }}
-                disabled={!globalReassignName.trim()}
-                className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
-              >
-                Verify{globalSelectedFaces.size > 1 ? ` (${globalSelectedFaces.size})` : ''}
-              </button>
-              <button
-                onClick={() => { setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set()); }}
-                className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
+            {(() => {
+              // Determine implicit name: if all selected faces belong to the same Named cluster, use its name
+              const targets = Array.from(globalSelectedFaces);
+              const targetClusters = targets.map(fid => clusters.find(c => c.sample_faces?.some(f => f.face_id === fid)));
+              const allSameNamedCluster = targetClusters.length > 0
+                && targetClusters.every(c => c && c.person_name && !c.person_name.startsWith('__') && c.person_id === targetClusters[0]?.person_id);
+              const implicitName = allSameNamedCluster ? (targetClusters[0]?.person_name || '') : '';
+              const effectiveName = globalReassignName.trim() || implicitName;
+              return (
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => {
+                      const t = Array.from(globalSelectedFaces);
+                      if (t.length === 0 || !effectiveName) return;
+                      (async () => {
+                        for (let i = 0; i < t.length; i++) {
+                          const isLast = i === t.length - 1;
+                          await handleReassignFace(t[i], effectiveName, true, !isLast);
+                        }
+                        setGlobalReassignFaceId(null);
+                        setGlobalReassignName('');
+                        setGlobalSelectedFaces(new Set());
+                      })();
+                    }}
+                    disabled={!effectiveName}
+                    className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
+                  >
+                    Verify{globalSelectedFaces.size > 1 ? ` (${globalSelectedFaces.size})` : ''}
+                  </button>
+                  <button
+                    onClick={() => { setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set()); }}
+                    className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              );
+            })()}
             <div className="flex gap-1.5 pt-1 border-t border-border">
               {activeTab !== 'unsure' && (
                 <button onClick={() => {
