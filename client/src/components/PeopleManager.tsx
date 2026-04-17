@@ -49,6 +49,7 @@ import {
   type DiscardedPerson,
   type ClusterFacesResult,
   getVisualSuggestions,
+  refineFromVerified,
 } from '@/lib/electron-bridge';
 
 // ─── Notify main window that data changed ─────────────────────────────────
@@ -89,6 +90,10 @@ export default function PeopleManager() {
   const [globalReassignName, setGlobalReassignName] = useState('');
   const [panelSuggestionIdx, setPanelSuggestionIdx] = useState(-1);
 
+  // Refinement feature state
+  const [aiRefineEnabled, setAiRefineEnabled] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+
   // Load saved threshold from settings on mount
   useEffect(() => {
     (async () => {
@@ -96,6 +101,7 @@ export default function PeopleManager() {
       if (settings?.matchThreshold != null) {
         setClusterThreshold(settings.matchThreshold);
       }
+      setAiRefineEnabled(!!(settings as any)?.aiRefineFromVerified);
     })();
   }, []);
 
@@ -283,6 +289,59 @@ export default function PeopleManager() {
             {ignoredClusters.length > 0 && ` · ${ignoredClusters.length} ignored`}
           </span>
         </div>
+
+        {/* Improve Facial Recognition button */}
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={async () => {
+                  if (!aiRefineEnabled) {
+                    // Open Settings with AI tab active in main workspace
+                    if ((window as any).pdr?.openSettings) {
+                      (window as any).pdr.openSettings('pro');
+                    } else {
+                      // Fallback: post a message to the parent window
+                      window.opener?.postMessage({ type: 'pdr:openSettings', tab: 'pro' }, '*');
+                    }
+                    return;
+                  }
+                  setIsRefining(true);
+                  try {
+                    const result = await refineFromVerified(clusterThreshold);
+                    if (result.success && result.data) {
+                      await loadClusters();
+                      notifyChange();
+                      alert(`All verified photos have been analysed and assisted in refining the facial recognition matching.\n\n${result.data.newMatches} new face(s) were matched across ${result.data.personsProcessed} people.`);
+                    } else {
+                      alert('Refinement failed: ' + (result.error || 'unknown error'));
+                    }
+                  } finally {
+                    setIsRefining(false);
+                  }
+                }}
+                disabled={isRefining}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  aiRefineEnabled
+                    ? 'bg-purple-500 hover:bg-purple-600 text-white'
+                    : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/60'
+                } ${isRefining ? 'opacity-60 cursor-wait' : ''}`}
+              >
+                {isRefining ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Improving...</>
+                ) : (
+                  <><Sparkles className="w-3.5 h-3.5" /> Improve Facial Recognition</>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {aiRefineEnabled
+                ? 'Uses your verified faces to refine matching across all unnamed faces. Most populous people processed first.'
+                : 'Enable this in Settings → AI. Only activate after you\'re sure all people have the correct photos verified.'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
         <div className="flex flex-col items-center flex-1 mx-4 max-w-[220px]">
           <span className="text-[11px] text-foreground/60 font-semibold uppercase tracking-wider mb-0.5">Match</span>
           <div className="flex items-center gap-2 w-full">

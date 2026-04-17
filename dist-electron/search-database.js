@@ -1101,6 +1101,86 @@ export function getAllFaceEmbeddings() {
     const database = getDb();
     return database.prepare(`SELECT id, file_id, embedding, cluster_id FROM face_detections WHERE embedding IS NOT NULL`).all();
 }
+/**
+ * Refine facial recognition by computing per-person average embeddings
+ * from verified faces, then matching unnamed faces against those averages.
+ *
+ * Processes persons in descending order of verified face count (most populous first).
+ * Returns stats about what was done.
+ */
+export function refineFromVerifiedFaces(similarityThreshold = 0.72) {
+    const database = getDb();
+    // Get all real named persons with their verified face counts, most populous first
+    const persons = database.prepare(`
+    SELECT p.id, p.name, COUNT(fd.id) as verified_count
+    FROM persons p
+    INNER JOIN face_detections fd ON fd.person_id = p.id AND fd.verified = 1 AND fd.embedding IS NOT NULL
+    WHERE p.discarded_at IS NULL
+      AND p.name NOT IN ('__ignored__', '__unsure__')
+    GROUP BY p.id
+    HAVING verified_count > 0
+    ORDER BY verified_count DESC
+  `).all();
+    const perPerson = [];
+    let totalNewMatches = 0;
+    for (const person of persons) {
+        // Get verified embeddings for this person
+        const verifiedRows = database.prepare(`
+      SELECT embedding FROM face_detections
+      WHERE person_id = ? AND verified = 1 AND embedding IS NOT NULL
+    `).all(person.id);
+        if (verifiedRows.length === 0) {
+            perPerson.push({ personId: person.id, personName: person.name, verifiedCount: 0, matched: 0 });
+            continue;
+        }
+        // Compute average embedding
+        const firstVec = new Float32Array(verifiedRows[0].embedding.buffer, verifiedRows[0].embedding.byteOffset, verifiedRows[0].embedding.byteLength / 4);
+        const dim = firstVec.length;
+        const avg = new Float32Array(dim);
+        for (const row of verifiedRows) {
+            const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+            for (let i = 0; i < dim; i++)
+                avg[i] += vec[i];
+        }
+        for (let i = 0; i < dim; i++)
+            avg[i] /= verifiedRows.length;
+        // Get all unnamed faces (person_id IS NULL) with embeddings
+        const unnamed = database.prepare(`
+      SELECT id, embedding FROM face_detections
+      WHERE person_id IS NULL AND embedding IS NOT NULL
+    `).all();
+        let matchedForThisPerson = 0;
+        const assignStmt = database.prepare(`UPDATE face_detections SET person_id = ? WHERE id = ?`);
+        const avgMag = Math.sqrt(avg.reduce((s, v) => s + v * v, 0));
+        for (const row of unnamed) {
+            const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+            // Cosine similarity
+            let dot = 0, magB = 0;
+            for (let i = 0; i < dim; i++) {
+                dot += avg[i] * vec[i];
+                magB += vec[i] * vec[i];
+            }
+            const mag = avgMag * Math.sqrt(magB);
+            const sim = mag === 0 ? 0 : dot / mag;
+            if (sim >= similarityThreshold) {
+                assignStmt.run(person.id, row.id);
+                matchedForThisPerson++;
+            }
+        }
+        totalNewMatches += matchedForThisPerson;
+        perPerson.push({
+            personId: person.id,
+            personName: person.name,
+            verifiedCount: verifiedRows.length,
+            matched: matchedForThisPerson,
+        });
+    }
+    return {
+        personsProcessed: persons.length,
+        newMatches: totalNewMatches,
+        perPerson,
+    };
+}
 /** Update cluster assignments */
 export function updateFaceCluster(faceId, clusterId) {
     const database = getDb();

@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('pdr', {
         assignFace: (faceId, personId, verified) => ipcRenderer.invoke('ai:assignFace', faceId, personId, verified ?? false),
         batchVerify: (personIds) => ipcRenderer.invoke('ai:batchVerify', personIds),
         unnameFace: (faceId) => ipcRenderer.invoke('ai:unnameFace', faceId),
+        refineFromVerified: (similarityThreshold) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold),
         renamePerson: (personId, newName) => ipcRenderer.invoke('ai:renamePerson', personId, newName),
         setRepresentativeFace: (personId, faceId) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
         mergePersons: (targetPersonId, sourcePersonId) => ipcRenderer.invoke('ai:mergePersons', targetPersonId, sourcePersonId),
@@ -148,6 +149,11 @@ contextBridge.exposeInMainWorld('pdr', {
             ipcRenderer.on('ai:log', (_, msg) => callback(msg));
         },
         replayLogs: () => ipcRenderer.invoke('ai:replayLogs'),
+    },
+    openSettings: (tab) => ipcRenderer.invoke('app:openSettings', tab),
+    onOpenSettings: (callback) => {
+        ipcRenderer.on('app:openSettings', callback);
+        return () => ipcRenderer.removeListener('app:openSettings', callback);
     },
     people: {
         open: () => ipcRenderer.invoke('people:open'),

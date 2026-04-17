@@ -156,6 +156,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     assignFace: (faceId: number, personId: number, verified?: boolean) => ipcRenderer.invoke('ai:assignFace', faceId, personId, verified ?? false),
     batchVerify: (personIds: number[]) => ipcRenderer.invoke('ai:batchVerify', personIds),
     unnameFace: (faceId: number) => ipcRenderer.invoke('ai:unnameFace', faceId),
+    refineFromVerified: (similarityThreshold?: number) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold),
     renamePerson: (personId: number, newName: string) => ipcRenderer.invoke('ai:renamePerson', personId, newName),
     setRepresentativeFace: (personId: number, faceId: number) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
     mergePersons: (targetPersonId: number, sourcePersonId: number) => ipcRenderer.invoke('ai:mergePersons', targetPersonId, sourcePersonId),
@@ -189,6 +190,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('ai:log', (_: any, msg: string) => callback(msg));
     },
     replayLogs: () => ipcRenderer.invoke('ai:replayLogs'),
+  },
+
+  openSettings: (tab?: string) => ipcRenderer.invoke('app:openSettings', tab),
+  onOpenSettings: (callback: (event: any, tab: string) => void) => {
+    ipcRenderer.on('app:openSettings', callback);
+    return () => ipcRenderer.removeListener('app:openSettings', callback);
   },
 
   people: {

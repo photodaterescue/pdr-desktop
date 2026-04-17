@@ -1918,6 +1918,14 @@ ipcMain.handle('people:changed', async () => {
     }
     return { success: true };
 });
+// Open settings page in main window with a specific tab active
+ipcMain.handle('app:openSettings', async (_event, tab) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.focus();
+        mainWindow.webContents.send('app:openSettings', tab ?? 'general');
+    }
+    return { success: true };
+});
 // ═══ AI Recognition IPC Handlers ═══════════════════════════════════════════
 ipcMain.handle('ai:start', async () => {
     try {
@@ -2024,6 +2032,25 @@ ipcMain.handle('ai:batchVerify', async (_event, personIds) => {
         for (const fileId of affectedFiles)
             rebuildAiFts(fileId);
         return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold) => {
+    try {
+        const { refineFromVerifiedFaces, getDb } = await import('./search-database.js');
+        const result = refineFromVerifiedFaces(similarityThreshold ?? 0.72);
+        // Rebuild FTS for all files whose faces were newly assigned
+        const database = getDb();
+        const personIds = result.perPerson.filter(p => p.matched > 0).map(p => p.personId);
+        if (personIds.length > 0) {
+            const placeholders = personIds.map(() => '?').join(',');
+            const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id IN (${placeholders})`).all(...personIds);
+            for (const f of files)
+                rebuildAiFts(f.file_id);
+        }
+        return { success: true, data: result };
     }
     catch (err) {
         return { success: false, error: err.message };

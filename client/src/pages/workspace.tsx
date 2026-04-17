@@ -298,6 +298,19 @@ const handleActivateLicense = () => {
   setShowLicenseModal(true);
 };
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'fix' | 'pro'>('general');
+
+  // Listen for open-settings events from other windows (e.g., People window)
+  useEffect(() => {
+    const handler = (_event: any, tab: string) => {
+      const validTab = (tab === 'general' || tab === 'fix' || tab === 'pro') ? tab : 'general';
+      setInitialSettingsTab(validTab as any);
+      setShowSettingsModal(true);
+    };
+    if ((window as any).pdr?.onOpenSettings) {
+      return (window as any).pdr.onOpenSettings(handler);
+    }
+  }, []);
   const [showLicenseModal, setShowLicenseModal] = useState(false);
   const [showReportsList, setShowReportsList] = useState(false);
   const [showPostFixReport, setShowPostFixReport] = useState(false);
@@ -1372,7 +1385,8 @@ return (
         mode="source"
       />
       {showSettingsModal && (
-		<SettingsModal 
+		<SettingsModal
+		  initialTab={initialSettingsTab}
 		  onClose={() => setShowSettingsModal(false)}
 		  folderStructure={folderStructure}
 		  onFolderStructureChange={(value) => {
@@ -6937,7 +6951,8 @@ export function setSkipWelcomeScreen(skip: boolean): void {
   }
 }
 
-function SettingsModal({ onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange }: {
+function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange }: {
+  initialTab?: 'general' | 'fix' | 'pro',
   onClose: () => void,
   folderStructure: 'year' | 'year-month' | 'year-month-day',
   onFolderStructureChange: (value: 'year' | 'year-month' | 'year-month-day') => void,
@@ -6974,6 +6989,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   const [aiObjectTagging, setAiObjectTagging] = useState(true);
   const [aiAutoProcess, setAiAutoProcess] = useState(true);
   const [aiVisualSuggestions, setAiVisualSuggestions] = useState(true);
+  const [aiRefineFromVerified, setAiRefineFromVerified] = useState(false);
   const [autoSaveCatalogue, setAutoSaveCatalogue] = useState(true);
   const [showManualReportExports, setShowManualReportExports] = useState(false);
 
@@ -6994,6 +7010,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
       setAiObjectTagging(settings.aiObjectTagging);
       setAiAutoProcess(settings.aiAutoProcess);
       setAiVisualSuggestions(settings.aiVisualSuggestions ?? true);
+      setAiRefineFromVerified((settings as any).aiRefineFromVerified ?? false);
       setAutoSaveCatalogue(settings.autoSaveCatalogue);
       setShowManualReportExports(settings.showManualReportExports);
     });
@@ -7068,6 +7085,10 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
   const handleAiVisualSuggestionsToggle = (checked: boolean) => {
     setAiVisualSuggestions(checked);
     setSetting('aiVisualSuggestions', checked);
+  };
+  const handleAiRefineFromVerifiedToggle = (checked: boolean) => {
+    setAiRefineFromVerified(checked);
+    setSetting('aiRefineFromVerified' as any, checked);
   };
 
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
@@ -7152,7 +7173,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
     setAutoAddToSD('ask');
   };
 
-  const [settingsTab, setSettingsTab] = useState<'general' | 'fix' | 'pro'>('general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'fix' | 'pro'>(initialTab ?? 'general');
   const [folderStructureOpen, setFolderStructureOpen] = useState(false);
 
   const options = [
@@ -7209,7 +7230,7 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
           </button>
           <button type="button" className={tabClass('pro')} onClick={() => setSettingsTab('pro')} data-testid="tab-pro">
             <span className="flex items-center gap-1.5">
-              Pro
+              AI
               <Sparkles className="w-3.5 h-3.5" />
             </span>
           </button>
@@ -7576,6 +7597,17 @@ function SettingsModal({ onClose, folderStructure, onFolderStructureChange, play
                           checked={aiVisualSuggestions}
                           onCheckedChange={(checked) => handleAiVisualSuggestionsToggle(!!checked)}
                           data-testid="checkbox-ai-visual-suggestions"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Improve facial recognition from verified faces</span>
+                          <span className="text-xs text-muted-foreground">Enables a button in the People window that uses your verified faces to refine matching. Only turn this on once you're sure the verified faces are correct.</span>
+                        </div>
+                        <Checkbox
+                          checked={aiRefineFromVerified}
+                          onCheckedChange={(checked) => handleAiRefineFromVerifiedToggle(!!checked)}
+                          data-testid="checkbox-ai-refine-from-verified"
                         />
                       </label>
                     </div>

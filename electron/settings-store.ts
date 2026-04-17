@@ -28,6 +28,7 @@ export interface PDRSettings {
   aiMinFaceConfidence: number;
   aiMinTagConfidence: number;
   aiVisualSuggestions: boolean;
+  aiRefineFromVerified: boolean;
 
   // Auto-catalogue
   autoSaveCatalogue: boolean;
@@ -56,6 +57,7 @@ export const optimisedDefaults: PDRSettings = {
   aiMinFaceConfidence: 0.7,
   aiMinTagConfidence: 0.3,
   aiVisualSuggestions: true,
+  aiRefineFromVerified: false,
   // Auto-catalogue — cumulative CSV/TXT at destination root
   autoSaveCatalogue: true,
   showManualReportExports: false,
@@ -85,6 +87,7 @@ export function getSettings(): PDRSettings {
     aiMinFaceConfidence: store.get('aiMinFaceConfidence', optimisedDefaults.aiMinFaceConfidence),
     aiMinTagConfidence: store.get('aiMinTagConfidence', optimisedDefaults.aiMinTagConfidence),
     aiVisualSuggestions: store.get('aiVisualSuggestions', optimisedDefaults.aiVisualSuggestions),
+    aiRefineFromVerified: store.get('aiRefineFromVerified', optimisedDefaults.aiRefineFromVerified),
     autoSaveCatalogue: store.get('autoSaveCatalogue', optimisedDefaults.autoSaveCatalogue),
     showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
     matchThreshold: store.get('matchThreshold', optimisedDefaults.matchThreshold),

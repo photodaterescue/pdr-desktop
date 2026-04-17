@@ -970,6 +970,21 @@ export async function unnameFace(faceId: number): Promise<{ success: boolean }> 
   return { success: false };
 }
 
+export async function refineFromVerified(similarityThreshold?: number): Promise<{
+  success: boolean;
+  data?: {
+    personsProcessed: number;
+    newMatches: number;
+    perPerson: { personId: number; personName: string; verifiedCount: number; matched: number }[];
+  };
+  error?: string;
+}> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.refineFromVerified(similarityThreshold);
+  }
+  return { success: false };
+}
+
 export async function assignFace(faceId: number, personId: number, verified: boolean = false): Promise<{ success: boolean }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.assignFace(faceId, personId, verified);
