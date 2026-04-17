@@ -531,6 +531,7 @@ export default function PeopleManager() {
                             onGlobalReassignChange={(id, name) => { setGlobalReassignFaceId(id); setGlobalReassignName(name); }}
                             globalReassignName={globalReassignName}
                             onGlobalReassignNameChange={setGlobalReassignName}
+                            currentTab={activeTab}
                           />
                         ))}
                       </div>
@@ -610,6 +611,7 @@ export default function PeopleManager() {
                           onGlobalReassignChange={(id, name) => { setGlobalReassignFaceId(id); setGlobalReassignName(name); }}
                           globalReassignName={globalReassignName}
                           onGlobalReassignNameChange={setGlobalReassignName}
+                          currentTab={activeTab}
                         />
                       ))}
                     </div>
@@ -1417,14 +1419,14 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                         const targetCount = getTargetFaceIds().length;
                         return (
                       <div className="space-y-2">
-                        {sampleCrops[face.face_id] && (
-                          <div className="flex justify-center">
-                            <img src={sampleCrops[face.face_id]} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-purple-400/40" />
-                          </div>
-                        )}
                         {targetCount > 1 && (
                           <div className="bg-green-500 text-white text-xs font-medium text-center py-1 px-3 rounded-md">
                             {targetCount} faces selected
+                          </div>
+                        )}
+                        {sampleCrops[face.face_id] && (
+                          <div className="flex justify-center">
+                            <img src={sampleCrops[face.face_id]} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-purple-400/40" />
                           </div>
                         )}
                         {targetCount <= 1 && (
