@@ -858,9 +858,9 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                         onClick={() => { setReassignFaceId(face.face_id); setReassignName(''); setTimeout(() => reassignInputRef.current?.focus(), 100); }}
                       >
                         {faceCrops[face.face_id] ? (
-                          <img src={faceCrops[face.face_id]} alt="" className={`w-full aspect-square rounded-lg object-cover hover:ring-2 hover:ring-purple-400/50 transition-all ${face.verified ? 'border-2 border-orange-400' : 'border border-border/50'}`} />
+                          <img src={faceCrops[face.face_id]} alt="" className={`w-full aspect-square rounded-lg object-cover hover:ring-2 hover:ring-purple-400/50 transition-all ${face.verified ? 'border-2 border-purple-500' : 'border border-border/50'}`} />
                         ) : (
-                          <div className={`w-full aspect-square rounded-lg bg-secondary flex items-center justify-center ${face.verified ? 'border-2 border-orange-400' : ''}`}>
+                          <div className={`w-full aspect-square rounded-lg bg-secondary flex items-center justify-center ${face.verified ? 'border-2 border-purple-500' : ''}`}>
                             <Users className="w-4 h-4 text-muted-foreground/40" />
                           </div>
                         )}
@@ -869,7 +869,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                         </span>
                       </div>
                     </PopoverTrigger>
-                    <PopoverContent side="top" align="center" className="w-80 p-3 z-[60]" onOpenAutoFocus={(e) => e.preventDefault()} collisionPadding={8}>
+                    <PopoverContent side="top" align="center" className="min-w-[250px] max-w-[320px] w-auto p-3 z-[60]" onOpenAutoFocus={(e) => e.preventDefault()} collisionPadding={8}>
                       <div className="space-y-2">
                         {faceCrops[face.face_id] && (
                           <div className="flex justify-center">
@@ -1380,14 +1380,14 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                                   className={`w-10 h-10 rounded-full object-cover cursor-pointer transition-all ${
                                     selectedFaces.has(face.face_id)
                                       ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
-                                      : face.verified ? 'border-2 border-orange-400 hover:ring-2 hover:ring-purple-400/50' : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50'
+                                      : face.verified ? 'border-2 border-purple-500 hover:ring-2 hover:ring-purple-400/50' : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50'
                                   }`}
                                 />
                               ) : (
                                 <div className={`w-10 h-10 rounded-full bg-secondary flex items-center justify-center cursor-pointer ${
                                   selectedFaces.has(face.face_id)
                                     ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
-                                    : face.verified ? 'border-2 border-orange-400' : ''
+                                    : face.verified ? 'border-2 border-purple-500' : ''
                                 }`}>
                                   <Users className="w-3.5 h-3.5 text-muted-foreground/40" />
                                 </div>
@@ -1407,7 +1407,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                         )}
                       </Tooltip>
                     </TooltipProvider>
-                    <PopoverContent side="top" align="center" className="w-80 p-3 z-[60]" onOpenAutoFocus={(e) => e.preventDefault()} collisionPadding={8}
+                    <PopoverContent side="top" align="center" className="min-w-[250px] max-w-[320px] w-auto p-3 z-[60]" onOpenAutoFocus={(e) => e.preventDefault()} collisionPadding={8}
                       onPointerDownOutside={(e) => {
                         const target = e.target as HTMLElement;
                         if (target.closest('[data-face-thumb]')) {
@@ -1705,7 +1705,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
         <div className="flex items-center gap-0.5 shrink-0">
           {cluster.sample_faces.slice(0, 4).map(face => (
             <div key={face.face_id}>
-              {sampleCrops[face.face_id] ? <img src={sampleCrops[face.face_id]} alt="" className={`w-6 h-6 rounded-full object-cover ${face.verified ? 'border-2 border-orange-400' : 'border border-border/40'}`} /> : <div className={`w-6 h-6 rounded-full bg-secondary ${face.verified ? 'border-2 border-orange-400' : ''}`} />}
+              {sampleCrops[face.face_id] ? <img src={sampleCrops[face.face_id]} alt="" className={`w-6 h-6 rounded-full object-cover ${face.verified ? 'border-2 border-purple-500' : 'border border-border/40'}`} /> : <div className={`w-6 h-6 rounded-full bg-secondary ${face.verified ? 'border-2 border-purple-500' : ''}`} />}
             </div>
           ))}
         </div>
