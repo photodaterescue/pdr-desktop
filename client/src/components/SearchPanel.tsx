@@ -593,17 +593,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     } else {
       return null;
     }
-    // Try to match each part to a person name (case-insensitive, exact or prefix match)
+    // Match each part to a person — EXACT name match only (no prefix/substring auto-completion)
     const ids: number[] = [];
     for (const part of parts) {
       const q = part.trim().toLowerCase();
       if (!q) continue;
-      // Prefer exact name match, fall back to prefix match
-      const exact = peopleList.find(p => p.name.toLowerCase() === q);
-      const prefix = exact || peopleList.find(p => p.name.toLowerCase().startsWith(q));
-      const match = prefix || peopleList.find(p => p.name.toLowerCase().includes(q));
+      const match = peopleList.find(p => p.name.toLowerCase() === q);
       if (match) ids.push(match.id);
-      else return null; // If any part can't be matched to a person, bail out (fall back to text search)
+      else return null; // If any part doesn't match a full name, don't treat as operator query
     }
     if (ids.length < 2) return null; // Need at least 2 names for operators to make sense
     return { personIds: Array.from(new Set(ids)), mode };
