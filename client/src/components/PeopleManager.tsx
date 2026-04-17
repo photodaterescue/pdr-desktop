@@ -62,6 +62,10 @@ function notifyChange() {
 export default function PeopleManager() {
   const [activeTab, setActiveTab] = useState<'named' | 'unnamed' | 'unsure' | 'ignored'>('named');
   const [viewMode, setViewMode] = useState<'list' | 'card'>('card');
+  const [zoomLevel, setZoomLevel] = useState(() => {
+    const saved = localStorage.getItem('pdr-people-zoom');
+    return saved ? parseInt(saved, 10) : 100;
+  });
   const [clusters, setClusters] = useState<PersonCluster[]>([]);
   const [discardedPersons, setDiscardedPersons] = useState<DiscardedPerson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -153,6 +157,22 @@ export default function PeopleManager() {
       }
     }
   }, [isLoading, clusters]);
+
+  // Ctrl+scroll zoom
+  useEffect(() => {
+    const handler = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setZoomLevel(prev => {
+          const next = Math.max(60, Math.min(150, prev + (e.deltaY < 0 ? 5 : -5)));
+          localStorage.setItem('pdr-people-zoom', String(next));
+          return next;
+        });
+      }
+    };
+    window.addEventListener('wheel', handler, { passive: false });
+    return () => window.removeEventListener('wheel', handler);
+  }, []);
 
   const handleNameCluster = async (clusterId: number, name: string) => {
     if (!name.trim()) return;
@@ -392,7 +412,7 @@ export default function PeopleManager() {
       </div>
 
       {/* Scrollable Content — fills remaining height */}
-      <div className="flex-1 overflow-y-auto px-6 pt-4 pb-6">
+      <div className="flex-1 overflow-y-auto px-6 pt-4 pb-6" style={{ zoom: `${zoomLevel}%` }}>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
@@ -714,11 +734,16 @@ export default function PeopleManager() {
       </div>
 
       {/* Footer status bar */}
-      <div className="px-6 py-3 border-t border-border bg-muted/30">
-        <p className="text-center text-xs text-muted-foreground">
+      <div className="px-6 py-3 border-t border-border bg-muted/30 flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
           {namedClusters.length} named · {unnamedClusters.length} unnamed · {unsureClusters.length} unsure · {ignoredClusters.length} ignored
           {isReclustering && <span className="ml-2 text-purple-500"><Loader2 className="w-3 h-3 animate-spin inline-block" /> Reclustering...</span>}
         </p>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <button onClick={() => { const z = Math.max(60, zoomLevel - 10); setZoomLevel(z); localStorage.setItem('pdr-people-zoom', String(z)); }} className="p-0.5 hover:text-foreground transition-colors">−</button>
+          <span className="w-8 text-center">{zoomLevel}%</span>
+          <button onClick={() => { const z = Math.min(150, zoomLevel + 10); setZoomLevel(z); localStorage.setItem('pdr-people-zoom', String(z)); }} className="p-0.5 hover:text-foreground transition-colors">+</button>
+        </div>
       </div>
     </div>
   );
