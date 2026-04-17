@@ -75,7 +75,7 @@ export default function PeopleManager() {
   const [pendingIgnore, setPendingIgnore] = useState<string | null>(null);
   const [pendingUnsure, setPendingUnsure] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
-  const [clusterThreshold, setClusterThreshold] = useState(0.72);
+  const [clusterThreshold, setClusterThreshold] = useState(0.70);
   const [isReclustering, setIsReclustering] = useState(false);
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
 
@@ -279,15 +279,15 @@ export default function PeopleManager() {
             <div className="relative flex-1">
               <input
                 type="range"
-                min="0.65"
-                max="0.95"
+                min="0.60"
+                max="0.90"
                 step="0.01"
                 value={clusterThreshold}
                 onChange={(e) => setClusterThreshold(parseFloat(e.target.value))}
                 onMouseUp={() => handleRecluster(clusterThreshold)}
                 onTouchEnd={() => handleRecluster(clusterThreshold)}
                 className="w-full h-1 accent-purple-500 cursor-pointer relative z-10"
-                title={`Match: ${Math.round(((clusterThreshold - 0.65) / 0.30) * 100)}%`}
+                title={`Match: ${Math.round(((clusterThreshold - 0.60) / 0.30) * 100)}%`}
                 disabled={isReclustering}
               />
               {/* Tick marks at 25%, 50%, 75% */}
