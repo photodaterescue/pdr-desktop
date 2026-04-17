@@ -1497,12 +1497,14 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               : 'text-purple-600'
             }`}>{rowIndex + 1}</span>
           )}
-          {/* Main face thumbnail — always shows the first sample face */}
+          {/* Main face thumbnail — uses user-chosen rep for Named, else first sample face */}
           <TooltipProvider delayDuration={500}>
             <Tooltip onOpenChange={(open) => {
-              const firstFace = cluster.sample_faces?.[0];
-              if (open && firstFace?.file_path) {
-                loadContextCrop(`main_${firstFace.face_id}`, firstFace.file_path, firstFace.box_x, firstFace.box_y, firstFace.box_w, firstFace.box_h);
+              const isNamed = cluster.person_name && !cluster.person_name.startsWith('__');
+              const repFace = isNamed ? cluster.sample_faces?.find(f => f.face_id === cluster.representative_face_id) : null;
+              const displayFace = repFace || cluster.sample_faces?.[0];
+              if (open && displayFace?.file_path) {
+                loadContextCrop(`main_${displayFace.face_id}`, displayFace.file_path, displayFace.box_x, displayFace.box_y, displayFace.box_w, displayFace.box_h);
               }
             }}>
               <TooltipTrigger asChild>
@@ -1533,10 +1535,13 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               {(cropUrl || cluster.sample_faces?.[0]) && (
                 <TooltipContent side="right" className="p-0.5 border border-purple-400/30 bg-background shadow-lg rounded-xl z-[70]">
                   {(() => {
-                    const firstFaceId = cluster.sample_faces?.[0]?.face_id;
-                    const contextKey = firstFaceId ? `main_${firstFaceId}` : '';
+                    const isNamed = cluster.person_name && !cluster.person_name.startsWith('__');
+                    const repFace = isNamed ? cluster.sample_faces?.find(f => f.face_id === cluster.representative_face_id) : null;
+                    const displayFace = repFace || cluster.sample_faces?.[0];
+                    const displayFaceId = displayFace?.face_id;
+                    const contextKey = displayFaceId ? `main_${displayFaceId}` : '';
                     const contextImg = contextKey ? contextCrops[contextKey] : null;
-                    const fallback = firstFaceId ? sampleCrops[firstFaceId] : cropUrl;
+                    const fallback = displayFaceId ? sampleCrops[displayFaceId] : cropUrl;
                     return <img src={contextImg || fallback} alt="" className={`${contextImg ? 'w-[200px] h-[200px] rounded-lg' : 'w-28 h-28 rounded-full'} object-cover`} />;
                   })()}
                 </TooltipContent>
