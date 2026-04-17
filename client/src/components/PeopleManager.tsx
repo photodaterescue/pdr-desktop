@@ -117,28 +117,6 @@ export default function PeopleManager() {
             const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
             if (crop.success && crop.dataUrl) crops[face.face_id] = crop.dataUrl;
           }
-          // Always use the first sample face as the main thumbnail
-          if (cluster.sample_faces.length > 0) {
-            const firstFace = cluster.sample_faces[0];
-            const crop = await getFaceCrop(firstFace.file_path, firstFace.box_x, firstFace.box_y, firstFace.box_w, firstFace.box_h, 96);
-            if (crop.success && crop.dataUrl) crops[key] = crop.dataUrl;
-          }
-        }
-        // For Named tab: override with user-chosen representative if one was set
-        const hasRealName = cluster.person_name && !cluster.person_name.startsWith('__');
-        if (hasRealName && cluster.representative_file_path && cluster.box_w > 0) {
-          // Check if the representative is different from the first sample face
-          const firstFaceId = cluster.sample_faces?.[0]?.face_id;
-          if (firstFaceId && cluster.representative_face_id !== firstFaceId) {
-            const crop = await getFaceCrop(
-              cluster.representative_file_path,
-              cluster.box_x, cluster.box_y, cluster.box_w, cluster.box_h,
-              96
-            );
-            if (crop.success && crop.dataUrl) {
-              crops[key] = crop.dataUrl;
-            }
-          }
         }
       }));
       setFaceCropsMap(crops);
@@ -1336,17 +1314,18 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               : 'text-purple-600'
             }`}>{rowIndex + 1}</span>
           )}
-          {/* Main face thumbnail */}
+          {/* Main face thumbnail — always shows the first sample face */}
           <TooltipProvider delayDuration={500}>
             <Tooltip onOpenChange={(open) => {
-              if (open && cluster.representative_file_path) {
-                loadContextCrop(`main_${cluster.representative_face_id}`, cluster.representative_file_path, cluster.box_x, cluster.box_y, cluster.box_w, cluster.box_h);
+              const firstFace = cluster.sample_faces?.[0];
+              if (open && firstFace?.file_path) {
+                loadContextCrop(`main_${firstFace.face_id}`, firstFace.file_path, firstFace.box_x, firstFace.box_y, firstFace.box_w, firstFace.box_h);
               }
             }}>
               <TooltipTrigger asChild>
                 <div className={`shrink-0 ${(!isEditing && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'cursor-pointer' : ''}`} onClick={() => { if (!isEditing && cluster.person_name && !cluster.person_name.startsWith('__')) onStartEdit(); }}>
-                  {cropUrl ? (
-                    <img src={cropUrl} alt="" className={`w-14 h-14 rounded-full object-cover shrink-0 border-2 ${
+                  {(cropUrl || (cluster.sample_faces?.[0] && sampleCrops[cluster.sample_faces[0].face_id])) ? (
+                    <img src={sampleCrops[cluster.sample_faces?.[0]?.face_id] || cropUrl} alt="" className={`w-14 h-14 rounded-full object-cover shrink-0 border-2 ${
                       cluster.person_name === '__ignored__' ? 'border-[#76899F]'
                       : cluster.person_name === '__unsure__' ? 'border-blue-400'
                       : !cluster.person_name ? 'border-amber-400'
@@ -1360,9 +1339,15 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   )}
                 </div>
               </TooltipTrigger>
-              {cropUrl && (
+              {(cropUrl || cluster.sample_faces?.[0]) && (
                 <TooltipContent side="right" className="p-0.5 border border-purple-400/30 bg-background shadow-lg rounded-xl z-[70]">
-                  <img src={contextCrops[`main_${cluster.representative_face_id}`] || cropUrl} alt="" className={`${contextCrops[`main_${cluster.representative_face_id}`] ? 'w-[200px] h-[200px] rounded-lg' : 'w-28 h-28 rounded-full'} object-cover`} />
+                  {(() => {
+                    const firstFaceId = cluster.sample_faces?.[0]?.face_id;
+                    const contextKey = firstFaceId ? `main_${firstFaceId}` : '';
+                    const contextImg = contextKey ? contextCrops[contextKey] : null;
+                    const fallback = firstFaceId ? sampleCrops[firstFaceId] : cropUrl;
+                    return <img src={contextImg || fallback} alt="" className={`${contextImg ? 'w-[200px] h-[200px] rounded-lg' : 'w-28 h-28 rounded-full'} object-cover`} />;
+                  })()}
                 </TooltipContent>
               )}
             </Tooltip>
