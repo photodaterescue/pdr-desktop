@@ -887,7 +887,7 @@ export default function PeopleManager() {
                     await handleSetRepresentative(ownerCluster.person_id!, faceId);
                     setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
                   }}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-green-300/50 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 text-xs font-medium transition-colors"
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-medium transition-colors"
                 >
                   <ImageIcon className="w-3 h-3" /> Set as main photo
                 </button>
