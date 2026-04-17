@@ -851,7 +851,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       {/* ═══ RIBBON — Word-style, collapsible, high contrast ═══ */}
       {/* Tab bar — OUTSIDE scaling so it stays fixed height */}
       <div className="shrink-0 select-none">
-        <div className="flex items-center justify-between ribbon-tab-bar relative">
+        <div className="flex items-center justify-between ribbon-tab-bar relative" data-tour="sd-ribbon-tabs">
           {/* Left: category tabs */}
           <div className="flex items-end shrink-0">
             {([
@@ -964,7 +964,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 {/* ── Search Group (always visible) ── */}
                 <RibbonGroup label="Search">
                   <div className="flex items-center gap-2 flex-1 py-1.5">
-                    <div className="relative min-w-[170px] max-w-[280px] flex-1">
+                    <div className="relative min-w-[170px] max-w-[280px] flex-1" data-tour="sd-search-box">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
                       <input
                         ref={searchInputRef}
@@ -1644,6 +1644,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         }}>
                           <PopoverTrigger asChild>
                             <button
+                              data-tour="sd-people-filter"
                               className={`flex flex-col items-center px-2 py-0.5 rounded-md hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors cursor-pointer ${selectedPersonIds.length > 0 ? 'ring-2 ring-purple-400/50 bg-purple-50/50 dark:bg-purple-900/20' : ''}`}
                               title="Filter by people & faces"
                             >

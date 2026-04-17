@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Pin,
+  Menu,
   ChevronDown,
   Plus,
   Play,
@@ -82,7 +83,7 @@ import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
 import { SearchRibbon } from "@/components/SearchPanel";
 import { useLicense } from "@/contexts/LicenseContext";
-import { TourOverlay, TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
+import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
 import type { SourceAnalysisResult } from "../electron";
 
 interface Source {
@@ -1502,8 +1503,8 @@ return (
         />
       )}
       
-      <TourOverlay 
-        steps={TOUR_STEPS}
+      <TourOverlay
+        steps={searchResultsActive ? SD_TOUR_STEPS : TOUR_STEPS}
         isOpen={showTour}
         onClose={() => setShowTour(false)}
         onComplete={() => setShowTour(false)}
@@ -1569,29 +1570,56 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   if (collapsed) {
     return (
       <div
-        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-4"
+        data-tour="sd-sidebar-collapse"
+        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-4 gap-1.5"
         style={{ width: '48px', transition: 'width 0.2s ease' }}
       >
+        {/* Menu / expand button — restores the Source Menu sidebar */}
         <button
           onClick={() => setPinStatePersisted(pinState === 'closed' ? 'auto' : 'open')}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors mb-2"
-          title={pinState === 'closed' ? 'Unpin and expand' : 'Expand sidebar'}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+          title={pinState === 'closed' ? 'Show Source Menu (unpin)' : 'Show Source Menu'}
         >
-          <ChevronRight className="w-4 h-4" />
+          <Menu className="w-4 h-4" />
+        </button>
+
+        <div className="flex-1" />
+
+        {/* Guidance icons */}
+        <button
+          onClick={onStartTour}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+          title="Quick Tour"
+        >
+          <PlayCircle className="w-4 h-4 opacity-70" />
         </button>
         <button
-          onClick={onDashboardClick}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors mb-4"
-          title="Workspace"
+          onClick={() => onPanelChange('getting-started')}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors"
+          title="Getting Started"
         >
-          <img src="./assets//pdr-logo_transparent.png" alt="PDR" className="h-6 w-auto object-contain" />
+          <img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="" />
         </button>
         <button
-          onClick={onAddSource}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary/20 text-primary transition-colors"
-          title="Add Source"
+          onClick={() => onPanelChange('best-practices')}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors"
+          title="Best Practices"
         >
-          <img src="./assets//pdr-source.png" className="w-4 h-4 object-contain" alt="Add Source" />
+          <img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="" />
+        </button>
+        <button
+          onClick={() => onPanelChange('what-next')}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors"
+          title="What Happens Next"
+        >
+          <img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="" />
+        </button>
+        <button
+          onClick={onSettingsClick}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+          title="Settings"
+        >
+          <Settings className="w-4 h-4" />
         </button>
       </div>
     );

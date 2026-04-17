@@ -441,3 +441,86 @@ export const TOUR_STEPS: TourStep[] = [
     position: 'center'
   }
 ];
+
+/* ─── Search & Discovery Tour ─────────────────────────────────────────────
+ * Shown when user clicks Quick Tour while S&D search results are active.
+ * Covers the ribbon filters, search bar, people filter, and results pane.
+ */
+export const SD_TOUR_STEPS: TourStep[] = [
+  {
+    id: 'sd-welcome',
+    title: 'Search & Discovery',
+    description: 'This tour walks you through finding photos across your library once they\'ve been fixed and indexed. It takes about a minute, and you can restart it anytime from the sidebar.',
+    position: 'center'
+  },
+  {
+    id: 'sd-ribbon-tabs',
+    targetSelector: '[data-tour="sd-ribbon-tabs"]',
+    title: 'Filter Tabs',
+    description: 'Switch between Favourites, Filters, Camera, Exposure, and AI. Each tab groups related filters so you can narrow down your library by any combination.',
+    position: 'bottom',
+    highlightPadding: 6
+  },
+  {
+    id: 'sd-search-box',
+    targetSelector: '[data-tour="sd-search-box"]',
+    title: 'Smart Search',
+    description: 'Type a person\'s name, a camera, a place, or a tag. For people you can use operators: "Mel + Terry" (together), "Mel, Terry" (any), "Mel and Terry" (together). Suggestions appear as you type.',
+    position: 'bottom',
+    highlightPadding: 8
+  },
+  {
+    id: 'sd-people-filter',
+    targetSelector: '[data-tour="sd-people-filter"]',
+    title: 'People Filter',
+    description: 'Click the PEOPLE button to pick people from your library. Single-column numbers = photos of just that person. Multi-column numbers = photos shared with the people you\'ve already selected.',
+    position: 'bottom',
+    highlightPadding: 8
+  },
+  {
+    id: 'sd-tags-filter',
+    targetSelector: '[data-tour="sd-tags-filter"]',
+    title: 'AI Tags',
+    description: 'Browse AI-detected tags — objects, scenes, activities. Click any tag to filter your library to only photos that contain it.',
+    position: 'bottom',
+    highlightPadding: 8
+  },
+  {
+    id: 'sd-sort',
+    targetSelector: '[data-tour="sd-sort"]',
+    title: 'Sort Order',
+    description: 'Sort results by date, name, size, confidence and more. Click to toggle ascending/descending.',
+    position: 'bottom',
+    highlightPadding: 6
+  },
+  {
+    id: 'sd-results-grid',
+    targetSelector: '[data-tour="sd-results-grid"]',
+    title: 'Results',
+    description: 'Your matching photos appear here. Click a thumbnail to preview, or select multiple to perform batch actions like copying to a new folder.',
+    position: 'top',
+    highlightPadding: 8
+  },
+  {
+    id: 'sd-sidebar-collapse',
+    targetSelector: '[data-tour="sd-sidebar-collapse"]',
+    title: 'More Viewing Space',
+    description: 'The sidebar collapses automatically when search results appear, giving you more room for thumbnails. Pin it open or closed using the buttons at the top — your preference is saved.',
+    preferredPositions: ['right', 'bottom', 'top'],
+    highlightPadding: 8
+  },
+  {
+    id: 'sd-favourites',
+    targetSelector: '[data-tour="sd-favourites"]',
+    title: 'Save Your Favourite Searches',
+    description: 'Star a filter combination to save it. Up to 10 favourites can be pinned for quick access on the Favourites tab.',
+    position: 'bottom',
+    highlightPadding: 6
+  },
+  {
+    id: 'sd-complete',
+    title: 'Enjoy Your Library',
+    description: 'That\'s Search & Discovery! Everything happens on your device — no uploads, no cloud. Your photos, your library, fully searchable.',
+    position: 'center'
+  }
+];
