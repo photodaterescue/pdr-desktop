@@ -858,9 +858,9 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                         onClick={() => { setReassignFaceId(face.face_id); setReassignName(''); setTimeout(() => reassignInputRef.current?.focus(), 100); }}
                       >
                         {faceCrops[face.face_id] ? (
-                          <img src={faceCrops[face.face_id]} alt="" className={`w-full aspect-square rounded-lg object-cover hover:ring-2 hover:ring-purple-400/50 transition-all ${(face.verified && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'border-2 border-purple-500' : 'border border-border/50'}`} />
+                          <img src={faceCrops[face.face_id]} alt="" className={`w-full aspect-square rounded-lg object-cover hover:ring-2 hover:ring-purple-400/50 transition-all ${face.verified ? verifiedBorder : 'border border-border/50'}`} />
                         ) : (
-                          <div className={`w-full aspect-square rounded-lg bg-secondary flex items-center justify-center ${(face.verified && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'border-2 border-purple-500' : ''}`}>
+                          <div className={`w-full aspect-square rounded-lg bg-secondary flex items-center justify-center ${face.verified ? verifiedBorder : ''}`}>
                             <Users className="w-4 h-4 text-muted-foreground/40" />
                           </div>
                         )}
@@ -1020,6 +1020,16 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   onGlobalReassignNameChange: (name: string) => void;
   currentTab?: 'named' | 'unnamed' | 'unsure' | 'ignored';
 }) {
+  // Ring colour for verified faces based on which category the cluster belongs to
+  const getVerifiedBorderClass = (): string => {
+    if (!cluster.person_name) return 'border-2 border-amber-400'; // Unnamed (user chose Unnamed)
+    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-slate-400';
+    if (cluster.person_name.startsWith('__')) return ''; // Other special names
+    return 'border-2 border-purple-500'; // Named (real name)
+  };
+  const verifiedBorder = getVerifiedBorderClass();
+
   const filteredPersons = (existingPersons || [])
     .filter(p => nameInput.length > 0 && p.name.toLowerCase().includes(nameInput.toLowerCase()) && p.name !== cluster.person_name && (p.photo_count ?? 0) > 0)
     .slice(0, 4);
@@ -1272,7 +1282,9 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               <TooltipTrigger asChild>
                 <div className={`shrink-0 ${!isEditing ? 'cursor-pointer' : ''}`} onClick={() => { if (!isEditing) onStartEdit(); }}>
                   {cropUrl ? (
-                    <img src={cropUrl} alt="" className="w-14 h-14 rounded-full object-cover shrink-0 border-2 border-purple-400/40" />
+                    <img src={cropUrl} alt="" className={`w-14 h-14 rounded-full object-cover shrink-0 border-2 ${
+                      cluster.person_name && !cluster.person_name.startsWith('__') ? 'border-indigo-500' : 'border-purple-400/40'
+                    }`} />
                   ) : (
                     <div className="w-14 h-14 rounded-full bg-purple-500/15 flex items-center justify-center shrink-0">
                       <Users className="w-6 h-6 text-purple-400" />
@@ -1380,14 +1392,14 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                                   className={`w-10 h-10 rounded-full object-cover cursor-pointer transition-all ${
                                     selectedFaces.has(face.face_id)
                                       ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
-                                      : (face.verified && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'border-2 border-purple-500 hover:ring-2 hover:ring-purple-400/50' : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50'
+                                      : face.verified ? `${verifiedBorder} hover:ring-2 hover:ring-purple-400/50` : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50'
                                   }`}
                                 />
                               ) : (
                                 <div className={`w-10 h-10 rounded-full bg-secondary flex items-center justify-center cursor-pointer ${
                                   selectedFaces.has(face.face_id)
                                     ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
-                                    : (face.verified && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'border-2 border-purple-500' : ''
+                                    : face.verified ? verifiedBorder : ''
                                 }`}>
                                   <Users className="w-3.5 h-3.5 text-muted-foreground/40" />
                                 </div>
@@ -1627,6 +1639,15 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   onConfirmUnsure?: () => void;
   onCancelUnsure?: () => void;
 }) {
+  const getVerifiedBorderClass = (): string => {
+    if (!cluster.person_name) return 'border-2 border-amber-400';
+    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-slate-400';
+    if (cluster.person_name.startsWith('__')) return '';
+    return 'border-2 border-purple-500';
+  };
+  const verifiedBorder = getVerifiedBorderClass();
+
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1705,7 +1726,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
         <div className="flex items-center gap-0.5 shrink-0">
           {cluster.sample_faces.slice(0, 4).map(face => (
             <div key={face.face_id}>
-              {sampleCrops[face.face_id] ? <img src={sampleCrops[face.face_id]} alt="" className={`w-6 h-6 rounded-full object-cover ${(face.verified && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'border-2 border-purple-500' : 'border border-border/40'}`} /> : <div className={`w-6 h-6 rounded-full bg-secondary ${(face.verified && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'border-2 border-purple-500' : ''}`} />}
+              {sampleCrops[face.face_id] ? <img src={sampleCrops[face.face_id]} alt="" className={`w-6 h-6 rounded-full object-cover ${face.verified ? verifiedBorder : 'border border-border/40'}`} /> : <div className={`w-6 h-6 rounded-full bg-secondary ${face.verified ? verifiedBorder : ''}`} />}
             </div>
           ))}
         </div>
