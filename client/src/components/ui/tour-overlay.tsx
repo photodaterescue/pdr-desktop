@@ -303,7 +303,7 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
               </span>
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">{step.title}</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed mb-5">{step.description}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-5 whitespace-pre-line">{step.description}</p>
           </div>
 
           <div className="flex items-center justify-between">
@@ -465,7 +465,7 @@ export const SD_TOUR_STEPS: TourStep[] = [
     id: 'sd-search-box',
     targetSelector: '[data-tour="sd-search-box"]',
     title: 'Smart Search',
-    description: 'Type a person\'s name, a camera, a place, or a tag. For people you can use operators: "Mel + Terry" (together), "Mel, Terry" (any), "Mel and Terry" (together). Suggestions appear as you type.',
+    description: 'Type a name, camera, place or tag. Combine people with:\n  •  +  or  &  →  photos where they appear together\n  •  ,  →  photos of any of them\nExample:  Sarah + James  finds only photos with both Sarah AND James. Sarah, James finds all photos with either.',
     position: 'bottom',
     highlightPadding: 8
   },
@@ -511,7 +511,7 @@ export const SD_TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'sd-favourites',
-    targetSelector: '[data-tour="sd-favourites"]',
+    targetSelector: '[data-tour="sd-favourites-tab"]',
     title: 'Save Your Favourite Searches',
     description: 'Star a filter combination to save it. Up to 10 favourites can be pinned for quick access on the Favourites tab.',
     position: 'bottom',

@@ -863,6 +863,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             ]).map(tab => (
               <button
                 key={tab.key}
+                data-tour={tab.key === 'favourites' ? 'sd-favourites-tab' : tab.key === 'ai' ? 'sd-tags-filter' : undefined}
                 onClick={() => { setActiveTab(tab.key); if (!ribbonExpanded) setRibbonExpanded(true); }}
                 className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 relative ${
                   activeTab === tab.key
@@ -975,6 +976,27 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         onFocus={() => { if (searchText.trim().length > 0) setShowSearchSuggestions(true); }}
                         onBlur={() => { setTimeout(() => setShowSearchSuggestions(false), 200); }}
                         onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setShowSearchSuggestions(false);
+                            setSearchSuggestionIdx(-1);
+                            return;
+                          }
+                          if (e.key === 'Enter') {
+                            // Always close the suggestions dropdown on Enter; search executes automatically.
+                            // If a suggestion is highlighted, use it; otherwise accept the typed text.
+                            if (showSearchSuggestions && searchSuggestionIdx >= 0 && currentSuggestions.items[searchSuggestionIdx]) {
+                              e.preventDefault();
+                              const chosen = currentSuggestions.items[searchSuggestionIdx];
+                              if (chosen.type === 'person' && chosen.isOperator) {
+                                setSearchText(`${chosen.prefix}${chosen.name}`);
+                              } else {
+                                setSearchText(chosen.name);
+                              }
+                            }
+                            setShowSearchSuggestions(false);
+                            setSearchSuggestionIdx(-1);
+                            return;
+                          }
                           if (!showSearchSuggestions || currentSuggestions.items.length === 0) return;
                           if (e.key === 'ArrowDown') {
                             e.preventDefault();
@@ -982,19 +1004,6 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           } else if (e.key === 'ArrowUp') {
                             e.preventDefault();
                             setSearchSuggestionIdx(prev => Math.max(prev - 1, -1));
-                          } else if (e.key === 'Enter' && searchSuggestionIdx >= 0) {
-                            e.preventDefault();
-                            const chosen = currentSuggestions.items[searchSuggestionIdx];
-                            if (chosen.type === 'person' && chosen.isOperator) {
-                              setSearchText(`${chosen.prefix}${chosen.name}`);
-                            } else {
-                              setSearchText(chosen.name);
-                            }
-                            setShowSearchSuggestions(false);
-                            setSearchSuggestionIdx(-1);
-                          } else if (e.key === 'Escape') {
-                            setShowSearchSuggestions(false);
-                            setSearchSuggestionIdx(-1);
                           }
                         }}
                         disabled={!dbReady}
@@ -2052,7 +2061,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 {/* ── Sort (always visible) ── */}
                 <RibbonSeparator />
                 <RibbonGroup label="Sort">
-                  <div className="flex items-center gap-1.5 flex-1 py-1.5">
+                  <div className="flex items-center gap-1.5 flex-1 py-1.5" data-tour="sd-sort">
                     <div className="flex items-center rounded-md border border-border bg-background overflow-hidden">
                       <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SearchQuery['sortBy'])}
                         className="px-2 py-1.5 bg-transparent text-[12px] text-foreground focus:outline-none border-none appearance-none cursor-pointer pr-1">
@@ -2529,7 +2538,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           {results.files.length > 0 ? (
             <ResizablePanelGroup direction="horizontal" className="flex-1">
               <ResizablePanel defaultSize={selectedFile && showPreviewPanel ? 65 : 100} minSize={40}>
-                <div ref={gridContainerRef} className="h-full overflow-y-auto p-4 select-none">
+                <div ref={gridContainerRef} data-tour="sd-results-grid" className="h-full overflow-y-auto p-4 select-none">
                   {/* ── Grid View (Large Icons) ── */}
                   {viewMode === 'grid' && (
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
