@@ -1283,9 +1283,9 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
           {rowIndex != null && (
             <span className={`text-xs font-bold shrink-0 w-5 text-center ${
               cluster.person_name === '__ignored__' ? 'text-[#76899F]'
-              : cluster.person_name === '__unsure__' ? 'text-blue-400'
-              : !cluster.person_name ? 'text-amber-400'
-              : 'text-indigo-500'
+              : cluster.person_name === '__unsure__' ? 'text-blue-600'
+              : !cluster.person_name ? 'text-amber-600'
+              : 'text-purple-600'
             }`}>{rowIndex + 1}</span>
           )}
           {/* Main face thumbnail */}
