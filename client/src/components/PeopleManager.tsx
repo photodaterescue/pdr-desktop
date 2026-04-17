@@ -393,7 +393,8 @@ export default function PeopleManager() {
         </div>
       </div>
 
-      {/* Scrollable Content — fills remaining height */}
+      {/* Main content area — scrollable content + optional side panel */}
+      <div className="flex-1 flex overflow-hidden">
       <div className="flex-1 overflow-y-auto px-6 pt-4 pb-6" style={{ zoom: `${zoomLevel}%` }}>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -714,6 +715,129 @@ export default function PeopleManager() {
           </>
         )}
       </div>
+
+      {/* ── Side panel — fixed action modal for face assignment ── */}
+      {globalReassignFaceId !== null && (
+        <div className="w-[280px] shrink-0 border-l border-border bg-background p-4 overflow-y-auto">
+          <div className="space-y-2">
+            {globalSelectedFaces.size > 1 && (
+              <div className="bg-green-500 text-white text-xs font-medium text-center py-1 px-3 rounded-md">
+                {globalSelectedFaces.size} faces selected
+              </div>
+            )}
+            {faceCropsMap[globalReassignFaceId] && (
+              <div className="flex justify-center">
+                <img src={faceCropsMap[globalReassignFaceId]} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-purple-400/40" />
+              </div>
+            )}
+            {globalSelectedFaces.size <= 1 && (
+              <p className="text-xs text-muted-foreground text-center">Choose an action for this face</p>
+            )}
+            <div className="relative">
+              <input
+                type="text"
+                value={globalReassignName}
+                onChange={(e) => setGlobalReassignName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && globalReassignName.trim()) {
+                    // Trigger verify via the handleReassignFace flow
+                    const targets = Array.from(globalSelectedFaces);
+                    if (targets.length === 0) return;
+                    (async () => {
+                      for (let i = 0; i < targets.length; i++) {
+                        const isLast = i === targets.length - 1;
+                        await handleReassignFace(targets[i], globalReassignName.trim(), true, !isLast);
+                      }
+                      setGlobalReassignFaceId(null);
+                      setGlobalReassignName('');
+                      setGlobalSelectedFaces(new Set());
+                    })();
+                  } else if (e.key === 'Escape') {
+                    setGlobalReassignFaceId(null);
+                    setGlobalReassignName('');
+                    setGlobalSelectedFaces(new Set());
+                  }
+                }}
+                placeholder="Type person name..."
+                className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                autoFocus
+              />
+              {/* Suggestions from existing persons */}
+              {globalReassignName.trim().length > 0 && existingPersons.filter(p => p.name.toLowerCase().includes(globalReassignName.toLowerCase()) && (p.photo_count ?? 0) > 0).length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
+                  {existingPersons.filter(p => p.name.toLowerCase().includes(globalReassignName.toLowerCase()) && (p.photo_count ?? 0) > 0).slice(0, 5).map(p => (
+                    <button key={p.id} onMouseDown={(e) => { e.preventDefault(); setGlobalReassignName(p.name); }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors text-left hover:bg-purple-100/50 dark:hover:bg-purple-900/20">
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => {
+                  const targets = Array.from(globalSelectedFaces);
+                  if (targets.length === 0 || !globalReassignName.trim()) return;
+                  (async () => {
+                    for (let i = 0; i < targets.length; i++) {
+                      const isLast = i === targets.length - 1;
+                      await handleReassignFace(targets[i], globalReassignName.trim(), true, !isLast);
+                    }
+                    setGlobalReassignFaceId(null);
+                    setGlobalReassignName('');
+                    setGlobalSelectedFaces(new Set());
+                  })();
+                }}
+                disabled={!globalReassignName.trim()}
+                className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
+              >
+                Verify{globalSelectedFaces.size > 1 ? ` (${globalSelectedFaces.size})` : ''}
+              </button>
+              <button
+                onClick={() => { setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set()); }}
+                className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="flex gap-1.5 pt-1 border-t border-border">
+              {activeTab !== 'unsure' && (
+                <button onClick={() => {
+                  const targets = Array.from(globalSelectedFaces);
+                  if (targets.length === 0) return;
+                  setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
+                  (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unsure__', false, i < targets.length - 1); })();
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-xs font-medium transition-colors">
+                  <HelpCircle className="w-3 h-3" /> Unsure
+                </button>
+              )}
+              {activeTab !== 'unnamed' && (
+                <button onClick={() => {
+                  const targets = Array.from(globalSelectedFaces);
+                  if (targets.length === 0) return;
+                  setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
+                  (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unnamed__', false, i < targets.length - 1); })();
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs font-medium transition-colors">
+                  <Users className="w-3 h-3" /> Unnamed
+                </button>
+              )}
+              {activeTab !== 'ignored' && (
+                <button onClick={() => {
+                  const targets = Array.from(globalSelectedFaces);
+                  if (targets.length === 0) return;
+                  setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
+                  (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__ignored__', false, i < targets.length - 1); })();
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-xs font-medium transition-colors">
+                  <UserX className="w-3 h-3" /> Ignore
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      </div>{/* end flex wrapper */}
 
       {/* Footer status bar */}
       <div className="px-6 py-3 border-t border-border bg-muted/30 flex items-center justify-between">
@@ -1429,15 +1553,13 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                 onClick={(e) => e.stopPropagation()}
               >
                 {cluster.sample_faces.map((face, faceIdx) => (
-                  <Popover key={face.face_id} open={reassignFaceId === face.face_id} onOpenChange={(open) => { if (!open) { onGlobalReassignChange(null, ''); clearSelection(); } }}>
-                    <TooltipProvider delayDuration={500}>
+                    <TooltipProvider key={face.face_id} delayDuration={500}>
                       <Tooltip onOpenChange={(open) => {
                         if (open && face.file_path) {
                           loadContextCrop(`face_${face.face_id}`, face.file_path, face.box_x, face.box_y, face.box_w, face.box_h);
                         }
                       }}>
                         <TooltipTrigger asChild>
-                          <PopoverAnchor asChild>
                             <div
                               className="shrink-0 relative"
                               data-face-thumb="true"
@@ -1473,7 +1595,6 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                                 <span className="text-[8px] font-bold text-white">{faceIdx + 1}</span>
                               </div>
                             </div>
-                          </PopoverAnchor>
                         </TooltipTrigger>
                         {contextCrops[`face_${face.face_id}`] && (
                           <TooltipContent side="top" avoidCollisions={false} className="p-0.5 border border-purple-400/30 bg-background shadow-lg rounded-xl z-[80]">
@@ -1482,117 +1603,6 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                         )}
                       </Tooltip>
                     </TooltipProvider>
-                    <PopoverContent side="right" align="start" className="min-w-[250px] max-w-[320px] w-auto p-3 z-[60]" onOpenAutoFocus={(e) => e.preventDefault()} collisionPadding={8} sideOffset={20}
-                      onPointerDownOutside={(e) => {
-                        const target = e.target as HTMLElement;
-                        if (target.closest('[data-face-thumb]')) {
-                          e.preventDefault();
-                        }
-                      }}
-                    >
-                      {(() => {
-                        const targetCount = getTargetFaceIds().length;
-                        return (
-                      <div className="space-y-2">
-                        {targetCount > 1 && (
-                          <div className="bg-green-500 text-white text-xs font-medium text-center py-1 px-3 rounded-md">
-                            {targetCount} faces selected
-                          </div>
-                        )}
-                        {sampleCrops[face.face_id] && (
-                          <div className="flex justify-center">
-                            <img src={sampleCrops[face.face_id]} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-purple-400/40" />
-                          </div>
-                        )}
-                        {targetCount <= 1 && (
-                        <p className="text-xs text-muted-foreground text-center">
-                          Choose an action for this face
-                        </p>
-                        )}
-                        <div className="relative">
-                        <input
-                          ref={reassignInputRef}
-                          type="text"
-                          value={reassignName}
-                          onChange={(e) => { setReassignName(e.target.value); setReassignSuggestionIdx(-1); }}
-                          onFocus={() => setReassignInputFocused(true)}
-                          onBlur={() => setTimeout(() => setReassignInputFocused(false), 150)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'ArrowDown' && reassignSuggestions.length > 0) {
-                              e.preventDefault();
-                              setReassignSuggestionIdx(prev => Math.min(prev + 1, reassignSuggestions.length - 1));
-                            } else if (e.key === 'ArrowUp' && reassignSuggestions.length > 0) {
-                              e.preventDefault();
-                              setReassignSuggestionIdx(prev => Math.max(prev - 1, -1));
-                            } else if (e.key === 'Enter') {
-                              if (reassignSuggestionIdx >= 0 && reassignSuggestions[reassignSuggestionIdx]) {
-                                e.preventDefault();
-                                setReassignName(reassignSuggestions[reassignSuggestionIdx].name);
-                                setReassignSuggestionIdx(-1);
-                              } else if (reassignName.trim()) {
-                                handleReassign(reassignName);
-                              }
-                            } else if (e.key === 'Escape') {
-                              setReassignFaceId(null); setReassignName(''); clearSelection();
-                            }
-                          }}
-                          placeholder="Type person name..."
-                          className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
-                          autoFocus
-                        />
-                        {reassignSuggestions.length > 0 && (
-                          <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
-                            {reassignSuggestions.map((p, idx) => (
-                              <button key={p.id} onMouseDown={(e) => { e.preventDefault(); setReassignName(p.name); setReassignSuggestionIdx(-1); setReassignInputFocused(false); }}
-                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors text-left ${idx === reassignSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}>
-                                <span className="truncate">{p.name}</span>
-                                <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        </div>
-                        <div className="flex gap-1.5">
-                          <button onClick={() => handleReassign(reassignName)} disabled={!reassignName.trim()}
-                            className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors">
-                            Verify{targetCount > 1 ? ` (${targetCount})` : ''}
-                          </button>
-                          <button onClick={() => { setReassignFaceId(null); setReassignName(''); clearSelection(); }}
-                            className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors">
-                            Cancel
-                          </button>
-                        </div>
-                        <div className="flex gap-1.5 pt-1 border-t border-border">
-                          {currentTab !== 'unsure' && (
-                          <button onClick={() => handleReassign('__unsure__')}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-xs font-medium transition-colors">
-                            <HelpCircle className="w-3 h-3" /> Unsure
-                          </button>
-                          )}
-                          {currentTab !== 'unnamed' && (
-                          <button onClick={() => handleReassign('__unnamed__')}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs font-medium transition-colors">
-                            <Users className="w-3 h-3" /> Unnamed
-                          </button>
-                          )}
-                          {currentTab !== 'ignored' && (
-                          <button onClick={() => handleReassign('__ignored__')}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-xs font-medium transition-colors">
-                            <UserX className="w-3 h-3" /> Ignore
-                          </button>
-                          )}
-                        </div>
-                        {onSetRepresentative && cluster.person_id && targetCount === 1 && (
-                          <button onClick={async () => { await onSetRepresentative(face.face_id); setReassignFaceId(null); setReassignName(''); }}
-                            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-green-300/50 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 text-xs font-medium transition-colors">
-                            <ImageIcon className="w-3 h-3" /> Set as main photo
-                          </button>
-                        )}
-                      </div>
-                        );
-                      })()}
-                    </PopoverContent>
-                  </Popover>
                 ))}
               </div>
               {/* Scroll position counter */}
