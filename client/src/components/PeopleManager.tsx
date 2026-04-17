@@ -1279,6 +1279,15 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
     >
       <div className="p-4">
         <div className="flex items-center gap-3">
+          {/* Row number */}
+          {rowIndex != null && (
+            <span className={`text-xs font-bold shrink-0 w-5 text-center ${
+              cluster.person_name === '__ignored__' ? 'text-[#76899F]'
+              : cluster.person_name === '__unsure__' ? 'text-blue-400'
+              : !cluster.person_name ? 'text-amber-400'
+              : 'text-indigo-500'
+            }`}>{rowIndex + 1}</span>
+          )}
           {/* Main face thumbnail */}
           <TooltipProvider delayDuration={500}>
             <Tooltip onOpenChange={(open) => {
@@ -1367,7 +1376,6 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   {displayName || (cluster.person_name && !cluster.person_name.startsWith('__') ? cluster.person_name : 'Unknown person')}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {rowIndex != null && <span className="text-muted-foreground/50 mr-1">#{rowIndex + 1}</span>}
                   {cluster.face_count} {cluster.face_count === 1 ? 'face' : 'faces'} · {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
                 </p>
               </>
