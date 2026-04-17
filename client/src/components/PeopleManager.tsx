@@ -598,7 +598,6 @@ export default function PeopleManager() {
                           inputRef={nameInputRef}
                           existingPersons={existingPersons}
                           onSelectPerson={(name) => handleNameCluster(cluster.cluster_id, name)}
-                          displayName="Unsure"
                           pendingIgnore={pendingIgnore === clusterKey(cluster)}
                           onIgnore={() => setPendingIgnore(clusterKey(cluster))}
                           onConfirmIgnore={() => handleIgnoreCluster(cluster.cluster_id)}
@@ -655,7 +654,6 @@ export default function PeopleManager() {
                           inputRef={nameInputRef}
                           existingPersons={existingPersons}
                           onSelectPerson={(name) => handleNameCluster(cluster.cluster_id, name)}
-                          displayName="Ignored"
                           onRestore={() => handleRestoreToUnnamed(cluster.cluster_id, cluster.person_id)}
                           onDiscard={cluster.person_id ? () => setConfirmPermanentDelete({ personId: cluster.person_id!, personName: 'Ignored face group' }) : undefined}
                           onReassignFace={handleReassignFace}
@@ -1024,7 +1022,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const getVerifiedBorderClass = (): string => {
     if (!cluster.person_name) return 'border-2 border-amber-400'; // Unnamed (user chose Unnamed)
     if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-red-300';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-red-500';
     if (cluster.person_name.startsWith('__')) return ''; // Other special names
     return 'border-2 border-purple-500'; // Named (real name)
   };
@@ -1642,7 +1640,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const getVerifiedBorderClass = (): string => {
     if (!cluster.person_name) return 'border-2 border-amber-400';
     if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-red-300';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-red-500';
     if (cluster.person_name.startsWith('__')) return '';
     return 'border-2 border-purple-500';
   };

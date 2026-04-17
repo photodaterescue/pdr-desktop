@@ -1415,7 +1415,8 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
     ORDER BY face_count DESC
   `).all() as any[];
 
-  // Special category clusters (__ignored__, __unsure__): group by cluster_id to preserve original grouping
+  // Special category clusters (__ignored__, __unsure__): group by cluster_id AND person_id
+  // so only faces actually assigned to the special person appear (not faces from same cluster assigned to real names)
   const specialClusters = database.prepare(`
     SELECT
       fd.cluster_id,
@@ -1428,7 +1429,7 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
     INNER JOIN persons p ON fd.person_id = p.id
     WHERE fd.cluster_id IS NOT NULL AND fd.person_id IS NOT NULL AND p.discarded_at IS NULL
       AND p.name IN ('__ignored__', '__unsure__')
-    GROUP BY fd.cluster_id
+    GROUP BY fd.cluster_id, fd.person_id
     ORDER BY face_count DESC
   `).all() as any[];
 
@@ -1495,21 +1496,21 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
     ORDER BY fd.confidence ASC
     LIMIT 20
   `);
-  // Sample faces for special categories: by cluster_id (with person assigned)
+  // Sample faces for special categories: by cluster_id AND person_id
   const facesByClusterWithPersonStmt = database.prepare(`
     SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id IS NOT NULL
+    WHERE fd.cluster_id = ? AND fd.person_id = ?
     ORDER BY fd.confidence ASC
     LIMIT 20
   `);
-  // Representative for special categories: by cluster_id (with person assigned)
+  // Representative for special categories: by cluster_id AND person_id
   const repByClusterWithPersonStmt = database.prepare(`
     SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id IS NOT NULL
+    WHERE fd.cluster_id = ? AND fd.person_id = ?
     ORDER BY fd.confidence DESC
     LIMIT 1
   `);
@@ -1518,12 +1519,12 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
     const isNamed = c.person_id != null;
     const isSpecial = isNamed && (c.person_name === '__ignored__' || c.person_name === '__unsure__');
     const rep = isSpecial
-      ? (repByClusterWithPersonStmt.get(c.cluster_id) as any || {})
+      ? (repByClusterWithPersonStmt.get(c.cluster_id, c.person_id) as any || {})
       : isNamed
         ? ((repByPersonChosenStmt.get(c.person_id) as any) || (repByPersonAutoStmt.get(c.person_id) as any) || {})
         : (repByClusterStmt.get(c.cluster_id) as any || {});
     const samples = isSpecial
-      ? (facesByClusterWithPersonStmt.all(c.cluster_id) as any[])
+      ? (facesByClusterWithPersonStmt.all(c.cluster_id, c.person_id) as any[])
       : isNamed
         ? (facesByPersonStmt.all(c.person_id) as any[])
         : (facesByClusterStmt.all(c.cluster_id) as any[]);
