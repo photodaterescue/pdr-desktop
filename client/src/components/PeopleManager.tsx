@@ -1198,6 +1198,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   };
 
   const [showFaceGrid, setShowFaceGrid] = useState(false);
+  const [scrollPosition, setScrollPosition] = useState(0); // index of first visible thumbnail
 
   const cardRef = useRef<HTMLDivElement>(null);
   const thumbStripRef = useRef<HTMLDivElement>(null);
@@ -1215,7 +1216,14 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
       }
     };
     el.addEventListener('wheel', handler, { passive: false });
-    return () => el.removeEventListener('wheel', handler);
+    // Track scroll position to show "X of Y" counter
+    const scrollHandler = () => {
+      const thumbWidth = 46; // w-10 (40px) + gap (6px)
+      const visibleIdx = Math.round(el.scrollLeft / thumbWidth);
+      setScrollPosition(visibleIdx);
+    };
+    el.addEventListener('scroll', scrollHandler, { passive: true });
+    return () => { el.removeEventListener('wheel', handler); el.removeEventListener('scroll', scrollHandler); };
   });
 
   useEffect(() => {
@@ -1384,7 +1392,12 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   {displayName || (cluster.person_name && !cluster.person_name.startsWith('__') ? cluster.person_name : 'Unknown person')}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {cluster.face_count} {cluster.face_count === 1 ? 'face' : 'faces'} · {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
+                  {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
+                  {cluster.sample_faces && (() => {
+                    const verifiedCount = cluster.sample_faces.filter(f => f.verified).length;
+                    const totalCount = cluster.sample_faces.length;
+                    return verifiedCount > 0 ? <span className="text-purple-500 ml-1">· {verifiedCount}/{totalCount} verified</span> : null;
+                  })()}
                 </p>
               </>
             )}
@@ -1437,6 +1450,9 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                                   <Check className="w-2.5 h-2.5 text-white" />
                                 </div>
                               )}
+                              <div className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-muted-foreground/60 flex items-center justify-center shadow-sm">
+                                <span className="text-[8px] font-bold text-white">{faceIdx + 1}</span>
+                              </div>
                             </div>
                           </PopoverAnchor>
                         </TooltipTrigger>
@@ -1560,6 +1576,12 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   </Popover>
                 ))}
               </div>
+              {/* Scroll position counter */}
+              {cluster.sample_faces && cluster.sample_faces.length > 6 && (
+                <div className="text-[9px] text-muted-foreground/60 text-right pr-1 mt-0.5">
+                  {Math.min(scrollPosition + 1, cluster.sample_faces.length)}–{Math.min(scrollPosition + Math.floor((thumbStripRef.current?.clientWidth || 300) / 46), cluster.sample_faces.length)} of {cluster.sample_faces.length}
+                </div>
+              )}
 
             </div>
           )}
