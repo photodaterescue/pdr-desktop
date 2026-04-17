@@ -173,6 +173,7 @@ export default function PeopleManager() {
     await deletePersonRecord(personId);
     setConfirmDiscard(null);
     await loadClusters(); notifyChange();
+    setActiveTab('unnamed'); // Faces go back to unnamed, show that tab
   };
 
   const handleRecluster = async (threshold: number) => {
@@ -1304,7 +1305,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               }
             }}>
               <TooltipTrigger asChild>
-                <div className={`shrink-0 ${!isEditing ? 'cursor-pointer' : ''}`} onClick={() => { if (!isEditing) onStartEdit(); }}>
+                <div className={`shrink-0 ${(!isEditing && cluster.person_name && !cluster.person_name.startsWith('__')) ? 'cursor-pointer' : ''}`} onClick={() => { if (!isEditing && cluster.person_name && !cluster.person_name.startsWith('__')) onStartEdit(); }}>
                   {cropUrl ? (
                     <img src={cropUrl} alt="" className={`w-14 h-14 rounded-full object-cover shrink-0 border-2 ${
                       cluster.person_name === '__ignored__' ? 'border-[#76899F]'
@@ -1328,10 +1329,10 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
             </Tooltip>
           </TooltipProvider>
 
-          {/* Name + stats — clicking this area opens rename */}
+          {/* Name + stats — clicking this area opens rename (only for named persons) */}
           <div
-            className={`min-w-0 ${isEditing ? 'flex-1' : 'w-[120px] shrink-0 cursor-pointer'}`}
-            onClick={() => { if (!isEditing) onStartEdit(); }}
+            className={`min-w-0 ${isEditing ? 'flex-1' : `w-[120px] shrink-0 ${cluster.person_name && !cluster.person_name.startsWith('__') ? 'cursor-pointer' : ''}`}`}
+            onClick={() => { if (!isEditing && cluster.person_name && !cluster.person_name.startsWith('__')) onStartEdit(); }}
           >
             {isEditing ? (
               <div onClick={(e) => e.stopPropagation()}>
