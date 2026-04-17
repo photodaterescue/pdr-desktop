@@ -87,6 +87,7 @@ export default function PeopleManager() {
   const [globalSelectedFaces, setGlobalSelectedFaces] = useState<Set<number>>(new Set());
   const [globalReassignFaceId, setGlobalReassignFaceId] = useState<number | null>(null);
   const [globalReassignName, setGlobalReassignName] = useState('');
+  const [panelSuggestionIdx, setPanelSuggestionIdx] = useState(-1);
 
   // Load saved threshold from settings on mount
   useEffect(() => {
@@ -734,46 +735,69 @@ export default function PeopleManager() {
               <p className="text-xs text-muted-foreground text-center">Choose an action for this face</p>
             )}
             <div className="relative">
-              <input
-                type="text"
-                value={globalReassignName}
-                onChange={(e) => setGlobalReassignName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && globalReassignName.trim()) {
-                    // Trigger verify via the handleReassignFace flow
-                    const targets = Array.from(globalSelectedFaces);
-                    if (targets.length === 0) return;
-                    (async () => {
-                      for (let i = 0; i < targets.length; i++) {
-                        const isLast = i === targets.length - 1;
-                        await handleReassignFace(targets[i], globalReassignName.trim(), true, !isLast);
-                      }
-                      setGlobalReassignFaceId(null);
-                      setGlobalReassignName('');
-                      setGlobalSelectedFaces(new Set());
-                    })();
-                  } else if (e.key === 'Escape') {
-                    setGlobalReassignFaceId(null);
-                    setGlobalReassignName('');
-                    setGlobalSelectedFaces(new Set());
-                  }
-                }}
-                placeholder="Type person name..."
-                className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
-                autoFocus
-              />
-              {/* Suggestions from existing persons */}
-              {globalReassignName.trim().length > 0 && existingPersons.filter(p => p.name.toLowerCase().includes(globalReassignName.toLowerCase()) && (p.photo_count ?? 0) > 0).length > 0 && (
-                <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
-                  {existingPersons.filter(p => p.name.toLowerCase().includes(globalReassignName.toLowerCase()) && (p.photo_count ?? 0) > 0).slice(0, 5).map(p => (
-                    <button key={p.id} onMouseDown={(e) => { e.preventDefault(); setGlobalReassignName(p.name); }}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors text-left hover:bg-purple-100/50 dark:hover:bg-purple-900/20">
-                      <span className="truncate">{p.name}</span>
-                      <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              {(() => {
+                const panelSuggestions = globalReassignName.trim().length > 0
+                  ? existingPersons.filter(p => p.name.toLowerCase().includes(globalReassignName.toLowerCase()) && (p.photo_count ?? 0) > 0).slice(0, 5)
+                  : [];
+                return (
+                  <>
+                    <input
+                      type="text"
+                      value={globalReassignName}
+                      onChange={(e) => { setGlobalReassignName(e.target.value); setPanelSuggestionIdx(-1); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowDown' && panelSuggestions.length > 0) {
+                          e.preventDefault();
+                          setPanelSuggestionIdx(prev => Math.min(prev + 1, panelSuggestions.length - 1));
+                        } else if (e.key === 'ArrowUp' && panelSuggestions.length > 0) {
+                          e.preventDefault();
+                          setPanelSuggestionIdx(prev => Math.max(prev - 1, -1));
+                        } else if (e.key === 'Enter') {
+                          e.preventDefault();
+                          let nameToUse = globalReassignName.trim();
+                          if (panelSuggestionIdx >= 0 && panelSuggestions[panelSuggestionIdx]) {
+                            nameToUse = panelSuggestions[panelSuggestionIdx].name;
+                            setGlobalReassignName(nameToUse);
+                            setPanelSuggestionIdx(-1);
+                          }
+                          if (!nameToUse) return;
+                          const targets = Array.from(globalSelectedFaces);
+                          if (targets.length === 0) return;
+                          (async () => {
+                            for (let i = 0; i < targets.length; i++) {
+                              const isLast = i === targets.length - 1;
+                              await handleReassignFace(targets[i], nameToUse, true, !isLast);
+                            }
+                            setGlobalReassignFaceId(null);
+                            setGlobalReassignName('');
+                            setGlobalSelectedFaces(new Set());
+                            setPanelSuggestionIdx(-1);
+                          })();
+                        } else if (e.key === 'Escape') {
+                          setGlobalReassignFaceId(null);
+                          setGlobalReassignName('');
+                          setGlobalSelectedFaces(new Set());
+                          setPanelSuggestionIdx(-1);
+                        }
+                      }}
+                      placeholder="Type person name..."
+                      className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                      autoFocus
+                    />
+                    {panelSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
+                        {panelSuggestions.map((p, idx) => (
+                          <button key={p.id} onMouseDown={(e) => { e.preventDefault(); setGlobalReassignName(p.name); setPanelSuggestionIdx(-1); }}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors text-left ${idx === panelSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}>
+                            <span className="truncate">{p.name}</span>
+                            <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             <div className="flex gap-1.5">
               <button
@@ -1168,11 +1192,11 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
 }) {
   // Ring colour for verified faces based on which category the cluster belongs to
   const getVerifiedBorderClass = (): string => {
-    if (!cluster.person_name) return 'border-[3px] border-amber-400'; // Unnamed
-    if (cluster.person_name === '__unsure__') return 'border-[3px] border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-[3px] border-[#76899F]';
+    if (!cluster.person_name) return 'border-2 border-amber-400/70'; // Unnamed
+    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400/70';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-[#76899F]/70';
     if (cluster.person_name.startsWith('__')) return '';
-    return 'border-[3px] border-purple-500'; // Named (real name)
+    return 'border-2 border-purple-400/70'; // Named (real name)
   };
   const verifiedBorder = getVerifiedBorderClass();
 
@@ -1590,7 +1614,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                                 </div>
                               )}
                               <div className={`absolute -top-1 -left-1 w-4 h-4 rounded-full flex items-center justify-center shadow-sm ${
-                                face.verified && cluster.person_name && !cluster.person_name.startsWith('__') ? 'bg-purple-500' : 'bg-muted-foreground/60'
+                                face.verified && cluster.person_name && !cluster.person_name.startsWith('__') ? 'bg-purple-400/80' : 'bg-muted-foreground/50'
                               }`}>
                                 <span className="text-[8px] font-bold text-white">{faceIdx + 1}</span>
                               </div>
@@ -1711,9 +1735,9 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   onCancelUnsure?: () => void;
 }) {
   const getVerifiedBorderClass = (): string => {
-    if (!cluster.person_name) return 'border-[3px] border-amber-400';
-    if (cluster.person_name === '__unsure__') return 'border-[3px] border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-[3px] border-[#76899F]';
+    if (!cluster.person_name) return 'border-2 border-amber-400/70';
+    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400/70';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-[#76899F]/70';
     if (cluster.person_name.startsWith('__')) return '';
     return 'border-[3px] border-purple-500';
   };
