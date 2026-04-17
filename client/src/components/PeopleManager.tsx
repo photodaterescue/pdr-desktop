@@ -864,6 +864,24 @@ export default function PeopleManager() {
                 </button>
               )}
             </div>
+            {/* Set as main photo — only in Named tab with 1 face selected */}
+            {activeTab === 'named' && globalSelectedFaces.size === 1 && (() => {
+              // Find the cluster that owns this face
+              const faceId = Array.from(globalSelectedFaces)[0];
+              const ownerCluster = clusters.find(c => c.sample_faces?.some(f => f.face_id === faceId));
+              if (!ownerCluster?.person_id) return null;
+              return (
+                <button
+                  onClick={async () => {
+                    await handleSetRepresentative(ownerCluster.person_id!, faceId);
+                    setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-green-300/50 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 text-xs font-medium transition-colors"
+                >
+                  <ImageIcon className="w-3 h-3" /> Set as main photo
+                </button>
+              );
+            })()}
           </div>
         </div>
       )}
