@@ -1450,7 +1450,9 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                                   <Check className="w-2.5 h-2.5 text-white" />
                                 </div>
                               )}
-                              <div className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-muted-foreground/60 flex items-center justify-center shadow-sm">
+                              <div className={`absolute -top-1 -left-1 w-4 h-4 rounded-full flex items-center justify-center shadow-sm ${
+                                face.verified && cluster.person_name && !cluster.person_name.startsWith('__') ? 'bg-purple-500' : 'bg-muted-foreground/60'
+                              }`}>
                                 <span className="text-[8px] font-bold text-white">{faceIdx + 1}</span>
                               </div>
                             </div>
