@@ -235,16 +235,16 @@ export default function PeopleManager() {
     await loadClusters(); notifyChange();
   };
 
-  const handleReassignFace = async (faceId: number, newName: string, verified: boolean = true) => {
+  const handleReassignFace = async (faceId: number, newName: string, verified: boolean = true, skipReload: boolean = false) => {
     if (newName === '__unnamed__') {
       await unnameFace(faceId);
-      await loadClusters(); notifyChange();
+      if (!skipReload) { await loadClusters(); notifyChange(); }
       return;
     }
     const personResult = await namePerson(newName);
     if (personResult.success && personResult.data?.personId) {
       await assignFace(faceId, personResult.data.personId, verified);
-      await loadClusters(); notifyChange();
+      if (!skipReload) { await loadClusters(); notifyChange(); }
     }
   };
 
@@ -1048,7 +1048,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   onCancelUnsure?: () => void;
   onRestore?: () => void;
   displayName?: string;
-  onReassignFace?: (faceId: number, newName: string, verified?: boolean) => Promise<void>;
+  onReassignFace?: (faceId: number, newName: string, verified?: boolean, skipReload?: boolean) => Promise<void>;
   onSetRepresentative?: (faceId: number) => Promise<void>;
   // Cross-row selection props
   globalSelectedFaces: Set<number>;
@@ -1202,8 +1202,10 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
     if (!name.trim() || !onReassignFace) return;
     const targets = getTargetFaceIds();
     if (targets.length === 0) return;
-    for (const fid of targets) {
-      await onReassignFace(fid, name.trim(), verified);
+    // Process all faces with skipReload, then the last one without (triggers single reload)
+    for (let i = 0; i < targets.length; i++) {
+      const isLast = i === targets.length - 1;
+      await onReassignFace(targets[i], name.trim(), verified, !isLast);
     }
     setReassignFaceId(null);
     setReassignName('');
@@ -1490,7 +1492,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                         )}
                       </Tooltip>
                     </TooltipProvider>
-                    <PopoverContent side="top" align="center" className="min-w-[250px] max-w-[320px] w-auto p-3 z-[60]" onOpenAutoFocus={(e) => e.preventDefault()} collisionPadding={8}
+                    <PopoverContent side="right" align="start" className="min-w-[250px] max-w-[320px] w-auto p-3 z-[60]" onOpenAutoFocus={(e) => e.preventDefault()} collisionPadding={8} sideOffset={20}
                       onPointerDownOutside={(e) => {
                         const target = e.target as HTMLElement;
                         if (target.closest('[data-face-thumb]')) {
