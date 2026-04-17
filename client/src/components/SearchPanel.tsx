@@ -337,6 +337,32 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
   // When non-null, multi-mode is active — query uses AND logic across selectedPersonIds
   const [multiModeActive, setMultiModeActive] = useState<boolean>(false);
+  // Preview count for the Show button (updates as selections change)
+  const [peoplePreviewCount, setPeoplePreviewCount] = useState<number | null>(null);
+
+  // Update preview count whenever person selection or mode changes
+  useEffect(() => {
+    if (selectedPersonIds.length === 0) {
+      setPeoplePreviewCount(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const result = await searchFiles({
+        sortBy: 'date' as any,
+        sortDir: 'desc' as any,
+        limit: 1,
+        offset: 0,
+        personId: selectedPersonIds,
+        personIdMode: multiModeActive ? 'and' : 'or',
+      } as any);
+      if (!cancelled && result.success && result.data) {
+        setPeoplePreviewCount(result.data.total);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedPersonIds, multiModeActive]);
+
   const [peopleFilterSearch, setPeopleFilterSearch] = useState('');
   const [peopleList, setPeopleList] = useState<PersonRecord[]>([]);
   const [peopleFilterMode, setPeopleFilterMode] = useState<'any' | 'together'>('any');
@@ -1600,7 +1626,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                             onClick={toggleSingle}
                                             className={`shrink-0 w-8 text-right text-[10px] tabular-nums rounded px-1 py-0.5 transition-colors ${
                                               isSelected && !multiModeActive
-                                                ? 'bg-purple-500 text-white font-semibold'
+                                                ? 'bg-[hsl(249_100%_81%)] text-foreground font-semibold'
                                                 : 'text-muted-foreground hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-foreground'
                                             }`}
                                           >
@@ -1608,21 +1634,20 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                           </button>
                                           {/* Multi-person count — click to toggle AND mode, adds person if not already selected */}
                                           {(() => {
-                                            const showDash = isSelected || selectedPersonIds.length === 0;
-                                            const count = showDash ? null : (coCount ?? 0);
+                                            const noSelection = selectedPersonIds.length === 0;
                                             return (
                                               <button
                                                 onClick={toggleMulti}
-                                                disabled={showDash && !isSelected}
+                                                disabled={noSelection && !isSelected}
                                                 className={`shrink-0 w-8 text-right text-[10px] tabular-nums rounded px-1 py-0.5 transition-colors ${
                                                   isSelected && multiModeActive
-                                                    ? 'bg-purple-500 text-white font-semibold'
-                                                    : showDash
+                                                    ? 'bg-[hsl(249_100%_81%)] text-foreground font-semibold'
+                                                    : noSelection
                                                       ? 'text-muted-foreground cursor-default'
                                                       : 'text-muted-foreground hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-foreground'
                                                 }`}
                                               >
-                                                {showDash ? '—' : count}
+                                                {isSelected ? `(${selectedPersonIds.length})` : noSelection ? '—' : (coCount ?? 0)}
                                               </button>
                                             );
                                           })()}
@@ -1646,9 +1671,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     }}
                                     className="flex-1 px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium transition-colors"
                                   >
-                                    {selectedPersonIds.length > 0
-                                      ? `Show ${selectedPersonIds.length === 1 ? peopleList.find(p => p.id === selectedPersonIds[0])?.name : `${selectedPersonIds.length} people`}`
-                                      : 'Show all people'}
+                                    {selectedPersonIds.length === 0
+                                      ? 'Show all people'
+                                      : peoplePreviewCount === null
+                                        ? 'Calculating...'
+                                        : `Show ${peoplePreviewCount.toLocaleString()} ${peoplePreviewCount === 1 ? 'photo' : 'photos'}`}
                                   </button>
                                   {selectedPersonIds.length > 0 && (
                                     <button
