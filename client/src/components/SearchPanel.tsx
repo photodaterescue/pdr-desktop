@@ -1517,10 +1517,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     {/* Sort toggle */}
                                     <button
                                       onClick={() => setPeopleSortMode(prev => prev === 'freq' ? 'az' : prev === 'az' ? 'recent' : 'freq')}
-                                      className="shrink-0 px-2 py-1.5 rounded-md border border-border hover:bg-secondary text-[10px] font-medium text-muted-foreground transition-colors"
-                                      title={`Sort: ${peopleSortMode === 'freq' ? 'Most photos' : peopleSortMode === 'az' ? 'A\u2013Z' : 'Recently added'}`}
+                                      className="shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-md border border-border hover:bg-secondary text-[10px] font-medium text-muted-foreground transition-colors"
+                                      title={`Sort by: ${peopleSortMode === 'freq' ? 'Most photos' : peopleSortMode === 'az' ? 'A\u2013Z' : 'Recently added'} (click to change)`}
                                     >
-                                      {peopleSortMode === 'freq' ? '#' : peopleSortMode === 'az' ? 'AZ' : 'New'}
+                                      <ArrowUpDown className="w-3 h-3" />
+                                      <span>{peopleSortMode === 'freq' ? 'Most' : peopleSortMode === 'az' ? 'A–Z' : 'New'}</span>
                                     </button>
                                   </div>
                                   <p className="text-[10px] text-muted-foreground mt-1.5 px-1">
@@ -1641,7 +1642,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                                 disabled={noSelection && !isSelected}
                                                 className={`shrink-0 w-8 text-right text-[10px] tabular-nums rounded px-1 py-0.5 transition-colors ${
                                                   isSelected && multiModeActive
-                                                    ? 'bg-[hsl(249_100%_81%)] text-foreground font-semibold'
+                                                    ? 'bg-[hsl(250_100%_92%)] text-foreground font-semibold'
                                                     : noSelection
                                                       ? 'text-muted-foreground cursor-default'
                                                       : 'text-muted-foreground hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-foreground'
