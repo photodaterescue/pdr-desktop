@@ -11,6 +11,8 @@ import {
   CheckCircle2, 
   AlertTriangle,
   ChevronRight,
+  ChevronLeft,
+  Pin,
   ChevronDown,
   Plus,
   Play,
@@ -1292,6 +1294,7 @@ return (
 		  isLicensed={isLicensed}
 		  onLicenseRequired={handleLicenseRequired}
 		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
+		  searchResultsActive={searchResultsActive}
 		/>
       {/* Right-side content area: ribbon + panels */}
       <div className="flex-1 flex flex-col h-full">
@@ -1511,7 +1514,7 @@ return (
 }
 
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, searchResultsActive }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -1519,10 +1522,24 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [width, setWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
 
+  // Pin state — user's manual override. 'auto' = follow searchResultsActive, 'open' = always open, 'closed' = always collapsed
+  const [pinState, setPinState] = useState<'auto' | 'open' | 'closed'>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('pdr-sidebar-pin') : null;
+    return (saved === 'open' || saved === 'closed') ? saved : 'auto';
+  });
+  const setPinStatePersisted = (state: 'auto' | 'open' | 'closed') => {
+    setPinState(state);
+    if (state === 'auto') localStorage.removeItem('pdr-sidebar-pin');
+    else localStorage.setItem('pdr-sidebar-pin', state);
+  };
+  // Compute collapsed state
+  const collapsed = pinState === 'closed' ? true : pinState === 'open' ? false : !!searchResultsActive;
+  const effectiveWidth = collapsed ? 48 : width;
+
   // Sync sidebar width to CSS custom property so TitleBar can track it
   useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-width', `${width}px`);
-  }, [width]);
+    document.documentElement.style.setProperty('--sidebar-width', `${effectiveWidth}px`);
+  }, [effectiveWidth]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -1549,11 +1566,60 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     };
   }, [isResizing]);
 
+  if (collapsed) {
+    return (
+      <div
+        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-4"
+        style={{ width: '48px', transition: 'width 0.2s ease' }}
+      >
+        <button
+          onClick={() => setPinStatePersisted(pinState === 'closed' ? 'auto' : 'open')}
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors mb-2"
+          title={pinState === 'closed' ? 'Unpin and expand' : 'Expand sidebar'}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onDashboardClick}
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors mb-4"
+          title="Workspace"
+        >
+          <img src="./assets//pdr-logo_transparent.png" alt="PDR" className="h-6 w-auto object-contain" />
+        </button>
+        <button
+          onClick={onAddSource}
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary/20 text-primary transition-colors"
+          title="Add Source"
+        >
+          <img src="./assets//pdr-source.png" className="w-4 h-4 object-contain" alt="Add Source" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div 
-      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative transition-none sidebar-container"
-      style={{ width: `${width}px` }}
+    <div
+      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container"
+      style={{ width: `${width}px`, transition: 'width 0.2s ease' }}
     >
+      {/* Pin / collapse controls */}
+      <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
+        <button
+          onClick={() => setPinStatePersisted(pinState === 'open' ? 'auto' : 'open')}
+          className={`p-1 rounded hover:bg-secondary/60 transition-colors ${pinState === 'open' ? 'text-primary' : 'text-muted-foreground/60'}`}
+          title={pinState === 'open' ? 'Unpin (follow S&D state)' : 'Pin open'}
+        >
+          <Pin className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => setPinStatePersisted('closed')}
+          className="p-1 rounded hover:bg-secondary/60 text-muted-foreground/60 hover:text-foreground transition-colors"
+          title="Collapse sidebar"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
       <div 
         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors z-50 group"
         onMouseDown={(e) => {
