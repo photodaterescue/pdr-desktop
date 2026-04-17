@@ -694,8 +694,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   }, [searchText, parsePeopleOperators]);
 
   // Sync People filter selection → ribbon search text
+  // Only runs when the user isn't actively typing in the search input
   useEffect(() => {
     if (syncDirectionRef.current === 'textToFilter') return;
+    // Don't overwrite the search box while the user is typing in it
+    if (document.activeElement === searchInputRef.current) return;
     if (selectedPersonIds.length === 0) return;
     const names = selectedPersonIds
       .map(id => peopleList.find(p => p.id === id)?.name)
