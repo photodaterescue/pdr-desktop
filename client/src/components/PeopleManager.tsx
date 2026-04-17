@@ -112,28 +112,32 @@ export default function PeopleManager() {
       const crops: Record<string, string> = {};
       await Promise.all(result.data.map(async (cluster) => {
         const key = clusterKey(cluster);
-        const hasRealName = cluster.person_name && !cluster.person_name.startsWith('__');
-        // Load the backend representative crop (used for Named tab with user-chosen rep)
-        if (hasRealName && cluster.representative_file_path && cluster.box_w > 0) {
-          const crop = await getFaceCrop(
-            cluster.representative_file_path,
-            cluster.box_x, cluster.box_y, cluster.box_w, cluster.box_h,
-            96
-          );
-          if (crop.success && crop.dataUrl) {
-            crops[key] = crop.dataUrl;
-          }
-        }
         if (cluster.sample_faces) {
           for (const face of cluster.sample_faces) {
             const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
             if (crop.success && crop.dataUrl) crops[face.face_id] = crop.dataUrl;
           }
-          // For non-named clusters, use the first sample face as the main thumbnail
-          if (!hasRealName && cluster.sample_faces.length > 0) {
+          // Always use the first sample face as the main thumbnail
+          if (cluster.sample_faces.length > 0) {
             const firstFace = cluster.sample_faces[0];
             const crop = await getFaceCrop(firstFace.file_path, firstFace.box_x, firstFace.box_y, firstFace.box_w, firstFace.box_h, 96);
             if (crop.success && crop.dataUrl) crops[key] = crop.dataUrl;
+          }
+        }
+        // For Named tab: override with user-chosen representative if one was set
+        const hasRealName = cluster.person_name && !cluster.person_name.startsWith('__');
+        if (hasRealName && cluster.representative_file_path && cluster.box_w > 0) {
+          // Check if the representative is different from the first sample face
+          const firstFaceId = cluster.sample_faces?.[0]?.face_id;
+          if (firstFaceId && cluster.representative_face_id !== firstFaceId) {
+            const crop = await getFaceCrop(
+              cluster.representative_file_path,
+              cluster.box_x, cluster.box_y, cluster.box_w, cluster.box_h,
+              96
+            );
+            if (crop.success && crop.dataUrl) {
+              crops[key] = crop.dataUrl;
+            }
           }
         }
       }));
