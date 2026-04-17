@@ -1629,14 +1629,6 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   </button>
                 </TooltipTrigger><TooltipContent>View all faces</TooltipContent></Tooltip>
               )}
-              <Tooltip><TooltipTrigger asChild>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onStartEdit(); }}
-                  className="p-1.5 rounded-lg border border-purple-300/50 bg-background hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5 text-purple-500" />
-                </button>
-              </TooltipTrigger><TooltipContent>{cluster.person_name && !displayName ? 'Rename' : 'Name this person'}</TooltipContent></Tooltip>
               {onDiscard && (
                 <Tooltip><TooltipTrigger asChild>
                   <button
@@ -1645,7 +1637,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   >
                     <Trash2 className="w-3.5 h-3.5 text-red-500" />
                   </button>
-                </TooltipTrigger><TooltipContent>Discard this person</TooltipContent></Tooltip>
+                </TooltipTrigger><TooltipContent>Send to Unnamed</TooltipContent></Tooltip>
               )}
               {onUnsure && (
                 <Tooltip><TooltipTrigger asChild>
