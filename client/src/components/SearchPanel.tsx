@@ -335,6 +335,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // People filter dropdown state
   const [showPeopleDropdown, setShowPeopleDropdown] = useState(false);
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
+  // When non-null, multi-mode is active — query uses AND logic across selectedPersonIds
+  const [multiModeActive, setMultiModeActive] = useState<boolean>(false);
   const [peopleFilterSearch, setPeopleFilterSearch] = useState('');
   const [peopleList, setPeopleList] = useState<PersonRecord[]>([]);
   const [peopleFilterMode, setPeopleFilterMode] = useState<'any' | 'together'>('any');
@@ -1497,8 +1499,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                   </div>
                                   <p className="text-[10px] text-muted-foreground mt-1.5 px-1">
                                     {selectedPersonIds.length === 0
-                                      ? 'Select people to find shared photos'
-                                      : 'Counts update to show shared photos'}
+                                      ? 'Click a single-column number to include that person'
+                                      : multiModeActive
+                                        ? 'Showing photos with ALL selected people together'
+                                        : 'Showing photos with any selected person · click a multi-column number for shared-only'}
                                   </p>
                                 </div>
                                 {/* Column header icons — aligned directly above the list columns */}
@@ -1564,35 +1568,65 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                       const coCount = selectedPersonIds.length > 0 && !isSelected
                                         ? togetherCounts.find(tc => tc.id === p.id)?.photo_count
                                         : undefined;
+                                      const toggleSingle = async () => {
+                                        // Clicking single toggles inclusion in OR set (or disables multi-mode if it was on)
+                                        setMultiModeActive(false);
+                                        const newIds = isSelected
+                                          ? selectedPersonIds.filter(id => id !== p.id)
+                                          : [...selectedPersonIds, p.id];
+                                        setSelectedPersonIds(newIds);
+                                        if (newIds.length > 0) {
+                                          const result = await getPersonsCooccurrence(newIds);
+                                          if (result.success && result.data) setTogetherCounts(result.data);
+                                        } else {
+                                          setTogetherCounts([]);
+                                        }
+                                      };
+                                      const toggleMulti = async () => {
+                                        // Clicking multi adds this person to the set AND switches to AND mode
+                                        const newIds = isSelected ? selectedPersonIds : [...selectedPersonIds, p.id];
+                                        setSelectedPersonIds(newIds);
+                                        setMultiModeActive(true);
+                                        if (newIds.length > 0) {
+                                          const result = await getPersonsCooccurrence(newIds);
+                                          if (result.success && result.data) setTogetherCounts(result.data);
+                                        }
+                                      };
                                       return (
-                                        <label key={p.id} className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer transition-colors ${coCount === 0 ? 'opacity-40' : ''}`}>
-                                          <input
-                                            type="checkbox"
-                                            checked={isSelected}
-                                            onChange={async () => {
-                                              const newIds = isSelected
-                                                ? selectedPersonIds.filter(id => id !== p.id)
-                                                : [...selectedPersonIds, p.id];
-                                              setSelectedPersonIds(newIds);
-                                              if (newIds.length > 0) {
-                                                const result = await getPersonsCooccurrence(newIds);
-                                                if (result.success && result.data) setTogetherCounts(result.data);
-                                              } else {
-                                                setTogetherCounts([]);
-                                              }
-                                            }}
-                                            className="rounded border-border text-purple-500 focus:ring-purple-400/50"
-                                          />
+                                        <div key={p.id} className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-colors ${coCount === 0 ? 'opacity-40' : ''}`}>
                                           <span className="text-sm text-foreground flex-1 truncate">{p.name}</span>
-                                          {/* Single-person count (total photos with just this person) */}
-                                          <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right tabular-nums">
+                                          {/* Single-person count — click to toggle in OR set */}
+                                          <button
+                                            onClick={toggleSingle}
+                                            className={`shrink-0 w-8 text-right text-[10px] tabular-nums rounded px-1 py-0.5 transition-colors ${
+                                              isSelected && !multiModeActive
+                                                ? 'bg-purple-500 text-white font-semibold'
+                                                : 'text-muted-foreground hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-foreground'
+                                            }`}
+                                          >
                                             {p.photo_count ?? 0}
-                                          </span>
-                                          {/* Multi-person count (photos where this person co-occurs with all checked people) */}
-                                          <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right tabular-nums">
-                                            {isSelected || selectedPersonIds.length === 0 ? '—' : (coCount ?? 0)}
-                                          </span>
-                                        </label>
+                                          </button>
+                                          {/* Multi-person count — click to toggle AND mode, adds person if not already selected */}
+                                          {(() => {
+                                            const showDash = isSelected || selectedPersonIds.length === 0;
+                                            const count = showDash ? null : (coCount ?? 0);
+                                            return (
+                                              <button
+                                                onClick={toggleMulti}
+                                                disabled={showDash && !isSelected}
+                                                className={`shrink-0 w-8 text-right text-[10px] tabular-nums rounded px-1 py-0.5 transition-colors ${
+                                                  isSelected && multiModeActive
+                                                    ? 'bg-purple-500 text-white font-semibold'
+                                                    : showDash
+                                                      ? 'text-muted-foreground cursor-default'
+                                                      : 'text-muted-foreground hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-foreground'
+                                                }`}
+                                              >
+                                                {showDash ? '—' : count}
+                                              </button>
+                                            );
+                                          })()}
+                                        </div>
                                       );
                                     });
                                   })()}
@@ -1603,7 +1637,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     onClick={() => {
                                       if (selectedPersonIds.length > 0) {
                                         clearFilters();
-                                        executeSearch({ sortBy, sortDir, limit: 60, offset: 0, personId: selectedPersonIds } as SearchQuery);
+                                        executeSearch({ sortBy, sortDir, limit: 60, offset: 0, personId: selectedPersonIds, personIdMode: multiModeActive ? 'and' : 'or' } as SearchQuery);
                                       } else {
                                         clearFilters();
                                         executeSearch({ sortBy, sortDir, limit: 60, offset: 0, hasNamedPeople: true } as SearchQuery);
@@ -1618,7 +1652,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                   </button>
                                   {selectedPersonIds.length > 0 && (
                                     <button
-                                      onClick={() => { setSelectedPersonIds([]); setTogetherCounts([]); }}
+                                      onClick={() => { setSelectedPersonIds([]); setTogetherCounts([]); setMultiModeActive(false); }}
                                       className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors"
                                     >
                                       Clear

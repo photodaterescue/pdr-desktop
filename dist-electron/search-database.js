@@ -527,11 +527,17 @@ export function searchFiles(query) {
         conditions.push(`f.orientation IN (${query.orientation.map(() => '?').join(',')})`);
         params.push(...query.orientation);
     }
-    // AI: Person filter — photos containing ALL specified named people (intersection)
+    // AI: Person filter — 'and' = intersection (all selected people in same photo), 'or' = union (any)
     if (query.personId && query.personId.length > 0) {
         const placeholders = query.personId.map(() => '?').join(',');
-        conditions.push(`f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${placeholders}) GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`);
-        params.push(...query.personId, query.personId.length);
+        if (query.personIdMode === 'and' && query.personId.length > 1) {
+            conditions.push(`f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${placeholders}) GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`);
+            params.push(...query.personId, query.personId.length);
+        }
+        else {
+            conditions.push(`f.id IN (SELECT file_id FROM face_detections WHERE person_id IN (${placeholders}))`);
+            params.push(...query.personId);
+        }
     }
     // AI: Tag filter — photos with specific AI tags
     if (query.aiTag && query.aiTag.length > 0) {
