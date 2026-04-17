@@ -40,6 +40,7 @@ import {
   Info,
   Sparkles,
   Users,
+  User,
   Tag,
   Brain,
   Scan,
@@ -1493,6 +1494,27 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     >
                                       {peopleSortMode === 'freq' ? '#' : peopleSortMode === 'az' ? 'AZ' : 'New'}
                                     </button>
+                                    {/* Column header icons */}
+                                    <TooltipProvider delayDuration={200}>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="shrink-0 w-8 flex items-center justify-center text-muted-foreground">
+                                            <User className="w-3.5 h-3.5" />
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">Photos with just this person</TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                    <TooltipProvider delayDuration={200}>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="shrink-0 w-8 flex items-center justify-center text-muted-foreground">
+                                            <Users className="w-3.5 h-3.5" />
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">Photos shared with checked people</TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                   </div>
                                   <p className="text-[10px] text-muted-foreground mt-1.5 px-1">
                                     {selectedPersonIds.length === 0
@@ -1513,6 +1535,19 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     const sorted = [...filtered].sort((a, b) => {
                                       if (peopleSortMode === 'az') return a.name.localeCompare(b.name);
                                       if (peopleSortMode === 'recent') return (b.id ?? 0) - (a.id ?? 0);
+                                      // Frequency sort: when people are selected, sort by co-occurrence count (most populous with checked people first)
+                                      if (selectedPersonIds.length > 0) {
+                                        const aSelected = selectedPersonIds.includes(a.id);
+                                        const bSelected = selectedPersonIds.includes(b.id);
+                                        // Checked rows float to top, keeping their relative order by total photos
+                                        if (aSelected && !bSelected) return -1;
+                                        if (!aSelected && bSelected) return 1;
+                                        if (aSelected && bSelected) return (b.photo_count ?? 0) - (a.photo_count ?? 0);
+                                        // Both unchecked: sort by co-occurrence count descending, then total photos
+                                        const aCo = togetherCounts.find(tc => tc.id === a.id)?.photo_count ?? 0;
+                                        const bCo = togetherCounts.find(tc => tc.id === b.id)?.photo_count ?? 0;
+                                        if (aCo !== bCo) return bCo - aCo;
+                                      }
                                       return (b.photo_count ?? 0) - (a.photo_count ?? 0);
                                     });
                                     if (sorted.length === 0) {
@@ -1543,8 +1578,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                             className="rounded border-border text-purple-500 focus:ring-purple-400/50"
                                           />
                                           <span className="text-sm text-foreground flex-1 truncate">{p.name}</span>
-                                          <span className="text-[10px] text-muted-foreground shrink-0">
-                                            {coCount !== undefined ? coCount : (p.photo_count ?? 0)}
+                                          {/* Single-person count (total photos with just this person) */}
+                                          <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right tabular-nums">
+                                            {p.photo_count ?? 0}
+                                          </span>
+                                          {/* Multi-person count (photos where this person co-occurs with all checked people) */}
+                                          <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right tabular-nums">
+                                            {isSelected || selectedPersonIds.length === 0 ? '—' : (coCount ?? '—')}
                                           </span>
                                         </label>
                                       );
