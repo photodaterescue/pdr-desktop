@@ -94,7 +94,11 @@ export default function PeopleManager() {
     })();
   }, []);
 
-  const clusterKey = (c: PersonCluster) => c.person_id ? `p${c.person_id}` : `c${c.cluster_id}`;
+  const clusterKey = (c: PersonCluster) => {
+    // Special categories share one person_id, so use cluster_id to keep them separate
+    if (c.person_name === '__ignored__' || c.person_name === '__unsure__') return `c${c.cluster_id}`;
+    return c.person_id ? `p${c.person_id}` : `c${c.cluster_id}`;
+  };
 
   const loadClusters = async () => {
     setIsLoading(true);
