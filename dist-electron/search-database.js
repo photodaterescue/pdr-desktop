@@ -1107,7 +1107,8 @@ export function updateFaceCluster(faceId, clusterId) {
 export function getPersonClusters() {
     const database = getDb();
     // Named clusters: group by person_id (so individually reassigned faces appear under their new person)
-    const namedClusters = database.prepare(`
+    // For special categories (__ignored__, __unsure__), group by cluster_id to keep original clusters separate
+    const realNamedClusters = database.prepare(`
     SELECT
       fd.cluster_id,
       p.id as person_id,
@@ -1118,9 +1119,27 @@ export function getPersonClusters() {
     FROM face_detections fd
     INNER JOIN persons p ON fd.person_id = p.id
     WHERE fd.cluster_id IS NOT NULL AND fd.person_id IS NOT NULL AND p.discarded_at IS NULL
+      AND p.name NOT IN ('__ignored__', '__unsure__')
     GROUP BY fd.person_id
     ORDER BY face_count DESC
   `).all();
+    // Special category clusters (__ignored__, __unsure__): group by cluster_id to preserve original grouping
+    const specialClusters = database.prepare(`
+    SELECT
+      fd.cluster_id,
+      p.id as person_id,
+      p.name as person_name,
+      COUNT(fd.id) as face_count,
+      COUNT(DISTINCT fd.file_id) as photo_count,
+      MIN(fd.id) as representative_face_id
+    FROM face_detections fd
+    INNER JOIN persons p ON fd.person_id = p.id
+    WHERE fd.cluster_id IS NOT NULL AND fd.person_id IS NOT NULL AND p.discarded_at IS NULL
+      AND p.name IN ('__ignored__', '__unsure__')
+    GROUP BY fd.cluster_id
+    ORDER BY face_count DESC
+  `).all();
+    const namedClusters = [...realNamedClusters, ...specialClusters];
     // Unnamed clusters: faces with no person assigned, grouped by cluster_id
     const unnamedClusters = database.prepare(`
     SELECT
@@ -1180,14 +1199,37 @@ export function getPersonClusters() {
     ORDER BY fd.confidence ASC
     LIMIT 20
   `);
+    // Sample faces for special categories: by cluster_id (with person assigned)
+    const facesByClusterWithPersonStmt = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.cluster_id = ? AND fd.person_id IS NOT NULL
+    ORDER BY fd.confidence ASC
+    LIMIT 20
+  `);
+    // Representative for special categories: by cluster_id (with person assigned)
+    const repByClusterWithPersonStmt = database.prepare(`
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
+    FROM face_detections fd
+    INNER JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.cluster_id = ? AND fd.person_id IS NOT NULL
+    ORDER BY fd.confidence DESC
+    LIMIT 1
+  `);
     return clusters.map((c) => {
         const isNamed = c.person_id != null;
-        const rep = isNamed
-            ? (repByPersonChosenStmt.get(c.person_id) || repByPersonAutoStmt.get(c.person_id) || {})
-            : (repByClusterStmt.get(c.cluster_id) || {});
-        const samples = isNamed
-            ? facesByPersonStmt.all(c.person_id)
-            : facesByClusterStmt.all(c.cluster_id);
+        const isSpecial = isNamed && (c.person_name === '__ignored__' || c.person_name === '__unsure__');
+        const rep = isSpecial
+            ? (repByClusterWithPersonStmt.get(c.cluster_id) || {})
+            : isNamed
+                ? (repByPersonChosenStmt.get(c.person_id) || repByPersonAutoStmt.get(c.person_id) || {})
+                : (repByClusterStmt.get(c.cluster_id) || {});
+        const samples = isSpecial
+            ? facesByClusterWithPersonStmt.all(c.cluster_id)
+            : isNamed
+                ? facesByPersonStmt.all(c.person_id)
+                : facesByClusterStmt.all(c.cluster_id);
         return {
             cluster_id: c.cluster_id,
             person_id: c.person_id,

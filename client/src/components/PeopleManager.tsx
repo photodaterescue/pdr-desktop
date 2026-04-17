@@ -1024,7 +1024,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const getVerifiedBorderClass = (): string => {
     if (!cluster.person_name) return 'border-2 border-amber-400'; // Unnamed (user chose Unnamed)
     if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-slate-400';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-red-300';
     if (cluster.person_name.startsWith('__')) return ''; // Other special names
     return 'border-2 border-purple-500'; // Named (real name)
   };
@@ -1642,7 +1642,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const getVerifiedBorderClass = (): string => {
     if (!cluster.person_name) return 'border-2 border-amber-400';
     if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-slate-400';
+    if (cluster.person_name === '__ignored__') return 'border-2 border-red-300';
     if (cluster.person_name.startsWith('__')) return '';
     return 'border-2 border-purple-500';
   };
