@@ -1486,20 +1486,24 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                           </button>
                         </div>
                         <div className="flex gap-1.5 pt-1 border-t border-border">
+                          {currentTab !== 'unsure' && (
                           <button onClick={() => handleReassign('__unsure__')}
                             className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-xs font-medium transition-colors">
                             <HelpCircle className="w-3 h-3" /> Unsure
                           </button>
+                          )}
                           {currentTab !== 'unnamed' && (
                           <button onClick={() => handleReassign('__unnamed__')}
                             className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs font-medium transition-colors">
                             <Users className="w-3 h-3" /> Unnamed
                           </button>
                           )}
+                          {currentTab !== 'ignored' && (
                           <button onClick={() => handleReassign('__ignored__')}
                             className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-xs font-medium transition-colors">
                             <UserX className="w-3 h-3" /> Ignore
                           </button>
+                          )}
                         </div>
                         {onSetRepresentative && cluster.person_id && targetCount === 1 && (
                           <button onClick={async () => { await onSetRepresentative(face.face_id); setReassignFaceId(null); setReassignName(''); }}
