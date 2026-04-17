@@ -955,54 +955,74 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           <X className="w-4 h-4" />
                         </button>
                       )}
-                      {/* Search suggestions dropdown */}
-                      {showSearchSuggestions && searchText.trim().length > 0 && (
+                      {/* Search suggestions dropdown — operator-aware */}
+                      {showSearchSuggestions && searchText.trim().length > 0 && (() => {
+                        // Split search text at the last operator so we can suggest the NEXT name after `,` `+` `&` or ` and `
+                        const opRegex = /(\s*(?:,|\+|&|\band\b)\s*)/gi;
+                        let lastOpEnd = 0;
+                        let m: RegExpExecArray | null;
+                        const regex = new RegExp(opRegex.source, 'gi');
+                        while ((m = regex.exec(searchText)) !== null) {
+                          lastOpEnd = m.index + m[0].length;
+                        }
+                        const prefix = lastOpEnd > 0 ? searchText.slice(0, lastOpEnd) : '';
+                        const fragment = searchText.slice(lastOpEnd).trim();
+                        const isOperatorContext = lastOpEnd > 0;
+                        const matchQuery = isOperatorContext ? fragment : searchText;
+                        const matchLower = matchQuery.toLowerCase();
+                        // Filter people suggestions
+                        const peopleMatches = searchSuggestionPersons.filter(p => p.name.toLowerCase().includes(matchLower));
+                        const tagMatches = !isOperatorContext ? aiTagOptions.filter(t => t.tag.toLowerCase().includes(matchLower)) : [];
+                        return (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-50 max-h-[280px] overflow-y-auto">
                           {/* Person matches */}
-                          {searchSuggestionPersons.filter(p => p.name.toLowerCase().includes(searchText.toLowerCase())).length > 0 && (
+                          {peopleMatches.length > 0 && (
                             <div className="p-1.5">
-                              <p className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-medium">People</p>
-                              {searchSuggestionPersons
-                                .filter(p => p.name.toLowerCase().includes(searchText.toLowerCase()))
-                                .slice(0, 5)
-                                .map(p => (
-                                  <button key={p.id}
-                                    onMouseDown={(e) => { e.preventDefault(); setSearchText(p.name); setShowSearchSuggestions(false); }}
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left">
-                                    <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                                    <span className="truncate text-foreground">{p.name}</span>
-                                    <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{p.photo_count ?? 0} photos</span>
-                                  </button>
-                                ))}
+                              <p className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-medium">
+                                {isOperatorContext ? 'People — click to add' : 'People'}
+                              </p>
+                              {peopleMatches.slice(0, 5).map(p => (
+                                <button key={p.id}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const newText = isOperatorContext ? `${prefix}${p.name}` : p.name;
+                                    setSearchText(newText);
+                                    setShowSearchSuggestions(false);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left">
+                                  <Users className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                  <span className="truncate text-foreground">{p.name}</span>
+                                  <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{p.photo_count ?? 0} photos</span>
+                                </button>
+                              ))}
                             </div>
                           )}
-                          {/* Tag matches */}
-                          {aiTagOptions.filter(t => t.tag.toLowerCase().includes(searchText.toLowerCase())).length > 0 && (
+                          {/* Tag matches — only shown when not in operator context */}
+                          {tagMatches.length > 0 && (
                             <div className="p-1.5 border-t border-border">
                               <p className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-medium">Tags</p>
-                              {aiTagOptions
-                                .filter(t => t.tag.toLowerCase().includes(searchText.toLowerCase()))
-                                .slice(0, 5)
-                                .map(t => (
-                                  <button key={t.tag}
-                                    onMouseDown={(e) => { e.preventDefault(); setSearchText(t.tag); setShowSearchSuggestions(false); }}
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/50 transition-colors text-left">
-                                    <Tag className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                                    <span className="truncate text-foreground">{t.tag}</span>
-                                    <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{t.count} photos</span>
-                                  </button>
-                                ))}
+                              {tagMatches.slice(0, 5).map(t => (
+                                <button key={t.tag}
+                                  onMouseDown={(e) => { e.preventDefault(); setSearchText(t.tag); setShowSearchSuggestions(false); }}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/50 transition-colors text-left">
+                                  <Tag className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                  <span className="truncate text-foreground">{t.tag}</span>
+                                  <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{t.count} photos</span>
+                                </button>
+                              ))}
                             </div>
                           )}
                           {/* No matches */}
-                          {searchSuggestionPersons.filter(p => p.name.toLowerCase().includes(searchText.toLowerCase())).length === 0 &&
-                           aiTagOptions.filter(t => t.tag.toLowerCase().includes(searchText.toLowerCase())).length === 0 && (
+                          {peopleMatches.length === 0 && tagMatches.length === 0 && (
                             <div className="p-3 text-center text-xs text-muted-foreground">
-                              No matching people or tags — press Enter to search all fields
+                              {isOperatorContext
+                                ? 'No matching people — keep typing or press Enter'
+                                : 'No matching people or tags — press Enter to search all fields'}
                             </div>
                           )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                     {!dbReady && !isIndexing && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />}
                   </div>
