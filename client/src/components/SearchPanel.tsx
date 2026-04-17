@@ -1584,7 +1584,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                           </span>
                                           {/* Multi-person count (photos where this person co-occurs with all checked people) */}
                                           <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right tabular-nums">
-                                            {isSelected || selectedPersonIds.length === 0 ? '—' : (coCount ?? '—')}
+                                            {isSelected || selectedPersonIds.length === 0 ? '—' : (coCount ?? 0)}
                                           </span>
                                         </label>
                                       );

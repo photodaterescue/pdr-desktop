@@ -716,10 +716,11 @@ export function searchFiles(query: SearchQuery): SearchResult {
     params.push(...query.orientation);
   }
 
-  // AI: Person filter — photos containing specific named people
+  // AI: Person filter — photos containing ALL specified named people (intersection)
   if (query.personId && query.personId.length > 0) {
-    conditions.push(`f.id IN (SELECT file_id FROM face_detections WHERE person_id IN (${query.personId.map(() => '?').join(',')}))`);
-    params.push(...query.personId);
+    const placeholders = query.personId.map(() => '?').join(',');
+    conditions.push(`f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${placeholders}) GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`);
+    params.push(...query.personId, query.personId.length);
   }
 
   // AI: Tag filter — photos with specific AI tags
