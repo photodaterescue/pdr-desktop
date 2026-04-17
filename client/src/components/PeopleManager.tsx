@@ -1202,14 +1202,15 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
     if (!name.trim() || !onReassignFace) return;
     const targets = getTargetFaceIds();
     if (targets.length === 0) return;
-    // Process all faces with skipReload, then the last one without (triggers single reload)
+    // Close modal and clear selection first to prevent interference
+    setReassignFaceId(null);
+    setReassignName('');
+    clearSelection();
+    // Process all faces — skip reload for all except the last
     for (let i = 0; i < targets.length; i++) {
       const isLast = i === targets.length - 1;
       await onReassignFace(targets[i], name.trim(), verified, !isLast);
     }
-    setReassignFaceId(null);
-    setReassignName('');
-    clearSelection();
   };
 
   const [selectedSuggestionIdx, setSelectedSuggestionIdx] = useState(-1);
