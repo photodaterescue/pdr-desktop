@@ -813,7 +813,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   }, [searchActive]);
 
   const loadThumbnailsBatch = async (files: IndexedFile[]) => {
-    const photos = files.filter(f => f.file_type === 'photo' && !thumbnails[f.file_path]);
+    // Both photos and videos now get real thumbnails (videos via ffmpeg frame extraction in main).
+    const photos = files.filter(f => (f.file_type === 'photo' || f.file_type === 'video') && !thumbnails[f.file_path]);
     // Load thumbnails in parallel batches of 8 for much faster loading
     const batchSize = 8;
     for (let i = 0; i < photos.length; i += batchSize) {
