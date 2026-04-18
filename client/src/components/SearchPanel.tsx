@@ -186,6 +186,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.setItem('pdr-sd-view-mode', viewMode);
   }, [viewMode]);
+
+  // Which metadata fields to show in each tile's footer — default: none (pure photos, zero gap)
+  const [tileMetaFields, setTileMetaFields] = useState<TileMetaField[]>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('pdr-sd-tile-meta') : null;
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('pdr-sd-tile-meta', JSON.stringify(tileMetaFields));
+  }, [tileMetaFields]);
+  const [showMetaDropdown, setShowMetaDropdown] = useState(false);
   const [overflowModalGroup, setOverflowModalGroup] = useState<string | null>(null); // which group's overflow modal is open
   const ribbonRef = useRef<HTMLDivElement>(null);
 
@@ -2550,6 +2562,61 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <Table2 className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Metadata display dropdown — customise what info appears below each tile */}
+              {viewMode.startsWith('grid-') && (
+                <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
+                  <PopoverTrigger asChild>
+                    <button
+                      className={`p-1.5 rounded-lg border border-border transition-colors ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                      title="Show info below tiles"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-2" align="end">
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-2 pt-1 pb-2">Show below each tile</p>
+                    {([
+                      { key: 'filename' as TileMetaField, label: 'Filename' },
+                      { key: 'date' as TileMetaField, label: 'Date' },
+                      { key: 'size' as TileMetaField, label: 'File size' },
+                      { key: 'dimensions' as TileMetaField, label: 'Dimensions' },
+                      { key: 'confidence' as TileMetaField, label: 'Date confidence' },
+                      { key: 'camera' as TileMetaField, label: 'Camera' },
+                      { key: 'lens' as TileMetaField, label: 'Lens' },
+                      { key: 'iso' as TileMetaField, label: 'ISO' },
+                      { key: 'aperture' as TileMetaField, label: 'Aperture' },
+                      { key: 'focalLength' as TileMetaField, label: 'Focal length' },
+                      { key: 'country' as TileMetaField, label: 'Country' },
+                      { key: 'city' as TileMetaField, label: 'City' },
+                    ]).map(opt => {
+                      const checked = tileMetaFields.includes(opt.key);
+                      return (
+                        <label key={opt.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setTileMetaFields(prev => checked ? prev.filter(f => f !== opt.key) : [...prev, opt.key]);
+                            }}
+                            className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+                          />
+                          <span className="text-sm text-foreground flex-1">{opt.label}</span>
+                        </label>
+                      );
+                    })}
+                    {tileMetaFields.length > 0 && (
+                      <button
+                        onClick={() => setTileMetaFields([])}
+                        className="w-full mt-2 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-secondary text-muted-foreground transition-colors"
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              )}
+
               <button onClick={() => setShowPreviewPanel(!showPreviewPanel)}
                 className={`p-1 rounded-lg transition-colors ${showPreviewPanel ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
                 title={showPreviewPanel ? 'Hide preview' : 'Show preview'}>
@@ -2593,6 +2660,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     >
                       {results.files.map((file, idx) => (
                         <FileCard key={file.id} file={file} thumbnail={thumbnails[file.file_path]}
+                          metaFields={tileMetaFields}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.has(file.id)}
                           onCheckboxClick={() => {
@@ -2865,11 +2933,16 @@ function FilterCheckbox({ label, checked, onChange, color, icon }: { label: stri
 
 // ─── File Card ───────────────────────────────────────────────────────────────
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: () => void; onDoubleClick?: () => void }) {
+// Metadata field keys that users can toggle on for tile footers
+type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
+
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: () => void; onDoubleClick?: () => void; metaFields?: TileMetaField[] }) {
   const highlighted = isSelected || isMultiSelected;
+  const fields = metaFields ?? [];
+  const hasAnyMeta = fields.length > 0;
   return (
     <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick}
-      className={`group rounded-xl border cursor-pointer transition-all duration-200 overflow-hidden ${highlighted ? 'border-primary ring-2 ring-primary/20 shadow-lg' : 'border-border hover:border-primary/40 hover:shadow-md'}`}>
+      className={`group cursor-pointer transition-all duration-200 overflow-hidden ${hasAnyMeta ? 'rounded-xl border' : ''} ${highlighted ? (hasAnyMeta ? 'border-primary ring-2 ring-primary/20 shadow-lg' : 'ring-2 ring-primary/40') : (hasAnyMeta ? 'border-border hover:border-primary/40 hover:shadow-md' : 'hover:ring-2 hover:ring-primary/30')}`}>
       <div className="aspect-square bg-secondary/30 relative overflow-hidden">
         {thumbnail ? <img src={thumbnail} alt={file.filename} className="w-full h-full object-cover" loading="lazy" draggable={false} /> : (
           <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-10 h-10 text-muted-foreground/30" /> : <ImageIcon className="w-10 h-10 text-muted-foreground/30" />}</div>
@@ -2891,11 +2964,22 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
           </div>
         )}
       </div>
-      <div className="p-2.5">
-        <p className="text-xs font-medium text-foreground truncate" title={file.filename}>{file.filename}</p>
-        <p className="text-[10px] text-muted-foreground mt-0.5">{file.derived_date ? formatDate(file.derived_date) : 'No date'}{file.size_bytes > 0 && ` · ${formatBytes(file.size_bytes)}`}</p>
-        {file.camera_model && <p className="text-[10px] text-muted-foreground mt-0.5 truncate flex items-center gap-1"><Camera className="w-2.5 h-2.5" /> {file.camera_model}</p>}
-      </div>
+      {hasAnyMeta && (
+        <div className="p-2 space-y-0.5">
+          {fields.includes('filename') && <p className="text-xs font-medium text-foreground truncate" title={file.filename}>{file.filename}</p>}
+          {fields.includes('date') && <p className="text-[10px] text-muted-foreground truncate">{file.derived_date ? formatDate(file.derived_date) : 'No date'}</p>}
+          {fields.includes('size') && file.size_bytes > 0 && <p className="text-[10px] text-muted-foreground truncate">{formatBytes(file.size_bytes)}</p>}
+          {fields.includes('camera') && file.camera_model && <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1"><Camera className="w-2.5 h-2.5 shrink-0" /> {file.camera_model}</p>}
+          {fields.includes('lens') && (file as any).lens_model && <p className="text-[10px] text-muted-foreground truncate">{(file as any).lens_model}</p>}
+          {fields.includes('iso') && (file as any).iso && <p className="text-[10px] text-muted-foreground truncate">ISO {(file as any).iso}</p>}
+          {fields.includes('aperture') && (file as any).aperture && <p className="text-[10px] text-muted-foreground truncate">f/{(file as any).aperture}</p>}
+          {fields.includes('focalLength') && (file as any).focal_length && <p className="text-[10px] text-muted-foreground truncate">{(file as any).focal_length}mm</p>}
+          {fields.includes('dimensions') && (file as any).width && (file as any).height && <p className="text-[10px] text-muted-foreground truncate">{(file as any).width}×{(file as any).height}</p>}
+          {fields.includes('country') && (file as any).country && <p className="text-[10px] text-muted-foreground truncate">{(file as any).country}</p>}
+          {fields.includes('city') && (file as any).city && <p className="text-[10px] text-muted-foreground truncate">{(file as any).city}</p>}
+          {fields.includes('confidence') && file.confidence_level && <p className="text-[10px] text-muted-foreground truncate capitalize">{file.confidence_level}</p>}
+        </div>
+      )}
     </div>
   );
 }
