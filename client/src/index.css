@@ -310,6 +310,25 @@
     border: 2px solid transparent;
   }
 
+  /* ── Ribbon horizontal scroll — thin bar at the bottom of the ribbon ── */
+  .ribbon-scroll {
+    scroll-behavior: smooth;
+    overscroll-behavior-x: contain;
+  }
+  .ribbon-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+  .ribbon-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .ribbon-scroll::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  .ribbon-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
   /* ── Face action modal — fixed at top center of People page ────────── */
   .fixed-action-modal {
     position: fixed !important;

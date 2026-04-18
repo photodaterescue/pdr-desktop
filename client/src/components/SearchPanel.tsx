@@ -998,7 +998,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         <AnimatePresence initial={false}>
           {ribbonExpanded && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'visible' }}>
-              <div ref={ribbonRef} className="flex items-stretch px-2 py-1 gap-0 h-[104px] bg-gradient-to-b from-background to-secondary/10" style={{ overflow: 'visible' }}>
+              <div ref={ribbonRef} className="flex items-stretch px-2 py-1 gap-0 h-[104px] bg-gradient-to-b from-background to-secondary/10 ribbon-scroll" style={{ overflowX: 'auto', overflowY: 'visible' }}>
 
                 {/* ── Favourites empty state ── */}
                 {activeTab === 'favourites' && favouriteGroups.length === 0 && (
@@ -1406,25 +1406,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Location" onExpand={() => setOverflowModalGroup('gps')} groupId="gps" isFavourited={isGroupFavourited('gps')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1">
-                        {/* GPS 3-way toggle: On / Off / Both */}
-                        <div className="flex flex-col items-center gap-0">
+                        {/* GPS 3-way toggle: ON / BOTH / OFF (vertical stack) */}
+                        <div className="flex flex-col items-center gap-0.5">
                           <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold leading-none">GPS</span>
-                          <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
+                          <div className="flex flex-col rounded-md border border-border overflow-hidden bg-background w-[40px]">
                             <button
                               onClick={() => setHasGps(true)}
-                              className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors ${hasGps === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${hasGps === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="Only photos with GPS data"
                             >On</button>
                             <button
-                              onClick={() => setHasGps(false)}
-                              className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors border-x border-border ${hasGps === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-                              title="Only photos without GPS data"
-                            >Off</button>
-                            <button
                               onClick={() => setHasGps(undefined)}
-                              className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors ${hasGps === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-y border-border ${hasGps === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="All photos"
                             >Both</button>
+                            <button
+                              onClick={() => setHasGps(false)}
+                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${hasGps === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              title="Only photos without GPS data"
+                            >Off</button>
                           </div>
                         </div>
                         {/* Country / City dropdowns — matching widths */}
