@@ -281,9 +281,10 @@
     }
     function isVideoPath(filePath) { return VIDEO_EXTS.has(getExt(filePath)); }
     function getFileSrc(filePath) {
-      // THREE slashes — see main.ts comment on toPdrUrl. With two slashes
-      // Chromium would treat 'C:' as the host and mangle the URL.
-      return 'pdr-file:///' + encodeURI(filePath.replace(/\\/g, '/'));
+      // Put the path in a query param so Chromium's URL parser (which
+      // treats pdr-file as 'standard' scheme) can't mangle the C: drive
+      // letter when serialising the URL.
+      return 'pdr-file://local/?f=' + encodeURIComponent(filePath.replace(/\\/g, '/'));
     }
     function getFileSrcFallback(filePath) {
       return 'file:///' + encodeURI(filePath.replace(/\\/g, '/'));

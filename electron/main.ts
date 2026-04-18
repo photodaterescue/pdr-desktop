@@ -458,17 +458,27 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
   // Handle pdr-file:// protocol — serves local files to the viewer window
   protocol.handle('pdr-file', (request) => {
-    // Robust Windows path reconstruction.
-    // All emitters now produce pdr-file:///C:/Users/... (three slashes, empty host),
-    // but we still defensively handle the old two-slash form for backwards compat.
-    let raw = request.url.replace(/^pdr-file:\/\//i, '');
-    while (raw.startsWith('/')) raw = raw.substring(1);      // strip any leading slashes
-    try { raw = decodeURI(raw); } catch {}
+    // New canonical form: pdr-file://local/?f=<urlencoded-path>
+    // (Query params are never host-parsed, so the drive-letter colon survives.)
+    // Legacy form: pdr-file://[/[/]]<path> — still handled for compat.
+    let raw = '';
+    try {
+      const u = new URL(request.url);
+      const f = u.searchParams.get('f');
+      if (f) {
+        raw = f;
+      } else {
+        // Legacy: strip the scheme + leading slashes from the path component.
+        let p = u.pathname;
+        while (p.startsWith('/')) p = p.substring(1);
+        raw = decodeURI(p);
+      }
+    } catch {
+      raw = request.url.replace(/^pdr-file:\/\//i, '');
+      while (raw.startsWith('/')) raw = raw.substring(1);
+      try { raw = decodeURI(raw); } catch {}
+    }
 
-    // Handle accidentally-lowercased drive letters from the buggy old form
-    // (pdr-file://c/Users/... had no colon at all; if we see a single-letter
-    // path segment before /Users or similar, it's unrecoverable — just log).
-    // Normal case: raw starts with "C:/Users/Terry/..."
     const fileUrl = 'file:///' + encodeURI(raw);
     if (process.env.PDR_DEBUG_PROTOCOL) {
       console.log('[pdr-file] request =', request.url, '→ fetch', fileUrl);
@@ -818,10 +828,11 @@ ipcMain.handle('video:prepare', async (_event, filePath: string): Promise<{ succ
     const ext = path.extname(filePath).toLowerCase();
 
     // Normalised pdr-file:// URL the renderer uses for direct playback.
-    // THREE slashes are essential on Windows — 'pdr-file://C:/...' would make
-    // Chromium treat "C:" as the host and lowercase it, losing the drive letter.
-    // 'pdr-file:///C:/...' has an empty host so the full path lands in the pathname.
-    const toPdrUrl = (p: string) => 'pdr-file:///' + encodeURI(p.replace(/\\/g, '/'));
+    // Chromium's URL parser mangles 'C:' drive letters even with three slashes
+    // because pdr-file is registered as a 'standard' scheme — it tries to
+    // parse the path as host:port and silently drops the colon. We dodge that
+    // by putting the path in a query parameter, which is never host-parsed.
+    const toPdrUrl = (p: string) => 'pdr-file://local/?f=' + encodeURIComponent(p.replace(/\\/g, '/'));
 
     // Extensions Chromium handles natively — no transcode needed.
     if (!TRANSCODE_EXTS.has(ext)) {
