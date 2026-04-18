@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Info,
   ImageIcon,
+  Download,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
@@ -50,6 +51,7 @@ import {
   type ClusterFacesResult,
   getVisualSuggestions,
   refineFromVerified,
+  importXmpFaces,
 } from '@/lib/electron-bridge';
 
 // ─── Notify main window that data changed ─────────────────────────────────
@@ -93,6 +95,7 @@ export default function PeopleManager() {
   // Refinement feature state
   const [aiRefineEnabled, setAiRefineEnabled] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
+  const [isImportingXmp, setIsImportingXmp] = useState(false);
 
   // Load saved threshold from settings on mount
   useEffect(() => {
@@ -330,6 +333,48 @@ export default function PeopleManager() {
                 {aiRefineEnabled
                   ? 'Uses your verified faces to refine matching across all unnamed faces. Most populous people processed first.'
                   : 'Enable this in Settings → AI. Only activate after you\'re sure all people have the correct photos verified.'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/* Import from Lightroom XMP sidecars */}
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={async () => {
+                    if (isImportingXmp) return;
+                    setIsImportingXmp(true);
+                    try {
+                      const result = await importXmpFaces();
+                      if (result.success && result.data) {
+                        await loadClusters();
+                        notifyChange();
+                        const d = result.data;
+                        alert(`Lightroom XMP import complete.\n\n` +
+                          `${d.filesScanned} file${d.filesScanned === 1 ? '' : 's'} scanned\n` +
+                          `${d.sidecarsFound} sidecar${d.sidecarsFound === 1 ? '' : 's'} found\n` +
+                          `${d.facesImported} face${d.facesImported === 1 ? '' : 's'} imported across ${d.personsCreated} ${d.personsCreated === 1 ? 'person' : 'people'}\n` +
+                          `${d.filesSkipped} file${d.filesSkipped === 1 ? '' : 's'} skipped (already had face data)`);
+                      } else {
+                        alert('XMP import failed: ' + (result.error || 'unknown error'));
+                      }
+                    } finally {
+                      setIsImportingXmp(false);
+                    }
+                  }}
+                  disabled={isImportingXmp}
+                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isImportingXmp ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+                >
+                  {isImportingXmp ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing...</>
+                  ) : (
+                    <><Download className="w-3.5 h-3.5" /> Import from Lightroom</>
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Scans your indexed photos for Lightroom-style .xmp sidecars and imports any face regions (names + positions) as verified faces. Skips photos that already have face data.
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

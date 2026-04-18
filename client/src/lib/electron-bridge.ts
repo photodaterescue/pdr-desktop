@@ -985,6 +985,23 @@ export async function refineFromVerified(similarityThreshold?: number): Promise<
   return { success: false };
 }
 
+export async function importXmpFaces(): Promise<{
+  success: boolean;
+  data?: {
+    filesScanned: number;
+    sidecarsFound: number;
+    facesImported: number;
+    personsCreated: number;
+    filesSkipped: number;
+  };
+  error?: string;
+}> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.importXmpFaces();
+  }
+  return { success: false };
+}
+
 export async function assignFace(faceId: number, personId: number, verified: boolean = false): Promise<{ success: boolean }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.assignFace(faceId, personId, verified);

@@ -2037,6 +2037,16 @@ ipcMain.handle('ai:batchVerify', async (_event, personIds) => {
         return { success: false, error: err.message };
     }
 });
+ipcMain.handle('ai:importXmpFaces', async () => {
+    try {
+        const { importXmpFacesForAllFiles } = await import('./xmp-face-import.js');
+        const result = importXmpFacesForAllFiles();
+        return { success: true, data: result };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold) => {
     try {
         const { refineFromVerifiedFaces, getDb } = await import('./search-database.js');

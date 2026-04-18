@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld('pdr', {
         batchVerify: (personIds) => ipcRenderer.invoke('ai:batchVerify', personIds),
         unnameFace: (faceId) => ipcRenderer.invoke('ai:unnameFace', faceId),
         refineFromVerified: (similarityThreshold) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold),
+        importXmpFaces: () => ipcRenderer.invoke('ai:importXmpFaces'),
         renamePerson: (personId, newName) => ipcRenderer.invoke('ai:renamePerson', personId, newName),
         setRepresentativeFace: (personId, faceId) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
         mergePersons: (targetPersonId, sourcePersonId) => ipcRenderer.invoke('ai:mergePersons', targetPersonId, sourcePersonId),
