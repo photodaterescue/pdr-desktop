@@ -150,24 +150,8 @@ const handleZoomReset = () => {
   applyZoom(100);
 };
 
-// Ctrl+scroll wheel zoom (like browsers and Word)
-useEffect(() => {
-  const handleWheel = (e: WheelEvent) => {
-    if (!e.ctrlKey) return;
-    e.preventDefault(); // prevent native browser zoom
-    setZoomLevel(prev => {
-      const newZoom = e.deltaY < 0
-        ? Math.min(MAX_ZOOM, prev + ZOOM_STEP)
-        : Math.max(MIN_ZOOM, prev - ZOOM_STEP);
-      if (newZoom !== prev) {
-        localStorage.setItem("pdr-zoom-level", String(newZoom));
-      }
-      return newZoom;
-    });
-  };
-  window.addEventListener('wheel', handleWheel, { passive: false });
-  return () => window.removeEventListener('wheel', handleWheel);
-}, []);
+// Ctrl+scroll zoom is now handled inside SearchPanel for S&D tile-size cycling only.
+// Dashboard/Workspace have no zoom behaviour.
 
   const [location, setLocation] = useLocation();
   // For HashRouter, query params are inside the hash (e.g., #/workspace?tour=true)
@@ -1176,66 +1160,6 @@ const tourPlaceholderAnalysisResults: Record<string, SourceAnalysisResult> = {
 
 return (
   <>
-    {/* Zoom controls */}
-    <div className="fixed right-5 bottom-24 z-40 flex flex-col items-center gap-1 bg-background/90 backdrop-blur-sm border border-border/30 rounded-xl p-1.5 shadow-md opacity-80 hover:opacity-100 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 ease-out">
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={handleZoomIn}
-              disabled={zoomLevel >= MAX_ZOOM}
-              className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary/50 hover:bg-primary/15 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all duration-200"
-              data-testid="button-zoom-in"
-              aria-label="Zoom in"
-            >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            <p>Zoom in</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={handleZoomReset}
-              className="flex items-center justify-center w-7 h-5 text-[10px] font-medium text-muted-foreground hover:text-foreground cursor-pointer transition-all duration-200"
-              data-testid="button-zoom-reset"
-              aria-label="Reset zoom to 100%"
-            >
-              {zoomLevel}%
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            <p>Reset to 100%</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={handleZoomOut}
-              disabled={zoomLevel <= MIN_ZOOM}
-              className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary/50 hover:bg-primary/15 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all duration-200"
-              data-testid="button-zoom-out"
-              aria-label="Zoom out"
-            >
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            <p>Zoom out</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
-
-	
     {/* Main workspace layout */}
     <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
       <div className="flex flex-1 overflow-hidden">
@@ -1317,9 +1241,7 @@ return (
         </div>
 
         {/* Zoomable content area — only this part scales, hidden when search results are showing */}
-        <div className={`flex-1 overflow-auto relative ${searchResultsActive ? 'hidden' : ''}`} style={{
-          zoom: zoomLevel / 100,
-        }}>
+        <div className={`flex-1 overflow-auto relative ${searchResultsActive ? 'hidden' : ''}`}>
         {/* Panel content */}
         {activePanel ? (
           <PanelPlaceholder
