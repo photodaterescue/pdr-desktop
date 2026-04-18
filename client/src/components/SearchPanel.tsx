@@ -3102,8 +3102,8 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="px-4 pt-0 pb-4">
-        <div className="flex items-center justify-between py-1.5 mb-0 border-b border-border/30">
+      <div className="px-4 pb-4" style={{ paddingTop: 0, marginTop: 0 }}>
+        <div className="flex items-center justify-between py-1 mb-0 border-b border-border/30" style={{ marginTop: 0 }}>
           <div className="flex items-center gap-1.5 min-w-0">
             <h3 className="text-sm font-semibold text-foreground mr-1">Details</h3>
             {fileIndex != null && totalFiles != null && (
@@ -3380,7 +3380,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                           <Users className="w-5 h-5 text-purple-400" />
                         </div>
                       )}
-                      <span className={face.person_name ? 'text-foreground font-medium flex-1 min-w-0 truncate text-sm' : 'text-muted-foreground italic flex-1 min-w-0 truncate text-sm'}>
+                      <span className={face.person_name ? 'text-foreground font-medium flex-1 min-w-0 truncate text-base' : 'text-muted-foreground italic flex-1 min-w-0 truncate text-base'}>
                         {face.person_name || 'Unknown person'}
                       </span>
                       <button
@@ -3415,7 +3415,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                           <Trash2 className="w-3 h-3 text-red-400" />
                         </button>
                       )}
-                      <span className="text-sm text-muted-foreground shrink-0 ml-2">{Math.round(face.confidence * 100)}%</span>
+                      <span className="text-base text-muted-foreground shrink-0 ml-2">{Math.round(face.confidence * 100)}%</span>
                     </div>
                   )}
                 </div>
