@@ -795,6 +795,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   useEffect(() => {
     if (!dbReady) return;
     if (searchText.trim() || hasActiveFilters) executeSearch();
+    else if (searchActive) {
+      // User cleared the last filter while in an active S&D view —
+      // keep the view open and show all photos instead of reverting to Dashboard.
+      executeSearch();
+    }
     else { setResults(null); setSearchActive(false); }
   }, [selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
 
