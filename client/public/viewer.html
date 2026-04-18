@@ -497,6 +497,9 @@
       loadMedia(0);
     }
 
+    // Diagnostic: confirm preload attached + prepare() available
+    console.log('[viewer] window.pdr =', !!window.pdr, '| video.prepare =', !!(window.pdr && window.pdr.video && window.pdr.video.prepare), '| files =', files.length);
+
     // Navigation
     btnPrev.addEventListener('click', (e) => { e.stopPropagation(); loadMedia(currentIndex - 1); });
     btnNext.addEventListener('click', (e) => { e.stopPropagation(); loadMedia(currentIndex + 1); });

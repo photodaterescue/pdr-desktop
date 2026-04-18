@@ -2301,6 +2301,12 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
 
     viewerWindow.loadFile(viewerHtml, { query: { files: filesParam } });
 
+    // Log renderer console messages to the main process so we can diagnose
+    // preload / prepare failures that wouldn't otherwise be visible.
+    viewerWindow.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
+      console.log(`[viewer] ${sourceId}:${line} ${message}`);
+    });
+
     viewerWindow.on('closed', () => {
       viewerWindow = null;
     });
