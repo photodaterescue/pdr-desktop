@@ -1445,16 +1445,16 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [width, setWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
 
-  // Pin state — user's manual override. 'auto' = follow searchResultsActive, 'open' = always open, 'closed' = always collapsed
-  const [pinState, setPinState] = useState<'auto' | 'open' | 'closed'>(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('pdr-sidebar-pin') : null;
-    return (saved === 'open' || saved === 'closed') ? saved : 'auto';
-  });
+  // Pin state — user's manual override for this session only. 'auto' = follow searchResultsActive, 'open' = always open, 'closed' = always collapsed.
+  // Always starts as 'auto' on app launch (not persisted) so the app never opens with an unexpected pin state.
+  const [pinState, setPinState] = useState<'auto' | 'open' | 'closed'>('auto');
   const setPinStatePersisted = (state: 'auto' | 'open' | 'closed') => {
     setPinState(state);
-    if (state === 'auto') localStorage.removeItem('pdr-sidebar-pin');
-    else localStorage.setItem('pdr-sidebar-pin', state);
   };
+  // Clean up any stale persisted key from previous versions
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.removeItem('pdr-sidebar-pin');
+  }, []);
   // Compute collapsed state
   const collapsed = pinState === 'closed' ? true : pinState === 'open' ? false : !!searchResultsActive;
   const effectiveWidth = collapsed ? 48 : width;
