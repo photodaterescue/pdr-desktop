@@ -367,29 +367,36 @@
         container.appendChild(status);
 
         const prepareStarted = filePath;
-        const useSrc = (url, isFallback) => {
-          // Only attach if we are still on the same file (user may have navigated away).
+        // Attach the video with TWO candidate URLs — the primary (usually the
+        // transcoded MP4) and a file:// fallback of that SAME file. The old
+        // code mistakenly fell back to file:// of the original .mpg, which
+        // Chromium couldn't play either way.
+        const useSrc = (primaryUrl, fallbackUrl, label) => {
           if (currentIndex < 0 || files[currentIndex] !== prepareStarted) return;
           status.remove();
           const video = document.createElement('video');
-          video.src = url;
           video.controls = true;
           video.autoplay = false;
           video.preload = 'metadata';
           video.onloadedmetadata = () => {
             dimensionsEl.textContent = video.videoWidth + ' \u00d7 ' + video.videoHeight + ' px \u2022 ' + Math.round(video.duration) + 's';
+            console.log('[video] loaded metadata for', label);
           };
-          let retried = isFallback === true;
+          let retried = false;
           video.onerror = () => {
-            if (!retried) {
+            const err = video.error;
+            console.warn('[video] error loading', label, 'src=' + video.src, 'code=' + (err && err.code), 'message=' + (err && err.message));
+            if (!retried && fallbackUrl) {
               retried = true;
-              video.src = getFileSrcFallback(filePath);
-            } else {
-              video.remove();
-              mediaEl = null;
-              showUnplayable(filePath);
+              console.log('[video] retrying with fallback URL');
+              video.src = fallbackUrl;
+              return;
             }
+            video.remove();
+            mediaEl = null;
+            showUnplayable(filePath);
           };
+          video.src = primaryUrl;
           container.appendChild(video);
           mediaEl = video;
         };
@@ -397,18 +404,27 @@
         (async () => {
           try {
             if (window.pdr && window.pdr.video && window.pdr.video.prepare) {
+              console.log('[video] calling prepare() for', filePath);
               const r = await window.pdr.video.prepare(filePath);
+              console.log('[video] prepare returned:', JSON.stringify(r));
               if (r && r.success && r.playableUrl) {
-                useSrc(r.playableUrl, false);
+                // If a cachePath is returned, use it as the file:// fallback;
+                // otherwise fall back to file:// of whatever pdr-file:// URL we got.
+                const fallback = r.cachePath
+                  ? 'file:///' + encodeURI(r.cachePath.replace(/\\/g, '/'))
+                  : null;
+                useSrc(r.playableUrl, fallback, 'prepared');
                 return;
               }
-              // Transcode failed — fall through to try raw.
               console.warn('[video] prepare failed:', r && r.error);
             }
           } catch (e) {
             console.warn('[video] prepare threw:', e && e.message);
           }
-          useSrc(getFileSrc(filePath), false);
+          // Last-resort: raw URL. Most of the time this will fail for formats
+          // that required prepare in the first place, so showUnplayable is the
+          // likely outcome — but at least we try.
+          useSrc(getFileSrc(filePath), getFileSrcFallback(filePath), 'raw');
         })();
       } else {
         const img = document.createElement('img');

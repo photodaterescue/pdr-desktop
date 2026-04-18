@@ -451,14 +451,23 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
   // Handle pdr-file:// protocol — serves local files to the viewer window
   protocol.handle('pdr-file', (request) => {
-    const url = new URL(request.url);
-    // Decode the path — pdr-file://C:/Users/... or pdr-file:///C:/Users/...
-    let filePath = decodeURI(url.pathname);
-    // Remove leading slash on Windows paths (e.g., /C:/Users → C:/Users)
-    if (process.platform === 'win32' && filePath.startsWith('/')) {
-      filePath = filePath.substring(1);
+    // Robust Windows path reconstruction.
+    // Input looks like: pdr-file://C:/Users/Terry/...  or  pdr-file:///C:/Users/Terry/...
+    // URL parsing may land the drive letter in the host ("c:") and the rest in
+    // pathname — or, for three-slash form, put the whole path in pathname.
+    // Rather than trust URL(), pull the raw path out of the request.url string.
+    let raw = request.url.replace(/^pdr-file:\/\//i, '');
+    if (raw.startsWith('/')) raw = raw.substring(1);         // pdr-file:///C:/... → C:/...
+    // URL-decode any %XX escapes (e.g. spaces).
+    try { raw = decodeURI(raw); } catch {}
+
+    // At this point `raw` should look like "C:/Users/Terry/..." or a UNC/relative path.
+    // net.fetch wants a proper file:// URL with re-encoded reserved chars.
+    const fileUrl = 'file:///' + encodeURI(raw);
+    if (process.env.PDR_DEBUG_PROTOCOL) {
+      console.log('[pdr-file] request =', request.url, '→ fetch', fileUrl);
     }
-    return net.fetch('file:///' + filePath);
+    return net.fetch(fileUrl);
   });
 
   // Remove default Electron menus — custom title bar replaces them
