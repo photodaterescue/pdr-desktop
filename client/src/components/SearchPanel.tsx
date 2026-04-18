@@ -3179,9 +3179,20 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors" title="Close (Esc)"><X className="w-4 h-4" /></button>
           </div>
         </div>
-        {/* Preview image with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
+        {/* Preview image/video with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
         <div className="rounded-xl overflow-hidden bg-secondary/30 mb-3 relative group sticky top-0 z-10" style={{ maxHeight: '60vh' }}>
-          {(fullThumbnail || thumbnail) ? <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-auto max-h-[60vh] object-contain block" /> : (
+          {file.file_type === 'video' ? (
+            <video
+              key={file.file_path}
+              src={`pdr-file://${encodeURI(file.file_path.replace(/\\/g, '/'))}`}
+              controls
+              preload="metadata"
+              poster={fullThumbnail || thumbnail || undefined}
+              className="w-full h-auto max-h-[60vh] bg-black block"
+            />
+          ) : (fullThumbnail || thumbnail) ? (
+            <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-auto max-h-[60vh] object-contain block" />
+          ) : (
             <div className="w-full aspect-square flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
           )}
           {/* Face bounding box overlays — clickable for naming */}
@@ -3288,7 +3299,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
         </div>
         {(onOpenViewer || onOpenInExplorer) && (
           <div className="flex gap-2 mb-4">
-            {onOpenViewer && file.file_type === 'photo' && (
+            {onOpenViewer && (file.file_type === 'photo' || file.file_type === 'video') && (
               <button onClick={onOpenViewer} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-sm hover:bg-primary/90 transition-all">
                 <Eye className="w-3.5 h-3.5" />{isShowingChecked && totalFiles && totalFiles > 1 ? `Open ${totalFiles} in Viewer` : 'Open in Viewer'}
               </button>
