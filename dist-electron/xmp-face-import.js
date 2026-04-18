@@ -148,13 +148,14 @@ export function importXmpFacesForAllFiles() {
                 embedding: null,
                 confidence: 1.0,
                 cluster_id: null,
-                verified: 1,
             };
         });
-        // Insert — note PDR's insertFaceDetections doesn't set verified, so we insert manually
+        // Insert faces with verified=0 — the user must confirm each face to earn the purple ring.
+        // This is deliberate: we trust Lightroom enough to suggest the name, but not enough to contaminate
+        // the verified-face pool that powers the "Improve Facial Recognition" average-embedding feature.
         const insertStmt = db.prepare(`
       INSERT INTO face_detections (file_id, person_id, box_x, box_y, box_w, box_h, embedding, confidence, cluster_id, verified)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
         const insertMany = db.transaction((items) => {
             for (const f of items) {

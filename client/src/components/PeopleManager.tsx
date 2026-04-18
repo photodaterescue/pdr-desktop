@@ -373,8 +373,8 @@ export default function PeopleManager() {
                   )}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">
-                Scans your indexed photos for Lightroom-style .xmp sidecars and imports any face regions (names + positions) as verified faces. Skips photos that already have face data.
+              <TooltipContent side="bottom" className="max-w-[320px]">
+                Scans your indexed photos for Lightroom-style .xmp sidecars and imports any face regions as Named (but unverified) faces — you confirm each one with the Verify button to earn the purple ring. This prevents third-party naming mistakes from polluting your verified-face pool. Skips photos that already have face data.
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
