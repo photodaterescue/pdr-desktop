@@ -1493,8 +1493,8 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     return (
       <div
         data-tour="sd-sidebar-collapse"
-        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-4 gap-1.5"
-        style={{ width: '48px', transition: 'width 0.2s ease' }}
+        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-4 gap-1.5 sidebar-animated"
+        style={{ width: '48px' }}
       >
         {/* Menu / expand button — restores the Source Menu sidebar */}
         <button
@@ -1549,8 +1549,8 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
   return (
     <div
-      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container"
-      style={{ width: `${width}px`, transition: 'width 0.2s ease' }}
+      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container sidebar-animated"
+      style={{ width: `${width}px` }}
     >
       {/* Pin / collapse controls */}
       <div className="absolute top-2 right-2 z-30 flex items-center gap-1">

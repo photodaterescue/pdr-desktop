@@ -40,7 +40,8 @@ export function TitleBar() {
         style={{
           WebkitAppRegion: 'drag',
           width: `${whiteSectionWidth}px`,
-          transition: 'width 0.2s ease',
+          transition: 'width 0.35s cubic-bezier(0.22, 1, 0.36, 1), padding 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
+          willChange: 'width',
           justifyContent: isSidebarCollapsed ? 'center' : 'flex-start',
           paddingLeft: isSidebarCollapsed ? 0 : '16px',
           paddingRight: isSidebarCollapsed ? 0 : '16px',

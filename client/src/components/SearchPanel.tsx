@@ -1513,15 +1513,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="File Size" onExpand={() => setOverflowModalGroup('fileSize')} groupId="fileSize" isFavourited={isGroupFavourited('fileSize')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex items-center gap-1.5 flex-1 py-1.5">
+                      <div className="flex flex-col gap-1 flex-1 py-0.5">
                         <div className="relative">
                           <input type="number" step="0.1" placeholder="Min" value={sizeFromMB ?? ''} onChange={(e) => setSizeFromMB(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-8 py-1.5 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MB</span>
                         </div>
                         <div className="relative">
                           <input type="number" step="0.1" placeholder="Max" value={sizeToMB ?? ''} onChange={(e) => setSizeToMB(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-8 py-1.5 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MB</span>
                         </div>
                       </div>
