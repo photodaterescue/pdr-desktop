@@ -143,7 +143,17 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ViewMode = 'grid' | 'list' | 'details';
+type ViewMode = 'grid-xs' | 'grid-s' | 'grid-m' | 'grid-l' | 'grid-xl' | 'list' | 'details';
+// Ordered list used for Ctrl+scroll cycling (smallest tiles → largest → list → details)
+const VIEW_MODE_CYCLE: ViewMode[] = ['grid-xs', 'grid-s', 'grid-m', 'grid-l', 'grid-xl', 'list', 'details'];
+// Tile min-widths per grid size (used by the CSS grid)
+const TILE_SIZES: Record<string, number> = {
+  'grid-xs': 90,
+  'grid-s': 130,
+  'grid-m': 180,
+  'grid-l': 240,
+  'grid-xl': 320,
+};
 
 interface SearchRibbonProps {
   isIndexing?: boolean;
@@ -168,7 +178,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // Ribbon state
   const [ribbonExpanded, setRibbonExpanded] = useState(true);
   const [searchActive, setSearchActive] = useState(false); // true when results should show
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('pdr-sd-view-mode') : null;
+    if (saved && (VIEW_MODE_CYCLE as string[]).includes(saved)) return saved as ViewMode;
+    return 'grid-m';
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('pdr-sd-view-mode', viewMode);
+  }, [viewMode]);
   const [overflowModalGroup, setOverflowModalGroup] = useState<string | null>(null); // which group's overflow modal is open
   const ribbonRef = useRef<HTMLDivElement>(null);
 
@@ -2504,20 +2521,31 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             </span>
             <div className="flex items-center gap-3">
               {selectedFile && <span className="text-xs text-muted-foreground font-medium">← → navigate{selectedFiles.size > 0 ? ' checked' : ''} · Enter view · Esc close</span>}
-              {/* View mode buttons */}
+              {/* View mode buttons — 5 tile sizes + List + Details. Ctrl+scroll cycles through them. */}
               <div className="flex items-center border border-border rounded-lg overflow-hidden">
-                <button onClick={() => setViewMode('grid')}
-                  className={`p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                  title="Large Icons">
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                </button>
+                {([
+                  { v: 'grid-xs' as ViewMode, label: 'Extra small tiles', size: 10 },
+                  { v: 'grid-s' as ViewMode, label: 'Small tiles', size: 12 },
+                  { v: 'grid-m' as ViewMode, label: 'Medium tiles', size: 14 },
+                  { v: 'grid-l' as ViewMode, label: 'Large tiles', size: 16 },
+                  { v: 'grid-xl' as ViewMode, label: 'Extra large tiles', size: 18 },
+                ]).map((opt, i) => (
+                  <button
+                    key={opt.v}
+                    onClick={() => setViewMode(opt.v)}
+                    className={`p-1.5 transition-colors ${i > 0 ? 'border-l border-border' : ''} ${viewMode === opt.v ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                    title={`${opt.label} (Ctrl+scroll to cycle)`}
+                  >
+                    <LayoutGrid style={{ width: `${opt.size}px`, height: `${opt.size}px` }} />
+                  </button>
+                ))}
                 <button onClick={() => setViewMode('list')}
-                  className={`p-1.5 transition-colors border-x border-border ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                  className={`p-1.5 transition-colors border-l border-border ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
                   title="List">
                   <List className="w-3.5 h-3.5" />
                 </button>
                 <button onClick={() => setViewMode('details')}
-                  className={`p-1.5 transition-colors ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                  className={`p-1.5 transition-colors border-l border-border ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
                   title="Details">
                   <Table2 className="w-3.5 h-3.5" />
                 </button>
@@ -2538,10 +2566,31 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           {results.files.length > 0 ? (
             <ResizablePanelGroup direction="horizontal" className="flex-1">
               <ResizablePanel defaultSize={selectedFile && showPreviewPanel ? 65 : 100} minSize={40}>
-                <div ref={gridContainerRef} data-tour="sd-results-grid" className="h-full overflow-y-auto p-4 select-none">
-                  {/* ── Grid View (Large Icons) ── */}
-                  {viewMode === 'grid' && (
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+                <div
+                  ref={gridContainerRef}
+                  data-tour="sd-results-grid"
+                  className="h-full overflow-y-auto p-4 select-none sd-scroll-container"
+                  onWheel={(e) => {
+                    if (!(e.ctrlKey || e.metaKey)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setViewMode(prev => {
+                      const idx = VIEW_MODE_CYCLE.indexOf(prev);
+                      if (idx === -1) return 'grid-m';
+                      // Wheel up (deltaY < 0) = larger tiles; wheel down = smaller
+                      const nextIdx = e.deltaY < 0
+                        ? Math.min(VIEW_MODE_CYCLE.length - 1, idx + 1)
+                        : Math.max(0, idx - 1);
+                      return VIEW_MODE_CYCLE[nextIdx];
+                    });
+                  }}
+                >
+                  {/* ── Grid View (5 tile sizes) ── */}
+                  {viewMode.startsWith('grid-') && (
+                    <div
+                      className="grid gap-0"
+                      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${TILE_SIZES[viewMode] ?? 180}px, 1fr))` }}
+                    >
                       {results.files.map((file, idx) => (
                         <FileCard key={file.id} file={file} thumbnail={thumbnails[file.file_path]}
                           isSelected={selectedFile?.id === file.id}

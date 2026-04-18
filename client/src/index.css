@@ -271,6 +271,31 @@
     box-shadow: 0 10px 25px rgba(108, 99, 255, 0.3);
   }
 
+  /* ── S&D thumbnail scroller — silky smooth with momentum ─────────── */
+  .sd-scroll-container {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    will-change: scroll-position;
+  }
+  .sd-scroll-container::-webkit-scrollbar {
+    width: 10px;
+  }
+  .sd-scroll-container::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .sd-scroll-container::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .sd-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+
   /* ── Face action modal — fixed at top center of People page ────────── */
   .fixed-action-modal {
     position: fixed !important;
