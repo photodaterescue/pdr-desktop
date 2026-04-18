@@ -144,17 +144,18 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ViewMode = 'grid-xs' | 'grid-s' | 'grid-m' | 'grid-l' | 'grid-xl' | 'list' | 'details';
-// Ordered list used for Ctrl+scroll cycling (smallest tiles → largest → list → details)
-const VIEW_MODE_CYCLE: ViewMode[] = ['grid-xs', 'grid-s', 'grid-m', 'grid-l', 'grid-xl', 'list', 'details'];
-// Tile min-widths per grid size (used by the CSS grid)
-const TILE_SIZES: Record<string, number> = {
-  'grid-xs': 90,
-  'grid-s': 130,
-  'grid-m': 180,
-  'grid-l': 240,
-  'grid-xl': 320,
-};
+type ViewMode = 'grid' | 'list' | 'details';
+// Tile size slider: 0..100 in 10% increments, mapped to min-width px
+const TILE_SLIDER_MIN = 0;
+const TILE_SLIDER_MAX = 100;
+const TILE_SLIDER_STEP = 10;
+// 0% → 80px tiles, 100% → 360px tiles (linear interpolation)
+const TILE_PX_MIN = 80;
+const TILE_PX_MAX = 360;
+function tileSliderToPx(slider: number): number {
+  const clamped = Math.max(TILE_SLIDER_MIN, Math.min(TILE_SLIDER_MAX, slider));
+  return Math.round(TILE_PX_MIN + (TILE_PX_MAX - TILE_PX_MIN) * (clamped / 100));
+}
 
 interface SearchRibbonProps {
   isIndexing?: boolean;
@@ -181,12 +182,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [searchActive, setSearchActive] = useState(false); // true when results should show
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('pdr-sd-view-mode') : null;
-    if (saved && (VIEW_MODE_CYCLE as string[]).includes(saved)) return saved as ViewMode;
-    return 'grid-m';
+    if (saved === 'grid' || saved === 'list' || saved === 'details') return saved;
+    return 'grid';
   });
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.setItem('pdr-sd-view-mode', viewMode);
   }, [viewMode]);
+
+  // Tile size slider — only meaningful in grid view
+  const [tileSizeSlider, setTileSizeSlider] = useState<number>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('pdr-sd-tile-size') : null;
+    const n = saved ? parseInt(saved, 10) : 40;
+    return isFinite(n) ? Math.max(0, Math.min(100, n)) : 40;
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('pdr-sd-tile-size', String(tileSizeSlider));
+  }, [tileSizeSlider]);
 
   // Selection mode — shows checkboxes on tiles. Off by default.
   const [selectionMode, setSelectionMode] = useState<boolean>(false);
@@ -2536,38 +2547,58 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin inline ml-2 text-primary" />}
             </span>
             <div className="flex items-center gap-3">
-              {/* View mode buttons — 5 tile sizes + List + Details. Ctrl+scroll cycles through them. */}
-              <div className="flex items-center border border-border rounded-lg overflow-hidden">
-                {([
-                  { v: 'grid-xs' as ViewMode, label: 'Extra small tiles', size: 10 },
-                  { v: 'grid-s' as ViewMode, label: 'Small tiles', size: 12 },
-                  { v: 'grid-m' as ViewMode, label: 'Medium tiles', size: 14 },
-                  { v: 'grid-l' as ViewMode, label: 'Large tiles', size: 16 },
-                  { v: 'grid-xl' as ViewMode, label: 'Extra large tiles', size: 18 },
-                ]).map((opt, i) => (
-                  <button
-                    key={opt.v}
-                    onClick={() => setViewMode(opt.v)}
-                    className={`p-1.5 transition-colors ${i > 0 ? 'border-l border-border' : ''} ${viewMode === opt.v ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                    title={`${opt.label} (Ctrl+scroll to cycle)`}
-                  >
-                    <LayoutGrid style={{ width: `${opt.size}px`, height: `${opt.size}px` }} />
+              {/* Tile size slider (grid view only) + List + Details */}
+              <div className="flex items-center gap-2">
+                {/* Grid tile size slider — styled like the People Match slider */}
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+                {viewMode === 'grid' && (
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-border bg-background min-w-[160px]">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">0%</span>
+                    <div className="relative flex-1">
+                      <input
+                        type="range"
+                        min={TILE_SLIDER_MIN}
+                        max={TILE_SLIDER_MAX}
+                        step={TILE_SLIDER_STEP}
+                        value={tileSizeSlider}
+                        onChange={(e) => setTileSizeSlider(parseInt(e.target.value, 10))}
+                        className="w-full h-1 accent-purple-500 cursor-pointer relative z-10"
+                        title={`Tile size: ${tileSizeSlider}%`}
+                      />
+                      {/* Tick marks at 25%, 50%, 75% */}
+                      <div className="absolute top-1/2 left-0 right-0 flex justify-between px-[2px] pointer-events-none" style={{ transform: 'translateY(-50%)' }}>
+                        <div className="w-px h-2 bg-transparent" />
+                        <div className="w-px h-2.5 bg-muted-foreground/25" />
+                        <div className="w-px h-2.5 bg-muted-foreground/25" />
+                        <div className="w-px h-2.5 bg-muted-foreground/25" />
+                        <div className="w-px h-2 bg-transparent" />
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">100%</span>
+                  </div>
+                )}
+                <div className="flex items-center border border-border rounded-lg overflow-hidden">
+                  <button onClick={() => setViewMode('list')}
+                    className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                    title="List">
+                    <List className="w-3.5 h-3.5" />
                   </button>
-                ))}
-                <button onClick={() => setViewMode('list')}
-                  className={`p-1.5 transition-colors border-l border-border ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                  title="List">
-                  <List className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => setViewMode('details')}
-                  className={`p-1.5 transition-colors border-l border-border ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                  title="Details">
-                  <Table2 className="w-3.5 h-3.5" />
-                </button>
+                  <button onClick={() => setViewMode('details')}
+                    className={`p-1.5 transition-colors border-l border-border ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                    title="Details">
+                    <Table2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               {/* Metadata display dropdown — customise what info appears below each tile */}
-              {viewMode.startsWith('grid-') && (
+              {viewMode === 'grid' && (
                 <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
                   <PopoverTrigger asChild>
                     <button
@@ -2659,24 +2690,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   className="h-full overflow-y-auto p-4 select-none sd-scroll-container"
                   onWheel={(e) => {
                     if (!(e.ctrlKey || e.metaKey)) return;
+                    // Only scale tiles when in grid view. List and Details ignore Ctrl+scroll.
+                    if (viewMode !== 'grid') return;
                     e.preventDefault();
                     e.stopPropagation();
-                    setViewMode(prev => {
-                      const idx = VIEW_MODE_CYCLE.indexOf(prev);
-                      if (idx === -1) return 'grid-m';
-                      // Wheel up (deltaY < 0) = larger tiles; wheel down = smaller
-                      const nextIdx = e.deltaY < 0
-                        ? Math.min(VIEW_MODE_CYCLE.length - 1, idx + 1)
-                        : Math.max(0, idx - 1);
-                      return VIEW_MODE_CYCLE[nextIdx];
+                    setTileSizeSlider(prev => {
+                      // Wheel up (deltaY < 0) = bigger tiles; wheel down = smaller. 10% step.
+                      const next = e.deltaY < 0
+                        ? Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP)
+                        : Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP);
+                      return next;
                     });
                   }}
                 >
-                  {/* ── Grid View (5 tile sizes) ── */}
-                  {viewMode.startsWith('grid-') && (
+                  {/* ── Grid View (tile size controlled by slider) ── */}
+                  {viewMode === 'grid' && (
                     <div
                       className="grid gap-0"
-                      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${TILE_SIZES[viewMode] ?? 180}px, 1fr))` }}
+                      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSliderToPx(tileSizeSlider)}px, 1fr))` }}
                     >
                       {results.files.map((file, idx) => (
                         <FileCard key={file.id} file={file} thumbnail={thumbnails[file.file_path]}
