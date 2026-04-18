@@ -3125,9 +3125,9 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
           </div>
         </div>
         {/* Preview image with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
-        <div className="rounded-xl overflow-hidden bg-secondary/30 mb-3 aspect-square relative group sticky top-0 z-10">
-          {(fullThumbnail || thumbnail) ? <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-full object-contain" /> : (
-            <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
+        <div className="rounded-xl overflow-hidden bg-secondary/30 mb-3 relative group sticky top-0 z-10" style={{ maxHeight: '60vh' }}>
+          {(fullThumbnail || thumbnail) ? <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-auto max-h-[60vh] object-contain block" /> : (
+            <div className="w-full aspect-square flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
           )}
           {/* Face bounding box overlays — clickable for naming */}
           {showFaceOverlays && fileFaces.length > 0 && (fullThumbnail || thumbnail) && (
@@ -3245,12 +3245,12 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
         {/* AI Faces — positioned right after photo for easy naming */}
         {fileFaces.length > 0 && (
           <div className="mb-3 rounded-lg border border-purple-200/50 dark:border-purple-700/30 bg-purple-50/30 dark:bg-purple-950/10 overflow-hidden">
-            <div className="flex items-center justify-between gap-1.5 px-3 py-1.5 text-[11px] text-purple-600 dark:text-purple-400 uppercase font-semibold border-b border-purple-200/30 dark:border-purple-700/20">
+            <div className="flex items-center justify-between gap-1.5 px-3 py-1.5 text-sm text-purple-600 dark:text-purple-400 uppercase font-semibold border-b border-purple-200/30 dark:border-purple-700/20">
               <span className="flex items-center gap-1.5">
-                <Users className="w-3 h-3" /> People ({fileFaces.length})
+                <Users className="w-4 h-4" /> People ({fileFaces.length})
               </span>
               <label className="flex items-center gap-2 cursor-pointer normal-case" title={showFaceOverlays ? 'Hide face boxes on photo' : 'Show face boxes on photo'}>
-                <span className="text-[10px] text-muted-foreground">Boxes</span>
+                <span className="text-sm text-muted-foreground">Boxes</span>
                 <button
                   type="button"
                   role="switch"
@@ -3380,7 +3380,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                           <Users className="w-5 h-5 text-purple-400" />
                         </div>
                       )}
-                      <span className={face.person_name ? 'text-foreground font-medium flex-1 min-w-0 truncate text-base' : 'text-muted-foreground italic flex-1 min-w-0 truncate text-base'}>
+                      <span className={face.person_name ? 'text-foreground font-medium flex-1 min-w-0 truncate text-sm' : 'text-muted-foreground italic flex-1 min-w-0 truncate text-sm'}>
                         {face.person_name || 'Unknown person'}
                       </span>
                       <button
@@ -3415,7 +3415,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                           <Trash2 className="w-3 h-3 text-red-400" />
                         </button>
                       )}
-                      <span className="text-base text-muted-foreground shrink-0 ml-2">{Math.round(face.confidence * 100)}%</span>
+                      <span className="text-sm text-muted-foreground shrink-0 ml-2">{Math.round(face.confidence * 100)}%</span>
                     </div>
                   )}
                 </div>
