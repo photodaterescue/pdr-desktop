@@ -3135,11 +3135,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
               {fileFaces.map((face) => (
                 <div
                   key={`face-overlay-${face.id}`}
-                  className={`absolute rounded-sm cursor-pointer transition-all group/face ${
-                    editingFaceId === face.id
-                      ? 'border-2 border-purple-400 shadow-lg shadow-purple-500/30 z-20'
-                      : 'border-2 border-purple-400/70 hover:border-purple-300 hover:shadow-md hover:shadow-purple-500/20 z-10'
-                  }`}
+                  className="absolute rounded-sm transition-all group/face border-2 border-purple-400/70 z-10"
                   style={{
                     left: `${face.box_x * 100}%`,
                     top: `${face.box_y * 100}%`,
@@ -3147,18 +3143,13 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                     height: `${face.box_h * 100}%`,
                   }}
                   onClick={(e) => {
+                    // Name editing moved to the People (N) row below — don't open an editor on top of the image
                     e.stopPropagation();
-                    if (editingFaceId !== face.id) {
-                      setEditingFaceId(face.id);
-                      setFaceNameInput(face.person_name || '');
-                      listPersons().then(r => { if (r.success && r.data) setExistingPersons(r.data); });
-                      setTimeout(() => faceNameInputRef.current?.focus(), 50);
-                    }
                   }}
                 >
-                  {/* Name label or "click to name" hint */}
-                  {editingFaceId === face.id ? (
-                    /* Inline name input directly on the face */
+                  {/* Name label shown on hover. Editing happens in the People rows below. */}
+                  {false ? (
+                    /* Inline editor kept in tree but never rendered */
                     <div className="absolute left-1/2 -translate-x-1/2 w-[160px] z-30"
                       style={{ top: `calc(100% + 4px)` }}
                       onClick={(e) => e.stopPropagation()}
@@ -3213,12 +3204,14 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                       </div>
                     </div>
                   ) : (
-                    /* Facebook-style: name tooltip appears on hover over the face box */
+                    /* Facebook-style: name tooltip appears on hover over the face box (read-only) */
                     <span className="absolute bottom-0 left-0 right-0 flex justify-center opacity-0 group-hover/face:opacity-100 transition-opacity pointer-events-none"
                     >
-                      <span className={`${face.person_name ? 'bg-purple-600/90' : 'bg-black/70'} text-white px-2 py-0.5 rounded-t text-[10px] font-semibold leading-tight shadow-lg inline-block truncate max-w-full`}>
-                        {face.person_name || 'Click to name'}
-                      </span>
+                      {face.person_name && (
+                        <span className="bg-purple-600/90 text-white px-2 py-0.5 rounded-t text-[10px] font-semibold leading-tight shadow-lg inline-block truncate max-w-full">
+                          {face.person_name}
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>
@@ -3532,7 +3525,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
 
         <div className="mr-10">
         <table className="w-full border-collapse">
-          <thead className="sticky top-0 bg-background z-10">
+          <thead className="bg-background">
             <tr className="border-b border-border">
               <th className="text-left text-[10px] text-muted-foreground uppercase font-semibold py-1.5 pr-3 w-[110px] min-w-[110px] max-w-[110px] border-r border-border/20">Field</th>
               <th className="text-left text-[10px] text-muted-foreground uppercase font-semibold py-1.5 pl-3">Value</th>
