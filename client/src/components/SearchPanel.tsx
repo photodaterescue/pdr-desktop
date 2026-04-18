@@ -2568,10 +2568,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
                   <PopoverTrigger asChild>
                     <button
-                      className={`p-1.5 rounded-lg border border-border transition-colors ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                      title="Show info below tiles"
+                      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
+                      title="Choose which details show below each photo"
                     >
                       <Info className="w-3.5 h-3.5" />
+                      <span>Add Info{tileMetaFields.length > 0 ? ` (${tileMetaFields.length})` : ''}</span>
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-56 p-2" align="end">
@@ -2622,8 +2623,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 title={showPreviewPanel ? 'Hide preview' : 'Show preview'}>
                 {showPreviewPanel ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
               </button>
-              <button onClick={clearFilters} className="px-3 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all flex items-center gap-1.5 ml-1">
-                <ArrowLeft className="w-3 h-3" />
+              <button onClick={clearFilters} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-all flex items-center gap-1.5 ml-1 border border-primary/40">
+                <ArrowLeft className="w-3.5 h-3.5" />
                 {hasSources ? 'Back to Dashboard' : 'Back to Workspace'}
               </button>
             </div>
@@ -3100,8 +3101,8 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors" title="Close (Esc)"><X className="w-4 h-4" /></button>
           </div>
         </div>
-        {/* Preview image with face overlays and navigation arrows */}
-        <div className="rounded-xl overflow-hidden bg-secondary/30 mb-4 aspect-square relative group">
+        {/* Preview image with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
+        <div className="rounded-xl overflow-hidden bg-secondary/30 mb-4 aspect-square relative group sticky top-0 z-10">
           {(fullThumbnail || thumbnail) ? <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-full object-contain" /> : (
             <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
           )}
@@ -3201,18 +3202,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
               ))}
             </>
           )}
-          {/* Toggle face overlays */}
-          {fileFaces.length > 0 && (
-            <button
-              onClick={() => setShowFaceOverlays(prev => !prev)}
-              className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-                showFaceOverlays ? 'bg-purple-500/80 text-white' : 'bg-black/40 text-white/60'
-              } opacity-0 group-hover:opacity-100`}
-              title={showFaceOverlays ? 'Hide face boxes' : 'Show face boxes'}
-            >
-              <Users className="w-3 h-3" />
-            </button>
-          )}
+          {/* Face overlay toggle moved to the People header below */}
           {/* Overlay prev/next arrows on the image */}
           {onPrev && (
             <button onClick={onPrev} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all" title="Previous (←)">
@@ -3238,9 +3228,23 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
 
         {/* AI Faces — positioned right after photo for easy naming */}
         {fileFaces.length > 0 && (
-          <div className="mb-3 mr-10 rounded-lg border border-purple-200/50 dark:border-purple-700/30 bg-purple-50/30 dark:bg-purple-950/10 overflow-hidden">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-purple-600 dark:text-purple-400 uppercase font-semibold border-b border-purple-200/30 dark:border-purple-700/20">
-              <Users className="w-3 h-3" /> People ({fileFaces.length})
+          <div className="mb-3 rounded-lg border border-purple-200/50 dark:border-purple-700/30 bg-purple-50/30 dark:bg-purple-950/10 overflow-hidden">
+            <div className="flex items-center justify-between gap-1.5 px-3 py-1.5 text-[11px] text-purple-600 dark:text-purple-400 uppercase font-semibold border-b border-purple-200/30 dark:border-purple-700/20">
+              <span className="flex items-center gap-1.5">
+                <Users className="w-3 h-3" /> People ({fileFaces.length})
+              </span>
+              <button
+                onClick={() => setShowFaceOverlays(prev => !prev)}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] normal-case transition-colors ${
+                  showFaceOverlays
+                    ? 'bg-purple-500 text-white hover:bg-purple-600'
+                    : 'bg-background text-muted-foreground border border-border hover:border-purple-400/50 hover:text-foreground'
+                }`}
+                title={showFaceOverlays ? 'Hide face boxes on photo' : 'Show face boxes on photo'}
+              >
+                <Users className="w-3 h-3" />
+                {showFaceOverlays ? 'Boxes on' : 'Boxes off'}
+              </button>
             </div>
             <div className="px-2 py-1.5 space-y-1">
               {fileFaces.map((face) => (
@@ -3346,15 +3350,15 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                     </div>
                   ) : (
                     /* Display mode — click pencil to edit, X to remove name */
-                    <div className="flex items-center gap-2 px-1 py-1 rounded text-xs hover:bg-secondary/30 transition-colors">
+                    <div className="flex items-center gap-2.5 px-1.5 py-1.5 rounded hover:bg-secondary/30 transition-colors">
                       {faceCrops[face.id] ? (
-                        <img src={faceCrops[face.id]} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 border border-purple-400/40" />
+                        <img src={faceCrops[face.id]} alt="" className="w-11 h-11 rounded-full object-cover shrink-0 border-2 border-purple-400/40" />
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0">
-                          <Users className="w-4 h-4 text-purple-400" />
+                        <div className="w-11 h-11 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0">
+                          <Users className="w-5 h-5 text-purple-400" />
                         </div>
                       )}
-                      <span className={face.person_name ? 'text-foreground font-medium flex-1 min-w-0 truncate' : 'text-muted-foreground italic flex-1 min-w-0 truncate'}>
+                      <span className={face.person_name ? 'text-foreground font-medium flex-1 min-w-0 truncate text-sm' : 'text-muted-foreground italic flex-1 min-w-0 truncate text-sm'}>
                         {face.person_name || 'Unknown person'}
                       </span>
                       <button
