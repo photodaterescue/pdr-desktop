@@ -58,16 +58,14 @@ export function TitleBar() {
         )}
       </div>
 
-      {/* Center (when collapsed): "Photo Date Rescue" title, absolutely centered */}
+      {/* When collapsed: "Photo Date Rescue" title left-aligned, starting right after the white section */}
       {isSidebarCollapsed && (
-        <div
-          className="absolute left-0 right-0 flex justify-center pointer-events-none"
+        <span
+          className="text-[12px] text-foreground/80 font-semibold tracking-wide whitespace-nowrap font-heading pl-3"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <span className="text-[12px] text-foreground/80 font-semibold tracking-wide whitespace-nowrap font-heading">
-            Photo Date Rescue
-          </span>
-        </div>
+          Photo Date Rescue
+        </span>
       )}
 
       {/* Rest: lavender draggable area */}
