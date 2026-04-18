@@ -57,6 +57,32 @@
       border-color: rgba(169, 156, 255, 0.4);
     }
     .toolbar-btn[hidden] { display: none; }
+    .speed-wrap { position: relative; -webkit-app-region: no-drag; }
+    .speed-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      background: rgba(18,18,42,0.96);
+      border: 1px solid rgba(169,156,255,0.25);
+      border-radius: 8px;
+      padding: 4px 0;
+      min-width: 80px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+      z-index: 100;
+    }
+    .speed-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 5px 12px;
+      font-size: 12px;
+      color: #ccc;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+    }
+    .speed-menu button:hover { background: rgba(169,156,255,0.12); color: #fff; }
+    .speed-menu button.active { color: #A99CFF; background: rgba(169,156,255,0.08); }
     .toolbar-counter {
       font-size: 12px;
       color: #A99CFF;
@@ -212,6 +238,10 @@
       <button class="toolbar-btn" id="btn-100" title="Actual size (0)">100%</button>
       <button class="toolbar-btn" id="btn-zoomIn" title="Zoom in (+)">+</button>
       <button class="toolbar-btn" id="btn-zoomOut" title="Zoom out (-)">−</button>
+      <div class="speed-wrap" id="speed-wrap" hidden>
+        <button class="toolbar-btn" id="btn-speed" title="Playback speed (shift+, / shift+.)">1x</button>
+        <div class="speed-menu" id="speed-menu" style="display:none"></div>
+      </div>
       <button class="toolbar-btn" id="btn-openExternal" title="Open in system player" hidden>Open externally</button>
     </div>
   </div>
@@ -248,6 +278,38 @@
     const btnZoomIn = document.getElementById('btn-zoomIn');
     const btnZoomOut = document.getElementById('btn-zoomOut');
     const btnOpenExternal = document.getElementById('btn-openExternal');
+    const speedWrap = document.getElementById('speed-wrap');
+    const btnSpeed = document.getElementById('btn-speed');
+    const speedMenu = document.getElementById('speed-menu');
+
+    const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+    let playbackRate = 1;
+
+    function renderSpeedMenu() {
+      speedMenu.innerHTML = '';
+      PLAYBACK_RATES.forEach((r) => {
+        const b = document.createElement('button');
+        b.textContent = r === 1 ? 'Normal' : (r + 'x');
+        if (Math.abs(r - playbackRate) < 0.001) b.classList.add('active');
+        b.addEventListener('click', () => {
+          playbackRate = r;
+          btnSpeed.textContent = r === 1 ? '1x' : (r + 'x');
+          if (mediaEl && isVideo) mediaEl.playbackRate = r;
+          speedMenu.style.display = 'none';
+          renderSpeedMenu();
+        });
+        speedMenu.appendChild(b);
+      });
+    }
+    renderSpeedMenu();
+
+    btnSpeed.addEventListener('click', (e) => {
+      e.stopPropagation();
+      speedMenu.style.display = speedMenu.style.display === 'none' ? 'block' : 'none';
+    });
+    document.addEventListener('click', (e) => {
+      if (!speedWrap.contains(e.target)) speedMenu.style.display = 'none';
+    });
 
     const VIDEO_EXTS = new Set(['mp4','mov','m4v','avi','mkv','webm','wmv','flv','3gp','mpg','mpeg']);
 
@@ -314,6 +376,7 @@
       btnZoomIn.hidden = !show;
       btnZoomOut.hidden = !show;
       zoomLabelEl.style.visibility = show ? '' : 'hidden';
+      speedWrap.hidden = show;
     }
 
     function showUnplayable(filePath) {
@@ -383,6 +446,7 @@
           video.preload = 'metadata';
           video.onloadedmetadata = () => {
             dimensionsEl.textContent = video.videoWidth + ' \u00d7 ' + video.videoHeight + ' px \u2022 ' + Math.round(video.duration) + 's';
+            video.playbackRate = playbackRate;
             console.log('[video] loaded metadata for', label);
           };
           let retried = false;
@@ -634,6 +698,29 @@
           e.preventDefault();
           if (mediaEl.paused) mediaEl.play(); else mediaEl.pause();
         }
+        return;
+      }
+      // YouTube-style speed nudges: Shift+, slows down, Shift+. speeds up
+      if (isVideo && e.shiftKey && (e.key === '<' || e.key === ',')) {
+        const i = PLAYBACK_RATES.indexOf(playbackRate);
+        if (i > 0) {
+          playbackRate = PLAYBACK_RATES[i - 1];
+          btnSpeed.textContent = playbackRate === 1 ? '1x' : (playbackRate + 'x');
+          if (mediaEl) mediaEl.playbackRate = playbackRate;
+          renderSpeedMenu();
+        }
+        e.preventDefault();
+        return;
+      }
+      if (isVideo && e.shiftKey && (e.key === '>' || e.key === '.')) {
+        const i = PLAYBACK_RATES.indexOf(playbackRate);
+        if (i >= 0 && i < PLAYBACK_RATES.length - 1) {
+          playbackRate = PLAYBACK_RATES[i + 1];
+          btnSpeed.textContent = playbackRate === 1 ? '1x' : (playbackRate + 'x');
+          if (mediaEl) mediaEl.playbackRate = playbackRate;
+          renderSpeedMenu();
+        }
+        e.preventDefault();
         return;
       }
       if (e.key === '+' || e.key === '=') zoomToCenter(zoom * 1.25);

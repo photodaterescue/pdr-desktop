@@ -3064,6 +3064,48 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
   );
 }
 
+// ─── Video Speed Picker (YouTube-style) ──────────────────────────────────────
+
+const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+function VideoSpeedPicker({ rate, onChange }: { rate: number; onChange: (r: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const label = rate === 1 ? '1x' : `${rate}x`;
+  return (
+    <div ref={ref} className="absolute top-2 right-2 z-20">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="px-2 py-1 rounded bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold tracking-wide shadow-lg backdrop-blur-sm transition-colors"
+        title="Playback speed"
+      >
+        {label}
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 py-1 rounded-md bg-black/90 shadow-xl backdrop-blur-sm min-w-[68px]">
+          {PLAYBACK_RATES.map(r => (
+            <button
+              key={r}
+              onClick={() => { onChange(r); setOpen(false); }}
+              className={`w-full text-left px-3 py-1 text-[11px] font-medium transition-colors ${r === rate ? 'text-primary bg-white/10' : 'text-white hover:bg-white/10'}`}
+            >
+              {r === 1 ? 'Normal' : `${r}x`}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── File Detail Panel ───────────────────────────────────────────────────────
 
 function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExplorer, onOpenViewer, fileIndex, totalFiles, isShowingChecked }: {
@@ -3073,6 +3115,8 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoPreparing, setVideoPreparing] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [fileTags, setFileTags] = useState<AiTagRecord[]>([]);
   const [fileFaces, setFileFaces] = useState<FaceRecord[]>([]);
   const [editingFaceId, setEditingFaceId] = useState<number | null>(null);
@@ -3203,23 +3247,37 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
         <div className="rounded-xl overflow-hidden bg-secondary/30 mb-3 relative group sticky top-0 z-10" style={{ maxHeight: '60vh' }}>
           {file.file_type === 'video' ? (
             videoUrl ? (
-              <video
-                key={videoUrl}
-                src={videoUrl}
-                controls
-                preload="metadata"
-                poster={fullThumbnail || thumbnail || undefined}
-                className="w-full h-auto max-h-[60vh] bg-black block"
-                onError={(e) => {
-                  const v = e.currentTarget;
-                  const err = v.error;
-                  console.warn('[inline-video] error src=', v.src, 'code=', err?.code, 'message=', err?.message);
-                }}
-                onLoadedMetadata={(e) => {
-                  const v = e.currentTarget;
-                  console.log('[inline-video] loaded metadata', v.videoWidth, 'x', v.videoHeight, v.duration + 's');
-                }}
-              />
+              <div className="relative">
+                <video
+                  key={videoUrl}
+                  ref={(el) => {
+                    videoRef.current = el;
+                    if (el) el.playbackRate = playbackRate;
+                  }}
+                  src={videoUrl}
+                  controls
+                  preload="metadata"
+                  poster={fullThumbnail || thumbnail || undefined}
+                  className="w-full h-auto max-h-[60vh] bg-black block"
+                  onError={(e) => {
+                    const v = e.currentTarget;
+                    const err = v.error;
+                    console.warn('[inline-video] error src=', v.src, 'code=', err?.code, 'message=', err?.message);
+                  }}
+                  onLoadedMetadata={(e) => {
+                    const v = e.currentTarget;
+                    v.playbackRate = playbackRate;
+                    console.log('[inline-video] loaded metadata', v.videoWidth, 'x', v.videoHeight, v.duration + 's');
+                  }}
+                />
+                <VideoSpeedPicker
+                  rate={playbackRate}
+                  onChange={(r) => {
+                    setPlaybackRate(r);
+                    if (videoRef.current) videoRef.current.playbackRate = r;
+                  }}
+                />
+              </div>
             ) : (
               <div className="w-full flex flex-col items-center justify-center gap-2 py-16 bg-black/80">
                 {(fullThumbnail || thumbnail) && (
