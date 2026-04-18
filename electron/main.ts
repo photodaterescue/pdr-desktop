@@ -756,6 +756,8 @@ async function transcodeVideoToMp4(sourcePath: string, cachePath: string): Promi
     // Write to a .part file first so a crashed transcode doesn't leave a half-written cache entry.
     const partPath = cachePath + '.part';
     try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch {}
+    // -f mp4 is REQUIRED because the .part extension means ffmpeg can't
+    // infer the container from the filename.
     const args = [
       '-hide_banner', '-loglevel', 'error',
       '-i', sourcePath,
@@ -763,6 +765,7 @@ async function transcodeVideoToMp4(sourcePath: string, cachePath: string): Promi
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac', '-b:a', '128k',
       '-movflags', '+faststart',
+      '-f', 'mp4',
       '-y', partPath,
     ];
     const proc = spawn(ffmpegPath!, args, { windowsHide: true });
