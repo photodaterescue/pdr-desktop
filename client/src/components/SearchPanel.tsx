@@ -1400,24 +1400,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Location" onExpand={() => setOverflowModalGroup('gps')} groupId="gps" isFavourited={isGroupFavourited('gps')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex items-center gap-2 flex-1 py-1">
+                      <div className="flex items-center gap-1.5 flex-1 py-1">
                         {/* GPS 3-way toggle: On / Off / Both */}
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">GPS</span>
+                        <div className="flex flex-col items-center gap-0">
+                          <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold leading-none">GPS</span>
                           <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
                             <button
                               onClick={() => setHasGps(true)}
-                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${hasGps === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors ${hasGps === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="Only photos with GPS data"
                             >On</button>
                             <button
                               onClick={() => setHasGps(false)}
-                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors border-x border-border ${hasGps === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors border-x border-border ${hasGps === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="Only photos without GPS data"
                             >Off</button>
                             <button
                               onClick={() => setHasGps(undefined)}
-                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${hasGps === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors ${hasGps === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="All photos"
                             >Both</button>
                           </div>
