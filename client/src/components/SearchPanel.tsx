@@ -994,7 +994,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       </div>{/* end tab bar wrapper */}
 
       {/* Ribbon body — counter-scaled for zoom independence */}
-      <div className="border-b-2 bg-background select-none ribbon-outer-border shrink-0">
+      <div className="border-b-2 bg-background select-none ribbon-outer-border shrink-0 min-w-0 w-full">
         <AnimatePresence initial={false}>
           {ribbonExpanded && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'visible' }}>

@@ -1222,9 +1222,9 @@ return (
 		  searchResultsActive={searchResultsActive}
 		/>
       {/* Right-side content area: ribbon + panels */}
-      <div className="flex-1 flex flex-col h-full">
+      <div className="flex-1 flex flex-col h-full min-w-0">
         {/* Search Ribbon — grows to fill space when results are active */}
-        <div className={`relative z-30 flex flex-col ${searchResultsActive ? 'flex-1 overflow-hidden' : 'shrink-0'}`} style={{ overflow: searchResultsActive ? undefined : 'visible' }}>
+        <div className={`relative z-30 flex flex-col min-w-0 ${searchResultsActive ? 'flex-1 overflow-hidden' : 'shrink-0'}`} style={{ overflow: searchResultsActive ? undefined : 'visible' }}>
           <SearchRibbon
             isIndexing={isIndexing}
             indexingProgress={indexingProgress}
