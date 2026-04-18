@@ -2559,8 +2559,9 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             lastClickedIndexRef.current = idx;
                           }}
                           onClick={(e: React.MouseEvent) => {
-                            if (e.ctrlKey || e.metaKey) {
-                              // CTRL+click — toggle individual selection
+                            // Ctrl/Shift modifiers only take effect when multi-select is already in progress
+                            const multiSelectActive = selectedFiles.size > 0;
+                            if ((e.ctrlKey || e.metaKey) && multiSelectActive) {
                               const wasChecked = selectedFiles.has(file.id);
                               setSelectedFiles(prev => {
                                 const next = new Set(prev);
@@ -2569,8 +2570,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               });
                               if (!wasChecked) setSelectedFile(file);
                               lastClickedIndexRef.current = idx;
-                            } else if (e.shiftKey && lastClickedIndexRef.current !== null) {
-                              // Shift+click — range selection
+                            } else if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
                               e.preventDefault();
                               const start = Math.min(lastClickedIndexRef.current, idx);
                               const end = Math.max(lastClickedIndexRef.current, idx);
@@ -2583,9 +2583,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               });
                               setSelectedFile(file);
                             } else {
-                              // Normal click — single select for detail panel, clear multi-select
+                              // Plain click — open preview panel. Do not touch multi-select.
                               setSelectedFile(file);
-                              setSelectedFiles(new Set());
                               lastClickedIndexRef.current = idx;
                             }
                           }}
@@ -2826,13 +2825,13 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
         {thumbnail ? <img src={thumbnail} alt={file.filename} className="w-full h-full object-cover" loading="lazy" draggable={false} /> : (
           <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-10 h-10 text-muted-foreground/30" /> : <ImageIcon className="w-10 h-10 text-muted-foreground/30" />}</div>
         )}
-        {/* Multi-select checkbox — clickable without CTRL */}
+        {/* Multi-select checkbox — always visible so it's discoverable */}
         <div
           onClick={(e) => { e.stopPropagation(); onCheckboxClick?.(); }}
           className={`absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${
           isMultiSelected
             ? 'bg-primary border-primary text-white'
-            : 'border-white/60 bg-black/30 text-transparent opacity-0 group-hover:opacity-100 hover:border-white hover:bg-black/50'
+            : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60'
         }`}>
           {isMultiSelected && <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 6l3 3 5-5" /></svg>}
         </div>
