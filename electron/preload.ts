@@ -114,6 +114,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     prepare: (filePath: string) => ipcRenderer.invoke('video:prepare', filePath),
   },
 
+  date: {
+    getSuggestions: (fileId: number) => ipcRenderer.invoke('date:getSuggestions', fileId),
+    apply: (opts: any) => ipcRenderer.invoke('date:apply', opts),
+    undo: () => ipcRenderer.invoke('date:undo'),
+    auditLog: (limit?: number) => ipcRenderer.invoke('date:auditLog', limit),
+  },
+
   search: {
     init: () => ipcRenderer.invoke('search:init'),
     indexRun: (reportId: string) => ipcRenderer.invoke('search:indexRun', reportId),

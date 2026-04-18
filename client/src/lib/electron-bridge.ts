@@ -831,6 +831,59 @@ export async function prepareVideoForPlayback(filePath: string): Promise<{ succe
   return { success: false, error: 'Not running in Electron' };
 }
 
+// ─── Date editor ─────────────────────────────────────────────────────────────
+
+export interface DateSuggestion {
+  id: string;
+  iso: string;
+  label: string;
+  reason: string;
+  source: 'neighbour' | 'sequence' | 'folder' | 'faces' | 'gps' | 'filename';
+  confidence: number;
+}
+
+export interface ApplyDateResult {
+  success: boolean;
+  applied: Array<{
+    fileId: number;
+    oldPath: string;
+    newPath: string;
+    oldDate: string | null;
+    newDate: string;
+    exifWritten: boolean;
+    renamed: boolean;
+    error?: string;
+  }>;
+  errors: Array<{ fileId: number; error: string }>;
+}
+
+export async function getDateSuggestions(fileId: number): Promise<{ success: boolean; data?: DateSuggestion[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.date?.getSuggestions) {
+    return (window as any).pdr.date.getSuggestions(fileId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function applyDateCorrection(opts: {
+  fileIds: number[];
+  date: string | Record<number, string>;
+  writeExif: boolean;
+  renameFile: boolean;
+  reason?: string;
+}): Promise<{ success: boolean; data?: ApplyDateResult; error?: string }> {
+  if (isElectron() && (window as any).pdr?.date?.apply) {
+    return (window as any).pdr.date.apply(opts);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function undoLastDateCorrection(): Promise<{ success: boolean; undone?: any; error?: string }> {
+  if (isElectron() && (window as any).pdr?.date?.undo) {
+    return (window as any).pdr.date.undo();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export async function openSearchViewer(filePath: string | string[], filename: string | string[]): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.search) {
     // Normalise to arrays for the IPC call

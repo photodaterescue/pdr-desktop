@@ -2114,6 +2114,45 @@ ipcMain.handle('license:getMachineId', async () => {
   return getMachineFingerprint();
 });
 
+// ─── Date editor IPC handlers ───────────────────────────────────────────────
+
+ipcMain.handle('date:getSuggestions', async (_event, fileId: number) => {
+  try {
+    const { getDateSuggestionsForFile } = await import('./date-editor.js');
+    return { success: true, data: getDateSuggestionsForFile(fileId) };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle('date:apply', async (_event, opts: any) => {
+  try {
+    const { applyDateCorrection } = await import('./date-editor.js');
+    const result = await applyDateCorrection(opts);
+    return { success: result.success, data: result };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle('date:undo', async () => {
+  try {
+    const { undoLastDateCorrection } = await import('./date-editor.js');
+    return await undoLastDateCorrection();
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle('date:auditLog', async (_event, limit: number = 20) => {
+  try {
+    const { getRecentAuditEntries } = await import('./date-editor.js');
+    return { success: true, data: getRecentAuditEntries(limit) };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
 // ─── Search & Discovery IPC handlers ─────────────────────────────────────────
 
 ipcMain.handle('search:init', async () => {

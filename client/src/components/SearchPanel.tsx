@@ -77,6 +77,10 @@ import {
   isElectron,
   openSearchViewer,
   prepareVideoForPlayback,
+  getDateSuggestions,
+  applyDateCorrection,
+  undoLastDateCorrection,
+  type DateSuggestion,
   checkPathsExist,
   listSearchRuns,
   removeSearchRun,
@@ -2827,7 +2831,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         </thead>
                         <tbody>
                           {results.files.map(file => {
-                            const confidenceColor = file.confidence === 'confirmed' ? 'text-green-600' : file.confidence === 'recovered' ? 'text-amber-600' : 'text-red-500';
+                            const confidenceColor = file.confidence === 'confirmed' ? 'text-green-600' : file.confidence === 'corrected' ? 'text-primary' : file.confidence === 'recovered' ? 'text-amber-600' : 'text-red-500';
                             return (
                               <tr key={file.id} data-file-id={file.id}
                                 onClick={() => setSelectedFile(file)}
@@ -2889,6 +2893,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             safeOpenViewer(selectedFile.file_path, selectedFile.filename);
                           }
                         }}
+                        onDateCorrected={() => { executeSearch(); }}
                         fileIndex={navIdx + 1} totalFiles={navFiles.length}
                         isShowingChecked={selectedFiles.size > 0} />
                     </ResizablePanel>
@@ -3108,8 +3113,8 @@ function VideoSpeedPicker({ rate, onChange }: { rate: number; onChange: (r: numb
 
 // ─── File Detail Panel ───────────────────────────────────────────────────────
 
-function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExplorer, onOpenViewer, fileIndex, totalFiles, isShowingChecked }: {
-  file: IndexedFile; thumbnail?: string; onClose: () => void; onPrev?: () => void; onNext?: () => void; onOpenInExplorer?: () => void; onOpenViewer?: () => void; fileIndex?: number; totalFiles?: number; isShowingChecked?: boolean;
+function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExplorer, onOpenViewer, onDateCorrected, fileIndex, totalFiles, isShowingChecked }: {
+  file: IndexedFile; thumbnail?: string; onClose: () => void; onPrev?: () => void; onNext?: () => void; onOpenInExplorer?: () => void; onOpenViewer?: () => void; onDateCorrected?: () => void; fileIndex?: number; totalFiles?: number; isShowingChecked?: boolean;
 }) {
   const [fullThumbnail, setFullThumbnail] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -3117,6 +3122,16 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
   const [videoError, setVideoError] = useState<string | null>(null);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // ─── Date editor state ─────────────────────────────────────────────────────
+  const [dateEditorOpen, setDateEditorOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<DateSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [editorDate, setEditorDate] = useState<string>('');   // datetime-local format: YYYY-MM-DDTHH:MM
+  const [writeExif, setWriteExif] = useState(true);
+  const [renameFile, setRenameFile] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const [fileTags, setFileTags] = useState<AiTagRecord[]>([]);
   const [fileFaces, setFileFaces] = useState<FaceRecord[]>([]);
   const [editingFaceId, setEditingFaceId] = useState<number | null>(null);
@@ -3214,8 +3229,90 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
     return () => { cancelled = true; setFullThumbnail(null); setFileTags([]); setFileFaces([]); setFaceCrops({}); setVideoUrl(null); setVideoError(null); setVideoPreparing(false); };
   }, [file.file_path, file.id]);
 
+  // Seed the datetime-local input from the current derived_date whenever the file changes.
+  useEffect(() => {
+    if (file.derived_date) {
+      try {
+        const d = new Date(file.derived_date);
+        if (!isNaN(d.getTime())) {
+          const pad = (n: number) => String(n).padStart(2, '0');
+          setEditorDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+        }
+      } catch {}
+    } else {
+      setEditorDate('');
+    }
+    setApplyStatus(null);
+  }, [file.id, file.derived_date]);
+
+  // Load suggestions when the editor is opened.
+  useEffect(() => {
+    if (!dateEditorOpen) return;
+    setSuggestionsLoading(true);
+    getDateSuggestions(file.id).then((r) => {
+      if (r.success && r.data) setSuggestions(r.data);
+      else setSuggestions([]);
+      setSuggestionsLoading(false);
+    });
+  }, [dateEditorOpen, file.id]);
+
+  // Open the editor by default for Marked photos so the user sees it straight away.
+  useEffect(() => {
+    if (file.confidence === 'marked') setDateEditorOpen(true);
+  }, [file.id, file.confidence]);
+
+  const applyEditorDate = useCallback(async () => {
+    if (!editorDate) { setApplyStatus('Pick a date first.'); return; }
+    setApplying(true);
+    setApplyStatus(null);
+    try {
+      // datetime-local strings are local wallclock. Build a Date explicitly to
+      // avoid timezone surprises.
+      const [d, t] = editorDate.split('T');
+      const [yy, mo, dd] = d.split('-').map(Number);
+      const [hh, mi] = t.split(':').map(Number);
+      const iso = new Date(yy, mo - 1, dd, hh, mi, 0).toISOString();
+      const res = await applyDateCorrection({
+        fileIds: [file.id],
+        date: iso,
+        writeExif,
+        renameFile,
+        reason: 'manual',
+      });
+      if (res.success) {
+        const rec = res.data?.applied[0];
+        setApplyStatus(rec?.exifWritten ? 'Applied — EXIF and index updated.' : 'Applied — index updated.');
+        onDateCorrected?.();
+      } else {
+        setApplyStatus('Failed: ' + (res.error || res.data?.errors[0]?.error || 'unknown'));
+      }
+    } finally {
+      setApplying(false);
+    }
+  }, [editorDate, file.id, writeExif, renameFile, onDateCorrected]);
+
+  const pickSuggestion = (s: DateSuggestion) => {
+    try {
+      const d = new Date(s.iso);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      setEditorDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    } catch {}
+  };
+
+  const undoLast = async () => {
+    const r = await undoLastDateCorrection();
+    if (r.success) {
+      setApplyStatus('Undone.');
+      onDateCorrected?.();
+    } else {
+      setApplyStatus('Undo failed: ' + (r.error || 'unknown'));
+    }
+  };
+
   const confidenceLabel = file.confidence === 'confirmed'
     ? { text: 'Confirmed', color: 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-900/30', icon: <CheckCircle2 className="w-3.5 h-3.5" /> }
+    : file.confidence === 'corrected'
+      ? { text: 'Corrected', color: 'text-primary bg-primary/10', icon: <CheckCircle2 className="w-3.5 h-3.5" /> }
     : file.confidence === 'recovered'
       ? { text: 'Recovered', color: 'text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/30', icon: <AlertTriangle className="w-3.5 h-3.5" /> }
       : { text: 'Marked', color: 'text-red-500 bg-red-50 dark:text-red-400 dark:bg-red-900/30', icon: <HelpCircle className="w-3.5 h-3.5" /> };
@@ -3411,6 +3508,114 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             {onOpenInExplorer && <button onClick={onOpenInExplorer} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"><FolderOpen className="w-3.5 h-3.5" />Show in Folder</button>}
           </div>
         )}
+
+        {/* Date editor — open by default for Marked, collapsed for others */}
+        <div className={`mb-4 rounded-xl border overflow-hidden ${file.confidence === 'marked' ? 'border-red-300 dark:border-red-800/50 bg-red-50/30 dark:bg-red-950/10' : 'border-border'}`}>
+          <button
+            onClick={() => setDateEditorOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-foreground/80 hover:bg-secondary/30 transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5" />
+              Date Editor
+              <span className={`text-[10px] normal-case font-medium px-1.5 py-0.5 rounded-full ${confidenceLabel.color}`}>
+                {confidenceLabel.text}
+              </span>
+            </span>
+            {dateEditorOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+          {dateEditorOpen && (
+            <div className="px-3 pb-3 space-y-3">
+              {/* Current + editable date row */}
+              <div>
+                <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Set date/time</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="datetime-local"
+                    value={editorDate}
+                    onChange={(e) => setEditorDate(e.target.value)}
+                    className="flex-1 px-2 py-1.5 rounded-md border border-border bg-background text-xs font-mono"
+                  />
+                  <button
+                    onClick={applyEditorDate}
+                    disabled={applying || !editorDate}
+                    className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                  >
+                    {applying ? 'Applying…' : 'Apply'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Write options */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={writeExif} onChange={(e) => setWriteExif(e.target.checked)} />
+                  <span>Write to EXIF</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={renameFile} onChange={(e) => setRenameFile(e.target.checked)} />
+                  <span>Rename file (new date)</span>
+                </label>
+                <button
+                  onClick={undoLast}
+                  className="ml-auto text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                  title="Undo the most recent date correction (session or persistent)"
+                >
+                  Undo last
+                </button>
+              </div>
+
+              {/* Suggestions */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Suggestions</span>
+                  {suggestionsLoading && <span className="text-[10px] text-muted-foreground italic">Loading…</span>}
+                </div>
+                {suggestions.length === 0 && !suggestionsLoading && (
+                  <div className="text-[11px] text-muted-foreground italic">
+                    No context to infer from — set the date manually above.
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {suggestions.map((s, idx) => (
+                    <button
+                      key={s.id}
+                      onClick={() => pickSuggestion(s)}
+                      className="w-full text-left flex items-start gap-2 px-2 py-1.5 rounded-md border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors group"
+                      title="Click to load this date into the picker above"
+                    >
+                      <span className={`shrink-0 text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded ${
+                        s.source === 'neighbour' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' :
+                        s.source === 'sequence' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400' :
+                        s.source === 'filename' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                        s.source === 'faces' ? 'bg-pink-500/15 text-pink-600 dark:text-pink-400' :
+                        s.source === 'gps' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {s.source}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-semibold text-foreground">{s.label}</span>
+                          {idx === 0 && (
+                            <span className="text-[9px] text-primary font-semibold">Top pick</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground line-clamp-2">{s.reason}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {applyStatus && (
+                <div className={`text-[11px] px-2 py-1 rounded ${applyStatus.startsWith('Failed') || applyStatus.startsWith('Undo failed') ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
+                  {applyStatus}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* AI Faces — positioned right after photo for easy naming */}
         {fileFaces.length > 0 && (

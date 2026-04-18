@@ -1900,6 +1900,162 @@ export function purgeGhostRuns(): { autoRemoved: number; promptUser: IndexedRun[
  * Updates the run's destination_path and all associated indexed_files' file_path values.
  * Returns the number of file paths updated.
  */
+/**
+ * Update the stored date for a file (used by the manual date editor).
+ * Sets derived_date + year/month/day + confidence + date_source atomically,
+ * and optionally updates the file_path if the file was renamed on disk.
+ */
+export function updateFileDate(
+  fileId: number,
+  date: Date,
+  confidence: 'confirmed' | 'recovered' | 'marked' | 'corrected',
+  dateSource: string,
+  newFilePath?: string
+): void {
+  const database = getDb();
+  const iso = date.toISOString();
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  if (newFilePath) {
+    const filename = newFilePath.split(/[\\/]/).pop() || '';
+    database.prepare(`
+      UPDATE indexed_files
+         SET derived_date = ?, year = ?, month = ?, day = ?,
+             confidence = ?, date_source = ?, file_path = ?, filename = ?
+       WHERE id = ?
+    `).run(iso, year, month, day, confidence, dateSource, newFilePath, filename, fileId);
+  } else {
+    database.prepare(`
+      UPDATE indexed_files
+         SET derived_date = ?, year = ?, month = ?, day = ?,
+             confidence = ?, date_source = ?
+       WHERE id = ?
+    `).run(iso, year, month, day, confidence, dateSource, fileId);
+  }
+}
+
+/**
+ * Return files that sit immediately before and after the given file in
+ * derived-date order, restricted to Confirmed/Recovered neighbours that share
+ * the same parent folder. Used by the date-suggestion engine for interpolation.
+ */
+export function getDateNeighbours(fileId: number): {
+  before?: { id: number; filename: string; derived_date: string; confidence: string };
+  after?: { id: number; filename: string; derived_date: string; confidence: string };
+} {
+  const database = getDb();
+  const self = database.prepare(`SELECT file_path, derived_date, run_id FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string; derived_date: string | null; run_id: number } | undefined;
+  if (!self) return {};
+  const folder = self.file_path.replace(/[\\/][^\\/]*$/, '');
+  const before = database.prepare(`
+    SELECT id, filename, derived_date, confidence FROM indexed_files
+    WHERE id != ? AND confidence IN ('confirmed','recovered','corrected') AND derived_date IS NOT NULL
+      AND substr(file_path, 1, ?) = ?
+    ORDER BY derived_date DESC LIMIT 1
+  `).get(fileId, folder.length, folder) as any;
+  const after = database.prepare(`
+    SELECT id, filename, derived_date, confidence FROM indexed_files
+    WHERE id != ? AND confidence IN ('confirmed','recovered','corrected') AND derived_date IS NOT NULL
+      AND substr(file_path, 1, ?) = ?
+    ORDER BY derived_date ASC LIMIT 1
+  `).get(fileId, folder.length, folder) as any;
+  return { before: before || undefined, after: after || undefined };
+}
+
+/**
+ * Return Confirmed/Recovered/Corrected files in the same folder whose filename
+ * shares the given numeric prefix (e.g. MOV00920, MOV00927 for MOV00924).
+ * Used for sequential-filename interpolation.
+ */
+export function getSequentialFilenameNeighbours(fileId: number): {
+  before?: { id: number; filename: string; derived_date: string; seqNum: number };
+  after?: { id: number; filename: string; derived_date: string; seqNum: number };
+  selfSeqNum?: number;
+} {
+  const database = getDb();
+  const self = database.prepare(`SELECT file_path, filename FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string; filename: string } | undefined;
+  if (!self) return {};
+  const match = self.filename.match(/^(.*?)(\d{3,})(\.[^.]+)?$/);
+  if (!match) return {};
+  const [, prefix, numStr] = match;
+  const selfSeqNum = parseInt(numStr, 10);
+  const folder = self.file_path.replace(/[\\/][^\\/]*$/, '');
+  const rows = database.prepare(`
+    SELECT id, filename, derived_date FROM indexed_files
+    WHERE confidence IN ('confirmed','recovered','corrected') AND derived_date IS NOT NULL
+      AND filename LIKE ?
+      AND substr(file_path, 1, ?) = ?
+  `).all(prefix + '%', folder.length, folder) as { id: number; filename: string; derived_date: string }[];
+  let before: { id: number; filename: string; derived_date: string; seqNum: number } | undefined;
+  let after: { id: number; filename: string; derived_date: string; seqNum: number } | undefined;
+  for (const row of rows) {
+    const m = row.filename.match(/^.*?(\d{3,})/);
+    if (!m) continue;
+    const n = parseInt(m[1], 10);
+    if (n < selfSeqNum && (!before || n > before.seqNum)) before = { ...row, seqNum: n };
+    if (n > selfSeqNum && (!after || n < after.seqNum)) after = { ...row, seqNum: n };
+  }
+  return { before, after, selfSeqNum };
+}
+
+/**
+ * Return the median Confirmed/Recovered date of files in the same folder.
+ */
+export function getFolderMedianDate(fileId: number): string | null {
+  const database = getDb();
+  const self = database.prepare(`SELECT file_path FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string } | undefined;
+  if (!self) return null;
+  const folder = self.file_path.replace(/[\\/][^\\/]*$/, '');
+  const rows = database.prepare(`
+    SELECT derived_date FROM indexed_files
+    WHERE confidence IN ('confirmed','recovered','corrected') AND derived_date IS NOT NULL
+      AND substr(file_path, 1, ?) = ?
+    ORDER BY derived_date
+  `).all(folder.length, folder) as { derived_date: string }[];
+  if (rows.length === 0) return null;
+  return rows[Math.floor(rows.length / 2)].derived_date;
+}
+
+/**
+ * Return the median date of Confirmed/Recovered photos that contain one or
+ * more of the given person IDs. Used for face-based date inference.
+ */
+export function getMedianDateForPersons(personIds: number[]): string | null {
+  if (personIds.length === 0) return null;
+  const database = getDb();
+  const placeholders = personIds.map(() => '?').join(',');
+  const rows = database.prepare(`
+    SELECT DISTINCT f.id, f.derived_date FROM indexed_files f
+    JOIN face_detections fd ON fd.file_id = f.id
+    WHERE fd.person_id IN (${placeholders})
+      AND f.confidence IN ('confirmed','recovered','corrected')
+      AND f.derived_date IS NOT NULL
+    ORDER BY f.derived_date
+  `).all(...personIds) as { id: number; derived_date: string }[];
+  if (rows.length === 0) return null;
+  return rows[Math.floor(rows.length / 2)].derived_date;
+}
+
+/**
+ * Return the median date of Confirmed/Recovered photos whose GPS coordinates
+ * fall within ~approxKm of the given lat/lon.
+ */
+export function getMedianDateForGpsRadius(lat: number, lon: number, approxKm: number = 1): string | null {
+  const database = getDb();
+  // Rough degree offsets (good enough for a few km at any latitude).
+  const dLat = approxKm / 111;
+  const dLon = approxKm / (111 * Math.max(0.01, Math.cos((lat * Math.PI) / 180)));
+  const rows = database.prepare(`
+    SELECT derived_date FROM indexed_files
+    WHERE confidence IN ('confirmed','recovered','corrected') AND derived_date IS NOT NULL
+      AND gps_lat BETWEEN ? AND ? AND gps_lon BETWEEN ? AND ?
+    ORDER BY derived_date
+  `).all(lat - dLat, lat + dLat, lon - dLon, lon + dLon) as { derived_date: string }[];
+  if (rows.length === 0) return null;
+  return rows[Math.floor(rows.length / 2)].derived_date;
+}
+
 export function relocateRun(runId: number, newDestinationPath: string): number {
   const database = getDb();
   const run = database.prepare(`SELECT * FROM indexed_runs WHERE id = ?`).get(runId) as IndexedRun | undefined;
