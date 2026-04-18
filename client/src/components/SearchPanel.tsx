@@ -1400,32 +1400,46 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Location" onExpand={() => setOverflowModalGroup('gps')} groupId="gps" isFavourited={isGroupFavourited('gps')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex items-center gap-1.5 flex-1 py-1">
-                        <div className="flex flex-col gap-0.5">
-                          <button onClick={() => setHasGps(prev => prev === true ? undefined : true)}
-                            className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium transition-all ${hasGps === true ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'}`}>
-                            <MapPin className="w-3.5 h-3.5" />
-                            <span>GPS</span>
-                          </button>
-                          <button onClick={() => setHasGps(prev => prev === false ? undefined : false)}
-                            className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium transition-all ${hasGps === false ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'}`}>
-                            <MapPin className="w-3.5 h-3.5 opacity-40" />
-                            <span>No GPS</span>
-                          </button>
+                      <div className="flex items-center gap-2 flex-1 py-1">
+                        {/* GPS 3-way toggle: On / Off / Both */}
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">GPS</span>
+                          <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
+                            <button
+                              onClick={() => setHasGps(true)}
+                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${hasGps === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              title="Only photos with GPS data"
+                            >On</button>
+                            <button
+                              onClick={() => setHasGps(false)}
+                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors border-x border-border ${hasGps === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              title="Only photos without GPS data"
+                            >Off</button>
+                            <button
+                              onClick={() => setHasGps(undefined)}
+                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${hasGps === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              title="All photos"
+                            >Both</button>
+                          </div>
                         </div>
+                        {/* Country / City dropdowns — matching widths */}
                         <div className="flex flex-col gap-0.5">
-                          <FilterDropdown label="Country" active={selectedCountry.length > 0} activeLabel={selectedCountry.length > 0 ? selectedCountry.join(', ') : undefined}>
-                            {(!filterOptions?.countries || filterOptions.countries.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
-                            {filterOptions?.countries?.map(c => (
-                              <FilterCheckbox key={c} label={c} checked={selectedCountry.includes(c)} onChange={() => toggleFilter(selectedCountry, setSelectedCountry, c)} />
-                            ))}
-                          </FilterDropdown>
-                          <FilterDropdown label="City" active={selectedCity.length > 0} activeLabel={selectedCity.length > 0 ? selectedCity.join(', ') : undefined}>
-                            {(!filterOptions?.cities || filterOptions.cities.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
-                            {filterOptions?.cities?.map(c => (
-                              <FilterCheckbox key={c} label={c} checked={selectedCity.includes(c)} onChange={() => toggleFilter(selectedCity, setSelectedCity, c)} />
-                            ))}
-                          </FilterDropdown>
+                          <div className="[&>div>button]:w-[96px] [&>div>button]:justify-between">
+                            <FilterDropdown label="Country" active={selectedCountry.length > 0} activeLabel={selectedCountry.length > 0 ? selectedCountry.join(', ') : undefined}>
+                              {(!filterOptions?.countries || filterOptions.countries.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
+                              {filterOptions?.countries?.map(c => (
+                                <FilterCheckbox key={c} label={c} checked={selectedCountry.includes(c)} onChange={() => toggleFilter(selectedCountry, setSelectedCountry, c)} />
+                              ))}
+                            </FilterDropdown>
+                          </div>
+                          <div className="[&>div>button]:w-[96px] [&>div>button]:justify-between">
+                            <FilterDropdown label="City" active={selectedCity.length > 0} activeLabel={selectedCity.length > 0 ? selectedCity.join(', ') : undefined}>
+                              {(!filterOptions?.cities || filterOptions.cities.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
+                              {filterOptions?.cities?.map(c => (
+                                <FilterCheckbox key={c} label={c} checked={selectedCity.includes(c)} onChange={() => toggleFilter(selectedCity, setSelectedCity, c)} />
+                              ))}
+                            </FilterDropdown>
+                          </div>
                         </div>
                       </div>
                     </RibbonGroup>
