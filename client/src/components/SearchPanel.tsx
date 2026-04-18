@@ -2496,7 +2496,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       {searchActive && results && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Results count bar */}
-          <div className="px-4 py-2 border-b border-border flex items-center justify-between shrink-0 bg-secondary/20">
+          <div className="px-4 py-1 border-b border-border flex items-center justify-between shrink-0 bg-secondary/20">
             <span className="text-sm font-semibold text-foreground flex items-center gap-2">
               {results.total.toLocaleString()} {results.total === 1 ? 'result' : 'results'}
               {selectedFiles.size > 0 && (
@@ -3125,7 +3125,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
           </div>
         </div>
         {/* Preview image with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
-        <div className="rounded-xl overflow-hidden bg-secondary/30 mt-2 mb-4 aspect-square relative group sticky top-0 z-10">
+        <div className="rounded-xl overflow-hidden bg-secondary/30 mb-3 aspect-square relative group sticky top-0 z-10">
           {(fullThumbnail || thumbnail) ? <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-full object-contain" /> : (
             <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
           )}
