@@ -757,15 +757,19 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     // Video: extract a frame via ffmpeg-static, then resize through sharp.
     if (VIDEO_EXTS.has(ext)) {
       try {
-        const frame = await extractVideoFrame(filePath, 1);
+        // Try 1s in first; short clips / MPEG-1 files may fail that seek, so retry at 0.
+        let frame = await extractVideoFrame(filePath, 1);
+        if (!frame) frame = await extractVideoFrame(filePath, 0);
         if (frame) {
           jpegBuffer = await sharp(frame, { failOnError: false })
             .resize(size, size, { fit: 'inside', withoutEnlargement: true })
             .jpeg({ quality: 80 })
             .toBuffer();
+        } else {
+          console.warn('[ffmpeg] no frame extracted for', filePath);
         }
-      } catch {
-        // Fall through to sharp/nativeImage (will almost certainly fail for videos but harmless).
+      } catch (e) {
+        console.warn('[ffmpeg] frame→sharp failed for', filePath, (e as Error).message);
       }
     }
 
@@ -2190,6 +2194,7 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        preload: path.join(__dirname, 'preload.js'),
       },
     });
 
