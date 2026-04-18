@@ -824,6 +824,13 @@ export async function checkPathsExist(paths: string[]): Promise<Record<string, b
   return {};
 }
 
+export async function prepareVideoForPlayback(filePath: string): Promise<{ success: boolean; playableUrl?: string; error?: string }> {
+  if (isElectron() && (window as any).pdr?.video?.prepare) {
+    return (window as any).pdr.video.prepare(filePath);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export async function openSearchViewer(filePath: string | string[], filename: string | string[]): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.search) {
     // Normalise to arrays for the IPC call

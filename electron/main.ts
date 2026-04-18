@@ -735,6 +735,100 @@ ipcMain.handle('browser:listDrives', async () => {
 const thumbCacheDir = path.join(app.getPath('userData'), 'thumb-cache');
 fs.mkdirSync(thumbCacheDir, { recursive: true });
 
+// ─── Video transcoding cache ────────────────────────────────────────────────
+// Chromium cannot natively play MPEG-1/2 (.mpg), most .avi/.wmv/.flv variants,
+// or anything outside H.264/H.265/VP8/VP9/AV1 in MP4/WebM/MKV containers.
+// For those we transcode on-demand to H.264 + AAC MP4 via ffmpeg-static and
+// cache the result under userData, so the second open is instant.
+const videoCacheDir = path.join(app.getPath('userData'), 'video-cache');
+fs.mkdirSync(videoCacheDir, { recursive: true });
+
+// Extensions that Chromium will almost certainly refuse. We transcode these
+// up-front rather than waiting for the <video> element to emit an error.
+const TRANSCODE_EXTS = new Set(['.mpg', '.mpeg', '.avi', '.wmv', '.flv', '.3gp', '.m2ts', '.mts', '.vob', '.rm', '.rmvb', '.asf', '.mpe', '.mpv']);
+
+// Track in-flight transcodes so concurrent calls de-dupe to the same promise.
+const transcodeInFlight = new Map<string, Promise<{ success: boolean; cachePath?: string; error?: string }>>();
+
+async function transcodeVideoToMp4(sourcePath: string, cachePath: string): Promise<{ success: boolean; cachePath?: string; error?: string }> {
+  if (!ffmpegPath) return { success: false, error: 'ffmpeg binary not found' };
+  return new Promise((resolve) => {
+    // Write to a .part file first so a crashed transcode doesn't leave a half-written cache entry.
+    const partPath = cachePath + '.part';
+    try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch {}
+    const args = [
+      '-hide_banner', '-loglevel', 'error',
+      '-i', sourcePath,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      '-y', partPath,
+    ];
+    const proc = spawn(ffmpegPath!, args, { windowsHide: true });
+    let stderr = '';
+    proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+    let finished = false;
+    const done = (ok: boolean, err?: string) => {
+      if (finished) return;
+      finished = true;
+      if (ok) {
+        try {
+          fs.renameSync(partPath, cachePath);
+          resolve({ success: true, cachePath });
+          return;
+        } catch (e) {
+          resolve({ success: false, error: (e as Error).message });
+          return;
+        }
+      }
+      try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch {}
+      resolve({ success: false, error: err || stderr || 'ffmpeg failed' });
+    };
+    proc.on('error', (e) => done(false, e.message));
+    proc.on('close', (code) => done(code === 0));
+  });
+}
+
+ipcMain.handle('video:prepare', async (_event, filePath: string): Promise<{ success: boolean; playableUrl?: string; cachePath?: string; error?: string }> => {
+  try {
+    if (!fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+    const ext = path.extname(filePath).toLowerCase();
+
+    // Normalised pdr-file:// URL the renderer uses for direct playback.
+    const toPdrUrl = (p: string) => 'pdr-file://' + encodeURI(p.replace(/\\/g, '/'));
+
+    // Extensions Chromium handles natively — no transcode needed.
+    if (!TRANSCODE_EXTS.has(ext)) {
+      return { success: true, playableUrl: toPdrUrl(filePath) };
+    }
+
+    // Derive a deterministic cache key from absolute path + mtime + size so the
+    // cache auto-invalidates if the source is replaced.
+    const stat = await fs.promises.stat(filePath);
+    const keySrc = `${filePath}:${stat.size}:${stat.mtimeMs}`;
+    const cacheKey = crypto.createHash('md5').update(keySrc).digest('hex');
+    const cachePath = path.join(videoCacheDir, `${cacheKey}.mp4`);
+
+    if (fs.existsSync(cachePath)) {
+      return { success: true, playableUrl: toPdrUrl(cachePath), cachePath };
+    }
+
+    // De-dupe concurrent transcodes of the same file.
+    let pending = transcodeInFlight.get(cachePath);
+    if (!pending) {
+      pending = transcodeVideoToMp4(filePath, cachePath);
+      transcodeInFlight.set(cachePath, pending);
+      pending.finally(() => { transcodeInFlight.delete(cachePath); });
+    }
+    const result = await pending;
+    if (!result.success || !result.cachePath) return { success: false, error: result.error };
+    return { success: true, playableUrl: toPdrUrl(result.cachePath), cachePath: result.cachePath };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
 ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: number) => {
   try {
     // Check disk cache first

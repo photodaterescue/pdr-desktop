@@ -110,6 +110,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     thumbnail: (filePath: string, size: number) => ipcRenderer.invoke('browser:thumbnail', filePath, size),
   },
 
+  video: {
+    prepare: (filePath: string) => ipcRenderer.invoke('video:prepare', filePath),
+  },
+
   search: {
     init: () => ipcRenderer.invoke('search:init'),
     indexRun: (reportId: string) => ipcRenderer.invoke('search:indexRun', reportId),

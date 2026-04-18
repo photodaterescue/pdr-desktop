@@ -348,6 +348,8 @@
         mediaEl.remove();
         mediaEl = null;
       }
+      // Remove any stray status/preparing panes from a previous async load
+      container.querySelectorAll('.no-image:not(#placeholder)').forEach((n) => n.remove());
       placeholder.style.display = 'none';
       placeholder.innerHTML = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>No image loaded</span>';
 
@@ -356,27 +358,58 @@
       btnOpenExternal.hidden = !isVideo;
 
       if (isVideo) {
-        const video = document.createElement('video');
-        video.src = getFileSrc(filePath);
-        video.controls = true;
-        video.autoplay = false;
-        video.preload = 'metadata';
-        video.onloadedmetadata = () => {
-          dimensionsEl.textContent = video.videoWidth + ' \u00d7 ' + video.videoHeight + ' px \u2022 ' + Math.round(video.duration) + 's';
+        // Show a transcoding status while we wait for ffmpeg (no-op for
+        // natively-supported formats — prepare() returns immediately).
+        const status = document.createElement('div');
+        status.className = 'no-image';
+        status.innerHTML = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#A99CFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg><span>Preparing video…</span><span style="color:#666;font-size:11px">Older formats are transcoded on first play. Subsequent opens are instant.</span>';
+        placeholder.style.display = 'none';
+        container.appendChild(status);
+
+        const prepareStarted = filePath;
+        const useSrc = (url, isFallback) => {
+          // Only attach if we are still on the same file (user may have navigated away).
+          if (currentIndex < 0 || files[currentIndex] !== prepareStarted) return;
+          status.remove();
+          const video = document.createElement('video');
+          video.src = url;
+          video.controls = true;
+          video.autoplay = false;
+          video.preload = 'metadata';
+          video.onloadedmetadata = () => {
+            dimensionsEl.textContent = video.videoWidth + ' \u00d7 ' + video.videoHeight + ' px \u2022 ' + Math.round(video.duration) + 's';
+          };
+          let retried = isFallback === true;
+          video.onerror = () => {
+            if (!retried) {
+              retried = true;
+              video.src = getFileSrcFallback(filePath);
+            } else {
+              video.remove();
+              mediaEl = null;
+              showUnplayable(filePath);
+            }
+          };
+          container.appendChild(video);
+          mediaEl = video;
         };
-        let retried = false;
-        video.onerror = () => {
-          if (!retried) {
-            retried = true;
-            video.src = getFileSrcFallback(filePath);
-          } else {
-            video.remove();
-            mediaEl = null;
-            showUnplayable(filePath);
+
+        (async () => {
+          try {
+            if (window.pdr && window.pdr.video && window.pdr.video.prepare) {
+              const r = await window.pdr.video.prepare(filePath);
+              if (r && r.success && r.playableUrl) {
+                useSrc(r.playableUrl, false);
+                return;
+              }
+              // Transcode failed — fall through to try raw.
+              console.warn('[video] prepare failed:', r && r.error);
+            }
+          } catch (e) {
+            console.warn('[video] prepare threw:', e && e.message);
           }
-        };
-        container.appendChild(video);
-        mediaEl = video;
+          useSrc(getFileSrc(filePath), false);
+        })();
       } else {
         const img = document.createElement('img');
         img.src = getFileSrc(filePath);

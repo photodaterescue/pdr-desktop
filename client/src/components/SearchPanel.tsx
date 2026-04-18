@@ -76,6 +76,7 @@ import {
   formatBytes,
   isElectron,
   openSearchViewer,
+  prepareVideoForPlayback,
   checkPathsExist,
   listSearchRuns,
   removeSearchRun,
@@ -3069,6 +3070,9 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
   file: IndexedFile; thumbnail?: string; onClose: () => void; onPrev?: () => void; onNext?: () => void; onOpenInExplorer?: () => void; onOpenViewer?: () => void; fileIndex?: number; totalFiles?: number; isShowingChecked?: boolean;
 }) {
   const [fullThumbnail, setFullThumbnail] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoPreparing, setVideoPreparing] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [fileTags, setFileTags] = useState<AiTagRecord[]>([]);
   const [fileFaces, setFileFaces] = useState<FaceRecord[]>([]);
   const [editingFaceId, setEditingFaceId] = useState<number | null>(null);
@@ -3132,6 +3136,22 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
   useEffect(() => {
     const loadFull = async () => { const r = await getThumbnail(file.file_path, 400); if (r.success && r.dataUrl) setFullThumbnail(r.dataUrl); };
     if (file.file_type === 'photo') loadFull();
+    // Videos get a full-size poster from the thumbnail cache and an on-demand
+    // transcode if the codec/container isn't natively playable by Chromium.
+    let cancelled = false;
+    if (file.file_type === 'video') {
+      loadFull();
+      setVideoUrl(null);
+      setVideoError(null);
+      setVideoPreparing(true);
+      (async () => {
+        const r = await prepareVideoForPlayback(file.file_path);
+        if (cancelled) return;
+        if (r.success && r.playableUrl) { setVideoUrl(r.playableUrl); setVideoError(null); }
+        else { setVideoUrl(null); setVideoError(r.error || 'Could not prepare video'); }
+        setVideoPreparing(false);
+      })();
+    }
     // Load AI data for this file
     getAiFileTags(file.id).then(r => { if (r.success && r.data) setFileTags(r.data); else setFileTags([]); });
     getAiFaces(file.id).then(r => {
@@ -3147,7 +3167,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
         setFileFaces([]);
       }
     });
-    return () => { setFullThumbnail(null); setFileTags([]); setFileFaces([]); setFaceCrops({}); };
+    return () => { cancelled = true; setFullThumbnail(null); setFileTags([]); setFileFaces([]); setFaceCrops({}); setVideoUrl(null); setVideoError(null); setVideoPreparing(false); };
   }, [file.file_path, file.id]);
 
   const confidenceLabel = file.confidence === 'confirmed'
@@ -3182,14 +3202,31 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
         {/* Preview image/video with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
         <div className="rounded-xl overflow-hidden bg-secondary/30 mb-3 relative group sticky top-0 z-10" style={{ maxHeight: '60vh' }}>
           {file.file_type === 'video' ? (
-            <video
-              key={file.file_path}
-              src={`pdr-file://${encodeURI(file.file_path.replace(/\\/g, '/'))}`}
-              controls
-              preload="metadata"
-              poster={fullThumbnail || thumbnail || undefined}
-              className="w-full h-auto max-h-[60vh] bg-black block"
-            />
+            videoUrl ? (
+              <video
+                key={videoUrl}
+                src={videoUrl}
+                controls
+                preload="metadata"
+                poster={fullThumbnail || thumbnail || undefined}
+                className="w-full h-auto max-h-[60vh] bg-black block"
+              />
+            ) : (
+              <div className="w-full flex flex-col items-center justify-center gap-2 py-16 bg-black/80">
+                {(fullThumbnail || thumbnail) && (
+                  <img src={fullThumbnail || thumbnail} alt={file.filename} className="absolute inset-0 w-full h-full object-contain opacity-30" />
+                )}
+                <div className="relative z-10 flex flex-col items-center gap-2 text-white/80">
+                  <Film className="w-10 h-10 text-primary/80" />
+                  {videoPreparing && <span className="text-xs font-medium">Preparing video…</span>}
+                  {videoPreparing && <span className="text-[10px] text-white/60 max-w-[80%] text-center">Older formats are transcoded on first play. Subsequent opens are instant.</span>}
+                  {!videoPreparing && videoError && <span className="text-xs text-red-300">{videoError}</span>}
+                  {!videoPreparing && videoError && (
+                    <button onClick={onOpenInExplorer} className="text-[11px] px-3 py-1 rounded border border-white/30 hover:bg-white/10">Show in Folder</button>
+                  )}
+                </div>
+              </div>
+            )
           ) : (fullThumbnail || thumbnail) ? (
             <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-auto max-h-[60vh] object-contain block" />
           ) : (
