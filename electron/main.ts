@@ -459,22 +459,25 @@ app.whenReady().then(() => {
   // Handle pdr-file:// protocol — serves local files to the viewer window
   protocol.handle('pdr-file', (request) => {
     // Robust Windows path reconstruction.
-    // Input looks like: pdr-file://C:/Users/Terry/...  or  pdr-file:///C:/Users/Terry/...
-    // URL parsing may land the drive letter in the host ("c:") and the rest in
-    // pathname — or, for three-slash form, put the whole path in pathname.
-    // Rather than trust URL(), pull the raw path out of the request.url string.
+    // All emitters now produce pdr-file:///C:/Users/... (three slashes, empty host),
+    // but we still defensively handle the old two-slash form for backwards compat.
     let raw = request.url.replace(/^pdr-file:\/\//i, '');
-    if (raw.startsWith('/')) raw = raw.substring(1);         // pdr-file:///C:/... → C:/...
-    // URL-decode any %XX escapes (e.g. spaces).
+    while (raw.startsWith('/')) raw = raw.substring(1);      // strip any leading slashes
     try { raw = decodeURI(raw); } catch {}
 
-    // At this point `raw` should look like "C:/Users/Terry/..." or a UNC/relative path.
-    // net.fetch wants a proper file:// URL with re-encoded reserved chars.
+    // Handle accidentally-lowercased drive letters from the buggy old form
+    // (pdr-file://c/Users/... had no colon at all; if we see a single-letter
+    // path segment before /Users or similar, it's unrecoverable — just log).
+    // Normal case: raw starts with "C:/Users/Terry/..."
     const fileUrl = 'file:///' + encodeURI(raw);
     if (process.env.PDR_DEBUG_PROTOCOL) {
       console.log('[pdr-file] request =', request.url, '→ fetch', fileUrl);
     }
-    return net.fetch(fileUrl);
+    // Forward Range headers so the <video> element can seek properly.
+    return net.fetch(fileUrl, {
+      headers: request.headers,
+      method: request.method,
+    });
   });
 
   // Remove default Electron menus — custom title bar replaces them
@@ -815,7 +818,10 @@ ipcMain.handle('video:prepare', async (_event, filePath: string): Promise<{ succ
     const ext = path.extname(filePath).toLowerCase();
 
     // Normalised pdr-file:// URL the renderer uses for direct playback.
-    const toPdrUrl = (p: string) => 'pdr-file://' + encodeURI(p.replace(/\\/g, '/'));
+    // THREE slashes are essential on Windows — 'pdr-file://C:/...' would make
+    // Chromium treat "C:" as the host and lowercase it, losing the drive letter.
+    // 'pdr-file:///C:/...' has an empty host so the full path lands in the pathname.
+    const toPdrUrl = (p: string) => 'pdr-file:///' + encodeURI(p.replace(/\\/g, '/'));
 
     // Extensions Chromium handles natively — no transcode needed.
     if (!TRANSCODE_EXTS.has(ext)) {
