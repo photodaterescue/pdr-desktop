@@ -1556,8 +1556,12 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
         <button
           onClick={() => setPinStatePersisted(pinState === 'open' ? 'auto' : 'open')}
-          className={`p-1 rounded hover:bg-secondary/60 transition-colors ${pinState === 'open' ? 'text-primary' : 'text-muted-foreground/60'}`}
-          title={pinState === 'open' ? 'Unpin (follow S&D state)' : 'Pin open'}
+          className={`p-1 rounded transition-colors ${
+            pinState === 'open'
+              ? 'bg-primary/15 text-primary ring-1 ring-primary/40'
+              : 'text-muted-foreground/60 hover:bg-secondary/60 hover:text-foreground'
+          }`}
+          title={pinState === 'open' ? 'Pinned open — click to unpin (follow S&D)' : 'Pin sidebar open (stay open during S&D)'}
         >
           <Pin className="w-3.5 h-3.5" />
         </button>

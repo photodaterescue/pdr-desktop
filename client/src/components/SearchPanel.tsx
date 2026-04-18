@@ -3142,7 +3142,6 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                 {fileIndex} of {totalFiles.toLocaleString()}{isShowingChecked ? ' checked' : ''}
               </span>
             )}
-            <span className="text-[10px] text-muted-foreground/70 truncate ml-1 hidden md:inline">← → navigate · Esc close</span>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
             <button onClick={onPrev} disabled={!onPrev}
