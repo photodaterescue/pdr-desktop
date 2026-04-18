@@ -2543,17 +2543,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </span>
                   <button
                     onClick={() => {
-                      const selectedPhotos = results.files.filter(f => selectedFiles.has(f.id) && f.file_type === 'photo');
-                      if (selectedPhotos.length > 0) {
-                        const filePaths = selectedPhotos.map(f => f.file_path);
-                        const fileNames = selectedPhotos.map(f => f.filename);
+                      const selectedViewable = results.files.filter(f => selectedFiles.has(f.id) && (f.file_type === 'photo' || f.file_type === 'video'));
+                      if (selectedViewable.length > 0) {
+                        const filePaths = selectedViewable.map(f => f.file_path);
+                        const fileNames = selectedViewable.map(f => f.filename);
                         safeOpenViewer(filePaths, fileNames);
                       }
                     }}
                     className="text-xs font-medium text-white bg-primary hover:bg-primary/90 px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
                   >
                     <Eye className="w-3 h-3" />
-                    Open {results.files.filter(f => selectedFiles.has(f.id) && f.file_type === 'photo').length} in Viewer
+                    Open {results.files.filter(f => selectedFiles.has(f.id) && (f.file_type === 'photo' || f.file_type === 'video')).length} in Viewer
                   </button>
                   <button
                     onClick={() => setShowStructureModal(true)}
@@ -2871,7 +2871,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 const hasNext = navIdx < navFiles.length - 1;
                 // When checked files exist, "Open in Viewer" opens all checked; otherwise just current
                 const viewerFiles = selectedFiles.size > 0
-                  ? navFiles.filter(f => f.file_type === 'photo')
+                  ? navFiles.filter(f => f.file_type === 'photo' || f.file_type === 'video')
                   : [selectedFile];
                 return (
                   <>
@@ -3210,6 +3210,15 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                 preload="metadata"
                 poster={fullThumbnail || thumbnail || undefined}
                 className="w-full h-auto max-h-[60vh] bg-black block"
+                onError={(e) => {
+                  const v = e.currentTarget;
+                  const err = v.error;
+                  console.warn('[inline-video] error src=', v.src, 'code=', err?.code, 'message=', err?.message);
+                }}
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  console.log('[inline-video] loaded metadata', v.videoWidth, 'x', v.videoHeight, v.duration + 's');
+                }}
               />
             ) : (
               <div className="w-full flex flex-col items-center justify-center gap-2 py-16 bg-black/80">

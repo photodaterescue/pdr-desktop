@@ -208,6 +208,13 @@ function createWindow() {
 
 	mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
 
+	// Surface renderer [inline-video] / [video] console messages in main log.
+	mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+	  if (message.includes('[inline-video]') || message.includes('[video]') || message.includes('[pdr-file]')) {
+	    console.log(`[main-renderer] ${sourceId}:${line} ${message}`);
+	  }
+	});
+
 	// Register main window with AI manager for progress IPC
 	setAiMainWindow(mainWindow);
 
