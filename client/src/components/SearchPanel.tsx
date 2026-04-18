@@ -1513,12 +1513,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="File Size" onExpand={() => setOverflowModalGroup('fileSize')} groupId="fileSize" isFavourited={isGroupFavourited('fileSize')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex flex-col gap-0.5 flex-1 py-1">
-                        <span className="text-foreground/50 text-[10px] font-semibold uppercase tracking-wider">MB</span>
-                        <input type="number" step="0.1" placeholder="Min" value={sizeFromMB ?? ''} onChange={(e) => setSizeFromMB(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
-                        <input type="number" step="0.1" placeholder="Max" value={sizeToMB ?? ''} onChange={(e) => setSizeToMB(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
+                      <div className="flex items-center gap-1.5 flex-1 py-1.5">
+                        <div className="relative">
+                          <input type="number" step="0.1" placeholder="Min" value={sizeFromMB ?? ''} onChange={(e) => setSizeFromMB(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-8 py-1.5 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MB</span>
+                        </div>
+                        <div className="relative">
+                          <input type="number" step="0.1" placeholder="Max" value={sizeToMB ?? ''} onChange={(e) => setSizeToMB(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-8 py-1.5 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MB</span>
+                        </div>
                       </div>
                     </RibbonGroup>
                   </>
