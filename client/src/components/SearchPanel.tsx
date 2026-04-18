@@ -48,6 +48,7 @@ import {
   Copy,
   Pencil,
   Check,
+  CheckSquare,
   UserPlus,
   RefreshCw,
   Pause,
@@ -186,6 +187,9 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.setItem('pdr-sd-view-mode', viewMode);
   }, [viewMode]);
+
+  // Selection mode — shows checkboxes on tiles. Off by default.
+  const [selectionMode, setSelectionMode] = useState<boolean>(false);
 
   // Which metadata fields to show in each tile's footer — default: none (pure photos, zero gap)
   const [tileMetaFields, setTileMetaFields] = useState<TileMetaField[]>(() => {
@@ -978,7 +982,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         <AnimatePresence initial={false}>
           {ribbonExpanded && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'visible' }}>
-              <div ref={ribbonRef} className="flex items-stretch px-2 py-1 gap-0 h-[90px] bg-gradient-to-b from-background to-secondary/10" style={{ overflow: 'visible' }}>
+              <div ref={ribbonRef} className="flex items-stretch px-2 py-1 gap-0 h-[104px] bg-gradient-to-b from-background to-secondary/10" style={{ overflow: 'visible' }}>
 
                 {/* ── Favourites empty state ── */}
                 {activeTab === 'favourites' && favouriteGroups.length === 0 && (
@@ -2532,7 +2536,6 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin inline ml-2 text-primary" />}
             </span>
             <div className="flex items-center gap-3">
-              {selectedFile && <span className="text-xs text-muted-foreground font-medium">← → navigate{selectedFiles.size > 0 ? ' checked' : ''} · Enter view · Esc close</span>}
               {/* View mode buttons — 5 tile sizes + List + Details. Ctrl+scroll cycles through them. */}
               <div className="flex items-center border border-border rounded-lg overflow-hidden">
                 {([
@@ -2618,6 +2621,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 </Popover>
               )}
 
+              {/* Selection mode toggle — shows checkboxes on tiles for multi-select */}
+              <button
+                onClick={() => {
+                  setSelectionMode(prev => {
+                    const next = !prev;
+                    if (!next) setSelectedFiles(new Set()); // clear selections when leaving selection mode
+                    return next;
+                  });
+                }}
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
+                title={selectionMode ? 'Exit selection mode' : 'Enable checkbox selection'}
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>Select{selectedFiles.size > 0 ? ` (${selectedFiles.size})` : ''}</span>
+              </button>
+
               <button onClick={() => setShowPreviewPanel(!showPreviewPanel)}
                 className={`p-1 rounded-lg transition-colors ${showPreviewPanel ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
                 title={showPreviewPanel ? 'Hide preview' : 'Show preview'}>
@@ -2662,6 +2681,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       {results.files.map((file, idx) => (
                         <FileCard key={file.id} file={file} thumbnail={thumbnails[file.file_path]}
                           metaFields={tileMetaFields}
+                          selectionMode={selectionMode}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.has(file.id)}
                           onCheckboxClick={() => {
@@ -2937,7 +2957,7 @@ function FilterCheckbox({ label, checked, onChange, color, icon }: { label: stri
 // Metadata field keys that users can toggle on for tile footers
 type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: () => void; onDoubleClick?: () => void; metaFields?: TileMetaField[] }) {
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: () => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean }) {
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
@@ -2948,16 +2968,18 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
         {thumbnail ? <img src={thumbnail} alt={file.filename} className="w-full h-full object-cover" loading="lazy" draggable={false} /> : (
           <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-10 h-10 text-muted-foreground/30" /> : <ImageIcon className="w-10 h-10 text-muted-foreground/30" />}</div>
         )}
-        {/* Multi-select checkbox — always visible so it's discoverable */}
-        <div
-          onClick={(e) => { e.stopPropagation(); onCheckboxClick?.(); }}
-          className={`absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${
-          isMultiSelected
-            ? 'bg-primary border-primary text-white'
-            : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60'
-        }`}>
-          {isMultiSelected && <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 6l3 3 5-5" /></svg>}
-        </div>
+        {/* Multi-select checkbox — only visible when Selection Mode is active */}
+        {(selectionMode || isMultiSelected) && (
+          <div
+            onClick={(e) => { e.stopPropagation(); onCheckboxClick?.(); }}
+            className={`absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
+              isMultiSelected
+                ? 'bg-primary border-primary text-white'
+                : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60'
+            }`}>
+            {isMultiSelected && <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 6l3 3 5-5" /></svg>}
+          </div>
+        )}
         {file.file_type === 'video' && <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-medium flex items-center gap-1"><Film className="w-3 h-3" /> Video</div>}
         {file.file_type === 'photo' && onDoubleClick && !isMultiSelected && (
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -3080,17 +3102,18 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-1.5">
+      <div className="px-4 pt-2 pb-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5 min-w-0">
             <h3 className="text-sm font-semibold text-foreground mr-1">Details</h3>
             {fileIndex != null && totalFiles != null && (
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isShowingChecked ? 'text-primary bg-primary/10' : 'text-muted-foreground'}`}>
                 {fileIndex} of {totalFiles.toLocaleString()}{isShowingChecked ? ' checked' : ''}
               </span>
             )}
+            <span className="text-[10px] text-muted-foreground/70 truncate ml-1 hidden md:inline">← → navigate · Esc close</span>
           </div>
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 shrink-0">
             <button onClick={onPrev} disabled={!onPrev}
               className={`p-1.5 rounded-lg transition-colors ${onPrev ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
               title="Previous (←)"><ArrowLeft className="w-4 h-4" /></button>
@@ -3393,7 +3416,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                           <Trash2 className="w-3 h-3 text-red-400" />
                         </button>
                       )}
-                      <span className="text-[9px] text-muted-foreground shrink-0">{Math.round(face.confidence * 100)}%</span>
+                      <span className="text-sm text-muted-foreground shrink-0 ml-2">{Math.round(face.confidence * 100)}%</span>
                     </div>
                   )}
                 </div>
