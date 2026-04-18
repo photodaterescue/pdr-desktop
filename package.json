@@ -139,6 +139,7 @@
     "exiftool-vendored": "^35.0.0",
     "express": "^4.21.2",
     "express-session": "^1.18.1",
+    "ffmpeg-static": "^5.3.0",
     "framer-motion": "^12.23.24",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.545.0",

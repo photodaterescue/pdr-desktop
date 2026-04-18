@@ -1,9 +1,54 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { execSync, execFile } from 'child_process';
+import { spawn } from 'child_process';
 import sharp from 'sharp';
+// ffmpeg-static exports the absolute path to the bundled ffmpeg binary.
+// Uses `require` at runtime so a missing package fails gracefully.
+let ffmpegPath: string | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ffmpegPath = require('ffmpeg-static');
+} catch { ffmpegPath = null; }
+
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg']);
+
+/**
+ * Extract a single frame from a video using ffmpeg-static. Returns a JPEG buffer
+ * suitable for piping into sharp. Seeks ~1s into the video to skip the usual
+ * black/fade-in frame. Falls back to frame 0 if the video is shorter than 1s.
+ */
+async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer | null> {
+  if (!ffmpegPath) return null;
+  return new Promise<Buffer | null>((resolve) => {
+    const tmp = path.join(os.tmpdir(), `pdr-vthumb-${crypto.randomBytes(6).toString('hex')}.jpg`);
+    // -ss before -i is a fast seek; -frames:v 1 takes a single frame; -y overwrites
+    const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(seekSec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', '-y', tmp];
+    const proc = spawn(ffmpegPath!, args, { windowsHide: true });
+    let finished = false;
+    const done = async (ok: boolean) => {
+      if (finished) return;
+      finished = true;
+      try {
+        if (ok && fs.existsSync(tmp)) {
+          const buf = await fs.promises.readFile(tmp);
+          fs.promises.unlink(tmp).catch(() => {});
+          resolve(buf);
+          return;
+        }
+      } catch {}
+      fs.promises.unlink(tmp).catch(() => {});
+      resolve(null);
+    };
+    proc.on('error', () => done(false));
+    proc.on('close', (code) => done(code === 0));
+    // Safety timeout so hangs don't pile up
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} done(false); }, 15000);
+  });
+}
 
 // Let sharp use default thread pool (number of CPU cores) for fast encoding
 import { analyzeSource, cancelAnalysis } from './analysis-engine.js';
@@ -707,14 +752,31 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     let jpegBuffer: Buffer | null = null;
     const ext = path.extname(filePath).toLowerCase();
 
+    // Video: extract a frame via ffmpeg-static, then resize through sharp.
+    if (VIDEO_EXTS.has(ext)) {
+      try {
+        const frame = await extractVideoFrame(filePath, 1);
+        if (frame) {
+          jpegBuffer = await sharp(frame, { failOnError: false })
+            .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+        }
+      } catch {
+        // Fall through to sharp/nativeImage (will almost certainly fail for videos but harmless).
+      }
+    }
+
     // Use sharp for robust thumbnail generation (handles TIF, large files, RAW formats)
-    try {
-      jpegBuffer = await sharp(filePath, { failOnError: false })
-        .resize(size, size, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toBuffer();
-    } catch {
-      // Sharp failed — fall back to nativeImage
+    if (!jpegBuffer) {
+      try {
+        jpegBuffer = await sharp(filePath, { failOnError: false })
+          .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+      } catch {
+        // Sharp failed — fall back to nativeImage
+      }
     }
 
     // Fallback: nativeImage (good for standard JPEG/PNG/BMP)
