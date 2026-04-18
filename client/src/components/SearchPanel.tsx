@@ -3102,8 +3102,8 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="px-4 pt-2 pb-4">
-        <div className="flex items-center justify-between mb-2">
+      <div className="px-4 pt-0 pb-4">
+        <div className="flex items-center justify-between py-1.5 mb-0 border-b border-border/30">
           <div className="flex items-center gap-1.5 min-w-0">
             <h3 className="text-sm font-semibold text-foreground mr-1">Details</h3>
             {fileIndex != null && totalFiles != null && (
@@ -3125,7 +3125,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
           </div>
         </div>
         {/* Preview image with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
-        <div className="rounded-xl overflow-hidden bg-secondary/30 mb-4 aspect-square relative group sticky top-0 z-10">
+        <div className="rounded-xl overflow-hidden bg-secondary/30 mt-2 mb-4 aspect-square relative group sticky top-0 z-10">
           {(fullThumbnail || thumbnail) ? <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-full object-contain" /> : (
             <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
           )}
@@ -3234,7 +3234,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
         {(onOpenViewer || onOpenInExplorer) && (
           <div className="flex gap-2 mb-4">
             {onOpenViewer && file.file_type === 'photo' && (
-              <button onClick={onOpenViewer} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 hover:border-primary/50 transition-all">
+              <button onClick={onOpenViewer} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-sm hover:bg-primary/90 transition-all">
                 <Eye className="w-3.5 h-3.5" />{isShowingChecked && totalFiles && totalFiles > 1 ? `Open ${totalFiles} in Viewer` : 'Open in Viewer'}
               </button>
             )}
@@ -3249,18 +3249,24 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
               <span className="flex items-center gap-1.5">
                 <Users className="w-3 h-3" /> People ({fileFaces.length})
               </span>
-              <button
-                onClick={() => setShowFaceOverlays(prev => !prev)}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] normal-case transition-colors ${
-                  showFaceOverlays
-                    ? 'bg-purple-500 text-white hover:bg-purple-600'
-                    : 'bg-background text-muted-foreground border border-border hover:border-purple-400/50 hover:text-foreground'
-                }`}
-                title={showFaceOverlays ? 'Hide face boxes on photo' : 'Show face boxes on photo'}
-              >
-                <Users className="w-3 h-3" />
-                {showFaceOverlays ? 'Boxes on' : 'Boxes off'}
-              </button>
+              <label className="flex items-center gap-2 cursor-pointer normal-case" title={showFaceOverlays ? 'Hide face boxes on photo' : 'Show face boxes on photo'}>
+                <span className="text-[10px] text-muted-foreground">Boxes</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showFaceOverlays}
+                  onClick={() => setShowFaceOverlays(prev => !prev)}
+                  className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                    showFaceOverlays ? 'bg-purple-500' : 'bg-muted-foreground/30'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                      showFaceOverlays ? 'translate-x-3.5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </label>
             </div>
             <div className="px-2 py-1.5 space-y-1">
               {fileFaces.map((face) => (
