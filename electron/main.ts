@@ -5,14 +5,16 @@ import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { execSync, execFile } from 'child_process';
 import { spawn } from 'child_process';
+import { createRequire } from 'module';
 import sharp from 'sharp';
-// ffmpeg-static exports the absolute path to the bundled ffmpeg binary.
-// Uses `require` at runtime so a missing package fails gracefully.
+// ffmpeg-static is a CommonJS module; createRequire lets us require it from ESM.
+const esmRequire = createRequire(import.meta.url);
 let ffmpegPath: string | null = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  ffmpegPath = require('ffmpeg-static');
+  ffmpegPath = esmRequire('ffmpeg-static');
+  if (ffmpegPath && !fs.existsSync(ffmpegPath)) ffmpegPath = null;
 } catch { ffmpegPath = null; }
+console.log('[ffmpeg] path =', ffmpegPath);
 
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg']);
 
