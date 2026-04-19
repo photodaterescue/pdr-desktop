@@ -93,12 +93,16 @@
       white-space: nowrap;
     }
     .viewer-container {
+      /* Kept as a plain block container to match the pre-video-playback
+         original. Absolute-positioned children (the <img>, nav arrows,
+         and video wrapper) all position themselves via transform /
+         top-left, so the container only needs position:relative +
+         overflow:hidden. Adding display:flex here previously broke the
+         image fit math because it changed how clientWidth/Height
+         interacted with the absolutely-positioned media during layout. */
       flex: 1;
       overflow: hidden;
       position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
     .viewer-container img {
       position: absolute;
@@ -109,6 +113,13 @@
       cursor: grabbing;
     }
     .viewer-container video {
+      /* Centred via absolute positioning since the parent is no longer
+         a flex container. max-width/height: 100% keeps the video scaled
+         to fit the viewer without overflow. */
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       max-width: 100%;
       max-height: 100%;
       background: #000;
@@ -513,13 +524,12 @@
         img.src = getFileSrc(filePath);
         img.onload = () => {
           dimensionsEl.textContent = img.naturalWidth + ' \u00d7 ' + img.naturalHeight + ' px';
-          // Aggressive fit: the container can take several frames to settle
-          // its final size in an Electron window (title bar, toolbar,
-          // optional filmstrip, font fallback, window-resize events all
-          // land at different moments). So we schedule multiple fits at
-          // expanding intervals and log each attempt to make the actual
-          // read dimensions debuggable.
-          scheduleFitsFor(500);
+          // Matches the original working behaviour (pre-video changes):
+          // one fit immediately, one on the next animation frame for cases
+          // where the image landed mid-layout pass. ResizeObserver handles
+          // any later container changes.
+          fitToWindow();
+          requestAnimationFrame(fitToWindow);
         };
         let retried = false;
         img.onerror = () => {
@@ -630,18 +640,7 @@
       applyTransform();
     }
 
-    // Schedule multiple fit passes across the given duration. Catches the
-    // common cases where the container's final dimensions are only
-    // available after the browser has completed several layout passes.
-    function scheduleFitsFor(durationMs) {
-      const runs = [0, 16, 50, 100, 200, 350, 500, 750, 1000, 1500].filter(t => t <= durationMs);
-      for (const t of runs) {
-        if (t === 0) requestAnimationFrame(() => requestAnimationFrame(fitToWindow));
-        else setTimeout(fitToWindow, t);
-      }
-    }
-
-    function zoomTo(newZoom, centreX, centreY) {
+function zoomTo(newZoom, centreX, centreY) {
       if (!mediaEl || isVideo) return;
       newZoom = Math.max(0.05, Math.min(newZoom, 20));
       const imgX = (centreX - panX) / zoom;
