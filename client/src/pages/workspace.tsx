@@ -153,8 +153,27 @@ const handleZoomReset = () => {
   applyZoom(100);
 };
 
-// Ctrl+scroll zoom is now handled inside SearchPanel for S&D tile-size cycling only.
-// Dashboard/Workspace have no zoom behaviour.
+// Ctrl+scroll wheel zoom (like browsers and Word) — scoped to the
+// Dashboard / Workspace view only. S&D has its own tile-size cycling that
+// owns Ctrl+wheel inside its area, so this listener is effectively a no-op
+// there because the S&D panel intercepts the event first.
+useEffect(() => {
+  const handleWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    setZoomLevel(prev => {
+      const newZoom = e.deltaY < 0
+        ? Math.min(MAX_ZOOM, prev + ZOOM_STEP)
+        : Math.max(MIN_ZOOM, prev - ZOOM_STEP);
+      if (newZoom !== prev) {
+        localStorage.setItem('pdr-zoom-level', String(newZoom));
+      }
+      return newZoom;
+    });
+  };
+  window.addEventListener('wheel', handleWheel, { passive: false });
+  return () => window.removeEventListener('wheel', handleWheel);
+}, []);
 
   const [location, setLocation] = useLocation();
   // For HashRouter, query params are inside the hash (e.g., #/workspace?tour=true)
@@ -1174,6 +1193,72 @@ const tourPlaceholderAnalysisResults: Record<string, SourceAnalysisResult> = {
 
 return (
   <>
+    {/* Zoom controls — vertical pill at bottom-right. Only affects the
+        Dashboard / Workspace zoomable content (via CSS `zoom` on that
+        container). S&D has its own independent tile-size zoom. Hidden
+        while S&D results own the main area and while non-zoomable views
+        (Memories, Trees) are active, to avoid the impression of
+        controlling something you're not looking at. */}
+    {activeView === 'dashboard' && !searchResultsActive && (
+      <div className="fixed right-5 bottom-24 z-40 flex flex-col items-center gap-1 bg-background/90 backdrop-blur-sm border border-border/30 rounded-xl p-1.5 shadow-md opacity-80 hover:opacity-100 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 ease-out">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleZoomIn}
+                disabled={zoomLevel >= MAX_ZOOM}
+                className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary/50 hover:bg-primary/15 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all duration-200"
+                data-testid="button-zoom-in"
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p>Zoom in</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleZoomReset}
+                className="flex items-center justify-center w-7 h-5 text-[10px] font-medium text-muted-foreground hover:text-foreground cursor-pointer transition-all duration-200"
+                data-testid="button-zoom-reset"
+                aria-label="Reset zoom to 100%"
+              >
+                {zoomLevel}%
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p>Reset to 100%</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleZoomOut}
+                disabled={zoomLevel <= MIN_ZOOM}
+                className="flex items-center justify-center w-7 h-7 rounded-lg bg-secondary/50 hover:bg-primary/15 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all duration-200"
+                data-testid="button-zoom-out"
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p>Zoom out</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    )}
+
     {/* Main workspace layout */}
     <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
       <div className="flex flex-1 overflow-hidden">
@@ -1277,8 +1362,12 @@ return (
 
         {/* Zoomable content area — only this part scales, hidden when S&D
             results are actively showing OR when a non-dashboard view owns
-            the main area (Memories, Family Tree). */}
-        <div className={`flex-1 overflow-auto relative ${(activeView === 'search' && searchResultsActive) || activeView === 'memories' || activeView === 'familytree' ? 'hidden' : ''}`}>
+            the main area (Memories, Family Tree). CSS zoom applies only to
+            Dashboard / Workspace content so S&D is never affected. */}
+        <div
+          className={`flex-1 overflow-auto relative ${(activeView === 'search' && searchResultsActive) || activeView === 'memories' || activeView === 'familytree' ? 'hidden' : ''}`}
+          style={{ zoom: zoomLevel / 100 }}
+        >
         {/* Panel content */}
         {activePanel ? (
           <PanelPlaceholder
@@ -1318,21 +1407,6 @@ return (
             isLicensed={isLicensed}
             onActivateLicense={handleActivateLicense}
             zoomLevel={zoomLevel}
-          />
-        )}
-        {/* Floating zoom controls — visible only while the Dashboard /
-            Workspace / Guidance panels occupy the main area. Kept out of the
-            S&D view entirely, which has its own tile-size zoom in the
-            results header. Independent zoom state, so scaling the Dashboard
-            doesn't affect S&D and vice versa. Placed inside the zoomable
-            container so the absolute position docks to the Dashboard area,
-            not the whole app. */}
-        {activeView === 'dashboard' && !searchResultsActive && (
-          <DashboardZoomControls
-            zoom={zoomLevel}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onReset={handleZoomReset}
           />
         )}
         </div>{/* close zoomable content wrapper */}
@@ -1534,6 +1608,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [viewsCollapsed, setViewsCollapsed] = useState(false);
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
+  const [appCollapsed, setAppCollapsed] = useState(false);
   const [userOverrodeGuidance, setUserOverrodeGuidance] = useState(false);
 
   // Auto-collapse Guidance when the window is short so Menu/Views/Tools
@@ -1833,11 +1908,21 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         )}
       </div>
 
-      {/* UTILITY SECTION - BOTTOM */}
-      <div className="p-4 border-t space-y-1 sidebar-divider">
-        <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
-        <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
-        <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
+      {/* APP SECTION - BOTTOM (Settings / About / Help) — collapsible to
+          match Views / Tools / Guidance. */}
+      <div className="border-t px-4 pt-2 pb-3 sidebar-divider">
+        <SectionHeader
+          label="App"
+          collapsed={appCollapsed}
+          onToggle={() => setAppCollapsed((v) => !v)}
+        />
+        {!appCollapsed && (
+          <div className="space-y-1">
+            <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
+            <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
+            <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1866,41 +1951,6 @@ function ComingSoonView({ title, subtitle, description, iconName }: { title: str
           Coming soon
         </div>
       </div>
-    </div>
-  );
-}
-
-/**
- * Floating zoom controls for the Dashboard view. Bottom-right corner pill
- * with -, percentage, + buttons. Dashboard zoom is independent from the
- * S&D tile-size zoom — the two never share state so changing one doesn't
- * surprise the user in the other. Double-click the percentage to reset.
- */
-function DashboardZoomControls({ zoom, onZoomIn, onZoomOut, onReset }: { zoom: number; onZoomIn: () => void; onZoomOut: () => void; onReset: () => void }) {
-  return (
-    <div className="absolute bottom-4 right-4 z-30 flex items-center gap-0.5 rounded-full border border-border bg-background/90 backdrop-blur shadow-lg p-1">
-      <button
-        onClick={onZoomOut}
-        className="w-7 h-7 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
-        title="Zoom out"
-      >
-        <ZoomOut className="w-3.5 h-3.5" />
-      </button>
-      <button
-        onClick={onReset}
-        onDoubleClick={onReset}
-        className="min-w-[44px] px-1.5 py-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors"
-        title="Reset zoom (double-click)"
-      >
-        {zoom}%
-      </button>
-      <button
-        onClick={onZoomIn}
-        className="w-7 h-7 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
-        title="Zoom in"
-      >
-        <ZoomIn className="w-3.5 h-3.5" />
-      </button>
     </div>
   );
 }
