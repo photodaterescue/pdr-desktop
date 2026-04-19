@@ -3083,7 +3083,10 @@ function FilterDropdown({
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 min-w-[200px] bg-background border border-border rounded-xl shadow-lg z-50 p-2 space-y-0.5">
+        // Horizontally centred under the trigger. Buttons inside a RibbonGroup
+        // sit roughly in the same column as the group's footer label, so this
+        // also centres the popover above the filter name.
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 min-w-[200px] bg-background border border-border rounded-xl shadow-lg z-50 p-2 space-y-0.5">
           {children}
         </div>
       )}
