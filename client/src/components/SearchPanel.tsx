@@ -442,6 +442,26 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   // Search suggestions state
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  // Portal position for the suggestions dropdown. Kept in sync with the
+  // search input's bounding rect so the dropdown floats above everything
+  // else and can't be clipped by the ribbon's overflow-x scroll container.
+  const [searchSuggestionsPos, setSearchSuggestionsPos] = useState<{ left: number; top: number; width: number } | null>(null);
+  const recomputeSearchSuggestionsPos = useCallback(() => {
+    if (!searchInputRef.current) return;
+    const rect = searchInputRef.current.getBoundingClientRect();
+    setSearchSuggestionsPos({ left: rect.left, top: rect.bottom + 4, width: rect.width });
+  }, []);
+  useLayoutEffect(() => {
+    if (!showSearchSuggestions) return;
+    recomputeSearchSuggestionsPos();
+    const handler = () => recomputeSearchSuggestionsPos();
+    window.addEventListener('resize', handler);
+    window.addEventListener('scroll', handler, true);
+    return () => {
+      window.removeEventListener('resize', handler);
+      window.removeEventListener('scroll', handler, true);
+    };
+  }, [showSearchSuggestions, recomputeSearchSuggestionsPos, searchText]);
   const [searchSuggestionIdx, setSearchSuggestionIdx] = useState(-1);
 
   const [searchSuggestionPersons, setSearchSuggestionPersons] = useState<PersonRecord[]>([]);
@@ -1097,8 +1117,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           <X className="w-4 h-4" />
                         </button>
                       )}
-                      {/* Search suggestions dropdown — operator-aware */}
-                      {showSearchSuggestions && searchText.trim().length > 0 && (() => {
+                      {/* Search suggestions dropdown — portaled to body so it
+                          can't be clipped by the ribbon's overflow-x-auto
+                          container. Position is tracked via
+                          searchSuggestionsPos (see useLayoutEffect up top). */}
+                      {showSearchSuggestions && searchText.trim().length > 0 && searchSuggestionsPos && (() => {
                         // Split search text at the last operator so we can suggest the NEXT name after `,` `+` `&` or ` and `
                         const opRegex = /(\s*(?:,|\+|&|\band\b)\s*)/gi;
                         let lastOpEnd = 0;
@@ -1115,8 +1138,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         // Filter people suggestions
                         const peopleMatches = searchSuggestionPersons.filter(p => p.name.toLowerCase().includes(matchLower));
                         const tagMatches = !isOperatorContext ? aiTagOptions.filter(t => t.tag.toLowerCase().includes(matchLower)) : [];
-                        return (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-50 max-h-[280px] overflow-y-auto">
+                        return createPortal(
+                        <div
+                          style={{ position: 'fixed', left: searchSuggestionsPos.left, top: searchSuggestionsPos.top, width: Math.max(240, searchSuggestionsPos.width), zIndex: 1000 }}
+                          className="bg-background border border-border rounded-lg shadow-lg max-h-[320px] overflow-y-auto"
+                        >
                           {/* Person matches */}
                           {peopleMatches.length > 0 && (
                             <div className="p-1.5">
@@ -1173,7 +1199,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                 : 'No matching people or tags — press Enter to search all fields'}
                             </div>
                           )}
-                        </div>
+                        </div>,
+                        document.body,
                         );
                       })()}
                     </div>
@@ -1356,10 +1383,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 {visibleGroups.includes('scene') && (
                   <>
                     <RibbonSeparator />
-                    <RibbonGroup label="Scene Mode" onExpand={() => setOverflowModalGroup('scene')} groupId="scene" isFavourited={isGroupFavourited('scene')} onToggleFavourite={toggleFavouriteGroup}>
+                    {/* Renamed from 'Scene Mode' → 'Camera Mode' to disambiguate
+                        from AI-detected scene content (sunset / beach / etc.).
+                        The underlying EXIF SceneCaptureType describes which
+                        shooting-mode dial the camera was set to (Standard /
+                        Landscape / Portrait / Night), not visual content. */}
+                    <RibbonGroup label="Camera Mode" onExpand={() => setOverflowModalGroup('scene')} groupId="scene" isFavourited={isGroupFavourited('scene')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Scene" active={selectedScene.length > 0} selectedValues={selectedScene}>
-                          {(!filterOptions?.sceneCaptureTypes || filterOptions.sceneCaptureTypes.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No scene data — run a fix to populate</p>}
+                        <FilterDropdown label="Mode" active={selectedScene.length > 0} selectedValues={selectedScene}>
+                          {(!filterOptions?.sceneCaptureTypes || filterOptions.sceneCaptureTypes.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No camera-mode data — run a fix to populate</p>}
                           {filterOptions?.sceneCaptureTypes?.map(scene => (
                             <FilterCheckbox key={scene} label={scene} checked={selectedScene.includes(scene)} onChange={() => toggleFilter(selectedScene, setSelectedScene, scene)} />
                           ))}
@@ -1401,21 +1433,49 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </>
                 )}
 
-                {visibleGroups.includes('orientation') && (
-                  <>
-                    <RibbonSeparator />
-                    <RibbonGroup label="Orientation" onExpand={() => setOverflowModalGroup('orientation')} groupId="orientation" isFavourited={isGroupFavourited('orientation')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Orient." active={selectedOrientation.length > 0} selectedValues={selectedOrientation}>
-                          {(!filterOptions?.orientations || filterOptions.orientations.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
-                          {filterOptions?.orientations?.map(o => (
-                            <FilterCheckbox key={o} label={o} checked={selectedOrientation.includes(o)} onChange={() => toggleFilter(selectedOrientation, setSelectedOrientation, o)} />
-                          ))}
-                        </FilterDropdown>
-                      </div>
-                    </RibbonGroup>
-                  </>
-                )}
+                {visibleGroups.includes('orientation') && (() => {
+                  // Build group labels that reflect which raw values actually
+                  // appear in the library. Groups with zero matching raws are
+                  // hidden entirely rather than showing a dead checkbox.
+                  const available = new Set(filterOptions?.orientations || []);
+                  const activeGroups = ORIENTATION_GROUPS
+                    .map(g => ({ ...g, present: g.raws.filter(r => available.has(r)) }))
+                    .filter(g => g.present.length > 0);
+                  // Derive selected group labels from raw selections so the
+                  // trigger button shows "Portrait" not "6".
+                  const selectedGroupLabels = Array.from(new Set(selectedOrientation.map(orientationGroupFor)));
+                  const toggleGroup = (groupLabel: string, raws: string[]) => {
+                    const allSelected = raws.every(r => selectedOrientation.includes(r));
+                    if (allSelected) {
+                      setSelectedOrientation(prev => prev.filter(v => !raws.includes(v)));
+                    } else {
+                      setSelectedOrientation(prev => Array.from(new Set([...prev, ...raws])));
+                    }
+                  };
+                  return (
+                    <>
+                      <RibbonSeparator />
+                      <RibbonGroup label="Orientation" onExpand={() => setOverflowModalGroup('orientation')} groupId="orientation" isFavourited={isGroupFavourited('orientation')} onToggleFavourite={toggleFavouriteGroup}>
+                        <div className="flex items-center gap-1.5 flex-1 py-1.5">
+                          <FilterDropdown label="Orient." active={selectedOrientation.length > 0} selectedValues={selectedGroupLabels}>
+                            {activeGroups.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No orientation data — run a fix to populate</p>}
+                            {activeGroups.map(g => {
+                              const allSelected = g.present.every(r => selectedOrientation.includes(r));
+                              return (
+                                <FilterCheckbox
+                                  key={g.label}
+                                  label={g.label}
+                                  checked={allSelected}
+                                  onChange={() => toggleGroup(g.label, g.present)}
+                                />
+                              );
+                            })}
+                          </FilterDropdown>
+                        </div>
+                      </RibbonGroup>
+                    </>
+                  );
+                })()}
 
                 {visibleGroups.includes('source') && (
                   <>
@@ -3263,6 +3323,27 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
 // ─── Video Speed Picker (YouTube-style) ──────────────────────────────────────
 
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+// ─── Orientation groups ─────────────────────────────────────────────────────
+// EXIF Orientation tag (0x0112) stores a rotation hint as an integer 0–8.
+// PDR's DB holds whatever exiftool returned, so raw values can look like
+// "Horizontal (normal)", "Rotate 90 CW", "1", "6", "0" depending on
+// extractor version. We normalise those to four user-meaningful groups
+// (Landscape / Portrait / Mirrored / Unknown) for the filter UI, while
+// the backend query still runs a plain IN-list against the stored raw
+// strings.
+const ORIENTATION_GROUPS: Array<{ label: 'Landscape' | 'Portrait' | 'Mirrored' | 'Unknown'; raws: string[] }> = [
+  { label: 'Landscape', raws: ['1', 'Horizontal (normal)', '3', 'Rotate 180'] },
+  { label: 'Portrait',  raws: ['6', 'Rotate 90 CW', '8', 'Rotate 270 CW'] },
+  { label: 'Mirrored',  raws: ['2', 'Mirror horizontal', '4', 'Mirror vertical', '5', 'Mirror horizontal and rotate 270 CW', '7', 'Mirror horizontal and rotate 90 CW'] },
+  { label: 'Unknown',   raws: ['0', ''] },
+];
+
+/** Given a raw orientation string, return the human group label. */
+function orientationGroupFor(raw: string): 'Landscape' | 'Portrait' | 'Mirrored' | 'Unknown' {
+  for (const g of ORIENTATION_GROUPS) if (g.raws.includes(raw)) return g.label;
+  return 'Unknown';
+}
 
 function VideoSpeedPicker({ rate, onChange }: { rate: number; onChange: (r: number) => void }) {
   const [open, setOpen] = useState(false);
