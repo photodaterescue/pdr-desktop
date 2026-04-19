@@ -1283,13 +1283,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <div className="flex items-center gap-1.5 flex-1 py-1">
                         <Camera className="w-[16px] h-[16px] text-foreground/50 shrink-0" />
                         <div className="flex flex-col gap-0.5">
-                          <FilterDropdown label="Make" active={selectedCameraMake.length > 0} activeLabel={selectedCameraMake.length > 0 ? selectedCameraMake.join(', ') : undefined}>
+                          <FilterDropdown label="Make" active={selectedCameraMake.length > 0} selectedValues={selectedCameraMake}>
                             {filterOptions?.cameraMakes.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No camera data</p>}
                             {filterOptions?.cameraMakes.map(make => (
                               <FilterCheckbox key={make} label={make} checked={selectedCameraMake.includes(make)} onChange={() => toggleFilter(selectedCameraMake, setSelectedCameraMake, make)} />
                             ))}
                           </FilterDropdown>
-                          <FilterDropdown label="Model" active={selectedCameraModel.length > 0} activeLabel={selectedCameraModel.length > 0 ? selectedCameraModel.join(', ') : undefined}>
+                          <FilterDropdown label="Model" active={selectedCameraModel.length > 0} selectedValues={selectedCameraModel}>
                             {filterOptions?.cameraModels.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No models</p>}
                             {filterOptions?.cameraModels.map(model => (
                               <FilterCheckbox key={model} label={model} checked={selectedCameraModel.includes(model)} onChange={() => toggleFilter(selectedCameraModel, setSelectedCameraModel, model)} />
@@ -1306,7 +1306,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Lens" onExpand={() => setOverflowModalGroup('lens')} groupId="lens" isFavourited={isGroupFavourited('lens')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Lens Model" active={selectedLensModel.length > 0} activeLabel={selectedLensModel.length > 0 ? selectedLensModel.join(', ') : undefined}>
+                        <FilterDropdown label="Lens Model" active={selectedLensModel.length > 0} selectedValues={selectedLensModel}>
                           {(!filterOptions?.lensModels || filterOptions.lensModels.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No lens data</p>}
                           {filterOptions?.lensModels?.map(lens => (
                             <FilterCheckbox key={lens} label={lens} checked={selectedLensModel.includes(lens)} onChange={() => toggleFilter(selectedLensModel, setSelectedLensModel, lens)} />
@@ -1322,7 +1322,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Camera Type" onExpand={() => setOverflowModalGroup('cameraPosition')} groupId="cameraPosition" isFavourited={isGroupFavourited('cameraPosition')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Position" active={selectedCameraPosition.length > 0} activeLabel={selectedCameraPosition.length > 0 ? selectedCameraPosition.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ') : undefined}>
+                        <FilterDropdown label="Position" active={selectedCameraPosition.length > 0} selectedValues={selectedCameraPosition.map(p => p.charAt(0).toUpperCase() + p.slice(1))}>
                           {(!filterOptions?.cameraPositions || filterOptions.cameraPositions.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
                           {filterOptions?.cameraPositions?.map(pos => (
                             <FilterCheckbox key={pos} label={pos.charAt(0).toUpperCase() + pos.slice(1)} checked={selectedCameraPosition.includes(pos)} onChange={() => toggleFilter(selectedCameraPosition, setSelectedCameraPosition, pos)} />
@@ -1338,7 +1338,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Scene Mode" onExpand={() => setOverflowModalGroup('scene')} groupId="scene" isFavourited={isGroupFavourited('scene')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Scene" active={selectedScene.length > 0} activeLabel={selectedScene.length > 0 ? selectedScene.join(', ') : undefined}>
+                        <FilterDropdown label="Scene" active={selectedScene.length > 0} selectedValues={selectedScene}>
                           {(!filterOptions?.sceneCaptureTypes || filterOptions.sceneCaptureTypes.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No scene data — run a fix to populate</p>}
                           {filterOptions?.sceneCaptureTypes?.map(scene => (
                             <FilterCheckbox key={scene} label={scene} checked={selectedScene.includes(scene)} onChange={() => toggleFilter(selectedScene, setSelectedScene, scene)} />
@@ -1354,7 +1354,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Exposure" onExpand={() => setOverflowModalGroup('exposureProgram')} groupId="exposureProgram" isFavourited={isGroupFavourited('exposureProgram')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Program" active={selectedExposureProgram.length > 0} activeLabel={selectedExposureProgram.length > 0 ? selectedExposureProgram.join(', ') : undefined}>
+                        <FilterDropdown label="Program" active={selectedExposureProgram.length > 0} selectedValues={selectedExposureProgram}>
                           {(!filterOptions?.exposurePrograms || filterOptions.exposurePrograms.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
                           {filterOptions?.exposurePrograms?.map(prog => (
                             <FilterCheckbox key={prog} label={prog} checked={selectedExposureProgram.includes(prog)} onChange={() => toggleFilter(selectedExposureProgram, setSelectedExposureProgram, prog)} />
@@ -1370,7 +1370,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="White Balance" onExpand={() => setOverflowModalGroup('whiteBalance')} groupId="whiteBalance" isFavourited={isGroupFavourited('whiteBalance')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="WB" active={selectedWhiteBalance.length > 0} activeLabel={selectedWhiteBalance.length > 0 ? selectedWhiteBalance.join(', ') : undefined}>
+                        <FilterDropdown label="WB" active={selectedWhiteBalance.length > 0} selectedValues={selectedWhiteBalance}>
                           {(!filterOptions?.whiteBalances || filterOptions.whiteBalances.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
                           {filterOptions?.whiteBalances?.map(wb => (
                             <FilterCheckbox key={wb} label={wb} checked={selectedWhiteBalance.includes(wb)} onChange={() => toggleFilter(selectedWhiteBalance, setSelectedWhiteBalance, wb)} />
@@ -1386,7 +1386,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Orientation" onExpand={() => setOverflowModalGroup('orientation')} groupId="orientation" isFavourited={isGroupFavourited('orientation')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Orient." active={selectedOrientation.length > 0} activeLabel={selectedOrientation.length > 0 ? selectedOrientation.join(', ') : undefined}>
+                        <FilterDropdown label="Orient." active={selectedOrientation.length > 0} selectedValues={selectedOrientation}>
                           {(!filterOptions?.orientations || filterOptions.orientations.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
                           {filterOptions?.orientations?.map(o => (
                             <FilterCheckbox key={o} label={o} checked={selectedOrientation.includes(o)} onChange={() => toggleFilter(selectedOrientation, setSelectedOrientation, o)} />
@@ -1402,7 +1402,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Date Source" onExpand={() => setOverflowModalGroup('source')} groupId="source" isFavourited={isGroupFavourited('source')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Source" active={selectedDateSource.length > 0} activeLabel={selectedDateSource.length > 0 ? selectedDateSource.join(', ') : undefined}>
+                        <FilterDropdown label="Source" active={selectedDateSource.length > 0} selectedValues={selectedDateSource}>
                           {filterOptions?.dateSources.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No sources</p>}
                           {filterOptions?.dateSources.map(src => (
                             <FilterCheckbox key={src} label={src} checked={selectedDateSource.includes(src)} onChange={() => toggleFilter(selectedDateSource, setSelectedDateSource, src)} />
@@ -1444,7 +1444,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         {/* Country / City dropdowns — matching widths */}
                         <div className="flex flex-col gap-0.5">
                           <div className="[&>div>button]:w-[96px] [&>div>button]:justify-between">
-                            <FilterDropdown label="Country" active={selectedCountry.length > 0} activeLabel={selectedCountry.length > 0 ? selectedCountry.join(', ') : undefined}>
+                            <FilterDropdown label="Country" active={selectedCountry.length > 0} selectedValues={selectedCountry}>
                               {(!filterOptions?.countries || filterOptions.countries.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
                               {filterOptions?.countries?.map(c => (
                                 <FilterCheckbox key={c} label={c} checked={selectedCountry.includes(c)} onChange={() => toggleFilter(selectedCountry, setSelectedCountry, c)} />
@@ -1452,7 +1452,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             </FilterDropdown>
                           </div>
                           <div className="[&>div>button]:w-[96px] [&>div>button]:justify-between">
-                            <FilterDropdown label="City" active={selectedCity.length > 0} activeLabel={selectedCity.length > 0 ? selectedCity.join(', ') : undefined}>
+                            <FilterDropdown label="City" active={selectedCity.length > 0} selectedValues={selectedCity}>
                               {(!filterOptions?.cities || filterOptions.cities.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
                               {filterOptions?.cities?.map(c => (
                                 <FilterCheckbox key={c} label={c} checked={selectedCity.includes(c)} onChange={() => toggleFilter(selectedCity, setSelectedCity, c)} />
@@ -1506,19 +1506,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Flash" onExpand={() => setOverflowModalGroup('flash')} groupId="flash" isFavourited={isGroupFavourited('flash')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1">
-                        {/* Flash 2-way toggle — same visual style as the GPS
-                            toggle: label above, vertical stack of pills. */}
+                        {/* Flash 3-way toggle: ON / BOTH / OFF — identical
+                            structure to the GPS toggle. The group already
+                            shows a FLASH label at the bottom, so no duplicate
+                            header above the buttons. */}
                         <div className="flex flex-col items-center gap-0.5">
-                          <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold leading-none">Flash</span>
                           <div className="flex flex-col rounded-md border border-border overflow-hidden bg-background w-[40px]">
                             <button
-                              onClick={() => setFlashFired(prev => prev === true ? undefined : true)}
+                              onClick={() => setFlashFired(true)}
                               className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${flashFired === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="Only photos where the flash fired"
                             >On</button>
                             <button
-                              onClick={() => setFlashFired(prev => prev === false ? undefined : false)}
-                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-t border-border ${flashFired === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              onClick={() => setFlashFired(undefined)}
+                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-y border-border ${flashFired === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              title="All photos, regardless of flash"
+                            >Both</button>
+                            <button
+                              onClick={() => setFlashFired(false)}
+                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${flashFired === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="Only photos where the flash did not fire"
                             >Off</button>
                           </div>
@@ -3018,7 +3024,30 @@ function RibbonSeparator() {
 
 // ─── Filter Dropdown ─────────────────────────────────────────────────────────
 
-function FilterDropdown({ label, active, activeLabel, children }: { label: string; active: boolean; activeLabel?: string; children: React.ReactNode }) {
+/**
+ * Ribbon filter dropdown. Display rules for the trigger button (designed to
+ * stay readable at any ribbon width without resorting to mid-word ellipsis):
+ *   - 0 selected          → show the fallback `label` (e.g. "Source")
+ *   - 1 selected          → show that single value, truncated to max width
+ *   - 2+ selected         → show "N selected" (count instead of join)
+ * `activeLabel` (legacy prop) is still honoured as an override but new call
+ * sites should pass `selectedValues` instead.
+ * A `title` attribute on the button always holds the full comma-joined
+ * selection so hovering reveals it even when truncated.
+ */
+function FilterDropdown({
+  label,
+  active,
+  activeLabel,
+  selectedValues,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  activeLabel?: string;
+  selectedValues?: string[];
+  children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -3028,13 +3057,29 @@ function FilterDropdown({ label, active, activeLabel, children }: { label: strin
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
+  let display: string;
+  let title: string | undefined;
+  if (selectedValues && selectedValues.length > 0) {
+    title = selectedValues.join(', ');
+    display = selectedValues.length === 1 ? selectedValues[0] : `${selectedValues.length} selected`;
+  } else if (activeLabel) {
+    // Legacy path — used by filters that already format their own label.
+    display = activeLabel;
+    title = activeLabel;
+  } else {
+    display = label;
+  }
+
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(!open)}
+      <button
+        onClick={() => setOpen(!open)}
+        title={title}
         className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] transition-all ${
           active ? 'border-primary/50 bg-primary/10 text-primary font-medium' : 'border-border text-foreground hover:border-primary/30 hover:text-primary'
-        }`}>
-        {activeLabel ? <span className="max-w-[100px] truncate">{activeLabel}</span> : label}
+        }`}
+      >
+        <span className="max-w-[110px] truncate">{display}</span>
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
