@@ -23,6 +23,7 @@ import {
   HelpCircle,
   ArrowUpDown,
   Database,
+  Filter,
   Trash2,
   Plus,
   FolderOpen,
@@ -185,6 +186,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // Ribbon state
   const [ribbonExpanded, setRibbonExpanded] = useState(true);
   const [searchActive, setSearchActive] = useState(false); // true when results should show
+  // True once the user has explicitly asked to see the whole library via the
+  // "Show entire library" button. Resets when the S&D view is closed, so
+  // every new session starts in the safer empty state and can never
+  // accidentally feed the full library into Edit dates. While this is true,
+  // clearing every filter shows all photos; while it's false, clearing every
+  // filter shows the empty prompt asking the user to pick a filter.
+  const [showAllOverride, setShowAllOverride] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('pdr-sd-view-mode') : null;
     if (saved === 'grid' || saved === 'list' || saved === 'details') return saved;
@@ -239,6 +247,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setSearchActive(false);
       setResults(null);
       setSelectedFile(null);
+      setShowAllOverride(false); // Reset the show-all opt-in on every close.
     }
   }, [requestClose]);
 
@@ -796,17 +805,29 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [searchText, dbReady]);
 
-  // Re-search on filter change
+  // Re-search on filter change.
+  // Behaviour:
+  //   - Any filter active → run the search.
+  //   - No filters active + user has opted in to "Show entire library" →
+  //     run the unfiltered search (they explicitly asked for it).
+  //   - No filters active + no opt-in + S&D currently open → KEEP the view
+  //     open but clear the result set. The empty-state panel prompts the
+  //     user to either add a filter or tap "Show entire library".
+  //   - No filters active + no opt-in + S&D not open → collapse back to
+  //     Dashboard.
   useEffect(() => {
     if (!dbReady) return;
-    if (searchText.trim() || hasActiveFilters) executeSearch();
-    else if (searchActive) {
-      // User cleared the last filter while in an active S&D view —
-      // keep the view open and show all photos instead of reverting to Dashboard.
+    if (searchText.trim() || hasActiveFilters) {
       executeSearch();
+    } else if (showAllOverride && searchActive) {
+      executeSearch();
+    } else if (searchActive) {
+      setResults(null);
+    } else {
+      setResults(null);
+      setSearchActive(false);
     }
-    else { setResults(null); setSearchActive(false); }
-  }, [selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
+  }, [selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir, showAllOverride]);
 
   // People window data-changed listener — refresh AI data when people window modifies clusters
   useEffect(() => {
@@ -867,6 +888,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setSelectedAiTags([]); setSelectedDestination([]);
     setSortBy('derived_date'); setSortDir('desc');
     setResults(null); setSearchActive(false); setSelectedFile(null);
+    setShowAllOverride(false);
   };
 
   const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
@@ -2540,6 +2562,34 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           <button onClick={() => setUnavailableFileMessage(null)} className="p-1 rounded hover:bg-amber-200/50 dark:hover:bg-amber-800/50 transition-colors">
             <X className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           </button>
+        </div>
+      )}
+
+      {/* ═══ EMPTY-FILTER STATE ═══
+           The user is inside S&D but nothing is filtered, and they haven't
+           opted-in to showing the whole library. Rather than dump every
+           photo they own into the grid (and, crucially, into Edit dates),
+           we prompt them to add a filter or explicitly ask for everything. */}
+      {searchActive && !results && !hasActiveFilters && !searchText.trim() && (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
+          <Filter className="w-10 h-10 text-muted-foreground/40" />
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Pick a filter to see photos</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              PDR doesn't load your whole library by default — pick any filter above (Confidence, Camera, Date, etc.)
+              so Edit dates and other actions only ever target the set you meant.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setShowAllOverride(true); executeSearch(); }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+              title="Load every photo in your library into the grid"
+            >
+              <Database className="w-4 h-4" />
+              Show entire library{stats ? ` (${stats.totalFiles.toLocaleString()})` : ''}
+            </button>
+          </div>
         </div>
       )}
 
