@@ -2451,6 +2451,60 @@ ipcMain.handle('people:changed', async () => {
   return { success: true };
 });
 
+// ─── Date Editor window ───────────────────────────────────────────────────────
+
+let dateEditorWindow: BrowserWindow | null = null;
+
+ipcMain.handle('dateEditor:open', async () => {
+  try {
+    if (dateEditorWindow && !dateEditorWindow.isDestroyed()) {
+      dateEditorWindow.focus();
+      return { success: true };
+    }
+
+    const isDark = await mainWindow?.webContents.executeJavaScript(
+      'document.documentElement.classList.contains("dark")'
+    ).catch(() => false) ?? false;
+
+    dateEditorWindow = new BrowserWindow({
+      width: 1280,
+      height: 820,
+      minWidth: 900,
+      minHeight: 560,
+      backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
+      title: 'Date Editor — Photo Date Rescue',
+      parent: mainWindow ?? undefined,
+      roundedCorners: true,
+      thickFrame: true,
+      icon: app.isPackaged
+        ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
+        : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        zoomFactor: 1.0,
+      },
+    });
+
+    const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
+    dateEditorWindow.loadFile(dateEditorPage, { query: { dark: isDark ? '1' : '0' } });
+
+    dateEditorWindow.on('closed', () => {
+      dateEditorWindow = null;
+      // Any corrections landed while the window was open — nudge the main
+      // window so the grid / filters re-fetch.
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('dateEditor:dataChanged');
+      }
+    });
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // Open settings page in main window with a specific tab active
 ipcMain.handle('app:openSettings', async (_event, tab?: string) => {
   if (mainWindow && !mainWindow.isDestroyed()) {

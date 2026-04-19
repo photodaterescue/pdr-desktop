@@ -884,6 +884,23 @@ export async function undoLastDateCorrection(): Promise<{ success: boolean; undo
   return { success: false, error: 'Not running in Electron' };
 }
 
+// Open the standalone Date Editor window.
+export async function openDateEditor(): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.dateEditor?.open) {
+    return (window as any).pdr.dateEditor.open();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Subscribe to "data changed" notifications from the Date Editor window so
+// the main window can refresh its search results when corrections land.
+export function onDateEditorDataChanged(callback: () => void): () => void {
+  if (isElectron() && (window as any).pdr?.dateEditor?.onDataChanged) {
+    return (window as any).pdr.dateEditor.onDataChanged(callback);
+  }
+  return () => {};
+}
+
 export async function openSearchViewer(filePath: string | string[], filename: string | string[]): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.search) {
     // Normalise to arrays for the IPC call
