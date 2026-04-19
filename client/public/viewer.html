@@ -321,6 +321,12 @@
     let dragStartX = 0, dragStartY = 0;
     let panStartX = 0, panStartY = 0;
     let fitZoom = 1;
+    // True once the user has explicitly zoomed (wheel / +/- / 100%).
+    // Resets whenever a new image is loaded. While false, any layout change
+    // to the viewer container re-runs fitToWindow so the photo always ends
+    // up correctly sized and centred regardless of when the container
+    // finishes laying out.
+    let userHasZoomed = false;
 
     // Multi-file support
     let files = [];
@@ -416,6 +422,15 @@
       }
       // Remove any stray status/preparing panes from a previous async load
       container.querySelectorAll('.no-image:not(#placeholder)').forEach((n) => n.remove());
+
+      // Fresh file → fresh fit state. Any zoom the user applied to the
+      // previous photo is forgotten here, so the new photo always opens
+      // correctly fitted + centred.
+      userHasZoomed = false;
+      zoom = 1;
+      panX = 0;
+      panY = 0;
+      fitZoom = 1;
       placeholder.style.display = 'none';
       placeholder.innerHTML = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>No image loaded</span>';
 
@@ -498,19 +513,13 @@
         img.src = getFileSrc(filePath);
         img.onload = () => {
           dimensionsEl.textContent = img.naturalWidth + ' \u00d7 ' + img.naturalHeight + ' px';
-          // Defer fit until the browser has laid out the container. Firing
-          // fitToWindow() directly in onload can read clientWidth/Height
-          // from a container that hasn't finished layout (especially during
-          // the initial paint when the filmstrip is still sizing), causing
-          // a garbage zoom + wrong centering. Double-rAF guarantees a
-          // post-layout read, and a third pass inside 50ms handles the
-          // (rare) case where fonts or the filmstrip resize late.
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              fitToWindow();
-              setTimeout(fitToWindow, 50);
-            });
-          });
+          // Aggressive fit: the container can take several frames to settle
+          // its final size in an Electron window (title bar, toolbar,
+          // optional filmstrip, font fallback, window-resize events all
+          // land at different moments). So we schedule multiple fits at
+          // expanding intervals and log each attempt to make the actual
+          // read dimensions debuggable.
+          scheduleFitsFor(500);
         };
         let retried = false;
         img.onerror = () => {
@@ -609,11 +618,27 @@
       const ch = container.clientHeight;
       const iw = mediaEl.naturalWidth;
       const ih = mediaEl.naturalHeight;
+      if (cw <= 0 || ch <= 0 || iw <= 0 || ih <= 0) {
+        console.log('[viewer] skip fit — bad dims', { cw, ch, iw, ih });
+        return;
+      }
       fitZoom = Math.min(cw / iw, ch / ih, 1);
       zoom = fitZoom;
-      panX = (cw - iw * zoom) / 2;
-      panY = (ch - ih * zoom) / 2;
+      panX = Math.max(0, (cw - iw * zoom) / 2);
+      panY = Math.max(0, (ch - ih * zoom) / 2);
+      console.log('[viewer] fit', { cw, ch, iw, ih, zoom: Number(zoom.toFixed(3)), panX: Number(panX.toFixed(0)), panY: Number(panY.toFixed(0)) });
       applyTransform();
+    }
+
+    // Schedule multiple fit passes across the given duration. Catches the
+    // common cases where the container's final dimensions are only
+    // available after the browser has completed several layout passes.
+    function scheduleFitsFor(durationMs) {
+      const runs = [0, 16, 50, 100, 200, 350, 500, 750, 1000, 1500].filter(t => t <= durationMs);
+      for (const t of runs) {
+        if (t === 0) requestAnimationFrame(() => requestAnimationFrame(fitToWindow));
+        else setTimeout(fitToWindow, t);
+      }
     }
 
     function zoomTo(newZoom, centreX, centreY) {
@@ -653,15 +678,19 @@
       applyTransform();
     }
 
-    btnFit.addEventListener('click', fitToWindow);
-    btn100.addEventListener('click', () => zoomToCenter(1));
-    btnZoomIn.addEventListener('click', () => zoomToCenter(zoom * 1.25));
-    btnZoomOut.addEventListener('click', () => zoomToCenter(zoom / 1.25));
+    // Note: btnFit explicitly re-enables auto-fit for future resizes by
+    // clearing userHasZoomed. Every other zoom action sets it to true so
+    // the auto-fit listeners stop fighting the user.
+    btnFit.addEventListener('click', () => { userHasZoomed = false; fitToWindow(); });
+    btn100.addEventListener('click', () => { userHasZoomed = true; zoomToCenter(1); });
+    btnZoomIn.addEventListener('click', () => { userHasZoomed = true; zoomToCenter(zoom * 1.25); });
+    btnZoomOut.addEventListener('click', () => { userHasZoomed = true; zoomToCenter(zoom / 1.25); });
 
     // Mouse wheel zoom — images only
     container.addEventListener('wheel', (e) => {
       if (!mediaEl || isVideo) return;
       e.preventDefault();
+      userHasZoomed = true;
       const rect = container.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -697,18 +726,22 @@
       }
     });
 
+    // Re-fit on any window resize OR container-size change, as long as
+    // the user hasn't taken explicit zoom control. Simpler and more
+    // reliable than the old 'zoom ≈ fitZoom' heuristic which failed when
+    // the initial fit was computed against a pre-layout container size.
     window.addEventListener('resize', () => {
-      if (!mediaEl || isVideo) return;
-      if (zoom <= fitZoom + 0.01) fitToWindow();
+      if (!mediaEl || isVideo || userHasZoomed) return;
+      fitToWindow();
     });
-
-    // ResizeObserver on the viewer container catches post-load layout
-    // changes that window resize doesn't (e.g. filmstrip appearing, font
-    // load shifting the layout). When the user has zoom at fit, re-fit.
+    window.addEventListener('load', () => {
+      if (!mediaEl || isVideo || userHasZoomed) return;
+      fitToWindow();
+    });
     if ('ResizeObserver' in window) {
       const ro = new ResizeObserver(() => {
-        if (!mediaEl || isVideo) return;
-        if (zoom <= fitZoom + 0.01) fitToWindow();
+        if (!mediaEl || isVideo || userHasZoomed) return;
+        fitToWindow();
       });
       ro.observe(container);
     }
@@ -746,10 +779,10 @@
         e.preventDefault();
         return;
       }
-      if (e.key === '+' || e.key === '=') zoomToCenter(zoom * 1.25);
-      else if (e.key === '-') zoomToCenter(zoom / 1.25);
-      else if (e.key === '0') zoomToCenter(1);
-      else if (e.key === 'f' || e.key === 'F') fitToWindow();
+      if (e.key === '+' || e.key === '=') { userHasZoomed = true; zoomToCenter(zoom * 1.25); }
+      else if (e.key === '-') { userHasZoomed = true; zoomToCenter(zoom / 1.25); }
+      else if (e.key === '0') { userHasZoomed = true; zoomToCenter(1); }
+      else if (e.key === 'f' || e.key === 'F') { userHasZoomed = false; fitToWindow(); }
       else if (e.key === 'ArrowLeft' && !isVideo) loadMedia(currentIndex - 1);
       else if (e.key === 'ArrowRight' && !isVideo) loadMedia(currentIndex + 1);
       else if (e.key === 'Escape') window.close();
