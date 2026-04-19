@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -6,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   Camera,
+  Clapperboard,
   Calendar,
   FileImage,
   FileVideo,
@@ -1198,7 +1200,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-md border text-[11px] font-medium transition-all min-w-[50px] ${
                               selectedFileType.includes('photo') ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'
                             }`}>
-                            <FileImage className="w-[16px] h-[16px]" />
+                            <Camera className="w-[16px] h-[16px]" />
                             <span>Photos</span>
                           </button>
                           <FilterDropdown label="▾" active={selectedExtension.some(e => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(e.toLowerCase()))}
@@ -1226,7 +1228,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-md border text-[11px] font-medium transition-all min-w-[50px] ${
                               selectedFileType.includes('video') ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'
                             }`}>
-                            <FileVideo className="w-[16px] h-[16px]" />
+                            <Clapperboard className="w-[16px] h-[16px]" />
                             <span>Videos</span>
                           </button>
                           <FilterDropdown label="▾" active={selectedExtension.some(e => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(e.toLowerCase()))}
@@ -2970,7 +2972,10 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
 }) {
   return (
     <div className="flex flex-col justify-between px-2.5 min-w-0 shrink-0">
-      <div className="flex items-center flex-1">{children}</div>
+      {/* Centre the content so the trigger button sits in the same column as
+          the footer label below — otherwise narrow triggers like 'WB' or
+          'Position' visually drift to the left of their group name. */}
+      <div className="flex items-center justify-center flex-1">{children}</div>
       <div className="flex items-center justify-center gap-1 border-t mt-0.5 pt-0.5 pb-0.5 ribbon-group-border">
         {groupId && onToggleFavourite && (
           <button onClick={() => onToggleFavourite(groupId)}
@@ -3049,12 +3054,48 @@ function FilterDropdown({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // Popover is rendered into document.body via a portal so it can never be
+  // clipped by the ribbon's overflow-x-auto container. Position is kept in
+  // sync with the trigger rect via useLayoutEffect + scroll/resize listeners.
+  const [popoverPos, setPopoverPos] = useState<{ left: number; top: number } | null>(null);
+
+  const recomputePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    // Horizontally centre under the trigger.
+    const left = rect.left + rect.width / 2;
+    const top = rect.bottom + 4; // small gap below the trigger
+    setPopoverPos({ left, top });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    recomputePosition();
+    const handler = () => recomputePosition();
+    window.addEventListener('resize', handler);
+    window.addEventListener('scroll', handler, true);
+    return () => {
+      window.removeEventListener('resize', handler);
+      window.removeEventListener('scroll', handler, true);
+    };
+  }, [open, recomputePosition]);
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    if (open) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [open]);
 
   let display: string;
@@ -3071,8 +3112,9 @@ function FilterDropdown({
   }
 
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={triggerRef}
         onClick={() => setOpen(!open)}
         title={title}
         className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] transition-all ${
@@ -3082,15 +3124,23 @@ function FilterDropdown({
         <span className="max-w-[110px] truncate">{display}</span>
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && (
-        // Horizontally centred under the trigger. Buttons inside a RibbonGroup
-        // sit roughly in the same column as the group's footer label, so this
-        // also centres the popover above the filter name.
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 min-w-[200px] bg-background border border-border rounded-xl shadow-lg z-50 p-2 space-y-0.5">
+      {open && popoverPos && createPortal(
+        <div
+          ref={popoverRef}
+          style={{
+            position: 'fixed',
+            left: popoverPos.left,
+            top: popoverPos.top,
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+          }}
+          className="min-w-[200px] max-h-[60vh] overflow-y-auto bg-background border border-border rounded-xl shadow-lg p-2 space-y-0.5"
+        >
           {children}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
