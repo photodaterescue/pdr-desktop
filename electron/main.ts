@@ -2496,9 +2496,30 @@ ipcMain.handle('people:changed', async () => {
 
 let dateEditorWindow: BrowserWindow | null = null;
 
-ipcMain.handle('dateEditor:open', async () => {
+ipcMain.handle('dateEditor:open', async (_event, seedQuery?: any) => {
   try {
+    // URL-encode the seed query so the Date Editor renderer can restore
+    // exactly the main window's current S&D filter. Capped at ~16 KiB to
+    // defend against pathological filter strings.
+    const seedParam = seedQuery
+      ? (() => {
+          try {
+            const s = JSON.stringify(seedQuery);
+            return s.length <= 16 * 1024 ? s : '';
+          } catch { return ''; }
+        })()
+      : '';
+
     if (dateEditorWindow && !dateEditorWindow.isDestroyed()) {
+      // Window already open — reload it with the new seed query so the user
+      // sees the photos matching whatever they've just filtered to.
+      const isDark = await mainWindow?.webContents.executeJavaScript(
+        'document.documentElement.classList.contains("dark")'
+      ).catch(() => false) ?? false;
+      const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
+      dateEditorWindow.loadFile(dateEditorPage, {
+        query: { dark: isDark ? '1' : '0', ...(seedParam ? { seed: seedParam } : {}) },
+      });
       dateEditorWindow.focus();
       return { success: true };
     }
@@ -2530,7 +2551,9 @@ ipcMain.handle('dateEditor:open', async () => {
     });
 
     const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
-    dateEditorWindow.loadFile(dateEditorPage, { query: { dark: isDark ? '1' : '0' } });
+    dateEditorWindow.loadFile(dateEditorPage, {
+      query: { dark: isDark ? '1' : '0', ...(seedParam ? { seed: seedParam } : {}) },
+    });
 
     dateEditorWindow.on('closed', () => {
       dateEditorWindow = null;

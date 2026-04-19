@@ -229,7 +229,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   quickAccessPaths: () => ipcRenderer.invoke('app:quickAccessPaths'),
 
   dateEditor: {
-    open: () => ipcRenderer.invoke('dateEditor:open'),
+    open: (seedQuery?: any) => ipcRenderer.invoke('dateEditor:open', seedQuery),
     onThemeChange: (callback: (isDark: boolean) => void) => {
       const handler = (_event: any, isDark: boolean) => callback(isDark);
       ipcRenderer.on('dateEditor:themeChange', handler);

@@ -12,6 +12,7 @@ import {
   findGoogleTakeoutSidecar,
   generateDateBasedFilename,
 } from './date-extraction-engine.js';
+import { isScannerDevice } from './scanner-detection.js';
 import * as crypto from 'crypto';
 
 // Yield to event loop to keep UI responsive
@@ -126,6 +127,36 @@ async function extractExifDateFromPath(filePath: string): Promise<Date | null> {
   return null;
 }
 
+// Pull just the EXIF Make/Model strings from the first 64 KiB of a buffer so
+// the analysis phase can run its scanner-detection rule before confidence is
+// finalised. Returns nulls on any error (EXIF parsing is best-effort).
+function extractExifMakeModelFromBuffer(buffer: Buffer): { make: string | null; model: string | null } {
+  try {
+    const parser = exifParser.create(buffer);
+    const result = parser.parse();
+    const make = result.tags?.Make ? String(result.tags.Make).trim() : null;
+    const model = result.tags?.Model ? String(result.tags.Model).trim() : null;
+    return { make, model };
+  } catch {
+    return { make: null, model: null };
+  }
+}
+
+async function extractExifMakeModelFromPath(filePath: string): Promise<{ make: string | null; model: string | null }> {
+  try {
+    const fd = await fs.promises.open(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(65536);
+      const { bytesRead } = await fd.read(buffer, 0, 65536, 0);
+      return extractExifMakeModelFromBuffer(buffer.subarray(0, bytesRead));
+    } finally {
+      await fd.close();
+    }
+  } catch {
+    return { make: null, model: null };
+  }
+}
+
 function extractExifDateFromBuffer(buffer: Buffer): Date | null {
   try {
     const parser = exifParser.create(buffer);
@@ -229,6 +260,17 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
     }
   }
 
+  // Scanner / multifunction-printer demotion — applied before we emit the
+  // filename so the suffix (_MK) is baked into the fix output rather than
+  // relying on a later re-classification in the search indexer.
+  if (dateConfidence !== 'marked') {
+    const { make, model } = await extractExifMakeModelFromPath(filePath);
+    if (isScannerDevice(make, model)) {
+      dateConfidence = 'marked';
+      dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
+    }
+  }
+
   const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())
     ? generateDateBasedFilename(
         Math.floor(derivedDate.getTime() / 1000),
@@ -309,6 +351,16 @@ async function analyzeFileFromBuffer(
     derivedDate = entryTime;
     dateSource = 'ZIP entry modification time (fallback)';
     dateConfidence = 'marked';
+  }
+
+  // Scanner / multifunction-printer demotion — mirrors the path-based
+  // analyzer so ZIP-archive imports are classified consistently.
+  if (dateConfidence !== 'marked') {
+    const { make, model } = extractExifMakeModelFromBuffer(buffer);
+    if (isScannerDevice(make, model)) {
+      dateConfidence = 'marked';
+      dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
+    }
   }
 
   const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())

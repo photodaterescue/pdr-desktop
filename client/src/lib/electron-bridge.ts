@@ -904,9 +904,9 @@ export async function getQuickAccessPaths(): Promise<QuickAccessPaths> {
 }
 
 // Open the standalone Date Editor window.
-export async function openDateEditor(): Promise<{ success: boolean; error?: string }> {
+export async function openDateEditor(seedQuery?: SearchQuery): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.dateEditor?.open) {
-    return (window as any).pdr.dateEditor.open();
+    return (window as any).pdr.dateEditor.open(seedQuery);
   }
   return { success: false, error: 'Not running in Electron' };
 }

@@ -2138,24 +2138,9 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </>
                 )}
 
-                {/* AI: Date Editor — open the dedicated window */}
-                {activeTab === 'ai' && (
-                  <>
-                    <RibbonSeparator />
-                    <RibbonGroup label="Date Editor">
-                      <div className="flex items-center gap-1 flex-1 py-1.5">
-                        <button
-                          onClick={() => openDateEditor()}
-                          className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-primary/10 hover:text-primary transition-all text-[11px] font-medium min-w-[42px]"
-                          title="Review and correct dates for Marked photos"
-                        >
-                          <Calendar className="w-[18px] h-[18px]" />
-                          <span>Open</span>
-                        </button>
-                      </div>
-                    </RibbonGroup>
-                  </>
-                )}
+                {/* Date Editor button moved into the results header so it's
+                    visible next to the search count and inherits the current
+                    S&D filter automatically. */}
 
                 {/* ── Sort (always visible) ── */}
                 <RibbonSeparator />
@@ -2565,6 +2550,20 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           <div className="px-4 py-1 border-b border-border flex items-center justify-between shrink-0 bg-secondary/20">
             <span className="text-sm font-semibold text-foreground flex items-center gap-2">
               {results.total.toLocaleString()} {results.total === 1 ? 'result' : 'results'}
+              {/* Date Editor button — inherits the current S&D query so the
+                  dedicated window operates on exactly these photos. Enabled
+                  only while there's something to edit. */}
+              <button
+                onClick={() => openDateEditor(query)}
+                disabled={results.total === 0}
+                className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-primary border border-primary/30 hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Open these photos in the Date Editor to review and correct their dates"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                {selectedFiles.size > 0
+                  ? `Edit dates (${selectedFiles.size} selected)`
+                  : `Edit dates (${results.total.toLocaleString()})`}
+              </button>
               {selectedFiles.size > 0 && (
                 <>
                   <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">

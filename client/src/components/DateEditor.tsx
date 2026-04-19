@@ -29,7 +29,37 @@ import {
 } from '../lib/electron-bridge';
 import { MainAliveBanner } from './MainAliveBanner';
 
-type ConfidenceFilter = 'marked' | 'recovered' | 'confirmed' | 'corrected' | 'all';
+/**
+ * Compact pill-row summary of the inherited SearchQuery — keeps the user
+ * oriented about which photos they're editing, without resurrecting a full
+ * filter UI inside the Date Editor.
+ */
+function SeedSummary({ seed }: { seed: any }) {
+  const pills: string[] = [];
+  if (Array.isArray(seed?.confidence) && seed.confidence.length) pills.push(seed.confidence.map((c: string) => c[0]?.toUpperCase() + c.slice(1)).join(' / '));
+  if (seed?.text) pills.push(`"${seed.text}"`);
+  if (Array.isArray(seed?.cameraMake) && seed.cameraMake.length) pills.push(`Make: ${seed.cameraMake.length === 1 ? seed.cameraMake[0] : `${seed.cameraMake.length} makes`}`);
+  if (Array.isArray(seed?.cameraModel) && seed.cameraModel.length) pills.push(`Model: ${seed.cameraModel.length === 1 ? seed.cameraModel[0] : `${seed.cameraModel.length} models`}`);
+  if (Array.isArray(seed?.fileType) && seed.fileType.length) pills.push(seed.fileType.map((t: string) => t[0]?.toUpperCase() + t.slice(1)).join(' / '));
+  if (Array.isArray(seed?.dateSource) && seed.dateSource.length) pills.push(`Source: ${seed.dateSource.length === 1 ? seed.dateSource[0] : `${seed.dateSource.length} sources`}`);
+  if (seed?.yearFrom != null || seed?.yearTo != null) pills.push(`Year ${seed.yearFrom ?? '…'}–${seed.yearTo ?? '…'}`);
+  if (Array.isArray(seed?.country) && seed.country.length) pills.push(`Country: ${seed.country.length === 1 ? seed.country[0] : `${seed.country.length}`}`);
+  if (Array.isArray(seed?.personId) && seed.personId.length) pills.push(`People: ${seed.personId.length}`);
+  if (seed?.hasGps === true) pills.push('GPS on');
+  else if (seed?.hasGps === false) pills.push('GPS off');
+  if (seed?.flashFired === true) pills.push('Flash on');
+  else if (seed?.flashFired === false) pills.push('Flash off');
+  if (pills.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {pills.map((p, i) => (
+        <span key={i} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+          {p}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const CONF_META: Record<string, { label: string; ring: string; badge: string; icon: any }> = {
   marked:    { label: 'Marked',    ring: 'ring-red-400',    badge: 'bg-red-500/15 text-red-600 dark:text-red-400',         icon: HelpCircle },
@@ -71,8 +101,24 @@ function formatHumanDate(iso: string | null): string {
   return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+// Parse the ?seed=<url-encoded JSON> URL param set by main.ts when opening
+// the Date Editor from the S&D results header. The param carries the exact
+// SearchQuery the user has already built in the main window, so the editor
+// operates on the same photo set rather than running its own filter UI.
+function readSeedQuery(): any | null {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('seed');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
 export default function DateEditor() {
-  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>('marked');
+  // Seed query from the main window — captured once on mount. If absent
+  // (Tour / stand-alone open) we fall back to the Marked-only default.
+  const seedQuery = useMemo(readSeedQuery, []);
+  const hasSeed = !!seedQuery;
+
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -91,17 +137,22 @@ export default function DateEditor() {
 
   const selected = files[selectedIdx];
 
-  // ─── Load files matching the confidence filter ────────────────────────────
+  // ─── Load files — seed query from main window, or Marked default ──────────
   const loadFiles = async (keepSelectedId?: number) => {
     setLoadingFiles(true);
     setStatus(null);
+    const baseQuery: any = hasSeed
+      ? { ...seedQuery }
+      : { confidence: ['marked'] };
     const query: any = {
       sortBy: 'derived_date',
       sortDir: 'desc',
-      limit: 500,
+      ...baseQuery,
+      // Always raise the limit for Date Editor so users can work through a
+      // longer batch without pagination surprises.
+      limit: Math.max(500, baseQuery.limit ?? 0),
       offset: 0,
     };
-    if (confidenceFilter !== 'all') query.confidence = [confidenceFilter];
     const res = await searchFiles(query);
     const list = (res.success && res.data ? res.data.files : []) as IndexedFile[];
     setFiles(list);
@@ -114,7 +165,7 @@ export default function DateEditor() {
     setLoadingFiles(false);
   };
 
-  useEffect(() => { loadFiles(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [confidenceFilter]);
+  useEffect(() => { loadFiles(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   // ─── Thumbnails for the filmstrip ─────────────────────────────────────────
   useEffect(() => {
@@ -228,9 +279,6 @@ export default function DateEditor() {
     setEditorDate(isoToDatetimeLocal(s.iso));
   };
 
-  // ─── Header counts by tier (for the filter toolbar chips) ────────────────
-  const counts = useMemo(() => ({ marked: 0, recovered: 0, confirmed: 0, corrected: 0 } as Record<string, number>), []);
-
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
       <MainAliveBanner />
@@ -250,23 +298,16 @@ export default function DateEditor() {
         </div>
       </header>
 
-      {/* ─── Filter bar ───────────────────────────────────────────────────── */}
+      {/* ─── Context breadcrumb ─────────────────────────────────────────────
+          No more internal confidence filter — the set of photos shown here
+          is inherited from the main S&D window's current filter (passed via
+          the ?seed URL param). This panel just reports what was inherited. */}
       <div className="shrink-0 px-4 py-2 border-b border-border flex items-center gap-2 bg-secondary/20">
         <FilterIcon className="w-3.5 h-3.5 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">Show:</span>
-        {(['marked', 'recovered', 'corrected', 'confirmed', 'all'] as ConfidenceFilter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setConfidenceFilter(f)}
-            className={`px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wide transition-all ${
-              confidenceFilter === f
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-            }`}
-          >
-            {f === 'all' ? 'All' : CONF_META[f]?.label || f}
-          </button>
-        ))}
+        <span className="text-xs text-muted-foreground">
+          {hasSeed ? 'Editing photos matching your Search & Discovery filter' : 'Default set — Marked photos'}
+        </span>
+        {hasSeed && <SeedSummary seed={seedQuery} />}
         <div className="ml-auto text-xs text-muted-foreground">
           {loadingFiles ? 'Loading…' : `${files.length} ${files.length === 1 ? 'photo' : 'photos'}`}
         </div>
