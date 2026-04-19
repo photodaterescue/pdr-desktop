@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from 'react';
+import { Sun, Moon } from 'lucide-react';
+import { LicenseStatusBadge } from '@/components/LicenseModal';
 
 /**
  * Custom title bar — PDR branding left, lavender right.
  * Rendered once at the app root so it appears on all views.
+ *
+ * Hosts two app-global controls on the right side of the lavender area so
+ * they stay visible regardless of which view is active (Dashboard, S&D,
+ * Memories, Trees):
+ *   - Light/dark theme toggle
+ *   - Licensed / Unlicensed status badge
+ *
  * Behaviour:
  *  - When sidebar is expanded (> ~100px): title "Photo Date Rescue" sits next to the logo on the left
  *    over the white sidebar-matching background
@@ -11,6 +20,10 @@ import React, { useEffect, useState } from 'react';
  */
 export function TitleBar() {
   const [sidebarWidth, setSidebarWidth] = useState<number>(280);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return false;
+    return document.documentElement.classList.contains('dark');
+  });
 
   useEffect(() => {
     // Observe the --sidebar-width CSS variable changes
@@ -24,6 +37,25 @@ export function TitleBar() {
     const interval = setInterval(update, 200);
     return () => clearInterval(interval);
   }, []);
+
+  // Sync local dark-mode state when another surface (Settings, keyboard
+  // shortcut) flips the documentElement class.
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+
+  const toggleDarkMode = () => {
+    const next = !isDarkMode;
+    if (next) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+    setIsDarkMode(next);
+    try { localStorage.setItem('pdr-dark-mode', next ? 'true' : 'false'); } catch {}
+    (window as any).pdr?.setTitleBarColor?.(next);
+  };
 
   const isSidebarCollapsed = sidebarWidth < 100;
   // When collapsed, the white section holds just the logo at a fixed minimum width
@@ -71,6 +103,25 @@ export function TitleBar() {
 
       {/* Rest: lavender draggable area */}
       <div className="flex-1" />
+
+      {/* App-global controls — visible on every view. The no-drag wrapper is
+          required so clicks aren't swallowed by the title-bar's drag region. */}
+      <div
+        className="flex items-center gap-1.5 pr-2"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
+        <button
+          onClick={toggleDarkMode}
+          className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all"
+          title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+        </button>
+        <LicenseStatusBadge
+          onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLicenseModal'))}
+        />
+      </div>
+
       {/* Spacer for native window controls overlay area */}
       <div className="w-[140px] shrink-0" />
     </div>

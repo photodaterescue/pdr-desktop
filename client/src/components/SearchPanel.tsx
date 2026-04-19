@@ -1018,18 +1018,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             >
               {ribbonExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
-            {/* Separator before app controls */}
-            <div className="w-px h-5 bg-white/30 mx-0.5" />
-            {onToggleDarkMode && (
-              <button
-                onClick={onToggleDarkMode}
-                className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/70 hover:text-white transition-all"
-                title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-            )}
-            {licenseStatusBadge}
+            {/* Theme toggle + Licensed badge have moved to the global
+                TitleBar so they stay visible on every view, not only S&D.
+                The onToggleDarkMode / licenseStatusBadge props remain on the
+                component signature for backwards compat but are no longer
+                rendered here. */}
           </div>
         </div>
       </div>{/* end tab bar wrapper */}

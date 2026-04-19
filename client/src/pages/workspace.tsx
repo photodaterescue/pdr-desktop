@@ -461,6 +461,13 @@ const handleActivateLicense = () => {
     }
   }, []);
 
+  // Listen for the license-badge click event fired by the global TitleBar.
+  useEffect(() => {
+    const handler = () => setShowLicenseModal(true);
+    window.addEventListener('pdr:openLicenseModal', handler);
+    return () => window.removeEventListener('pdr:openLicenseModal', handler);
+  }, []);
+
   // Background search database init — non-blocking, no UI wait
   useEffect(() => {
     const initDb = async () => {
@@ -1324,12 +1331,14 @@ return (
           />
         )}
 
-        {/* Family Tree view — placeholder for v1 release */}
+        {/* Trees view — placeholder for v1 release. Deliberately not called
+            'Family Tree' because the same tool handles friend groups, work
+            colleagues, and any other set of relationships — not just kin. */}
         {activeView === 'familytree' && (
           <ComingSoonView
-            title="Family Tree"
+            title="Trees"
             subtitle="Your people, organised by relationship."
-            description="Build a family tree from the people you've named in PDR, then click anyone to see every photo they appear in. Future versions will suggest relationships from face co-occurrence and import/export GEDCOM files so you can sync with genealogy apps. Coming in a future update."
+            description="Build a visual tree from the people you've named in PDR — family, friends, colleagues, any group — then click anyone to see every photo they appear in. Future versions will suggest relationships from face co-occurrence and import/export GEDCOM files so you can sync with genealogy apps. Coming in a future update."
             iconName="familytree"
           />
         )}
@@ -1705,8 +1714,14 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             </Button>
           </div>
         </div>
+      </div>
 
-        {/* VIEWS — destinations that swap the main content area. */}
+      {/* VIEWS + TOOLS — static section anchored just above Guidance, so
+          it stays visible regardless of how many sources the user adds. The
+          scrollable Sources area above it grows to fill any free space
+          between Add Source and this block, giving the user a natural
+          "drop zone" of breathing room for source entries to populate. */}
+      <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider">
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Views</h3>
           <div className="space-y-1">
@@ -1733,17 +1748,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             />
             <SidebarItem
               icon={<Sparkles className="w-4 h-4 opacity-70" />}
-              label="Family Tree"
+              label="Trees"
               onClick={() => onViewChange?.('familytree')}
               active={activeView === 'familytree'}
               selectable={false}
             />
           </div>
         </div>
-
-        {/* TOOLS — open in their own windows. Date Editor intentionally
-            NOT listed here: it's only reachable from within the S&D view
-            once a filter defines the set of photos to act on. */}
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Tools</h3>
           <div className="space-y-1">
