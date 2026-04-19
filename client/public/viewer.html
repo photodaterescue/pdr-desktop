@@ -498,7 +498,19 @@
         img.src = getFileSrc(filePath);
         img.onload = () => {
           dimensionsEl.textContent = img.naturalWidth + ' \u00d7 ' + img.naturalHeight + ' px';
-          fitToWindow();
+          // Defer fit until the browser has laid out the container. Firing
+          // fitToWindow() directly in onload can read clientWidth/Height
+          // from a container that hasn't finished layout (especially during
+          // the initial paint when the filmstrip is still sizing), causing
+          // a garbage zoom + wrong centering. Double-rAF guarantees a
+          // post-layout read, and a third pass inside 50ms handles the
+          // (rare) case where fonts or the filmstrip resize late.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              fitToWindow();
+              setTimeout(fitToWindow, 50);
+            });
+          });
         };
         let retried = false;
         img.onerror = () => {
@@ -689,6 +701,17 @@
       if (!mediaEl || isVideo) return;
       if (zoom <= fitZoom + 0.01) fitToWindow();
     });
+
+    // ResizeObserver on the viewer container catches post-load layout
+    // changes that window resize doesn't (e.g. filmstrip appearing, font
+    // load shifting the layout). When the user has zoom at fit, re-fit.
+    if ('ResizeObserver' in window) {
+      const ro = new ResizeObserver(() => {
+        if (!mediaEl || isVideo) return;
+        if (zoom <= fitZoom + 0.01) fitToWindow();
+      });
+      ro.observe(container);
+    }
 
     // Keyboard shortcuts
     window.addEventListener('keydown', (e) => {

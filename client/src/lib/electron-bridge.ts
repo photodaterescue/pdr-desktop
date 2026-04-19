@@ -936,21 +936,21 @@ export interface MemoriesOnThisDayItem {
   year: number | null;
 }
 
-export async function getMemoriesYearMonthBuckets(runId?: number): Promise<{ success: boolean; data?: MemoriesYearBucket[]; error?: string }> {
+export async function getMemoriesYearMonthBuckets(runIds?: number[]): Promise<{ success: boolean; data?: MemoriesYearBucket[]; error?: string }> {
   if (isElectron() && (window as any).pdr?.memories) {
-    return (window as any).pdr.memories.yearMonthBuckets(runId);
+    return (window as any).pdr.memories.yearMonthBuckets(runIds);
   }
   return { success: false, error: 'Not running in Electron' };
 }
 
-export async function getMemoriesOnThisDay(args: { month: number; day: number; runId?: number; limit?: number }): Promise<{ success: boolean; data?: MemoriesOnThisDayItem[]; error?: string }> {
+export async function getMemoriesOnThisDay(args: { month: number; day: number; runIds?: number[]; limit?: number }): Promise<{ success: boolean; data?: MemoriesOnThisDayItem[]; error?: string }> {
   if (isElectron() && (window as any).pdr?.memories) {
     return (window as any).pdr.memories.onThisDay(args);
   }
   return { success: false, error: 'Not running in Electron' };
 }
 
-export async function getMemoriesDayFiles(args: { year: number; month: number; day: number; runId?: number }): Promise<{ success: boolean; data?: IndexedFile[]; error?: string }> {
+export async function getMemoriesDayFiles(args: { year: number; month: number; day: number; runIds?: number[] }): Promise<{ success: boolean; data?: IndexedFile[]; error?: string }> {
   if (isElectron() && (window as any).pdr?.memories) {
     return (window as any).pdr.memories.dayFiles(args);
   }

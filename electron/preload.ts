@@ -128,9 +128,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
   memories: {
-    yearMonthBuckets: (runId?: number) => ipcRenderer.invoke('memories:yearMonthBuckets', runId),
-    onThisDay: (args: { month: number; day: number; runId?: number; limit?: number }) => ipcRenderer.invoke('memories:onThisDay', args),
-    dayFiles: (args: { year: number; month: number; day: number; runId?: number }) => ipcRenderer.invoke('memories:dayFiles', args),
+    yearMonthBuckets: (runIds?: number[]) => ipcRenderer.invoke('memories:yearMonthBuckets', runIds),
+    onThisDay: (args: { month: number; day: number; runIds?: number[]; limit?: number }) => ipcRenderer.invoke('memories:onThisDay', args),
+    dayFiles: (args: { year: number; month: number; day: number; runIds?: number[] }) => ipcRenderer.invoke('memories:dayFiles', args),
   },
 
   search: {

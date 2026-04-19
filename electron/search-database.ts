@@ -2129,15 +2129,25 @@ export interface MemoriesOnThisDayItem {
 }
 
 /**
- * Photos-per-month aggregate across every year in the library, optionally
- * scoped to a single indexed_run (parallel structure). Returns one row per
- * (year, month) combination that has at least one photo, with a sample file
- * for thumbnail display.
+ * Helper: build the SQL fragment + parameters for a run_id IN (...) clause
+ * from an optional list. Empty / undefined → no filter, covers all runs.
  */
-export function getMemoriesYearMonthBuckets(runId?: number): MemoriesYearBucket[] {
+function runIdsClause(runIds: number[] | undefined, alias = ''): { sql: string; params: number[] } {
+  if (!runIds || runIds.length === 0) return { sql: '', params: [] };
+  const col = alias ? `${alias}.run_id` : 'run_id';
+  return { sql: `AND ${col} IN (${runIds.map(() => '?').join(',')})`, params: runIds };
+}
+
+/**
+ * Photos-per-month aggregate across every year in the library, optionally
+ * scoped to a set of indexed_runs. Multiple run IDs are OR-combined so the
+ * UI can group runs that share the same logical library (same source
+ * labels, two destinations, etc.) into a single selection.
+ */
+export function getMemoriesYearMonthBuckets(runIds?: number[]): MemoriesYearBucket[] {
   const database = getDb();
-  const runFilter = runId != null ? 'AND run_id = ?' : '';
-  const params: any[] = runId != null ? [runId] : [];
+  const outer = runIdsClause(runIds);
+  const inner = runIdsClause(runIds, 'f2');
   const rows = database.prepare(`
     SELECT
       year,
@@ -2146,16 +2156,16 @@ export function getMemoriesYearMonthBuckets(runId?: number): MemoriesYearBucket[
       SUM(CASE WHEN file_type = 'video' THEN 1 ELSE 0 END) AS videoCount,
       -- Pick a stable sample file per bucket (lowest id = earliest indexed).
       (SELECT f2.file_path FROM indexed_files f2
-         WHERE f2.year = f.year AND f2.month = f.month ${runId != null ? 'AND f2.run_id = ?' : ''}
+         WHERE f2.year = f.year AND f2.month = f.month ${inner.sql}
          ORDER BY f2.id ASC LIMIT 1) AS sampleFilePath,
       (SELECT f2.id FROM indexed_files f2
-         WHERE f2.year = f.year AND f2.month = f.month ${runId != null ? 'AND f2.run_id = ?' : ''}
+         WHERE f2.year = f.year AND f2.month = f.month ${inner.sql}
          ORDER BY f2.id ASC LIMIT 1) AS sampleFileId
     FROM indexed_files f
-    WHERE year IS NOT NULL AND month IS NOT NULL ${runFilter}
+    WHERE year IS NOT NULL AND month IS NOT NULL ${outer.sql}
     GROUP BY year, month
     ORDER BY year DESC, month DESC
-  `).all(...params, ...params, ...params) as MemoriesYearBucket[];
+  `).all(...inner.params, ...inner.params, ...outer.params) as MemoriesYearBucket[];
   return rows;
 }
 
@@ -2163,16 +2173,14 @@ export function getMemoriesYearMonthBuckets(runId?: number): MemoriesYearBucket[
  * Files taken on the same month/day as today across every previous year.
  * Powers the "On This Day" row at the top of Memories.
  */
-export function getMemoriesOnThisDay(month: number, day: number, runId?: number, limit: number = 50): MemoriesOnThisDayItem[] {
+export function getMemoriesOnThisDay(month: number, day: number, runIds?: number[], limit: number = 50): MemoriesOnThisDayItem[] {
   const database = getDb();
-  const runFilter = runId != null ? 'AND run_id = ?' : '';
-  const params: any[] = [month, day];
-  if (runId != null) params.push(runId);
-  params.push(limit);
+  const clause = runIdsClause(runIds);
+  const params: any[] = [month, day, ...clause.params, limit];
   return database.prepare(`
     SELECT id, file_path, filename, file_type, derived_date, year
     FROM indexed_files
-    WHERE month = ? AND day = ? ${runFilter}
+    WHERE month = ? AND day = ? ${clause.sql}
       AND derived_date IS NOT NULL
     ORDER BY year DESC, derived_date DESC
     LIMIT ?
@@ -2181,16 +2189,15 @@ export function getMemoriesOnThisDay(month: number, day: number, runId?: number,
 
 /**
  * Fetch every file taken on a specific calendar date, optionally scoped to a
- * run. Used for the day-drill-down grid.
+ * set of runs. Used for the day-drill-down grid.
  */
-export function getMemoriesDayFiles(year: number, month: number, day: number, runId?: number): IndexedFile[] {
+export function getMemoriesDayFiles(year: number, month: number, day: number, runIds?: number[]): IndexedFile[] {
   const database = getDb();
-  const runFilter = runId != null ? 'AND run_id = ?' : '';
-  const params: any[] = [year, month, day];
-  if (runId != null) params.push(runId);
+  const clause = runIdsClause(runIds);
+  const params: any[] = [year, month, day, ...clause.params];
   return database.prepare(`
     SELECT * FROM indexed_files
-    WHERE year = ? AND month = ? AND day = ? ${runFilter}
+    WHERE year = ? AND month = ? AND day = ? ${clause.sql}
     ORDER BY derived_date ASC, id ASC
   `).all(...params) as IndexedFile[];
 }

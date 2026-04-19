@@ -26,16 +26,6 @@ import {
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-function runLabel(run: IndexedRun): string {
-  try {
-    const labels = run.source_labels ? (JSON.parse(run.source_labels) as string[]) : [];
-    if (labels.length > 0) return labels.join(' + ');
-  } catch { /* legacy format */ }
-  // Fallback: show the destination folder tail.
-  const tail = run.destination_path.split(/[\\/]/).filter(Boolean).pop() || `Run #${run.id}`;
-  return tail;
-}
-
 function formatHumanDate(iso: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -47,9 +37,48 @@ function formatHumanDate(iso: string | null): string {
 
 type Density = 'spacious' | 'tight';
 
+// A "library" in the UI is one or more runs that share the same set of
+// source labels. Two runs that fixed the same sources into two destinations
+// (e.g. local SSD + NAS backup) are still one library to the user — the
+// destinations are just where the output lives. Only when parallel
+// structures ship will same-source runs deserve separate entries.
+interface Library {
+  key: string;                 // stable id derived from the source-label set
+  label: string;               // human label (source labels joined)
+  runIds: number[];            // every indexed_run that rolls up into this library
+  fileCount: number;
+}
+
+function sourceLabelsOf(run: IndexedRun): string[] {
+  try {
+    const parsed = run.source_labels ? JSON.parse(run.source_labels) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function groupRunsIntoLibraries(runs: IndexedRun[]): Library[] {
+  const byKey = new Map<string, Library>();
+  for (const r of runs) {
+    const labels = sourceLabelsOf(r);
+    // Normalise key so order doesn't matter and case is stable.
+    const key = labels.map(l => l.toLowerCase().trim()).sort().join('||') || `__run_${r.id}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.runIds.push(r.id);
+      existing.fileCount += r.file_count;
+    } else {
+      const label = labels.length > 0 ? labels.join(' + ') : (r.destination_path.split(/[\\/]/).filter(Boolean).pop() || `Run #${r.id}`);
+      byKey.set(key, { key, label, runIds: [r.id], fileCount: r.file_count });
+    }
+  }
+  return Array.from(byKey.values());
+}
+
 export default function MemoriesView() {
   const [runs, setRuns] = useState<IndexedRun[]>([]);
-  const [runId, setRunId] = useState<number | undefined>(undefined); // undefined = all libraries
+  const [libraryKey, setLibraryKey] = useState<string | undefined>(undefined); // undefined = all libraries
   const [buckets, setBuckets] = useState<MemoriesYearBucket[]>([]);
   const [onThisDay, setOnThisDay] = useState<MemoriesOnThisDayItem[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
@@ -74,6 +103,17 @@ export default function MemoriesView() {
     })();
   }, []);
 
+  // Derived libraries grouping + currently-selected run IDs (or undefined
+  // for "all libraries"). Libraries is memoised so the effect below doesn't
+  // spin from identity-only changes.
+  const libraries = useMemo(() => groupRunsIntoLibraries(runs), [runs]);
+  const selectedRunIds = useMemo(() => {
+    if (!libraryKey) return undefined;
+    const lib = libraries.find(l => l.key === libraryKey);
+    return lib ? lib.runIds : undefined;
+  }, [libraryKey, libraries]);
+  const selectedRunIdsKey = selectedRunIds ? selectedRunIds.join(',') : '';
+
   // Re-fetch whenever the scope changes.
   useEffect(() => {
     let cancelled = false;
@@ -81,8 +121,8 @@ export default function MemoriesView() {
       setLoading(true);
       const today = new Date();
       const [ym, otd] = await Promise.all([
-        getMemoriesYearMonthBuckets(runId),
-        getMemoriesOnThisDay({ month: today.getMonth() + 1, day: today.getDate(), runId, limit: 40 }),
+        getMemoriesYearMonthBuckets(selectedRunIds),
+        getMemoriesOnThisDay({ month: today.getMonth() + 1, day: today.getDate(), runIds: selectedRunIds, limit: 40 }),
       ]);
       if (cancelled) return;
       setBuckets(ym.success && ym.data ? ym.data : []);
@@ -90,7 +130,7 @@ export default function MemoriesView() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [runId]);
+  }, [selectedRunIdsKey]);
 
   // Batch-load sample thumbnails for each year/month card + on-this-day items.
   useEffect(() => {
@@ -151,7 +191,7 @@ export default function MemoriesView() {
         year={selectedDay.year}
         month={selectedDay.month}
         day={selectedDay.day}
-        runId={runId}
+        runIds={selectedRunIds}
         density={density}
         onBack={() => setSelectedDay(null)}
       />
@@ -188,7 +228,7 @@ export default function MemoriesView() {
 
         <div className="flex items-center gap-3">
           <DensityToggle value={density} onChange={changeDensity} />
-          <LibrarySelector runs={runs} value={runId} onChange={setRunId} />
+          <LibrarySelector libraries={libraries} value={libraryKey} onChange={setLibraryKey} />
         </div>
       </div>
 
@@ -315,21 +355,25 @@ function DensityToggle({ value, onChange }: { value: Density; onChange: (d: Dens
 
 // ─── Library selector ──────────────────────────────────────────────────────
 
-function LibrarySelector({ runs, value, onChange }: { runs: IndexedRun[]; value: number | undefined; onChange: (id: number | undefined) => void }) {
-  if (runs.length === 0) return null;
+function LibrarySelector({ libraries, value, onChange }: { libraries: Library[]; value: string | undefined; onChange: (key: string | undefined) => void }) {
+  // Hide entirely when there's only one logical library — nothing to choose
+  // between. Destinations alone don't create separate libraries; parallel
+  // structures (when they ship) will surface as distinct entries here
+  // because they carry a different source-labels signature.
+  if (libraries.length <= 1) return null;
   return (
     <div className="flex items-center gap-2">
       <Layers className="w-4 h-4 text-muted-foreground" />
       <label className="text-xs text-muted-foreground">Library</label>
       <select
         value={value ?? 'all'}
-        onChange={(e) => onChange(e.target.value === 'all' ? undefined : Number(e.target.value))}
+        onChange={(e) => onChange(e.target.value === 'all' ? undefined : e.target.value)}
         className="px-2.5 py-1 rounded-md border border-border bg-background text-xs text-foreground cursor-pointer"
       >
-        <option value="all">All libraries ({runs.length})</option>
-        {runs.map((r) => (
-          <option key={r.id} value={r.id}>
-            {runLabel(r)} · {r.file_count.toLocaleString()} files
+        <option value="all">All libraries ({libraries.length})</option>
+        {libraries.map((lib) => (
+          <option key={lib.key} value={lib.key}>
+            {lib.label} · {lib.fileCount.toLocaleString()} files
           </option>
         ))}
       </select>
@@ -370,35 +414,22 @@ function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBuc
 
 // ─── Day drill-down ────────────────────────────────────────────────────────
 
-function MemoriesDayDrilldown({ year, month, day, runId, density, onBack }: { year: number; month: number; day: number; runId: number | undefined; density: Density; onBack: () => void }) {
+function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { year: number; month: number; day: number; runIds: number[] | undefined; density: Density; onBack: () => void }) {
   const [files, setFiles] = useState<IndexedFile[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
-  const [monthDays, setMonthDays] = useState<Set<number>>(new Set());
 
-  // Load every day in the month that has files so we can enable prev/next
-  // arrows between days (and grey out empty days).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const r = await getMemoriesYearMonthBuckets(runId);
-      if (cancelled || !r.success || !r.data) return;
-      // Quick pass — the buckets query gives counts per month only. For per-day
-      // availability we use the day query itself when navigating.
-      setMonthDays(new Set());
-    })();
-    return () => { cancelled = true; };
-  }, [year, month, runId]);
+  const runIdsKey = runIds ? runIds.join(',') : '';
 
   useEffect(() => {
     let cancelled = false;
     setFiles(null);
     (async () => {
-      const r = await getMemoriesDayFiles({ year, month, day, runId });
+      const r = await getMemoriesDayFiles({ year, month, day, runIds });
       if (cancelled) return;
       setFiles(r.success && r.data ? r.data : []);
     })();
     return () => { cancelled = true; };
-  }, [year, month, day, runId]);
+  }, [year, month, day, runIdsKey]);
 
   useEffect(() => {
     if (!files) return;

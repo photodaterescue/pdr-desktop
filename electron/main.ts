@@ -2387,25 +2387,25 @@ ipcMain.handle('search:stats', async () => {
 
 // ─── Memories IPC handlers ──────────────────────────────────────────────────
 
-ipcMain.handle('memories:yearMonthBuckets', async (_event, runId?: number) => {
+ipcMain.handle('memories:yearMonthBuckets', async (_event, runIds?: number[]) => {
   try {
-    return { success: true, data: getMemoriesYearMonthBuckets(runId) };
+    return { success: true, data: getMemoriesYearMonthBuckets(runIds) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
 });
 
-ipcMain.handle('memories:onThisDay', async (_event, args: { month: number; day: number; runId?: number; limit?: number }) => {
+ipcMain.handle('memories:onThisDay', async (_event, args: { month: number; day: number; runIds?: number[]; limit?: number }) => {
   try {
-    return { success: true, data: getMemoriesOnThisDay(args.month, args.day, args.runId, args.limit ?? 50) };
+    return { success: true, data: getMemoriesOnThisDay(args.month, args.day, args.runIds, args.limit ?? 50) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
 });
 
-ipcMain.handle('memories:dayFiles', async (_event, args: { year: number; month: number; day: number; runId?: number }) => {
+ipcMain.handle('memories:dayFiles', async (_event, args: { year: number; month: number; day: number; runIds?: number[] }) => {
   try {
-    return { success: true, data: getMemoriesDayFiles(args.year, args.month, args.day, args.runId) };
+    return { success: true, data: getMemoriesDayFiles(args.year, args.month, args.day, args.runIds) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
