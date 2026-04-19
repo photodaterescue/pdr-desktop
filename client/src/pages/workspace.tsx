@@ -73,7 +73,9 @@ import {
   resetSettingsToDefaults,
   PDRSettings,
   formatBytesToGB,
-  PreScanResult
+  PreScanResult,
+  openPeopleWindow,
+  openDateEditor
 } from "@/lib/electron-bridge";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
@@ -239,6 +241,10 @@ const handleZoomReset = () => {
   const [showCompletionScreen, setShowCompletionScreen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
   const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | 'search' | null>(null);
+  // Top-level "view" currently occupying the main content area. Dashboard is
+  // the default (the existing workspace/dashboard hybrid); other options are
+  // separate destinations in the sidebar.
+  const [activeView, setActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
@@ -1206,11 +1212,23 @@ return (
 		  onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | null)}
 		  onDashboardClick={() => {
 			setActivePanel(null);
+			setActiveView('dashboard');
 			const updatedSources = sources.map(s => ({ ...s, active: false }));
 			setSources(updatedSources);
 			setActiveSource(null);
 			// Close S&D search results if active
 			if (searchResultsActive) {
+			  setRequestSearchClose(true);
+			  setTimeout(() => setRequestSearchClose(false), 100);
+			}
+		  }}
+		  activeView={activeView}
+		  onViewChange={(view) => {
+			setActivePanel(null);
+			setActiveView(view);
+			// Leaving the S&D view — close its results so the sidebar doesn't
+			// stay in the "search-active" collapsed state.
+			if (view !== 'search' && searchResultsActive) {
 			  setRequestSearchClose(true);
 			  setTimeout(() => setRequestSearchClose(false), 100);
 			}
@@ -1223,8 +1241,17 @@ return (
 		/>
       {/* Right-side content area: ribbon + panels */}
       <div className="flex-1 flex flex-col h-full min-w-0">
-        {/* Search Ribbon — grows to fill space when results are active */}
-        <div className={`relative z-30 flex flex-col min-w-0 ${searchResultsActive ? 'flex-1 overflow-hidden' : 'shrink-0'}`} style={{ overflow: searchResultsActive ? undefined : 'visible' }}>
+        {/* Search Ribbon — only visible inside the S&D view. Kept mounted
+            (display: none when hidden) so filter state is preserved between
+            view switches. Loses pin/colour state otherwise would be lost if
+            the user bounces through Dashboard → Memories → back to S&D. */}
+        <div
+          className={`relative z-30 flex flex-col min-w-0 ${activeView === 'search' ? (searchResultsActive ? 'flex-1 overflow-hidden' : 'shrink-0') : ''}`}
+          style={{
+            overflow: activeView === 'search' ? (searchResultsActive ? undefined : 'visible') : 'hidden',
+            display: activeView === 'search' ? 'flex' : 'none',
+          }}
+        >
           <SearchRibbon
             isIndexing={isIndexing}
             indexingProgress={indexingProgress}
@@ -1240,8 +1267,10 @@ return (
           />
         </div>
 
-        {/* Zoomable content area — only this part scales, hidden when search results are showing */}
-        <div className={`flex-1 overflow-auto relative ${searchResultsActive ? 'hidden' : ''}`}>
+        {/* Zoomable content area — only this part scales, hidden when S&D
+            results are actively showing OR when a non-dashboard view owns
+            the main area (Memories, Family Tree). */}
+        <div className={`flex-1 overflow-auto relative ${(activeView === 'search' && searchResultsActive) || activeView === 'memories' || activeView === 'familytree' ? 'hidden' : ''}`}>
         {/* Panel content */}
         {activePanel ? (
           <PanelPlaceholder
@@ -1284,6 +1313,27 @@ return (
           />
         )}
         </div>{/* close zoomable content wrapper */}
+
+        {/* Memories view — placeholder for v1 release */}
+        {activeView === 'memories' && (
+          <ComingSoonView
+            title="Memories"
+            subtitle="Your photos, organised by time."
+            description="Browse your library by year, month, and day. Rediscover what happened on this day in previous years, watch slideshows of a chosen period, and find events by date. Coming in a future update."
+            iconName="memories"
+          />
+        )}
+
+        {/* Family Tree view — placeholder for v1 release */}
+        {activeView === 'familytree' && (
+          <ComingSoonView
+            title="Family Tree"
+            subtitle="Your people, organised by relationship."
+            description="Build a family tree from the people you've named in PDR, then click anyone to see every photo they appear in. Future versions will suggest relationships from face co-occurrence and import/export GEDCOM files so you can sync with genealogy apps. Coming in a future update."
+            iconName="familytree"
+          />
+        )}
+
       </div>
       </div>{/* close inner flex row */}
 	  {isScanning && <ScanningOverlay message={scanProgress.message} percent={scanProgress.percent} onCancel={handleCancelAnalysis} showCancelConfirm={showCancelConfirm} onConfirmCancel={handleConfirmCancelAnalysis} onDismissCancel={handleDismissCancelConfirm} />}
@@ -1437,7 +1487,9 @@ return (
 }
 
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, searchResultsActive }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean }) {
+type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
+
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -1592,21 +1644,67 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
-        {/* DASHBOARD LINK */}
+        {/* VIEWS — destinations that swap the main content area. */}
         <div>
-          <SidebarItem 
-            icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />} 
-            label={sources.length > 0 ? "Dashboard" : "Workspace"}
-            onClick={() => onDashboardClick()}
-            active={activePanel === null && !sources.some(s => s.active)}
-            selectable={false}
-          />
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Views</h3>
+          <div className="space-y-1">
+            <SidebarItem
+              icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />}
+              label={sources.length > 0 ? "Dashboard" : "Workspace"}
+              onClick={() => onDashboardClick()}
+              active={activeView === 'dashboard' && activePanel === null && !sources.some(s => s.active)}
+              selectable={false}
+            />
+            <SidebarItem
+              icon={<Search className="w-4 h-4 opacity-70" />}
+              label="Search & Discovery"
+              onClick={() => onViewChange?.('search')}
+              active={activeView === 'search'}
+              selectable={false}
+            />
+            <SidebarItem
+              icon={<CalendarRange className="w-4 h-4 opacity-70" />}
+              label="Memories"
+              onClick={() => onViewChange?.('memories')}
+              active={activeView === 'memories'}
+              selectable={false}
+            />
+            <SidebarItem
+              icon={<Sparkles className="w-4 h-4 opacity-70" />}
+              label="Family Tree"
+              onClick={() => onViewChange?.('familytree')}
+              active={activeView === 'familytree'}
+              selectable={false}
+            />
+          </div>
+        </div>
+
+        {/* TOOLS — open in their own windows. The external-link glyph signals
+            these break out of the main window rather than swap the view. */}
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Tools</h3>
+          <div className="space-y-1">
+            <SidebarItem
+              icon={<img src="./assets//pdr-people.png" className="w-4 h-4 object-contain" alt="People Manager" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+              label="People Manager"
+              onClick={() => { openPeopleWindow(); }}
+              selectable={false}
+            />
+            <SidebarItem
+              icon={<CalendarRange className="w-4 h-4 opacity-70" />}
+              label="Date Editor"
+              onClick={() => { openDateEditor(); }}
+              selectable={false}
+            />
+          </div>
         </div>
 
         {/* SOURCES SECTION */}
         <div data-tour="sources-panel">
           <div className="flex items-center justify-between mb-3 px-2">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Source Menu</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {sources.length > 0 ? 'Source Menu' : 'Menu'}
+            </h3>
             {sources.length > 0 && (
               <div className="flex items-center gap-2">
                 <Checkbox 
@@ -1677,6 +1775,33 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
         <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
         <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Placeholder panel used by upcoming views (Memories, Family Tree) that ship
+ * as sidebar destinations before the real functionality exists. Gives the
+ * user something informative instead of a blank pane and makes it clear the
+ * feature is on the roadmap rather than broken.
+ */
+function ComingSoonView({ title, subtitle, description, iconName }: { title: string; subtitle: string; description: string; iconName: 'memories' | 'familytree' }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-12 text-center overflow-auto">
+      <div className="max-w-xl space-y-4">
+        <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center">
+          {iconName === 'memories'
+            ? <CalendarRange className="w-7 h-7 text-primary" />
+            : <Sparkles className="w-7 h-7 text-primary" />}
+        </div>
+        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
+        <p className="text-base text-muted-foreground">{subtitle}</p>
+        <p className="text-sm text-muted-foreground/80 leading-relaxed">{description}</p>
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/5 text-primary text-xs font-medium">
+          <Sparkles className="w-3 h-3" />
+          Coming soon
+        </div>
       </div>
     </div>
   );
