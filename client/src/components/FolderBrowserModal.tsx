@@ -107,6 +107,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   const mouseDownOnBackdropRef = useRef(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [quickAccess, setQuickAccess] = useState<QuickAccessPaths | null>(null);
+  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -139,6 +140,24 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   }, [sortBy, sortDir]);
 
   const sortedEntries = sortEntries(entries);
+
+  // Clicking a Details-view column header toggles sort direction if already
+  // sorted by that column, otherwise switches to that column starting
+  // ascending. Same UX as Windows File Explorer / macOS Finder.
+  const handleHeaderSort = useCallback((col: 'name' | 'date' | 'size') => {
+    if (sortBy === col) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(col);
+      setSortDir('asc');
+    }
+  }, [sortBy]);
+
+  // Chevron icon for the active-sort column header.
+  const sortIndicator = (col: 'name' | 'date' | 'size') =>
+    sortBy !== col ? null : (
+      <ChevronDown className={`inline w-3 h-3 ml-1 -mt-0.5 ${sortDir === 'desc' ? '' : 'rotate-180'}`} />
+    );
   const [selectedFile, setSelectedFile] = useState<string>('');
   const isArchiveMode = mode === 'archives';
   const [driveWarning, setDriveWarning] = useState<{ reasons: string[]; suggestions: string[]; path: string } | null>(null);
@@ -698,35 +717,45 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
             {/* Left sidebar - drives and tree */}
             <div className="w-[240px] border-r border-border bg-card/30 overflow-y-auto shrink-0">
               <div className="p-2.5">
-                {/* Quick Access — common user folders pulled from app.getPath(). */}
+                {/* Quick Access — collapsible accordion, closed by default.
+                    Matches the File Explorer sidebar pattern where less
+                    frequently used sections are hidden until clicked. */}
                 {quickAccess && (quickAccess.desktop || quickAccess.downloads || quickAccess.documents || quickAccess.pictures) && (
                   <>
-                    <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-2 py-2">
-                      Quick Access
-                    </div>
-                    {quickAccess.desktop && (
-                      <QuickAccessItem icon={Monitor} label="Desktop" path={quickAccess.desktop}
-                        isSelected={currentPath === quickAccess.desktop} onClick={() => navigateTo(quickAccess.desktop!)} />
-                    )}
-                    {quickAccess.downloads && (
-                      <QuickAccessItem icon={Download} label="Downloads" path={quickAccess.downloads}
-                        isSelected={currentPath === quickAccess.downloads} onClick={() => navigateTo(quickAccess.downloads!)} />
-                    )}
-                    {quickAccess.documents && (
-                      <QuickAccessItem icon={FileText} label="Documents" path={quickAccess.documents}
-                        isSelected={currentPath === quickAccess.documents} onClick={() => navigateTo(quickAccess.documents!)} />
-                    )}
-                    {quickAccess.pictures && (
-                      <QuickAccessItem icon={Image} label="Pictures" path={quickAccess.pictures}
-                        isSelected={currentPath === quickAccess.pictures} onClick={() => navigateTo(quickAccess.pictures!)} />
-                    )}
-                    {quickAccess.videos && (
-                      <QuickAccessItem icon={Film} label="Videos" path={quickAccess.videos}
-                        isSelected={currentPath === quickAccess.videos} onClick={() => navigateTo(quickAccess.videos!)} />
-                    )}
-                    {quickAccess.music && (
-                      <QuickAccessItem icon={Music} label="Music" path={quickAccess.music}
-                        isSelected={currentPath === quickAccess.music} onClick={() => navigateTo(quickAccess.music!)} />
+                    <button
+                      onClick={() => setQuickAccessOpen(v => !v)}
+                      className="w-full flex items-center justify-between gap-2 px-2 py-2 text-xs uppercase tracking-wider text-muted-foreground font-medium hover:text-foreground transition-colors"
+                    >
+                      <span>Quick Access</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${quickAccessOpen ? '' : '-rotate-90'}`} />
+                    </button>
+                    {quickAccessOpen && (
+                      <div className="space-y-0.5">
+                        {quickAccess.desktop && (
+                          <QuickAccessItem icon={Monitor} label="Desktop" path={quickAccess.desktop}
+                            isSelected={currentPath === quickAccess.desktop} onClick={() => navigateTo(quickAccess.desktop!)} />
+                        )}
+                        {quickAccess.downloads && (
+                          <QuickAccessItem icon={Download} label="Downloads" path={quickAccess.downloads}
+                            isSelected={currentPath === quickAccess.downloads} onClick={() => navigateTo(quickAccess.downloads!)} />
+                        )}
+                        {quickAccess.documents && (
+                          <QuickAccessItem icon={FileText} label="Documents" path={quickAccess.documents}
+                            isSelected={currentPath === quickAccess.documents} onClick={() => navigateTo(quickAccess.documents!)} />
+                        )}
+                        {quickAccess.pictures && (
+                          <QuickAccessItem icon={Image} label="Pictures" path={quickAccess.pictures}
+                            isSelected={currentPath === quickAccess.pictures} onClick={() => navigateTo(quickAccess.pictures!)} />
+                        )}
+                        {quickAccess.videos && (
+                          <QuickAccessItem icon={Film} label="Videos" path={quickAccess.videos}
+                            isSelected={currentPath === quickAccess.videos} onClick={() => navigateTo(quickAccess.videos!)} />
+                        )}
+                        {quickAccess.music && (
+                          <QuickAccessItem icon={Music} label="Music" path={quickAccess.music}
+                            isSelected={currentPath === quickAccess.music} onClick={() => navigateTo(quickAccess.music!)} />
+                        )}
+                      </div>
                     )}
                     <div className="border-t border-border my-2" />
                   </>
@@ -911,26 +940,8 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                         <button onClick={() => setFileViewMode('list')} className={`p-1.5 transition-colors ${fileViewMode === 'list' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="List view"><List className="w-3.5 h-3.5" /></button>
                         <button onClick={() => setFileViewMode('details')} className={`p-1.5 transition-colors ${fileViewMode === 'details' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="Details view"><Table2 className="w-3.5 h-3.5" /></button>
                       </div>
-                      {/* Sort-by dropdown + direction toggle */}
-                      <div className="flex items-center gap-1 border border-border rounded-lg px-2 py-0.5">
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Sort</span>
-                        <select
-                          value={sortBy}
-                          onChange={(e) => setSortBy(e.target.value as 'name' | 'date' | 'size')}
-                          className="bg-transparent text-xs text-foreground outline-none cursor-pointer"
-                        >
-                          <option value="name">Name</option>
-                          <option value="date">Modified</option>
-                          <option value="size">Size</option>
-                        </select>
-                        <button
-                          onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
-                          className="p-0.5 rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
-                          title={sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'}
-                        >
-                          {sortDir === 'asc' ? <ChevronDown className="w-3.5 h-3.5 rotate-180" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
+                      {/* Sort is driven by clicking the column headers in the
+                          Details view, matching the File Explorer pattern. */}
                       {fileViewMode === 'grid' && hasImages && (
                         <>
                           <ZoomOut className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -973,9 +984,21 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                       <div className="mb-2 overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
-                            <tr className="text-xs text-muted-foreground border-b border-border/50">
-                              <th className="text-left py-1.5 px-3 font-medium">Name</th>
-                              <th className="text-left py-1.5 px-3 font-medium">Modified</th>
+                            <tr className="text-xs text-muted-foreground border-b border-border/50 select-none">
+                              <th
+                                onClick={() => handleHeaderSort('name')}
+                                className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                                title="Click to sort by name"
+                              >
+                                Name{sortIndicator('name')}
+                              </th>
+                              <th
+                                onClick={() => handleHeaderSort('date')}
+                                className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                                title="Click to sort by modified date"
+                              >
+                                Modified{sortIndicator('date')}
+                              </th>
                               <th className="text-left py-1.5 px-3 font-medium">Type</th>
                             </tr>
                           </thead>
@@ -1116,10 +1139,22 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                     <div className="mt-1 overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-xs text-muted-foreground border-b border-border/50">
-                            <th className="text-left py-1.5 px-3 font-medium">Name</th>
+                          <tr className="text-xs text-muted-foreground border-b border-border/50 select-none">
+                            <th
+                              onClick={() => handleHeaderSort('name')}
+                              className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                              title="Click to sort by name"
+                            >
+                              Name{sortIndicator('name')}
+                            </th>
                             <th className="text-left py-1.5 px-3 font-medium">Type</th>
-                            <th className="text-right py-1.5 px-3 font-medium">Size</th>
+                            <th
+                              onClick={() => handleHeaderSort('size')}
+                              className="text-right py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                              title="Click to sort by size"
+                            >
+                              Size{sortIndicator('size')}
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
