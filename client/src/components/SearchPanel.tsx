@@ -1483,12 +1483,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Aperture" onExpand={() => setOverflowModalGroup('aperture')} groupId="aperture" isFavourited={isGroupFavourited('aperture')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex flex-col gap-0.5 flex-1 py-1">
-                        <span className="text-foreground/50 text-[10px] font-semibold uppercase tracking-wider">f/</span>
-                        <input type="number" step="0.1" placeholder="Min" value={apertureFrom ?? ''} onChange={(e) => setApertureFrom(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
-                        <input type="number" step="0.1" placeholder="Max" value={apertureTo ?? ''} onChange={(e) => setApertureTo(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
+                      <div className="flex flex-col gap-1 flex-1 py-0.5">
+                        <div className="relative">
+                          <input type="number" step="0.1" placeholder="Min" value={apertureFrom ?? ''} onChange={(e) => setApertureFrom(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">f/</span>
+                        </div>
+                        <div className="relative">
+                          <input type="number" step="0.1" placeholder="Max" value={apertureTo ?? ''} onChange={(e) => setApertureTo(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">f/</span>
+                        </div>
                       </div>
                     </RibbonGroup>
                   </>
@@ -1498,12 +1503,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Focal Length" onExpand={() => setOverflowModalGroup('focalLength')} groupId="focalLength" isFavourited={isGroupFavourited('focalLength')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex flex-col gap-0.5 flex-1 py-1">
-                        <span className="text-foreground/50 text-[10px] font-semibold uppercase tracking-wider">mm</span>
-                        <input type="number" placeholder="Min" value={focalLengthFrom ?? ''} onChange={(e) => setFocalLengthFrom(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
-                        <input type="number" placeholder="Max" value={focalLengthTo ?? ''} onChange={(e) => setFocalLengthTo(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
+                      <div className="flex flex-col gap-1 flex-1 py-0.5">
+                        <div className="relative">
+                          <input type="number" placeholder="Min" value={focalLengthFrom ?? ''} onChange={(e) => setFocalLengthFrom(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">mm</span>
+                        </div>
+                        <div className="relative">
+                          <input type="number" placeholder="Max" value={focalLengthTo ?? ''} onChange={(e) => setFocalLengthTo(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">mm</span>
+                        </div>
                       </div>
                     </RibbonGroup>
                   </>
@@ -1513,15 +1523,23 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Flash" onExpand={() => setOverflowModalGroup('flash')} groupId="flash" isFavourited={isGroupFavourited('flash')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex items-center gap-1 flex-1 py-1.5">
-                        <button onClick={() => setFlashFired(prev => prev === true ? undefined : true)}
-                          className={`px-2.5 py-1.5 rounded-md border text-[11px] font-medium transition-all ${flashFired === true ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'}`}>
-                          Fired
-                        </button>
-                        <button onClick={() => setFlashFired(prev => prev === false ? undefined : false)}
-                          className={`px-2.5 py-1.5 rounded-md border text-[11px] font-medium transition-all ${flashFired === false ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'}`}>
-                          No Flash
-                        </button>
+                      <div className="flex items-center gap-1.5 flex-1 py-1">
+                        {/* Flash 2-way toggle: On / Off. Undefined = no filter.
+                            Matches the GPS compact toggle style. */}
+                        <div className="flex flex-col items-center gap-0">
+                          <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
+                            <button
+                              onClick={() => setFlashFired(prev => prev === true ? undefined : true)}
+                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${flashFired === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              title="Only photos where the flash fired"
+                            >On</button>
+                            <button
+                              onClick={() => setFlashFired(prev => prev === false ? undefined : false)}
+                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors border-l border-border ${flashFired === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              title="Only photos where the flash did not fire"
+                            >Off</button>
+                          </div>
+                        </div>
                       </div>
                     </RibbonGroup>
                   </>
@@ -1531,12 +1549,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Megapixels" onExpand={() => setOverflowModalGroup('megapixels')} groupId="megapixels" isFavourited={isGroupFavourited('megapixels')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex flex-col gap-0.5 flex-1 py-1">
-                        <span className="text-foreground/50 text-[10px] font-semibold uppercase tracking-wider">MP</span>
-                        <input type="number" step="0.1" placeholder="Min" value={megapixelsFrom ?? ''} onChange={(e) => setMegapixelsFrom(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
-                        <input type="number" step="0.1" placeholder="Max" value={megapixelsTo ?? ''} onChange={(e) => setMegapixelsTo(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
+                      <div className="flex flex-col gap-1 flex-1 py-0.5">
+                        <div className="relative">
+                          <input type="number" step="0.1" placeholder="Min" value={megapixelsFrom ?? ''} onChange={(e) => setMegapixelsFrom(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MP</span>
+                        </div>
+                        <div className="relative">
+                          <input type="number" step="0.1" placeholder="Max" value={megapixelsTo ?? ''} onChange={(e) => setMegapixelsTo(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MP</span>
+                        </div>
                       </div>
                     </RibbonGroup>
                   </>

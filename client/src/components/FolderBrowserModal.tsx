@@ -980,7 +980,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
 
                   {/* Folder entries — respect the view toggle + sort order. */}
                   {fileViewMode === 'details' ? (
-                    sortedEntries.filter(e => e.isDirectory).length > 0 && (
+                    (sortedEntries.filter(e => e.isDirectory).length > 0 || quickAccess) && (
                       <div className="mb-2 overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
@@ -1003,6 +1003,32 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                             </tr>
                           </thead>
                           <tbody>
+                            {/* Quick Access shortcut rows — appear at the top of
+                                the Details view so shortcuts are reachable
+                                without opening the sidebar accordion. */}
+                            {quickAccess && ([
+                              quickAccess.desktop && { icon: Monitor, label: 'Desktop', path: quickAccess.desktop },
+                              quickAccess.downloads && { icon: Download, label: 'Downloads', path: quickAccess.downloads },
+                              quickAccess.documents && { icon: FileText, label: 'Documents', path: quickAccess.documents },
+                              quickAccess.pictures && { icon: Image, label: 'Pictures', path: quickAccess.pictures },
+                              quickAccess.videos && { icon: Film, label: 'Videos', path: quickAccess.videos },
+                              quickAccess.music && { icon: Music, label: 'Music', path: quickAccess.music },
+                            ].filter(Boolean) as Array<{ icon: any; label: string; path: string }>).map(({ icon: Ico, label, path: p }) => (
+                              <tr
+                                key={'qa-' + p}
+                                onClick={() => navigateTo(p)}
+                                className="border-b border-border/30 hover:bg-primary/5 transition-colors cursor-pointer"
+                              >
+                                <td className="py-1.5 px-3 max-w-[320px]">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <Ico className="w-4 h-4 text-primary shrink-0" />
+                                    <span className="truncate text-foreground">{label}</span>
+                                  </div>
+                                </td>
+                                <td className="py-1.5 px-3 text-muted-foreground whitespace-nowrap">—</td>
+                                <td className="py-1.5 px-3 text-primary text-[11px] font-medium uppercase tracking-wide">Quick Access</td>
+                              </tr>
+                            ))}
                             {sortedEntries.filter(e => e.isDirectory).map(entry => (
                               <tr
                                 key={entry.path}
