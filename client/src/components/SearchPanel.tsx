@@ -1469,11 +1469,9 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="ISO" onExpand={() => setOverflowModalGroup('iso')} groupId="iso" isFavourited={isGroupFavourited('iso')} onToggleFavourite={toggleFavouriteGroup}>
-                      <div className="flex flex-col gap-0.5 flex-1 py-1">
-                        <input type="number" placeholder="Min" value={isoFrom ?? ''} onChange={(e) => setIsoFrom(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
-                        <input type="number" placeholder="Max" value={isoTo ?? ''} onChange={(e) => setIsoTo(e.target.value ? Number(e.target.value) : undefined)}
-                          className="px-2 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[52px]" />
+                      <div className="flex flex-col gap-1 flex-1 py-0.5">
+                        <UnitInput placeholder="Min" value={isoFrom} onChange={setIsoFrom} unit="ISO" />
+                        <UnitInput placeholder="Max" value={isoTo} onChange={setIsoTo} unit="ISO" />
                       </div>
                     </RibbonGroup>
                   </>
@@ -1484,16 +1482,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Aperture" onExpand={() => setOverflowModalGroup('aperture')} groupId="aperture" isFavourited={isGroupFavourited('aperture')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex flex-col gap-1 flex-1 py-0.5">
-                        <div className="relative">
-                          <input type="number" step="0.1" placeholder="Min" value={apertureFrom ?? ''} onChange={(e) => setApertureFrom(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">f/</span>
-                        </div>
-                        <div className="relative">
-                          <input type="number" step="0.1" placeholder="Max" value={apertureTo ?? ''} onChange={(e) => setApertureTo(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">f/</span>
-                        </div>
+                        <UnitInput placeholder="Min" value={apertureFrom} onChange={setApertureFrom} unit="f/" step="0.1" />
+                        <UnitInput placeholder="Max" value={apertureTo} onChange={setApertureTo} unit="f/" step="0.1" />
                       </div>
                     </RibbonGroup>
                   </>
@@ -1504,16 +1494,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Focal Length" onExpand={() => setOverflowModalGroup('focalLength')} groupId="focalLength" isFavourited={isGroupFavourited('focalLength')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex flex-col gap-1 flex-1 py-0.5">
-                        <div className="relative">
-                          <input type="number" placeholder="Min" value={focalLengthFrom ?? ''} onChange={(e) => setFocalLengthFrom(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">mm</span>
-                        </div>
-                        <div className="relative">
-                          <input type="number" placeholder="Max" value={focalLengthTo ?? ''} onChange={(e) => setFocalLengthTo(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">mm</span>
-                        </div>
+                        <UnitInput placeholder="Min" value={focalLengthFrom} onChange={setFocalLengthFrom} unit="mm" />
+                        <UnitInput placeholder="Max" value={focalLengthTo} onChange={setFocalLengthTo} unit="mm" />
                       </div>
                     </RibbonGroup>
                   </>
@@ -1524,18 +1506,19 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Flash" onExpand={() => setOverflowModalGroup('flash')} groupId="flash" isFavourited={isGroupFavourited('flash')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1">
-                        {/* Flash 2-way toggle: On / Off. Undefined = no filter.
-                            Matches the GPS compact toggle style. */}
-                        <div className="flex flex-col items-center gap-0">
-                          <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
+                        {/* Flash 2-way toggle — same visual style as the GPS
+                            toggle: label above, vertical stack of pills. */}
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold leading-none">Flash</span>
+                          <div className="flex flex-col rounded-md border border-border overflow-hidden bg-background w-[40px]">
                             <button
                               onClick={() => setFlashFired(prev => prev === true ? undefined : true)}
-                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${flashFired === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${flashFired === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="Only photos where the flash fired"
                             >On</button>
                             <button
                               onClick={() => setFlashFired(prev => prev === false ? undefined : false)}
-                              className={`px-2 py-0.5 text-[10px] font-medium transition-colors border-l border-border ${flashFired === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-t border-border ${flashFired === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                               title="Only photos where the flash did not fire"
                             >Off</button>
                           </div>
@@ -1550,16 +1533,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Megapixels" onExpand={() => setOverflowModalGroup('megapixels')} groupId="megapixels" isFavourited={isGroupFavourited('megapixels')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex flex-col gap-1 flex-1 py-0.5">
-                        <div className="relative">
-                          <input type="number" step="0.1" placeholder="Min" value={megapixelsFrom ?? ''} onChange={(e) => setMegapixelsFrom(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MP</span>
-                        </div>
-                        <div className="relative">
-                          <input type="number" step="0.1" placeholder="Max" value={megapixelsTo ?? ''} onChange={(e) => setMegapixelsTo(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-8 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MP</span>
-                        </div>
+                        <UnitInput placeholder="Min" value={megapixelsFrom} onChange={setMegapixelsFrom} unit="MP" step="0.1" />
+                        <UnitInput placeholder="Max" value={megapixelsTo} onChange={setMegapixelsTo} unit="MP" step="0.1" />
                       </div>
                     </RibbonGroup>
                   </>
@@ -1570,16 +1545,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="File Size" onExpand={() => setOverflowModalGroup('fileSize')} groupId="fileSize" isFavourited={isGroupFavourited('fileSize')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex flex-col gap-1 flex-1 py-0.5">
-                        <div className="relative">
-                          <input type="number" step="0.1" placeholder="Min" value={sizeFromMB ?? ''} onChange={(e) => setSizeFromMB(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MB</span>
-                        </div>
-                        <div className="relative">
-                          <input type="number" step="0.1" placeholder="Max" value={sizeToMB ?? ''} onChange={(e) => setSizeToMB(e.target.value ? Number(e.target.value) : undefined)}
-                            className="pl-2 pr-7 py-1 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-24" />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">MB</span>
-                        </div>
+                        <UnitInput placeholder="Min" value={sizeFromMB} onChange={setSizeFromMB} unit="MB" step="0.1" />
+                        <UnitInput placeholder="Max" value={sizeToMB} onChange={setSizeToMB} unit="MB" step="0.1" />
                       </div>
                     </RibbonGroup>
                   </>
@@ -3013,6 +2980,34 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Numeric ribbon input with its unit label shown inline on the right. Uses
+ * flex rather than absolute positioning so the unit physically can't overlap
+ * the input value, regardless of how wide the unit string is (f/, mm, MP,
+ * ISO, MB all just work).
+ */
+function UnitInput({ placeholder, value, onChange, unit, step }: {
+  placeholder: string;
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+  unit: string;
+  step?: string;
+}) {
+  return (
+    <div className="flex items-center rounded-md border border-border bg-background overflow-hidden focus-within:ring-1 focus-within:ring-primary/40 w-[92px]">
+      <input
+        type="number"
+        step={step}
+        placeholder={placeholder}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
+        className="flex-1 min-w-0 bg-transparent pl-2 py-1 text-xs text-foreground focus:outline-none"
+      />
+      <span className="px-1.5 text-[10px] text-muted-foreground pointer-events-none select-none whitespace-nowrap">{unit}</span>
     </div>
   );
 }
