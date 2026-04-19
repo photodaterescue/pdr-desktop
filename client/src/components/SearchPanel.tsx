@@ -2972,10 +2972,14 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
 }) {
   return (
     <div className="flex flex-col justify-between px-2.5 min-w-0 shrink-0">
-      {/* Centre the content so the trigger button sits in the same column as
-          the footer label below — otherwise narrow triggers like 'WB' or
-          'Position' visually drift to the left of their group name. */}
-      <div className="flex items-center justify-center flex-1">{children}</div>
+      {/* Centre the content both vertically and horizontally. The inner
+          wrapper divs used by each filter have `flex-1` so they stretch to
+          the group width — which means a plain `justify-center` on this
+          outer row has no effect on the button inside. The arbitrary-child
+          selector `[&>div]:justify-center` pushes horizontal centering INTO
+          those stretched inner divs so their trigger button ends up in the
+          same column as the footer label. */}
+      <div className="flex items-center justify-center flex-1 [&>div]:justify-center">{children}</div>
       <div className="flex items-center justify-center gap-1 border-t mt-0.5 pt-0.5 pb-0.5 ribbon-group-border">
         {groupId && onToggleFavourite && (
           <button onClick={() => onToggleFavourite(groupId)}
