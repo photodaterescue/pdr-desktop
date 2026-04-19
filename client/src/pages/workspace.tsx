@@ -84,6 +84,7 @@ import { FolderBrowserModal } from "@/components/FolderBrowserModal";
 import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
 import { SearchRibbon } from "@/components/SearchPanel";
+import MemoriesView from "@/components/MemoriesView";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
 import type { SourceAnalysisResult } from "../electron";
@@ -1321,15 +1322,8 @@ return (
         )}
         </div>{/* close zoomable content wrapper */}
 
-        {/* Memories view — placeholder for v1 release */}
-        {activeView === 'memories' && (
-          <ComingSoonView
-            title="Memories"
-            subtitle="Your photos, organised by time."
-            description="Browse your library by year, month, and day. Rediscover what happened on this day in previous years, watch slideshows of a chosen period, and find events by date. Coming in a future update."
-            iconName="memories"
-          />
-        )}
+        {/* Memories view */}
+        {activeView === 'memories' && <MemoriesView />}
 
         {/* Trees view — placeholder for v1 release. Deliberately not called
             'Family Tree' because the same tool handles friend groups, work

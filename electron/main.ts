@@ -80,6 +80,9 @@ import {
   removeRun,
   removeRunByReportId,
   listRuns,
+  getMemoriesYearMonthBuckets,
+  getMemoriesOnThisDay,
+  getMemoriesDayFiles,
   saveFavouriteFilter,
   listFavouriteFilters,
   deleteFavouriteFilter,
@@ -2377,6 +2380,32 @@ ipcMain.handle('search:filterOptions', async () => {
 ipcMain.handle('search:stats', async () => {
   try {
     return { success: true, data: getIndexStats() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── Memories IPC handlers ──────────────────────────────────────────────────
+
+ipcMain.handle('memories:yearMonthBuckets', async (_event, runId?: number) => {
+  try {
+    return { success: true, data: getMemoriesYearMonthBuckets(runId) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('memories:onThisDay', async (_event, args: { month: number; day: number; runId?: number; limit?: number }) => {
+  try {
+    return { success: true, data: getMemoriesOnThisDay(args.month, args.day, args.runId, args.limit ?? 50) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('memories:dayFiles', async (_event, args: { year: number; month: number; day: number; runId?: number }) => {
+  try {
+    return { success: true, data: getMemoriesDayFiles(args.year, args.month, args.day, args.runId) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

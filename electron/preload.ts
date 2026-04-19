@@ -127,6 +127,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     clear: (args: { make: string; model: string }) => ipcRenderer.invoke('scannerOverride:clear', args),
   },
 
+  memories: {
+    yearMonthBuckets: (runId?: number) => ipcRenderer.invoke('memories:yearMonthBuckets', runId),
+    onThisDay: (args: { month: number; day: number; runId?: number; limit?: number }) => ipcRenderer.invoke('memories:onThisDay', args),
+    dayFiles: (args: { year: number; month: number; day: number; runId?: number }) => ipcRenderer.invoke('memories:dayFiles', args),
+  },
+
   search: {
     init: () => ipcRenderer.invoke('search:init'),
     indexRun: (reportId: string) => ipcRenderer.invoke('search:indexRun', reportId),

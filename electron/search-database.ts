@@ -2103,6 +2103,98 @@ export function relocateRun(runId: number, newDestinationPath: string): number {
  *
  * Returns cleanup stats + any runs needing user attention.
  */
+// ─── Memories queries ───────────────────────────────────────────────────────
+// Aggregates that power the Memories view (year/month/day timeline + "On
+// This Day"). Kept as raw SQL aggregates so we never load more rows than we
+// need — a library of 100k photos summarises into ~30 years × 12 months ≈
+// 360 rows for the main timeline, and <10 rows for On This Day.
+
+export interface MemoriesYearBucket {
+  year: number;
+  month: number;
+  photoCount: number;
+  videoCount: number;
+  // One representative file path + id so the grid can show a sample thumb.
+  sampleFilePath: string | null;
+  sampleFileId: number | null;
+}
+
+export interface MemoriesOnThisDayItem {
+  id: number;
+  file_path: string;
+  filename: string;
+  file_type: string;
+  derived_date: string | null;
+  year: number | null;
+}
+
+/**
+ * Photos-per-month aggregate across every year in the library, optionally
+ * scoped to a single indexed_run (parallel structure). Returns one row per
+ * (year, month) combination that has at least one photo, with a sample file
+ * for thumbnail display.
+ */
+export function getMemoriesYearMonthBuckets(runId?: number): MemoriesYearBucket[] {
+  const database = getDb();
+  const runFilter = runId != null ? 'AND run_id = ?' : '';
+  const params: any[] = runId != null ? [runId] : [];
+  const rows = database.prepare(`
+    SELECT
+      year,
+      month,
+      SUM(CASE WHEN file_type = 'photo' THEN 1 ELSE 0 END) AS photoCount,
+      SUM(CASE WHEN file_type = 'video' THEN 1 ELSE 0 END) AS videoCount,
+      -- Pick a stable sample file per bucket (lowest id = earliest indexed).
+      (SELECT f2.file_path FROM indexed_files f2
+         WHERE f2.year = f.year AND f2.month = f.month ${runId != null ? 'AND f2.run_id = ?' : ''}
+         ORDER BY f2.id ASC LIMIT 1) AS sampleFilePath,
+      (SELECT f2.id FROM indexed_files f2
+         WHERE f2.year = f.year AND f2.month = f.month ${runId != null ? 'AND f2.run_id = ?' : ''}
+         ORDER BY f2.id ASC LIMIT 1) AS sampleFileId
+    FROM indexed_files f
+    WHERE year IS NOT NULL AND month IS NOT NULL ${runFilter}
+    GROUP BY year, month
+    ORDER BY year DESC, month DESC
+  `).all(...params, ...params, ...params) as MemoriesYearBucket[];
+  return rows;
+}
+
+/**
+ * Files taken on the same month/day as today across every previous year.
+ * Powers the "On This Day" row at the top of Memories.
+ */
+export function getMemoriesOnThisDay(month: number, day: number, runId?: number, limit: number = 50): MemoriesOnThisDayItem[] {
+  const database = getDb();
+  const runFilter = runId != null ? 'AND run_id = ?' : '';
+  const params: any[] = [month, day];
+  if (runId != null) params.push(runId);
+  params.push(limit);
+  return database.prepare(`
+    SELECT id, file_path, filename, file_type, derived_date, year
+    FROM indexed_files
+    WHERE month = ? AND day = ? ${runFilter}
+      AND derived_date IS NOT NULL
+    ORDER BY year DESC, derived_date DESC
+    LIMIT ?
+  `).all(...params) as MemoriesOnThisDayItem[];
+}
+
+/**
+ * Fetch every file taken on a specific calendar date, optionally scoped to a
+ * run. Used for the day-drill-down grid.
+ */
+export function getMemoriesDayFiles(year: number, month: number, day: number, runId?: number): IndexedFile[] {
+  const database = getDb();
+  const runFilter = runId != null ? 'AND run_id = ?' : '';
+  const params: any[] = [year, month, day];
+  if (runId != null) params.push(runId);
+  return database.prepare(`
+    SELECT * FROM indexed_files
+    WHERE year = ? AND month = ? AND day = ? ${runFilter}
+    ORDER BY derived_date ASC, id ASC
+  `).all(...params) as IndexedFile[];
+}
+
 export function runDatabaseCleanup(): {
   staleRuns: IndexedRun[];
   duplicateRunsRemoved: number;

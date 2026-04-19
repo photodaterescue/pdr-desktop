@@ -916,6 +916,47 @@ export async function clearScannerOverride(args: { make: string; model: string }
   return { success: false, error: 'Not running in Electron' };
 }
 
+// ─── Memories ──────────────────────────────────────────────────────────────
+
+export interface MemoriesYearBucket {
+  year: number;
+  month: number;
+  photoCount: number;
+  videoCount: number;
+  sampleFilePath: string | null;
+  sampleFileId: number | null;
+}
+
+export interface MemoriesOnThisDayItem {
+  id: number;
+  file_path: string;
+  filename: string;
+  file_type: string;
+  derived_date: string | null;
+  year: number | null;
+}
+
+export async function getMemoriesYearMonthBuckets(runId?: number): Promise<{ success: boolean; data?: MemoriesYearBucket[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.yearMonthBuckets(runId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function getMemoriesOnThisDay(args: { month: number; day: number; runId?: number; limit?: number }): Promise<{ success: boolean; data?: MemoriesOnThisDayItem[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.onThisDay(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function getMemoriesDayFiles(args: { year: number; month: number; day: number; runId?: number }): Promise<{ success: boolean; data?: IndexedFile[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.dayFiles(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export interface QuickAccessPaths {
   desktop: string | null;
   downloads: string | null;
