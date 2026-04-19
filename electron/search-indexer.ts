@@ -310,6 +310,21 @@ async function buildFileRecord(
     // Camera position — derive from lens model or camera model for smartphones
     record.camera_position = deriveCameraPosition(record.lens_model, record.camera_model);
 
+    // Scanner / multifunction-device demotion. Scanners typically write the
+    // scan date into DateTimeOriginal, which PDR would otherwise treat as
+    // Confirmed — but the scan date is almost never the actual photo date
+    // (e.g. 1995 wedding photo scanned today → Confirmed: today). We flag
+    // these as Marked so they surface in the Date Editor for manual review.
+    // False positive (same-day scan of a same-day event) is rare; false
+    // negative (silent corruption of family photo dates) is common, so we
+    // err on the side of review.
+    if (isScannerDevice(record.camera_make, record.camera_model)) {
+      record.confidence = 'marked';
+      record.date_source = record.date_source
+        ? `${record.date_source} — scanner`
+        : 'Scanner date (likely scan time, not photo date)';
+    }
+
     // GPS + reverse geocoding
     if (tags.GPSLatitude != null && tags.GPSLongitude != null) {
       record.gps_lat = Number(tags.GPSLatitude);
@@ -370,6 +385,49 @@ function isVideoExtension(ext: string): boolean {
  *   "iPhone 15 Pro back camera 2.22mm f/2.2" (ultrawide) → "wide"
  *   "telephoto" in lens model                     → "telephoto"
  */
+/**
+ * Return true if the EXIF `Make` / `Model` strings identify a flatbed scanner,
+ * film scanner, or multifunction scan-capable printer. Used to demote the
+ * confidence tier so these files land in the Marked bucket for manual review.
+ *
+ * The patterns are intentionally conservative — we want scanners but NOT
+ * camera models that happen to share a brand (e.g. Canon DSLRs). Matching is
+ * done on a combination of keywords rather than full-string equality so
+ * specific model numbers (HP Scanjet G4050, Epson Perfection V600, etc.)
+ * are captured automatically.
+ */
+function isScannerDevice(make: string | null, model: string | null): boolean {
+  const m = `${make || ''} ${model || ''}`.toLowerCase();
+  if (!m.trim()) return false;
+
+  // Dedicated scanner product lines
+  const scannerPatterns: RegExp[] = [
+    /\bscanjet\b/,             // HP Scanjet (flatbed/photo scanners)
+    /\bperfection\b/,          // Epson Perfection (flatbed)
+    /\bcanoscan\b/,            // Canon CanoScan
+    /\bopticfilm\b/,           // Plustek OpticFilm (film scanner)
+    /\bopticpro\b/,            // Plustek OpticPro
+    /\bcoolscan\b/,            // Nikon Coolscan
+    /\bscanmaker\b/,           // Microtek ScanMaker
+    /\bscanwit\b/,             // Acer ScanWit
+    /\bvuescan\b/,             // VueScan (software, but may appear in EXIF)
+    /\bimacon\b/,              // Imacon/Hasselblad film scanners
+    /\bflextight\b/,           // Hasselblad Flextight
+    /\bpacific image\b/,       // Pacific Image film scanners
+    /\bdimage\s*scan\b/,       // Minolta Dimage Scan
+  ];
+  if (scannerPatterns.some(rx => rx.test(m))) return true;
+
+  // Multifunction printer/scanner combos — match brand + a typical MFP token
+  const mfpHints = /\b(officejet|deskjet|envy|laserjet|workforce|expression|pixma|imageclass|mfc|dcp|hl|maxify)\b/;
+  if (mfpHints.test(m) && /\b(scan|mfp|all[-\s]?in[-\s]?one|aio)\b/.test(m)) return true;
+
+  // Generic "scanner" anywhere in the Make/Model string is a strong signal.
+  if (/\bscanner\b/.test(m)) return true;
+
+  return false;
+}
+
 function deriveCameraPosition(lensModel: string | null, cameraModel: string | null): string | null {
   const combined = ((lensModel || '') + ' ' + (cameraModel || '')).toLowerCase();
   if (!combined.trim()) return null;
