@@ -319,7 +319,13 @@ async function buildFileRecord(
     // False positive (same-day scan of a same-day event) is rare; false
     // negative (silent corruption of family photo dates) is common, so we
     // err on the side of review.
-    if (isScannerDevice(record.camera_make, record.camera_model)) {
+    // Software tag: many scanners self-identify here via the scanning app
+    // (VueScan, SilverFast, Epson Scan, HP ScanSmart, Canon ScanGear, ...).
+    // This often catches scanner output even when Make/Model don't name a
+    // known scanner model — effectively a long-tail safety net.
+    const softwareTag = (tags as any).Software != null ? String((tags as any).Software).trim() : null;
+
+    if (isScannerDevice(record.camera_make, record.camera_model, softwareTag)) {
       record.confidence = 'marked';
       record.date_source = record.date_source
         ? `${record.date_source} — scanner`

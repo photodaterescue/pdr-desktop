@@ -127,33 +127,36 @@ async function extractExifDateFromPath(filePath: string): Promise<Date | null> {
   return null;
 }
 
-// Pull just the EXIF Make/Model strings from the first 64 KiB of a buffer so
+// Pull EXIF Make/Model/Software strings from the first 64 KiB of a buffer so
 // the analysis phase can run its scanner-detection rule before confidence is
-// finalised. Returns nulls on any error (EXIF parsing is best-effort).
-function extractExifMakeModelFromBuffer(buffer: Buffer): { make: string | null; model: string | null } {
+// finalised. Software is used for the long-tail scanner detection (VueScan,
+// SilverFast, Epson Scan, ScanGear, etc.). Returns nulls on any error (EXIF
+// parsing is best-effort).
+function extractExifCameraInfoFromBuffer(buffer: Buffer): { make: string | null; model: string | null; software: string | null } {
   try {
     const parser = exifParser.create(buffer);
     const result = parser.parse();
     const make = result.tags?.Make ? String(result.tags.Make).trim() : null;
     const model = result.tags?.Model ? String(result.tags.Model).trim() : null;
-    return { make, model };
+    const software = (result.tags as any)?.Software ? String((result.tags as any).Software).trim() : null;
+    return { make, model, software };
   } catch {
-    return { make: null, model: null };
+    return { make: null, model: null, software: null };
   }
 }
 
-async function extractExifMakeModelFromPath(filePath: string): Promise<{ make: string | null; model: string | null }> {
+async function extractExifCameraInfoFromPath(filePath: string): Promise<{ make: string | null; model: string | null; software: string | null }> {
   try {
     const fd = await fs.promises.open(filePath, 'r');
     try {
       const buffer = Buffer.alloc(65536);
       const { bytesRead } = await fd.read(buffer, 0, 65536, 0);
-      return extractExifMakeModelFromBuffer(buffer.subarray(0, bytesRead));
+      return extractExifCameraInfoFromBuffer(buffer.subarray(0, bytesRead));
     } finally {
       await fd.close();
     }
   } catch {
-    return { make: null, model: null };
+    return { make: null, model: null, software: null };
   }
 }
 
@@ -264,8 +267,8 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
   // filename so the suffix (_MK) is baked into the fix output rather than
   // relying on a later re-classification in the search indexer.
   if (dateConfidence !== 'marked') {
-    const { make, model } = await extractExifMakeModelFromPath(filePath);
-    if (isScannerDevice(make, model)) {
+    const { make, model, software } = await extractExifCameraInfoFromPath(filePath);
+    if (isScannerDevice(make, model, software)) {
       dateConfidence = 'marked';
       dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
     }
@@ -356,8 +359,8 @@ async function analyzeFileFromBuffer(
   // Scanner / multifunction-printer demotion — mirrors the path-based
   // analyzer so ZIP-archive imports are classified consistently.
   if (dateConfidence !== 'marked') {
-    const { make, model } = extractExifMakeModelFromBuffer(buffer);
-    if (isScannerDevice(make, model)) {
+    const { make, model, software } = extractExifCameraInfoFromBuffer(buffer);
+    if (isScannerDevice(make, model, software)) {
       dateConfidence = 'marked';
       dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
     }
