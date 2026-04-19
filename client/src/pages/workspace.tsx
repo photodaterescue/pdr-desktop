@@ -32,6 +32,7 @@ import {
   Loader2,
   Info,
   Sparkles,
+  Users,
   Tag,
   Shield,
   ShieldCheck,
@@ -74,8 +75,7 @@ import {
   PDRSettings,
   formatBytesToGB,
   PreScanResult,
-  openPeopleWindow,
-  openDateEditor
+  openPeopleWindow
 } from "@/lib/electron-bridge";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
@@ -1644,62 +1644,10 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
-        {/* VIEWS — destinations that swap the main content area. */}
-        <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Views</h3>
-          <div className="space-y-1">
-            <SidebarItem
-              icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />}
-              label={sources.length > 0 ? "Dashboard" : "Workspace"}
-              onClick={() => onDashboardClick()}
-              active={activeView === 'dashboard' && activePanel === null && !sources.some(s => s.active)}
-              selectable={false}
-            />
-            <SidebarItem
-              icon={<Search className="w-4 h-4 opacity-70" />}
-              label="Search & Discovery"
-              onClick={() => onViewChange?.('search')}
-              active={activeView === 'search'}
-              selectable={false}
-            />
-            <SidebarItem
-              icon={<CalendarRange className="w-4 h-4 opacity-70" />}
-              label="Memories"
-              onClick={() => onViewChange?.('memories')}
-              active={activeView === 'memories'}
-              selectable={false}
-            />
-            <SidebarItem
-              icon={<Sparkles className="w-4 h-4 opacity-70" />}
-              label="Family Tree"
-              onClick={() => onViewChange?.('familytree')}
-              active={activeView === 'familytree'}
-              selectable={false}
-            />
-          </div>
-        </div>
-
-        {/* TOOLS — open in their own windows. The external-link glyph signals
-            these break out of the main window rather than swap the view. */}
-        <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Tools</h3>
-          <div className="space-y-1">
-            <SidebarItem
-              icon={<img src="./assets//pdr-people.png" className="w-4 h-4 object-contain" alt="People Manager" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-              label="People Manager"
-              onClick={() => { openPeopleWindow(); }}
-              selectable={false}
-            />
-            <SidebarItem
-              icon={<CalendarRange className="w-4 h-4 opacity-70" />}
-              label="Date Editor"
-              onClick={() => { openDateEditor(); }}
-              selectable={false}
-            />
-          </div>
-        </div>
-
-        {/* SOURCES SECTION */}
+        {/* MENU / SOURCES SECTION — sits at the top of the sidebar directly
+            below the PDR logo. Header renames to 'Source Menu' once the user
+            adds sources, otherwise it reads 'Menu' to match the fact that
+            only the Add Source / Remove controls are visible. */}
         <div data-tour="sources-panel">
           <div className="flex items-center justify-between mb-3 px-2">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -1755,6 +1703,56 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             >
               <img src="./assets//pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
             </Button>
+          </div>
+        </div>
+
+        {/* VIEWS — destinations that swap the main content area. */}
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Views</h3>
+          <div className="space-y-1">
+            <SidebarItem
+              icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />}
+              label={sources.length > 0 ? "Dashboard" : "Workspace"}
+              onClick={() => onDashboardClick()}
+              active={activeView === 'dashboard' && activePanel === null && !sources.some(s => s.active)}
+              selectable={false}
+            />
+            <SidebarItem
+              icon={<Search className="w-4 h-4 opacity-70" />}
+              label="Search & Discovery"
+              onClick={() => onViewChange?.('search')}
+              active={activeView === 'search'}
+              selectable={false}
+            />
+            <SidebarItem
+              icon={<CalendarRange className="w-4 h-4 opacity-70" />}
+              label="Memories"
+              onClick={() => onViewChange?.('memories')}
+              active={activeView === 'memories'}
+              selectable={false}
+            />
+            <SidebarItem
+              icon={<Sparkles className="w-4 h-4 opacity-70" />}
+              label="Family Tree"
+              onClick={() => onViewChange?.('familytree')}
+              active={activeView === 'familytree'}
+              selectable={false}
+            />
+          </div>
+        </div>
+
+        {/* TOOLS — open in their own windows. Date Editor intentionally
+            NOT listed here: it's only reachable from within the S&D view
+            once a filter defines the set of photos to act on. */}
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Tools</h3>
+          <div className="space-y-1">
+            <SidebarItem
+              icon={<span className="w-4 h-4 rounded-md bg-purple-500/15 flex items-center justify-center"><Users className="w-3 h-3 text-purple-500" /></span>}
+              label="People Manager"
+              onClick={() => { openPeopleWindow(); }}
+              selectable={false}
+            />
           </div>
         </div>
       </div>

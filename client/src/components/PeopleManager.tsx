@@ -287,7 +287,7 @@ export default function PeopleManager() {
           <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center">
             <Users className="w-4 h-4 text-purple-500" />
           </div>
-          <h2 className="text-base font-semibold text-foreground">People</h2>
+          <h2 className="text-base font-semibold text-foreground">People Manager</h2>
 
           {/* Improve Facial Recognition button */}
           <TooltipProvider delayDuration={200}>

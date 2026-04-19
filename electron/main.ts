@@ -2447,7 +2447,7 @@ ipcMain.handle('people:open', async () => {
       minWidth: 700,
       minHeight: 500,
       backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
-      title: 'People — Photo Date Rescue',
+      title: 'People Manager — Photo Date Rescue',
       // Independent top-level window. We deliberately do NOT set
       // `skipTaskbar: true` on Windows: that flag also excludes the window
       // from Alt-Tab and makes minimised windows impossible to restore (no
