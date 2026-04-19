@@ -970,7 +970,7 @@ const ARCHIVE_EXTENSIONS = new Set(['.zip', '.rar']);
 ipcMain.handle('browser:readDirectory', async (_event, dirPath: string, fileFilter?: string) => {
   try {
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    const items: Array<{ name: string; path: string; isDirectory: boolean; isImage: boolean; isArchive: boolean; sizeBytes: number; hasSubfolders: boolean }> = [];
+    const items: Array<{ name: string; path: string; isDirectory: boolean; isImage: boolean; isArchive: boolean; sizeBytes: number; hasSubfolders: boolean; modifiedAt: number }> = [];
     for (const entry of entries) {
       // Skip hidden/system files
       if (entry.name.startsWith('.') || entry.name.startsWith('$')) continue;
@@ -991,28 +991,30 @@ ipcMain.handle('browser:readDirectory', async (_event, dirPath: string, fileFilt
         }
       }
 
+      // Modified-date stat: one fs.stat per entry. Needed for sort-by-date.
+      // Wrapped in try so an inaccessible item doesn't abort the whole listing.
+      let modifiedAt = 0;
+      let sizeBytes = 0;
+      try {
+        const st = await fs.promises.stat(fullPath);
+        modifiedAt = st.mtimeMs;
+        sizeBytes = st.size;
+      } catch { /* leave zero */ }
+
       if (fileFilter === 'archives') {
         // In archive mode: show folders + archive files only
         if (isDir || isArchive) {
-          let sizeBytes = 0;
-          if (isArchive) {
-            try { sizeBytes = (await fs.promises.stat(fullPath)).size; } catch {}
-          }
-          items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage: false, isArchive, sizeBytes, hasSubfolders });
+          items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage: false, isArchive, sizeBytes: isArchive ? sizeBytes : 0, hasSubfolders, modifiedAt });
         }
       } else if (fileFilter === 'source') {
         // Source mode: show folders + images + archives
         if (isDir || isImage || isArchive) {
-          let sizeBytes = 0;
-          if (isArchive || isImage) {
-            try { sizeBytes = (await fs.promises.stat(fullPath)).size; } catch {}
-          }
-          items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive, sizeBytes, hasSubfolders });
+          items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive, sizeBytes: (isArchive || isImage) ? sizeBytes : 0, hasSubfolders, modifiedAt });
         }
       } else {
         // Default mode: show folders + image files
         if (isDir || isImage) {
-          items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive: false, sizeBytes: 0, hasSubfolders });
+          items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive: false, sizeBytes: isImage ? sizeBytes : 0, hasSubfolders, modifiedAt });
         }
       }
     }
@@ -2129,6 +2131,24 @@ ipcMain.handle('license:getMachineId', async () => {
 // would take the renderer down too).
 ipcMain.handle('app:ping', async () => ({ alive: true, t: Date.now() }));
 
+// Resolve the user's well-known Quick Access folders so the Add Source
+// browser can surface them in its sidebar. Electron's app.getPath() already
+// knows the correct localised paths on all platforms.
+ipcMain.handle('app:quickAccessPaths', async () => {
+  const safe = (key: string): string | null => {
+    try { return app.getPath(key as any); } catch { return null; }
+  };
+  return {
+    desktop: safe('desktop'),
+    downloads: safe('downloads'),
+    documents: safe('documents'),
+    pictures: safe('pictures'),
+    videos: safe('videos'),
+    music: safe('music'),
+    home: safe('home'),
+  };
+});
+
 // ─── Date editor IPC handlers ───────────────────────────────────────────────
 
 ipcMain.handle('date:getSuggestions', async (_event, fileId: number) => {
@@ -2428,12 +2448,13 @@ ipcMain.handle('people:open', async () => {
       minHeight: 500,
       backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
       title: 'People — Photo Date Rescue',
-      // Independent top-level window: no parent so z-order isn't tied to
-      // mainWindow, Alt-Tab treats it as peer. skipTaskbar hides its icon
-      // (PDR's main icon stays as the only visible taskbar entry). The main
-      // window's 'close' handler explicitly destroys this window so it never
-      // outlives the app.
-      skipTaskbar: true,
+      // Independent top-level window. We deliberately do NOT set
+      // `skipTaskbar: true` on Windows: that flag also excludes the window
+      // from Alt-Tab and makes minimised windows impossible to restore (no
+      // taskbar icon to click). The extra taskbar icon is the accepted price
+      // for Alt-Tab working and the user being able to un-minimise.
+      // The main window's 'close' handler explicitly destroys this window so
+      // it never outlives the app.
       roundedCorners: true,
       thickFrame: true,
       icon: app.isPackaged
@@ -2493,9 +2514,8 @@ ipcMain.handle('dateEditor:open', async () => {
       minHeight: 560,
       backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
       title: 'Date Editor — Photo Date Rescue',
-      // See peopleWindow above: independent top-level + hidden from taskbar +
-      // destroyed explicitly on main-window close.
-      skipTaskbar: true,
+      // See peopleWindow above: independent top-level window, no skipTaskbar
+      // so Alt-Tab works and the user can restore a minimised window.
       roundedCorners: true,
       thickFrame: true,
       icon: app.isPackaged

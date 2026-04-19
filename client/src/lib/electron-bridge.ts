@@ -432,6 +432,8 @@ export interface DirectoryEntry {
   isArchive: boolean;
   sizeBytes: number;
   hasSubfolders: boolean;
+  /** Unix ms epoch — mtimeMs from fs.stat. 0 if stat failed. */
+  modifiedAt: number;
 }
 
 export async function listDrives(): Promise<DriveInfo[]> {
@@ -882,6 +884,23 @@ export async function undoLastDateCorrection(): Promise<{ success: boolean; undo
     return (window as any).pdr.date.undo();
   }
   return { success: false, error: 'Not running in Electron' };
+}
+
+export interface QuickAccessPaths {
+  desktop: string | null;
+  downloads: string | null;
+  documents: string | null;
+  pictures: string | null;
+  videos: string | null;
+  music: string | null;
+  home: string | null;
+}
+
+export async function getQuickAccessPaths(): Promise<QuickAccessPaths> {
+  if (isElectron() && (window as any).pdr?.quickAccessPaths) {
+    return (window as any).pdr.quickAccessPaths();
+  }
+  return { desktop: null, downloads: null, documents: null, pictures: null, videos: null, music: null, home: null };
 }
 
 // Open the standalone Date Editor window.

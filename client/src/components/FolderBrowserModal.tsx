@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, HardDrive, Folder, FolderOpen, FolderPlus, ChevronRight, ChevronLeft, ChevronDown,
   Image, ArrowLeft, ArrowRight, AlertCircle, Loader2, Monitor, ZoomIn, ZoomOut, Pencil,
-  FileArchive, LayoutGrid, List, Table2, CheckCircle2, AlertTriangle, Info, Zap, Wifi, ExternalLink
+  FileArchive, LayoutGrid, List, Table2, CheckCircle2, AlertTriangle, Info, Zap, Wifi, ExternalLink,
+  FileText, Download, Music, Film, User
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
-import { listDrives, readDirectory, getThumbnail, createDirectory, DriveInfo, DirectoryEntry } from '@/lib/electron-bridge';
+import { listDrives, readDirectory, getThumbnail, createDirectory, getQuickAccessPaths, DriveInfo, DirectoryEntry, QuickAccessPaths } from '@/lib/electron-bridge';
 
 // Drive scoring for colour coding (mirrors DestinationAdvisorModal logic)
 type DriveRating = 'good' | 'warning' | 'poor';
@@ -105,6 +106,7 @@ interface TreeNode {
 export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select Folder', mode = 'folder', defaultPath, onOpenDriveAdvisor, plannedCollectionSizeGB, enableSavedLocations, showDriveRatings = false }: FolderBrowserModalProps) {
   const mouseDownOnBackdropRef = useRef(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
+  const [quickAccess, setQuickAccess] = useState<QuickAccessPaths | null>(null);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -116,6 +118,27 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [thumbSize, setThumbSize] = useState(64);
   const [fileViewMode, setFileViewMode] = useState<'grid' | 'list' | 'details'>('grid');
+  const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Sort entries respecting the current sortBy / sortDir. Folders always
+  // come first so the user's navigation flow isn't disrupted.
+  const sortEntries = useCallback((list: DirectoryEntry[]) => {
+    const folders = list.filter(e => e.isDirectory);
+    const files = list.filter(e => !e.isDirectory);
+    const cmp = (a: DirectoryEntry, b: DirectoryEntry) => {
+      let d = 0;
+      if (sortBy === 'name') d = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      else if (sortBy === 'date') d = (a.modifiedAt || 0) - (b.modifiedAt || 0);
+      else if (sortBy === 'size') d = (a.sizeBytes || 0) - (b.sizeBytes || 0);
+      return sortDir === 'asc' ? d : -d;
+    };
+    folders.sort(cmp);
+    files.sort(cmp);
+    return [...folders, ...files];
+  }, [sortBy, sortDir]);
+
+  const sortedEntries = sortEntries(entries);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const isArchiveMode = mode === 'archives';
   const [driveWarning, setDriveWarning] = useState<{ reasons: string[]; suggestions: string[]; path: string } | null>(null);
@@ -162,6 +185,8 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
       }
     };
     loadDrives();
+    // Quick Access folders — Desktop / Downloads / Documents / Pictures etc.
+    getQuickAccessPaths().then((qa) => { if (!cancelled) setQuickAccess(qa); });
     setCurrentPath('');
     setEntries([]);
     setSelectedPath('');
@@ -673,6 +698,40 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
             {/* Left sidebar - drives and tree */}
             <div className="w-[240px] border-r border-border bg-card/30 overflow-y-auto shrink-0">
               <div className="p-2.5">
+                {/* Quick Access — common user folders pulled from app.getPath(). */}
+                {quickAccess && (quickAccess.desktop || quickAccess.downloads || quickAccess.documents || quickAccess.pictures) && (
+                  <>
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-2 py-2">
+                      Quick Access
+                    </div>
+                    {quickAccess.desktop && (
+                      <QuickAccessItem icon={Monitor} label="Desktop" path={quickAccess.desktop}
+                        isSelected={currentPath === quickAccess.desktop} onClick={() => navigateTo(quickAccess.desktop!)} />
+                    )}
+                    {quickAccess.downloads && (
+                      <QuickAccessItem icon={Download} label="Downloads" path={quickAccess.downloads}
+                        isSelected={currentPath === quickAccess.downloads} onClick={() => navigateTo(quickAccess.downloads!)} />
+                    )}
+                    {quickAccess.documents && (
+                      <QuickAccessItem icon={FileText} label="Documents" path={quickAccess.documents}
+                        isSelected={currentPath === quickAccess.documents} onClick={() => navigateTo(quickAccess.documents!)} />
+                    )}
+                    {quickAccess.pictures && (
+                      <QuickAccessItem icon={Image} label="Pictures" path={quickAccess.pictures}
+                        isSelected={currentPath === quickAccess.pictures} onClick={() => navigateTo(quickAccess.pictures!)} />
+                    )}
+                    {quickAccess.videos && (
+                      <QuickAccessItem icon={Film} label="Videos" path={quickAccess.videos}
+                        isSelected={currentPath === quickAccess.videos} onClick={() => navigateTo(quickAccess.videos!)} />
+                    )}
+                    {quickAccess.music && (
+                      <QuickAccessItem icon={Music} label="Music" path={quickAccess.music}
+                        isSelected={currentPath === quickAccess.music} onClick={() => navigateTo(quickAccess.music!)} />
+                    )}
+                    <div className="border-t border-border my-2" />
+                  </>
+                )}
+
                 <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-2 py-2">
                   Drives
                 </div>
@@ -842,15 +901,37 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                 </div>
               ) : (
                 <div className="p-2.5">
-                  {/* View mode buttons + Thumbnail size slider */}
-                  {hasImages && (
+                  {/* View mode + sort toolbar — visible whenever the folder is
+                      not empty, so the toggle works on plain folders too, not
+                      just folders that contain images. */}
+                  {entries.length > 0 && (
                     <div className="flex items-center gap-2.5 px-2 py-2 mb-1 sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
                       <div className="flex items-center border border-border rounded-lg overflow-hidden shrink-0">
                         <button onClick={() => setFileViewMode('grid')} className={`p-1.5 transition-colors ${fileViewMode === 'grid' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="Grid view"><LayoutGrid className="w-3.5 h-3.5" /></button>
                         <button onClick={() => setFileViewMode('list')} className={`p-1.5 transition-colors ${fileViewMode === 'list' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="List view"><List className="w-3.5 h-3.5" /></button>
                         <button onClick={() => setFileViewMode('details')} className={`p-1.5 transition-colors ${fileViewMode === 'details' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="Details view"><Table2 className="w-3.5 h-3.5" /></button>
                       </div>
-                      {fileViewMode === 'grid' && (
+                      {/* Sort-by dropdown + direction toggle */}
+                      <div className="flex items-center gap-1 border border-border rounded-lg px-2 py-0.5">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Sort</span>
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as 'name' | 'date' | 'size')}
+                          className="bg-transparent text-xs text-foreground outline-none cursor-pointer"
+                        >
+                          <option value="name">Name</option>
+                          <option value="date">Modified</option>
+                          <option value="size">Size</option>
+                        </select>
+                        <button
+                          onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                          className="p-0.5 rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+                          title={sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'}
+                        >
+                          {sortDir === 'asc' ? <ChevronDown className="w-3.5 h-3.5 rotate-180" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                      {fileViewMode === 'grid' && hasImages && (
                         <>
                           <ZoomOut className="w-4 h-4 text-muted-foreground shrink-0" />
                           <input
@@ -886,23 +967,78 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                     </div>
                   )}
 
-                  {/* Folder entries */}
-                  {entries.filter(e => e.isDirectory).map(entry => (
-                    <button
-                      key={entry.path}
-                      onClick={() => handleEntryClick(entry)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors hover:bg-secondary/50 cursor-pointer"
-                    >
-                      {entry.hasSubfolders
-                        ? <FolderOpen className="w-5 h-5 text-primary shrink-0" />
-                        : <Folder className="w-5 h-5 text-primary/60 shrink-0" />
-                      }
-                      <span className="text-base text-foreground truncate">{entry.name}</span>
-                    </button>
-                  ))}
+                  {/* Folder entries — respect the view toggle + sort order. */}
+                  {fileViewMode === 'details' ? (
+                    sortedEntries.filter(e => e.isDirectory).length > 0 && (
+                      <div className="mb-2 overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-muted-foreground border-b border-border/50">
+                              <th className="text-left py-1.5 px-3 font-medium">Name</th>
+                              <th className="text-left py-1.5 px-3 font-medium">Modified</th>
+                              <th className="text-left py-1.5 px-3 font-medium">Type</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedEntries.filter(e => e.isDirectory).map(entry => (
+                              <tr
+                                key={entry.path}
+                                onClick={() => handleEntryClick(entry)}
+                                className="border-b border-border/30 hover:bg-secondary/30 transition-colors cursor-pointer"
+                              >
+                                <td className="py-1.5 px-3 max-w-[320px]">
+                                  <div className="flex items-center gap-2 truncate">
+                                    {entry.hasSubfolders ? <FolderOpen className="w-4 h-4 text-primary shrink-0" /> : <Folder className="w-4 h-4 text-primary/60 shrink-0" />}
+                                    <span className="truncate text-foreground">{entry.name}</span>
+                                  </div>
+                                </td>
+                                <td className="py-1.5 px-3 text-muted-foreground whitespace-nowrap">
+                                  {entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString(undefined, { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                                </td>
+                                <td className="py-1.5 px-3 text-muted-foreground">Folder</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  ) : fileViewMode === 'list' ? (
+                    sortedEntries.filter(e => e.isDirectory).map(entry => (
+                      <button
+                        key={entry.path}
+                        onClick={() => handleEntryClick(entry)}
+                        className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-left transition-colors hover:bg-secondary/50 cursor-pointer"
+                      >
+                        {entry.hasSubfolders
+                          ? <FolderOpen className="w-4 h-4 text-primary shrink-0" />
+                          : <Folder className="w-4 h-4 text-primary/60 shrink-0" />
+                        }
+                        <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
+                        {entry.modifiedAt > 0 && (
+                          <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap">
+                            {new Date(entry.modifiedAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    sortedEntries.filter(e => e.isDirectory).map(entry => (
+                      <button
+                        key={entry.path}
+                        onClick={() => handleEntryClick(entry)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors hover:bg-secondary/50 cursor-pointer"
+                      >
+                        {entry.hasSubfolders
+                          ? <FolderOpen className="w-5 h-5 text-primary shrink-0" />
+                          : <Folder className="w-5 h-5 text-primary/60 shrink-0" />
+                        }
+                        <span className="text-base text-foreground truncate">{entry.name}</span>
+                      </button>
+                    ))
+                  )}
 
                   {/* Archive file entries (ZIP/RAR mode) */}
-                  {entries.filter(e => e.isArchive).map(entry => (
+                  {sortedEntries.filter(e => e.isArchive).map(entry => (
                     <button
                       key={entry.path}
                       onClick={() => handleEntryClick(entry)}
@@ -931,7 +1067,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                   {/* Image entries */}
                   {hasImages && fileViewMode === 'grid' && (
                     <div className="flex flex-wrap gap-2.5 mt-1 px-1">
-                      {entries.filter(e => e.isImage).map(entry => (
+                      {sortedEntries.filter(e => e.isImage).map(entry => (
                         <div
                           key={entry.path}
                           className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-secondary/30 transition-colors"
@@ -961,7 +1097,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                   )}
                   {hasImages && fileViewMode === 'list' && (
                     <div className="mt-1">
-                      {entries.filter(e => e.isImage).map(entry => (
+                      {sortedEntries.filter(e => e.isImage).map(entry => (
                         <div key={entry.path} className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-secondary/30 transition-colors" title={entry.name}>
                           <Image className="w-4 h-4 text-muted-foreground/50 shrink-0" />
                           <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
@@ -987,7 +1123,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                           </tr>
                         </thead>
                         <tbody>
-                          {entries.filter(e => e.isImage).map(entry => {
+                          {sortedEntries.filter(e => e.isImage).map(entry => {
                             const ext = entry.name.split('.').pop()?.toUpperCase() || '';
                             return (
                               <tr key={entry.path} className="border-b border-border/30 hover:bg-secondary/30 transition-colors">
@@ -1167,6 +1303,21 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
         </motion.div>
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+function QuickAccessItem({ icon: Icon, label, path, isSelected, onClick }: { icon: any; label: string; path: string; isSelected: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={path}
+      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
+        isSelected ? 'bg-primary/10 text-primary' : 'text-foreground/80 hover:bg-secondary/50 hover:text-foreground'
+      }`}
+    >
+      <Icon className="w-4 h-4 shrink-0" />
+      <span className="text-sm font-medium truncate">{label}</span>
+    </button>
   );
 }
 

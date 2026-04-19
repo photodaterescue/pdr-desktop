@@ -226,6 +226,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
   ping: () => ipcRenderer.invoke('app:ping'),
+  quickAccessPaths: () => ipcRenderer.invoke('app:quickAccessPaths'),
 
   dateEditor: {
     open: () => ipcRenderer.invoke('dateEditor:open'),
