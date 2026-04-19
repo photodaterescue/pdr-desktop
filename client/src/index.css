@@ -184,6 +184,62 @@
   50% { box-shadow: 0 0 0 5px rgba(169, 156, 255, 0.35); }
 }
 
+/* ── Window resize corner hints ─────────────────────────────────────────
+   PDR runs as a custom-frame Electron window (titleBarStyle: 'hidden'),
+   so Windows' native resize grips live in a very thin 4-6px strip at the
+   very edge that users struggle to hit. We overlay four non-interactive
+   L-brackets in the corners as visual targets — pointer-events: none so
+   the actual OS-native resize behaviour underneath is unaffected. Users
+   aim at the bracket, drop their cursor on the tiny frame edge, and get
+   the native resize cursor. */
+body::before,
+body::after,
+body > .window-resize-hint-tl,
+body > .window-resize-hint-tr {
+  content: '';
+  position: fixed;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  opacity: 0.35;
+  z-index: 10000;
+  border-color: hsl(var(--primary));
+  border-style: solid;
+  transition: opacity 0.18s ease-out;
+}
+body:hover::before,
+body:hover::after,
+body:hover > .window-resize-hint-tl,
+body:hover > .window-resize-hint-tr {
+  opacity: 0.65;
+}
+/* bottom-right (most-used resize) */
+body::after {
+  bottom: 3px;
+  right: 3px;
+  border-width: 0 2px 2px 0;
+  border-bottom-right-radius: 4px;
+}
+/* bottom-left */
+body::before {
+  bottom: 3px;
+  left: 3px;
+  border-width: 0 0 2px 2px;
+  border-bottom-left-radius: 4px;
+}
+/* top corners need real DOM nodes because ::before/::after are used above.
+   Rendered by App.tsx. */
+body > .window-resize-hint-tl {
+  top: 3px; left: 3px;
+  border-width: 2px 0 0 2px;
+  border-top-left-radius: 4px;
+}
+body > .window-resize-hint-tr {
+  top: 3px; right: 3px;
+  border-width: 2px 2px 0 0;
+  border-top-right-radius: 4px;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

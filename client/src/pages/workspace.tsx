@@ -1320,6 +1320,21 @@ return (
             zoomLevel={zoomLevel}
           />
         )}
+        {/* Floating zoom controls — visible only while the Dashboard /
+            Workspace / Guidance panels occupy the main area. Kept out of the
+            S&D view entirely, which has its own tile-size zoom in the
+            results header. Independent zoom state, so scaling the Dashboard
+            doesn't affect S&D and vice versa. Placed inside the zoomable
+            container so the absolute position docks to the Dashboard area,
+            not the whole app. */}
+        {activeView === 'dashboard' && !searchResultsActive && (
+          <DashboardZoomControls
+            zoom={zoomLevel}
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onReset={handleZoomReset}
+          />
+        )}
         </div>{/* close zoomable content wrapper */}
 
         {/* Memories view */}
@@ -1512,6 +1527,28 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   }, []);
   // Compute collapsed state
   const collapsed = pinState === 'closed' ? true : pinState === 'open' ? false : !!searchResultsActive;
+
+  // Section-collapse state for Views / Tools / Guidance. Session-only so
+  // the sidebar always opens fully expanded in a fresh session. User can
+  // override via the chevron on each section header.
+  const [viewsCollapsed, setViewsCollapsed] = useState(false);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
+  const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
+  const [userOverrodeGuidance, setUserOverrodeGuidance] = useState(false);
+
+  // Auto-collapse Guidance when the window is short so Menu/Views/Tools
+  // fit without scrolling. Triggers at window.innerHeight < 760 by default
+  // (typical 13" laptop). Respects user override — once they click to open
+  // Guidance on a small screen, we don't fight them.
+  useEffect(() => {
+    const autoAdjust = () => {
+      if (userOverrodeGuidance) return;
+      setGuidanceCollapsed(window.innerHeight < 760);
+    };
+    autoAdjust();
+    window.addEventListener('resize', autoAdjust);
+    return () => window.removeEventListener('resize', autoAdjust);
+  }, [userOverrodeGuidance]);
   const effectiveWidth = collapsed ? 48 : width;
 
   // Sync sidebar width to CSS custom property so TitleBar can track it
@@ -1717,60 +1754,83 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           "drop zone" of breathing room for source entries to populate. */}
       <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider">
         <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Views</h3>
-          <div className="space-y-1">
-            <SidebarItem
-              icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />}
-              label={sources.length > 0 ? "Dashboard" : "Workspace"}
-              onClick={() => onDashboardClick()}
-              active={activeView === 'dashboard' && activePanel === null && !sources.some(s => s.active)}
-              selectable={false}
-            />
-            <SidebarItem
-              icon={<Search className="w-4 h-4 opacity-70" />}
-              label="Search & Discovery"
-              onClick={() => onViewChange?.('search')}
-              active={activeView === 'search'}
-              selectable={false}
-            />
-            <SidebarItem
-              icon={<CalendarRange className="w-4 h-4 opacity-70" />}
-              label="Memories"
-              onClick={() => onViewChange?.('memories')}
-              active={activeView === 'memories'}
-              selectable={false}
-            />
-            <SidebarItem
-              icon={<Sparkles className="w-4 h-4 opacity-70" />}
-              label="Trees"
-              onClick={() => onViewChange?.('familytree')}
-              active={activeView === 'familytree'}
-              selectable={false}
-            />
-          </div>
+          <SectionHeader
+            label="Views"
+            collapsed={viewsCollapsed}
+            onToggle={() => setViewsCollapsed((v) => !v)}
+          />
+          {!viewsCollapsed && (
+            <div className="space-y-1">
+              <SidebarItem
+                icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />}
+                label={sources.length > 0 ? "Dashboard" : "Workspace"}
+                onClick={() => onDashboardClick()}
+                active={activeView === 'dashboard' && activePanel === null && !sources.some(s => s.active)}
+                selectable={false}
+              />
+              <SidebarItem
+                icon={<Search className="w-4 h-4 opacity-70" />}
+                label="Search & Discovery"
+                onClick={() => onViewChange?.('search')}
+                active={activeView === 'search'}
+                selectable={false}
+              />
+              <SidebarItem
+                icon={<CalendarRange className="w-4 h-4 opacity-70" />}
+                label="Memories"
+                onClick={() => onViewChange?.('memories')}
+                active={activeView === 'memories'}
+                selectable={false}
+              />
+              <SidebarItem
+                icon={<Sparkles className="w-4 h-4 opacity-70" />}
+                label="Trees"
+                onClick={() => onViewChange?.('familytree')}
+                active={activeView === 'familytree'}
+                selectable={false}
+              />
+            </div>
+          )}
         </div>
         <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Tools</h3>
-          <div className="space-y-1">
-            <SidebarItem
-              icon={<span className="w-4 h-4 rounded-md bg-purple-500/15 flex items-center justify-center"><Users className="w-3 h-3 text-purple-500" /></span>}
-              label="People Manager"
-              onClick={() => { openPeopleWindow(); }}
-              selectable={false}
-            />
-          </div>
+          <SectionHeader
+            label="Tools"
+            collapsed={toolsCollapsed}
+            onToggle={() => setToolsCollapsed((v) => !v)}
+          />
+          {!toolsCollapsed && (
+            <div className="space-y-1">
+              <SidebarItem
+                icon={<span className="w-4 h-4 rounded-md bg-purple-500/15 flex items-center justify-center"><Users className="w-3 h-3 text-purple-500" /></span>}
+                label="People Manager"
+                onClick={() => { openPeopleWindow(); }}
+                selectable={false}
+              />
+            </div>
+          )}
         </div>
       </div>
 
       {/* EDUCATION SECTION */}
       <div className="pt-2 border-t pb-2 sidebar-divider" data-tour="guides-panel">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-6">Guidance</h3>
-        <div className="space-y-1 px-4">
-          <SidebarItem icon={<PlayCircle className="w-4 h-4 opacity-60" />} label="Quick Tour" onClick={onStartTour} />
-          <SidebarItem icon={<img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
-          <SidebarItem icon={<img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
-          <SidebarItem icon={<img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
+        <div className="px-4">
+          <SectionHeader
+            label="Guidance"
+            collapsed={guidanceCollapsed}
+            onToggle={() => {
+              setGuidanceCollapsed((v) => !v);
+              setUserOverrodeGuidance(true);
+            }}
+          />
         </div>
+        {!guidanceCollapsed && (
+          <div className="space-y-1 px-4">
+            <SidebarItem icon={<PlayCircle className="w-4 h-4 opacity-60" />} label="Quick Tour" onClick={onStartTour} />
+            <SidebarItem icon={<img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="Getting Started" />} label="Getting Started" onClick={() => onPanelChange('getting-started')} active={activePanel === 'getting-started'} />
+            <SidebarItem icon={<img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="Best Practices" />} label="Best Practices" onClick={() => onPanelChange('best-practices')} active={activePanel === 'best-practices'} />
+            <SidebarItem icon={<img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="What Happens Next" />} label="What Happens Next" onClick={() => onPanelChange('what-next')} active={activePanel === 'what-next'} />
+          </div>
+        )}
       </div>
 
       {/* UTILITY SECTION - BOTTOM */}
@@ -1807,6 +1867,59 @@ function ComingSoonView({ title, subtitle, description, iconName }: { title: str
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Floating zoom controls for the Dashboard view. Bottom-right corner pill
+ * with -, percentage, + buttons. Dashboard zoom is independent from the
+ * S&D tile-size zoom — the two never share state so changing one doesn't
+ * surprise the user in the other. Double-click the percentage to reset.
+ */
+function DashboardZoomControls({ zoom, onZoomIn, onZoomOut, onReset }: { zoom: number; onZoomIn: () => void; onZoomOut: () => void; onReset: () => void }) {
+  return (
+    <div className="absolute bottom-4 right-4 z-30 flex items-center gap-0.5 rounded-full border border-border bg-background/90 backdrop-blur shadow-lg p-1">
+      <button
+        onClick={onZoomOut}
+        className="w-7 h-7 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+        title="Zoom out"
+      >
+        <ZoomOut className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={onReset}
+        onDoubleClick={onReset}
+        className="min-w-[44px] px-1.5 py-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+        title="Reset zoom (double-click)"
+      >
+        {zoom}%
+      </button>
+      <button
+        onClick={onZoomIn}
+        className="w-7 h-7 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+        title="Zoom in"
+      >
+        <ZoomIn className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Clickable section header used by Views / Tools / Guidance in the sidebar.
+ * Renders the uppercase-tracking label + a chevron that rotates when the
+ * section expands, so users can tuck away sections they don't use often and
+ * give the main list room to breathe on short screens.
+ */
+function SectionHeader({ label, collapsed, onToggle }: { label: string; collapsed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center justify-between px-2 py-1 mb-1 rounded text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground hover:bg-primary/5 transition-colors"
+    >
+      <span>{label}</span>
+      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+    </button>
   );
 }
 

@@ -29,6 +29,11 @@ function AppRouter() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </div>
+        {/* Window resize-corner hints — CSS handles bottom two via body
+            ::before/::after; these two provide the top-left / top-right
+            brackets. All four are pointer-events: none, see index.css. */}
+        <div className="window-resize-hint-tl" aria-hidden="true" />
+        <div className="window-resize-hint-tr" aria-hidden="true" />
       </div>
     </HashRouter>
   );

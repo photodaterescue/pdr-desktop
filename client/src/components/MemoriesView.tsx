@@ -45,6 +45,8 @@ function formatHumanDate(iso: string | null): string {
 
 // ─── Main component ────────────────────────────────────────────────────────
 
+type Density = 'spacious' | 'tight';
+
 export default function MemoriesView() {
   const [runs, setRuns] = useState<IndexedRun[]>([]);
   const [runId, setRunId] = useState<number | undefined>(undefined); // undefined = all libraries
@@ -53,6 +55,16 @@ export default function MemoriesView() {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<{ year: number; month: number; day: number } | null>(null);
+  // Gap density — some users prefer a dense wall of photos with no gaps,
+  // others prefer breathing room. Persist across sessions for this surface.
+  const [density, setDensity] = useState<Density>(() => {
+    if (typeof localStorage === 'undefined') return 'spacious';
+    return (localStorage.getItem('pdr-memories-density') as Density) || 'spacious';
+  });
+  const changeDensity = (d: Density) => {
+    setDensity(d);
+    try { localStorage.setItem('pdr-memories-density', d); } catch {}
+  };
 
   // Load once on mount.
   useEffect(() => {
@@ -140,10 +152,16 @@ export default function MemoriesView() {
         month={selectedDay.month}
         day={selectedDay.day}
         runId={runId}
+        density={density}
         onBack={() => setSelectedDay(null)}
       />
     );
   }
+
+  const gridGap = density === 'tight' ? 'gap-0' : 'gap-3';
+  const tileRing = density === 'tight' ? '' : 'rounded-xl ring-1 ring-border';
+  const tileRingHover = density === 'tight' ? '' : 'hover:ring-primary/50';
+  const otdTileClass = density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50';
 
   const today = new Date();
   const otdLabel = `${MONTH_NAMES[today.getMonth()]} ${today.getDate()}`;
@@ -168,7 +186,10 @@ export default function MemoriesView() {
           </div>
         </div>
 
-        <LibrarySelector runs={runs} value={runId} onChange={setRunId} />
+        <div className="flex items-center gap-3">
+          <DensityToggle value={density} onChange={changeDensity} />
+          <LibrarySelector runs={runs} value={runId} onChange={setRunId} />
+        </div>
       </div>
 
       {buckets.length === 0 && !loading ? (
@@ -203,12 +224,12 @@ export default function MemoriesView() {
                   <h2 className="text-sm font-semibold text-foreground">On {otdLabel} in previous years</h2>
                   <span className="text-xs text-muted-foreground">· {onThisDay.length} {onThisDay.length === 1 ? 'photo' : 'photos'}</span>
                 </div>
-                <div className="flex gap-2.5 overflow-x-auto pb-2">
+                <div className={`flex ${density === 'tight' ? 'gap-0' : 'gap-2.5'} overflow-x-auto pb-2`}>
                   {onThisDay.map((item) => (
                     <button
                       key={item.id}
                       onClick={() => openSearchViewer(item.file_path, item.filename)}
-                      className="group relative shrink-0 w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border hover:ring-primary/50 transition-all"
+                      className={`group relative shrink-0 w-[140px] h-[140px] overflow-hidden bg-secondary/30 transition-all ${otdTileClass}`}
                       title={`${item.filename} · ${formatHumanDate(item.derived_date)}`}
                     >
                       {thumbs[item.file_path] ? (
@@ -247,13 +268,14 @@ export default function MemoriesView() {
                         {yearVideos > 0 && ` · ${yearVideos.toLocaleString()} ${yearVideos === 1 ? 'video' : 'videos'}`}
                       </span>
                     </div>
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+                    <div className={`grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] ${gridGap}`}>
                       {monthBuckets.map((b) => (
                         <MonthTile
                           key={`${b.year}-${b.month}`}
                           bucket={b}
                           thumb={b.sampleFilePath ? thumbs[b.sampleFilePath] : undefined}
                           onOpen={(day) => openDay(b.year, b.month, day)}
+                          density={density}
                         />
                       ))}
                     </div>
@@ -264,6 +286,29 @@ export default function MemoriesView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Density toggle ───────────────────────────────────────────────────────
+
+function DensityToggle({ value, onChange }: { value: Density; onChange: (d: Density) => void }) {
+  return (
+    <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
+      <button
+        onClick={() => onChange('spacious')}
+        className={`px-2 py-1 text-[11px] font-medium transition-colors ${value === 'spacious' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+        title="Space between photos"
+      >
+        Spacious
+      </button>
+      <button
+        onClick={() => onChange('tight')}
+        className={`px-2 py-1 text-[11px] font-medium transition-colors border-l border-border ${value === 'tight' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+        title="No gaps between photos — dense wall view"
+      >
+        Tight
+      </button>
     </div>
   );
 }
@@ -294,12 +339,13 @@ function LibrarySelector({ runs, value, onChange }: { runs: IndexedRun[]; value:
 
 // ─── Month tile ────────────────────────────────────────────────────────────
 
-function MonthTile({ bucket, thumb, onOpen }: { bucket: MemoriesYearBucket; thumb?: string; onOpen: (day: number) => void }) {
+function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBucket; thumb?: string; onOpen: (day: number) => void; density: Density }) {
   const total = (bucket.photoCount || 0) + (bucket.videoCount || 0);
+  const tight = density === 'tight';
   return (
     <button
       onClick={() => onOpen(1)}
-      className="group relative aspect-[4/3] rounded-xl overflow-hidden bg-secondary/30 ring-1 ring-border hover:ring-primary/50 transition-all text-left"
+      className={`group relative aspect-[4/3] overflow-hidden bg-secondary/30 transition-all text-left ${tight ? '' : 'rounded-xl ring-1 ring-border hover:ring-primary/50'}`}
       title={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year} · ${total.toLocaleString()} files`}
     >
       {thumb ? (
@@ -324,7 +370,7 @@ function MonthTile({ bucket, thumb, onOpen }: { bucket: MemoriesYearBucket; thum
 
 // ─── Day drill-down ────────────────────────────────────────────────────────
 
-function MemoriesDayDrilldown({ year, month, day, runId, onBack }: { year: number; month: number; day: number; runId: number | undefined; onBack: () => void }) {
+function MemoriesDayDrilldown({ year, month, day, runId, density, onBack }: { year: number; month: number; day: number; runId: number | undefined; density: Density; onBack: () => void }) {
   const [files, setFiles] = useState<IndexedFile[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [monthDays, setMonthDays] = useState<Set<number>>(new Set());
@@ -411,12 +457,12 @@ function MemoriesDayDrilldown({ year, month, day, runId, onBack }: { year: numbe
         ) : files.length === 0 ? (
           <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No files on this day.</div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+          <div className={`grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] ${density === 'tight' ? 'gap-0' : 'gap-3'}`}>
             {files.map((f) => (
               <button
                 key={f.id}
                 onClick={() => openSearchViewer(f.file_path, f.filename)}
-                className="group relative aspect-square rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border hover:ring-primary/50 transition-all"
+                className={`group relative aspect-square overflow-hidden bg-secondary/30 transition-all ${density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50'}`}
                 title={`${f.filename} · ${formatHumanDate(f.derived_date)}`}
               >
                 {thumbs[f.file_path] ? (
