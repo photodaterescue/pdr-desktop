@@ -1609,21 +1609,27 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
   const [appCollapsed, setAppCollapsed] = useState(false);
-  const [userOverrodeGuidance, setUserOverrodeGuidance] = useState(false);
+  const [userOverrode, setUserOverrode] = useState<{ tools: boolean; guidance: boolean; app: boolean }>({ tools: false, guidance: false, app: false });
 
-  // Auto-collapse Guidance when the window is short so Menu/Views/Tools
-  // fit without scrolling. Triggers at window.innerHeight < 760 by default
-  // (typical 13" laptop). Respects user override — once they click to open
-  // Guidance on a small screen, we don't fight them.
+  // Auto-collapse the lower sidebar sections under height pressure so the
+  // Source Menu always has room for its contents. Priority of shrinkage:
+  // App first, then Guidance, then Tools. Views stays expanded because
+  // they are the primary navigation. Source Menu also has its own
+  // min-height further down so it can't be squeezed to zero regardless.
+  //
+  // Respects user-override: once the user manually opens a section on a
+  // short window, we stop auto-folding it for the session.
   useEffect(() => {
     const autoAdjust = () => {
-      if (userOverrodeGuidance) return;
-      setGuidanceCollapsed(window.innerHeight < 760);
+      const h = window.innerHeight;
+      if (!userOverrode.app)      setAppCollapsed(h < 900);
+      if (!userOverrode.guidance) setGuidanceCollapsed(h < 820);
+      if (!userOverrode.tools)    setToolsCollapsed(h < 740);
     };
     autoAdjust();
     window.addEventListener('resize', autoAdjust);
     return () => window.removeEventListener('resize', autoAdjust);
-  }, [userOverrodeGuidance]);
+  }, [userOverrode]);
   const effectiveWidth = collapsed ? 48 : width;
 
   // Sync sidebar width to CSS custom property so TitleBar can track it
@@ -1758,7 +1764,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-6">
+      <div className="flex-1 min-h-[180px] overflow-y-auto px-4 py-2 space-y-6">
         {/* MENU / SOURCES SECTION — sits at the top of the sidebar directly
             below the PDR logo. Header renames to 'Source Menu' once the user
             adds sources, otherwise it reads 'Menu' to match the fact that
@@ -1871,7 +1877,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           <SectionHeader
             label="Tools"
             collapsed={toolsCollapsed}
-            onToggle={() => setToolsCollapsed((v) => !v)}
+            onToggle={() => { setToolsCollapsed((v) => !v); setUserOverrode((u) => ({ ...u, tools: true })); }}
           />
           {!toolsCollapsed && (
             <div className="space-y-1">
@@ -1894,7 +1900,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             collapsed={guidanceCollapsed}
             onToggle={() => {
               setGuidanceCollapsed((v) => !v);
-              setUserOverrodeGuidance(true);
+              setUserOverrode((u) => ({ ...u, guidance: true }));
             }}
           />
         </div>
@@ -1914,7 +1920,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         <SectionHeader
           label="App"
           collapsed={appCollapsed}
-          onToggle={() => setAppCollapsed((v) => !v)}
+          onToggle={() => { setAppCollapsed((v) => !v); setUserOverrode((u) => ({ ...u, app: true })); }}
         />
         {!appCollapsed && (
           <div className="space-y-1">
