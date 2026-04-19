@@ -13,6 +13,7 @@ import {
   generateDateBasedFilename,
 } from './date-extraction-engine.js';
 import { isScannerDevice } from './scanner-detection.js';
+import { getScannerOverride } from './settings-store.js';
 import * as crypto from 'crypto';
 
 // Yield to event loop to keep UI responsive
@@ -268,7 +269,9 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
   // relying on a later re-classification in the search indexer.
   if (dateConfidence !== 'marked') {
     const { make, model, software } = await extractExifCameraInfoFromPath(filePath);
-    if (isScannerDevice(make, model, software)) {
+    const override = getScannerOverride(make, model);
+    const treatAsScanner = override !== null ? override : isScannerDevice(make, model, software);
+    if (treatAsScanner) {
       dateConfidence = 'marked';
       dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
     }
@@ -360,7 +363,9 @@ async function analyzeFileFromBuffer(
   // analyzer so ZIP-archive imports are classified consistently.
   if (dateConfidence !== 'marked') {
     const { make, model, software } = extractExifCameraInfoFromBuffer(buffer);
-    if (isScannerDevice(make, model, software)) {
+    const override = getScannerOverride(make, model);
+    const treatAsScanner = override !== null ? override : isScannerDevice(make, model, software);
+    if (treatAsScanner) {
       dateConfidence = 'marked';
       dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
     }

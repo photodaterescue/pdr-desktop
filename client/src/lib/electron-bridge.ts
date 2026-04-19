@@ -886,6 +886,36 @@ export async function undoLastDateCorrection(): Promise<{ success: boolean; undo
   return { success: false, error: 'Not running in Electron' };
 }
 
+// ─── Scanner overrides ─────────────────────────────────────────────────────
+
+export interface ScannerOverride {
+  make: string;
+  model: string;
+  isScanner: boolean;
+  addedAt: string;
+}
+
+export async function listScannerOverrides(): Promise<{ success: boolean; data?: ScannerOverride[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.scannerOverride?.list) {
+    return (window as any).pdr.scannerOverride.list();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function setScannerOverride(args: { make: string; model: string; isScanner: boolean }): Promise<{ success: boolean; data?: { list: ScannerOverride[]; updated: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.scannerOverride?.set) {
+    return (window as any).pdr.scannerOverride.set(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function clearScannerOverride(args: { make: string; model: string }): Promise<{ success: boolean; data?: { list: ScannerOverride[] }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.scannerOverride?.clear) {
+    return (window as any).pdr.scannerOverride.clear(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export interface QuickAccessPaths {
   desktop: string | null;
   downloads: string | null;

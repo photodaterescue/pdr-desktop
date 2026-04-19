@@ -80,6 +80,9 @@ import {
   isElectron,
   openSearchViewer,
   prepareVideoForPlayback,
+  listScannerOverrides,
+  setScannerOverride,
+  clearScannerOverride,
   checkPathsExist,
   listSearchRuns,
   removeSearchRun,
@@ -3938,6 +3941,16 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                 {file.lens_model && <DetailRow label="Lens" value={file.lens_model} />}
               </tbody>
             </table>
+            {/* Scanner override — lets the user flag an unknown scanner or
+                undo a false-positive. Only offered when we have both Make
+                and Model, since that's the override key. */}
+            {file.camera_make && file.camera_model && (
+              <ScannerOverrideControl
+                make={file.camera_make}
+                model={file.camera_model}
+                currentConfidence={file.confidence}
+              />
+            )}
           </details>
         )}
 
@@ -5943,6 +5956,118 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return <div className="p-3 rounded-xl border border-border bg-secondary/20 text-center"><p className="text-lg font-semibold text-foreground font-heading">{value}</p><p className="text-[10px] text-muted-foreground uppercase font-semibold">{label}</p></div>;
+}
+
+/**
+ * Small inline control that sits under the Make/Model rows in the Details
+ * Camera section. Lets the user flag an unknown scanner / MFP so future
+ * indexing runs (and an immediate re-classification of existing files)
+ * demote everything with that same Make+Model to the Marked tier — and the
+ * reverse: escape-hatch an over-eager detection.
+ *
+ * The override state is stored in settings, so clicking once here affects
+ * every photo in the library that shares this Make+Model pair.
+ */
+function ScannerOverrideControl({ make, model, currentConfidence }: { make: string; model: string; currentConfidence: string }) {
+  const [state, setState] = useState<'loading' | 'on' | 'off' | 'none'>('loading');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listScannerOverrides().then(r => {
+      if (cancelled) return;
+      const list = r.success && r.data ? r.data : [];
+      const hit = list.find(o => o.make === make.toLowerCase().trim() && o.model === model.toLowerCase().trim());
+      setState(hit ? (hit.isScanner ? 'on' : 'off') : 'none');
+    });
+    return () => { cancelled = true; };
+  }, [make, model]);
+
+  const apply = async (isScanner: boolean) => {
+    setBusy(true);
+    setStatus(null);
+    const r = await setScannerOverride({ make, model, isScanner });
+    setBusy(false);
+    if (r.success && r.data) {
+      setState(isScanner ? 'on' : 'off');
+      setStatus(
+        r.data.updated > 0
+          ? `Applied — ${r.data.updated.toLocaleString()} ${r.data.updated === 1 ? 'file' : 'files'} re-classified.`
+          : 'Applied — no existing files needed changing.'
+      );
+    } else {
+      setStatus('Failed: ' + (r.error || 'unknown'));
+    }
+  };
+
+  const reset = async () => {
+    setBusy(true);
+    setStatus(null);
+    const r = await clearScannerOverride({ make, model });
+    setBusy(false);
+    if (r.success) {
+      setState('none');
+      setStatus('Override cleared — built-in rule will decide going forward.');
+    } else {
+      setStatus('Failed: ' + (r.error || 'unknown'));
+    }
+  };
+
+  if (state === 'loading') return null;
+
+  // Messaging adapts to the current state to keep the control self-explanatory.
+  const looksLikeScanner = currentConfidence === 'marked' || state === 'on';
+  return (
+    <div className="mt-2 rounded-md border border-border/60 bg-secondary/20 px-3 py-2 space-y-1.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <AlertTriangle className="w-3 h-3" /> Scanner override
+      </div>
+      <p className="text-[11px] text-muted-foreground leading-snug">
+        {state === 'on'
+          ? `All photos with camera "${make} ${model}" are being treated as scanner output.`
+          : state === 'off'
+            ? `"${make} ${model}" is explicitly marked as NOT a scanner — built-in rule skipped.`
+            : looksLikeScanner
+              ? `Think this isn't actually a scanner? Tell PDR to stop demoting its photos.`
+              : `Think this is actually a scanner PDR missed? Tell PDR and every photo from this camera will be Marked.`}
+      </p>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {state !== 'on' && (
+          <button
+            onClick={() => apply(true)}
+            disabled={busy}
+            className="text-[11px] font-medium px-2.5 py-1 rounded border border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-40 transition-colors"
+          >
+            Mark as scanner
+          </button>
+        )}
+        {state !== 'off' && (
+          <button
+            onClick={() => apply(false)}
+            disabled={busy}
+            className="text-[11px] font-medium px-2.5 py-1 rounded border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40 transition-colors"
+          >
+            Not a scanner
+          </button>
+        )}
+        {state !== 'none' && (
+          <button
+            onClick={reset}
+            disabled={busy}
+            className="text-[11px] font-medium px-2.5 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 disabled:opacity-40 transition-colors"
+          >
+            Clear override
+          </button>
+        )}
+      </div>
+      {status && (
+        <div className={`text-[10px] ${status.startsWith('Failed') ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
+          {status}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {

@@ -121,6 +121,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     auditLog: (limit?: number) => ipcRenderer.invoke('date:auditLog', limit),
   },
 
+  scannerOverride: {
+    list: () => ipcRenderer.invoke('scannerOverride:list'),
+    set: (args: { make: string; model: string; isScanner: boolean }) => ipcRenderer.invoke('scannerOverride:set', args),
+    clear: (args: { make: string; model: string }) => ipcRenderer.invoke('scannerOverride:clear', args),
+  },
+
   search: {
     init: () => ipcRenderer.invoke('search:init'),
     indexRun: (reportId: string) => ipcRenderer.invoke('search:indexRun', reportId),

@@ -2188,6 +2188,101 @@ ipcMain.handle('date:auditLog', async (_event, limit: number = 20) => {
   }
 });
 
+// ─── Scanner override IPC handlers ──────────────────────────────────────────
+
+/**
+ * Re-classify every indexed file that matches the given camera Make/Model
+ * after the user has flipped its scanner override. For 'isScanner = true':
+ * demote matching Confirmed / Recovered files to Marked and annotate
+ * date_source. For 'isScanner = false': restore files that were previously
+ * Marked via the scanner rule (date_source contains 'scanner') back to
+ * Confirmed so the user's "no, this is a real camera" intent takes effect.
+ */
+function reclassifyFilesForOverride(make: string, model: string, isScanner: boolean): { updated: number } {
+  const db = getDbForReclassify();
+  if (!db) return { updated: 0 };
+  const mk = make.trim();
+  const md = model.trim();
+  if (!mk && !md) return { updated: 0 };
+
+  // Case-insensitive equality match on camera_make + camera_model.
+  if (isScanner) {
+    const r = db.prepare(`
+      UPDATE indexed_files
+         SET confidence = 'marked',
+             date_source = CASE
+               WHEN date_source LIKE '%scanner%' THEN date_source
+               WHEN date_source IS NULL OR date_source = '' THEN 'Scanner date (user override)'
+               ELSE date_source || ' — scanner (user override)'
+             END
+       WHERE LOWER(IFNULL(camera_make, '')) = LOWER(?)
+         AND LOWER(IFNULL(camera_model, '')) = LOWER(?)
+         AND confidence != 'marked'
+    `).run(mk, md);
+    return { updated: r.changes };
+  }
+  // Restore: undo only rows that were auto-demoted (date_source mentions
+  // 'scanner'). Leave Recovered/Confirmed alone. We set back to 'confirmed'
+  // which is the usual EXIF-derived tier these files came from.
+  const r = db.prepare(`
+    UPDATE indexed_files
+       SET confidence = 'confirmed',
+           date_source = REPLACE(REPLACE(REPLACE(date_source, ' — scanner (user override)', ''), ' — scanner (likely scan time, not photo date)', ''), 'Scanner date (user override)', '')
+     WHERE LOWER(IFNULL(camera_make, '')) = LOWER(?)
+       AND LOWER(IFNULL(camera_model, '')) = LOWER(?)
+       AND confidence = 'marked'
+       AND date_source LIKE '%scanner%'
+  `).run(mk, md);
+  return { updated: r.changes };
+}
+
+function getDbForReclassify() {
+  try {
+    // getDb is exported from search-database but not imported at top-level
+    // here; lazy-require to avoid a circular at startup.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const m = require('./search-database.js');
+    return m.getDb ? m.getDb() : null;
+  } catch { return null; }
+}
+
+ipcMain.handle('scannerOverride:list', async () => {
+  try {
+    const { listScannerOverrides } = await import('./settings-store.js');
+    return { success: true, data: listScannerOverrides() };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle('scannerOverride:set', async (_event, args: { make: string; model: string; isScanner: boolean }) => {
+  try {
+    const { setScannerOverride } = await import('./settings-store.js');
+    const list = setScannerOverride(args.make, args.model, args.isScanner);
+    const { updated } = reclassifyFilesForOverride(args.make, args.model, args.isScanner);
+    // Nudge the main window so S&D / Dashboard counts refresh.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('dateEditor:dataChanged');
+    }
+    return { success: true, data: { list, updated } };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle('scannerOverride:clear', async (_event, args: { make: string; model: string }) => {
+  try {
+    const { clearScannerOverride } = await import('./settings-store.js');
+    const list = clearScannerOverride(args.make, args.model);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('dateEditor:dataChanged');
+    }
+    return { success: true, data: { list } };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+});
+
 // ─── Search & Discovery IPC handlers ─────────────────────────────────────────
 
 ipcMain.handle('search:init', async () => {

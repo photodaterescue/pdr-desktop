@@ -15,6 +15,7 @@ import {
 import type { FixReport, FileChange } from './report-storage.js';
 import { initGeocoder, reverseGeocode } from './reverse-geocoder.js';
 import { isScannerDevice } from './scanner-detection.js';
+import { getScannerOverride } from './settings-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -325,7 +326,15 @@ async function buildFileRecord(
     // known scanner model — effectively a long-tail safety net.
     const softwareTag = (tags as any).Software != null ? String((tags as any).Software).trim() : null;
 
-    if (isScannerDevice(record.camera_make, record.camera_model, softwareTag)) {
+    // User override trumps the built-in rule in both directions:
+    //   true  → force-demote (even if the rule wouldn't have caught it)
+    //   false → force-not-scanner (escape hatch for false positives)
+    //   null  → no override, fall through to the built-in detection
+    const override = getScannerOverride(record.camera_make, record.camera_model);
+    const treatAsScanner = override !== null
+      ? override
+      : isScannerDevice(record.camera_make, record.camera_model, softwareTag);
+    if (treatAsScanner) {
       record.confidence = 'marked';
       record.date_source = record.date_source
         ? `${record.date_source} — scanner`
