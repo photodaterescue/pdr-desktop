@@ -225,6 +225,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
+  ping: () => ipcRenderer.invoke('app:ping'),
+
   dateEditor: {
     open: () => ipcRenderer.invoke('dateEditor:open'),
     onThemeChange: (callback: (isDark: boolean) => void) => {

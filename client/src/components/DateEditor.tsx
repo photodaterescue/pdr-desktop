@@ -27,6 +27,7 @@ import {
   type IndexedFile,
   type DateSuggestion,
 } from '../lib/electron-bridge';
+import { MainAliveBanner } from './MainAliveBanner';
 
 type ConfidenceFilter = 'marked' | 'recovered' | 'confirmed' | 'corrected' | 'all';
 
@@ -232,6 +233,7 @@ export default function DateEditor() {
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
+      <MainAliveBanner />
       {/* ─── Header ─────────────────────────────────────────────────────── */}
       <header className="shrink-0 px-4 py-3 border-b border-border flex items-center gap-3">
         <Calendar className="w-5 h-5 text-primary" />

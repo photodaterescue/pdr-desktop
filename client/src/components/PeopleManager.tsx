@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
+import { MainAliveBanner } from './MainAliveBanner';
 import {
   getPersonClusters,
   listPersons,
@@ -278,6 +279,7 @@ export default function PeopleManager() {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
+      <MainAliveBanner />
 
       {/* Header — below the title bar */}
       <div className="flex items-center justify-between px-6 pt-4 pb-3">

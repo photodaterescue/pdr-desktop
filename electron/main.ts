@@ -283,10 +283,20 @@ function createWindow() {
       // Cancel any running operations before window closes
       preScanCancelled = true;
       copyFilesCancelled = true;
-      // Close viewer window if open
+      // Child windows are independent top-level windows (not OS children of
+      // mainWindow), so we must explicitly destroy them here — otherwise they
+      // would keep the app alive after the user closes PDR.
       if (viewerWindow && !viewerWindow.isDestroyed()) {
         viewerWindow.destroy();
         viewerWindow = null;
+      }
+      if (peopleWindow && !peopleWindow.isDestroyed()) {
+        peopleWindow.destroy();
+        peopleWindow = null;
+      }
+      if (dateEditorWindow && !dateEditorWindow.isDestroyed()) {
+        dateEditorWindow.destroy();
+        dateEditorWindow = null;
       }
     }
   });
@@ -2114,6 +2124,11 @@ ipcMain.handle('license:getMachineId', async () => {
   return getMachineFingerprint();
 });
 
+// Lightweight liveness ping used by the child-window heartbeat so each window
+// can surface a banner when main goes dark (hang, not a clean crash — a crash
+// would take the renderer down too).
+ipcMain.handle('app:ping', async () => ({ alive: true, t: Date.now() }));
+
 // ─── Date editor IPC handlers ───────────────────────────────────────────────
 
 ipcMain.handle('date:getSuggestions', async (_event, fileId: number) => {
@@ -2413,7 +2428,12 @@ ipcMain.handle('people:open', async () => {
       minHeight: 500,
       backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
       title: 'People — Photo Date Rescue',
-      parent: mainWindow ?? undefined,
+      // Independent top-level window: no parent so z-order isn't tied to
+      // mainWindow, Alt-Tab treats it as peer. skipTaskbar hides its icon
+      // (PDR's main icon stays as the only visible taskbar entry). The main
+      // window's 'close' handler explicitly destroys this window so it never
+      // outlives the app.
+      skipTaskbar: true,
       roundedCorners: true,
       thickFrame: true,
       icon: app.isPackaged
@@ -2473,7 +2493,9 @@ ipcMain.handle('dateEditor:open', async () => {
       minHeight: 560,
       backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
       title: 'Date Editor — Photo Date Rescue',
-      parent: mainWindow ?? undefined,
+      // See peopleWindow above: independent top-level + hidden from taskbar +
+      // destroyed explicitly on main-window close.
+      skipTaskbar: true,
       roundedCorners: true,
       thickFrame: true,
       icon: app.isPackaged
