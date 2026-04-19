@@ -557,7 +557,14 @@ export interface SearchQuery {
   orientation?: string[];
   // AI filters
   personId?: number[];
+  personIdMode?: 'and' | 'or';
   aiTag?: string[];
+  aiTagMode?: 'and' | 'or';
+  // Determines whether personId + aiTag conditions AND together (default,
+  // intersection — photos must have both) or OR together (union — photos
+  // that match either). OR is used when the search bar mixes a person and
+  // a tag with a comma operator.
+  textFilterJoin?: 'and' | 'or';
   hasFaces?: boolean;
   hasUnnamedFaces?: boolean;
   hasAiTags?: boolean;

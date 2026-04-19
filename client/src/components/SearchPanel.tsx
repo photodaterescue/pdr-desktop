@@ -680,11 +680,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   // ─── Query / Search ───────────────────────────────────────────────────────
 
-  // Parse search text for people operators: "Terry + Mel", "Terry & Mel", "Terry and Mel" → AND; "Terry, Mel" → OR
-  const parsePeopleOperators = useCallback((text: string): { personIds: number[]; mode: 'and' | 'or' } | null => {
+  // Parse search text for people / tag / mixed operator queries.
+  //   "Terry + Mel"             → people AND
+  //   "Terry, Mel"              → people OR
+  //   "beach + sunset"          → tag AND
+  //   "beach, sunset"           → tag OR
+  //   "Terry + beach"           → person AND tag (intersection)
+  //   "Terry, beach"            → person OR tag (union)
+  //   "Terry + Mel, beach"      → mixed connectors not supported — bails out
+  // Each token must match exactly ONE person or ONE tag (case-insensitive,
+  // exact match) or the whole thing bails out to a plain-text search so
+  // we never silently swallow typos.
+  const parseSearchOperators = useCallback((text: string): {
+    personIds: number[];
+    tags: string[];
+    mode: 'and' | 'or';
+  } | null => {
     const trimmed = text.trim();
     if (!trimmed) return null;
-    // Detect operator type: AND operators first (+, &, " and "), then OR (,)
     const andPattern = /\s*(?:\+|&|\band\b)\s*/i;
     const orPattern = /\s*,\s*/;
     let parts: string[] = [];
@@ -692,31 +705,66 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     if (andPattern.test(trimmed)) {
       parts = trimmed.split(andPattern).filter(Boolean);
       mode = 'and';
+      // Reject if OR punctuation is mixed into an AND expression.
+      if (orPattern.test(trimmed)) return null;
     } else if (orPattern.test(trimmed)) {
       parts = trimmed.split(orPattern).filter(Boolean);
       mode = 'or';
     } else {
       return null;
     }
-    // Match each part to a person — EXACT name match only (no prefix/substring auto-completion)
-    const ids: number[] = [];
+    const personIds: number[] = [];
+    const tags: string[] = [];
     for (const part of parts) {
       const q = part.trim().toLowerCase();
       if (!q) continue;
-      const match = peopleList.find(p => p.name.toLowerCase() === q);
-      if (match) ids.push(match.id);
-      else return null; // If any part doesn't match a full name, don't treat as operator query
+      const person = peopleList.find(p => p.name.toLowerCase() === q);
+      if (person) { personIds.push(person.id); continue; }
+      const tag = aiTagOptions.find(t => t.tag.toLowerCase() === q);
+      if (tag) { tags.push(tag.tag); continue; }
+      // Unknown token — fall back to plain text search.
+      return null;
     }
-    if (ids.length < 2) return null; // Need at least 2 names for operators to make sense
-    return { personIds: Array.from(new Set(ids)), mode };
-  }, [peopleList]);
+    if (personIds.length + tags.length < 2) return null;
+    return {
+      personIds: Array.from(new Set(personIds)),
+      tags: Array.from(new Set(tags)),
+      mode,
+    };
+  }, [peopleList, aiTagOptions]);
+
+  // Back-compat alias for the sync effect that still thinks in "people
+  // operators". Returns null for tag-only or mixed parses, so the
+  // people-filter-sync effect below only reacts to pure-people queries.
+  const parsePeopleOperators = useCallback((text: string): { personIds: number[]; mode: 'and' | 'or' } | null => {
+    const parsed = parseSearchOperators(text);
+    if (!parsed) return null;
+    if (parsed.tags.length > 0) return null;
+    if (parsed.personIds.length < 2) return null;
+    return { personIds: parsed.personIds, mode: parsed.mode };
+  }, [parseSearchOperators]);
 
   const buildQuery = useCallback((): SearchQuery => {
-    const peopleParsed = parsePeopleOperators(searchText);
+    // Try the richer operator parser first (handles people, tags, and
+    // person × tag mixes). Falls back to plain text search when the query
+    // doesn't match the operator grammar.
+    const opParsed = parseSearchOperators(searchText);
+    const tagsFromOps = opParsed?.tags ?? [];
+    const peopleFromOps = opParsed?.personIds ?? [];
+    // Preserve the existing sidebar-checkbox tag filter alongside anything
+    // the operator parser pulled from the search bar. Tag-type sentinels
+    // ('__has_faces', '__no_faces') stay on the client side.
+    const sidebarTags = selectedAiTags.filter(t => !t.startsWith('__'));
+    const combinedTags = Array.from(new Set([...sidebarTags, ...tagsFromOps]));
     return ({
-    text: peopleParsed ? undefined : (searchText.trim() || undefined),
-    personId: peopleParsed ? peopleParsed.personIds : undefined,
-    personIdMode: peopleParsed ? peopleParsed.mode : undefined,
+    text: opParsed ? undefined : (searchText.trim() || undefined),
+    personId: opParsed ? peopleFromOps : undefined,
+    personIdMode: opParsed ? opParsed.mode : undefined,
+    aiTagMode: opParsed && tagsFromOps.length > 1 ? opParsed.mode : undefined,
+    // When both people AND tags came from a single OR-mode query, tell the
+    // backend to OR the two conditions together ("Mel, beach" = Mel OR
+    // beach). All other cases AND the conditions normally.
+    textFilterJoin: opParsed && opParsed.mode === 'or' && peopleFromOps.length > 0 && tagsFromOps.length > 0 ? 'or' : undefined,
     confidence: selectedConfidence.length > 0 ? selectedConfidence : undefined,
     fileType: selectedFileType.length > 0 ? selectedFileType : undefined,
     dateSource: selectedDateSource.length > 0 ? selectedDateSource : undefined,
@@ -738,11 +786,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     cameraPosition: selectedCameraPosition.length > 0 ? selectedCameraPosition : undefined,
     orientation: selectedOrientation.length > 0 ? selectedOrientation : undefined,
     destinationPath: selectedDestination.length > 0 ? selectedDestination : undefined,
-    aiTag: selectedAiTags.filter(t => !t.startsWith('__')).length > 0 ? selectedAiTags.filter(t => !t.startsWith('__')) : undefined,
+    aiTag: combinedTags.length > 0 ? combinedTags : undefined,
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
     } as SearchQuery);
-  }, [searchText, parsePeopleOperators, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
+  }, [searchText, parseSearchOperators, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery) => {
     setIsLoading(true);
@@ -818,13 +866,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     await openSearchViewer(filePath, filename);
   };
 
-  // Debounced text search
+  // Debounced text search. Mirrors the filter-change effect below so
+  // clearing the search bar has the same effect as unchecking every
+  // filter: results empty out and the S&D view drops back to its empty-
+  // state prompt (unless another filter or showAllOverride keeps it
+  // populated).
   useEffect(() => {
     if (!dbReady) return;
     // Show/hide search suggestions based on text
     setShowSearchSuggestions(searchText.trim().length > 0 && document.activeElement === searchInputRef.current);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => { if (searchText.trim() || hasActiveFilters) executeSearch(); }, 300);
+    searchTimeoutRef.current = setTimeout(() => {
+      if (searchText.trim() || hasActiveFilters) {
+        executeSearch();
+      } else if (showAllOverride && searchActive) {
+        executeSearch();
+      } else if (searchActive) {
+        setResults(null);
+      }
+    }, 300);
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [searchText, dbReady]);
 

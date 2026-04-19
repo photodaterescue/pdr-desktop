@@ -106,6 +106,15 @@ export interface SearchQuery {
   // AI filters
   personId?: number[];
   personIdMode?: 'and' | 'or';
+  // Tag mode mirrors personIdMode: 'or' (default) = any tag; 'and' = every
+  // tag must be present on the file.
+  aiTagMode?: 'and' | 'or';
+  // How the personId and aiTag conditions relate to each other when BOTH
+  // are present. Defaults to 'and' (photos must match BOTH the person and
+  // the tag filter — the existing behaviour). 'or' yields a union so the
+  // ribbon search bar can express "Mel OR beach" queries when the user
+  // combines a person and a tag with a comma.
+  textFilterJoin?: 'and' | 'or';
   aiTag?: string[];
   hasFaces?: boolean;
   hasUnnamedFaces?: boolean;
@@ -717,22 +726,55 @@ export function searchFiles(query: SearchQuery): SearchResult {
     params.push(...query.orientation);
   }
 
-  // AI: Person filter — 'and' = intersection (all selected people in same photo), 'or' = union (any)
-  if (query.personId && query.personId.length > 0) {
-    const placeholders = query.personId.map(() => '?').join(',');
+  // AI: Person + Tag filters. Rendered as two SQL fragments first so we
+  // can decide at the end whether to AND them into separate conditions
+  // (default) or OR them into a single compound condition (used when the
+  // user types "Mel, beach" — they want photos that match either).
+  const personFragment = (() => {
+    if (!query.personId || query.personId.length === 0) return null;
+    const ph = query.personId.map(() => '?').join(',');
     if (query.personIdMode === 'and' && query.personId.length > 1) {
-      conditions.push(`f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${placeholders}) GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`);
-      params.push(...query.personId, query.personId.length);
-    } else {
-      conditions.push(`f.id IN (SELECT file_id FROM face_detections WHERE person_id IN (${placeholders}))`);
-      params.push(...query.personId);
+      return {
+        sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph}) GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`,
+        params: [...query.personId, query.personId.length],
+      };
     }
-  }
+    return {
+      sql: `f.id IN (SELECT file_id FROM face_detections WHERE person_id IN (${ph}))`,
+      params: [...query.personId],
+    };
+  })();
 
-  // AI: Tag filter — photos with specific AI tags
-  if (query.aiTag && query.aiTag.length > 0) {
-    conditions.push(`f.id IN (SELECT file_id FROM ai_tags WHERE tag IN (${query.aiTag.map(() => '?').join(',')}))`);
-    params.push(...query.aiTag);
+  const tagFragment = (() => {
+    if (!query.aiTag || query.aiTag.length === 0) return null;
+    if (query.aiTagMode === 'and' && query.aiTag.length > 1) {
+      // Every tag must be present on the file — one subquery per tag,
+      // AND'd together, so f.id appears in the tag table for all of them.
+      const parts = query.aiTag.map(() => 'f.id IN (SELECT file_id FROM ai_tags WHERE tag = ?)');
+      return { sql: `(${parts.join(' AND ')})`, params: [...query.aiTag] };
+    }
+    const ph = query.aiTag.map(() => '?').join(',');
+    return {
+      sql: `f.id IN (SELECT file_id FROM ai_tags WHERE tag IN (${ph}))`,
+      params: [...query.aiTag],
+    };
+  })();
+
+  if (personFragment && tagFragment && query.textFilterJoin === 'or') {
+    // "Mel, beach" style: a photo matches if either the person or the tag
+    // condition matches. Wrap them in a single parenthesised OR so the
+    // outer AND-ing of other conditions still works as expected.
+    conditions.push(`(${personFragment.sql} OR ${tagFragment.sql})`);
+    params.push(...personFragment.params, ...tagFragment.params);
+  } else {
+    if (personFragment) {
+      conditions.push(personFragment.sql);
+      params.push(...personFragment.params);
+    }
+    if (tagFragment) {
+      conditions.push(tagFragment.sql);
+      params.push(...tagFragment.params);
+    }
   }
 
   // AI: Has faces
