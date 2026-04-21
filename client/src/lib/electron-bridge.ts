@@ -1200,6 +1200,27 @@ export async function getGraphHistoryCounts(): Promise<{ success: boolean; data?
   return { success: false, error: 'Not running in Electron' };
 }
 
+export interface GraphHistoryEntry {
+  id: number;
+  description: string;
+  createdAt: string;
+  undone: boolean;
+}
+
+export async function listGraphHistoryEntries(limit?: number): Promise<{ success: boolean; data?: GraphHistoryEntry[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.historyList(limit);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function revertToGraphHistoryEntry(targetId: number): Promise<{ success: boolean; undoneCount?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.historyRevert(targetId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export async function createPlaceholderPerson(): Promise<{ success: boolean; data?: number; error?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
     return (window as any).pdr.trees.createPlaceholderPerson();

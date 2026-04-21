@@ -1,10 +1,13 @@
-import { useEffect, useState, useRef } from 'react';
-import { X, Plus, Pencil, Check, Trash2, Image as ImageIcon, FileText, Users, Move } from 'lucide-react';
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { X, Plus, Pencil, Check, Trash2, Image as ImageIcon, FileText, Users, Move, History as HistoryIcon, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import {
   listSavedTrees,
   updateSavedTree,
   deleteSavedTree,
+  listGraphHistoryEntries,
+  revertToGraphHistoryEntry,
   type SavedTreeRecord,
+  type GraphHistoryEntry,
 } from '@/lib/electron-bridge';
 import { promptConfirm } from './promptConfirm';
 
@@ -40,6 +43,23 @@ export function ManageTreesModal({
   const [editingName, setEditingName] = useState('');
   const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // History panel — lazy-loaded when expanded so we don't hit the DB
+  // for users who just want to rename / switch trees.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<GraphHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  useEffect(() => {
+    if (!historyOpen) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    listGraphHistoryEntries().then(r => {
+      if (cancelled) return;
+      if (r.success && r.data) setHistoryEntries(r.data);
+      setHistoryLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [historyOpen]);
 
   const allowRemove = typeof window !== 'undefined'
     && localStorage.getItem('pdr-allow-tree-removal') === 'true';
@@ -264,6 +284,29 @@ export function ManageTreesModal({
             </p>
           )}
 
+          <HistorySection
+            open={historyOpen}
+            onToggle={() => setHistoryOpen(v => !v)}
+            loading={historyLoading}
+            entries={historyEntries}
+            onRevert={async (targetId, description) => {
+              const ok = await promptConfirm({
+                title: 'Revert to this point?',
+                message: `Every change made AFTER "${description}" will be undone. You can redo them afterwards with the Redo button if you change your mind.`,
+                confirmLabel: 'Revert',
+                danger: true,
+              });
+              if (!ok) return;
+              const r = await revertToGraphHistoryEntry(targetId);
+              if (r.success) {
+                // Refresh the list so 'undone' flags are up to date.
+                const r2 = await listGraphHistoryEntries();
+                if (r2.success && r2.data) setHistoryEntries(r2.data);
+                onChanged();
+              }
+            }}
+          />
+
           <div className="mt-4 pt-4 border-t border-border">
             <p className="text-xs uppercase tracking-wide text-foreground font-semibold mb-2">Export current tree</p>
             <div className="flex gap-2">
@@ -358,4 +401,119 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
   )[c]);
+}
+
+// ───────────────────────────── History ─────────────────────────────
+
+/** Collapsible section at the bottom of Manage Trees listing every
+ *  stored relationship change with a timestamp. Users can revert the
+ *  graph to the state just after any entry — all newer entries are
+ *  undone (and can be redone individually via Ctrl+Shift+Z if the
+ *  user changes their mind). */
+function HistorySection({ open, onToggle, loading, entries, onRevert }: {
+  open: boolean;
+  onToggle: () => void;
+  loading: boolean;
+  entries: GraphHistoryEntry[];
+  onRevert: (targetId: number, description: string) => void;
+}) {
+  const grouped = useMemo(() => groupByBucket(entries), [entries]);
+  const activeCount = entries.filter(e => !e.undone).length;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-border">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 text-xs uppercase tracking-wide text-foreground font-semibold mb-2"
+      >
+        {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        <HistoryIcon className="w-3.5 h-3.5" />
+        <span className="flex-1 text-left">History</span>
+        <span className="text-[10px] text-muted-foreground font-normal normal-case">
+          {activeCount} change{activeCount === 1 ? '' : 's'} saved
+        </span>
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-3">
+          {loading && <p className="text-xs text-muted-foreground py-2">Loading…</p>}
+          {!loading && entries.length === 0 && (
+            <p className="text-xs text-muted-foreground py-2">No changes recorded yet.</p>
+          )}
+          {grouped.map(group => (
+            <div key={group.label}>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">{group.label}</p>
+              <div className="flex flex-col gap-1">
+                {group.entries.map(e => (
+                  <div
+                    key={e.id}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors ${
+                      e.undone
+                        ? 'border-border/50 bg-muted/30 text-muted-foreground italic'
+                        : 'border-border hover:border-primary/40'
+                    }`}
+                  >
+                    <span className="text-[10px] font-mono text-muted-foreground w-12 shrink-0">
+                      {formatTime(e.createdAt)}
+                    </span>
+                    <span className="flex-1 truncate">{e.description}</span>
+                    {e.undone && (
+                      <span className="text-[9px] uppercase tracking-wide text-muted-foreground">undone</span>
+                    )}
+                    {!e.undone && (
+                      <button
+                        onClick={() => onRevert(e.id, e.description)}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                        title="Revert to the state just after this change (undo everything newer)"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Revert to here
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground italic">
+            Reverting undoes every change made after the one you picked. Individual changes can still be redone afterwards if you change your mind.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Bucket entries into human-scale time groups: Today, Yesterday, This
+ *  week, This month, Older. */
+function groupByBucket(entries: GraphHistoryEntry[]): { label: string; entries: GraphHistoryEntry[] }[] {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86400000;
+  const startOfWeek = startOfToday - 6 * 86400000; // last 7 days
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  const buckets = { today: [] as GraphHistoryEntry[], yesterday: [] as GraphHistoryEntry[], thisWeek: [] as GraphHistoryEntry[], thisMonth: [] as GraphHistoryEntry[], older: [] as GraphHistoryEntry[] };
+  for (const e of entries) {
+    const t = Date.parse(e.createdAt + 'Z') || Date.parse(e.createdAt);
+    if (t >= startOfToday) buckets.today.push(e);
+    else if (t >= startOfYesterday) buckets.yesterday.push(e);
+    else if (t >= startOfWeek) buckets.thisWeek.push(e);
+    else if (t >= startOfMonth) buckets.thisMonth.push(e);
+    else buckets.older.push(e);
+  }
+  const out: { label: string; entries: GraphHistoryEntry[] }[] = [];
+  if (buckets.today.length)     out.push({ label: 'Today',      entries: buckets.today });
+  if (buckets.yesterday.length) out.push({ label: 'Yesterday',  entries: buckets.yesterday });
+  if (buckets.thisWeek.length)  out.push({ label: 'This week',  entries: buckets.thisWeek });
+  if (buckets.thisMonth.length) out.push({ label: 'This month', entries: buckets.thisMonth });
+  if (buckets.older.length)     out.push({ label: 'Older',      entries: buckets.older });
+  return out;
+}
+
+/** Compact HH:MM from the stored ISO timestamp. */
+function formatTime(iso: string): string {
+  const d = new Date(iso + 'Z');
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

@@ -2719,6 +2719,52 @@ export function getGraphHistoryCounts() {
     const r = db.prepare(`SELECT COUNT(*) AS cnt FROM graph_history WHERE undone = 1`).get().cnt;
     return { canUndo: u, canRedo: r };
 }
+/** Every entry in the graph history table, most recent first. Used by
+ *  the History panel in Manage Trees so the user can revert to any
+ *  past point, not just step back one Ctrl+Z at a time. */
+export function listGraphHistoryEntries(limit = 500) {
+    const db = getDb();
+    const rows = db.prepare(`
+    SELECT id, description, created_at, undone
+    FROM graph_history
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(limit);
+    return rows.map(r => ({
+        id: r.id,
+        description: r.description,
+        createdAt: r.created_at,
+        undone: r.undone === 1,
+    }));
+}
+/** Roll back to the state immediately after entry `targetId` happened:
+ *  undo every non-undone entry with id > targetId. Returns the count
+ *  of ops actually rewound. Does NOT undo entry targetId itself — if
+ *  the user wanted the state BEFORE that entry they should pick the
+ *  entry just prior. */
+export function revertToGraphHistoryEntry(targetId) {
+    const db = getDb();
+    const target = db.prepare(`SELECT id FROM graph_history WHERE id = ?`).get(targetId);
+    if (!target)
+        return { success: false, undoneCount: 0, error: 'History entry not found.' };
+    let total = 0;
+    // Undo-latest-first is exactly what undoLastGraphOperation does, so
+    // we repeat-call until no non-undone entry with id > targetId remains.
+    for (;;) {
+        const pending = db.prepare(`
+      SELECT COUNT(*) AS cnt FROM graph_history WHERE id > ? AND undone = 0
+    `).get(targetId);
+        if (pending.cnt === 0)
+            break;
+        const r = undoLastGraphOperation();
+        if (!r.success)
+            return { success: false, undoneCount: total, error: r.error ?? 'Undo failed mid-revert.' };
+        total++;
+        if (total > 10000)
+            break; // hard safety
+    }
+    return { success: true, undoneCount: total };
+}
 /** All relationships touching a person (as either endpoint). */
 export function listRelationshipsForPerson(personId) {
     const db = getDb();

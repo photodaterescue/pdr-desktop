@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('pdr', {
         undo: () => ipcRenderer.invoke('trees:undo'),
         redo: () => ipcRenderer.invoke('trees:redo'),
         historyCounts: () => ipcRenderer.invoke('trees:historyCounts'),
+        historyList: (limit) => ipcRenderer.invoke('trees:historyList', limit),
+        historyRevert: (targetId) => ipcRenderer.invoke('trees:historyRevert', targetId),
         createPlaceholderPerson: () => ipcRenderer.invoke('trees:createPlaceholderPerson'),
         createNamedPerson: (name) => ipcRenderer.invoke('trees:createNamedPerson', name),
         namePlaceholder: (args) => ipcRenderer.invoke('trees:namePlaceholder', args),

@@ -133,6 +133,8 @@ import {
   undoLastGraphOperation,
   redoGraphOperation,
   getGraphHistoryCounts,
+  listGraphHistoryEntries,
+  revertToGraphHistoryEntry,
   rebuildAiFts,
   getPersonClusters,
   getClusterFaces,
@@ -2581,6 +2583,16 @@ ipcMain.handle('trees:redo', async () => {
 ipcMain.handle('trees:historyCounts', async () => {
   try { return { success: true, data: getGraphHistoryCounts() }; }
   catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:historyList', async (_event, limit?: number) => {
+  try { return { success: true, data: listGraphHistoryEntries(limit ?? 500) }; }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:historyRevert', async (_event, targetId: number) => {
+  try { return revertToGraphHistoryEntry(targetId); }
+  catch (err) { return { success: false, undoneCount: 0, error: (err as Error).message }; }
 });
 
 ipcMain.handle('trees:createPlaceholderPerson', async () => {
