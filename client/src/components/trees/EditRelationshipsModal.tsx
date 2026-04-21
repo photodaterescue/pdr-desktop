@@ -1,5 +1,5 @@
-import { useMemo, useEffect, useState } from 'react';
-import { X, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { useMemo, useEffect, useState, useRef } from 'react';
+import { X, Pencil, Plus, Trash2, Users, Move } from 'lucide-react';
 import { removeRelationship, listRelationshipsForPerson, type RelationshipRecord } from '@/lib/electron-bridge';
 import { promptConfirm } from './promptConfirm';
 
@@ -96,13 +96,37 @@ export function EditRelationshipsModal({
     }
   };
 
+  // Drag-to-reposition — the modal often parks itself over the very
+  // person you're editing. Grab the header to drag it out of the way.
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
+  const onDragStart = (e: React.PointerEvent) => {
+    dragRef.current = { sx: e.clientX, sy: e.clientY, bx: pos.x, by: pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    setPos({ x: dragRef.current.bx + e.clientX - dragRef.current.sx, y: dragRef.current.by + e.clientY - dragRef.current.sy });
+  };
+  const onDragEnd = () => { dragRef.current = null; };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div
         className="bg-background rounded-xl shadow-2xl border border-border max-w-lg w-full max-h-[85vh] overflow-auto"
+        style={{ transform: `translate3d(${pos.x}px, ${pos.y}px, 0)` }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-background border-b border-border px-4 py-3 relative">
+        <div
+          className="sticky top-0 bg-background border-b border-border px-4 py-3 relative select-none"
+          style={{ cursor: dragRef.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+          title="Drag to move"
+        >
+          <Move className="absolute left-3 top-3 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
           <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
             <X className="w-4 h-4" />
           </button>

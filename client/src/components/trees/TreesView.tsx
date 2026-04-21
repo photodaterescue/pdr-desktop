@@ -585,6 +585,14 @@ export function TreesView() {
             onClose={() => { setRelationshipEditorFor(null); setRelationshipEditorInitialTo(null); }}
             onRelationshipCreated={handleRelationshipCreated}
             onPersonsChanged={reloadPersons}
+            onOpenEditRelationships={(personId) => {
+              // Close this modal and pop open Edit Relationships for
+              // the other person so the user can fix the conflicting
+              // link (remove it, or flip Parent ↔ Child).
+              setRelationshipEditorFor(null);
+              setRelationshipEditorInitialTo(null);
+              setEditRelationshipsFor(personId);
+            }}
           />
         );
       })()}

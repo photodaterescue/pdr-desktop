@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
-import { X, Users, AlertCircle, Info, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import { addRelationship, updateRelationship, removeRelationship, createPlaceholderPerson, createNamedPerson, type FamilyGraph, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { X, Users, AlertCircle, Info, Pencil, Trash2, ChevronDown, ChevronRight, Move } from 'lucide-react';
+import { addRelationship, updateRelationship, removeRelationship, createPlaceholderPerson, createNamedPerson, listRelationshipsForPerson, type FamilyGraph, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import { UserPlus } from 'lucide-react';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm } from './promptConfirm';
@@ -40,6 +40,11 @@ interface SetRelationshipModalProps {
   /** Called when a new named person is created from within the modal, so
    *  the parent can refresh its all-persons list. */
   onPersonsChanged?: () => void;
+  /** Called when the user hits an impossible-combination conflict (e.g.
+   *  trying to make someone both parent AND child) and wants to open
+   *  the Edit Relationships list for that person to fix the existing
+   *  link. Parent closes this modal and opens EditRelationshipsModal. */
+  onOpenEditRelationships?: (personId: number) => void;
 }
 
 /**
@@ -50,7 +55,7 @@ interface SetRelationshipModalProps {
  * to mark a grandparent when the intermediate parent isn't set yet) we
  * show a clear "you need X first" message rather than silently failing.
  */
-export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, graph, initialToPersonId, onClose, onRelationshipCreated, onPersonsChanged }: SetRelationshipModalProps) {
+export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, graph, initialToPersonId, onClose, onRelationshipCreated, onPersonsChanged, onOpenEditRelationships }: SetRelationshipModalProps) {
   // Persons list grows locally when the user creates a new named person
   // inside the modal — so the newly-created name shows up immediately
   // in the list without a full parent refresh.
@@ -72,6 +77,25 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
   const [customLabel, setCustomLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when save is blocked by a direction conflict (e.g. user trying
+   *  to add someone as their parent when that same person is already
+   *  stored as their child). Shows a banner with a one-click button
+   *  to jump to Edit Relationships for the offending person so the
+   *  stale link can be removed or flipped. */
+  const [conflictWithId, setConflictWithId] = useState<number | null>(null);
+
+  // Drag-to-reposition — modal often lands over the person being edited.
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
+  const onDragStart = (e: React.PointerEvent) => {
+    dragRef.current = { sx: e.clientX, sy: e.clientY, bx: pos.x, by: pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    setPos({ x: dragRef.current.bx + e.clientX - dragRef.current.sx, y: dragRef.current.by + e.clientY - dragRef.current.sy });
+  };
+  const onDragEnd = () => { dragRef.current = null; };
   /** When non-null, the modal is editing an existing stored edge rather
    *  than creating a new one. Populated whenever the user picks a
    *  `toPersonId` for whom a relationship already exists. */
@@ -161,9 +185,38 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
 
   const handleSave = async () => {
     setError(null);
+    setConflictWithId(null);
     if (!toPersonId) { setError('Pick someone to link to first.'); return; }
     setBusy(true);
     try {
+      // Pre-save conflict check for parent/child — someone can't be
+      // both a parent AND a child of the same person. The DB's UNIQUE
+      // constraint doesn't catch this because (A, B, parent_of) and
+      // (B, A, parent_of) are different tuples. Fetch fresh, since an
+      // inverted edge might live outside the current visible graph.
+      if (type === 'parent' || type === 'child') {
+        const all = await listRelationshipsForPerson(fromPersonId);
+        if (all.success && all.data) {
+          // type='parent' → we'd create (from, to, parent_of). Conflict
+          //   if (to, from, parent_of) already exists (they're already from's parent).
+          // type='child'  → we'd create (to, from, parent_of). Conflict
+          //   if (from, to, parent_of) already exists (they're already from's child).
+          const inverseExists = all.data.some(r => {
+            if (r.type !== 'parent_of') return false;
+            if (type === 'parent') return r.person_a_id === toPersonId && r.person_b_id === fromPersonId;
+            return r.person_a_id === fromPersonId && r.person_b_id === toPersonId;
+          });
+          // Allow the edit path that's intentionally flipping the edge
+          // direction on an existing record — editingEdge matches and
+          // directionFlipped handling below will drop+recreate cleanly.
+          if (inverseExists && !editingEdge) {
+            setConflictWithId(toPersonId);
+            setBusy(false);
+            return;
+          }
+        }
+      }
+
       const activeFlags: any = {};
       if (flags.step) activeFlags.step = true;
       if (flags.adopted) activeFlags.adopted = true;
@@ -257,11 +310,26 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-background rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold">Set relationship</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Link to someone already named, or add a new family member by name.</p>
+      <div
+        className="bg-background rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-auto"
+        style={{ transform: `translate3d(${pos.x}px, ${pos.y}px, 0)` }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div
+          className="sticky top-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between select-none"
+          style={{ cursor: dragRef.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+          title="Drag to move"
+        >
+          <div className="flex items-center gap-2">
+            <Move className="w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
+            <div>
+              <h3 className="text-base font-semibold">Set relationship</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Link to someone already named, or add a new family member by name.</p>
+            </div>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-accent"><X className="w-4 h-4" /></button>
         </div>
@@ -462,6 +530,27 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
             <div className="flex items-start gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-600">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {/* Conflict banner — someone can't be both parent AND child. */}
+          {conflictWithId != null && toPerson && (
+            <div className="flex items-start gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-sm">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+              <div className="flex-1 text-amber-700 dark:text-amber-300">
+                <strong>{toPerson.name}</strong> is already {type === 'parent' ? `${fromPersonName}'s parent` : `${fromPersonName}'s child`}.
+                Someone can't be both a parent and a child of the same person — the existing link needs to be removed or flipped first.
+                {onOpenEditRelationships && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => onOpenEditRelationships(toPerson.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-amber-600 text-white text-xs font-medium hover:bg-amber-700"
+                    >
+                      Open Edit Relationships for {toPerson.name}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
