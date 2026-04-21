@@ -95,7 +95,9 @@ export function TreesView() {
   );
   const [addInfoOpen, setAddInfoOpen] = useState(false);
   /** Undo/redo availability counts from the graph_history table.
-   *  Refreshed after every mutation + on app focus. */
+   *  Refreshed after every mutation + on app focus. The handlers that
+   *  use refetchGraph / reloadPersons are declared AFTER those
+   *  callbacks further below — see the second undo/redo block. */
   const [historyCounts, setHistoryCounts] = useState<{ canUndo: number; canRedo: number }>({ canUndo: 0, canRedo: 0 });
   const refreshHistoryCounts = useCallback(async () => {
     const r = await getGraphHistoryCounts();
@@ -107,52 +109,6 @@ export function TreesView() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshHistoryCounts]);
-
-  const handleUndo = useCallback(async () => {
-    const r = await undoGraphOperation();
-    if (r.success) {
-      toast(`Undone: ${r.description ?? 'last change'}`);
-      if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
-      reloadPersons();
-      refreshHistoryCounts();
-    } else if (r.error) {
-      toast.error(r.error);
-    }
-  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts]);
-
-  const handleRedo = useCallback(async () => {
-    const r = await redoGraphOperation();
-    if (r.success) {
-      toast(`Redone: ${r.description ?? 'change'}`);
-      if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
-      reloadPersons();
-      refreshHistoryCounts();
-    } else if (r.error) {
-      toast.error(r.error);
-    }
-  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts]);
-
-  // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or
-  // Ctrl/Cmd+Y = redo. Ignored when a text input is focused so the
-  // user's typing undo still works as expected in name fields.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const inText = (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA');
-      if (inText) return;
-      const meta = e.ctrlKey || e.metaKey;
-      if (!meta) return;
-      if (e.key === 'z' || e.key === 'Z') {
-        e.preventDefault();
-        if (e.shiftKey) handleRedo();
-        else handleUndo();
-      } else if (e.key === 'y' || e.key === 'Y') {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [handleUndo, handleRedo]);
 
   const toggleShowDates = useCallback((next: boolean) => {
     setShowDates(next);
@@ -273,6 +229,56 @@ export function TreesView() {
     if (res.success && res.data) setGraph(res.data);
     setLoading(false);
   }, []);
+
+  // Undo / redo handlers — declared here so their useCallback dep
+  // arrays can reference refetchGraph and reloadPersons (declared
+  // above). Placing them near the top of the component hit a
+  // temporal-dead-zone crash on mount.
+  const handleUndo = useCallback(async () => {
+    const r = await undoGraphOperation();
+    if (r.success) {
+      toast(`Undone: ${r.description ?? 'last change'}`);
+      if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
+      reloadPersons();
+      refreshHistoryCounts();
+    } else if (r.error) {
+      toast.error(r.error);
+    }
+  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts]);
+
+  const handleRedo = useCallback(async () => {
+    const r = await redoGraphOperation();
+    if (r.success) {
+      toast(`Redone: ${r.description ?? 'change'}`);
+      if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
+      reloadPersons();
+      refreshHistoryCounts();
+    } else if (r.error) {
+      toast.error(r.error);
+    }
+  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts]);
+
+  // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or
+  // Ctrl/Cmd+Y = redo. Ignored when a text input is focused so the
+  // user's typing undo still works as expected in name fields.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const inText = (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA');
+      if (inText) return;
+      const meta = e.ctrlKey || e.metaKey;
+      if (!meta) return;
+      if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+      } else if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleUndo, handleRedo]);
 
   // Total fetch depth = max(whichever filter is active, deepest pinned
   // pathway). Generations mode needs +1 hop over the deepest shown level
