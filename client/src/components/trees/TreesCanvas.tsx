@@ -1026,11 +1026,14 @@ function BluebellMarker({ cx, cy }: { cx: number; cy: number }) {
 }
 
 function formatLife(birth: string | null, death: string | null): string | null {
+  // Royal-chart style: "1978 — Living" when alive, "1948 — 2022" when
+  // deceased. Space-em-dash-space. When only a death year is known,
+  // fall back to "d. 2022" since we've no start year to bracket with.
   const b = birth ? birth.slice(0, 4) : null;
   const d = death ? death.slice(0, 4) : null;
   if (!b && !d) return null;
-  if (b && d) return `${b}–${d}`;
-  if (b) return `b. ${b}`;
+  if (b && d) return `${b} — ${d}`;
+  if (b) return `${b} — Living`;
   if (d) return `d. ${d}`;
   return null;
 }
