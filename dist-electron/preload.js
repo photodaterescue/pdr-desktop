@@ -177,9 +177,17 @@ contextBridge.exposeInMainWorld('pdr', {
         faceContext: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
         modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),
         onProgress: (callback) => {
-            ipcRenderer.on('ai:progress', (_, data) => callback(data));
+            // Per-handler registration so multiple renderer components can
+            // subscribe simultaneously (e.g. TitleBar + SearchPanel). The
+            // returned function removes ONLY this handler — the shared
+            // channel keeps firing for the others.
+            const handler = (_, data) => callback(data);
+            ipcRenderer.on('ai:progress', handler);
+            return () => ipcRenderer.removeListener('ai:progress', handler);
         },
         removeProgressListener: () => {
+            // DEPRECATED: nukes every renderer's listener on this channel.
+            // Prefer the unsubscribe function returned by onProgress().
             ipcRenderer.removeAllListeners('ai:progress');
         },
         onLog: (callback) => {

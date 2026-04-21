@@ -233,9 +233,17 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
     modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),
     onProgress: (callback: (progress: any) => void) => {
-      ipcRenderer.on('ai:progress', (_: any, data: any) => callback(data));
+      // Per-handler registration so multiple renderer components can
+      // subscribe simultaneously (e.g. TitleBar + SearchPanel). The
+      // returned function removes ONLY this handler — the shared
+      // channel keeps firing for the others.
+      const handler = (_: any, data: any) => callback(data);
+      ipcRenderer.on('ai:progress', handler);
+      return () => ipcRenderer.removeListener('ai:progress', handler);
     },
     removeProgressListener: () => {
+      // DEPRECATED: nukes every renderer's listener on this channel.
+      // Prefer the unsubscribe function returned by onProgress().
       ipcRenderer.removeAllListeners('ai:progress');
     },
     onLog: (callback: (msg: string) => void) => {

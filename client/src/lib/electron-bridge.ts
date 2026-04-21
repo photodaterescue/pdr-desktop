@@ -1558,12 +1558,18 @@ export async function getFaceContext(filePath: string, boxX: number, boxY: numbe
   return { success: false };
 }
 
-export function onAiProgress(callback: (progress: AiProgress) => void): void {
+/** Subscribe to AI progress events. Returns an unsubscribe function —
+ *  call it on component unmount so you don't clobber other subscribers. */
+export function onAiProgress(callback: (progress: AiProgress) => void): () => void {
   if (isElectron() && (window as any).pdr?.ai) {
-    (window as any).pdr.ai.onProgress(callback);
+    const unsub = (window as any).pdr.ai.onProgress(callback);
+    return typeof unsub === 'function' ? unsub : () => {};
   }
+  return () => {};
 }
 
+/** @deprecated Use the unsubscribe function returned by onAiProgress.
+ *  This wipes every renderer's listener on ai:progress, not just yours. */
 export function removeAiProgressListener(): void {
   if (isElectron() && (window as any).pdr?.ai) {
     (window as any).pdr.ai.removeProgressListener();

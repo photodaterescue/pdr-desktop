@@ -685,8 +685,18 @@ function impossibleCandidates(
     // associated_with) from fromId. This naturally excludes blood
     // relatives (incest), in-laws (brother's wife's family), ex-in-laws
     // (brother's ex-wife), and the person's own exes in a single pass.
-    for (const id of familyClosure(fromId, graph)) out.add(id);
+    const closure = familyClosure(fromId, graph);
+    // BUT: co-parents of fromId's children are exactly the couples the
+    // user is likely trying to formalize as partners (e.g. Sally and
+    // Alan, who share Colin as a child, but whose spouse_of edge hasn't
+    // been asserted yet). Exempt them from the closure — they're valid
+    // candidates, not hidden relatives.
+    const coparents = coparentsOf(fromId, graph);
+    for (const cp of coparents) closure.delete(cp);
+    for (const id of closure) out.add(id);
     // Plus anyone currently in an active spouse_of with a third party.
+    // Co-parents are not exempt from this — if Alan's already married
+    // to Louise, don't suggest him as Sally's partner.
     for (const id of currentlyPartnered(graph, fromId)) out.add(id);
   } else if (kind === 'sibling') {
     for (const a of ancestors(fromId)) out.add(a);
