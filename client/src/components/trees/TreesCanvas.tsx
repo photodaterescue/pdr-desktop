@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Link2, Trash2, Eye, Pencil, HelpCircle, UserPlus, X } from 'lucide-react';
-import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, createPlaceholderPerson, addRelationship, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, addRelationship, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm } from './promptConfirm';
@@ -1143,6 +1143,11 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
   const [allPersons, setAllPersons] = useState<{ id: number; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Relationships this placeholder already holds — shown up-top so the
+   *  user knows WHAT this "?" represents before naming/linking. Answers
+   *  the common confusion "why is there an extra placeholder?" — at a
+   *  glance you see e.g. "Currently: parent of Nee". */
+  const [relationships, setRelationships] = useState<{ label: string; otherName: string }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -1150,6 +1155,33 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
       if (res.success && res.data) setAllPersons(res.data.map(p => ({ id: p.id, name: p.name })));
     })();
   }, []);
+
+  // Also load this placeholder's own relationships so the modal can
+  // tell the user what role this '?' currently plays.
+  useEffect(() => {
+    (async () => {
+      const [relRes, personsRes] = await Promise.all([
+        listRelationshipsForPerson(personId),
+        listPersons(),
+      ]);
+      const nameBy = new Map<number, string>();
+      if (personsRes.success && personsRes.data) {
+        for (const p of personsRes.data) nameBy.set(p.id, p.name || '(unnamed)');
+      }
+      if (!relRes.success || !relRes.data) return;
+      const out: { label: string; otherName: string }[] = [];
+      for (const r of relRes.data) {
+        const aIsMe = r.person_a_id === personId;
+        const otherId = aIsMe ? r.person_b_id : r.person_a_id;
+        const otherName = nameBy.get(otherId) ?? '(unknown)';
+        if (r.type === 'parent_of') out.push({ label: aIsMe ? 'Parent of' : 'Child of', otherName });
+        else if (r.type === 'spouse_of') out.push({ label: r.until ? 'Ex-partner of' : 'Partner of', otherName });
+        else if (r.type === 'sibling_of') out.push({ label: 'Sibling of', otherName });
+        else if (r.type === 'associated_with') out.push({ label: 'Connected to', otherName });
+      }
+      setRelationships(out);
+    })();
+  }, [personId]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -1218,6 +1250,19 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* Tell the user what this placeholder currently represents so
+          they can decide whether to name it, link it, or remove it. */}
+      {relationships.length > 0 && (
+        <div className="mb-3 px-2.5 py-2 rounded-lg bg-muted/40 border border-border/60">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">Currently linked as</p>
+          <ul className="text-xs text-foreground space-y-0.5">
+            {relationships.map((r, i) => (
+              <li key={i}>{r.label} <strong>{r.otherName}</strong></li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Mode switcher */}
       <div className="flex gap-1 mb-3 p-0.5 bg-muted rounded-lg text-xs">
