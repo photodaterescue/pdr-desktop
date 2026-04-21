@@ -116,9 +116,14 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
   // and to leave room for the spouse connector between partners.
   // Vertical spacing increases to keep branches airy — lines look
   // much cleaner with room to breathe between generations.
-  nodeSpacing: 210,
+  // Wider cards need more lateral breathing room: with 170-wide cards
+  // and 210px spacing the gap between siblings was 40px, making the
+  // partnership horizontal and the midpoint dot feel crammed. 280 gives
+  // 110px gaps — the connector has visual room and siblings read as
+  // separate cards rather than a single block.
+  nodeSpacing: 280,
   rowHeight: 260,
-  spouseOffset: 180,
+  spouseOffset: 220,
 };
 
 /**

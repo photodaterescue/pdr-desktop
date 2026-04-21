@@ -194,8 +194,8 @@ export function EditRelationshipsModal({
 
         <div className="px-4 py-4 flex flex-col gap-2">
           {rows.some(r => r.derived) && (
-            <p className="text-[11px] text-muted-foreground italic -mb-1">
-              Rows marked · auto are shown automatically from other links (e.g. siblings appear when two people share a parent). Change the parent or partner links above to update them.
+            <p className="text-xs text-muted-foreground italic -mb-1">
+              Rows marked <span className="not-italic font-medium">· auto</span> are computed from the parent/partner links in the rows above them — e.g. two people automatically become siblings when they share a parent. They have no Edit/Remove buttons because there's no stored row to change; to alter an auto row, edit one of the parent/partner links it's derived from.
             </p>
           )}
           {loading ? (
