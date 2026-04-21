@@ -375,6 +375,19 @@ export function TreesView() {
           : (gen != null && gen >= -descendantsDepth && gen <= ancestorsDepth);
         if (passesSteps && passesGens) visible.add(n.personId);
       }
+      // Extend by ONE hop of direct family (parent / partner / sibling)
+      // past the boundary. Without this, stored family of boundary
+      // people gets clipped — e.g. Dave (Lindsay's dad) would stay
+      // invisible when Lindsay sits at the default depth edge. No
+      // cascade: a single pass only.
+      const extra: number[] = [];
+      for (const e of graph.edges) {
+        if (e.derived) continue;
+        if (e.type !== 'parent_of' && e.type !== 'spouse_of' && e.type !== 'sibling_of') continue;
+        if (visible.has(e.aId) && !visible.has(e.bId)) extra.push(e.bId);
+        else if (visible.has(e.bId) && !visible.has(e.aId)) extra.push(e.aId);
+      }
+      for (const id of extra) visible.add(id);
     }
     if (pinnedPeople.size > 0) {
       // Build an undirected adjacency map for BFS.

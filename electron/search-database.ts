@@ -3418,6 +3418,31 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
     }
   }
 
+  // Family-overflow sweep. Adds people who are the DIRECT family
+  // (parent / partner / sibling) of a boundary node but sit one hop
+  // past the BFS limit. Without this, e.g. Dave (Lindsay's dad) is
+  // invisible when Lindsay is at the boundary, even though the whole
+  // point of drawing the tree is to show those relationships. One
+  // extra hop only — no cascade.
+  const boundaryIds = Array.from(visited.entries())
+    .filter(([_, hop]) => hop >= maxHops)
+    .map(([id]) => id);
+  if (boundaryIds.length > 0) {
+    const qs2 = boundaryIds.map(() => '?').join(',');
+    const familyRows = db.prepare(`
+      SELECT * FROM relationships
+      WHERE (person_a_id IN (${qs2}) OR person_b_id IN (${qs2}))
+        AND type IN ('parent_of', 'spouse_of', 'sibling_of')
+    `).all(...boundaryIds, ...boundaryIds) as RelationshipRow[];
+    for (const row of familyRows) {
+      const other = boundaryIds.includes(row.person_a_id) ? row.person_b_id : row.person_a_id;
+      if (!visited.has(other)) visited.set(other, maxHops + 1);
+      if (seenEdgeIds.has(row.id)) continue;
+      seenEdgeIds.add(row.id);
+      collectedEdges.push(rowToRelationship(row));
+    }
+  }
+
   // Pull person details for every reachable node, plus photo counts.
   const ids = Array.from(visited.keys());
   const placeholders = ids.map(() => '?').join(',');
