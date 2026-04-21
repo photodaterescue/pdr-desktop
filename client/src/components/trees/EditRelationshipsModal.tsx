@@ -134,50 +134,53 @@ export function EditRelationshipsModal({
     }
   };
 
-  // Drag-to-reposition — the modal often parks itself over the very
-  // person you're editing. Grab the header to drag it out of the way.
-  // Clamped so the modal can never move more than half the viewport in
-  // any direction — otherwise the user can lose the close button off
-  // the edge of the screen.
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
+  // Drag-to-reposition — modal often lands over the person being edited.
+  // Ref-based transform so dragging doesn't trigger React re-renders on
+  // every pointermove (with a full relationships list below, that causes
+  // visible lag). Clamped to ±(viewport/2) on each axis so the close
+  // button can't be stranded off-screen.
+  const modalRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
   const onDragStart = (e: React.PointerEvent) => {
-    // Don't start a drag on interactive header children — the X close
-    // button and any future select/input would otherwise get their
-    // click swallowed by pointer capture.
+    // Skip drag when the press landed on an interactive child (the X
+    // close button etc.) so its click handler fires normally.
     const t = e.target as HTMLElement;
     if (t.closest('button, input, select, textarea, a')) return;
-    dragRef.current = { sx: e.clientX, sy: e.clientY, bx: pos.x, by: pos.y };
+    const d = dragRef.current;
+    d.dragging = true;
+    d.sx = e.clientX; d.sy = e.clientY;
+    d.bx = d.x; d.by = d.y;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onDragMove = (e: React.PointerEvent) => {
-    if (!dragRef.current) return;
-    const rawX = dragRef.current.bx + e.clientX - dragRef.current.sx;
-    const rawY = dragRef.current.by + e.clientY - dragRef.current.sy;
+    const d = dragRef.current;
+    if (!d.dragging) return;
+    const rawX = d.bx + e.clientX - d.sx;
+    const rawY = d.by + e.clientY - d.sy;
     const halfW = window.innerWidth / 2;
     const halfH = window.innerHeight / 2;
-    setPos({
-      x: Math.max(-halfW, Math.min(halfW, rawX)),
-      y: Math.max(-halfH, Math.min(halfH, rawY)),
-    });
+    d.x = Math.max(-halfW, Math.min(halfW, rawX));
+    d.y = Math.max(-halfH, Math.min(halfH, rawY));
+    if (modalRef.current) {
+      modalRef.current.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
+    }
   };
-  const onDragEnd = () => { dragRef.current = null; };
+  const onDragEnd = () => { dragRef.current.dragging = false; };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={modalRef}
         className="bg-background rounded-xl shadow-2xl border border-border max-w-lg w-full max-h-[85vh] overflow-auto"
-        style={{ transform: `translate3d(${pos.x}px, ${pos.y}px, 0)` }}
         onClick={e => e.stopPropagation()}
       >
         <div
-          className="sticky top-0 bg-background border-b border-border px-4 py-3 relative select-none"
-          style={{ cursor: dragRef.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+          className="sticky top-0 bg-background border-b border-border px-4 py-3 relative select-none cursor-grab active:cursor-grabbing"
+          style={{ touchAction: 'none' }}
           onPointerDown={onDragStart}
           onPointerMove={onDragMove}
           onPointerUp={onDragEnd}
           onPointerCancel={onDragEnd}
-          title="Drag to move"
         >
           <Move className="absolute left-3 top-3 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
           <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
@@ -205,31 +208,22 @@ export function EditRelationshipsModal({
                 <Users className={`w-4 h-4 shrink-0 ${row.derived ? 'text-muted-foreground/60' : 'text-muted-foreground'}`} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-foreground truncate">{row.otherName}</div>
-                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <div className="text-xs text-muted-foreground">
                     {row.label}
                     {row.derived && (
-                      <span
-                        className="text-[10px] px-1.5 py-0 rounded bg-muted text-muted-foreground/80 italic"
-                        title="Inferred from the underlying parent/partner links — edit or remove one of those to change this."
-                      >
-                        derived
-                      </span>
+                      <span className="italic"> — shown automatically because they share a parent</span>
                     )}
                   </div>
                 </div>
                 {row.derived ? (
-                  <span
-                    className="text-[10px] text-muted-foreground italic pr-1"
-                    title="Derived from primitives. To change it, edit the parent or partner links it's derived from."
-                  >
-                    via primitives
+                  <span className="text-[11px] text-muted-foreground italic pr-1">
+                    Edit the parent links to change this
                   </span>
                 ) : (
                   <>
                     <button
                       onClick={() => onEditEdge(row.otherId)}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs hover:bg-accent"
-                      title="Open in the relationship editor — change type, dates, flags."
                     >
                       <Pencil className="w-3.5 h-3.5" />
                       Edit
@@ -237,7 +231,6 @@ export function EditRelationshipsModal({
                     <button
                       onClick={() => row.edge && handleRemove(row.edge, row.label, row.otherName)}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-red-600 hover:bg-red-500/10"
-                      title="Remove this one link only."
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       Remove
