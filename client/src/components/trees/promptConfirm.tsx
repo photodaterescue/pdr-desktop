@@ -32,6 +32,7 @@ export function promptConfirm(options: string | ConfirmOptions): Promise<boolean
         confirmLabel={opts.confirmLabel}
         cancelLabel={opts.cancelLabel}
         danger={opts.danger}
+        hideCancel={opts.hideCancel}
         onConfirm={() => close(true)}
         onCancel={() => close(false)}
       />
@@ -46,10 +47,14 @@ export interface ConfirmOptions {
   cancelLabel?: string;
   /** Styles the confirm button red for destructive operations. */
   danger?: boolean;
+  /** Hide the cancel button entirely — use for info-only "OK" dialogs
+   *  where there's nothing to cancel. Clicking the backdrop or Escape
+   *  still dismisses, but the footer shows only the confirm button. */
+  hideCancel?: boolean;
 }
 
 function ConfirmDialog({
-  message, title, confirmLabel, cancelLabel, danger, onConfirm, onCancel,
+  message, title, confirmLabel, cancelLabel, danger, hideCancel, onConfirm, onCancel,
 }: ConfirmOptions & { onConfirm: () => void; onCancel: () => void }) {
   const [mounted, setMounted] = useState(false);
 
@@ -87,12 +92,14 @@ function ConfirmDialog({
           </button>
         </div>
         <div className="flex items-center justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 rounded-lg text-sm hover:bg-accent"
-          >
-            {cancelLabel ?? 'Cancel'}
-          </button>
+          {!hideCancel && (
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 rounded-lg text-sm hover:bg-accent"
+            >
+              {cancelLabel ?? 'Cancel'}
+            </button>
+          )}
           <button
             onClick={onConfirm}
             autoFocus

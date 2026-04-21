@@ -8026,13 +8026,19 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       if (!ok) return;
                       const r = await resetTagAnalysis();
                       if (r.success) {
-                        toast.success(`Re-tagging ${r.data?.filesQueued ?? 0} photos`, {
-                          description: 'Progress is shown in the Search & Discovery header (top right). Faces and people are untouched.',
-                          duration: 8000,
+                        await promptConfirm({
+                          title: 'Re-tagging started',
+                          message: `${r.data?.filesQueued ?? 0} photos have been queued for re-tagging. You can watch progress in the title bar at the top right — it shows "Analyzing X/Y" while the indexer works through the queue. Feel free to carry on using the app; re-tagging runs in the background.`,
+                          confirmLabel: 'Got it',
+                          hideCancel: true,
                         });
                       } else {
-                        toast.error('Could not reset tags', {
-                          description: r.error ?? 'unknown error',
+                        await promptConfirm({
+                          title: 'Could not reset tags',
+                          message: r.error ?? 'Unknown error',
+                          confirmLabel: 'OK',
+                          hideCancel: true,
+                          danger: true,
                         });
                       }
                     }}
