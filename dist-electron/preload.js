@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('pdr', {
         updatePersonLifeEvents: (args) => ipcRenderer.invoke('trees:updatePersonLifeEvents', args),
         getFamilyGraph: (args) => ipcRenderer.invoke('trees:getFamilyGraph', args),
         getCooccurrenceStats: (args) => ipcRenderer.invoke('trees:getCooccurrenceStats', args),
+        getPartnerSuggestionScores: (anchorId) => ipcRenderer.invoke('trees:getPartnerSuggestionScores', anchorId),
         createPlaceholderPerson: () => ipcRenderer.invoke('trees:createPlaceholderPerson'),
         createNamedPerson: (name) => ipcRenderer.invoke('trees:createNamedPerson', name),
         namePlaceholder: (args) => ipcRenderer.invoke('trees:namePlaceholder', args),

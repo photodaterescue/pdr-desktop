@@ -1113,6 +1113,20 @@ export async function getPersonCooccurrenceStats(limit: number = 25, minSharedPh
   return { success: false, error: 'Not running in Electron' };
 }
 
+export interface PartnerSuggestionScore {
+  id: number;
+  name: string;
+  score: number;
+  shared_photo_count: number;
+}
+
+export async function getPartnerSuggestionScores(anchorId: number): Promise<{ success: boolean; data?: PartnerSuggestionScore[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.getPartnerSuggestionScores(anchorId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export async function createPlaceholderPerson(): Promise<{ success: boolean; data?: number; error?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
     return (window as any).pdr.trees.createPlaceholderPerson();

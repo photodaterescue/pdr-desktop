@@ -8,6 +8,7 @@ import {
   createPlaceholderPerson,
   addRelationship,
   getPersonsCooccurrence,
+  getPartnerSuggestionScores,
   listAllRelationships,
   type FamilyGraph,
 } from '@/lib/electron-bridge';
@@ -410,12 +411,17 @@ export function TreesView() {
         // children's other parent → Alan should top the list, not Mel
         // who just happens to share a photo with Sally).
         const coparents = quickAdd.kind === 'partner' ? coparentsOf(quickAdd.fromPersonId, graph) : undefined;
+        // For partner quick-add, use intimacy/tag-weighted partner score
+        // instead of raw cooccurrence count — 2 group photos shouldn't
+        // beat 1 intimate photo. Non-partner adds keep the simple count.
+        const isPartner = quickAdd.kind === 'partner';
         return (
           <FocusPickerModal
             persons={allPersons.filter(p => p.id !== quickAdd.fromPersonId && !excluded.has(p.id))}
             currentFocusId={null}
             title={title}
-            cooccurrenceAnchorId={quickAdd.fromPersonId}
+            cooccurrenceAnchorId={isPartner ? undefined : quickAdd.fromPersonId}
+            partnerScoreAnchorId={isPartner ? quickAdd.fromPersonId : undefined}
             coparentIds={coparents}
             onPick={finaliseQuickAdd}
             onPersonsChanged={reloadPersons}
@@ -651,6 +657,11 @@ interface FocusPickerModalProps {
    *  anchor's children — i.e., the obvious partner candidates. These
    *  float to the top of suggestions ahead of simple co-occurrence. */
   coparentIds?: Set<number>;
+  /** For partner quick-adds: when set, fetch intimacy- and tag-weighted
+   *  partner scores for this anchor and sort candidates by score DESC
+   *  instead of raw shared-photo count. Two group photos lose to one
+   *  2-person photo; a wedding tag boosts; a 20-person group penalises. */
+  partnerScoreAnchorId?: number;
   onPick: (personId: number) => void;
   onPersonsChanged?: () => void;
   onClose: () => void;
@@ -658,7 +669,7 @@ interface FocusPickerModalProps {
 
 type PickerSortMode = 'connections' | 'photos' | 'alpha';
 
-function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId, showSortOptions, coparentIds, onPick, onPersonsChanged, onClose }: FocusPickerModalProps) {
+function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId, showSortOptions, coparentIds, partnerScoreAnchorId, onPick, onPersonsChanged, onClose }: FocusPickerModalProps) {
   // Tabbed design mirroring the "Who is this?" placeholder resolver:
   //   Tab 1: Name them       — type a new name, creates a real named person
   //   Tab 2: Pick existing   — search the already-named people list
@@ -668,7 +679,7 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
   //   b) sort options are enabled (Change focus, same reasoning).
   // Otherwise default to Name them.
   const [mode, setMode] = useState<'name' | 'link'>(
-    (cooccurrenceAnchorId != null || showSortOptions) ? 'link' : 'name'
+    (cooccurrenceAnchorId != null || partnerScoreAnchorId != null || showSortOptions) ? 'link' : 'name'
   );
   const [nameInput, setNameInput] = useState('');
   const [linkQuery, setLinkQuery] = useState('');
@@ -676,6 +687,8 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
   const [error, setError] = useState<string | null>(null);
   /** personId → co-occurrence photo count with the anchor, or null until loaded. */
   const [cooccurrence, setCooccurrence] = useState<Map<number, number> | null>(null);
+  /** personId → weighted partner score for the partner quick-add anchor. */
+  const [partnerScores, setPartnerScores] = useState<Map<number, number> | null>(null);
   /** Relationship-edge count per person, used by the Connections sort. */
   const [connectionCounts, setConnectionCounts] = useState<Map<number, number>>(new Map());
   /** Current sort mode when showSortOptions is enabled. */
@@ -695,6 +708,21 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
       }
     })();
   }, [cooccurrenceAnchorId]);
+
+  // Partner quick-add: fetch intimacy/tag-weighted scores for the anchor.
+  // Replaces the raw co-occurrence sort so 2 group photos don't outrank
+  // 1 intimate photo.
+  useEffect(() => {
+    if (partnerScoreAnchorId == null) { setPartnerScores(null); return; }
+    (async () => {
+      const r = await getPartnerSuggestionScores(partnerScoreAnchorId);
+      if (r.success && r.data) {
+        const m = new Map<number, number>();
+        for (const row of r.data) m.set(row.id, row.score);
+        setPartnerScores(m);
+      }
+    })();
+  }, [partnerScoreAnchorId]);
 
   // Load relationship-edge counts if the sort UI is enabled.
   useEffect(() => {
@@ -716,9 +744,23 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
     .filter(p => !p.name.startsWith('__'))
     .filter(p => p.name.toLowerCase().includes(linkQuery.trim().toLowerCase()))
     .sort((a, b) => {
-      // When an anchor is set (quick-add), sort priorities in order:
-      //   1. Co-parents float to the top — for "add partner" this is
-      //      the strongest signal (they already share children).
+      // Partner quick-add — weighted score wins over raw photo count.
+      //   1. Co-parents to the top (they already share a child).
+      //   2. Intimacy/tag-weighted partner score DESC. A 2-person wedding
+      //      photo (score ~1.5) now beats two 10-person group shots
+      //      (score ~0.2) that used to win on raw count alone.
+      //   3. Alphabetical tie-break for people with no partner signal.
+      if (partnerScoreAnchorId != null) {
+        const isCoparentA = coparentIds?.has(a.id) ? 1 : 0;
+        const isCoparentB = coparentIds?.has(b.id) ? 1 : 0;
+        if (isCoparentA !== isCoparentB) return isCoparentB - isCoparentA;
+        const scoreA = partnerScores?.get(a.id) ?? 0;
+        const scoreB = partnerScores?.get(b.id) ?? 0;
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        return a.name.localeCompare(b.name);
+      }
+      // When an anchor is set (non-partner quick-add), sort priorities:
+      //   1. Co-parents float to the top.
       //   2. Co-occurrence DESC — people in many shared photos next.
       //   3. Alphabetical tie-break.
       if (cooccurrenceAnchorId != null) {

@@ -138,6 +138,7 @@ import {
   updatePersonLifeEvents,
   getFamilyGraph,
   getPersonCooccurrenceStats,
+  getPartnerSuggestionScores,
   createPlaceholderPerson,
   createNamedPerson,
   namePlaceholder,
@@ -2504,6 +2505,14 @@ ipcMain.handle('trees:getFamilyGraph', async (_event, args: { focusPersonId: num
 ipcMain.handle('trees:getCooccurrenceStats', async (_event, args: { limit?: number; minSharedPhotos?: number }) => {
   try {
     return { success: true, data: getPersonCooccurrenceStats(args.limit ?? 25, args.minSharedPhotos ?? 20) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:getPartnerSuggestionScores', async (_event, anchorId: number) => {
+  try {
+    return { success: true, data: getPartnerSuggestionScores(anchorId) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
