@@ -168,6 +168,7 @@ contextBridge.exposeInMainWorld('pdr', {
         getTags: (fileId) => ipcRenderer.invoke('ai:getTags', fileId),
         tagOptions: () => ipcRenderer.invoke('ai:tagOptions'),
         clearAll: () => ipcRenderer.invoke('ai:clearAll'),
+        resetTagAnalysis: () => ipcRenderer.invoke('ai:resetTagAnalysis'),
         personClusters: () => ipcRenderer.invoke('ai:personClusters'),
         personsCooccurrence: (selectedPersonIds) => ipcRenderer.invoke('ai:personsCooccurrence', selectedPersonIds),
         clusterFaces: (clusterId, page, perPage, personId) => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId),

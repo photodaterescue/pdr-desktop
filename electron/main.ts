@@ -123,6 +123,7 @@ import {
   getAiTagOptions,
   getAiStats,
   clearAllAiData,
+  resetAllTagAnalysis,
   rebuildAiFts,
   getPersonClusters,
   getClusterFaces,
@@ -3146,6 +3147,14 @@ ipcMain.handle('ai:clearAll', async () => {
   try {
     clearAllAiData();
     return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai:resetTagAnalysis', async () => {
+  try {
+    return { success: true, data: resetAllTagAnalysis() };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

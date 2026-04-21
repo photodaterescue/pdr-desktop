@@ -2301,6 +2301,26 @@ export function clearFaceDataForModelUpgrade(): void {
   // if explicitly requested (e.g. model upgrade) or was never analysed.
 }
 
+/** Reset ONLY the AI tags + their processing status so the indexer
+ *  re-runs classification against the current label set. Preserves
+ *  face_detections, persons, verified face-to-person assignments, and
+ *  all relationships — nothing visible to the user is lost. Use after
+ *  expanding the DEFAULT_TAGS list or improving the tagger. */
+export function resetAllTagAnalysis(): { filesQueued: number } {
+  const database = getDb();
+  database.exec(`
+    DELETE FROM ai_tags;
+    UPDATE ai_processing_status SET tags_processed = 0, tags_model_ver = NULL;
+  `);
+  const row = database.prepare(`
+    SELECT COUNT(*) AS cnt FROM indexed_files WHERE file_type = 'photo'
+  `).get() as { cnt: number };
+  // FTS rows hold stale tag text — rebuild them as the indexer re-runs,
+  // but for now wipe the AI FTS content so search doesn't return old tags.
+  try { database.exec(`DELETE FROM files_ai_fts`); } catch {}
+  return { filesQueued: row.cnt };
+}
+
 /** Clear all AI data (faces, tags, processing status) */
 export function clearAllAiData(): void {
   const database = getDb();

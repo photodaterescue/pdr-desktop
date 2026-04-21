@@ -76,7 +76,8 @@ import {
   PDRSettings,
   formatBytesToGB,
   PreScanResult,
-  openPeopleWindow
+  openPeopleWindow,
+  resetTagAnalysis
 } from "@/lib/electron-bridge";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
@@ -8004,6 +8005,29 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     data-testid="checkbox-allow-index-removal"
                   />
                 </label>
+
+                {/* Re-analyze AI Tags */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-sm font-medium text-foreground">Re-analyze AI Tags</span>
+                    <span className="text-xs text-muted-foreground">Wipe every photo's AI tags and queue them for re-tagging against the current label set. Use after tag list changes. Faces, people, and relationships are preserved.</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      if (!confirm('Re-analyze AI tags for every photo?\n\nThis wipes existing AI tags and queues all photos for re-tagging. Faces, people, and relationships are kept. The re-analysis runs in the background and may take a while for large libraries.')) return;
+                      const r = await resetTagAnalysis();
+                      if (r.success) {
+                        alert(`Queued ${r.data?.filesQueued ?? 0} photos for re-tagging. The indexer will start picking them up shortly.`);
+                      } else {
+                        alert(`Could not reset: ${r.error ?? 'unknown error'}`);
+                      }
+                    }}
+                  >
+                    Re-analyze
+                  </Button>
+                </div>
               </div>
             </>
           )}

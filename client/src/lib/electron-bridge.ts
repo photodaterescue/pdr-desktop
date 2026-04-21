@@ -1495,6 +1495,13 @@ export async function clearAllAiData(): Promise<{ success: boolean }> {
   return { success: false };
 }
 
+export async function resetTagAnalysis(): Promise<{ success: boolean; data?: { filesQueued: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.resetTagAnalysis();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export interface PersonCluster {
   cluster_id: number;
   person_id: number | null;
