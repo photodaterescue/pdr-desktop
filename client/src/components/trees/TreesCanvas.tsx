@@ -266,27 +266,37 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           {/* Pedigree family groups — one marriage bar + sibling bracket
               per parent-set. Drawn BEFORE individual edges so they sit
               underneath the nodes. */}
-          {familyGroups.map((group, i) => (
-            <FamilyGroup
-              key={`fam-${i}-${group.parentIds.join('_')}`}
-              parents={group.parentIds.map(id => nodeById.get(id)!).filter(Boolean)}
-              children={group.childIds.map(id => nodeById.get(id)!).filter(Boolean)}
-              // Stagger the bracket Y so different families don't share
-              // the same horizontal line. Deterministic per-group offset.
-              bracketOffset={i * 8}
-              onParentClick={(parentId) => {
-                const parent = nodeById.get(parentId);
-                if (!parent) return;
-                if (parent.isPlaceholder) {
-                  const rect = svgRef.current?.getBoundingClientRect();
-                  if (!rect) return;
-                  const screenX = viewport.tx + parent.renderedX * viewport.scale;
-                  const screenY = viewport.ty + parent.renderedY * viewport.scale;
-                  setPlaceholderEditor({ personId: parentId, x: screenX, y: screenY });
-                }
-              }}
-            />
-          ))}
+          {familyGroups.map((group, i) => {
+            // Are the parents married (stored spouse_of between any of
+            // them)? If yes, EdgeLine draws the partnership connector —
+            // we skip our own marriage bar to avoid duplicate overlap.
+            const hasStoredSpouse = layout.edges.some(e =>
+              e.type === 'spouse_of' && !e.derived
+              && group.parentIds.includes(e.aId) && group.parentIds.includes(e.bId)
+            );
+            return (
+              <FamilyGroup
+                key={`fam-${i}-${group.parentIds.join('_')}`}
+                parents={group.parentIds.map(id => nodeById.get(id)!).filter(Boolean)}
+                children={group.childIds.map(id => nodeById.get(id)!).filter(Boolean)}
+                parentsAreSpouses={hasStoredSpouse}
+                // Stagger the bracket Y so different families don't share
+                // the same horizontal line. Deterministic per-group offset.
+                bracketOffset={i * 8}
+                onParentClick={(parentId) => {
+                  const parent = nodeById.get(parentId);
+                  if (!parent) return;
+                  if (parent.isPlaceholder) {
+                    const rect = svgRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    const screenX = viewport.tx + parent.renderedX * viewport.scale;
+                    const screenY = viewport.ty + parent.renderedY * viewport.scale;
+                    setPlaceholderEditor({ personId: parentId, x: screenX, y: screenY });
+                  }
+                }}
+              />
+            );
+          })}
 
           {/* Non-parent edges (spouse_of, sibling_of, associated_with) — parent_of is now rendered as family groups above. */}
           {layout.edges.map((edge, idx) => {
@@ -440,99 +450,83 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
  * Accepts any N parents and any M children. When N=1 the marriage bar
  * is skipped and the drop comes straight from the lone parent.
  */
-function FamilyGroup({ parents, children, bracketOffset, onParentClick }: {
+function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onParentClick }: {
   parents: (LaidOutNode & { renderedX: number; renderedY: number; isPlaceholder: boolean })[];
   children: (LaidOutNode & { renderedX: number; renderedY: number })[];
+  /** True when a stored spouse_of edge exists between parents. In that
+   *  case the partnership line is drawn by EdgeLine, so we skip our
+   *  own marriage bar to avoid duplicate overlap. */
+  parentsAreSpouses: boolean;
   bracketOffset: number;
   onParentClick: (parentId: number) => void;
 }) {
   if (parents.length === 0 || children.length === 0) return null;
 
-  // Card bottom is at renderedY + CARD_H/2. Ghost placeholders are
-  // only 28px radius, so their visual bottom sits higher. We share ONE
-  // parentY (aligned to the tallest — i.e. the card) and draw a
-  // per-parent vertical stub from each parent's actual bottom down to
-  // that shared Y. Cards get a zero-length stub (bar at the edge);
-  // ghosts get a short connector so the bar doesn't appear disconnected
-  // from them. Same pattern the royal-chart tree uses.
-  const GHOST_BOTTOM = 28;
-  const CARD_BOTTOM = CARD_H / 2;
-  const parentVisualBottom = (p: LaidOutNode & { isPlaceholder?: boolean }) =>
-    p.isPlaceholder ? p.renderedY + GHOST_BOTTOM : p.renderedY + CARD_BOTTOM;
-
-  // Shared marriage-bar Y — below the tallest parent. With two ghosts,
-  // this is renderedY + GHOST_BOTTOM + small gap so the bar sits just
-  // under both. With any card parent, use CARD_BOTTOM so the bar hugs
-  // the card's actual edge.
-  const anyCardParent = parents.some(p => !p.isPlaceholder);
-  const baseBottom = anyCardParent ? CARD_BOTTOM : GHOST_BOTTOM + 8;
-  const parentY = parents[0].renderedY + baseBottom;
+  // Partnership line now sits at AVATAR level between the card SIDES
+  // (royal-chart style), not below the cards. Children's vertical
+  // drop starts at that avatar-level midpoint and descends past the
+  // card bottoms to the bracket.
+  const parentY = parents[0].renderedY + AVATAR_CY; // avatar level
 
   const childY = children[0].renderedY - CARD_H / 2;
-  // Bracket lives between parent and child rows, staggered per-family
-  // so different families don't overlap their horizontals.
-  const bracketY = parentY + (childY - parentY) * 0.45 + bracketOffset;
+  // Bracket Y — computed from card BOTTOM / child TOP (the gap
+  // between the two generations), independent of where the partnership
+  // line itself sits. That keeps the drop length sensible.
+  const parentCardBottom = parents[0].renderedY + CARD_H / 2;
+  const bracketY = parentCardBottom + (childY - parentCardBottom) * 0.45 + bracketOffset;
 
-  // Parent x extents — marriage bar from leftmost to rightmost parent.
-  const parentXs = parents.map(p => p.renderedX).sort((a, b) => a - b);
-  const marriageBarStart = parentXs[0];
-  const marriageBarEnd = parentXs[parentXs.length - 1];
-  const marriageBarMidX = (marriageBarStart + marriageBarEnd) / 2;
+  // Parent x extents — the partnership bar spans from the right edge
+  // of the leftmost parent to the left edge of the rightmost. For
+  // ghosts we use the smaller ghost radius so the bar hugs the circle.
+  const GHOST_R = 28;
+  const halfWidthFor = (p: LaidOutNode & { isPlaceholder?: boolean }) =>
+    p.isPlaceholder ? GHOST_R : CARD_W / 2;
+  const sortedParents = [...parents].sort((a, b) => a.renderedX - b.renderedX);
+  const leftParent = sortedParents[0];
+  const rightParent = sortedParents[sortedParents.length - 1];
+  const barLeftX = leftParent.renderedX + halfWidthFor(leftParent);
+  const barRightX = rightParent.renderedX - halfWidthFor(rightParent);
+  const marriageBarMidX = (leftParent.renderedX + rightParent.renderedX) / 2;
 
   // Child x extents — bracket horizontal spans them.
   const childXs = children.map(c => c.renderedX).sort((a, b) => a - b);
   const bracketStart = Math.min(childXs[0], marriageBarMidX);
   const bracketEnd = Math.max(childXs[childXs.length - 1], marriageBarMidX);
 
-  const stroke = '#6366f1';
-  const strokeWidth = 1.75;
+  const stroke = '#64748b'; // slate, matches the EdgeLine spouse_of stroke
+  const strokeWidth = 1.5;
 
   return (
     <g>
-      {/* Per-parent vertical stub — from each parent's actual visual
-          bottom down to the shared marriage-bar Y. Zero-length for
-          cards; a short connector for ghost placeholders so the bar
-          never looks floating. */}
-      {parents.map(p => {
-        const visBottom = parentVisualBottom(p);
-        if (visBottom >= parentY) return null; // card already touches bar
-        return (
+      {/* Partnership bar at AVATAR level — drawn only when parents don't
+          already have a stored spouse_of edge (which EdgeLine renders).
+          Hugs each parent's side edge so it doesn't cut through cards. */}
+      {parents.length >= 2 && !parentsAreSpouses && barLeftX < barRightX && (
+        <>
           <line
-            key={`stub-${p.personId}`}
-            x1={p.renderedX}
-            y1={visBottom}
-            x2={p.renderedX}
+            x1={barLeftX}
+            y1={parentY}
+            x2={barRightX}
             y2={parentY}
             stroke={stroke}
             strokeWidth={strokeWidth}
+            strokeDasharray="6 4"
           />
-        );
-      })}
-      {/* Marriage bar — only if there are 2+ parents */}
-      {parents.length >= 2 && (
-        <line
-          x1={marriageBarStart}
-          y1={parentY}
-          x2={marriageBarEnd}
-          y2={parentY}
-          stroke={stroke}
-          strokeWidth={strokeWidth}
-        />
+          <circle cx={marriageBarMidX} cy={parentY} r={2.5} fill={stroke} />
+        </>
       )}
-      {/* Drop from marriage bar midpoint (or lone parent) to bracket */}
+      {/* Drop from the partnership midpoint (at avatar level) down to
+          the bracket level — this is the vertical line that carries
+          children from the parent connector down to the next row. */}
       <line
         x1={marriageBarMidX}
-        y1={parents.length >= 2 ? parentY : parentY}
+        y1={parentY}
         x2={marriageBarMidX}
         y2={bracketY}
         stroke={stroke}
         strokeWidth={strokeWidth}
       />
-      {/* Horizontal at bracket level — always drawn, even for a single
-          child. This ensures the parent's vertical drop meets the
-          child's vertical drop when their x coords differ (which happens
-          whenever the marriage bar midpoint isn't exactly above the
-          child). Previously single-child families had a gap here. */}
+      {/* Horizontal at bracket level — spans all children */}
       {bracketStart !== bracketEnd && (
         <line
           x1={bracketStart}
@@ -652,12 +646,12 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
   }
   if (type === 'spouse_of') {
     const dashed = !!until;
-    // Royal-chart style: a SINGLE thin neutral line bridging the gap
-    // between the two cards with a small dot at the midpoint. The
-    // midpoint is where any children's vertical drop will originate.
+    // Royal-chart style: a single thin slate line between the two
+    // cards at AVATAR level (the photo row), with a small dot at the
+    // midpoint where any children's vertical drop originates.
     const xLeft  = Math.min(ax, bx) + CARD_W / 2;
     const xRight = Math.max(ax, bx) - CARD_W / 2;
-    const yMid = (ay + by) / 2;
+    const yMid = (ay + by) / 2 + AVATAR_CY; // avatar-level horizontal
     const xMid = (xLeft + xRight) / 2;
     return (
       <g onClick={onClick}>
