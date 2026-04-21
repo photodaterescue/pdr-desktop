@@ -2586,6 +2586,28 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
             }
         }
     }
+    // Boundary-edge sweep. The BFS above stops extending from nodes at
+    // the max-hop boundary, so edges between two boundary nodes were
+    // never walked. Example: with maxHops=3, if A and B are both at hop
+    // 3, the edge (A parent_of B) is silently dropped — which made the
+    // augmenter then mistake a real parent for a missing slot and
+    // paint a ghost. Here we re-sweep the relationships table for any
+    // row whose BOTH endpoints already sit in `visited`, and add any
+    // we haven't seen yet.
+    if (visited.size > 0) {
+        const visitedIds = Array.from(visited.keys());
+        const qs = visitedIds.map(() => '?').join(',');
+        const boundary = db.prepare(`
+      SELECT * FROM relationships
+      WHERE person_a_id IN (${qs}) AND person_b_id IN (${qs})
+    `).all(...visitedIds, ...visitedIds);
+        for (const row of boundary) {
+            if (seenEdgeIds.has(row.id))
+                continue;
+            seenEdgeIds.add(row.id);
+            collectedEdges.push(rowToRelationship(row));
+        }
+    }
     // Pull person details for every reachable node, plus photo counts.
     const ids = Array.from(visited.keys());
     const placeholders = ids.map(() => '?').join(',');
