@@ -60,7 +60,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
   /** Popup editor anchored to a clicked edge. Only set while the popup is open. */
   const [edgeEditor, setEdgeEditor] = useState<{ edge: FamilyGraphEdge; x: number; y: number } | null>(null);
   /** Popup for resolving a placeholder ghost node (name/link/remove). */
-  const [placeholderEditor, setPlaceholderEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
+  // Placeholder editor state. Two modes:
+  //   { personId, ... }      — editing a PERSISTED placeholder (real DB row)
+  //   { virtualChildId, ... } — resolving a VIRTUAL ghost that hasn't been
+  //                             materialised yet. On commit the resolver
+  //                             creates (or links) a real person and wires
+  //                             the parent_of edge; on cancel nothing
+  //                             persists, so orphan 'Unknown' rows no
+  //                             longer accumulate.
+  const [placeholderEditor, setPlaceholderEditor] = useState<
+    | { kind: 'persisted'; personId: number; x: number; y: number }
+    | { kind: 'virtual'; virtualChildId: number; x: number; y: number }
+    | null
+  >(null);
 
   const panState = useRef<{ active: boolean; startX: number; startY: number; startTx: number; startTy: number }>({
     active: false, startX: 0, startY: 0, startTx: 0, startTy: 0,
@@ -181,25 +193,20 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     const screenX = viewport.tx + node.renderedX * viewport.scale;
     const screenY = viewport.ty + node.renderedY * viewport.scale;
 
-    let editorPersonId = node.personId;
-
-    // Virtual ghosts have negative IDs. Materialise them into real
-    // placeholder persons (with the appropriate parent_of edge) before
-    // opening the resolver — the resolver only speaks to real IDs.
+    // Virtual ghosts have negative IDs. Pass the virtual-edge info to
+    // the resolver — DO NOT materialise into a real placeholder yet.
+    // Materialising on click caused orphan 'Unknown' rows to pile up
+    // every time the user opened + closed the popup without committing.
     if (node.personId < 0) {
       const edge = layout.edges.find(ed => ed.aId === node.personId && ed.type === 'parent_of');
       if (!edge) return;
-      const ph = await createPlaceholderPerson();
-      if (!ph.success || ph.data == null) return;
-      await addRelationship({ personAId: ph.data, personBId: edge.bId, type: 'parent_of' });
-      editorPersonId = ph.data;
-      onGraphMutated();
+      setPlaceholderEditor({ kind: 'virtual', virtualChildId: edge.bId, x: screenX, y: screenY });
+    } else {
+      setPlaceholderEditor({ kind: 'persisted', personId: node.personId, x: screenX, y: screenY });
     }
-
-    setPlaceholderEditor({ personId: editorPersonId, x: screenX, y: screenY });
     setEdgeEditor(null);
     setContextMenu(null);
-  }, [viewport, layout, onGraphMutated]);
+  }, [viewport, layout]);
 
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: LaidOutNode) => {
     e.preventDefault();
@@ -291,7 +298,15 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     if (!rect) return;
                     const screenX = viewport.tx + parent.renderedX * viewport.scale;
                     const screenY = viewport.ty + parent.renderedY * viewport.scale;
-                    setPlaceholderEditor({ personId: parentId, x: screenX, y: screenY });
+                    // Virtual ghost: defer materialisation; persisted
+                    // placeholder: edit the existing row.
+                    if (parentId < 0) {
+                      const edge = layout.edges.find(ed => ed.aId === parentId && ed.type === 'parent_of');
+                      if (!edge) return;
+                      setPlaceholderEditor({ kind: 'virtual', virtualChildId: edge.bId, x: screenX, y: screenY });
+                    } else {
+                      setPlaceholderEditor({ kind: 'persisted', personId: parentId, x: screenX, y: screenY });
+                    }
                   }
                 }}
               />
@@ -322,7 +337,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               if (ghostNode) {
                 const screenX = viewport.tx + ghostNode.renderedX * viewport.scale;
                 const screenY = viewport.ty + ghostNode.renderedY * viewport.scale;
-                setPlaceholderEditor({ personId: ghostNode.personId, x: screenX, y: screenY });
+                if (ghostNode.personId < 0) {
+                  // Virtual ghost on this edge — find the child end.
+                  const childId = edge.aId === ghostNode.personId ? edge.bId : edge.aId;
+                  setPlaceholderEditor({ kind: 'virtual', virtualChildId: childId, x: screenX, y: screenY });
+                } else {
+                  setPlaceholderEditor({ kind: 'persisted', personId: ghostNode.personId, x: screenX, y: screenY });
+                }
                 setEdgeEditor(null);
                 setContextMenu(null);
                 return;
@@ -426,7 +447,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
 
       {placeholderEditor && (
         <PlaceholderResolver
-          personId={placeholderEditor.personId}
+          personId={placeholderEditor.kind === 'persisted' ? placeholderEditor.personId : null}
+          virtualChildId={placeholderEditor.kind === 'virtual' ? placeholderEditor.virtualChildId : null}
           x={placeholderEditor.x}
           y={placeholderEditor.y}
           onResolved={() => { onGraphMutated(); setPlaceholderEditor(null); }}
@@ -1258,13 +1280,25 @@ function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
   );
 }
 
-/** Inline popup: "Who is this?" — lets user name, link, or remove a placeholder. */
-function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
-  personId: number;
+/** Inline popup: "Who is this?" — lets user name, link, or remove a
+ *  placeholder. Runs in TWO modes:
+ *    personId (persisted placeholder): edits a real DB row. Name →
+ *      namePlaceholder; Link → mergePlaceholderIntoPerson; Remove →
+ *      removePlaceholder.
+ *    virtualChildId (virtual ghost, not yet materialised): no DB row
+ *      exists yet. Name → createNamedPerson + addRelationship to the
+ *      virtual child; Link → addRelationship between the chosen person
+ *      and the virtual child directly; Cancel/close → NOTHING persists.
+ *      This stops accidental 'Unknown' rows from piling up every time
+ *      the user opens + dismisses the popup without committing. */
+function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClose }: {
+  personId: number | null;
+  virtualChildId: number | null;
   x: number; y: number;
   onResolved: () => void;
   onClose: () => void;
 }) {
+  const isVirtual = personId == null && virtualChildId != null;
   // Default to 'link' — most placeholder resolutions are "this is
   // already a named person I have elsewhere", not "create a new named
   // person from scratch". Tab order in the UI puts Link FIRST for
@@ -1292,17 +1326,24 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
   }, []);
 
   // Also load this placeholder's own relationships so the modal can
-  // tell the user what role this '?' currently plays.
+  // tell the user what role this '?' currently plays. For VIRTUAL ghosts
+  // the "role" is implied from the virtual edge — they're going to be
+  // the parent of whoever virtualChildId is.
   useEffect(() => {
     (async () => {
-      const [relRes, personsRes] = await Promise.all([
-        listRelationshipsForPerson(personId),
-        listPersons(),
-      ]);
+      const personsRes = await listPersons();
       const nameBy = new Map<number, string>();
       if (personsRes.success && personsRes.data) {
         for (const p of personsRes.data) nameBy.set(p.id, p.name || '(unnamed)');
       }
+      if (isVirtual) {
+        if (virtualChildId != null) {
+          setRelationships([{ label: 'Parent of', otherName: nameBy.get(virtualChildId) ?? '(unknown)' }]);
+        }
+        return;
+      }
+      if (personId == null) return;
+      const relRes = await listRelationshipsForPerson(personId);
       if (!relRes.success || !relRes.data) return;
       const out: { label: string; otherName: string }[] = [];
       for (const r of relRes.data) {
@@ -1316,7 +1357,7 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
       }
       setRelationships(out);
     })();
-  }, [personId]);
+  }, [personId, virtualChildId, isVirtual]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -1345,6 +1386,18 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
     const trimmed = nameInput.trim();
     if (!trimmed) { setError('Type a name.'); return; }
     setBusy(true);
+    if (isVirtual && virtualChildId != null) {
+      // Virtual mode: create a named person and wire the parent_of edge.
+      // No placeholder row is created or orphaned on cancel.
+      const np = await createNamedPerson(trimmed);
+      if (!np.success || np.data == null) { setBusy(false); setError(np.error ?? 'Could not create person.'); return; }
+      const r = await addRelationship({ personAId: np.data, personBId: virtualChildId, type: 'parent_of' });
+      setBusy(false);
+      if ('error' in r && r.error) { setError(r.error); return; }
+      onResolved();
+      return;
+    }
+    if (personId == null) { setBusy(false); return; }
     const r = await namePlaceholder(personId, trimmed);
     setBusy(false);
     if (r.success) onResolved();
@@ -1354,6 +1407,16 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
   const handleLink = async (targetId: number) => {
     setError(null);
     setBusy(true);
+    if (isVirtual && virtualChildId != null) {
+      // Virtual mode: add parent_of edge between chosen person and the
+      // virtual child directly. No placeholder ever exists.
+      const r = await addRelationship({ personAId: targetId, personBId: virtualChildId, type: 'parent_of' });
+      setBusy(false);
+      if ('error' in r && r.error) { setError(r.error); return; }
+      onResolved();
+      return;
+    }
+    if (personId == null) { setBusy(false); return; }
     const r = await mergePlaceholderIntoPerson(personId, targetId);
     setBusy(false);
     if (r.success) onResolved();
@@ -1361,6 +1424,11 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
   };
 
   const handleRemove = async () => {
+    if (isVirtual || personId == null) {
+      // Virtual ghost has no persisted state; just dismiss.
+      onClose();
+      return;
+    }
     if (!(await promptConfirm({
       title: 'Remove placeholder?',
       message: 'Relationships that flowed through this unnamed person (e.g. grandparent links) will be broken.',
@@ -1475,14 +1543,16 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
       )}
 
       <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border">
-        <button
-          onClick={handleRemove}
-          disabled={busy}
-          className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs text-red-600 hover:bg-red-500/10 disabled:opacity-50"
-        >
-          <Trash2 className="w-3 h-3" />
-          Remove placeholder
-        </button>
+        {!isVirtual && (
+          <button
+            onClick={handleRemove}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs text-red-600 hover:bg-red-500/10 disabled:opacity-50"
+          >
+            <Trash2 className="w-3 h-3" />
+            Remove placeholder
+          </button>
+        )}
         <div className="flex-1" />
         {mode === 'name' && (
           <button

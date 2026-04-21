@@ -747,7 +747,7 @@ export function TreesView() {
                 onClick={handleRedo}
                 disabled={historyCounts.canRedo === 0}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed rounded-r-lg"
-                title={historyCounts.canRedo > 0 ? `Redo (Ctrl+Shift+Z) — ${historyCounts.canRedo} change${historyCounts.canRedo === 1 ? '' : 's'} available` : 'Nothing to redo'}
+                title={historyCounts.canRedo > 0 ? `Redo (Ctrl+Y) — ${historyCounts.canRedo} change${historyCounts.canRedo === 1 ? '' : 's'} available` : 'Nothing to redo'}
               >
                 <Redo2 className="w-4 h-4" />
               </button>
