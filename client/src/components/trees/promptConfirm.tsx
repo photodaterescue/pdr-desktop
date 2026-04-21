@@ -77,19 +77,25 @@ function ConfirmDialog({
         className={`bg-background rounded-xl shadow-2xl border border-border max-w-sm w-full p-5 transform transition-all ${mounted ? 'scale-100' : 'scale-95'}`}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-start gap-3 mb-4">
-          {danger ? (
-            <div className="shrink-0 w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center">
-              <AlertTriangle className="w-4 h-4 text-red-600" />
-            </div>
-          ) : null}
-          <div className="flex-1">
-            {title && <h3 className="text-base font-semibold mb-1">{title}</h3>}
-            <p className="text-sm text-foreground">{message}</p>
-          </div>
-          <button onClick={onCancel} className="p-1 rounded hover:bg-accent">
+        <div className="relative mb-4">
+          <button
+            onClick={onCancel}
+            className="absolute right-0 top-0 p-1 rounded hover:bg-accent"
+            aria-label="Close"
+          >
             <X className="w-4 h-4" />
           </button>
+          {danger && (
+            <div className="flex justify-center mb-2">
+              <div className="shrink-0 w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+              </div>
+            </div>
+          )}
+          {title && (
+            <h3 className="text-base font-semibold text-center mb-2 px-6">{title}</h3>
+          )}
+          <p className="text-sm text-foreground">{message}</p>
         </div>
         <div className="flex items-center justify-end gap-2">
           {!hideCancel && (
