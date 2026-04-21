@@ -86,24 +86,52 @@ globalThis.fetch = async function patchedFetch(url, options) {
 const DEFAULT_TAGS = [
     // Scenes & settings
     'beach', 'mountain', 'forest', 'lake', 'ocean', 'river', 'waterfall',
-    'city', 'street', 'park', 'garden', 'field', 'desert',
-    'sunset', 'sunrise', 'night sky', 'snow', 'rain',
-    // Events
-    'wedding', 'birthday party', 'christmas', 'graduation', 'concert',
-    'holiday', 'festival', 'sports event',
+    'city', 'street', 'park', 'garden', 'field', 'desert', 'meadow',
+    'countryside', 'farm', 'vineyard', 'cliff', 'cave', 'island', 'harbor',
+    'sunset', 'sunrise', 'night sky', 'snow', 'rain', 'fog', 'storm', 'rainbow',
+    // Events — life milestones
+    'wedding', 'bride', 'groom', 'bouquet', 'wedding dress', 'tuxedo',
+    'ceremony', 'reception', 'gown', 'altar', 'chapel', 'married', 'newlywed',
+    'engagement', 'proposal', 'honeymoon',
+    'birthday party', 'birthday cake', 'candles',
+    'christmas', 'christmas tree', 'ornaments',
+    'halloween', 'pumpkin', 'costume',
+    'thanksgiving', 'easter',
+    'new year', 'fireworks',
+    'graduation', 'diploma',
+    'baby shower', 'christening', 'baptism',
+    'funeral',
+    'anniversary',
+    // Events — gatherings
+    'concert', 'festival', 'sports event', 'parade', 'carnival', 'fair',
+    'conference', 'meeting', 'lecture',
+    'party', 'gathering', 'reunion', 'family photo', 'group photo',
+    // Couple / affection cues
+    'couple', 'kiss', 'hug', 'embrace', 'holding hands', 'romantic', 'dating',
     // Activities
-    'swimming', 'hiking', 'cycling', 'running', 'dancing',
-    'cooking', 'eating', 'playing',
+    'swimming', 'hiking', 'cycling', 'running', 'dancing', 'skiing',
+    'snowboarding', 'surfing', 'sailing', 'fishing', 'camping', 'climbing',
+    'cooking', 'eating', 'playing', 'reading', 'writing', 'painting',
+    'shopping', 'travel', 'driving',
     // People & groups
-    'portrait', 'selfie', 'group photo', 'family photo', 'baby', 'children',
+    'portrait', 'selfie', 'baby', 'toddler', 'child', 'children',
+    'teenager', 'adult', 'elderly', 'family',
+    'pregnancy', 'newborn',
     // Animals
-    'dog', 'cat', 'bird', 'horse', 'fish',
-    // Objects & places
-    'car', 'boat', 'airplane', 'train', 'bicycle',
-    'building', 'church', 'bridge', 'monument', 'castle',
-    'house', 'kitchen', 'living room', 'bedroom', 'restaurant',
+    'dog', 'cat', 'bird', 'horse', 'fish', 'rabbit', 'cow', 'sheep', 'pet',
+    // Vehicles
+    'car', 'boat', 'airplane', 'train', 'bicycle', 'motorcycle', 'bus', 'truck',
+    // Places & buildings
+    'building', 'church', 'bridge', 'monument', 'castle', 'skyscraper', 'tower',
+    'house', 'kitchen', 'living room', 'bedroom', 'bathroom', 'garage', 'backyard',
+    'restaurant', 'cafe', 'bar', 'pub', 'hotel', 'office', 'classroom', 'stage',
+    'hospital', 'museum', 'library', 'store', 'market', 'stadium', 'airport',
+    'gym', 'pool', 'playground',
     // Nature & things
-    'flower', 'tree', 'food', 'drink', 'book',
+    'flower', 'flowers', 'tree', 'trees', 'grass', 'leaves',
+    'food', 'drink', 'cake', 'pizza', 'coffee', 'wine', 'beer', 'cocktail',
+    'dinner', 'lunch', 'breakfast', 'picnic', 'barbecue',
+    'book', 'phone', 'camera', 'laptop', 'gift', 'balloons',
 ];
 // ─── Pipeline holders ────────────────────────────────────────────────────────
 let humanInstance = null;
@@ -379,10 +407,13 @@ async function processFile(fileId, filePath) {
                 const results = await classifier(image, DEFAULT_TAGS, {
                     hypothesis_template: 'a photo of {}',
                 });
-                // Filter by confidence threshold, take top 5
+                // Filter by confidence threshold, take top 10. Richer scenes
+                // like weddings legitimately have many relevant tags (bride,
+                // groom, bouquet, ceremony, gown, flowers…) — the old top-5
+                // cap was dropping signal on exactly those high-value photos.
                 const topTags = results
                     .filter((r) => r.score >= config.minTagConfidence)
-                    .slice(0, 5);
+                    .slice(0, 10);
                 for (const result of topTags) {
                     tags.push({ tag: result.label, confidence: result.score });
                 }
