@@ -321,6 +321,26 @@ export function initDatabase() {
         catch (migErr) {
             console.error('[DB] Relationships migration failed:', migErr);
         }
+        // Graph history — every relationship mutation (add / update / remove)
+        // is logged with a reversible payload so the user can undo/redo
+        // across sessions. Entries include a `forward` op (the mutation
+        // that happened) and `inverse` op (what would undo it). The
+        // `undone` flag tracks the undo/redo cursor: undone=1 means this
+        // op has been undone; a redo flips it back to 0. Creating a NEW op
+        // after an undo purges all undone entries — user branched.
+        db.exec(`
+      CREATE TABLE IF NOT EXISTS graph_history (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind        TEXT NOT NULL,
+        forward     TEXT NOT NULL,
+        inverse     TEXT NOT NULL,
+        description TEXT,
+        undone      INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_graph_history_created ON graph_history(created_at);
+      CREATE INDEX IF NOT EXISTS idx_graph_history_undone ON graph_history(undone, id);
+    `);
         // Saved trees — named view presets. Each captures a focus person +
         // filter state (Steps on/off + depth, Generations on/off + ↑/↓ depths).
         // Auto-saved as the user tweaks controls. Max 5 enforced at the
@@ -2467,6 +2487,13 @@ export function addRelationship(params) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(params.personAId, params.personBId, params.type, params.since ?? null, params.until ?? null, params.flags ? JSON.stringify(params.flags) : null, params.confidence ?? 1.0, params.source ?? 'user', params.note ?? null);
         const row = db.prepare(`SELECT * FROM relationships WHERE id = ?`).get(info.lastInsertRowid);
+        // Log history. Inverse of add is remove (by composite key so the
+        // log survives subsequent id churn from other add/remove cycles).
+        const personName = (pid) => {
+            const r = db.prepare(`SELECT name FROM persons WHERE id = ?`).get(pid);
+            return r?.name || `#${pid}`;
+        };
+        logGraphHistory('add_relationship', { kind: 'add', personAId: params.personAId, personBId: params.personBId, type: params.type, since: params.since, until: params.until, flags: params.flags, confidence: params.confidence, source: params.source, note: params.note }, { kind: 'remove', personAId: params.personAId, personBId: params.personBId, type: params.type }, `Added ${params.type.replace('_of', '')} link ${personName(params.personAId)} ↔ ${personName(params.personBId)}`);
         return rowToRelationship(row);
     }
     catch (err) {
@@ -2514,13 +2541,183 @@ export function updateRelationship(id, patch) {
     sets.push(`updated_at = datetime('now')`);
     db.prepare(`UPDATE relationships SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     const row = db.prepare(`SELECT * FROM relationships WHERE id = ?`).get(id);
+    // Log. Forward patch is what was just applied; inverse patch rewinds
+    // to the previous values of the same fields.
+    const previousPatch = {};
+    const forwardPatch = {};
+    if (patch.since !== undefined) {
+        previousPatch.since = existing.since;
+        forwardPatch.since = patch.since;
+    }
+    if (patch.until !== undefined) {
+        previousPatch.until = existing.until;
+        forwardPatch.until = patch.until;
+    }
+    if (patch.flags !== undefined) {
+        previousPatch.flags = existing.flags ? JSON.parse(existing.flags) : null;
+        forwardPatch.flags = patch.flags;
+    }
+    if (patch.confidence !== undefined) {
+        previousPatch.confidence = existing.confidence;
+        forwardPatch.confidence = patch.confidence;
+    }
+    if (patch.source !== undefined) {
+        previousPatch.source = existing.source;
+        forwardPatch.source = patch.source;
+    }
+    if (patch.note !== undefined) {
+        previousPatch.note = existing.note;
+        forwardPatch.note = patch.note;
+    }
+    logGraphHistory('update_relationship', { kind: 'update', personAId: existing.person_a_id, personBId: existing.person_b_id, type: existing.type, patch: forwardPatch }, { kind: 'update', personAId: existing.person_a_id, personBId: existing.person_b_id, type: existing.type, patch: previousPatch }, `Updated ${existing.type.replace('_of', '')} link`);
     return rowToRelationship(row);
 }
 /** Delete a relationship by ID. */
 export function removeRelationship(id) {
     const db = getDb();
+    // Snapshot the row BEFORE deletion so we can log an inverse that
+    // recreates it exactly (type, since/until, flags, etc.).
+    const existing = db.prepare(`SELECT * FROM relationships WHERE id = ?`).get(id);
     const info = db.prepare(`DELETE FROM relationships WHERE id = ?`).run(id);
+    if (info.changes > 0 && existing) {
+        const personName = (otherId) => {
+            const row = db.prepare(`SELECT name FROM persons WHERE id = ?`).get(otherId);
+            return row?.name || `#${otherId}`;
+        };
+        logGraphHistory('remove_relationship', { kind: 'remove', id: existing.id }, {
+            kind: 'add',
+            personAId: existing.person_a_id,
+            personBId: existing.person_b_id,
+            type: existing.type,
+            since: existing.since,
+            until: existing.until,
+            flags: existing.flags ? JSON.parse(existing.flags) : null,
+            confidence: existing.confidence,
+            source: existing.source,
+            note: existing.note,
+        }, `Removed ${existing.type.replace('_of', '')} link ${personName(existing.person_a_id)} ↔ ${personName(existing.person_b_id)}`);
+    }
     return info.changes > 0 ? { success: true } : { success: false, error: 'Relationship not found.' };
+}
+function logGraphHistory(kind, forward, inverse, description) {
+    const db = getDb();
+    // Any NEW operation truncates the redo stack (user took a new branch).
+    db.prepare(`DELETE FROM graph_history WHERE undone = 1`).run();
+    db.prepare(`
+    INSERT INTO graph_history (kind, forward, inverse, description, undone)
+    VALUES (?, ?, ?, ?, 0)
+  `).run(kind, JSON.stringify(forward), JSON.stringify(inverse), description);
+}
+/** Apply an op directly (bypassing history logging so undo/redo don't
+ *  clutter the log with their own operations). */
+function applyGraphOp(op) {
+    const db = getDb();
+    if (op.kind === 'add') {
+        try {
+            db.prepare(`
+        INSERT INTO relationships (person_a_id, person_b_id, type, since, until, flags, confidence, source, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(op.personAId, op.personBId, op.type, op.since ?? null, op.until ?? null, op.flags ? JSON.stringify(op.flags) : null, op.confidence ?? 1.0, op.source ?? 'user', op.note ?? null);
+            return { success: true };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+    if (op.kind === 'remove') {
+        // Prefer composite key for resilience across id churn.
+        if (op.personAId != null && op.personBId != null && op.type) {
+            const info = db.prepare(`DELETE FROM relationships WHERE person_a_id = ? AND person_b_id = ? AND type = ?`)
+                .run(op.personAId, op.personBId, op.type);
+            return { success: info.changes > 0 };
+        }
+        if (op.id != null) {
+            const info = db.prepare(`DELETE FROM relationships WHERE id = ?`).run(op.id);
+            return { success: info.changes > 0 };
+        }
+        return { success: false, error: 'remove op missing id/composite key' };
+    }
+    if (op.kind === 'update') {
+        const sets = [];
+        const vals = [];
+        const p = op.patch;
+        if (p.since !== undefined) {
+            sets.push('since = ?');
+            vals.push(p.since);
+        }
+        if (p.until !== undefined) {
+            sets.push('until = ?');
+            vals.push(p.until);
+        }
+        if (p.flags !== undefined) {
+            sets.push('flags = ?');
+            vals.push(p.flags ? JSON.stringify(p.flags) : null);
+        }
+        if (p.confidence !== undefined) {
+            sets.push('confidence = ?');
+            vals.push(p.confidence);
+        }
+        if (p.source !== undefined) {
+            sets.push('source = ?');
+            vals.push(p.source);
+        }
+        if (p.note !== undefined) {
+            sets.push('note = ?');
+            vals.push(p.note);
+        }
+        if (sets.length === 0)
+            return { success: true };
+        sets.push(`updated_at = datetime('now')`);
+        const info = db.prepare(`
+      UPDATE relationships SET ${sets.join(', ')}
+      WHERE person_a_id = ? AND person_b_id = ? AND type = ?
+    `).run(...vals, op.personAId, op.personBId, op.type);
+        return { success: info.changes > 0 };
+    }
+    return { success: false, error: 'unknown op kind' };
+}
+/** Pop the most recent non-undone entry, apply its inverse, mark undone. */
+export function undoLastGraphOperation() {
+    const db = getDb();
+    const row = db.prepare(`
+    SELECT * FROM graph_history
+    WHERE undone = 0
+    ORDER BY id DESC
+    LIMIT 1
+  `).get();
+    if (!row)
+        return { success: false, error: 'Nothing to undo.' };
+    const inverse = JSON.parse(row.inverse);
+    const r = applyGraphOp(inverse);
+    if (!r.success)
+        return { success: false, error: r.error ?? 'Undo failed.' };
+    db.prepare(`UPDATE graph_history SET undone = 1 WHERE id = ?`).run(row.id);
+    return { success: true, description: row.description };
+}
+/** Re-apply the most recently undone entry's forward. */
+export function redoGraphOperation() {
+    const db = getDb();
+    const row = db.prepare(`
+    SELECT * FROM graph_history
+    WHERE undone = 1
+    ORDER BY id DESC
+    LIMIT 1
+  `).get();
+    if (!row)
+        return { success: false, error: 'Nothing to redo.' };
+    const forward = JSON.parse(row.forward);
+    const r = applyGraphOp(forward);
+    if (!r.success)
+        return { success: false, error: r.error ?? 'Redo failed.' };
+    db.prepare(`UPDATE graph_history SET undone = 0 WHERE id = ?`).run(row.id);
+    return { success: true, description: row.description };
+}
+/** Counts for enabling/disabling the UI buttons. */
+export function getGraphHistoryCounts() {
+    const db = getDb();
+    const u = db.prepare(`SELECT COUNT(*) AS cnt FROM graph_history WHERE undone = 0`).get().cnt;
+    const r = db.prepare(`SELECT COUNT(*) AS cnt FROM graph_history WHERE undone = 1`).get().cnt;
+    return { canUndo: u, canRedo: r };
 }
 /** All relationships touching a person (as either endpoint). */
 export function listRelationshipsForPerson(personId) {

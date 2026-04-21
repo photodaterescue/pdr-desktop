@@ -441,15 +441,27 @@ function FamilyGroup({ parents, children, bracketOffset, onParentClick }: {
 }) {
   if (parents.length === 0 || children.length === 0) return null;
 
-  // Cards have their content (avatar + name + dates) INSIDE, so lines
-  // can attach cleanly at the card edges — no gap for a name-below-
-  // node label, no visible stub. Royal-chart style.
-  const PARENT_BOTTOM_OFFSET = CARD_H / 2;
-  const CHILD_TOP_OFFSET = CARD_H / 2;
+  // Card bottom is at renderedY + CARD_H/2. Ghost placeholders are
+  // only 28px radius, so their visual bottom sits higher. We share ONE
+  // parentY (aligned to the tallest — i.e. the card) and draw a
+  // per-parent vertical stub from each parent's actual bottom down to
+  // that shared Y. Cards get a zero-length stub (bar at the edge);
+  // ghosts get a short connector so the bar doesn't appear disconnected
+  // from them. Same pattern the royal-chart tree uses.
+  const GHOST_BOTTOM = 28;
+  const CARD_BOTTOM = CARD_H / 2;
+  const parentVisualBottom = (p: LaidOutNode & { isPlaceholder?: boolean }) =>
+    p.isPlaceholder ? p.renderedY + GHOST_BOTTOM : p.renderedY + CARD_BOTTOM;
 
-  // Assume parents are at the same y (same generation). Use the first's.
-  const parentY = parents[0].renderedY + PARENT_BOTTOM_OFFSET;
-  const childY = children[0].renderedY - CHILD_TOP_OFFSET;
+  // Shared marriage-bar Y — below the tallest parent. With two ghosts,
+  // this is renderedY + GHOST_BOTTOM + small gap so the bar sits just
+  // under both. With any card parent, use CARD_BOTTOM so the bar hugs
+  // the card's actual edge.
+  const anyCardParent = parents.some(p => !p.isPlaceholder);
+  const baseBottom = anyCardParent ? CARD_BOTTOM : GHOST_BOTTOM + 8;
+  const parentY = parents[0].renderedY + baseBottom;
+
+  const childY = children[0].renderedY - CARD_H / 2;
   // Bracket lives between parent and child rows, staggered per-family
   // so different families don't overlap their horizontals.
   const bracketY = parentY + (childY - parentY) * 0.45 + bracketOffset;
@@ -470,6 +482,25 @@ function FamilyGroup({ parents, children, bracketOffset, onParentClick }: {
 
   return (
     <g>
+      {/* Per-parent vertical stub — from each parent's actual visual
+          bottom down to the shared marriage-bar Y. Zero-length for
+          cards; a short connector for ghost placeholders so the bar
+          never looks floating. */}
+      {parents.map(p => {
+        const visBottom = parentVisualBottom(p);
+        if (visBottom >= parentY) return null; // card already touches bar
+        return (
+          <line
+            key={`stub-${p.personId}`}
+            x1={p.renderedX}
+            y1={visBottom}
+            x2={p.renderedX}
+            y2={parentY}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+          />
+        );
+      })}
       {/* Marriage bar — only if there are 2+ parents */}
       {parents.length >= 2 && (
         <line

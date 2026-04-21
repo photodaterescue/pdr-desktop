@@ -130,6 +130,9 @@ import {
   createSavedTree,
   updateSavedTree,
   deleteSavedTree,
+  undoLastGraphOperation,
+  redoGraphOperation,
+  getGraphHistoryCounts,
   rebuildAiFts,
   getPersonClusters,
   getClusterFaces,
@@ -2562,6 +2565,21 @@ ipcMain.handle('trees:savedUpdate', async (_event, args: { id: number; patch: Pa
 
 ipcMain.handle('trees:savedDelete', async (_event, id: number) => {
   try { return deleteSavedTree(id); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:undo', async () => {
+  try { return undoLastGraphOperation(); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:redo', async () => {
+  try { return redoGraphOperation(); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:historyCounts', async () => {
+  try { return { success: true, data: getGraphHistoryCounts() }; }
   catch (err) { return { success: false, error: (err as Error).message }; }
 });
 

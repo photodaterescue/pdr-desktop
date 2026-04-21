@@ -1179,6 +1179,27 @@ export async function deleteSavedTree(id: number): Promise<{ success: boolean; e
   return { success: false, error: 'Not running in Electron' };
 }
 
+export async function undoGraphOperation(): Promise<{ success: boolean; description?: string; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.undo();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function redoGraphOperation(): Promise<{ success: boolean; description?: string; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.redo();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function getGraphHistoryCounts(): Promise<{ success: boolean; data?: { canUndo: number; canRedo: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.historyCounts();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export async function createPlaceholderPerson(): Promise<{ success: boolean; data?: number; error?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
     return (window as any).pdr.trees.createPlaceholderPerson();
