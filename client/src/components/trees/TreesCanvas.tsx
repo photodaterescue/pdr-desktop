@@ -796,13 +796,18 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onMo
       {/* Avatar — small circle near the top of the card */}
       <circle cx={0} cy={AVATAR_CY} r={AVATAR_R} fill={avatar ? '#fff' : bgColor} stroke="rgba(0,0,0,0.12)" strokeWidth={1} />
       {avatar ? (
+        // clipPath percentages are relative to the IMAGE bounding box,
+        // not the SVG canvas. The image itself is already placed with
+        // x/y so its box is centred on (0, AVATAR_CY); we just need a
+        // circle clip at the image's own centre.
         <image
           href={avatar}
           x={-AVATAR_R}
           y={AVATAR_CY - AVATAR_R}
           width={AVATAR_R * 2}
           height={AVATAR_R * 2}
-          style={{ clipPath: `circle(${AVATAR_R}px at 50% ${AVATAR_CY + AVATAR_R}px)` }}
+          preserveAspectRatio="xMidYMid slice"
+          style={{ clipPath: `circle(${AVATAR_R}px at 50% 50%)` }}
         />
       ) : (
         <text x={0} y={AVATAR_CY + 7} textAnchor="middle" fontSize={18} fontWeight={600} fill="#fff">

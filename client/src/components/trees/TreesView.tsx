@@ -17,6 +17,7 @@ import {
   type SavedTreeRecord,
 } from '@/lib/electron-bridge';
 import { computeFocusLayout, augmentWithVirtualGhosts } from '@/lib/trees-layout';
+import { toast } from 'sonner';
 import { TreesCanvas } from './TreesCanvas';
 import { SetRelationshipModal } from './SetRelationshipModal';
 import { EditRelationshipsModal } from './EditRelationshipsModal';
@@ -535,18 +536,45 @@ export function TreesView() {
       (e.aId === personId || e.bId === personId) && e.id != null && !e.derived
     );
     if (edgesToRemove.length === 0) return;
-    const confirmMsg = `This will remove all ${edgesToRemove.length} relationship${edgesToRemove.length === 1 ? '' : 's'} involving this person. The person themselves stays — only the relationships go.`;
+    const personName = allPersons.find(p => p.id === personId)?.name ?? 'this person';
+    const confirmMsg = `This will remove all ${edgesToRemove.length} relationship${edgesToRemove.length === 1 ? '' : 's'} involving ${personName}. The person themselves stays — only the relationships go. You'll have a few seconds to undo.`;
     if (!(await promptConfirm({
       title: `Remove all relationships?`,
       message: confirmMsg,
       confirmLabel: 'Remove all',
       danger: true,
     }))) return;
+    // Snapshot edges BEFORE removal so Undo can re-create them.
+    // We capture the full shape (type, flags, since/until) so restore
+    // is lossless.
+    const snapshot = edgesToRemove.map(e => ({
+      personAId: e.aId,
+      personBId: e.bId,
+      type: e.type as any,
+      since: e.since ?? null,
+      until: e.until ?? null,
+      flags: e.flags ?? null,
+    }));
     for (const e of edgesToRemove) {
       if (e.id != null) await removeRelationship(e.id);
     }
     if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
-  }, [graph, focusPersonId, fetchDepth, refetchGraph]);
+
+    // Offer Undo — re-creates the stored edges one by one. 12s window.
+    toast(`Removed ${edgesToRemove.length} relationship${edgesToRemove.length === 1 ? '' : 's'} for ${personName}`, {
+      duration: 12000,
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          for (const s of snapshot) {
+            await addRelationship(s);
+          }
+          if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
+          toast.success(`Restored ${snapshot.length} relationship${snapshot.length === 1 ? '' : 's'}`);
+        },
+      },
+    });
+  }, [graph, focusPersonId, fetchDepth, refetchGraph, allPersons]);
 
 
   return (
