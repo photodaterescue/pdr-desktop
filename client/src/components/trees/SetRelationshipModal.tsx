@@ -178,8 +178,17 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
       // relationship shape is right.
       if (editingEdge && editingEdge.id != null) {
         const storedForNewType = declarativeToStoredType(type);
-        if (storedForNewType === editingEdge.type) {
-          // Same stored type → patch in place.
+        // Both 'parent' and 'child' map to stored type 'parent_of', but
+        // they point in OPPOSITE directions. If the user flipped the
+        // declarative side (Parent → Child or vice versa), we must
+        // drop the old edge and recreate it with swapped aId/bId —
+        // a field patch alone would leave the original direction.
+        const directionFlipped =
+          editingEdge.type === 'parent_of' &&
+          ((type === 'parent' && editingEdge.aId !== fromPersonId) ||
+           (type === 'child'  && editingEdge.aId === fromPersonId));
+        if (storedForNewType === editingEdge.type && !directionFlipped) {
+          // Same stored type AND same direction → patch in place.
           const patch: any = {
             since: sinceDate || null,
             until: untilDate || null,
@@ -517,17 +526,21 @@ const TYPE_VERBS: Record<DeclarativeRelationshipType, string> = {
   other: 'is connected to',
 };
 
+// Direction-sensitive labels spell out "…of" so the button's meaning
+// matches the preview sentence below: "Nee is [Parent of…] <other>" vs
+// "Nee is [Child of…] <other>". Symmetric types (Sibling, Partner,
+// Cousin, Half-sibling) stay un-suffixed.
 const TYPE_LABELS: Record<DeclarativeRelationshipType, string> = {
-  parent: 'Parent',
-  child: 'Child',
+  parent: 'Parent of…',
+  child: 'Child of…',
   partner: 'Partner / spouse',
   sibling: 'Sibling',
   half_sibling: 'Half-sibling',
   adopted_sibling: 'Adopted sibling',
-  grandparent: 'Grandparent',
-  grandchild: 'Grandchild',
-  aunt_uncle: 'Aunt / uncle',
-  niece_nephew: 'Niece / nephew',
+  grandparent: 'Grandparent of…',
+  grandchild: 'Grandchild of…',
+  aunt_uncle: 'Aunt / uncle of…',
+  niece_nephew: 'Niece / nephew of…',
   cousin: 'Cousin',
   ex_partner: 'Ex-partner',
   friend: 'Friend',
