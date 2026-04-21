@@ -15,6 +15,7 @@ import {
 import { computeFocusLayout, augmentWithVirtualGhosts } from '@/lib/trees-layout';
 import { TreesCanvas } from './TreesCanvas';
 import { SetRelationshipModal } from './SetRelationshipModal';
+import { EditRelationshipsModal } from './EditRelationshipsModal';
 import { promptConfirm } from './promptConfirm';
 
 interface PersonSummary {
@@ -55,6 +56,11 @@ export function TreesView() {
   const [descendantsDepth, setDescendantsDepth] = useState(2);
   const [allPersons, setAllPersons] = useState<PersonSummary[]>([]);
   const [relationshipEditorFor, setRelationshipEditorFor] = useState<number | null>(null);
+  /** Optional preselection for SetRelationshipModal's "other person" —
+   *  used when Edit Relationships jumps straight into an existing edge. */
+  const [relationshipEditorInitialTo, setRelationshipEditorInitialTo] = useState<number | null>(null);
+  /** When set, the Edit Relationships list modal is open for this person. */
+  const [editRelationshipsFor, setEditRelationshipsFor] = useState<number | null>(null);
   /** Target of an in-flight quick-add (chip around a node). null = no picker open. */
   const [quickAdd, setQuickAdd] = useState<{
     fromPersonId: number;
@@ -483,7 +489,8 @@ export function TreesView() {
           <TreesCanvas
             layout={layout}
             onRefocus={handleRefocus}
-            onSetRelationship={(personId) => setRelationshipEditorFor(personId)}
+            onSetRelationship={(personId) => { setRelationshipEditorInitialTo(null); setRelationshipEditorFor(personId); }}
+            onEditRelationships={(personId) => setEditRelationshipsFor(personId)}
             onRemovePerson={handleRemovePerson}
             onGraphMutated={handleRelationshipCreated}
             onQuickAddParent={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'parent' })}
@@ -574,9 +581,41 @@ export function TreesView() {
             fromPersonName={fromPerson.name}
             persons={allPersons}
             graph={graph}
-            onClose={() => setRelationshipEditorFor(null)}
+            initialToPersonId={relationshipEditorInitialTo ?? undefined}
+            onClose={() => { setRelationshipEditorFor(null); setRelationshipEditorInitialTo(null); }}
             onRelationshipCreated={handleRelationshipCreated}
             onPersonsChanged={reloadPersons}
+          />
+        );
+      })()}
+
+      {/* Edit Relationships list — shows every existing link for a
+          person with per-row Edit / Remove controls and an Add-new CTA. */}
+      {editRelationshipsFor != null && (() => {
+        const person = allPersons.find(p => p.id === editRelationshipsFor);
+        if (!person) return null;
+        return (
+          <EditRelationshipsModal
+            personId={editRelationshipsFor}
+            personName={person.name}
+            persons={allPersons}
+            graph={graph}
+            onClose={() => setEditRelationshipsFor(null)}
+            onEditEdge={(otherId) => {
+              // Hand off to SetRelationshipModal with the other side
+              // preselected — its edge-detection will prefill the form.
+              const pid = editRelationshipsFor;
+              setEditRelationshipsFor(null);
+              setRelationshipEditorInitialTo(otherId);
+              setRelationshipEditorFor(pid);
+            }}
+            onAddNew={() => {
+              const pid = editRelationshipsFor;
+              setEditRelationshipsFor(null);
+              setRelationshipEditorInitialTo(null);
+              setRelationshipEditorFor(pid);
+            }}
+            onChanged={handleRelationshipCreated}
           />
         );
       })()}

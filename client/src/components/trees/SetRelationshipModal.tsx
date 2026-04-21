@@ -30,6 +30,11 @@ interface SetRelationshipModalProps {
   persons: PersonSummary[];
   /** Current family graph (for deriving parents, children etc. during inference). */
   graph: FamilyGraph | null;
+  /** Optional: preselect the "other person" on mount. Used when the
+   *  Edit-Relationships modal launches directly into editing a specific
+   *  existing edge — the edge-detection useEffect then prefills the
+   *  form automatically. */
+  initialToPersonId?: number;
   onClose: () => void;
   onRelationshipCreated: () => void;
   /** Called when a new named person is created from within the modal, so
@@ -45,7 +50,7 @@ interface SetRelationshipModalProps {
  * to mark a grandparent when the intermediate parent isn't set yet) we
  * show a clear "you need X first" message rather than silently failing.
  */
-export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, graph, onClose, onRelationshipCreated, onPersonsChanged }: SetRelationshipModalProps) {
+export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, graph, initialToPersonId, onClose, onRelationshipCreated, onPersonsChanged }: SetRelationshipModalProps) {
   // Persons list grows locally when the user creates a new named person
   // inside the modal — so the newly-created name shows up immediately
   // in the list without a full parent refresh.
@@ -56,7 +61,7 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
     return [...persons, ...extra];
   }, [persons, locallyCreated]);
   const [type, setType] = useState<DeclarativeRelationshipType>('parent');
-  const [toPersonId, setToPersonId] = useState<number | null>(null);
+  const [toPersonId, setToPersonId] = useState<number | null>(initialToPersonId ?? null);
   const [query, setQuery] = useState('');
   const [flags, setFlags] = useState<{ biological: boolean; step: boolean; adopted: boolean; in_law: boolean }>({
     biological: true, step: false, adopted: false, in_law: false,

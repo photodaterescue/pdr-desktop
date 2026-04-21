@@ -9,6 +9,9 @@ interface TreesCanvasProps {
   layout: TreeLayout & { collapsedCountPerAnchor?: Map<number, number> };
   onRefocus: (personId: number) => void;
   onSetRelationship: (personId: number) => void;
+  /** Opens a list of all existing relationships touching this person,
+   *  with per-row Edit and Remove controls plus an Add-new CTA. */
+  onEditRelationships: (personId: number) => void;
   onRemovePerson: (personId: number) => void;
   /** Direct-relationship quick adds triggered by the +/chips around each node.
    *  Each fires a lightweight add flow (opens a small person picker). */
@@ -26,7 +29,7 @@ const NODE_RADIUS = 42;
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 150;
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, onGraphMutated }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, onGraphMutated }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -366,6 +369,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onRemovePers
           personId={contextMenu.personId}
           isFocus={contextMenu.personId === layout.focusPersonId}
           onSetRelationship={() => { onSetRelationship(contextMenu.personId); setContextMenu(null); }}
+          onEditRelationships={() => { onEditRelationships(contextMenu.personId); setContextMenu(null); }}
           onRefocus={() => { onRefocus(contextMenu.personId); setContextMenu(null); }}
           onRemovePerson={() => { onRemovePerson(contextMenu.personId); setContextMenu(null); }}
           onClose={() => setContextMenu(null)}
@@ -1017,11 +1021,12 @@ function EdgeQuickEditor({ edge, x, y, personNameLookup, onSaved, onClose }: {
   );
 }
 
-function NodeContextMenu({ x, y, isFocus, onSetRelationship, onRefocus, onRemovePerson, onClose }: {
+function NodeContextMenu({ x, y, isFocus, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onClose }: {
   x: number; y: number;
   personId: number;
   isFocus: boolean;
   onSetRelationship: () => void;
+  onEditRelationships: () => void;
   onRefocus: () => void;
   onRemovePerson: () => void;
   onClose: () => void;
@@ -1046,6 +1051,7 @@ function NodeContextMenu({ x, y, isFocus, onSetRelationship, onRefocus, onRemove
         </>
       )}
       <MenuItem icon={<Link2 className="w-4 h-4" />} label="Set relationship…" onClick={onSetRelationship} />
+      <MenuItem icon={<Pencil className="w-4 h-4" />} label="Edit relationships…" onClick={onEditRelationships} />
       <div className="border-t border-border my-1" />
       <MenuItem icon={<Trash2 className="w-4 h-4" />} label="Unlink from the tree" onClick={onRemovePerson} danger />
       {/* Deliberately NOT offering "Delete person" here — deleting a

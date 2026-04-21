@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sun, Moon, Brain, Pause, Play, X as XIcon } from 'lucide-react';
+import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { onAiProgress, pauseAi, resumeAi, cancelAi, type AiProgress } from '@/lib/electron-bridge';
 
@@ -26,6 +26,11 @@ export function TitleBar() {
     return document.documentElement.classList.contains('dark');
   });
   const [aiProgress, setAiProgress] = useState<AiProgress | null>(null);
+  // The flashing pill can be distracting across long re-tagging runs.
+  // When collapsed, the pill shrinks from the left toward the right,
+  // leaving a small static icon (no pulse) anchored on the right that
+  // can be clicked to expand again.
+  const [pillCollapsed, setPillCollapsed] = useState(false);
 
   // Subscribe to AI progress once at mount. onAiProgress returns a
   // per-handler unsubscribe so other renderer components (SearchPanel)
@@ -126,26 +131,46 @@ export function TitleBar() {
       >
         {/* AI progress pill — shown on every view while re-tagging or
             first-time analysis is running. "Tagging X/Y" for tags-only
-            re-runs, "Analyzing X/Y" for the combined faces+tags flow. */}
+            re-runs, "Analyzing X/Y" for the combined faces+tags flow.
+            Collapsible: click the chevron on the left to shrink the
+            pill down to just an icon (no pulse). */}
         {aiProcessing && (
-          <span className={`flex items-center gap-1.5 text-xs text-white font-medium ${aiProgress?.phase === 'paused' ? 'bg-amber-500/30' : 'bg-purple-500/30'} px-2.5 py-1 rounded-full ${aiProgress?.phase === 'paused' ? '' : 'animate-pulse'}`}>
-            {aiProgress?.phase === 'paused' ? (
-              <Pause className="w-3.5 h-3.5" />
-            ) : (
-              <Brain className="w-3.5 h-3.5 animate-spin" />
-            )}
-            {!aiProgress ? 'Starting AI analysis...' :
-             aiProgress.phase === 'downloading-models' ? `Downloading AI models${aiProgress.modelDownloadProgress ? ` (${aiProgress.modelDownloadProgress.percent}%)` : ''}...` :
-             aiProgress.phase === 'clustering' ? 'Clustering faces...' :
-             aiProgress.phase === 'paused' ? `Paused ${aiProgress.current}/${aiProgress.total}` :
-             `${aiProgress.tagsOnly ? 'Tagging' : 'Analyzing'} ${aiProgress.current}/${aiProgress.total}`}
-            {aiProgress?.phase === 'paused' ? (
-              <button onClick={() => resumeAi()} className="ml-1 hover:text-white/90" title="Resume"><Play className="w-3 h-3" /></button>
-            ) : (
-              <button onClick={() => pauseAi()} className="ml-1 hover:text-white/90" title="Pause"><Pause className="w-3 h-3" /></button>
-            )}
-            <button onClick={() => cancelAi()} className="ml-0.5 hover:text-white/90" title="Cancel"><XIcon className="w-3 h-3" /></button>
-          </span>
+          pillCollapsed ? (
+            <button
+              onClick={() => setPillCollapsed(false)}
+              className="flex items-center gap-1 text-xs text-white font-medium bg-purple-500/30 hover:bg-purple-500/45 px-2 py-1 rounded-full transition-colors"
+              title={aiProgress ? `Expand — ${aiProgress.tagsOnly ? 'Tagging' : 'Analyzing'} ${aiProgress.current}/${aiProgress.total}` : 'Expand'}
+            >
+              <ChevronLeft className="w-3 h-3 opacity-80" />
+              <Brain className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <span className={`flex items-center gap-1.5 text-xs text-white font-medium ${aiProgress?.phase === 'paused' ? 'bg-amber-500/30' : 'bg-purple-500/30'} px-2.5 py-1 rounded-full ${aiProgress?.phase === 'paused' ? '' : 'animate-pulse'}`}>
+              <button
+                onClick={() => setPillCollapsed(true)}
+                className="-ml-0.5 mr-0.5 hover:text-white/90"
+                title="Collapse — keeps the pill out of your peripheral vision while the run continues in the background."
+              >
+                <ChevronRight className="w-3 h-3" />
+              </button>
+              {aiProgress?.phase === 'paused' ? (
+                <Pause className="w-3.5 h-3.5" />
+              ) : (
+                <Brain className="w-3.5 h-3.5 animate-spin" />
+              )}
+              {!aiProgress ? 'Starting AI analysis...' :
+               aiProgress.phase === 'downloading-models' ? `Downloading AI models${aiProgress.modelDownloadProgress ? ` (${aiProgress.modelDownloadProgress.percent}%)` : ''}...` :
+               aiProgress.phase === 'clustering' ? 'Clustering faces...' :
+               aiProgress.phase === 'paused' ? `Paused ${aiProgress.current}/${aiProgress.total}` :
+               `${aiProgress.tagsOnly ? 'Tagging' : 'Analyzing'} ${aiProgress.current}/${aiProgress.total}`}
+              {aiProgress?.phase === 'paused' ? (
+                <button onClick={() => resumeAi()} className="ml-1 hover:text-white/90" title="Resume"><Play className="w-3 h-3" /></button>
+              ) : (
+                <button onClick={() => pauseAi()} className="ml-1 hover:text-white/90" title="Pause"><Pause className="w-3 h-3" /></button>
+              )}
+              <button onClick={() => cancelAi()} className="ml-0.5 hover:text-white/90" title="Cancel"><XIcon className="w-3 h-3" /></button>
+            </span>
+          )
         )}
         <button
           onClick={toggleDarkMode}
