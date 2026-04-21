@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from 'react';
 import { X, Plus, Pencil, Check, Trash2, Image as ImageIcon, FileText, Users, Move } from 'lucide-react';
 import {
   listSavedTrees,
-  createSavedTree,
   updateSavedTree,
   deleteSavedTree,
   type SavedTreeRecord,
@@ -12,22 +11,16 @@ import { promptConfirm } from './promptConfirm';
 interface ManageTreesModalProps {
   currentTreeId: number | null;
   currentFocusPersonId: number | null;
-  /** Snapshot of the live filter state so "New tree" can inherit it as
-   *  its starting point. The user can then change focus/filters while
-   *  the new tree is active — auto-save persists those changes. */
-  liveSettings: {
-    stepsEnabled: boolean;
-    stepsDepth: number;
-    generationsEnabled: boolean;
-    ancestorsDepth: number;
-    descendantsDepth: number;
-  };
   /** Returns the tree SVG element so we can export it. Null if nothing
    *  is rendered yet. */
   getTreeSvg: () => SVGSVGElement | null;
   onSwitch: (tree: SavedTreeRecord) => void;
   onChanged: () => void;
   onClose: () => void;
+  /** Ask the parent to start the "new tree" flow — a blank-canvas
+   *  create that prompts for the focus person. Parent handles focus
+   *  picking then creates the tree with default filter settings. */
+  onRequestNewTree: () => void;
 }
 
 const MAX_TREES = 5;
@@ -39,7 +32,7 @@ const MAX_TREES = 5;
  * relationship-wiring work.
  */
 export function ManageTreesModal({
-  currentTreeId, currentFocusPersonId, liveSettings, getTreeSvg, onSwitch, onChanged, onClose,
+  currentTreeId, currentFocusPersonId, getTreeSvg, onSwitch, onChanged, onClose, onRequestNewTree,
 }: ManageTreesModalProps) {
   const [trees, setTrees] = useState<SavedTreeRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,22 +93,12 @@ export function ManageTreesModal({
     onChanged();
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (trees.length >= MAX_TREES) return;
-    setBusy(true);
-    const r = await createSavedTree({
-      name: `Untitled tree ${trees.length + 1}`,
-      focusPersonId: currentFocusPersonId,
-      ...liveSettings,
-    });
-    setBusy(false);
-    if (r.success && r.data) {
-      await reload();
-      onSwitch(r.data);
-      onChanged();
-      // Jump straight into renaming so the user picks a name right away.
-      startRename(r.data);
-    }
+    // Delegate to the parent — it'll prompt for the focus person
+    // (fresh canvas, not a clone of the current tree) and then call
+    // back to refresh this list.
+    onRequestNewTree();
   };
 
   const handleRemove = async (t: SavedTreeRecord) => {
@@ -187,7 +170,7 @@ export function ManageTreesModal({
           <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
             <X className="w-4 h-4" />
           </button>
-          <h3 className="text-base font-semibold text-center px-10">Manage Trees</h3>
+          <h3 className="text-base font-semibold text-center px-10 text-foreground">Manage Trees</h3>
           <p className="text-xs text-muted-foreground text-center mt-0.5 px-10">
             {trees.length} of {MAX_TREES} trees
           </p>
@@ -199,88 +182,95 @@ export function ManageTreesModal({
           ) : trees.length === 0 ? (
             <div className="text-center text-sm text-muted-foreground py-6">No saved trees yet. Create your first one below.</div>
           ) : (
-            trees.map(t => (
-              <div
-                key={t.id}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-                  t.id === currentTreeId
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/40'
-                }`}
-              >
-                <Users className={`w-4 h-4 shrink-0 ${t.id === currentTreeId ? 'text-primary' : 'text-muted-foreground'}`} />
-                <div className="flex-1 min-w-0">
-                  {editingId === t.id ? (
-                    <div className="flex items-center gap-1">
-                      <input
-                        autoFocus
-                        value={editingName}
-                        onChange={e => setEditingName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') commitRename();
-                          else if (e.key === 'Escape') setEditingId(null);
-                        }}
-                        className="flex-1 px-2 py-0.5 rounded border border-border bg-background text-sm"
-                      />
-                      <button onClick={commitRename} disabled={busy} className="p-1 rounded hover:bg-accent text-primary">
-                        <Check className="w-3.5 h-3.5" />
+            trees.map(t => {
+              const isCurrent = t.id === currentTreeId;
+              return (
+                <div
+                  key={t.id}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border transition-colors ${
+                    isCurrent
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/40'
+                  }`}
+                >
+                  <Users className={`w-4 h-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <div className="flex-1 min-w-0">
+                    {editingId === t.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          autoFocus
+                          value={editingName}
+                          onChange={e => setEditingName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') commitRename();
+                            else if (e.key === 'Escape') setEditingId(null);
+                          }}
+                          className="flex-1 px-2 py-1 rounded border border-primary bg-background text-sm text-foreground"
+                        />
+                        <button onClick={commitRename} disabled={busy} className="p-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90">
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => onSwitch(t)}
+                        className="w-full text-left truncate"
+                        title="Switch to this tree"
+                      >
+                        <span className={`text-sm font-medium text-foreground ${isCurrent ? 'font-semibold' : ''}`}>{t.name}</span>
+                        {isCurrent && (
+                          <span className="ml-2 text-[10px] uppercase tracking-wide font-semibold text-foreground bg-primary/20 px-1.5 py-0.5 rounded">
+                            current
+                          </span>
+                        )}
                       </button>
-                    </div>
-                  ) : (
+                    )}
+                  </div>
+                  {editingId !== t.id && (
                     <button
-                      onClick={() => onSwitch(t)}
-                      className="w-full text-left text-sm truncate hover:underline"
-                      title="Switch to this tree"
+                      onClick={() => startRename(t)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/60 border border-border hover:bg-accent text-foreground"
                     >
-                      <span className={t.id === currentTreeId ? 'font-semibold text-primary' : 'text-foreground'}>{t.name}</span>
-                      {t.id === currentTreeId && <span className="ml-2 text-[10px] uppercase tracking-wide text-primary/80">current</span>}
+                      <Pencil className="w-3.5 h-3.5" />
+                      Rename
+                    </button>
+                  )}
+                  {editingId !== t.id && allowRemove && trees.length > 1 && (
+                    <button
+                      onClick={() => handleRemove(t)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-red-500/10 border border-red-500/40 text-red-600 hover:bg-red-500/20"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Remove
                     </button>
                   )}
                 </div>
-                {editingId !== t.id && (
-                  <button
-                    onClick={() => startRename(t)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs hover:bg-accent"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    Rename
-                  </button>
-                )}
-                {editingId !== t.id && allowRemove && trees.length > 1 && (
-                  <button
-                    onClick={() => handleRemove(t)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-red-600 hover:bg-red-500/10"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Remove
-                  </button>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
 
           <button
             onClick={handleCreate}
             disabled={busy || trees.length >= MAX_TREES}
-            className="mt-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border text-sm hover:bg-accent disabled:opacity-50"
+            className="mt-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             {trees.length >= MAX_TREES ? `Maximum of ${MAX_TREES} trees reached` : 'New tree'}
           </button>
 
           {!allowRemove && (
-            <p className="text-[11px] text-muted-foreground italic mt-1">
+            <p className="text-xs text-muted-foreground italic mt-1">
               Tip: the Remove button is hidden by default. To enable it, go to <strong>Settings → AI → Advanced</strong> and turn on <strong>Allow Tree Removal</strong>.
             </p>
           )}
 
           <div className="mt-4 pt-4 border-t border-border">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-2">Export current tree</p>
+            <p className="text-xs uppercase tracking-wide text-foreground font-semibold mb-2">Export current tree</p>
             <div className="flex gap-2">
               <button
                 onClick={handleExportPng}
                 disabled={exporting != null || !currentTreeId}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent disabled:opacity-50"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
               >
                 <ImageIcon className="w-4 h-4" />
                 {exporting === 'png' ? 'Exporting…' : 'Save as PNG'}
@@ -288,20 +278,20 @@ export function ManageTreesModal({
               <button
                 onClick={handleExportPdf}
                 disabled={exporting != null || !currentTreeId}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent disabled:opacity-50"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-accent/60 border border-border text-foreground text-sm font-medium hover:bg-accent disabled:opacity-50"
               >
                 <FileText className="w-4 h-4" />
                 {exporting === 'pdf' ? 'Opening…' : 'Print / Save PDF'}
               </button>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-2">
-              PNG for sharing (email, Messenger, social). PDF opens a print dialog — pick "Save as PDF" in the destination.
+            <p className="text-xs text-muted-foreground mt-2">
+              PNG is the quickest way to share (email, Messenger, social). PDF opens a print dialog — pick "Save as PDF" in the destination to get a PDF, or pick your printer for a wall chart.
             </p>
           </div>
         </div>
 
         <div className="sticky bottom-0 bg-background border-t border-border px-4 py-3 flex items-center justify-end">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm hover:bg-accent">Done</button>
+          <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm hover:bg-accent text-foreground">Done</button>
         </div>
       </div>
     </div>

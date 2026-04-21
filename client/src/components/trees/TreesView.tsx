@@ -80,6 +80,10 @@ export function TreesView() {
   /** Inline rename of the current tree name in the header. */
   const [editingTreeName, setEditingTreeName] = useState(false);
   const [treeNameDraft, setTreeNameDraft] = useState('');
+  /** When true, the focus picker is open in "pick focus for a NEW tree"
+   *  mode. Distinct from the plain Change Focus picker so we can swap
+   *  the onPick behaviour without adding flags. */
+  const [newTreePickerOpen, setNewTreePickerOpen] = useState(false);
   /** Suppress auto-save while we're applying a loaded tree's settings
    *  (otherwise the act of loading would immediately overwrite the
    *  record we just read). */
@@ -813,17 +817,52 @@ export function TreesView() {
         <ManageTreesModal
           currentTreeId={currentTreeId}
           currentFocusPersonId={focusPersonId}
-          liveSettings={{
-            stepsEnabled,
-            stepsDepth: expandedHops,
-            generationsEnabled,
-            ancestorsDepth,
-            descendantsDepth,
-          }}
           getTreeSvg={() => document.querySelector<SVGSVGElement>('svg[data-tree-canvas="true"]')}
           onSwitch={switchToTree}
           onChanged={reloadSavedTrees}
           onClose={() => setManageTreesOpen(false)}
+          onRequestNewTree={() => {
+            // Close Manage Trees and open the focus picker so the user
+            // starts a new tree with a chosen focal person + default
+            // filters — NOT a clone of the current tree.
+            setManageTreesOpen(false);
+            setNewTreePickerOpen(true);
+          }}
+        />
+      )}
+
+      {/* New-tree focus picker — fires after the user clicks "New tree"
+          in Manage Trees. On pick we create a saved tree with that
+          focus and default filter settings, then switch to it. */}
+      {newTreePickerOpen && (
+        <FocusPickerModal
+          persons={allPersons}
+          currentFocusId={null}
+          title="Who's at the centre of this new tree?"
+          showSortOptions={true}
+          onPick={async (personId) => {
+            setNewTreePickerOpen(false);
+            const r = await createSavedTree({
+              name: 'Untitled tree',
+              focusPersonId: personId,
+              stepsEnabled: true,
+              stepsDepth: 3,
+              generationsEnabled: false,
+              ancestorsDepth: 2,
+              descendantsDepth: 2,
+            });
+            if (r.success && r.data) {
+              await reloadSavedTrees();
+              // Switch to the new tree (applies its settings and sets
+              // focus via switchToTree).
+              switchToTree(r.data);
+              // Reopen Manage Trees so the user can immediately rename
+              // the newly-created tree — it starts with "Untitled tree".
+              setManageTreesOpen(true);
+            }
+          }}
+          onPersonsChanged={reloadPersons}
+          onClose={() => setNewTreePickerOpen(false)}
         />
       )}
 
