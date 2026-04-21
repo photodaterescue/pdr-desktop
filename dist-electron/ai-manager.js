@@ -11,10 +11,10 @@ import { Worker } from 'worker_threads';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { app, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, powerSaveBlocker } from 'electron';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import { getUnprocessedFileIds, getFileById, markAiProcessed, insertFaceDetections, insertAiTags, rebuildAiFts, getAllFaceEmbeddings, updateFaceCluster, clearFaceDataForModelUpgrade, } from './search-database.js';
+import { getUnprocessedFileIds, getFileById, markAiProcessed, insertFaceDetections, clearUnverifiedFacesForFile, insertAiTags, rebuildAiFts, getAllFaceEmbeddings, updateFaceCluster, clearFaceDataForModelUpgrade, } from './search-database.js';
 import { getSettings } from './settings-store.js';
 // ─── State ───────────────────────────────────────────────────────────────────
 let worker = null;
@@ -159,6 +159,11 @@ export async function startAiProcessing() {
                 const result = await processFileInWorker(file.id, file.file_path);
                 bufferAndSendLog(`[AI] File ${file.id} (${file.filename}): result=${result ? 'OK' : 'null'}, faces=${result?.faces?.length ?? 0}, tags=${result?.tags?.length ?? 0}`);
                 if (result) {
+                    // Wipe any pre-existing UNVERIFIED face rows for this file
+                    // before inserting fresh detections — stops re-processing
+                    // from stacking duplicate rows. User-verified assignments
+                    // (verified=1) are kept.
+                    clearUnverifiedFacesForFile(file.id);
                     // Store face detections
                     if (result.faces && result.faces.length > 0) {
                         const faceRecords = result.faces.map(f => ({
@@ -446,7 +451,17 @@ function cosineSimilarity(a, b) {
 }
 // ─── Progress IPC ──────────────────────────────────────────────────────────
 function sendProgress(progress) {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai:progress', progress);
+    // Broadcast to EVERY open renderer window — main, People Manager,
+    // Date Editor, etc. — so any window subscribed to `ai:progress`
+    // sees the same counter updates. Previously only mainWindow got them,
+    // which left the People Manager (where faces actually land) with no
+    // visibility into analysis progress.
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed())
+            continue;
+        try {
+            win.webContents.send('ai:progress', progress);
+        }
+        catch { }
     }
 }

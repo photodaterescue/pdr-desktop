@@ -24,6 +24,8 @@ import {
   Info,
   ImageIcon,
   Download,
+  RefreshCw,
+  Sparkle,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
@@ -53,6 +55,9 @@ import {
   getVisualSuggestions,
   refineFromVerified,
   importXmpFaces,
+  onAiProgress,
+  removeAiProgressListener,
+  type AiProgress,
 } from '@/lib/electron-bridge';
 
 // ─── Notify main window that data changed ─────────────────────────────────
@@ -71,6 +76,10 @@ export default function PeopleManager() {
     return saved ? parseInt(saved, 10) : 100;
   });
   const [clusters, setClusters] = useState<PersonCluster[]>([]);
+  // AI processing indicator — surfaces the same "Analyzing N/M" the main
+  // window shows, so the user can see analysis progress from inside the
+  // People Manager without flipping windows.
+  const [aiProgress, setAiProgress] = useState<AiProgress | null>(null);
   const [discardedPersons, setDiscardedPersons] = useState<DiscardedPerson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [faceCropsMap, setFaceCropsMap] = useState<Record<string, string>>({});
@@ -140,6 +149,20 @@ export default function PeopleManager() {
   };
 
   useEffect(() => { loadClusters(); }, []);
+
+  // Subscribe to AI progress so the header badge updates in real-time
+  // while files are being analysed. Auto-refresh the cluster list when
+  // processing hits 'complete' so freshly-found faces appear without
+  // the user having to close and reopen the window.
+  useEffect(() => {
+    onAiProgress((p) => {
+      setAiProgress(p);
+      if (p.phase === 'complete') {
+        loadClusters();
+      }
+    });
+    return () => removeAiProgressListener();
+  }, []);
 
   useEffect(() => {
     if (!isLoading) {
@@ -288,6 +311,37 @@ export default function PeopleManager() {
             <Users className="w-4 h-4 text-purple-500" />
           </div>
           <h2 className="text-base font-semibold text-foreground">People Manager</h2>
+
+          {/* AI analysis progress — mirrors the main window's "Analyzing
+              N/M" indicator so progress is visible while you're looking
+              at People Manager (the very place the results land). */}
+          {aiProgress && aiProgress.phase === 'processing' && aiProgress.total > 0 && (
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-400/40 text-xs text-violet-700 dark:text-violet-300"
+              title={`Analysing ${aiProgress.currentFile || ''}`}
+            >
+              <Sparkle className="w-3 h-3 animate-pulse" />
+              <span>Analysing {aiProgress.current}/{aiProgress.total}</span>
+            </div>
+          )}
+
+          {/* Refresh — re-queries clusters without closing/reopening the
+              window. Useful after AI finishes, after editing from another
+              window, or when something feels out of sync. */}
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => loadClusters()}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-accent transition-colors"
+                  aria-label="Refresh"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Refresh — reload clusters from the database</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
           {/* Improve Facial Recognition button */}
           <TooltipProvider delayDuration={200}>
@@ -841,8 +895,15 @@ export default function PeopleManager() {
                       const name = p.name.toLowerCase();
                       // Hide suggestion if user has typed the exact full name
                       if (name === typed) return false;
-                      return name.includes(typed) && (p.photo_count ?? 0) > 0;
-                    }).slice(0, 5)
+                      // Filter out internal markers but INCLUDE people with 0
+                      // photos — those are family members added in Trees who
+                      // don't have photos yet; they must still be pickable or
+                      // the user would create a duplicate when assigning faces.
+                      if (name.startsWith('__')) return false;
+                      return name.includes(typed);
+                    })
+                    .sort((a, b) => (b.photo_count ?? 0) - (a.photo_count ?? 0))
+                    .slice(0, 8)
                   : [];
                 return (
                   <>
@@ -1086,8 +1147,10 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
         });
     }
     const textMatches = (existingPersons || [])
-      .filter(p => p.name.toLowerCase().includes(typed) && (p.photo_count ?? 0) > 0)
-      .slice(0, 6);
+      // Include photo-less named people (e.g. family added in Trees) so
+      // re-assigning a face to them doesn't create a duplicate record.
+      .filter(p => p.name.toLowerCase().includes(typed) && !p.name.startsWith('__'))
+      .slice(0, 8);
     const visualMap = new Map(visualSugs.map(v => [v.personId, v.similarity]));
     return textMatches
       .map(p => ({ ...p, similarity: visualMap.get(p.id) ?? 0 }))
@@ -1335,8 +1398,11 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const verifiedBorder = getVerifiedBorderClass();
 
   const filteredPersons = (existingPersons || [])
-    .filter(p => nameInput.length > 0 && p.name.toLowerCase().includes(nameInput.toLowerCase()) && p.name !== cluster.person_name && (p.photo_count ?? 0) > 0)
-    .slice(0, 4);
+    // Allow photo-less named people (Trees additions) in suggestions too,
+    // or renaming a cluster onto a Trees-added person would always make a
+    // duplicate record.
+    .filter(p => nameInput.length > 0 && p.name.toLowerCase().includes(nameInput.toLowerCase()) && p.name !== cluster.person_name && !p.name.startsWith('__'))
+    .slice(0, 6);
 
   // Use global selection state (shared across rows)
   const reassignFaceId = globalReassignFaceId;
@@ -1389,8 +1455,10 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
     }
     // Text-based filtering, boosted by visual similarity
     const textMatches = (existingPersons || [])
-      .filter(p => p.name.toLowerCase().includes(typed) && (p.photo_count ?? 0) > 0)
-      .slice(0, 6);
+      // Include photo-less named people (e.g. family added in Trees) so
+      // re-assigning a face to them doesn't create a duplicate record.
+      .filter(p => p.name.toLowerCase().includes(typed) && !p.name.startsWith('__'))
+      .slice(0, 8);
     const visualMap = new Map(visualSugs.map(v => [v.personId, v.similarity]));
     return textMatches
       .map(p => ({ ...p, similarity: visualMap.get(p.id) ?? 0 }))

@@ -133,6 +133,32 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     dayFiles: (args: { year: number; month: number; day: number; runIds?: number[] }) => ipcRenderer.invoke('memories:dayFiles', args),
   },
 
+  trees: {
+    addRelationship: (args: {
+      personAId: number;
+      personBId: number;
+      type: 'parent_of' | 'spouse_of' | 'sibling_of' | 'associated_with';
+      since?: string | null;
+      until?: string | null;
+      flags?: Record<string, unknown> | null;
+      confidence?: number;
+      source?: 'user' | 'suggested';
+      note?: string | null;
+    }) => ipcRenderer.invoke('trees:addRelationship', args),
+    updateRelationship: (args: { id: number; patch: Record<string, unknown> }) => ipcRenderer.invoke('trees:updateRelationship', args),
+    removeRelationship: (id: number) => ipcRenderer.invoke('trees:removeRelationship', id),
+    listRelationshipsForPerson: (personId: number) => ipcRenderer.invoke('trees:listRelationshipsForPerson', personId),
+    listAllRelationships: () => ipcRenderer.invoke('trees:listAllRelationships'),
+    updatePersonLifeEvents: (args: { personId: number; patch: { birthDate?: string | null; deathDate?: string | null; deceasedMarker?: string | null } }) => ipcRenderer.invoke('trees:updatePersonLifeEvents', args),
+    getFamilyGraph: (args: { focusPersonId: number; maxHops?: number }) => ipcRenderer.invoke('trees:getFamilyGraph', args),
+    getCooccurrenceStats: (args: { limit?: number; minSharedPhotos?: number }) => ipcRenderer.invoke('trees:getCooccurrenceStats', args),
+    createPlaceholderPerson: () => ipcRenderer.invoke('trees:createPlaceholderPerson'),
+    createNamedPerson: (name: string) => ipcRenderer.invoke('trees:createNamedPerson', name),
+    namePlaceholder: (args: { personId: number; name: string }) => ipcRenderer.invoke('trees:namePlaceholder', args),
+    mergePlaceholder: (args: { placeholderId: number; targetPersonId: number }) => ipcRenderer.invoke('trees:mergePlaceholder', args),
+    removePlaceholder: (id: number) => ipcRenderer.invoke('trees:removePlaceholder', id),
+  },
+
   search: {
     init: () => ipcRenderer.invoke('search:init'),
     indexRun: (reportId: string) => ipcRenderer.invoke('search:indexRun', reportId),

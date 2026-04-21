@@ -72,6 +72,40 @@ contextBridge.exposeInMainWorld('pdr', {
         createDirectory: (dirPath) => ipcRenderer.invoke('browser:createDirectory', dirPath),
         thumbnail: (filePath, size) => ipcRenderer.invoke('browser:thumbnail', filePath, size),
     },
+    video: {
+        prepare: (filePath) => ipcRenderer.invoke('video:prepare', filePath),
+    },
+    date: {
+        getSuggestions: (fileId) => ipcRenderer.invoke('date:getSuggestions', fileId),
+        apply: (opts) => ipcRenderer.invoke('date:apply', opts),
+        undo: () => ipcRenderer.invoke('date:undo'),
+        auditLog: (limit) => ipcRenderer.invoke('date:auditLog', limit),
+    },
+    scannerOverride: {
+        list: () => ipcRenderer.invoke('scannerOverride:list'),
+        set: (args) => ipcRenderer.invoke('scannerOverride:set', args),
+        clear: (args) => ipcRenderer.invoke('scannerOverride:clear', args),
+    },
+    memories: {
+        yearMonthBuckets: (runIds) => ipcRenderer.invoke('memories:yearMonthBuckets', runIds),
+        onThisDay: (args) => ipcRenderer.invoke('memories:onThisDay', args),
+        dayFiles: (args) => ipcRenderer.invoke('memories:dayFiles', args),
+    },
+    trees: {
+        addRelationship: (args) => ipcRenderer.invoke('trees:addRelationship', args),
+        updateRelationship: (args) => ipcRenderer.invoke('trees:updateRelationship', args),
+        removeRelationship: (id) => ipcRenderer.invoke('trees:removeRelationship', id),
+        listRelationshipsForPerson: (personId) => ipcRenderer.invoke('trees:listRelationshipsForPerson', personId),
+        listAllRelationships: () => ipcRenderer.invoke('trees:listAllRelationships'),
+        updatePersonLifeEvents: (args) => ipcRenderer.invoke('trees:updatePersonLifeEvents', args),
+        getFamilyGraph: (args) => ipcRenderer.invoke('trees:getFamilyGraph', args),
+        getCooccurrenceStats: (args) => ipcRenderer.invoke('trees:getCooccurrenceStats', args),
+        createPlaceholderPerson: () => ipcRenderer.invoke('trees:createPlaceholderPerson'),
+        createNamedPerson: (name) => ipcRenderer.invoke('trees:createNamedPerson', name),
+        namePlaceholder: (args) => ipcRenderer.invoke('trees:namePlaceholder', args),
+        mergePlaceholder: (args) => ipcRenderer.invoke('trees:mergePlaceholder', args),
+        removePlaceholder: (id) => ipcRenderer.invoke('trees:removePlaceholder', id),
+    },
     search: {
         init: () => ipcRenderer.invoke('search:init'),
         indexRun: (reportId) => ipcRenderer.invoke('search:indexRun', reportId),
@@ -168,6 +202,21 @@ contextBridge.exposeInMainWorld('pdr', {
             const handler = () => callback();
             ipcRenderer.on('people:dataChanged', handler);
             return () => ipcRenderer.removeListener('people:dataChanged', handler);
+        },
+    },
+    ping: () => ipcRenderer.invoke('app:ping'),
+    quickAccessPaths: () => ipcRenderer.invoke('app:quickAccessPaths'),
+    dateEditor: {
+        open: (seedQuery) => ipcRenderer.invoke('dateEditor:open', seedQuery),
+        onThemeChange: (callback) => {
+            const handler = (_event, isDark) => callback(isDark);
+            ipcRenderer.on('dateEditor:themeChange', handler);
+            return () => ipcRenderer.removeListener('dateEditor:themeChange', handler);
+        },
+        onDataChanged: (callback) => {
+            const handler = () => callback();
+            ipcRenderer.on('dateEditor:dataChanged', handler);
+            return () => ipcRenderer.removeListener('dateEditor:dataChanged', handler);
         },
     },
     prescan: {

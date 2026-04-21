@@ -695,26 +695,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     personIds: number[];
     tags: string[];
     mode: 'and' | 'or';
+    unmatched: string[];
   } | null => {
-    const trimmed = text.trim();
+    // Strip a bare trailing operator so "beach," / "beach +" / "beach and"
+    // (user is mid-typing the next token) behave identically to "beach".
+    const trimmed = text.trim().replace(/\s*(?:\+|&|,|\band)\s*$/i, '').trim();
     if (!trimmed) return null;
     const andPattern = /\s*(?:\+|&|\band\b)\s*/i;
     const orPattern = /\s*,\s*/;
-    let parts: string[] = [];
-    let mode: 'and' | 'or' = 'or';
-    if (andPattern.test(trimmed)) {
-      parts = trimmed.split(andPattern).filter(Boolean);
-      mode = 'and';
-      // Reject if OR punctuation is mixed into an AND expression.
-      if (orPattern.test(trimmed)) return null;
-    } else if (orPattern.test(trimmed)) {
-      parts = trimmed.split(orPattern).filter(Boolean);
-      mode = 'or';
-    } else {
-      return null;
-    }
+    const hasAnd = andPattern.test(trimmed);
+    const hasOr = orPattern.test(trimmed);
+    // Mixed AND+OR is ambiguous — bail so the raw text search runs.
+    if (hasAnd && hasOr) return null;
+    if (!hasAnd && !hasOr) return null;
+    const mode: 'and' | 'or' = hasAnd ? 'and' : 'or';
+    const parts = trimmed.split(hasAnd ? andPattern : orPattern).filter(Boolean);
     const personIds: number[] = [];
     const tags: string[] = [];
+    const unmatched: string[] = [];
     for (const part of parts) {
       const q = part.trim().toLowerCase();
       if (!q) continue;
@@ -722,14 +720,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       if (person) { personIds.push(person.id); continue; }
       const tag = aiTagOptions.find(t => t.tag.toLowerCase() === q);
       if (tag) { tags.push(tag.tag); continue; }
-      // Unknown token — fall back to plain text search.
-      return null;
+      // Keep the unmatched fragment around — buildQuery folds it into
+      // the free-text search so a partial match still returns results.
+      unmatched.push(part.trim());
     }
-    if (personIds.length + tags.length < 2) return null;
+    // Need at least one recognised token OR some free text; otherwise we
+    // have nothing useful and let the raw text search handle it.
+    if (personIds.length + tags.length + unmatched.length === 0) return null;
+    // If nothing matched structurally, don't claim an operator parse —
+    // the caller will fall back to raw text search on the stem.
+    if (personIds.length + tags.length === 0) return null;
     return {
       personIds: Array.from(new Set(personIds)),
       tags: Array.from(new Set(tags)),
       mode,
+      unmatched,
     };
   }, [peopleList, aiTagOptions]);
 
@@ -740,6 +745,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     const parsed = parseSearchOperators(text);
     if (!parsed) return null;
     if (parsed.tags.length > 0) return null;
+    if (parsed.unmatched.length > 0) return null;
     if (parsed.personIds.length < 2) return null;
     return { personIds: parsed.personIds, mode: parsed.mode };
   }, [parseSearchOperators]);
@@ -751,13 +757,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     const opParsed = parseSearchOperators(searchText);
     const tagsFromOps = opParsed?.tags ?? [];
     const peopleFromOps = opParsed?.personIds ?? [];
+    const unmatchedFromOps = opParsed?.unmatched ?? [];
     // Preserve the existing sidebar-checkbox tag filter alongside anything
     // the operator parser pulled from the search bar. Tag-type sentinels
     // ('__has_faces', '__no_faces') stay on the client side.
     const sidebarTags = selectedAiTags.filter(t => !t.startsWith('__'));
     const combinedTags = Array.from(new Set([...sidebarTags, ...tagsFromOps]));
+    // When the operator parse succeeds: any tokens that didn't exact-match a
+    // person or tag become free-text fragments, so a partial query like
+    // "Mel, beachside" still surfaces results instead of collapsing to 0.
+    // When the parse fails: strip a bare trailing operator (",", "+", "&",
+    // "and") so mid-typing doesn't wipe out the in-progress search.
+    const fallbackText = searchText.replace(/\s*(?:\+|&|,|\band)\s*$/i, '').trim();
     return ({
-    text: opParsed ? undefined : (searchText.trim() || undefined),
+    text: opParsed
+      ? (unmatchedFromOps.length > 0 ? unmatchedFromOps.join(' ') : undefined)
+      : (fallbackText || undefined),
     personId: opParsed ? peopleFromOps : undefined,
     personIdMode: opParsed ? opParsed.mode : undefined,
     aiTagMode: opParsed && tagsFromOps.length > 1 ? opParsed.mode : undefined,
@@ -2682,10 +2697,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       )}
 
       {/* ═══ EMPTY-FILTER STATE ═══
-           The user is inside S&D but nothing is filtered, and they haven't
-           opted-in to showing the whole library. Rather than dump every
-           photo they own into the grid (and, crucially, into Edit dates),
-           we prompt them to add a filter or explicitly ask for everything. */}
+           The user is inside S&D but nothing is filtered. We deliberately
+           DO NOT offer a "Show entire library" escape hatch — that's a
+           foot-gun for Edit dates and other bulk actions. Users must pick
+           a real filter (Confidence, Camera, Date, etc.) so every action
+           targets a set they consciously scoped. */}
       {searchActive && !results && !hasActiveFilters && !searchText.trim() && (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
           <Filter className="w-10 h-10 text-muted-foreground/40" />
@@ -2695,16 +2711,6 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               PDR doesn't load your whole library by default — pick any filter above (Confidence, Camera, Date, etc.)
               so Edit dates and other actions only ever target the set you meant.
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => { setShowAllOverride(true); executeSearch(); }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
-              title="Load every photo in your library into the grid"
-            >
-              <Database className="w-4 h-4" />
-              Show entire library{stats ? ` (${stats.totalFiles.toLocaleString()})` : ''}
-            </button>
           </div>
         </div>
       )}

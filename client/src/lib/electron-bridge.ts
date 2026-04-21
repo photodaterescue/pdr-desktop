@@ -964,6 +964,190 @@ export async function getMemoriesDayFiles(args: { year: number; month: number; d
   return { success: false, error: 'Not running in Electron' };
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Trees v1 — family relationship renderer wrappers
+// ═══════════════════════════════════════════════════════════════
+
+export type RelationshipType = 'parent_of' | 'spouse_of' | 'sibling_of' | 'associated_with';
+
+export type AssociationKind =
+  | 'friend' | 'close_friend' | 'best_friend' | 'acquaintance' | 'neighbour'
+  | 'colleague' | 'classmate' | 'teammate' | 'roommate'
+  | 'mentor' | 'mentee' | 'manager' | 'client'
+  | 'ex_partner'
+  | 'other';
+
+export interface RelationshipFlags {
+  biological?: boolean;
+  step?: boolean;
+  adopted?: boolean;
+  in_law?: boolean;
+  half?: boolean;
+  kind?: AssociationKind;
+  label?: string;
+  ended?: boolean;
+}
+
+export interface RelationshipRecord {
+  id: number;
+  person_a_id: number;
+  person_b_id: number;
+  type: RelationshipType;
+  since: string | null;
+  until: string | null;
+  flags: RelationshipFlags | null;
+  confidence: number;
+  source: 'user' | 'suggested';
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function addRelationship(args: {
+  personAId: number;
+  personBId: number;
+  type: RelationshipType;
+  since?: string | null;
+  until?: string | null;
+  flags?: RelationshipFlags | null;
+  confidence?: number;
+  source?: 'user' | 'suggested';
+  note?: string | null;
+}): Promise<{ success: boolean; data?: RelationshipRecord; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.addRelationship(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function updateRelationship(id: number, patch: Partial<Omit<RelationshipRecord, 'id' | 'created_at' | 'updated_at' | 'person_a_id' | 'person_b_id' | 'type'>>): Promise<{ success: boolean; data?: RelationshipRecord; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.updateRelationship({ id, patch });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function removeRelationship(id: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.removeRelationship(id);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function listRelationshipsForPerson(personId: number): Promise<{ success: boolean; data?: RelationshipRecord[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.listRelationshipsForPerson(personId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function listAllRelationships(): Promise<{ success: boolean; data?: RelationshipRecord[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.listAllRelationships();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function updatePersonLifeEvents(personId: number, patch: { birthDate?: string | null; deathDate?: string | null; deceasedMarker?: string | null }): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.updatePersonLifeEvents({ personId, patch });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// Trees v1 — family graph types (shared with trees-layout.ts).
+
+export interface FamilyGraphNode {
+  personId: number;
+  name: string;
+  avatarData: string | null;
+  representativeFaceId: number | null;
+  representativeFaceFilePath: string | null;
+  representativeFaceBox: { x: number; y: number; w: number; h: number } | null;
+  birthDate: string | null;
+  deathDate: string | null;
+  deceasedMarker: string | null;
+  hopsFromFocus: number;
+  photoCount: number;
+  /** True for placeholder intermediate nodes (ghost rendered in Trees). */
+  isPlaceholder: boolean;
+}
+
+export interface FamilyGraphEdge {
+  id: number | null;
+  aId: number;
+  bId: number;
+  type: 'parent_of' | 'spouse_of' | 'sibling_of' | 'associated_with';
+  since: string | null;
+  until: string | null;
+  flags: RelationshipFlags | null;
+  derived: boolean;
+}
+
+export interface FamilyGraph {
+  focusPersonId: number;
+  nodes: FamilyGraphNode[];
+  edges: FamilyGraphEdge[];
+}
+
+export async function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Promise<{ success: boolean; data?: FamilyGraph; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.getFamilyGraph({ focusPersonId, maxHops });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export interface PersonCooccurrenceSuggestion {
+  personAId: number;
+  personBId: number;
+  personAName: string;
+  personBName: string;
+  sharedPhotoCount: number;
+  alreadyRelated: boolean;
+}
+
+export async function getPersonCooccurrenceStats(limit: number = 25, minSharedPhotos: number = 20): Promise<{ success: boolean; data?: PersonCooccurrenceSuggestion[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.getCooccurrenceStats({ limit, minSharedPhotos });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function createPlaceholderPerson(): Promise<{ success: boolean; data?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.createPlaceholderPerson();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function createNamedPerson(name: string): Promise<{ success: boolean; data?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.createNamedPerson(name);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function namePlaceholder(personId: number, name: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.namePlaceholder({ personId, name });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function mergePlaceholderIntoPerson(placeholderId: number, targetPersonId: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.mergePlaceholder({ placeholderId, targetPersonId });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function removePlaceholder(placeholderId: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.removePlaceholder(placeholderId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export interface QuickAccessPaths {
   desktop: string | null;
   downloads: string | null;

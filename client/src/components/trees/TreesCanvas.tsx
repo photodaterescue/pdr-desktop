@@ -1,0 +1,1300 @@
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { Link2, Trash2, Eye, Pencil, HelpCircle, UserPlus, X } from 'lucide-react';
+import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, createPlaceholderPerson, addRelationship, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
+import { DateTripleInput } from './DateTripleInput';
+import { promptConfirm } from './promptConfirm';
+
+interface TreesCanvasProps {
+  layout: TreeLayout & { collapsedCountPerAnchor?: Map<number, number> };
+  onRefocus: (personId: number) => void;
+  onSetRelationship: (personId: number) => void;
+  onRemovePerson: (personId: number) => void;
+  /** Direct-relationship quick adds triggered by the +/chips around each node.
+   *  Each fires a lightweight add flow (opens a small person picker). */
+  onQuickAddParent: (personId: number) => void;
+  onQuickAddPartner: (personId: number) => void;
+  onQuickAddChild: (personId: number) => void;
+  onQuickAddSibling: (personId: number) => void;
+  /** Called after an inline edge edit succeeds so the parent can refetch the graph. */
+  onGraphMutated: () => void;
+}
+
+interface Viewport { tx: number; ty: number; scale: number; }
+
+const NODE_RADIUS = 42;
+const NODE_WIDTH = 150;
+const NODE_HEIGHT = 150;
+
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, onGraphMutated }: TreesCanvasProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
+  const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
+  const [contextMenu, setContextMenu] = useState<{ personId: number; x: number; y: number } | null>(null);
+  /** Popup editor anchored to a clicked edge. Only set while the popup is open. */
+  const [edgeEditor, setEdgeEditor] = useState<{ edge: FamilyGraphEdge; x: number; y: number } | null>(null);
+  /** Popup for resolving a placeholder ghost node (name/link/remove). */
+  const [placeholderEditor, setPlaceholderEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
+
+  const panState = useRef<{ active: boolean; startX: number; startY: number; startTx: number; startTy: number }>({
+    active: false, startX: 0, startY: 0, startTx: 0, startTy: 0,
+  });
+
+  // ─── Centre the focus on mount / layout change ────────────────
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    setViewport({
+      tx: rect.width / 2,
+      ty: rect.height / 2,
+      scale: 1,
+    });
+    setContextMenu(null);
+  }, [layout.focusPersonId]);
+
+  // ─── Lazy-load avatar face crops ───────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const node of layout.nodes) {
+        if (avatars.has(node.personId)) continue;
+        if (!node.representativeFaceFilePath || !node.representativeFaceBox) continue;
+        const box = node.representativeFaceBox;
+        const res = await getFaceCrop(node.representativeFaceFilePath, box.x, box.y, box.w, box.h, 128);
+        if (cancelled) return;
+        if (res.success && res.dataUrl) {
+          setAvatars(prev => {
+            const next = new Map(prev);
+            next.set(node.personId, res.dataUrl!);
+            return next;
+          });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [layout.nodes]);
+
+  // ─── Viewport interactions ─────────────────────────────────────
+  const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const direction = e.deltaY > 0 ? -1 : 1;
+    const factor = 1 + direction * 0.1;
+    setViewport(v => {
+      const newScale = Math.min(3, Math.max(0.2, v.scale * factor));
+      // Zoom about the cursor: keep the world-point under the cursor fixed.
+      const worldX = (mouseX - v.tx) / v.scale;
+      const worldY = (mouseY - v.ty) / v.scale;
+      return {
+        tx: mouseX - worldX * newScale,
+        ty: mouseY - worldY * newScale,
+        scale: newScale,
+      };
+    });
+  }, []);
+
+  const handlePanStart = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    setContextMenu(null);
+    panState.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startTx: viewport.tx,
+      startTy: viewport.ty,
+    };
+  }, [viewport]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (panState.current.active) {
+        setViewport(v => ({
+          ...v,
+          tx: panState.current.startTx + (e.clientX - panState.current.startX),
+          ty: panState.current.startTy + (e.clientY - panState.current.startY),
+        }));
+      }
+    };
+    const onUp = () => {
+      panState.current.active = false;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [viewport.scale]);
+
+  // Individual-node dragging is intentionally disabled — the layout is
+  // deterministic and stable, so letting users drag people around just
+  // produces crooked lines and visual chaos. Users still pan the whole
+  // canvas by dragging empty space and change focus to re-centre.
+  const handleNodeMouseDown = useCallback((_e: React.MouseEvent, _node: LaidOutNode) => {
+    // No-op: lets mousedown bubble to the SVG so pan works over nodes.
+  }, []);
+
+  const handleNodeDoubleClick = useCallback((e: React.MouseEvent, node: LaidOutNode) => {
+    e.stopPropagation();
+    // Placeholders don't accept refocus — they're not real people yet.
+    if (node.isPlaceholder) return;
+    if (node.personId !== layout.focusPersonId) onRefocus(node.personId);
+  }, [layout.focusPersonId, onRefocus]);
+
+  const handleNodeClick = useCallback(async (e: React.MouseEvent, node: LaidOutNode) => {
+    // Only single-click matters for placeholders: opens the resolver popup.
+    if (!node.isPlaceholder) return;
+    e.stopPropagation();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const screenX = viewport.tx + node.renderedX * viewport.scale;
+    const screenY = viewport.ty + node.renderedY * viewport.scale;
+
+    let editorPersonId = node.personId;
+
+    // Virtual ghosts have negative IDs. Materialise them into real
+    // placeholder persons (with the appropriate parent_of edge) before
+    // opening the resolver — the resolver only speaks to real IDs.
+    if (node.personId < 0) {
+      const edge = layout.edges.find(ed => ed.aId === node.personId && ed.type === 'parent_of');
+      if (!edge) return;
+      const ph = await createPlaceholderPerson();
+      if (!ph.success || ph.data == null) return;
+      await addRelationship({ personAId: ph.data, personBId: edge.bId, type: 'parent_of' });
+      editorPersonId = ph.data;
+      onGraphMutated();
+    }
+
+    setPlaceholderEditor({ personId: editorPersonId, x: screenX, y: screenY });
+    setEdgeEditor(null);
+    setContextMenu(null);
+  }, [viewport, layout, onGraphMutated]);
+
+  const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: LaidOutNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setContextMenu({
+      personId: node.personId,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  }, []);
+
+  // Rendered positions come straight from the deterministic layout;
+  // there are no per-node offsets since individual dragging is disabled.
+  const placedNodes = useMemo(() => layout.nodes.map(n => ({
+    ...n, renderedX: n.x, renderedY: n.y,
+  })), [layout.nodes]);
+
+  const nodeById = useMemo(() => {
+    const m = new Map<number, typeof placedNodes[0]>();
+    for (const n of placedNodes) m.set(n.personId, n);
+    return m;
+  }, [placedNodes]);
+
+  /**
+   * Group parent_of edges into "families": a shared parent-set maps to
+   * a list of children with that exact set of parents. Rendering a
+   * whole family as ONE marriage-bar-plus-bracket structure is what
+   * makes pedigree diagrams readable — instead of drawing each edge
+   * as an individual Z that overlaps every other Z at the same mid-Y.
+   *
+   * Key is the sorted parent IDs, joined with commas.
+   */
+  const familyGroups = useMemo(() => {
+    const parentsByChild = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!nodeById.has(e.aId) || !nodeById.has(e.bId)) continue;
+      if (!parentsByChild.has(e.bId)) parentsByChild.set(e.bId, []);
+      parentsByChild.get(e.bId)!.push(e.aId);
+    }
+    const groups = new Map<string, { parentIds: number[]; childIds: number[] }>();
+    for (const [childId, parentIds] of parentsByChild) {
+      const sorted = [...parentIds].sort((a, b) => a - b);
+      const key = sorted.join(',');
+      if (!groups.has(key)) groups.set(key, { parentIds: sorted, childIds: [] });
+      groups.get(key)!.childIds.push(childId);
+    }
+    return Array.from(groups.values());
+  }, [layout.edges, nodeById]);
+
+  return (
+    <div className="absolute inset-0 select-none">
+      <svg
+        ref={svgRef}
+        className="w-full h-full bg-[radial-gradient(circle,_rgba(167,139,250,0.06)_1px,_transparent_1px)] [background-size:24px_24px] cursor-grab active:cursor-grabbing"
+        onWheel={handleWheel}
+        onMouseDown={handlePanStart}
+        onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+      >
+        <g transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}>
+          {/* Pedigree family groups — one marriage bar + sibling bracket
+              per parent-set. Drawn BEFORE individual edges so they sit
+              underneath the nodes. */}
+          {familyGroups.map((group, i) => (
+            <FamilyGroup
+              key={`fam-${i}-${group.parentIds.join('_')}`}
+              parents={group.parentIds.map(id => nodeById.get(id)!).filter(Boolean)}
+              children={group.childIds.map(id => nodeById.get(id)!).filter(Boolean)}
+              // Stagger the bracket Y so different families don't share
+              // the same horizontal line. Deterministic per-group offset.
+              bracketOffset={i * 8}
+              onParentClick={(parentId) => {
+                const parent = nodeById.get(parentId);
+                if (!parent) return;
+                if (parent.isPlaceholder) {
+                  const rect = svgRef.current?.getBoundingClientRect();
+                  if (!rect) return;
+                  const screenX = viewport.tx + parent.renderedX * viewport.scale;
+                  const screenY = viewport.ty + parent.renderedY * viewport.scale;
+                  setPlaceholderEditor({ personId: parentId, x: screenX, y: screenY });
+                }
+              }}
+            />
+          ))}
+
+          {/* Non-parent edges (spouse_of, sibling_of, associated_with) — parent_of is now rendered as family groups above. */}
+          {layout.edges.map((edge, idx) => {
+            if (!edge.visible) return null;
+            if (edge.type === 'parent_of') return null;
+            const a = nodeById.get(edge.aId);
+            const b = nodeById.get(edge.bId);
+            if (!a || !b) return null;
+            const hopA = a.hopsFromFocus;
+            const hopB = b.hopsFromFocus;
+            const maxHop = Math.max(hopA, hopB);
+            const opacity = Math.max(0.15, 1 - maxHop * 0.15);
+            // Stored (non-derived) edges are clickable → inline editor.
+            // EXCEPTION: if either endpoint is a placeholder ghost, clicking
+            // anywhere along the line is ambiguous (is it Terry's parent edge?
+            // Colin's parent edge?), so we route to the placeholder resolver
+            // where you can name or link the ghost instead.
+            const onClick = edge.derived || edge.id == null ? undefined : (ev: React.MouseEvent) => {
+              ev.stopPropagation();
+              const rect = svgRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const ghostNode = a.isPlaceholder ? a : (b.isPlaceholder ? b : null);
+              if (ghostNode) {
+                const screenX = viewport.tx + ghostNode.renderedX * viewport.scale;
+                const screenY = viewport.ty + ghostNode.renderedY * viewport.scale;
+                setPlaceholderEditor({ personId: ghostNode.personId, x: screenX, y: screenY });
+                setEdgeEditor(null);
+                setContextMenu(null);
+                return;
+              }
+              // World midpoint → screen coord via current viewport transform.
+              const midWorldX = (a.renderedX + b.renderedX) / 2;
+              const midWorldY = (a.renderedY + b.renderedY) / 2;
+              const screenX = viewport.tx + midWorldX * viewport.scale;
+              const screenY = viewport.ty + midWorldY * viewport.scale;
+              setEdgeEditor({ edge: edge as FamilyGraphEdge, x: screenX, y: screenY });
+              setContextMenu(null);
+            };
+            return (
+              <EdgeLine
+                key={`${edge.type}-${edge.aId}-${edge.bId}-${idx}`}
+                ax={a.renderedX}
+                ay={a.renderedY}
+                bx={b.renderedX}
+                by={b.renderedY}
+                type={edge.type}
+                until={edge.until}
+                opacity={opacity}
+                derived={edge.derived}
+                flags={edge.flags as { half?: boolean; adopted?: boolean } | null}
+                onClick={onClick}
+              />
+            );
+          })}
+
+          {/* Nodes */}
+          {placedNodes.map(node => {
+            const avatar = avatars.get(node.personId);
+            const isFocus = node.personId === layout.focusPersonId;
+            const dimOpacity = Math.max(0.5, 1 - node.hopsFromFocus * 0.1);
+            if (node.isPlaceholder) {
+              return (
+                <PlaceholderNode
+                  key={node.personId}
+                  node={node}
+                  opacity={dimOpacity}
+                  onClick={(e) => handleNodeClick(e, node)}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                />
+              );
+            }
+            return (
+              <PersonNode
+                key={node.personId}
+                node={node}
+                avatar={avatar}
+                isFocus={isFocus}
+                opacity={dimOpacity}
+                onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
+                onContextMenu={(e) => handleNodeContextMenu(e, node)}
+                onQuickAddParent={() => onQuickAddParent(node.personId)}
+                onQuickAddPartner={() => onQuickAddPartner(node.personId)}
+                onQuickAddChild={() => onQuickAddChild(node.personId)}
+                onQuickAddSibling={() => onQuickAddSibling(node.personId)}
+              />
+            );
+          })}
+        </g>
+
+        {/* Fixed overlay: zoom indicator */}
+        <g>
+          <rect x={12} y={12} rx={6} ry={6} width={56} height={22} fill="rgba(0,0,0,0.45)" />
+          <text x={40} y={27} textAnchor="middle" fontSize={12} fill="#fff">
+            {Math.round(viewport.scale * 100)}%
+          </text>
+        </g>
+      </svg>
+
+      {contextMenu && (
+        <NodeContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          personId={contextMenu.personId}
+          isFocus={contextMenu.personId === layout.focusPersonId}
+          onSetRelationship={() => { onSetRelationship(contextMenu.personId); setContextMenu(null); }}
+          onRefocus={() => { onRefocus(contextMenu.personId); setContextMenu(null); }}
+          onRemovePerson={() => { onRemovePerson(contextMenu.personId); setContextMenu(null); }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {edgeEditor && (
+        <EdgeQuickEditor
+          edge={edgeEditor.edge}
+          x={edgeEditor.x}
+          y={edgeEditor.y}
+          personNameLookup={(id) => nodeById.get(id)?.name ?? `#${id}`}
+          onSaved={() => { onGraphMutated(); setEdgeEditor(null); }}
+          onClose={() => setEdgeEditor(null)}
+        />
+      )}
+
+      {placeholderEditor && (
+        <PlaceholderResolver
+          personId={placeholderEditor.personId}
+          x={placeholderEditor.x}
+          y={placeholderEditor.y}
+          onResolved={() => { onGraphMutated(); setPlaceholderEditor(null); }}
+          onClose={() => setPlaceholderEditor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Pedigree "family group" rendering
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Renders ONE family unit: its parent(s) get a marriage bar between
+ * them (if there are two), a vertical drop from the bar's midpoint to
+ * a horizontal sibling bracket, and vertical drops from that bracket
+ * down to each child. This is the canonical pedigree look.
+ *
+ * Accepts any N parents and any M children. When N=1 the marriage bar
+ * is skipped and the drop comes straight from the lone parent.
+ */
+function FamilyGroup({ parents, children, bracketOffset, onParentClick }: {
+  parents: (LaidOutNode & { renderedX: number; renderedY: number; isPlaceholder: boolean })[];
+  children: (LaidOutNode & { renderedX: number; renderedY: number })[];
+  bracketOffset: number;
+  onParentClick: (parentId: number) => void;
+}) {
+  if (parents.length === 0 || children.length === 0) return null;
+
+  // Parent bottom must clear the name label (avatar + name = NODE_RADIUS + 18,
+  // plus some breathing room) — otherwise the marriage bar runs through
+  // the name text. Child top is just above the avatar itself (names sit
+  // BELOW child avatars so they're never crossed from above).
+  const PARENT_BOTTOM_OFFSET = NODE_RADIUS + 38;
+  const CHILD_TOP_OFFSET = NODE_RADIUS + 6;
+
+  // Assume parents are at the same y (same generation). Use the first's.
+  const parentY = parents[0].renderedY + PARENT_BOTTOM_OFFSET;
+  const childY = children[0].renderedY - CHILD_TOP_OFFSET;
+  // Bracket lives between parent and child rows, staggered per-family
+  // so different families don't overlap their horizontals.
+  const bracketY = parentY + (childY - parentY) * 0.45 + bracketOffset;
+
+  // Parent x extents — marriage bar from leftmost to rightmost parent.
+  const parentXs = parents.map(p => p.renderedX).sort((a, b) => a - b);
+  const marriageBarStart = parentXs[0];
+  const marriageBarEnd = parentXs[parentXs.length - 1];
+  const marriageBarMidX = (marriageBarStart + marriageBarEnd) / 2;
+
+  // Child x extents — bracket horizontal spans them.
+  const childXs = children.map(c => c.renderedX).sort((a, b) => a - b);
+  const bracketStart = Math.min(childXs[0], marriageBarMidX);
+  const bracketEnd = Math.max(childXs[childXs.length - 1], marriageBarMidX);
+
+  const stroke = '#6366f1';
+  const strokeWidth = 1.75;
+
+  return (
+    <g>
+      {/* Marriage bar — only if there are 2+ parents */}
+      {parents.length >= 2 && (
+        <line
+          x1={marriageBarStart}
+          y1={parentY}
+          x2={marriageBarEnd}
+          y2={parentY}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+        />
+      )}
+      {/* Drop from marriage bar midpoint (or lone parent) to bracket */}
+      <line
+        x1={marriageBarMidX}
+        y1={parents.length >= 2 ? parentY : parentY}
+        x2={marriageBarMidX}
+        y2={bracketY}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+      />
+      {/* Horizontal at bracket level — always drawn, even for a single
+          child. This ensures the parent's vertical drop meets the
+          child's vertical drop when their x coords differ (which happens
+          whenever the marriage bar midpoint isn't exactly above the
+          child). Previously single-child families had a gap here. */}
+      {bracketStart !== bracketEnd && (
+        <line
+          x1={bracketStart}
+          y1={bracketY}
+          x2={bracketEnd}
+          y2={bracketY}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+        />
+      )}
+      {/* Drops to each child */}
+      {children.map(c => (
+        <line
+          key={c.personId}
+          x1={c.renderedX}
+          y1={bracketY}
+          x2={c.renderedX}
+          y2={c.renderedY - NODE_RADIUS}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+        />
+      ))}
+      {/* Click targets sitting on top of the lines — let users click
+          the marriage bar or any drop to open the resolver for a
+          ghost parent (if one is involved). Single-parent groups let
+          you click the drop itself. */}
+      {parents.length === 1 && parents[0].isPlaceholder && (
+        <line
+          x1={marriageBarMidX}
+          y1={parentY}
+          x2={marriageBarMidX}
+          y2={bracketY}
+          stroke="transparent"
+          strokeWidth={14}
+          pointerEvents="stroke"
+          style={{ cursor: 'pointer' }}
+          onClick={(e) => { e.stopPropagation(); onParentClick(parents[0].personId); }}
+        />
+      )}
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Edge rendering
+// ─────────────────────────────────────────────────────────────────
+
+function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClick }: {
+  ax: number; ay: number; bx: number; by: number;
+  type: 'parent_of' | 'spouse_of' | 'sibling_of' | 'associated_with';
+  until: string | null;
+  opacity: number;
+  derived: boolean;
+  flags: { half?: boolean; adopted?: boolean; kind?: string; ended?: boolean; label?: string } | null;
+  onClick?: (e: React.MouseEvent) => void;
+}) {
+  // parent_of: solid vertical-preferring line, slight curve
+  // spouse_of: solid double line between partners, horizontal preferred; dashed if ended
+  // sibling_of:
+  //   · derived (from shared parents, not stored) — thin dotted light violet
+  //   · stored full sibling — solid violet medium weight
+  //   · stored half-sibling — short-dash violet
+  //   · stored adopted sibling — long-dash teal
+  // associated_with: grey curve, lighter weight, kind label on the line.
+  //   · ended (ex-colleague etc.) — dashed
+  const midX = (ax + bx) / 2;
+  const midY = (ay + by) / 2;
+  const hitArea = onClick ? (
+    <line x1={ax} y1={ay} x2={bx} y2={by}
+      stroke="transparent"
+      strokeWidth={14}
+      style={{ cursor: 'pointer' }}
+      pointerEvents="stroke"
+    />
+  ) : null;
+  if (type === 'associated_with') {
+    const color = ASSOCIATION_COLORS[flags?.kind ?? 'other'] ?? '#9ca3af';
+    const labelText = flags?.kind === 'other' ? (flags?.label ?? 'other')
+                    : flags?.kind ? ASSOCIATION_LABELS[flags.kind] ?? flags.kind : '';
+    const endedLabel = flags?.ended ? `ex-${labelText.toLowerCase()}` : labelText;
+    return (
+      <g onClick={onClick}>
+        {hitArea}
+        <line x1={ax} y1={ay} x2={bx} y2={by}
+          stroke={color}
+          strokeWidth={1.25}
+          strokeDasharray={flags?.ended ? '6 4' : undefined}
+          opacity={opacity * 0.75}
+        />
+        {endedLabel && (
+          <text x={midX} y={midY - 4} textAnchor="middle" fontSize={9} fill={color} opacity={opacity * 0.9}
+            style={{ pointerEvents: 'none', fontStyle: 'italic' }}>
+            {endedLabel}
+          </text>
+        )}
+      </g>
+    );
+  }
+  if (type === 'sibling_of') {
+    // Derived sibling edges aren't stored, so they're never clickable.
+    if (derived) {
+      return (
+        <line x1={ax} y1={ay} x2={bx} y2={by}
+          stroke="#a78bfa" strokeWidth={1} strokeDasharray="2 4" opacity={opacity * 0.6} />
+      );
+    }
+    const stroke = flags?.adopted ? '#14b8a6' : '#a78bfa';
+    const dash = flags?.adopted ? '8 4' : flags?.half ? '4 3' : undefined;
+    const width = 1.5;
+    return (
+      <g onClick={onClick}>
+        {hitArea}
+        <line x1={ax} y1={ay} x2={bx} y2={by}
+          stroke={stroke} strokeWidth={width} strokeDasharray={dash} opacity={opacity} />
+      </g>
+    );
+  }
+  if (type === 'spouse_of') {
+    const dashed = !!until;
+    return (
+      <g onClick={onClick}>
+        {hitArea}
+        <line x1={ax} y1={ay - 4} x2={bx} y2={by - 4}
+          stroke="#ec4899" strokeWidth={1.5}
+          strokeDasharray={dashed ? '6 4' : undefined}
+          opacity={opacity} />
+        <line x1={ax} y1={ay + 4} x2={bx} y2={by + 4}
+          stroke="#ec4899" strokeWidth={1.5}
+          strokeDasharray={dashed ? '6 4' : undefined}
+          opacity={opacity} />
+      </g>
+    );
+  }
+  // parent_of — orthogonal path: straight down from parent to the gap
+  // between tiers, across to the child's x, then straight down to the
+  // child. Classic pedigree-chart elbows rather than chaotic S-curves.
+  const orthPath = `M ${ax} ${ay} L ${ax} ${midY} L ${bx} ${midY} L ${bx} ${by}`;
+  return (
+    <g onClick={onClick}>
+      {onClick && (
+        <path d={orthPath} stroke="transparent" strokeWidth={14} fill="none"
+          style={{ cursor: 'pointer' }} pointerEvents="stroke" />
+      )}
+      <path
+        d={orthPath}
+        stroke="#6366f1"
+        strokeWidth={1.75}
+        fill="none"
+        opacity={opacity}
+      />
+    </g>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Person node rendering
+// ─────────────────────────────────────────────────────────────────
+
+const INITIAL_COLORS = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#3b82f6'];
+
+const ASSOCIATION_COLORS: Record<string, string> = {
+  friend: '#10b981',         // green
+  close_friend: '#059669',
+  best_friend: '#047857',
+  acquaintance: '#9ca3af',   // grey
+  neighbour: '#64748b',
+  colleague: '#0ea5e9',      // sky
+  classmate: '#6366f1',
+  teammate: '#f59e0b',
+  roommate: '#a855f7',
+  manager: '#0284c7',
+  mentor: '#0d9488',
+  mentee: '#14b8a6',
+  client: '#ca8a04',
+  ex_partner: '#ec4899',     // pink (dashed via ended flag)
+  other: '#9ca3af',
+};
+
+const ASSOCIATION_LABELS: Record<string, string> = {
+  friend: 'friend',
+  close_friend: 'close friend',
+  best_friend: 'best friend',
+  acquaintance: 'acquaintance',
+  neighbour: 'neighbour',
+  colleague: 'colleague',
+  classmate: 'classmate',
+  teammate: 'teammate',
+  roommate: 'roommate',
+  manager: 'manager',
+  mentor: 'mentor',
+  mentee: 'mentee',
+  client: 'client',
+  ex_partner: 'partner',
+  other: 'other',
+};
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function colorFromId(id: number): string {
+  return INITIAL_COLORS[id % INITIAL_COLORS.length];
+}
+
+function PersonNode({ node, avatar, isFocus, opacity, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
+  node: LaidOutNode & { renderedX: number; renderedY: number };
+  avatar: string | undefined;
+  isFocus: boolean;
+  opacity: number;
+  onMouseDown: (e: React.MouseEvent) => void;
+  onDoubleClick: (e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onQuickAddParent: () => void;
+  onQuickAddPartner: () => void;
+  onQuickAddChild: () => void;
+  onQuickAddSibling: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const ringColor = isFocus ? '#f59e0b' : '#6366f1';
+  const ringWidth = isFocus ? 4 : 2;
+  const initials = initialsOf(node.name);
+  const bgColor = colorFromId(node.personId);
+  const lifeLine = formatLife(node.birthDate, node.deathDate);
+  const isDeceased = !!node.deathDate;
+
+  return (
+    <g
+      transform={`translate(${node.renderedX} ${node.renderedY})`}
+      opacity={opacity}
+      style={{ cursor: 'default' }}
+      onMouseDown={onMouseDown}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Invisible hover buffer — covers the avatar AND the area around
+          it where the + chips sit, so moving from avatar to chip doesn't
+          trigger mouseleave and hide the chips. Drawn first (behind)
+          so it never intercepts clicks meant for visible elements. */}
+      <rect
+        x={-NODE_RADIUS - 36}
+        y={-NODE_RADIUS - 36}
+        width={(NODE_RADIUS + 36) * 2}
+        height={(NODE_RADIUS + 36) * 2 + 32}
+        fill="white"
+        fillOpacity={0.001}
+      />
+      {/* Outer halo on focus */}
+      {isFocus && (
+        <circle r={NODE_RADIUS + 8} fill="rgba(245, 158, 11, 0.12)" />
+      )}
+      {/* Avatar circle */}
+      <circle r={NODE_RADIUS} fill={avatar ? '#fff' : bgColor} stroke={ringColor} strokeWidth={ringWidth} />
+      {avatar ? (
+        <image
+          href={avatar}
+          x={-NODE_RADIUS}
+          y={-NODE_RADIUS}
+          width={NODE_RADIUS * 2}
+          height={NODE_RADIUS * 2}
+          clipPath={`circle(${NODE_RADIUS}px at ${NODE_RADIUS}px ${NODE_RADIUS}px)`}
+          style={{ clipPath: `circle(${NODE_RADIUS}px at 50% 50%)` }}
+        />
+      ) : (
+        <text y={6} textAnchor="middle" fontSize={24} fontWeight={600} fill="#fff">
+          {initials}
+        </text>
+      )}
+      {/* Deceased bluebell marker */}
+      {isDeceased && (
+        <BluebellMarker cx={NODE_RADIUS - 6} cy={-NODE_RADIUS + 6} />
+      )}
+      {/* Name below */}
+      <text y={NODE_RADIUS + 18} textAnchor="middle" fontSize={13} fontWeight={600} fill="currentColor">
+        {node.name.length > 20 ? node.name.slice(0, 18) + '…' : node.name}
+      </text>
+      {lifeLine && (
+        <text y={NODE_RADIUS + 34} textAnchor="middle" fontSize={10} fill="rgba(128,128,128,0.9)">
+          {lifeLine}
+        </text>
+      )}
+      {/* Quick-add chips — four plus buttons that appear on hover.
+          Top: add parent. Bottom: add child.
+          Sideways chips (left/right): open a menu with "Partner" and
+          "Sibling" so the same-generation direction isn't locked to
+          one choice (common ask: "I want to add my brother's wife").
+          When any chip is clicked, we force `hovered=false` so the
+          chips disappear under the modal — otherwise they stay sticky
+          if the user cancels the picker and moves the mouse away. */}
+      {(hovered || isFocus) && (
+        <g opacity={hovered ? 1 : 0.6} style={{ pointerEvents: 'all' }}>
+          <QuickAddChip cx={0}                   cy={-NODE_RADIUS - 20} label="parent"  onClick={() => { setHovered(false); onQuickAddParent(); }} />
+          <QuickAddChip cx={0}                   cy={NODE_RADIUS + 52}  label="child"   onClick={() => { setHovered(false); onQuickAddChild(); }} />
+          <QuickAddChipMenu
+            cx={-NODE_RADIUS - 24} cy={0} label="partner / sibling"
+            onPartner={() => { setHovered(false); onQuickAddPartner(); }}
+            onSibling={() => { setHovered(false); onQuickAddSibling(); }}
+          />
+          <QuickAddChipMenu
+            cx={NODE_RADIUS + 24} cy={0} label="partner / sibling"
+            onPartner={() => { setHovered(false); onQuickAddPartner(); }}
+            onSibling={() => { setHovered(false); onQuickAddSibling(); }}
+          />
+        </g>
+      )}
+    </g>
+  );
+}
+
+/** Sideways chip that opens a small menu instead of firing a single
+ *  action — used for same-generation adds so the user can pick Partner
+ *  or Sibling without caring which side the chip is on. */
+function QuickAddChipMenu({ cx, cy, label, onPartner, onSibling }: {
+  cx: number; cy: number; label: string;
+  onPartner: () => void;
+  onSibling: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Close menu if user clicks outside this chip.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      const target = e.target as SVGElement;
+      if (target.closest(`[data-chip-id="${cx}-${cy}"]`)) return;
+      setMenuOpen(false);
+    };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [menuOpen, cx, cy]);
+
+  return (
+    <g
+      transform={`translate(${cx} ${cy})`}
+      data-chip-id={`${cx}-${cy}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{ cursor: 'pointer' }}
+    >
+      <circle
+        r={12}
+        fill={hovered || menuOpen ? '#6366f1' : '#ffffff'}
+        stroke="#6366f1"
+        strokeWidth={1.5}
+        onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
+      />
+      <text y={4} textAnchor="middle" fontSize={16} fontWeight={600}
+        fill={hovered || menuOpen ? '#ffffff' : '#6366f1'}
+        style={{ pointerEvents: 'none' }}>+</text>
+      {hovered && !menuOpen && (
+        <g>
+          <rect x={-48} y={14} width={96} height={16} rx={3} fill="rgba(0,0,0,0.8)" />
+          <text y={26} textAnchor="middle" fontSize={10} fill="#ffffff"
+            style={{ pointerEvents: 'none' }}>{label}</text>
+        </g>
+      )}
+      {menuOpen && (
+        <g transform="translate(0 18)">
+          <rect x={-52} y={0} width={104} height={52} rx={6}
+            fill="#ffffff" stroke="#6366f1" strokeWidth={1} />
+          <g onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onPartner(); }}
+             style={{ cursor: 'pointer' }}>
+            <rect x={-50} y={2} width={100} height={22} fill="transparent" />
+            <text x={0} y={17} textAnchor="middle" fontSize={12} fill="#1f2937">Partner / spouse</text>
+          </g>
+          <line x1={-50} y1={26} x2={50} y2={26} stroke="#e5e7eb" strokeWidth={1} />
+          <g onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSibling(); }}
+             style={{ cursor: 'pointer' }}>
+            <rect x={-50} y={28} width={100} height={22} fill="transparent" />
+            <text x={0} y={43} textAnchor="middle" fontSize={12} fill="#1f2937">Sibling</text>
+          </g>
+        </g>
+      )}
+    </g>
+  );
+}
+
+function QuickAddChip({ cx, cy, label, onClick }: { cx: number; cy: number; label: string; onClick: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <g
+      transform={`translate(${cx} ${cy})`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{ cursor: 'pointer' }}
+    >
+      <circle r={12} fill={hovered ? '#6366f1' : '#ffffff'} stroke="#6366f1" strokeWidth={1.5} />
+      <text y={4} textAnchor="middle" fontSize={16} fontWeight={600} fill={hovered ? '#ffffff' : '#6366f1'} style={{ pointerEvents: 'none' }}>+</text>
+      {hovered && (
+        <g>
+          <rect x={-28} y={14} width={56} height={16} rx={3} fill="rgba(0,0,0,0.8)" />
+          <text y={26} textAnchor="middle" fontSize={10} fill="#ffffff" style={{ pointerEvents: 'none' }}>{label}</text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+/** Stylised English bluebell: a small blue droop of three bell-shaped blooms on a green stem.
+ *  Drawn in SVG so it scales crisply at any zoom level. */
+function BluebellMarker({ cx, cy }: { cx: number; cy: number }) {
+  return (
+    <g transform={`translate(${cx} ${cy})`}>
+      {/* Stem */}
+      <path d="M 0 0 Q 1 5 -1 10" stroke="#22c55e" strokeWidth={1} fill="none" />
+      {/* Three bell blooms */}
+      <path d="M -4 -2 Q -3 2 -1 1 Q -2 -1 -4 -2 Z" fill="#6366f1" />
+      <path d="M  2 -1 Q  3 3  1 2 Q  0 0  2 -1 Z" fill="#4f46e5" />
+      <path d="M -1  4 Q  0 8 -3 7 Q -3 5 -1  4 Z" fill="#3730a3" />
+    </g>
+  );
+}
+
+function formatLife(birth: string | null, death: string | null): string | null {
+  const b = birth ? birth.slice(0, 4) : null;
+  const d = death ? death.slice(0, 4) : null;
+  if (!b && !d) return null;
+  if (b && d) return `${b}–${d}`;
+  if (b) return `b. ${b}`;
+  if (d) return `d. ${d}`;
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Right-click context menu
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Small inline editor anchored to a clicked edge. Lets the user change
+ * since/until dates and remove just this one edge without opening the
+ * full Set-Relationship modal. This is the "option 1" fast path.
+ */
+function EdgeQuickEditor({ edge, x, y, personNameLookup, onSaved, onClose }: {
+  edge: FamilyGraphEdge;
+  x: number; y: number;
+  personNameLookup: (id: number) => string;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const [since, setSince] = useState(edge.since ?? '');
+  const [until, setUntil] = useState(edge.until ?? '');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.edge-quick-editor')) return;
+      onClose();
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [onClose]);
+
+  const save = async () => {
+    if (edge.id == null) return;
+    setBusy(true);
+    const r = await updateRelationship(edge.id, { since: since || null, until: until || null });
+    setBusy(false);
+    if (r.success) onSaved();
+  };
+
+  const remove = async () => {
+    if (edge.id == null) return;
+    if (!(await promptConfirm({
+      title: 'Remove relationship?',
+      message: 'This will remove only this one relationship. The people on either end are kept.',
+      confirmLabel: 'Remove',
+      danger: true,
+    }))) return;
+    setBusy(true);
+    const r = await removeRelationship(edge.id);
+    setBusy(false);
+    if (r.success) onSaved();
+  };
+
+  // Human-readable summary of the edge.
+  const a = personNameLookup(edge.aId);
+  const b = personNameLookup(edge.bId);
+  const summary =
+    edge.type === 'parent_of' ? `${a} is parent of ${b}`
+    : edge.type === 'spouse_of' ? `${a} & ${b} — partners`
+    : edge.type === 'sibling_of' ? `${a} & ${b} — siblings${(edge.flags as any)?.half ? ' (half)' : (edge.flags as any)?.adopted ? ' (adopted)' : ''}`
+    : edge.type === 'associated_with' ? `${a} & ${b} — ${(edge.flags as any)?.kind ?? 'connected'}`
+    : '';
+
+  // Only partner/spouse and associated_with meaningfully carry since/until.
+  // parent_of and sibling_of show just Remove + the summary.
+  const showDates = edge.type === 'spouse_of' || edge.type === 'associated_with';
+
+  return (
+    <div
+      className="edge-quick-editor absolute z-30 bg-popover border border-border rounded-xl shadow-2xl p-3 min-w-[260px]"
+      style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Pencil className="w-3.5 h-3.5 text-primary" />
+        <span className="text-sm font-medium">{summary}</span>
+      </div>
+      {showDates && (
+        <div className="flex flex-col gap-2 mb-2">
+          <DateTripleInput label="Since (optional)" value={since} onChange={setSince} />
+          <DateTripleInput label="Until (optional)" value={until} onChange={setUntil}
+            hint="Set to mark as ex-partner / deceased." />
+        </div>
+      )}
+      <div className="flex items-center gap-2 mt-2">
+        <button
+          onClick={remove}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-red-600 hover:bg-red-500/10 disabled:opacity-50"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Remove
+        </button>
+        <div className="flex-1" />
+        <button onClick={onClose} className="px-2.5 py-1.5 rounded-lg text-xs hover:bg-accent">
+          Cancel
+        </button>
+        {showDates && (
+          <button
+            onClick={save}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
+          >
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NodeContextMenu({ x, y, isFocus, onSetRelationship, onRefocus, onRemovePerson, onClose }: {
+  x: number; y: number;
+  personId: number;
+  isFocus: boolean;
+  onSetRelationship: () => void;
+  onRefocus: () => void;
+  onRemovePerson: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const close = () => onClose();
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [onClose]);
+
+  return (
+    <div
+      className="absolute z-20 bg-popover border border-border rounded-lg shadow-xl py-1 min-w-[240px]"
+      style={{ left: x, top: y }}
+      onClick={e => e.stopPropagation()}
+      onContextMenu={e => e.preventDefault()}
+    >
+      {!isFocus && (
+        <>
+          <MenuItem icon={<Eye className="w-4 h-4" />} label="Focus on this person" onClick={onRefocus} />
+          <div className="border-t border-border my-1" />
+        </>
+      )}
+      <MenuItem icon={<Link2 className="w-4 h-4" />} label="Set relationship…" onClick={onSetRelationship} />
+      <div className="border-t border-border my-1" />
+      <MenuItem icon={<Trash2 className="w-4 h-4" />} label="Unlink from the tree" onClick={onRemovePerson} danger />
+      {/* Deliberately NOT offering "Delete person" here — deleting a
+          person in People Manager happens there, not as a Trees side-
+          effect. Trees only manages relationships. */}
+    </div>
+  );
+}
+
+function MenuItem({ icon, label, onClick, danger }: { icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left ${danger ? 'text-red-500 hover:bg-red-500/10' : 'hover:bg-accent'}`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Placeholder (ghost) node + resolver
+// ─────────────────────────────────────────────────────────────────
+
+/** Faded dashed circle with a "?" icon — stands in for an unnamed
+ *  intermediate person. Clicking opens the resolver to name or link. */
+function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
+  node: LaidOutNode & { renderedX: number; renderedY: number };
+  opacity: number;
+  onClick: (e: React.MouseEvent) => void;
+  onMouseDown: (e: React.MouseEvent) => void;
+}) {
+  const ghostRadius = 28; // smaller than regular nodes so they read as "not-quite-there"
+  return (
+    <g
+      transform={`translate(${node.renderedX} ${node.renderedY})`}
+      opacity={opacity * 0.55}
+      style={{ cursor: 'pointer' }}
+      onClick={onClick}
+      onMouseDown={onMouseDown}
+    >
+      {/* Invisible fill for reliable click hit-testing — dashed circles
+          with fill="none" swallow clicks in the interior. */}
+      <circle r={ghostRadius} fill="#ffffff" fillOpacity={0.001} />
+      <circle
+        r={ghostRadius}
+        fill="none"
+        stroke="#94a3b8"
+        strokeWidth={1.5}
+        strokeDasharray="4 4"
+        style={{ pointerEvents: 'none' }}
+      />
+      <text
+        y={7}
+        textAnchor="middle"
+        fontSize={28}
+        fontWeight={400}
+        fill="#94a3b8"
+        style={{ pointerEvents: 'none' }}
+      >
+        ?
+      </text>
+      <text
+        y={ghostRadius + 16}
+        textAnchor="middle"
+        fontSize={11}
+        fontStyle="italic"
+        fontWeight={500}
+        fill="#64748b"
+        style={{ pointerEvents: 'none' }}
+      >
+        click to name
+      </text>
+    </g>
+  );
+}
+
+/** Inline popup: "Who is this?" — lets user name, link, or remove a placeholder. */
+function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
+  personId: number;
+  x: number; y: number;
+  onResolved: () => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<'name' | 'link'>('name');
+  const [nameInput, setNameInput] = useState('');
+  const [linkQuery, setLinkQuery] = useState('');
+  const [allPersons, setAllPersons] = useState<{ id: number; name: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const res = await listPersons();
+      if (res.success && res.data) setAllPersons(res.data.map(p => ({ id: p.id, name: p.name })));
+    })();
+  }, []);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.placeholder-resolver')) return;
+      onClose();
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [onClose]);
+
+  const filtered = allPersons
+    .filter(p => !p.name.startsWith('__'))
+    .filter(p => p.name.toLowerCase().includes(linkQuery.trim().toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const handleName = async () => {
+    setError(null);
+    const trimmed = nameInput.trim();
+    if (!trimmed) { setError('Type a name.'); return; }
+    setBusy(true);
+    const r = await namePlaceholder(personId, trimmed);
+    setBusy(false);
+    if (r.success) onResolved();
+    else setError(r.error ?? 'Could not save.');
+  };
+
+  const handleLink = async (targetId: number) => {
+    setError(null);
+    setBusy(true);
+    const r = await mergePlaceholderIntoPerson(personId, targetId);
+    setBusy(false);
+    if (r.success) onResolved();
+    else setError(r.error ?? 'Could not link.');
+  };
+
+  const handleRemove = async () => {
+    if (!(await promptConfirm({
+      title: 'Remove placeholder?',
+      message: 'Relationships that flowed through this unnamed person (e.g. grandparent links) will be broken.',
+      confirmLabel: 'Remove',
+      danger: true,
+    }))) return;
+    setBusy(true);
+    const r = await removePlaceholder(personId);
+    setBusy(false);
+    if (r.success) onResolved();
+    else setError(r.error ?? 'Could not remove.');
+  };
+
+  return (
+    <div
+      className="placeholder-resolver absolute z-30 bg-popover border border-border rounded-xl shadow-2xl p-3 min-w-[300px] max-w-[340px]"
+      style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <HelpCircle className="w-4 h-4 text-primary" />
+        <span className="text-sm font-semibold">Who is this?</span>
+        <div className="flex-1" />
+        <button onClick={onClose} className="p-0.5 rounded hover:bg-accent">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Mode switcher */}
+      <div className="flex gap-1 mb-3 p-0.5 bg-muted rounded-lg text-xs">
+        <button
+          onClick={() => setMode('name')}
+          className={`flex-1 px-2 py-1 rounded ${mode === 'name' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
+        >
+          Name them
+        </button>
+        <button
+          onClick={() => setMode('link')}
+          className={`flex-1 px-2 py-1 rounded ${mode === 'link' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
+        >
+          Link to existing
+        </button>
+      </div>
+
+      {mode === 'name' ? (
+        <div>
+          <input
+            type="text"
+            autoFocus
+            value={nameInput}
+            onChange={e => setNameInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleName(); }}
+            placeholder="e.g. Grandma Eileen"
+            className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">Creates a new named person. They'll appear in People Manager so you can link photos later.</p>
+        </div>
+      ) : (
+        <div>
+          <input
+            type="text"
+            value={linkQuery}
+            onChange={e => setLinkQuery(e.target.value)}
+            placeholder="Search named people…"
+            className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
+          />
+          <div className="mt-2 max-h-36 overflow-auto flex flex-col gap-0.5 border border-border rounded p-0.5">
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-2">No matches.</p>
+            )}
+            {filtered.map(p => (
+              <button
+                key={p.id}
+                onClick={() => handleLink(p.id)}
+                disabled={busy}
+                className="px-2 py-1 rounded text-left text-sm hover:bg-accent disabled:opacity-50"
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1">All relationships on this placeholder transfer to the chosen person.</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-2 text-xs text-red-600">{error}</div>
+      )}
+
+      <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border">
+        <button
+          onClick={handleRemove}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs text-red-600 hover:bg-red-500/10 disabled:opacity-50"
+        >
+          <Trash2 className="w-3 h-3" />
+          Remove placeholder
+        </button>
+        <div className="flex-1" />
+        {mode === 'name' && (
+          <button
+            onClick={handleName}
+            disabled={busy || !nameInput.trim()}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
+          >
+            <UserPlus className="w-3 h-3" />
+            {busy ? 'Saving…' : 'Save name'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

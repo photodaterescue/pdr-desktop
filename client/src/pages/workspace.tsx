@@ -46,7 +46,8 @@ import {
   Copy,
   ZoomIn,
   ZoomOut,
-  Search
+  Search,
+  Network
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/custom-button";
@@ -85,6 +86,7 @@ import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
 import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesView from "@/components/MemoriesView";
+import { TreesView } from "@/components/trees/TreesView";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
 import type { SourceAnalysisResult } from "../electron";
@@ -1414,17 +1416,10 @@ return (
         {/* Memories view */}
         {activeView === 'memories' && <MemoriesView />}
 
-        {/* Trees view — placeholder for v1 release. Deliberately not called
-            'Family Tree' because the same tool handles friend groups, work
-            colleagues, and any other set of relationships — not just kin. */}
-        {activeView === 'familytree' && (
-          <ComingSoonView
-            title="Trees"
-            subtitle="Your people, organised by relationship."
-            description="Build a visual tree from the people you've named in PDR — family, friends, colleagues, any group — then click anyone to see every photo they appear in. Future versions will suggest relationships from face co-occurrence and import/export GEDCOM files so you can sync with genealogy apps. Coming in a future update."
-            iconName="familytree"
-          />
-        )}
+        {/* Trees view — family graph explorer (v1). Deliberately not called
+            'Family Tree' because later versions will handle friend groups,
+            work colleagues, and any other relationships — not just kin. */}
+        {activeView === 'familytree' && <TreesView />}
 
       </div>
       </div>{/* close inner flex row */}
@@ -1669,11 +1664,15 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-4 gap-1.5 sidebar-animated"
         style={{ width: '48px' }}
       >
-        {/* Menu / expand button — restores the Source Menu sidebar */}
+        {/* Menu / expand button — restores the Source Menu sidebar.
+            Always goes to 'open' with a single click, regardless of the
+            previous pin state. Two clicks to expand felt like friction
+            (previously 'closed' → 'auto' could leave the sidebar still
+            collapsed if search-results auto-collapse was active). */}
         <button
-          onClick={() => setPinStatePersisted(pinState === 'closed' ? 'auto' : 'open')}
+          onClick={() => setPinStatePersisted('open')}
           className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
-          title={pinState === 'closed' ? 'Show Source Menu (unpin)' : 'Show Source Menu'}
+          title="Show Source Menu"
         >
           <Menu className="w-4 h-4" />
         </button>
@@ -1864,7 +1863,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 selectable={false}
               />
               <SidebarItem
-                icon={<Sparkles className="w-4 h-4 opacity-70" />}
+                icon={<Network className="w-4 h-4 opacity-70" />}
                 label="Trees"
                 onClick={() => onViewChange?.('familytree')}
                 active={activeView === 'familytree'}

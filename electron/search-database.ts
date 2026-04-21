@@ -192,6 +192,29 @@ export function initDatabase(): { success: boolean; error?: string } {
     if (db) return { success: true };
 
     const dbPath = getDbPath();
+
+    // ─── Pre-open backup ────────────────────────────────────────
+    // Snapshot the live DB to a rolling backup before we open it.
+    // Keeps 5 rotating backups (backup-0 newest, backup-4 oldest) so
+    // if a bug destroys user data, we have a recent copy to restore
+    // from. Cheap: copy only happens once at startup, file-system
+    // level, no SQLite traffic.
+    try {
+      if (fs.existsSync(dbPath)) {
+        const backupDir = path.join(path.dirname(dbPath), 'backups');
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+        // Rotate: shift backup-3 → backup-4, ..., backup-0 → backup-1.
+        for (let i = 3; i >= 0; i--) {
+          const src = path.join(backupDir, `pdr-search.backup-${i}.db`);
+          const dst = path.join(backupDir, `pdr-search.backup-${i + 1}.db`);
+          if (fs.existsSync(src)) fs.copyFileSync(src, dst);
+        }
+        fs.copyFileSync(dbPath, path.join(backupDir, 'pdr-search.backup-0.db'));
+      }
+    } catch (backupErr) {
+      console.warn('[DB] Startup backup failed (non-fatal):', backupErr);
+    }
+
     db = new Database(dbPath);
 
     // Performance pragmas
@@ -404,6 +427,96 @@ export function initDatabase(): { success: boolean; error?: string } {
       try { db.exec(`ALTER TABLE face_detections ADD COLUMN verified INTEGER NOT NULL DEFAULT 0`); } catch {}
     }
 
+    // Trees v1 — relationship edges between persons.
+    // Stored types:
+    //   parent_of     — A is parent of B (with optional biological/step/adopted/in_law flags)
+    //   spouse_of     — A and B are (or were) spouses/long-term partners. until date → ex.
+    //   sibling_of    — A and B are siblings (can be stored directly, no shared-parent prereq)
+    //   associated_with — non-family connection. flags.kind carries the specific label:
+    //                     'friend' | 'close_friend' | 'acquaintance' | 'neighbour'
+    //                     'colleague' | 'classmate' | 'teammate' | 'roommate'
+    //                     'mentor' | 'mentee' | 'client' | 'manager'
+    //                     'ex_partner' (ex-gf / ex-bf / ex-fiancé / short-term)
+    //                     'other' (free-form; uses flags.label for the display name)
+    //                  flags.ended = true marks historical ties (ex-colleague, ex-neighbour).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS relationships (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        person_a_id  INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+        person_b_id  INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+        type         TEXT NOT NULL CHECK(type IN ('parent_of', 'spouse_of', 'sibling_of', 'associated_with')),
+        since        TEXT,
+        until        TEXT,
+        flags        TEXT,               -- JSON: { biological?, step?, adopted?, in_law?, half?, kind?, label?, ended? }
+        confidence   REAL NOT NULL DEFAULT 1.0,
+        source       TEXT NOT NULL DEFAULT 'user',  -- 'user' | 'suggested'
+        note         TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_rel_a_type ON relationships(person_a_id, type);
+      CREATE INDEX IF NOT EXISTS idx_rel_b_type ON relationships(person_b_id, type);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique ON relationships(person_a_id, person_b_id, type);
+    `);
+
+    // Migrate older relationships tables that were created with a CHECK
+    // constraint predating the current type set. SQLite doesn't let us
+    // alter a CHECK in place, so copy-swap the table if needed.
+    try {
+      const schemaRow = db.prepare(
+        `SELECT sql FROM sqlite_master WHERE type='table' AND name='relationships'`
+      ).get() as { sql: string } | undefined;
+      if (schemaRow && !schemaRow.sql.includes("'associated_with'")) {
+        console.warn('[DB] Migrating relationships table to include associated_with type…');
+        db.exec(`
+          BEGIN;
+          CREATE TABLE relationships_new (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_a_id  INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            person_b_id  INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            type         TEXT NOT NULL CHECK(type IN ('parent_of', 'spouse_of', 'sibling_of', 'associated_with')),
+            since        TEXT,
+            until        TEXT,
+            flags        TEXT,
+            confidence   REAL NOT NULL DEFAULT 1.0,
+            source       TEXT NOT NULL DEFAULT 'user',
+            note         TEXT,
+            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO relationships_new SELECT * FROM relationships;
+          DROP TABLE relationships;
+          ALTER TABLE relationships_new RENAME TO relationships;
+          CREATE INDEX IF NOT EXISTS idx_rel_a_type ON relationships(person_a_id, type);
+          CREATE INDEX IF NOT EXISTS idx_rel_b_type ON relationships(person_b_id, type);
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique ON relationships(person_a_id, person_b_id, type);
+          COMMIT;
+        `);
+      }
+    } catch (migErr) {
+      console.error('[DB] Relationships migration failed:', migErr);
+    }
+
+    // Persons life-event + marker columns for Trees.
+    if (!personColNames.has('birth_date')) {
+      try { db.exec(`ALTER TABLE persons ADD COLUMN birth_date TEXT`); } catch {}
+    }
+    if (!personColNames.has('death_date')) {
+      try { db.exec(`ALTER TABLE persons ADD COLUMN death_date TEXT`); } catch {}
+    }
+    if (!personColNames.has('deceased_marker')) {
+      // Icon drawn over the avatar when death_date is set.
+      // Default: 'bluebell' (English bluebell). User-editable in v1.1.
+      try { db.exec(`ALTER TABLE persons ADD COLUMN deceased_marker TEXT DEFAULT 'bluebell'`); } catch {}
+    }
+    if (!personColNames.has('is_placeholder')) {
+      // Placeholder persons bridge skip-generation relationships
+      // (grandparent, aunt/uncle, cousin) when the intermediate person
+      // isn't yet named. They're hidden from People Manager and render
+      // as ghost nodes in Trees until the user names or merges them.
+      try { db.exec(`ALTER TABLE persons ADD COLUMN is_placeholder INTEGER NOT NULL DEFAULT 0`); } catch {}
+    }
+
     // Normalise any legacy double-backslash destination paths
     db.exec(`UPDATE indexed_runs SET destination_path = REPLACE(destination_path, '\\\\', '\\') WHERE destination_path LIKE '%\\\\%'`);
 
@@ -413,6 +526,71 @@ export function initDatabase(): { success: boolean; error?: string } {
     db.exec(`DELETE FROM ai_processing_status WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
     db.exec(`DELETE FROM face_detections WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
     db.exec(`DELETE FROM ai_tags WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
+
+    // FTS5 integrity check — contentless virtual tables can drift out of
+    // sync with their source tables if rows are deleted directly. If the
+    // index is corrupt, rebuild it from ai_tags + face_detections.
+    // Runs once at init; per-file rebuilds self-heal too.
+    try {
+      if (!checkAiFtsIntegrity()) {
+        console.warn('[FTS] files_ai_fts integrity check failed at startup; repairing…');
+        repairAiFts();
+      }
+    } catch (ftsErr) {
+      console.error('[FTS] Integrity check threw unexpectedly:', ftsErr);
+    }
+
+    // Consolidate any legacy duplicate indexed_files rows BEFORE the
+    // UNIQUE index below is created (otherwise the index creation
+    // would fail on the duplicate file_paths). This preserves every
+    // verified face_detection, every ai_tag, every ai_processing_status
+    // by moving them onto the surviving (winner) row first.
+    try {
+      consolidateIndexedFilesDuplicates();
+    } catch (consErr) {
+      console.error('[DB] file_path duplicate consolidation failed:', consErr);
+    }
+
+    // ALSO consolidate rows whose CONTENT is identical (same hash) but
+    // which live at different file_paths. Happens when the same photo
+    // exists in the source AND destination, or in multiple destination
+    // folders from different fix runs. Same safe merge: all downstream
+    // data moves onto the winner before losers are dropped.
+    try {
+      consolidateIndexedFilesByHash();
+    } catch (consErr) {
+      console.error('[DB] hash-based duplicate consolidation failed:', consErr);
+    }
+
+    // AND consolidate by (filename, size_bytes) — the hash column is not
+    // populated by the current indexer, so hash-based dedup misses real
+    // content duplicates. Filename+size is the strongest signal we can
+    // actually run on existing rows. Same safe merge strategy.
+    try {
+      consolidateIndexedFilesByFilenameAndSize();
+    } catch (consErr) {
+      console.error('[DB] filename+size duplicate consolidation failed:', consErr);
+    }
+
+    // Face-detection dedup: if AI re-processing ever ran without
+    // clearing the previous detections, the same face row can exist
+    // multiple times for the same photo. Collapse identical groups,
+    // preferring verified rows.
+    try {
+      deduplicateFaceDetections();
+    } catch (fdErr) {
+      console.error('[DB] face_detections dedup failed:', fdErr);
+    }
+
+    // Guarantee one indexed_files row per file_path going forward.
+    // Paired with the INSERT ... ON CONFLICT(file_path) DO UPDATE in
+    // insertFiles(), re-running a fix on the same source can never
+    // produce duplicate rows again.
+    try {
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_indexed_files_file_path ON indexed_files(file_path)`);
+    } catch (idxErr) {
+      console.error('[DB] Could not create unique index on indexed_files.file_path:', idxErr);
+    }
 
     return { success: true };
   } catch (err) {
@@ -484,6 +662,20 @@ export function listRuns(): IndexedRun[] {
 
 // ─── File insertion (batch) ──────────────────────────────────────────────────
 
+/**
+ * Insert (or upsert) files into the library index.
+ *
+ * Critical: the UNIQUE INDEX on `file_path` means re-indexing the same
+ * destination file no longer creates a duplicate indexed_files row. On
+ * conflict we UPDATE the existing row in place — preserving its `id`,
+ * so `face_detections.file_id`, `ai_tags.file_id`, and every verified
+ * face stays attached. The EXIF fields are refreshed from the new run,
+ * but the row's identity (and downstream user work) is untouched.
+ *
+ * This replaces the old plain-INSERT behaviour that was responsible
+ * for duplicate photos in People Manager and the cascade-wipe of
+ * verified faces when purgeDuplicateIndexedFiles ran.
+ */
 export function insertFiles(runId: number, files: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'>[]): number {
   const database = getDb();
 
@@ -511,9 +703,47 @@ export function insertFiles(runId: number, files: Omit<IndexedFile, 'id' | 'run_
       ?, ?, ?,
       ?
     )
+    ON CONFLICT(file_path) DO UPDATE SET
+      run_id = excluded.run_id,
+      filename = excluded.filename,
+      extension = excluded.extension,
+      file_type = excluded.file_type,
+      size_bytes = excluded.size_bytes,
+      hash = excluded.hash,
+      confidence = excluded.confidence,
+      date_source = excluded.date_source,
+      original_filename = excluded.original_filename,
+      derived_date = excluded.derived_date,
+      year = excluded.year,
+      month = excluded.month,
+      day = excluded.day,
+      camera_make = excluded.camera_make,
+      camera_model = excluded.camera_model,
+      lens_model = excluded.lens_model,
+      width = excluded.width,
+      height = excluded.height,
+      megapixels = excluded.megapixels,
+      iso = excluded.iso,
+      shutter_speed = excluded.shutter_speed,
+      aperture = excluded.aperture,
+      focal_length = excluded.focal_length,
+      flash_fired = excluded.flash_fired,
+      scene_capture_type = excluded.scene_capture_type,
+      exposure_program = excluded.exposure_program,
+      white_balance = excluded.white_balance,
+      orientation = excluded.orientation,
+      camera_position = excluded.camera_position,
+      gps_lat = excluded.gps_lat,
+      gps_lon = excluded.gps_lon,
+      gps_alt = excluded.gps_alt,
+      geo_country = excluded.geo_country,
+      geo_country_code = excluded.geo_country_code,
+      geo_city = excluded.geo_city,
+      exif_read_ok = excluded.exif_read_ok,
+      indexed_at = datetime('now')
   `);
 
-  const insertMany = database.transaction((rows: typeof files) => {
+  const upsertMany = database.transaction((rows: typeof files) => {
     let count = 0;
     for (const f of rows) {
       stmt.run(
@@ -533,7 +763,181 @@ export function insertFiles(runId: number, files: Omit<IndexedFile, 'id' | 'run_
     return count;
   });
 
-  return insertMany(files);
+  return upsertMany(files);
+}
+
+/**
+ * Merge one group of duplicate indexed_files rows onto a single winner.
+ * Transfers face_detections (including verified faces), ai_tags (with
+ * dedup), and ai_processing_status (OR-ing the flags) onto the winner
+ * BEFORE deleting loser rows, so the ON DELETE CASCADE has nothing
+ * left to wipe. Shared helper used by both file_path- and hash-based
+ * consolidation paths.
+ */
+function mergeIndexedFilesIntoWinner(database: Database.Database, winnerId: number, loserIds: number[]): number {
+  if (loserIds.length === 0) return 0;
+  const moveFacesStmt = database.prepare(`UPDATE face_detections SET file_id = ? WHERE file_id = ?`);
+  const copyTagsStmt = database.prepare(`
+    INSERT OR IGNORE INTO ai_tags (file_id, tag, confidence, source, model_ver)
+    SELECT ?, tag, confidence, source, model_ver FROM ai_tags WHERE file_id = ?
+  `);
+  const delTagsStmt = database.prepare(`DELETE FROM ai_tags WHERE file_id = ?`);
+  const getStatusStmt = database.prepare(`SELECT * FROM ai_processing_status WHERE file_id = ?`);
+  const mergeStatusStmt = database.prepare(`
+    UPDATE ai_processing_status
+    SET face_processed = CASE WHEN face_processed = 1 OR ? = 1 THEN 1 ELSE 0 END,
+        tags_processed = CASE WHEN tags_processed = 1 OR ? = 1 THEN 1 ELSE 0 END,
+        face_model_ver = COALESCE(face_model_ver, ?),
+        tags_model_ver = COALESCE(tags_model_ver, ?)
+    WHERE file_id = ?
+  `);
+  const moveStatusStmt = database.prepare(`UPDATE ai_processing_status SET file_id = ? WHERE file_id = ?`);
+  const delStatusStmt = database.prepare(`DELETE FROM ai_processing_status WHERE file_id = ?`);
+  const delFileStmt = database.prepare(`DELETE FROM indexed_files WHERE id = ?`);
+
+  let removed = 0;
+  for (const loserId of loserIds) {
+    moveFacesStmt.run(winnerId, loserId);
+    copyTagsStmt.run(winnerId, loserId);
+    delTagsStmt.run(loserId);
+    const loserStatus = getStatusStmt.get(loserId) as any;
+    if (loserStatus) {
+      const winnerStatus = getStatusStmt.get(winnerId) as any;
+      if (winnerStatus) {
+        mergeStatusStmt.run(
+          loserStatus.face_processed ?? 0,
+          loserStatus.tags_processed ?? 0,
+          loserStatus.face_model_ver ?? null,
+          loserStatus.tags_model_ver ?? null,
+          winnerId
+        );
+        delStatusStmt.run(loserId);
+      } else {
+        moveStatusStmt.run(winnerId, loserId);
+      }
+    }
+    delFileStmt.run(loserId);
+    removed++;
+  }
+  return removed;
+}
+
+/**
+ * Consolidate rows that share the SAME CONTENT HASH but live at
+ * different paths. This catches the case where the same photo exists
+ * at multiple locations (source + destination, or two destinations
+ * from different fix runs), producing visually-duplicate entries in
+ * People Manager. Each duplicate group collapses onto the highest-id
+ * row, preserving every face_detection / ai_tag / ai_processing_status.
+ *
+ * Only runs when `hash` is a non-empty string. Rows with null/empty
+ * hash are left alone (we can't prove they're duplicates).
+ */
+export function consolidateIndexedFilesByHash(): { groupsMerged: number; rowsRemoved: number } {
+  const database = getDb();
+  const groups = database.prepare(`
+    SELECT hash, MAX(id) AS winner_id
+    FROM indexed_files
+    WHERE hash IS NOT NULL AND hash != ''
+    GROUP BY hash
+    HAVING COUNT(*) > 1
+  `).all() as { hash: string; winner_id: number }[];
+
+  if (groups.length === 0) return { groupsMerged: 0, rowsRemoved: 0 };
+
+  let rowsRemoved = 0;
+  const tx = database.transaction(() => {
+    const loserStmt = database.prepare(
+      `SELECT id FROM indexed_files WHERE hash = ? AND id != ?`
+    );
+    for (const group of groups) {
+      const losers = (loserStmt.all(group.hash, group.winner_id) as { id: number }[]).map(r => r.id);
+      rowsRemoved += mergeIndexedFilesIntoWinner(database, group.winner_id, losers);
+    }
+  });
+  tx();
+
+  console.warn(`[DB] Consolidated ${groups.length} same-content duplicate group(s); merged downstream data, dropped ${rowsRemoved} redundant row(s)`);
+  return { groupsMerged: groups.length, rowsRemoved };
+}
+
+/**
+ * Consolidate rows that share the same (filename, size_bytes). The
+ * `hash` column on indexed_files is populated during fix-phase copies
+ * but NOT by the current indexer — so hash-based dedup misses most
+ * real duplicates. Filename + byte size is a strong enough signal for
+ * duplicate detection in practice (the same photo rarely shares both
+ * with a different picture), and it's what we can actually run on
+ * the existing data.
+ */
+export function consolidateIndexedFilesByFilenameAndSize(): { groupsMerged: number; rowsRemoved: number } {
+  const database = getDb();
+  const groups = database.prepare(`
+    SELECT filename, size_bytes, MAX(id) AS winner_id
+    FROM indexed_files
+    WHERE filename != '' AND size_bytes > 0
+    GROUP BY filename, size_bytes
+    HAVING COUNT(*) > 1
+  `).all() as { filename: string; size_bytes: number; winner_id: number }[];
+
+  if (groups.length === 0) {
+    console.log('[DB] No filename+size duplicates found.');
+    return { groupsMerged: 0, rowsRemoved: 0 };
+  }
+
+  let rowsRemoved = 0;
+  const tx = database.transaction(() => {
+    const loserStmt = database.prepare(
+      `SELECT id FROM indexed_files WHERE filename = ? AND size_bytes = ? AND id != ?`
+    );
+    for (const group of groups) {
+      const losers = (loserStmt.all(group.filename, group.size_bytes, group.winner_id) as { id: number }[]).map(r => r.id);
+      rowsRemoved += mergeIndexedFilesIntoWinner(database, group.winner_id, losers);
+    }
+  });
+  tx();
+
+  console.warn(`[DB] Consolidated ${groups.length} filename+size duplicate group(s); merged downstream data, dropped ${rowsRemoved} redundant row(s)`);
+  return { groupsMerged: groups.length, rowsRemoved };
+}
+
+/**
+ * One-time consolidation of legacy duplicate indexed_files rows.
+ *
+ * Before the upsert was introduced, re-indexing the same destination
+ * produced multiple indexed_files rows for the same file_path. This
+ * routine merges each duplicate group onto a winner (MAX(id)) by
+ * transferring all downstream data — face_detections (including
+ * verified faces), ai_tags, and ai_processing_status — onto the
+ * winner BEFORE dropping loser rows. Nothing user-entered is lost.
+ *
+ * Safe to call multiple times; does nothing if no duplicates remain.
+ */
+export function consolidateIndexedFilesDuplicates(): { groupsMerged: number; rowsRemoved: number } {
+  const database = getDb();
+  const groups = database.prepare(`
+    SELECT file_path, MAX(id) AS winner_id
+    FROM indexed_files
+    GROUP BY file_path
+    HAVING COUNT(*) > 1
+  `).all() as { file_path: string; winner_id: number }[];
+
+  if (groups.length === 0) return { groupsMerged: 0, rowsRemoved: 0 };
+
+  let rowsRemoved = 0;
+  const tx = database.transaction(() => {
+    const loserStmt = database.prepare(
+      `SELECT id FROM indexed_files WHERE file_path = ? AND id != ?`
+    );
+    for (const group of groups) {
+      const losers = (loserStmt.all(group.file_path, group.winner_id) as { id: number }[]).map(r => r.id);
+      rowsRemoved += mergeIndexedFilesIntoWinner(database, group.winner_id, losers);
+    }
+  });
+  tx();
+
+  console.warn(`[DB] Consolidated ${groups.length} duplicate file_path group(s); merged downstream data, dropped ${rowsRemoved} redundant row(s)`);
+  return { groupsMerged: groups.length, rowsRemoved };
 }
 
 // ─── Search / Query ──────────────────────────────────────────────────────────
@@ -1045,6 +1449,48 @@ export function markAiProcessed(fileId: number, task: 'faces' | 'tags', modelVer
   `).run(fileId, modelVer, modelVer);
 }
 
+/**
+ * Clear every UNVERIFIED face_detection row for a file before a
+ * re-detection run. Preserves verified=1 rows so user-confirmed face
+ * assignments survive a re-process. Without this, re-processing a file
+ * (e.g. after the "reset face-processed but 0 detections" logic kicks
+ * in) accumulates duplicate face rows — the same face appears multiple
+ * times in People Manager for the same photo.
+ */
+export function clearUnverifiedFacesForFile(fileId: number): number {
+  const database = getDb();
+  const result = database.prepare(`DELETE FROM face_detections WHERE file_id = ? AND verified = 0`).run(fileId);
+  return result.changes;
+}
+
+/**
+ * One-time consolidation that removes duplicate face_detection rows
+ * accumulated before `clearUnverifiedFacesForFile` was wired in.
+ *
+ * Duplicate = same (file_id, box coords, person_id). When a group of
+ * identical rows exists we keep the ONE with (a) verified=1 if any,
+ * (b) highest confidence, (c) lowest id — and drop the rest.
+ */
+export function deduplicateFaceDetections(): number {
+  const database = getDb();
+  const result = database.prepare(`
+    DELETE FROM face_detections
+    WHERE id NOT IN (
+      SELECT id FROM (
+        SELECT id, ROW_NUMBER() OVER (
+          PARTITION BY file_id, box_x, box_y, box_w, box_h, COALESCE(person_id, -1)
+          ORDER BY verified DESC, confidence DESC, id ASC
+        ) AS rn
+        FROM face_detections
+      ) WHERE rn = 1
+    )
+  `).run();
+  if (result.changes > 0) {
+    console.warn(`[DB] Removed ${result.changes} duplicate face_detection row(s)`);
+  }
+  return result.changes;
+}
+
 /** Insert face detections for a file */
 export function insertFaceDetections(faces: FaceDetectionRecord[]): void {
   const database = getDb();
@@ -1080,8 +1526,90 @@ export function insertAiTags(tags: AiTagRecord[]): void {
   replaceAll(tags);
 }
 
-/** Rebuild AI FTS entry for a specific file */
+/** Check whether the contentless files_ai_fts virtual table is internally
+ *  consistent. Uses FTS5's built-in integrity-check command. Returns
+ *  true for healthy, false for corrupt (so caller can trigger repair). */
+export function checkAiFtsIntegrity(): boolean {
+  const database = getDb();
+  try {
+    database.prepare(`INSERT INTO files_ai_fts(files_ai_fts) VALUES('integrity-check')`).run();
+    return true;
+  } catch (err) {
+    const msg = (err as Error).message.toLowerCase();
+    if (msg.includes('malformed') || msg.includes('corrupt')) return false;
+    throw err;
+  }
+}
+
+/** Drop and rebuild the files_ai_fts virtual table from the live source
+ *  tables (ai_tags + face_detections × persons). Because the FTS5 table
+ *  is contentless, nothing is lost — it's just a search accelerator
+ *  that is fully recomputable from the base data. */
+export function repairAiFts(): { rebuilt: number } {
+  const database = getDb();
+  console.warn('[FTS Repair] Dropping and rebuilding files_ai_fts…');
+  database.exec(`DROP TABLE IF EXISTS files_ai_fts`);
+  database.exec(`
+    CREATE VIRTUAL TABLE files_ai_fts USING fts5(
+      ai_tags,
+      person_names,
+      content='',
+      content_rowid='rowid'
+    );
+  `);
+
+  // Every file that has at least one tag or a named face is a candidate.
+  const fileRows = database.prepare(`
+    SELECT id FROM indexed_files
+    WHERE id IN (SELECT file_id FROM ai_tags)
+       OR id IN (SELECT file_id FROM face_detections WHERE person_id IS NOT NULL)
+  `).all() as { id: number }[];
+
+  const tagStmt = database.prepare(`SELECT tag FROM ai_tags WHERE file_id = ?`);
+  const personStmt = database.prepare(`
+    SELECT DISTINCT p.name FROM face_detections fd
+    JOIN persons p ON fd.person_id = p.id
+    WHERE fd.file_id = ?
+  `);
+  const insertStmt = database.prepare(`INSERT INTO files_ai_fts(rowid, ai_tags, person_names) VALUES (?, ?, ?)`);
+
+  let rebuilt = 0;
+  const tx = database.transaction(() => {
+    for (const r of fileRows) {
+      const tags = (tagStmt.all(r.id) as { tag: string }[]).map(t => t.tag).join(' ');
+      const persons = (personStmt.all(r.id) as { name: string }[]).map(p => p.name).join(' ');
+      if (tags || persons) {
+        insertStmt.run(r.id, tags, persons);
+        rebuilt++;
+      }
+    }
+  });
+  tx();
+
+  console.warn(`[FTS Repair] Rebuilt files_ai_fts with ${rebuilt} entries.`);
+  return { rebuilt };
+}
+
+/** Rebuild AI FTS entry for a specific file. Self-heals if the underlying
+ *  virtual table is corrupt: on SQLITE_CORRUPT_VTAB, kicks off a full
+ *  repair and retries once. */
 export function rebuildAiFts(fileId: number): void {
+  try {
+    rebuildAiFtsInner(fileId);
+  } catch (err) {
+    const msg = (err as Error).message.toLowerCase();
+    if (msg.includes('malformed') || msg.includes('corrupt')) {
+      console.warn('[FTS] Corruption detected during per-file rebuild; repairing index…');
+      repairAiFts();
+      // Retry once on the freshly-rebuilt table.
+      rebuildAiFtsInner(fileId);
+    } else {
+      throw err;
+    }
+  }
+}
+
+function rebuildAiFtsInner(fileId: number): void {
   const database = getDb();
   // Gather all tags for this file
   const tags = (database.prepare(`SELECT tag FROM ai_tags WHERE file_id = ?`).all(fileId) as { tag: string }[])
@@ -1125,7 +1653,10 @@ export function listPersons(): PersonRecord[] {
     SELECT p.*, COUNT(DISTINCT fd.file_id) as photo_count
     FROM persons p
     LEFT JOIN face_detections fd ON fd.person_id = p.id
-    WHERE p.discarded_at IS NULL AND p.name != '__ignored__' AND p.name != '__unsure__'
+    WHERE p.discarded_at IS NULL
+      AND p.name != '__ignored__'
+      AND p.name != '__unsure__'
+      AND COALESCE(p.is_placeholder, 0) = 0
     GROUP BY p.id
     ORDER BY photo_count DESC
   `).all() as PersonRecord[];
@@ -1167,16 +1698,27 @@ export function getPersonsWithCooccurrence(selectedPersonIds: number[]): { id: n
   return database.prepare(query).all(...selectedPersonIds, ...selectedPersonIds) as any[];
 }
 
-/** Remove person records that have no face detections pointing to them (orphaned leftovers) */
+/** Remove person records that have no face detections pointing to them
+ *  AND are not serving any Trees-level purpose. A person with zero face
+ *  detections might still be:
+ *    · a named family member added in Trees who simply has no photos yet
+ *      (common for older generations predating digital photography)
+ *    · a placeholder ghost bridging a skip-generation relationship
+ *    · the target of a relationship edge (parent_of, spouse_of, etc.)
+ *  Any of those cases must NOT be deleted, or the Trees graph collapses
+ *  via ON DELETE CASCADE on `relationships`. */
 export function cleanupOrphanedPersons(): number {
   const database = getDb();
   const result = database.prepare(`
     DELETE FROM persons
     WHERE id NOT IN (SELECT DISTINCT person_id FROM face_detections WHERE person_id IS NOT NULL)
       AND discarded_at IS NULL
+      AND COALESCE(is_placeholder, 0) = 0
+      AND id NOT IN (SELECT person_a_id FROM relationships)
+      AND id NOT IN (SELECT person_b_id FROM relationships)
   `).run();
   if (result.changes > 0) {
-    console.log(`[AI] Cleaned up ${result.changes} orphaned person record(s) with no face detections`);
+    console.log(`[AI] Cleaned up ${result.changes} orphaned person record(s) with no face detections and no Trees presence`);
   }
   return result.changes;
 }
@@ -1749,21 +2291,14 @@ export function clearFaceDataForModelUpgrade(): void {
     }
   }
 
-  // Also reset files that were marked as human-v1 processed but have zero face detections
-  // (this happens if the face model failed to load but files were still marked as processed)
-  const brokenProcessed = database.prepare(
-    `SELECT COUNT(*) as cnt FROM ai_processing_status aps
-     WHERE aps.face_processed = 1 AND aps.face_model_ver = 'human-v1'
-     AND NOT EXISTS (SELECT 1 FROM face_detections fd WHERE fd.file_id = aps.file_id)`
-  ).get() as { cnt: number };
-  if (brokenProcessed.cnt > 0) {
-    console.log(`[AI] Resetting ${brokenProcessed.cnt} files marked face-processed but with 0 detections (previous failed run)`);
-    database.exec(`
-      UPDATE ai_processing_status SET face_processed = 0, face_model_ver = NULL
-      WHERE face_processed = 1 AND face_model_ver = 'human-v1'
-      AND NOT EXISTS (SELECT 1 FROM face_detections fd WHERE fd.file_id = ai_processing_status.file_id);
-    `);
-  }
+  // NOTE: previous builds also reset any file marked `face_processed=1`
+  // that had zero detections, on the assumption that meant the model had
+  // failed to load. That logic was WRONG — a photo legitimately having
+  // zero faces (landscape, empty scene, text) is a valid result, not a
+  // failure. Resetting those caused the entire library to be re-analysed
+  // on every launch, which users saw as the "10–15 minute freeze".
+  // We no longer reset based on "0 faces". A photo is re-analysed only
+  // if explicitly requested (e.g. model upgrade) or was never analysed.
 }
 
 /** Clear all AI data (faces, tags, processing status) */
@@ -1826,16 +2361,14 @@ export function purgeDuplicateRuns(): number {
  * Returns the number of rows removed.
  */
 export function purgeDuplicateIndexedFiles(): number {
-  const database = getDb();
-  // Find IDs to keep (latest per file_path)
-  const result = database.prepare(`
-    DELETE FROM indexed_files
-    WHERE id NOT IN (
-      SELECT MAX(id) FROM indexed_files GROUP BY file_path
-    )
-  `).run();
-  console.log(`[DB Cleanup] Purged ${result.changes} duplicate indexed_files rows`);
-  return result.changes;
+  // Retired destructive behaviour: this used to DELETE duplicate rows
+  // outright, which cascaded through face_detections and wiped verified
+  // faces. It now delegates to consolidateIndexedFilesDuplicates() which
+  // moves all downstream data onto the winner row BEFORE removing the
+  // losers — preserving every verification and AI tag.
+  const result = consolidateIndexedFilesDuplicates();
+  console.log(`[DB Cleanup] Consolidated ${result.groupsMerged} duplicate group(s) safely; removed ${result.rowsRemoved} redundant row(s)`);
+  return result.rowsRemoved;
 }
 
 /**
@@ -2279,4 +2812,592 @@ export function runDatabaseCleanup(): {
     orphanRunsRemoved: orphans,
     ghostRunsRemoved: ghosts.autoRemoved,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Trees v1 — family relationship CRUD
+// ═══════════════════════════════════════════════════════════════
+
+export type RelationshipType = 'parent_of' | 'spouse_of' | 'sibling_of' | 'associated_with';
+
+/** Kinds of non-family associations carried in flags.kind for associated_with rows. */
+export type AssociationKind =
+  | 'friend' | 'close_friend' | 'best_friend' | 'acquaintance' | 'neighbour'
+  | 'colleague' | 'classmate' | 'teammate' | 'roommate'
+  | 'mentor' | 'mentee' | 'manager' | 'client'
+  | 'ex_partner'
+  | 'other';
+
+export interface RelationshipFlags {
+  biological?: boolean;
+  step?: boolean;
+  adopted?: boolean;
+  in_law?: boolean;
+  /** sibling_of: true when the two people share only one parent (half-sibling). */
+  half?: boolean;
+  /** associated_with: what kind of non-family tie this is. */
+  kind?: AssociationKind;
+  /** associated_with + kind='other': free-form label the user typed. */
+  label?: string;
+  /** Marks historical ties: ex-colleague, ex-neighbour, etc. */
+  ended?: boolean;
+}
+
+export interface RelationshipRecord {
+  id: number;
+  person_a_id: number;
+  person_b_id: number;
+  type: RelationshipType;
+  since: string | null;
+  until: string | null;
+  flags: RelationshipFlags | null;
+  confidence: number;
+  source: 'user' | 'suggested';
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RelationshipRow {
+  id: number;
+  person_a_id: number;
+  person_b_id: number;
+  type: RelationshipType;
+  since: string | null;
+  until: string | null;
+  flags: string | null;
+  confidence: number;
+  source: 'user' | 'suggested';
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToRelationship(row: RelationshipRow): RelationshipRecord {
+  let flags: RelationshipFlags | null = null;
+  if (row.flags) {
+    try { flags = JSON.parse(row.flags) as RelationshipFlags; } catch { flags = null; }
+  }
+  return {
+    id: row.id,
+    person_a_id: row.person_a_id,
+    person_b_id: row.person_b_id,
+    type: row.type,
+    since: row.since,
+    until: row.until,
+    flags,
+    confidence: row.confidence,
+    source: row.source,
+    note: row.note,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/** Add a new family relationship between two people. Enforces that a
+ *  parent_of edge always has A as the parent, B as the child. */
+export function addRelationship(params: {
+  personAId: number;
+  personBId: number;
+  type: RelationshipType;
+  since?: string | null;
+  until?: string | null;
+  flags?: RelationshipFlags | null;
+  confidence?: number;
+  source?: 'user' | 'suggested';
+  note?: string | null;
+}): RelationshipRecord | { error: string } {
+  if (params.personAId === params.personBId) {
+    return { error: 'A person cannot have a relationship with themself.' };
+  }
+  const db = getDb();
+  // Existence check — foreign keys may be enforced, but give a cleaner error.
+  const aExists = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(params.personAId);
+  const bExists = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(params.personBId);
+  if (!aExists || !bExists) {
+    return { error: 'One or both persons do not exist.' };
+  }
+  try {
+    const info = db.prepare(`
+      INSERT INTO relationships
+        (person_a_id, person_b_id, type, since, until, flags, confidence, source, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      params.personAId,
+      params.personBId,
+      params.type,
+      params.since ?? null,
+      params.until ?? null,
+      params.flags ? JSON.stringify(params.flags) : null,
+      params.confidence ?? 1.0,
+      params.source ?? 'user',
+      params.note ?? null,
+    );
+    const row = db.prepare(`SELECT * FROM relationships WHERE id = ?`).get(info.lastInsertRowid) as RelationshipRow;
+    return rowToRelationship(row);
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes('UNIQUE')) {
+      return { error: 'That relationship already exists.' };
+    }
+    return { error: msg };
+  }
+}
+
+/** Update any mutable field of a relationship. Missing fields are left alone. */
+export function updateRelationship(id: number, patch: Partial<Omit<RelationshipRecord, 'id' | 'created_at' | 'updated_at' | 'person_a_id' | 'person_b_id' | 'type'>>): RelationshipRecord | { error: string } {
+  const db = getDb();
+  const existing = db.prepare(`SELECT * FROM relationships WHERE id = ?`).get(id) as RelationshipRow | undefined;
+  if (!existing) return { error: 'Relationship not found.' };
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (patch.since !== undefined) { sets.push('since = ?'); vals.push(patch.since); }
+  if (patch.until !== undefined) { sets.push('until = ?'); vals.push(patch.until); }
+  if (patch.flags !== undefined) { sets.push('flags = ?'); vals.push(patch.flags ? JSON.stringify(patch.flags) : null); }
+  if (patch.confidence !== undefined) { sets.push('confidence = ?'); vals.push(patch.confidence); }
+  if (patch.source !== undefined) { sets.push('source = ?'); vals.push(patch.source); }
+  if (patch.note !== undefined) { sets.push('note = ?'); vals.push(patch.note); }
+  if (sets.length === 0) return rowToRelationship(existing);
+  sets.push(`updated_at = datetime('now')`);
+  db.prepare(`UPDATE relationships SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
+  const row = db.prepare(`SELECT * FROM relationships WHERE id = ?`).get(id) as RelationshipRow;
+  return rowToRelationship(row);
+}
+
+/** Delete a relationship by ID. */
+export function removeRelationship(id: number): { success: boolean; error?: string } {
+  const db = getDb();
+  const info = db.prepare(`DELETE FROM relationships WHERE id = ?`).run(id);
+  return info.changes > 0 ? { success: true } : { success: false, error: 'Relationship not found.' };
+}
+
+/** All relationships touching a person (as either endpoint). */
+export function listRelationshipsForPerson(personId: number): RelationshipRecord[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM relationships
+    WHERE person_a_id = ? OR person_b_id = ?
+    ORDER BY type, since
+  `).all(personId, personId) as RelationshipRow[];
+  return rows.map(rowToRelationship);
+}
+
+/** Every relationship in the database. Used for full-tree rendering. */
+export function listAllRelationships(): RelationshipRecord[] {
+  const db = getDb();
+  const rows = db.prepare(`SELECT * FROM relationships ORDER BY id`).all() as RelationshipRow[];
+  return rows.map(rowToRelationship);
+}
+
+/** Update a person's life-event fields: birth_date, death_date, deceased_marker. */
+export function updatePersonLifeEvents(personId: number, patch: { birthDate?: string | null; deathDate?: string | null; deceasedMarker?: string | null }): { success: boolean; error?: string } {
+  const db = getDb();
+  const existing = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(personId);
+  if (!existing) return { success: false, error: 'Person not found.' };
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (patch.birthDate !== undefined) { sets.push('birth_date = ?'); vals.push(patch.birthDate); }
+  if (patch.deathDate !== undefined) { sets.push('death_date = ?'); vals.push(patch.deathDate); }
+  if (patch.deceasedMarker !== undefined) { sets.push('deceased_marker = ?'); vals.push(patch.deceasedMarker); }
+  if (sets.length === 0) return { success: true };
+  sets.push(`updated_at = datetime('now')`);
+  db.prepare(`UPDATE persons SET ${sets.join(', ')} WHERE id = ?`).run(...vals, personId);
+  return { success: true };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Trees v1 — family graph traversal
+// ═══════════════════════════════════════════════════════════════
+
+export interface FamilyGraphNode {
+  personId: number;
+  name: string;
+  avatarData: string | null;
+  representativeFaceId: number | null;
+  /** File path + face-box coords so the renderer can call getFaceCrop()
+   *  to produce an avatar thumbnail. Null if no representative face set
+   *  or the referenced face has been deleted. */
+  representativeFaceFilePath: string | null;
+  representativeFaceBox: { x: number; y: number; w: number; h: number } | null;
+  birthDate: string | null;
+  deathDate: string | null;
+  deceasedMarker: string | null;
+  hopsFromFocus: number;
+  photoCount: number;
+  /** True for placeholder nodes bridging skip-generation relationships
+   *  (grandparent, aunt/uncle, cousin) where the intermediate person
+   *  isn't yet named. The renderer styles these as ghost circles. */
+  isPlaceholder: boolean;
+}
+
+export interface FamilyGraphEdge {
+  /** Relationship table ID, or null when the edge is derived (siblings). */
+  id: number | null;
+  aId: number;
+  bId: number;
+  type: 'parent_of' | 'spouse_of' | 'sibling_of' | 'associated_with';
+  since: string | null;
+  until: string | null;
+  flags: RelationshipFlags | null;
+  /** True for sibling_of edges inferred from shared parents. */
+  derived: boolean;
+}
+
+export interface FamilyGraph {
+  focusPersonId: number;
+  nodes: FamilyGraphNode[];
+  edges: FamilyGraphEdge[];
+}
+
+interface PersonRow {
+  id: number;
+  name: string;
+  avatar_data: string | null;
+  representative_face_id: number | null;
+  birth_date: string | null;
+  death_date: string | null;
+  deceased_marker: string | null;
+  is_placeholder: number;
+}
+
+/** BFS from a focus person through parent_of and spouse_of edges, returning
+ *  every person reachable within `maxHops` and all edges between them,
+ *  plus derived sibling_of edges for any pair sharing a parent.
+ *
+ *  maxHops defaults to 3 (grandparents, aunts/uncles, nieces/nephews). */
+export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): FamilyGraph {
+  const db = getDb();
+
+  // Pre-verify focus exists — return empty graph otherwise so callers
+  // don't need to special-case an "unknown person" error.
+  const focusRow = db.prepare(`SELECT id FROM persons WHERE id = ? AND discarded_at IS NULL`).get(focusPersonId);
+  if (!focusRow) {
+    return { focusPersonId, nodes: [], edges: [] };
+  }
+
+  // BFS. Visited map stores hop distance so the renderer can tier nodes.
+  const visited = new Map<number, number>();
+  visited.set(focusPersonId, 0);
+  const queue: number[] = [focusPersonId];
+  const collectedEdges: RelationshipRecord[] = [];
+  const seenEdgeIds = new Set<number>();
+
+  const neighbourStmt = db.prepare(`
+    SELECT * FROM relationships
+    WHERE person_a_id = ? OR person_b_id = ?
+  `);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const currentHops = visited.get(current)!;
+    if (currentHops >= maxHops) continue;
+    const rows = neighbourStmt.all(current, current) as RelationshipRow[];
+    for (const row of rows) {
+      const other = row.person_a_id === current ? row.person_b_id : row.person_a_id;
+      if (!seenEdgeIds.has(row.id)) {
+        seenEdgeIds.add(row.id);
+        collectedEdges.push(rowToRelationship(row));
+      }
+      if (!visited.has(other)) {
+        visited.set(other, currentHops + 1);
+        queue.push(other);
+      }
+    }
+  }
+
+  // Pull person details for every reachable node, plus photo counts.
+  const ids = Array.from(visited.keys());
+  const placeholders = ids.map(() => '?').join(',');
+  const personRows = db.prepare(`
+    SELECT id, name, avatar_data, representative_face_id,
+           birth_date, death_date, deceased_marker,
+           COALESCE(is_placeholder, 0) AS is_placeholder
+    FROM persons
+    WHERE id IN (${placeholders})
+  `).all(...ids) as PersonRow[];
+
+  const photoCountRows = db.prepare(`
+    SELECT person_id, COUNT(DISTINCT file_id) AS photo_count
+    FROM face_detections
+    WHERE person_id IN (${placeholders})
+    GROUP BY person_id
+  `).all(...ids) as { person_id: number; photo_count: number }[];
+  const photoCountByPerson = new Map<number, number>();
+  for (const r of photoCountRows) photoCountByPerson.set(r.person_id, r.photo_count);
+
+  // Face thumbnail coords per person — prefer the user-chosen representative
+  // face; fall back to any face for that person so a new cluster still
+  // gets an avatar until the user picks one in People Manager.
+  const faceCoordRows = db.prepare(`
+    SELECT fd.id AS face_id, fd.person_id, fd.file_id,
+           fd.box_x, fd.box_y, fd.box_w, fd.box_h,
+           f.file_path
+    FROM face_detections fd
+    JOIN indexed_files f ON fd.file_id = f.id
+    WHERE fd.person_id IN (${placeholders})
+    ORDER BY fd.person_id, fd.confidence DESC
+  `).all(...ids) as {
+    face_id: number; person_id: number; file_id: number;
+    box_x: number; box_y: number; box_w: number; box_h: number;
+    file_path: string;
+  }[];
+  const faceByFaceId = new Map<number, typeof faceCoordRows[0]>();
+  const firstFaceByPerson = new Map<number, typeof faceCoordRows[0]>();
+  for (const f of faceCoordRows) {
+    faceByFaceId.set(f.face_id, f);
+    if (!firstFaceByPerson.has(f.person_id)) firstFaceByPerson.set(f.person_id, f);
+  }
+
+  const nodes: FamilyGraphNode[] = personRows.map(row => {
+    let face: typeof faceCoordRows[0] | undefined;
+    if (row.representative_face_id != null) face = faceByFaceId.get(row.representative_face_id);
+    if (!face) face = firstFaceByPerson.get(row.id);
+    return {
+      personId: row.id,
+      name: row.name,
+      avatarData: row.avatar_data,
+      representativeFaceId: row.representative_face_id,
+      representativeFaceFilePath: face ? face.file_path : null,
+      representativeFaceBox: face ? { x: face.box_x, y: face.box_y, w: face.box_w, h: face.box_h } : null,
+      birthDate: row.birth_date,
+      deathDate: row.death_date,
+      deceasedMarker: row.deceased_marker,
+      hopsFromFocus: visited.get(row.id) ?? maxHops,
+      photoCount: photoCountByPerson.get(row.id) ?? 0,
+      isPlaceholder: row.is_placeholder === 1,
+    };
+  });
+
+  // Build stored edges: every collected relationship whose both endpoints
+  // are in the visible node set.
+  const nodeIdSet = new Set(nodes.map(n => n.personId));
+  const edges: FamilyGraphEdge[] = collectedEdges
+    .filter(r => nodeIdSet.has(r.person_a_id) && nodeIdSet.has(r.person_b_id))
+    .map(r => ({
+      id: r.id,
+      aId: r.person_a_id,
+      bId: r.person_b_id,
+      type: r.type,
+      since: r.since,
+      until: r.until,
+      flags: r.flags,
+      derived: false,
+    }));
+
+  // Pre-record pairs that already have a STORED sibling_of edge so we
+  // don't double-emit derived sibling edges over the top of them.
+  const siblingPairs = new Set<string>();
+  for (const r of collectedEdges) {
+    if (r.type !== 'sibling_of') continue;
+    const lo = Math.min(r.person_a_id, r.person_b_id);
+    const hi = Math.max(r.person_a_id, r.person_b_id);
+    siblingPairs.add(`${lo}:${hi}`);
+  }
+
+  // Derive sibling_of: if two different people share at least one parent
+  // AND both appear in the visible node set AND there's no stored sibling
+  // edge between them already, emit one derived edge for the canvas.
+  const parentsByChild = new Map<number, Set<number>>();
+  for (const r of collectedEdges) {
+    if (r.type !== 'parent_of') continue;
+    // person_a_id = parent, person_b_id = child
+    const child = r.person_b_id;
+    const parent = r.person_a_id;
+    if (!parentsByChild.has(child)) parentsByChild.set(child, new Set());
+    parentsByChild.get(child)!.add(parent);
+  }
+  const childIds = Array.from(parentsByChild.keys());
+  for (let i = 0; i < childIds.length; i++) {
+    for (let j = i + 1; j < childIds.length; j++) {
+      const a = childIds[i];
+      const b = childIds[j];
+      if (!nodeIdSet.has(a) || !nodeIdSet.has(b)) continue;
+      const pa = parentsByChild.get(a)!;
+      const pb = parentsByChild.get(b)!;
+      let shared = false;
+      for (const parent of pa) { if (pb.has(parent)) { shared = true; break; } }
+      if (!shared) continue;
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      if (siblingPairs.has(key)) continue;
+      siblingPairs.add(key);
+      edges.push({
+        id: null,
+        aId: Math.min(a, b),
+        bId: Math.max(a, b),
+        type: 'sibling_of',
+        since: null,
+        until: null,
+        flags: null,
+        derived: true,
+      });
+    }
+  }
+
+  return { focusPersonId, nodes, edges };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Trees v1 — co-occurrence suggestions (for later chip)
+// ═══════════════════════════════════════════════════════════════
+
+export interface PersonCooccurrenceSuggestion {
+  personAId: number;
+  personBId: number;
+  personAName: string;
+  personBName: string;
+  sharedPhotoCount: number;
+  /** True if an existing relationship between A and B already exists. */
+  alreadyRelated: boolean;
+}
+
+/** Pairs of persons who appear in many of the same photos together. The
+ *  UI layer decides whether to suggest "spouse", "parent", "sibling" etc.
+ *  — we just surface strong pairs. */
+export function getPersonCooccurrenceStats(limit: number = 25, minSharedPhotos: number = 20): PersonCooccurrenceSuggestion[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT
+      pA.id   AS a_id,  pA.name AS a_name,
+      pB.id   AS b_id,  pB.name AS b_name,
+      COUNT(DISTINCT fdA.file_id) AS shared
+    FROM face_detections fdA
+    JOIN face_detections fdB
+      ON fdA.file_id = fdB.file_id
+     AND fdA.person_id < fdB.person_id
+    JOIN persons pA ON fdA.person_id = pA.id
+    JOIN persons pB ON fdB.person_id = pB.id
+    WHERE pA.discarded_at IS NULL
+      AND pB.discarded_at IS NULL
+    GROUP BY pA.id, pB.id
+    HAVING shared >= ?
+    ORDER BY shared DESC
+    LIMIT ?
+  `).all(minSharedPhotos, limit) as { a_id: number; a_name: string; b_id: number; b_name: string; shared: number }[];
+
+  if (rows.length === 0) return [];
+
+  const pairIds = rows.map(r => `${r.a_id}:${r.b_id}`);
+  // Any existing relationship between these pairs (either direction).
+  const existing = db.prepare(`
+    SELECT person_a_id, person_b_id FROM relationships
+  `).all() as { person_a_id: number; person_b_id: number }[];
+  const relatedSet = new Set<string>();
+  for (const r of existing) {
+    const lo = Math.min(r.person_a_id, r.person_b_id);
+    const hi = Math.max(r.person_a_id, r.person_b_id);
+    relatedSet.add(`${lo}:${hi}`);
+  }
+
+  return rows.map(r => ({
+    personAId: r.a_id,
+    personBId: r.b_id,
+    personAName: r.a_name,
+    personBName: r.b_name,
+    sharedPhotoCount: r.shared,
+    alreadyRelated: relatedSet.has(`${Math.min(r.a_id, r.b_id)}:${Math.max(r.a_id, r.b_id)}`),
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Trees v1 — placeholder persons (skip-generation bridges)
+// ═══════════════════════════════════════════════════════════════
+
+/** Create a blank placeholder person. Used when the user asserts a
+ *  skip-generation relationship (grandparent, aunt/uncle, cousin)
+ *  without the intermediary yet being named. Placeholders are hidden
+ *  from People Manager and render as ghost circles in Trees. */
+export function createPlaceholderPerson(): number {
+  const db = getDb();
+  const info = db.prepare(
+    `INSERT INTO persons (name, is_placeholder) VALUES ('', 1)`
+  ).run();
+  return info.lastInsertRowid as number;
+}
+
+/** Create a new named person with no photos or faces yet. Used from the
+ *  Trees modal when the user wants to add a family member who isn't yet
+ *  represented in any photo (e.g. a great-grandparent they never had
+ *  pictures of). The person shows up in People Manager like any other
+ *  named person — photos can be assigned later if they ever surface. */
+export function createNamedPerson(name: string): { success: boolean; data?: number; error?: string } {
+  const trimmed = name.trim();
+  if (!trimmed) return { success: false, error: 'Name cannot be empty.' };
+  if (trimmed.startsWith('__')) return { success: false, error: 'Names starting with __ are reserved.' };
+  const db = getDb();
+  try {
+    const info = db.prepare(
+      `INSERT INTO persons (name, is_placeholder) VALUES (?, 0)`
+    ).run(trimmed);
+    return { success: true, data: info.lastInsertRowid as number };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/** Turn a placeholder into a real named person (user typed their name). */
+export function namePlaceholder(personId: number, name: string): { success: boolean; error?: string } {
+  const db = getDb();
+  const person = db.prepare(
+    `SELECT COALESCE(is_placeholder, 0) AS is_placeholder FROM persons WHERE id = ?`
+  ).get(personId) as { is_placeholder: number } | undefined;
+  if (!person) return { success: false, error: 'Person not found.' };
+  if (!person.is_placeholder) return { success: false, error: 'That person is not a placeholder.' };
+  const trimmed = name.trim();
+  if (!trimmed) return { success: false, error: 'Name cannot be empty.' };
+  db.prepare(`UPDATE persons SET name = ?, is_placeholder = 0, updated_at = datetime('now') WHERE id = ?`)
+    .run(trimmed, personId);
+  return { success: true };
+}
+
+/** Replace a placeholder with an existing named person: transfer all
+ *  edges touching the placeholder to the target, dedupe against the
+ *  target's existing edges, then delete the placeholder. */
+export function mergePlaceholderIntoPerson(placeholderId: number, targetPersonId: number): { success: boolean; error?: string } {
+  const db = getDb();
+  const ph = db.prepare(
+    `SELECT COALESCE(is_placeholder, 0) AS is_placeholder FROM persons WHERE id = ?`
+  ).get(placeholderId) as { is_placeholder: number } | undefined;
+  if (!ph) return { success: false, error: 'Placeholder not found.' };
+  if (!ph.is_placeholder) return { success: false, error: 'Source is not a placeholder.' };
+  if (placeholderId === targetPersonId) return { success: false, error: 'Cannot merge into self.' };
+  const target = db.prepare(`SELECT id FROM persons WHERE id = ? AND discarded_at IS NULL`).get(targetPersonId);
+  if (!target) return { success: false, error: 'Target person not found.' };
+
+  const tx = db.transaction(() => {
+    const edges = db.prepare(
+      `SELECT * FROM relationships WHERE person_a_id = ? OR person_b_id = ?`
+    ).all(placeholderId) as { id: number; person_a_id: number; person_b_id: number; type: string }[];
+    for (const edge of edges) {
+      const newA = edge.person_a_id === placeholderId ? targetPersonId : edge.person_a_id;
+      const newB = edge.person_b_id === placeholderId ? targetPersonId : edge.person_b_id;
+      if (newA === newB) {
+        db.prepare(`DELETE FROM relationships WHERE id = ?`).run(edge.id);
+        continue;
+      }
+      const exists = db.prepare(
+        `SELECT id FROM relationships WHERE person_a_id = ? AND person_b_id = ? AND type = ?`
+      ).get(newA, newB, edge.type);
+      if (exists) {
+        db.prepare(`DELETE FROM relationships WHERE id = ?`).run(edge.id);
+      } else {
+        db.prepare(`UPDATE relationships SET person_a_id = ?, person_b_id = ? WHERE id = ?`).run(newA, newB, edge.id);
+      }
+    }
+    db.prepare(`DELETE FROM persons WHERE id = ? AND is_placeholder = 1`).run(placeholderId);
+  });
+  tx();
+  return { success: true };
+}
+
+/** Delete a placeholder entirely (and any edges touching it). */
+export function removePlaceholder(placeholderId: number): { success: boolean; error?: string } {
+  const db = getDb();
+  const ph = db.prepare(
+    `SELECT COALESCE(is_placeholder, 0) AS is_placeholder FROM persons WHERE id = ?`
+  ).get(placeholderId) as { is_placeholder: number } | undefined;
+  if (!ph) return { success: false, error: 'Placeholder not found.' };
+  if (!ph.is_placeholder) return { success: false, error: 'Not a placeholder.' };
+  // ON DELETE CASCADE on relationships takes care of edges.
+  db.prepare(`DELETE FROM persons WHERE id = ?`).run(placeholderId);
+  return { success: true };
 }

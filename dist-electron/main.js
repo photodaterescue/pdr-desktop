@@ -1,9 +1,64 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { execSync, execFile } from 'child_process';
+import { spawn } from 'child_process';
+import { createRequire } from 'module';
 import sharp from 'sharp';
+// ffmpeg-static is a CommonJS module; createRequire lets us require it from ESM.
+const esmRequire = createRequire(import.meta.url);
+let ffmpegPath = null;
+try {
+    ffmpegPath = esmRequire('ffmpeg-static');
+    if (ffmpegPath && !fs.existsSync(ffmpegPath))
+        ffmpegPath = null;
+}
+catch {
+    ffmpegPath = null;
+}
+console.log('[ffmpeg] path =', ffmpegPath);
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg']);
+/**
+ * Extract a single frame from a video using ffmpeg-static. Returns a JPEG buffer
+ * suitable for piping into sharp. Seeks ~1s into the video to skip the usual
+ * black/fade-in frame. Falls back to frame 0 if the video is shorter than 1s.
+ */
+async function extractVideoFrame(videoPath, seekSec = 1) {
+    if (!ffmpegPath)
+        return null;
+    return new Promise((resolve) => {
+        const tmp = path.join(os.tmpdir(), `pdr-vthumb-${crypto.randomBytes(6).toString('hex')}.jpg`);
+        // -ss before -i is a fast seek; -frames:v 1 takes a single frame; -y overwrites
+        const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(seekSec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', '-y', tmp];
+        const proc = spawn(ffmpegPath, args, { windowsHide: true });
+        let finished = false;
+        const done = async (ok) => {
+            if (finished)
+                return;
+            finished = true;
+            try {
+                if (ok && fs.existsSync(tmp)) {
+                    const buf = await fs.promises.readFile(tmp);
+                    fs.promises.unlink(tmp).catch(() => { });
+                    resolve(buf);
+                    return;
+                }
+            }
+            catch { }
+            fs.promises.unlink(tmp).catch(() => { });
+            resolve(null);
+        };
+        proc.on('error', () => done(false));
+        proc.on('close', (code) => done(code === 0));
+        // Safety timeout so hangs don't pile up
+        setTimeout(() => { try {
+            proc.kill('SIGKILL');
+        }
+        catch { } done(false); }, 15000);
+    });
+}
 // Let sharp use default thread pool (number of CPU cores) for fast encoding
 import { analyzeSource, cancelAnalysis } from './analysis-engine.js';
 import AdmZip from 'adm-zip';
@@ -15,11 +70,11 @@ import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import { getLicenseStatus, activateLicense, refreshLicense, deactivateLicense, getMachineFingerprint } from './license-manager.js';
 import { checkForUpdates } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
-import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, } from './search-database.js';
+import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, } from './search-database.js';
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, } from './ai-manager.js';
-import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, } from './search-database.js';
+import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, getFamilyGraph, getPersonCooccurrenceStats, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
 // Update checking
 ipcMain.handle('updates:check', async () => {
     return await checkForUpdates();
@@ -87,6 +142,12 @@ function createWindow() {
         },
     });
     mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
+    // Surface renderer [inline-video] / [video] console messages in main log.
+    mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+        if (message.includes('[inline-video]') || message.includes('[video]') || message.includes('[pdr-file]')) {
+            console.log(`[main-renderer] ${sourceId}:${line} ${message}`);
+        }
+    });
     // Register main window with AI manager for progress IPC
     setAiMainWindow(mainWindow);
     // Zoom is handled purely via CSS transform on the content area — keep Electron at 1.0
@@ -151,10 +212,20 @@ function createWindow() {
             // Cancel any running operations before window closes
             preScanCancelled = true;
             copyFilesCancelled = true;
-            // Close viewer window if open
+            // Child windows are independent top-level windows (not OS children of
+            // mainWindow), so we must explicitly destroy them here — otherwise they
+            // would keep the app alive after the user closes PDR.
             if (viewerWindow && !viewerWindow.isDestroyed()) {
                 viewerWindow.destroy();
                 viewerWindow = null;
+            }
+            if (peopleWindow && !peopleWindow.isDestroyed()) {
+                peopleWindow.destroy();
+                peopleWindow = null;
+            }
+            if (dateEditorWindow && !dateEditorWindow.isDestroyed()) {
+                dateEditorWindow.destroy();
+                dateEditorWindow = null;
             }
         }
     });
@@ -291,14 +362,42 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
     // Handle pdr-file:// protocol — serves local files to the viewer window
     protocol.handle('pdr-file', (request) => {
-        const url = new URL(request.url);
-        // Decode the path — pdr-file://C:/Users/... or pdr-file:///C:/Users/...
-        let filePath = decodeURI(url.pathname);
-        // Remove leading slash on Windows paths (e.g., /C:/Users → C:/Users)
-        if (process.platform === 'win32' && filePath.startsWith('/')) {
-            filePath = filePath.substring(1);
+        // New canonical form: pdr-file://local/?f=<urlencoded-path>
+        // (Query params are never host-parsed, so the drive-letter colon survives.)
+        // Legacy form: pdr-file://[/[/]]<path> — still handled for compat.
+        let raw = '';
+        try {
+            const u = new URL(request.url);
+            const f = u.searchParams.get('f');
+            if (f) {
+                raw = f;
+            }
+            else {
+                // Legacy: strip the scheme + leading slashes from the path component.
+                let p = u.pathname;
+                while (p.startsWith('/'))
+                    p = p.substring(1);
+                raw = decodeURI(p);
+            }
         }
-        return net.fetch('file:///' + filePath);
+        catch {
+            raw = request.url.replace(/^pdr-file:\/\//i, '');
+            while (raw.startsWith('/'))
+                raw = raw.substring(1);
+            try {
+                raw = decodeURI(raw);
+            }
+            catch { }
+        }
+        const fileUrl = 'file:///' + encodeURI(raw);
+        if (process.env.PDR_DEBUG_PROTOCOL) {
+            console.log('[pdr-file] request =', request.url, '→ fetch', fileUrl);
+        }
+        // Forward Range headers so the <video> element can seek properly.
+        return net.fetch(fileUrl, {
+            headers: request.headers,
+            method: request.method,
+        });
     });
     // Remove default Electron menus — custom title bar replaces them
     Menu.setApplicationMenu(null);
@@ -552,6 +651,111 @@ ipcMain.handle('browser:listDrives', async () => {
 // Thumbnail cache directory
 const thumbCacheDir = path.join(app.getPath('userData'), 'thumb-cache');
 fs.mkdirSync(thumbCacheDir, { recursive: true });
+// ─── Video transcoding cache ────────────────────────────────────────────────
+// Chromium cannot natively play MPEG-1/2 (.mpg), most .avi/.wmv/.flv variants,
+// or anything outside H.264/H.265/VP8/VP9/AV1 in MP4/WebM/MKV containers.
+// For those we transcode on-demand to H.264 + AAC MP4 via ffmpeg-static and
+// cache the result under userData, so the second open is instant.
+const videoCacheDir = path.join(app.getPath('userData'), 'video-cache');
+fs.mkdirSync(videoCacheDir, { recursive: true });
+// Extensions that Chromium will almost certainly refuse. We transcode these
+// up-front rather than waiting for the <video> element to emit an error.
+const TRANSCODE_EXTS = new Set(['.mpg', '.mpeg', '.avi', '.wmv', '.flv', '.3gp', '.m2ts', '.mts', '.vob', '.rm', '.rmvb', '.asf', '.mpe', '.mpv']);
+// Track in-flight transcodes so concurrent calls de-dupe to the same promise.
+const transcodeInFlight = new Map();
+async function transcodeVideoToMp4(sourcePath, cachePath) {
+    if (!ffmpegPath)
+        return { success: false, error: 'ffmpeg binary not found' };
+    return new Promise((resolve) => {
+        // Write to a .part file first so a crashed transcode doesn't leave a half-written cache entry.
+        const partPath = cachePath + '.part';
+        try {
+            if (fs.existsSync(partPath))
+                fs.unlinkSync(partPath);
+        }
+        catch { }
+        // -f mp4 is REQUIRED because the .part extension means ffmpeg can't
+        // infer the container from the filename.
+        const args = [
+            '-hide_banner', '-loglevel', 'error',
+            '-i', sourcePath,
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart',
+            '-f', 'mp4',
+            '-y', partPath,
+        ];
+        const proc = spawn(ffmpegPath, args, { windowsHide: true });
+        let stderr = '';
+        proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+        let finished = false;
+        const done = (ok, err) => {
+            if (finished)
+                return;
+            finished = true;
+            if (ok) {
+                try {
+                    fs.renameSync(partPath, cachePath);
+                    resolve({ success: true, cachePath });
+                    return;
+                }
+                catch (e) {
+                    resolve({ success: false, error: e.message });
+                    return;
+                }
+            }
+            try {
+                if (fs.existsSync(partPath))
+                    fs.unlinkSync(partPath);
+            }
+            catch { }
+            resolve({ success: false, error: err || stderr || 'ffmpeg failed' });
+        };
+        proc.on('error', (e) => done(false, e.message));
+        proc.on('close', (code) => done(code === 0));
+    });
+}
+ipcMain.handle('video:prepare', async (_event, filePath) => {
+    try {
+        if (!fs.existsSync(filePath))
+            return { success: false, error: 'File not found' };
+        const ext = path.extname(filePath).toLowerCase();
+        // Normalised pdr-file:// URL the renderer uses for direct playback.
+        // Chromium's URL parser mangles 'C:' drive letters even with three slashes
+        // because pdr-file is registered as a 'standard' scheme — it tries to
+        // parse the path as host:port and silently drops the colon. We dodge that
+        // by putting the path in a query parameter, which is never host-parsed.
+        const toPdrUrl = (p) => 'pdr-file://local/?f=' + encodeURIComponent(p.replace(/\\/g, '/'));
+        // Extensions Chromium handles natively — no transcode needed.
+        if (!TRANSCODE_EXTS.has(ext)) {
+            return { success: true, playableUrl: toPdrUrl(filePath) };
+        }
+        // Derive a deterministic cache key from absolute path + mtime + size so the
+        // cache auto-invalidates if the source is replaced.
+        const stat = await fs.promises.stat(filePath);
+        const keySrc = `${filePath}:${stat.size}:${stat.mtimeMs}`;
+        const cacheKey = crypto.createHash('md5').update(keySrc).digest('hex');
+        const cachePath = path.join(videoCacheDir, `${cacheKey}.mp4`);
+        if (fs.existsSync(cachePath)) {
+            return { success: true, playableUrl: toPdrUrl(cachePath), cachePath };
+        }
+        // De-dupe concurrent transcodes of the same file.
+        let pending = transcodeInFlight.get(cachePath);
+        if (!pending) {
+            pending = transcodeVideoToMp4(filePath, cachePath);
+            transcodeInFlight.set(cachePath, pending);
+            pending.finally(() => { transcodeInFlight.delete(cachePath); });
+        }
+        const result = await pending;
+        if (!result.success || !result.cachePath)
+            return { success: false, error: result.error };
+        return { success: true, playableUrl: toPdrUrl(result.cachePath), cachePath: result.cachePath };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
 ipcMain.handle('browser:thumbnail', async (_event, filePath, size) => {
     try {
         // Check disk cache first
@@ -567,15 +771,38 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath, size) => {
         }
         let jpegBuffer = null;
         const ext = path.extname(filePath).toLowerCase();
-        // Use sharp for robust thumbnail generation (handles TIF, large files, RAW formats)
-        try {
-            jpegBuffer = await sharp(filePath, { failOnError: false })
-                .resize(size, size, { fit: 'inside', withoutEnlargement: true })
-                .jpeg({ quality: 80 })
-                .toBuffer();
+        // Video: extract a frame via ffmpeg-static, then resize through sharp.
+        if (VIDEO_EXTS.has(ext)) {
+            try {
+                // Try 1s in first; short clips / MPEG-1 files may fail that seek, so retry at 0.
+                let frame = await extractVideoFrame(filePath, 1);
+                if (!frame)
+                    frame = await extractVideoFrame(filePath, 0);
+                if (frame) {
+                    jpegBuffer = await sharp(frame, { failOnError: false })
+                        .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+                        .jpeg({ quality: 80 })
+                        .toBuffer();
+                }
+                else {
+                    console.warn('[ffmpeg] no frame extracted for', filePath);
+                }
+            }
+            catch (e) {
+                console.warn('[ffmpeg] frame→sharp failed for', filePath, e.message);
+            }
         }
-        catch {
-            // Sharp failed — fall back to nativeImage
+        // Use sharp for robust thumbnail generation (handles TIF, large files, RAW formats)
+        if (!jpegBuffer) {
+            try {
+                jpegBuffer = await sharp(filePath, { failOnError: false })
+                    .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 80 })
+                    .toBuffer();
+            }
+            catch {
+                // Sharp failed — fall back to nativeImage
+            }
         }
         // Fallback: nativeImage (good for standard JPEG/PNG/BMP)
         if (!jpegBuffer) {
@@ -640,36 +867,32 @@ ipcMain.handle('browser:readDirectory', async (_event, dirPath, fileFilter) => {
                     // Access denied or other error — just leave as false
                 }
             }
+            // Modified-date stat: one fs.stat per entry. Needed for sort-by-date.
+            // Wrapped in try so an inaccessible item doesn't abort the whole listing.
+            let modifiedAt = 0;
+            let sizeBytes = 0;
+            try {
+                const st = await fs.promises.stat(fullPath);
+                modifiedAt = st.mtimeMs;
+                sizeBytes = st.size;
+            }
+            catch { /* leave zero */ }
             if (fileFilter === 'archives') {
                 // In archive mode: show folders + archive files only
                 if (isDir || isArchive) {
-                    let sizeBytes = 0;
-                    if (isArchive) {
-                        try {
-                            sizeBytes = (await fs.promises.stat(fullPath)).size;
-                        }
-                        catch { }
-                    }
-                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage: false, isArchive, sizeBytes, hasSubfolders });
+                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage: false, isArchive, sizeBytes: isArchive ? sizeBytes : 0, hasSubfolders, modifiedAt });
                 }
             }
             else if (fileFilter === 'source') {
                 // Source mode: show folders + images + archives
                 if (isDir || isImage || isArchive) {
-                    let sizeBytes = 0;
-                    if (isArchive || isImage) {
-                        try {
-                            sizeBytes = (await fs.promises.stat(fullPath)).size;
-                        }
-                        catch { }
-                    }
-                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive, sizeBytes, hasSubfolders });
+                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive, sizeBytes: (isArchive || isImage) ? sizeBytes : 0, hasSubfolders, modifiedAt });
                 }
             }
             else {
                 // Default mode: show folders + image files
                 if (isDir || isImage) {
-                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive: false, sizeBytes: 0, hasSubfolders });
+                    items.push({ name: entry.name, path: fullPath, isDirectory: isDir, isImage, isArchive: false, sizeBytes: isImage ? sizeBytes : 0, hasSubfolders, modifiedAt });
                 }
             }
         }
@@ -1649,6 +1872,166 @@ ipcMain.handle('license:deactivate', async (_event, licenseKey) => {
 ipcMain.handle('license:getMachineId', async () => {
     return getMachineFingerprint();
 });
+// Lightweight liveness ping used by the child-window heartbeat so each window
+// can surface a banner when main goes dark (hang, not a clean crash — a crash
+// would take the renderer down too).
+ipcMain.handle('app:ping', async () => ({ alive: true, t: Date.now() }));
+// Resolve the user's well-known Quick Access folders so the Add Source
+// browser can surface them in its sidebar. Electron's app.getPath() already
+// knows the correct localised paths on all platforms.
+ipcMain.handle('app:quickAccessPaths', async () => {
+    const safe = (key) => {
+        try {
+            return app.getPath(key);
+        }
+        catch {
+            return null;
+        }
+    };
+    return {
+        desktop: safe('desktop'),
+        downloads: safe('downloads'),
+        documents: safe('documents'),
+        pictures: safe('pictures'),
+        videos: safe('videos'),
+        music: safe('music'),
+        home: safe('home'),
+    };
+});
+// ─── Date editor IPC handlers ───────────────────────────────────────────────
+ipcMain.handle('date:getSuggestions', async (_event, fileId) => {
+    try {
+        const { getDateSuggestionsForFile } = await import('./date-editor.js');
+        return { success: true, data: getDateSuggestionsForFile(fileId) };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+ipcMain.handle('date:apply', async (_event, opts) => {
+    try {
+        const { applyDateCorrection } = await import('./date-editor.js');
+        const result = await applyDateCorrection(opts);
+        return { success: result.success, data: result };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+ipcMain.handle('date:undo', async () => {
+    try {
+        const { undoLastDateCorrection } = await import('./date-editor.js');
+        return await undoLastDateCorrection();
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+ipcMain.handle('date:auditLog', async (_event, limit = 20) => {
+    try {
+        const { getRecentAuditEntries } = await import('./date-editor.js');
+        return { success: true, data: getRecentAuditEntries(limit) };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+// ─── Scanner override IPC handlers ──────────────────────────────────────────
+/**
+ * Re-classify every indexed file that matches the given camera Make/Model
+ * after the user has flipped its scanner override. For 'isScanner = true':
+ * demote matching Confirmed / Recovered files to Marked and annotate
+ * date_source. For 'isScanner = false': restore files that were previously
+ * Marked via the scanner rule (date_source contains 'scanner') back to
+ * Confirmed so the user's "no, this is a real camera" intent takes effect.
+ */
+function reclassifyFilesForOverride(make, model, isScanner) {
+    const db = getDbForReclassify();
+    if (!db)
+        return { updated: 0 };
+    const mk = make.trim();
+    const md = model.trim();
+    if (!mk && !md)
+        return { updated: 0 };
+    // Case-insensitive equality match on camera_make + camera_model.
+    if (isScanner) {
+        const r = db.prepare(`
+      UPDATE indexed_files
+         SET confidence = 'marked',
+             date_source = CASE
+               WHEN date_source LIKE '%scanner%' THEN date_source
+               WHEN date_source IS NULL OR date_source = '' THEN 'Scanner date (user override)'
+               ELSE date_source || ' — scanner (user override)'
+             END
+       WHERE LOWER(IFNULL(camera_make, '')) = LOWER(?)
+         AND LOWER(IFNULL(camera_model, '')) = LOWER(?)
+         AND confidence != 'marked'
+    `).run(mk, md);
+        return { updated: r.changes };
+    }
+    // Restore: undo only rows that were auto-demoted (date_source mentions
+    // 'scanner'). Leave Recovered/Confirmed alone. We set back to 'confirmed'
+    // which is the usual EXIF-derived tier these files came from.
+    const r = db.prepare(`
+    UPDATE indexed_files
+       SET confidence = 'confirmed',
+           date_source = REPLACE(REPLACE(REPLACE(date_source, ' — scanner (user override)', ''), ' — scanner (likely scan time, not photo date)', ''), 'Scanner date (user override)', '')
+     WHERE LOWER(IFNULL(camera_make, '')) = LOWER(?)
+       AND LOWER(IFNULL(camera_model, '')) = LOWER(?)
+       AND confidence = 'marked'
+       AND date_source LIKE '%scanner%'
+  `).run(mk, md);
+    return { updated: r.changes };
+}
+function getDbForReclassify() {
+    try {
+        // getDb is exported from search-database but not imported at top-level
+        // here; lazy-require to avoid a circular at startup.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const m = require('./search-database.js');
+        return m.getDb ? m.getDb() : null;
+    }
+    catch {
+        return null;
+    }
+}
+ipcMain.handle('scannerOverride:list', async () => {
+    try {
+        const { listScannerOverrides } = await import('./settings-store.js');
+        return { success: true, data: listScannerOverrides() };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+ipcMain.handle('scannerOverride:set', async (_event, args) => {
+    try {
+        const { setScannerOverride } = await import('./settings-store.js');
+        const list = setScannerOverride(args.make, args.model, args.isScanner);
+        const { updated } = reclassifyFilesForOverride(args.make, args.model, args.isScanner);
+        // Nudge the main window so S&D / Dashboard counts refresh.
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('dateEditor:dataChanged');
+        }
+        return { success: true, data: { list, updated } };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+ipcMain.handle('scannerOverride:clear', async (_event, args) => {
+    try {
+        const { clearScannerOverride } = await import('./settings-store.js');
+        const list = clearScannerOverride(args.make, args.model);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('dateEditor:dataChanged');
+        }
+        return { success: true, data: { list } };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
 // ─── Search & Discovery IPC handlers ─────────────────────────────────────────
 ipcMain.handle('search:init', async () => {
     const result = initDatabase();
@@ -1739,6 +2122,144 @@ ipcMain.handle('search:filterOptions', async () => {
 ipcMain.handle('search:stats', async () => {
     try {
         return { success: true, data: getIndexStats() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// ─── Memories IPC handlers ──────────────────────────────────────────────────
+ipcMain.handle('memories:yearMonthBuckets', async (_event, runIds) => {
+    try {
+        return { success: true, data: getMemoriesYearMonthBuckets(runIds) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('memories:onThisDay', async (_event, args) => {
+    try {
+        return { success: true, data: getMemoriesOnThisDay(args.month, args.day, args.runIds, args.limit ?? 50) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('memories:dayFiles', async (_event, args) => {
+    try {
+        return { success: true, data: getMemoriesDayFiles(args.year, args.month, args.day, args.runIds) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// ═══════════════════════════════════════════════════════════════
+// Trees v1 — family relationship IPC handlers
+// ═══════════════════════════════════════════════════════════════
+ipcMain.handle('trees:addRelationship', async (_event, args) => {
+    try {
+        const result = addRelationship(args);
+        if ('error' in result)
+            return { success: false, error: result.error };
+        return { success: true, data: result };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:updateRelationship', async (_event, args) => {
+    try {
+        const result = updateRelationship(args.id, args.patch);
+        if ('error' in result)
+            return { success: false, error: result.error };
+        return { success: true, data: result };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:removeRelationship', async (_event, id) => {
+    try {
+        return removeRelationship(id);
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:listRelationshipsForPerson', async (_event, personId) => {
+    try {
+        return { success: true, data: listRelationshipsForPerson(personId) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:listAllRelationships', async () => {
+    try {
+        return { success: true, data: listAllRelationships() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:updatePersonLifeEvents', async (_event, args) => {
+    try {
+        return updatePersonLifeEvents(args.personId, args.patch);
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:getFamilyGraph', async (_event, args) => {
+    try {
+        return { success: true, data: getFamilyGraph(args.focusPersonId, args.maxHops ?? 3) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:getCooccurrenceStats', async (_event, args) => {
+    try {
+        return { success: true, data: getPersonCooccurrenceStats(args.limit ?? 25, args.minSharedPhotos ?? 20) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:createPlaceholderPerson', async () => {
+    try {
+        return { success: true, data: createPlaceholderPerson() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:createNamedPerson', async (_event, name) => {
+    try {
+        return createNamedPerson(name);
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:namePlaceholder', async (_event, args) => {
+    try {
+        return namePlaceholder(args.personId, args.name);
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:mergePlaceholder', async (_event, args) => {
+    try {
+        return mergePlaceholderIntoPerson(args.placeholderId, args.targetPersonId);
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('trees:removePlaceholder', async (_event, id) => {
+    try {
+        return removePlaceholder(id);
     }
     catch (err) {
         return { success: false, error: err.message };
@@ -1852,12 +2373,18 @@ ipcMain.handle('search:openViewer', async (_event, filePaths, fileNames) => {
             webPreferences: {
                 contextIsolation: true,
                 nodeIntegration: false,
+                preload: path.join(__dirname, 'preload.js'),
             },
         });
         const viewerHtml = app.isPackaged
             ? path.join(process.resourcesPath, 'dist/public/viewer.html')
             : path.join(__dirname, '../dist/public/viewer.html');
         viewerWindow.loadFile(viewerHtml, { query: { files: filesParam } });
+        // Log renderer console messages to the main process so we can diagnose
+        // preload / prepare failures that wouldn't otherwise be visible.
+        viewerWindow.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
+            console.log(`[viewer] ${sourceId}:${line} ${message}`);
+        });
         viewerWindow.on('closed', () => {
             viewerWindow = null;
         });
@@ -1884,8 +2411,14 @@ ipcMain.handle('people:open', async () => {
             minWidth: 700,
             minHeight: 500,
             backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
-            title: 'People — Photo Date Rescue',
-            parent: mainWindow ?? undefined,
+            title: 'People Manager — Photo Date Rescue',
+            // Independent top-level window. We deliberately do NOT set
+            // `skipTaskbar: true` on Windows: that flag also excludes the window
+            // from Alt-Tab and makes minimised windows impossible to restore (no
+            // taskbar icon to click). The extra taskbar icon is the accepted price
+            // for Alt-Tab working and the user being able to un-minimise.
+            // The main window's 'close' handler explicitly destroys this window so
+            // it never outlives the app.
             roundedCorners: true,
             thickFrame: true,
             icon: app.isPackaged
@@ -1917,6 +2450,75 @@ ipcMain.handle('people:changed', async () => {
         mainWindow.webContents.send('people:dataChanged');
     }
     return { success: true };
+});
+// ─── Date Editor window ───────────────────────────────────────────────────────
+let dateEditorWindow = null;
+ipcMain.handle('dateEditor:open', async (_event, seedQuery) => {
+    try {
+        // URL-encode the seed query so the Date Editor renderer can restore
+        // exactly the main window's current S&D filter. Capped at ~16 KiB to
+        // defend against pathological filter strings.
+        const seedParam = seedQuery
+            ? (() => {
+                try {
+                    const s = JSON.stringify(seedQuery);
+                    return s.length <= 16 * 1024 ? s : '';
+                }
+                catch {
+                    return '';
+                }
+            })()
+            : '';
+        if (dateEditorWindow && !dateEditorWindow.isDestroyed()) {
+            // Window already open — reload it with the new seed query so the user
+            // sees the photos matching whatever they've just filtered to.
+            const isDark = await mainWindow?.webContents.executeJavaScript('document.documentElement.classList.contains("dark")').catch(() => false) ?? false;
+            const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
+            dateEditorWindow.loadFile(dateEditorPage, {
+                query: { dark: isDark ? '1' : '0', ...(seedParam ? { seed: seedParam } : {}) },
+            });
+            dateEditorWindow.focus();
+            return { success: true };
+        }
+        const isDark = await mainWindow?.webContents.executeJavaScript('document.documentElement.classList.contains("dark")').catch(() => false) ?? false;
+        dateEditorWindow = new BrowserWindow({
+            width: 1280,
+            height: 820,
+            minWidth: 900,
+            minHeight: 560,
+            backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
+            title: 'Date Editor — Photo Date Rescue',
+            // See peopleWindow above: independent top-level window, no skipTaskbar
+            // so Alt-Tab works and the user can restore a minimised window.
+            roundedCorners: true,
+            thickFrame: true,
+            icon: app.isPackaged
+                ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
+                : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
+            webPreferences: {
+                preload: path.join(__dirname, 'preload.js'),
+                contextIsolation: true,
+                nodeIntegration: false,
+                zoomFactor: 1.0,
+            },
+        });
+        const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
+        dateEditorWindow.loadFile(dateEditorPage, {
+            query: { dark: isDark ? '1' : '0', ...(seedParam ? { seed: seedParam } : {}) },
+        });
+        dateEditorWindow.on('closed', () => {
+            dateEditorWindow = null;
+            // Any corrections landed while the window was open — nudge the main
+            // window so the grid / filters re-fetch.
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('dateEditor:dataChanged');
+            }
+        });
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
 });
 // Open settings page in main window with a specific tab active
 ipcMain.handle('app:openSettings', async (_event, tab) => {

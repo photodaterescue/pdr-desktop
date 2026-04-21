@@ -5,6 +5,8 @@ import { app } from 'electron';
 import { fileURLToPath } from 'url';
 import { initDatabase, insertRun, insertFiles, updateRunFileCount, removeRunByReportId, getRunByReportId, } from './search-database.js';
 import { initGeocoder, reverseGeocode } from './reverse-geocoder.js';
+import { isScannerDevice } from './scanner-detection.js';
+import { getScannerOverride } from './settings-store.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // ─── ExifTool instance (shared, lazy) ────────────────────────────────────────
@@ -255,6 +257,33 @@ async function buildFileRecord(et, destFilePath, fileChange) {
         }
         // Camera position — derive from lens model or camera model for smartphones
         record.camera_position = deriveCameraPosition(record.lens_model, record.camera_model);
+        // Scanner / multifunction-device demotion. Scanners typically write the
+        // scan date into DateTimeOriginal, which PDR would otherwise treat as
+        // Confirmed — but the scan date is almost never the actual photo date
+        // (e.g. 1995 wedding photo scanned today → Confirmed: today). We flag
+        // these as Marked so they surface in the Date Editor for manual review.
+        // False positive (same-day scan of a same-day event) is rare; false
+        // negative (silent corruption of family photo dates) is common, so we
+        // err on the side of review.
+        // Software tag: many scanners self-identify here via the scanning app
+        // (VueScan, SilverFast, Epson Scan, HP ScanSmart, Canon ScanGear, ...).
+        // This often catches scanner output even when Make/Model don't name a
+        // known scanner model — effectively a long-tail safety net.
+        const softwareTag = tags.Software != null ? String(tags.Software).trim() : null;
+        // User override trumps the built-in rule in both directions:
+        //   true  → force-demote (even if the rule wouldn't have caught it)
+        //   false → force-not-scanner (escape hatch for false positives)
+        //   null  → no override, fall through to the built-in detection
+        const override = getScannerOverride(record.camera_make, record.camera_model);
+        const treatAsScanner = override !== null
+            ? override
+            : isScannerDevice(record.camera_make, record.camera_model, softwareTag);
+        if (treatAsScanner) {
+            record.confidence = 'marked';
+            record.date_source = record.date_source
+                ? `${record.date_source} — scanner`
+                : 'Scanner date (likely scan time, not photo date)';
+        }
         // GPS + reverse geocoding
         if (tags.GPSLatitude != null && tags.GPSLongitude != null) {
             record.gps_lat = Number(tags.GPSLatitude);

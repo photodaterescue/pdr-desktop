@@ -3,6 +3,8 @@ import * as path from 'path';
 import * as exifParser from 'exif-parser';
 import AdmZip from 'adm-zip';
 import { extractDateFromFilename, extractXmpMetadataFromBuffer, extractXmpMetadataFromPath, parseGoogleTakeoutJson, parseGoogleTakeoutJsonContent, findGoogleTakeoutSidecar, generateDateBasedFilename, } from './date-extraction-engine.js';
+import { isScannerDevice } from './scanner-detection.js';
+import { getScannerOverride } from './settings-store.js';
 import * as crypto from 'crypto';
 // Yield to event loop to keep UI responsive
 function yieldToEventLoop() {
@@ -66,6 +68,40 @@ async function extractExifDateFromPath(filePath) {
     catch (error) {
     }
     return null;
+}
+// Pull EXIF Make/Model/Software strings from the first 64 KiB of a buffer so
+// the analysis phase can run its scanner-detection rule before confidence is
+// finalised. Software is used for the long-tail scanner detection (VueScan,
+// SilverFast, Epson Scan, ScanGear, etc.). Returns nulls on any error (EXIF
+// parsing is best-effort).
+function extractExifCameraInfoFromBuffer(buffer) {
+    try {
+        const parser = exifParser.create(buffer);
+        const result = parser.parse();
+        const make = result.tags?.Make ? String(result.tags.Make).trim() : null;
+        const model = result.tags?.Model ? String(result.tags.Model).trim() : null;
+        const software = result.tags?.Software ? String(result.tags.Software).trim() : null;
+        return { make, model, software };
+    }
+    catch {
+        return { make: null, model: null, software: null };
+    }
+}
+async function extractExifCameraInfoFromPath(filePath) {
+    try {
+        const fd = await fs.promises.open(filePath, 'r');
+        try {
+            const buffer = Buffer.alloc(65536);
+            const { bytesRead } = await fd.read(buffer, 0, 65536, 0);
+            return extractExifCameraInfoFromBuffer(buffer.subarray(0, bytesRead));
+        }
+        finally {
+            await fd.close();
+        }
+    }
+    catch {
+        return { make: null, model: null, software: null };
+    }
 }
 function extractExifDateFromBuffer(buffer) {
     try {
@@ -168,6 +204,18 @@ async function analyzeFileFromPath(filePath, filename, sizeBytes) {
             }
         }
     }
+    // Scanner / multifunction-printer demotion — applied before we emit the
+    // filename so the suffix (_MK) is baked into the fix output rather than
+    // relying on a later re-classification in the search indexer.
+    if (dateConfidence !== 'marked') {
+        const { make, model, software } = await extractExifCameraInfoFromPath(filePath);
+        const override = getScannerOverride(make, model);
+        const treatAsScanner = override !== null ? override : isScannerDevice(make, model, software);
+        if (treatAsScanner) {
+            dateConfidence = 'marked';
+            dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
+        }
+    }
     const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())
         ? generateDateBasedFilename(Math.floor(derivedDate.getTime() / 1000), extension, dateConfidence)
         : null;
@@ -230,6 +278,17 @@ async function analyzeFileFromBuffer(entryPath, filename, sizeBytes, buffer, ent
         derivedDate = entryTime;
         dateSource = 'ZIP entry modification time (fallback)';
         dateConfidence = 'marked';
+    }
+    // Scanner / multifunction-printer demotion — mirrors the path-based
+    // analyzer so ZIP-archive imports are classified consistently.
+    if (dateConfidence !== 'marked') {
+        const { make, model, software } = extractExifCameraInfoFromBuffer(buffer);
+        const override = getScannerOverride(make, model);
+        const treatAsScanner = override !== null ? override : isScannerDevice(make, model, software);
+        if (treatAsScanner) {
+            dateConfidence = 'marked';
+            dateSource = dateSource ? `${dateSource} — scanner (likely scan time, not photo date)` : 'Scanner date (likely scan time, not photo date)';
+        }
     }
     const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())
         ? generateDateBasedFilename(Math.floor(derivedDate.getTime() / 1000), extension, dateConfidence)

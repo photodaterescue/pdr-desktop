@@ -130,6 +130,22 @@ import {
   cleanupOrphanedPersons,
   runDatabaseCleanup,
   relocateRun,
+  addRelationship,
+  updateRelationship,
+  removeRelationship,
+  listRelationshipsForPerson,
+  listAllRelationships,
+  updatePersonLifeEvents,
+  getFamilyGraph,
+  getPersonCooccurrenceStats,
+  createPlaceholderPerson,
+  createNamedPerson,
+  namePlaceholder,
+  mergePlaceholderIntoPerson,
+  removePlaceholder,
+  type RelationshipRecord,
+  type RelationshipType,
+  type RelationshipFlags,
 } from './search-database.js';
 
 // Update checking
@@ -2406,6 +2422,128 @@ ipcMain.handle('memories:onThisDay', async (_event, args: { month: number; day: 
 ipcMain.handle('memories:dayFiles', async (_event, args: { year: number; month: number; day: number; runIds?: number[] }) => {
   try {
     return { success: true, data: getMemoriesDayFiles(args.year, args.month, args.day, args.runIds) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Trees v1 — family relationship IPC handlers
+// ═══════════════════════════════════════════════════════════════
+
+ipcMain.handle('trees:addRelationship', async (_event, args: {
+  personAId: number;
+  personBId: number;
+  type: RelationshipType;
+  since?: string | null;
+  until?: string | null;
+  flags?: RelationshipFlags | null;
+  confidence?: number;
+  source?: 'user' | 'suggested';
+  note?: string | null;
+}) => {
+  try {
+    const result = addRelationship(args);
+    if ('error' in result) return { success: false, error: result.error };
+    return { success: true, data: result };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:updateRelationship', async (_event, args: { id: number; patch: Partial<Omit<RelationshipRecord, 'id' | 'created_at' | 'updated_at' | 'person_a_id' | 'person_b_id' | 'type'>> }) => {
+  try {
+    const result = updateRelationship(args.id, args.patch);
+    if ('error' in result) return { success: false, error: result.error };
+    return { success: true, data: result };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:removeRelationship', async (_event, id: number) => {
+  try {
+    return removeRelationship(id);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:listRelationshipsForPerson', async (_event, personId: number) => {
+  try {
+    return { success: true, data: listRelationshipsForPerson(personId) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:listAllRelationships', async () => {
+  try {
+    return { success: true, data: listAllRelationships() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:updatePersonLifeEvents', async (_event, args: { personId: number; patch: { birthDate?: string | null; deathDate?: string | null; deceasedMarker?: string | null } }) => {
+  try {
+    return updatePersonLifeEvents(args.personId, args.patch);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:getFamilyGraph', async (_event, args: { focusPersonId: number; maxHops?: number }) => {
+  try {
+    return { success: true, data: getFamilyGraph(args.focusPersonId, args.maxHops ?? 3) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:getCooccurrenceStats', async (_event, args: { limit?: number; minSharedPhotos?: number }) => {
+  try {
+    return { success: true, data: getPersonCooccurrenceStats(args.limit ?? 25, args.minSharedPhotos ?? 20) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:createPlaceholderPerson', async () => {
+  try {
+    return { success: true, data: createPlaceholderPerson() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:createNamedPerson', async (_event, name: string) => {
+  try {
+    return createNamedPerson(name);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:namePlaceholder', async (_event, args: { personId: number; name: string }) => {
+  try {
+    return namePlaceholder(args.personId, args.name);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:mergePlaceholder', async (_event, args: { placeholderId: number; targetPersonId: number }) => {
+  try {
+    return mergePlaceholderIntoPerson(args.placeholderId, args.targetPersonId);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:removePlaceholder', async (_event, id: number) => {
+  try {
+    return removePlaceholder(id);
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

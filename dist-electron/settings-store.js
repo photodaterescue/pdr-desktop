@@ -23,6 +23,7 @@ export const optimisedDefaults = {
     autoSaveCatalogue: true,
     showManualReportExports: false,
     matchThreshold: 0.72,
+    scannerOverrides: [],
 };
 const store = new Store({
     name: 'pdr-settings',
@@ -50,7 +51,50 @@ export function getSettings() {
         autoSaveCatalogue: store.get('autoSaveCatalogue', optimisedDefaults.autoSaveCatalogue),
         showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
         matchThreshold: store.get('matchThreshold', optimisedDefaults.matchThreshold),
+        scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
     };
+}
+// ─── Scanner override helpers ────────────────────────────────────────────────
+function normaliseOverrideKey(make, model) {
+    return {
+        make: (make || '').trim().toLowerCase(),
+        model: (model || '').trim().toLowerCase(),
+    };
+}
+/**
+ * Look up a user-set scanner override for a given camera Make/Model.
+ * Returns true/false/null — null means "no override, let the built-in rule
+ * decide". This is imported by the scanner-detection pipeline so overrides
+ * sit in front of the regex rules without duplicating the lookup logic.
+ */
+export function getScannerOverride(make, model) {
+    const key = normaliseOverrideKey(make || '', model || '');
+    if (!key.make && !key.model)
+        return null;
+    const list = store.get('scannerOverrides', []);
+    const hit = list.find(o => o.make === key.make && o.model === key.model);
+    return hit ? hit.isScanner : null;
+}
+/**
+ * Add or replace a scanner override for a camera Make/Model pair. Returns
+ * the updated list so the renderer can refresh its view.
+ */
+export function setScannerOverride(make, model, isScanner) {
+    const key = normaliseOverrideKey(make, model);
+    const list = store.get('scannerOverrides', []).filter(o => !(o.make === key.make && o.model === key.model));
+    list.push({ make: key.make, model: key.model, isScanner, addedAt: new Date().toISOString() });
+    store.set('scannerOverrides', list);
+    return list;
+}
+/** Remove any override for a Make/Model pair so the built-in rule decides again. */
+export function clearScannerOverride(make, model) {
+    const key = normaliseOverrideKey(make, model);
+    const list = store.get('scannerOverrides', []).filter(o => !(o.make === key.make && o.model === key.model));
+    store.set('scannerOverrides', list);
+    return list;
+}
+export function listScannerOverrides() {
+    return store.get('scannerOverrides', []);
 }
 export function setSetting(key, value) {
     store.set(key, value);

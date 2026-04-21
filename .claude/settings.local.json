@@ -50,7 +50,30 @@
       "Bash(git reset:*)",
       "Bash(git push:*)",
       "Bash(curl -s --max-time 5 https://api.lemonsqueezy.com)",
-      "Bash(taskkill //F //IM electron.exe)"
+      "Bash(taskkill //F //IM electron.exe)",
+      "Bash(git rm:*)",
+      "Bash(grep -n \"toPdrUrl\\\\|pdr-file:///\" C:/Users/Terry/pdr-desktop/dist-electron/main.js)",
+      "Bash(ls C:/Users/Terry/pdr-desktop/dist/public/assets/main-*.js)",
+      "Bash(grep -l \"people.html\\\\|people\\\\.html\" C:/Users/Terry/pdr-desktop/*.* C:/Users/Terry/pdr-desktop/client/*.*)",
+      "Bash(powershell -Command \"Get-Process electron -ErrorAction SilentlyContinue | Select-Object Id, StartTime | Format-Table -AutoSize\")",
+      "Read(//c/Users/Terry/**)",
+      "Bash(powershell -Command 'Select-String -Path '\\\\''.claude\\\\projects\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6.jsonl'\\\\'' -Pattern '\\\\''npx electron|electron \\\\.|NODE_ENV|cross-env'\\\\'' -SimpleMatch | Select-Object -Last 30 | ForEach-Object { $_.Line.Substring\\(0, [Math]::Min\\($_.Line.Length, 300\\)\\) }')",
+      "Bash(powershell -Command 'Select-String -Path '\\\\''C:\\\\Users\\\\Terry\\\\.claude\\\\projects\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6.jsonl'\\\\'' -Pattern '\\\\''electron \\\\.'\\\\'','\\\\''npx electron'\\\\'','\\\\''NODE_ENV'\\\\'','\\\\''command.*electron'\\\\'' | Select-Object -Last 40 | ForEach-Object { $_.Line.Substring\\(0, [Math]::Min\\($_.Line.Length, 400\\)\\) }')",
+      "Bash(powershell -Command \"Get-ChildItem -Path 'C:\\\\Users\\\\Terry\\\\AppData\\\\Roaming\\\\Electron' -Filter '*.db*' -Recurse -ErrorAction SilentlyContinue | Select-Object FullName, Length, LastWriteTime | Format-List\")",
+      "Bash(powershell -Command \"Get-ChildItem -Path 'C:\\\\Users\\\\Terry\\\\AppData\\\\Roaming\\\\Electron' -Filter '*backup*','*.bak','*.db.*' -Recurse -ErrorAction SilentlyContinue | Select-Object FullName, Length, LastWriteTime | Format-List; Get-ChildItem -Path 'C:\\\\Users\\\\Terry\\\\AppData\\\\Roaming\\\\Electron\\\\search-index' -ErrorAction SilentlyContinue | Select-Object Name, Length, LastWriteTime\")",
+      "Bash(powershell -Command \"vssadmin list shadows /for=C: 2>&1 | Select-String -Pattern 'Shadow Copy ID|Creation Time' | Select-Object -First 20\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\bqa6u3nka.output' -ErrorAction SilentlyContinue | Select-String -Pattern 'Consolidated|idx_indexed_files|duplicate'\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\bqa6u3nka.output' -Tail 40\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\bokgtk7am.output' | Select-String -Pattern 'Consolidated|duplicate|Merged|redundant'\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\b6ln82boz.output' | Select-String -Pattern 'Consolidated|same-content|duplicate|redundant'\")",
+      "Bash(powershell -Command \"Get-Content 'C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\bc1olgrbb.output' | Select-String -Pattern 'face_detection|Removed|duplicate|Consolidated|redundant'\")",
+      "Bash(powershell -Command 'Get-Content '\\\\''C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\bc1olgrbb.output'\\\\'' | Select-Object -First 80 | Select-String -Pattern '\\\\''face|dedup|FTS|Repair|same-content'\\\\'' -CaseSensitive:$false')",
+      "Bash(powershell -Command 'Get-Content '\\\\''C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\bk26ubx90.output'\\\\'' | Select-String -Pattern '\\\\''Consolidated|filename\\\\+size|Resetting|redundant|duplicate'\\\\'' -CaseSensitive:$false')",
+      "Bash(powershell -Command 'Get-Content '\\\\''C:\\\\Users\\\\Terry\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Terry-pdr-desktop\\\\74036a25-a48b-4e0b-90a2-5f5b563185a6\\\\tasks\\\\bjiq2rra3.output'\\\\'' | Select-String -Pattern '\\\\''Consolidated|filename\\\\+size|Resetting|redundant|duplicate|No filename'\\\\'' -CaseSensitive:$false')",
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git rev-list *)",
+      "Bash(xargs wc *)"
     ]
   }
 }
