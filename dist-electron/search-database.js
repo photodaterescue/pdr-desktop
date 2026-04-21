@@ -2766,8 +2766,17 @@ export function getPartnerSuggestionScores(anchorId) {
     WITH anchor_photos AS (
       SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?
     ),
-    anchor_avatar AS (
-      SELECT avatar_data FROM persons WHERE id = ?
+    -- The "profile photo" shown in Trees comes from representative_face_id,
+    -- which points to a face_detections row. Two people "share a profile
+    -- photo" when their representative faces sit in the same file_id.
+    -- avatar_data is kept as a fallback for the rare case where users
+    -- have manually set an avatar that isn't one of their detected faces.
+    anchor_profile AS (
+      SELECT
+        (SELECT fd.file_id FROM face_detections fd
+         JOIN persons p ON p.representative_face_id = fd.id
+         WHERE p.id = ?) AS profile_file_id,
+        (SELECT avatar_data FROM persons WHERE id = ?) AS avatar_data
     ),
     shared AS (
       SELECT
@@ -2812,8 +2821,15 @@ export function getPartnerSuggestionScores(anchorId) {
         ), 0.0)
         +
         CASE
+          -- Shared representative-face photo: the strongest signal possible,
+          -- both people literally have the same image as their profile.
+          WHEN (SELECT fd.file_id FROM face_detections fd WHERE fd.id = p.representative_face_id)
+               = (SELECT profile_file_id FROM anchor_profile)
+               AND (SELECT profile_file_id FROM anchor_profile) IS NOT NULL
+          THEN 10.0
+          -- Fallback: explicit avatar_data equality (manually set avatars)
           WHEN p.avatar_data IS NOT NULL
-            AND p.avatar_data = (SELECT avatar_data FROM anchor_avatar)
+            AND p.avatar_data = (SELECT avatar_data FROM anchor_profile)
           THEN 10.0
           ELSE 0.0
         END
@@ -2822,9 +2838,9 @@ export function getPartnerSuggestionScores(anchorId) {
     INNER JOIN persons p ON p.id = shared.candidate_id
     WHERE p.discarded_at IS NULL
       AND p.name NOT LIKE '__%'
-    GROUP BY p.id, p.name, p.avatar_data
+    GROUP BY p.id, p.name, p.avatar_data, p.representative_face_id
     ORDER BY score DESC, shared_photo_count DESC
-  `).all(anchorId, anchorId, anchorId);
+  `).all(anchorId, anchorId, anchorId, anchorId);
 }
 // ═══════════════════════════════════════════════════════════════
 // Trees v1 — placeholder persons (skip-generation bridges)
