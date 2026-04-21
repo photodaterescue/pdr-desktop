@@ -595,14 +595,19 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
   }
   if (type === 'spouse_of') {
     const dashed = !!until;
+    // Anchor the partnership line near the BOTTOM of each avatar rather
+    // than through its centre — it now visually bridges the bottoms
+    // of the two circles (like a classic pedigree-chart couple
+    // connector) instead of drawing across their faces.
+    const yOffset = NODE_RADIUS * 0.72; // just inside the bottom edge
     return (
       <g onClick={onClick}>
         {hitArea}
-        <line x1={ax} y1={ay - 4} x2={bx} y2={by - 4}
+        <line x1={ax} y1={ay + yOffset - 3} x2={bx} y2={by + yOffset - 3}
           stroke="#ec4899" strokeWidth={1.5}
           strokeDasharray={dashed ? '6 4' : undefined}
           opacity={opacity} />
-        <line x1={ax} y1={ay + 4} x2={bx} y2={by + 4}
+        <line x1={ax} y1={ay + yOffset + 3} x2={bx} y2={by + yOffset + 3}
           stroke="#ec4899" strokeWidth={1.5}
           strokeDasharray={dashed ? '6 4' : undefined}
           opacity={opacity} />

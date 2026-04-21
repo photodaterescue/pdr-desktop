@@ -16,6 +16,7 @@ import { computeFocusLayout, augmentWithVirtualGhosts } from '@/lib/trees-layout
 import { TreesCanvas } from './TreesCanvas';
 import { SetRelationshipModal } from './SetRelationshipModal';
 import { EditRelationshipsModal } from './EditRelationshipsModal';
+import { SiblingKindDialog, type SiblingKind } from './SiblingKindDialog';
 import { promptConfirm } from './promptConfirm';
 
 interface PersonSummary {
@@ -61,6 +62,10 @@ export function TreesView() {
   const [relationshipEditorInitialTo, setRelationshipEditorInitialTo] = useState<number | null>(null);
   /** When set, the Edit Relationships list modal is open for this person. */
   const [editRelationshipsFor, setEditRelationshipsFor] = useState<number | null>(null);
+  /** When set, the Sibling Kind dialog is open between these two people.
+   *  Triggered by the +sibling quick-add; on confirm we run the chosen
+   *  flavour of sibling wiring instead of the old assume-full default. */
+  const [siblingKindDialog, setSiblingKindDialog] = useState<{ fromId: number; toId: number; fromName: string; toName: string } | null>(null);
   /** Target of an in-flight quick-add (chip around a node). null = no picker open. */
   const [quickAdd, setQuickAdd] = useState<{
     fromPersonId: number;
@@ -265,6 +270,63 @@ export function TreesView() {
     setFocusPersonId(personId);
   }, []);
 
+  /** Resolve a +sibling quick-add now that the user has chosen the
+   *  sibling flavour. Runs the appropriate wiring:
+   *   full → cross-inherit parents + top up to 2 with ghosts
+   *   half → explicit sibling_of with flags.half, cross-wire shared parent if known
+   *   none/unknown → explicit sibling_of only, parents untouched
+   */
+  const finaliseSiblingKind = useCallback(async (kind: SiblingKind, sharedParentId: number | null) => {
+    if (!siblingKindDialog) return;
+    const { fromId, toId } = siblingKindDialog;
+    setSiblingKindDialog(null);
+
+    const parentsOf = (pid: number): number[] => {
+      if (!graph) return [];
+      return graph.edges
+        .filter(e => e.type === 'parent_of' && e.bId === pid && !e.derived)
+        .map(e => e.aId);
+    };
+
+    if (kind === 'full') {
+      const fromParents = parentsOf(fromId);
+      const toParents = parentsOf(toId);
+      for (const pid of toParents) {
+        if (!fromParents.includes(pid)) await addRelationship({ personAId: pid, personBId: fromId, type: 'parent_of' });
+      }
+      for (const pid of fromParents) {
+        if (!toParents.includes(pid)) await addRelationship({ personAId: pid, personBId: toId, type: 'parent_of' });
+      }
+      const shared = new Set<number>([...fromParents, ...toParents]);
+      const missing = Math.max(0, 2 - shared.size);
+      for (let i = 0; i < missing; i++) {
+        const ph = await createPlaceholderPerson();
+        if (ph.success && ph.data != null) {
+          await addRelationship({ personAId: ph.data, personBId: fromId, type: 'parent_of' });
+          await addRelationship({ personAId: ph.data, personBId: toId, type: 'parent_of' });
+        }
+      }
+    } else if (kind === 'half') {
+      await addRelationship({ personAId: fromId, personBId: toId, type: 'sibling_of', flags: { half: true } });
+      if (sharedParentId != null) {
+        const fromParents = parentsOf(fromId);
+        const toParents = parentsOf(toId);
+        if (!fromParents.includes(sharedParentId)) {
+          await addRelationship({ personAId: sharedParentId, personBId: fromId, type: 'parent_of' });
+        }
+        if (!toParents.includes(sharedParentId)) {
+          await addRelationship({ personAId: sharedParentId, personBId: toId, type: 'parent_of' });
+        }
+      }
+    } else {
+      // 'none' or 'unknown' — just link them.
+      await addRelationship({ personAId: fromId, personBId: toId, type: 'sibling_of' });
+    }
+
+    // Refresh the graph.
+    if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
+  }, [siblingKindDialog, graph, focusPersonId, fetchDepth, refetchGraph]);
+
   const handleRelationshipCreated = useCallback(() => {
     // A graph mutation can also change the person table (e.g. a ghost
     // placeholder getting named, or a new named person created via the
@@ -287,30 +349,13 @@ export function TreesView() {
     } else if (kind === 'partner') {
       await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of' });
     } else if (kind === 'sibling') {
-      // Use the same 2-parents-guaranteed logic as the modal: cross-inherit, then top up with ghosts.
-      const parentsOf = (pid: number): number[] => {
-        if (!graph) return [];
-        return graph.edges
-          .filter(e => e.type === 'parent_of' && e.bId === pid && !e.derived)
-          .map(e => e.aId);
-      };
-      const fromParents = parentsOf(fromPersonId);
-      const toParents = parentsOf(otherPersonId);
-      for (const pid of toParents) {
-        if (!fromParents.includes(pid)) await addRelationship({ personAId: pid, personBId: fromPersonId, type: 'parent_of' });
-      }
-      for (const pid of fromParents) {
-        if (!toParents.includes(pid)) await addRelationship({ personAId: pid, personBId: otherPersonId, type: 'parent_of' });
-      }
-      const shared = new Set<number>([...fromParents, ...toParents]);
-      const missing = Math.max(0, 2 - shared.size);
-      for (let i = 0; i < missing; i++) {
-        const ph = await createPlaceholderPerson();
-        if (ph.success && ph.data != null) {
-          await addRelationship({ personAId: ph.data, personBId: fromPersonId, type: 'parent_of' });
-          await addRelationship({ personAId: ph.data, personBId: otherPersonId, type: 'parent_of' });
-        }
-      }
+      // Ask the user what kind of sibling relationship it is, rather
+      // than silently assuming full siblings and auto-filling ghost
+      // parents. Pull names so the dialog can show them clearly.
+      const fromName = allPersons.find(p => p.id === fromPersonId)?.name ?? 'this person';
+      const toName = allPersons.find(p => p.id === otherPersonId)?.name ?? 'this person';
+      setSiblingKindDialog({ fromId: fromPersonId, toId: otherPersonId, fromName, toName });
+      return; // dialog confirm handles the rest
     }
 
     // Probe fetch depth upward until the new person appears, so we know
@@ -393,79 +438,50 @@ export function TreesView() {
                 {pinnedPeople.size} pinned
               </button>
             )}
-            {/* Steps filter — toggle + always-visible Depth dropdown.
-                Fields stay rendered (just dimmed) when the toggle is
-                off so the header layout never jumps between states. */}
+            {/* Steps filter — toggle + +/- stepper. No dropdown — stepper
+                is faster. Stepper stays rendered (dimmed) when filter is off
+                so the header layout doesn't jump. */}
             <div className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-lg border border-border bg-background">
               <button
                 onClick={() => setStepsEnabled(v => !v)}
                 className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${stepsEnabled ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-accent'}`}
-                title={stepsEnabled
-                  ? 'Click to turn off the Steps filter. With both filters off, only the focus person is shown.'
-                  : 'Turn on Steps — undirected hops from focus. Includes siblings, cousins, in-laws equally as each step expands.'}
                 aria-pressed={stepsEnabled}
               >
                 Steps
               </button>
-              <select
+              <NumberStepper
                 value={expandedHops}
-                onChange={e => setExpandedHops(parseInt(e.target.value, 10))}
+                onChange={setExpandedHops}
+                min={1}
+                max={6}
                 disabled={!stepsEnabled}
-                className={`bg-background border border-border rounded px-1 py-0 text-xs ${stepsEnabled ? '' : 'opacity-40'}`}
-                title="Hops from focus: 1 = parents/partners/siblings/children only. Higher values reach further."
-              >
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-                <option value={3}>3</option>
-                <option value={4}>4</option>
-                <option value={5}>5</option>
-                <option value={6}>6</option>
-              </select>
+              />
             </div>
-            {/* Generations filter — toggle + always-visible ↑ / ↓ dials. */}
+            {/* Generations filter — toggle + ↑ / ↓ steppers. */}
             <div className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-lg border border-border bg-background">
               <button
                 onClick={() => setGenerationsEnabled(v => !v)}
                 className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${generationsEnabled ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-accent'}`}
-                title={generationsEnabled
-                  ? 'Click to turn off the Generations filter.'
-                  : 'Turn on Generations — vertical ancestor/descendant depth. Siblings and spouses at each shown generation come along automatically.'}
                 aria-pressed={generationsEnabled}
               >
                 Generations
               </button>
-              <label className={`inline-flex items-center gap-0.5 text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`} title="Generations above focus (parents, grandparents…)">
-                ↑
-                <select
-                  value={ancestorsDepth}
-                  onChange={e => setAncestorsDepth(parseInt(e.target.value, 10))}
-                  disabled={!generationsEnabled}
-                  className={`bg-background border border-border rounded px-1 py-0 text-xs ${generationsEnabled ? '' : 'opacity-40'}`}
-                >
-                  <option value={0}>0</option>
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={3}>3</option>
-                  <option value={4}>4</option>
-                  <option value={5}>5</option>
-                </select>
-              </label>
-              <label className={`inline-flex items-center gap-0.5 text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`} title="Generations below focus (children, grandchildren…)">
-                ↓
-                <select
-                  value={descendantsDepth}
-                  onChange={e => setDescendantsDepth(parseInt(e.target.value, 10))}
-                  disabled={!generationsEnabled}
-                  className={`bg-background border border-border rounded px-1 py-0 text-xs ${generationsEnabled ? '' : 'opacity-40'}`}
-                >
-                  <option value={0}>0</option>
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={3}>3</option>
-                  <option value={4}>4</option>
-                  <option value={5}>5</option>
-                </select>
-              </label>
+              <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>↑</span>
+              <NumberStepper
+                value={ancestorsDepth}
+                onChange={setAncestorsDepth}
+                min={0}
+                max={5}
+                disabled={!generationsEnabled}
+              />
+              <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>↓</span>
+              <NumberStepper
+                value={descendantsDepth}
+                onChange={setDescendantsDepth}
+                min={0}
+                max={5}
+                disabled={!generationsEnabled}
+              />
             </div>
             <button
               onClick={() => focusPersonId != null && refetchGraph(focusPersonId, fetchDepth)}
@@ -626,6 +642,24 @@ export function TreesView() {
           />
         );
       })()}
+
+      {/* Sibling kind dialog — fires after the +sibling quick-add picks
+          a person. Asks full vs half vs none vs unknown before touching
+          any parent_of edges, so we don't silently auto-fill shared
+          placeholder parents when that isn't the intent. */}
+      {siblingKindDialog && (
+        <SiblingKindDialog
+          fromPersonId={siblingKindDialog.fromId}
+          fromPersonName={siblingKindDialog.fromName}
+          toPersonId={siblingKindDialog.toId}
+          toPersonName={siblingKindDialog.toName}
+          graph={graph}
+          onConfirm={(kind, sharedParentId) => {
+            finaliseSiblingKind(kind, sharedParentId);
+          }}
+          onClose={() => setSiblingKindDialog(null)}
+        />
+      )}
     </div>
   );
 }
@@ -637,6 +671,40 @@ export function TreesView() {
  * because they already share kids in the tree, regardless of whether a
  * spouse_of edge has been asserted yet.
  */
+/** Compact stepper control — two buttons (−/+) around a centered number.
+ *  Replaces a native <select> where quick small adjustments matter.
+ *  When disabled, the whole control dims but stays rendered so the
+ *  header layout doesn't shift when the parent toggle flips. */
+function NumberStepper({ value, onChange, min, max, disabled }: {
+  value: number; onChange: (n: number) => void; min: number; max: number; disabled?: boolean;
+}) {
+  const dec = () => !disabled && onChange(Math.max(min, value - 1));
+  const inc = () => !disabled && onChange(Math.min(max, value + 1));
+  return (
+    <div className={`inline-flex items-center text-xs ${disabled ? 'opacity-40' : ''}`}>
+      <button
+        type="button"
+        onClick={dec}
+        disabled={disabled || value <= min}
+        className="w-5 h-5 flex items-center justify-center rounded hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40"
+        aria-label="Decrease"
+      >
+        −
+      </button>
+      <span className="w-5 text-center font-mono tabular-nums">{value}</span>
+      <button
+        type="button"
+        onClick={inc}
+        disabled={disabled || value >= max}
+        className="w-5 h-5 flex items-center justify-center rounded hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40"
+        aria-label="Increase"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 function coparentsOf(fromId: number, graph: FamilyGraph | null): Set<number> {
   const out = new Set<number>();
   if (!graph) return out;

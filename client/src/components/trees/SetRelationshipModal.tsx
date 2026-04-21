@@ -74,6 +74,11 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
   const [sinceDate, setSinceDate] = useState('');
   const [untilDate, setUntilDate] = useState('');
   const [sharedParentId, setSharedParentId] = useState<number | null>(null);
+  /** Sibling flavour — only applies when type is 'sibling' or
+   *  'adopted_sibling'. Defaults to 'full' for backwards compatibility
+   *  with the earlier implicit behaviour, but the user can opt out of
+   *  auto-filling shared parents. */
+  const [siblingKind, setSiblingKind] = useState<'full' | 'half' | 'none' | 'unknown'>('full');
   const [customLabel, setCustomLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -191,13 +196,18 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
   }, [toPersonId, graph, fromPersonId]);
 
   // For half-sibling: parents of the SELECTED other person (to offer as "which parent is shared").
+  // Candidate shared parents come from EITHER person's parent set so
+  // the half-sibling picker works regardless of which side's parents
+  // have been recorded so far.
   const potentialSharedParents = useMemo(() => {
     if (!graph || !toPersonId) return [];
-    const parentIds = graph.edges
-      .filter(e => e.type === 'parent_of' && e.bId === toPersonId && !e.derived)
-      .map(e => e.aId);
-    return graph.nodes.filter(n => parentIds.includes(n.personId));
-  }, [graph, toPersonId]);
+    const parentIds = new Set<number>();
+    for (const e of graph.edges) {
+      if (e.type !== 'parent_of' || e.derived) continue;
+      if (e.bId === toPersonId || e.bId === fromPersonId) parentIds.add(e.aId);
+    }
+    return graph.nodes.filter(n => parentIds.has(n.personId));
+  }, [graph, toPersonId, fromPersonId]);
 
   const handleSave = async () => {
     setError(null);
@@ -295,6 +305,7 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
         untilDate: untilDate || undefined,
         sharedParentId,
         customLabel: customLabel.trim() || undefined,
+        siblingKind,
       });
       if (results.error) { setError(results.error); setBusy(false); return; }
       onRelationshipCreated();
@@ -476,9 +487,36 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
             </p>
           </div>
 
-          {/* Half-sibling: optionally name the shared parent. Completely
-              optional — half-sibling is stored as a direct fact either way. */}
-          {type === 'half_sibling' && toPersonId && potentialSharedParents.length > 0 && (
+          {/* Sibling kind — replaces the old silent "assume full siblings"
+              behaviour. User picks what they actually mean. For 'half',
+              the shared-parent picker below surfaces choices. */}
+          {(type === 'sibling' || type === 'adopted_sibling') && toPersonId && (
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">What kind of siblings?</label>
+              <div className="mt-1.5 grid grid-cols-2 gap-2 text-sm">
+                {([
+                  { k: 'full', label: 'Full', sub: 'Share both parents' },
+                  { k: 'half', label: 'Half', sub: 'Share one parent' },
+                  { k: 'none', label: 'Not related by blood', sub: 'Step / chosen / blended' },
+                  { k: 'unknown', label: 'Not sure', sub: 'Link them, sort parents later' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.k}
+                    onClick={() => setSiblingKind(opt.k)}
+                    className={`px-3 py-2 rounded-lg border text-left transition-colors ${siblingKind === opt.k ? 'border-primary bg-primary/10' : 'border-border hover:bg-accent'}`}
+                  >
+                    <div className={`text-sm font-medium ${siblingKind === opt.k ? 'text-primary' : ''}`}>{opt.label}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* For half siblings — which parent is shared. Same picker the
+              explicit 'half_sibling' type used; reused for the Full/Half
+              question's 'half' answer too. */}
+          {((type === 'half_sibling') || ((type === 'sibling' || type === 'adopted_sibling') && siblingKind === 'half')) && toPersonId && potentialSharedParents.length > 0 && (
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Which parent is shared? <span className="font-normal italic">(optional)</span>
@@ -791,7 +829,7 @@ async function performDeclarativeCreate(
   fromId: number,
   toId: number,
   graph: FamilyGraph | null,
-  extra: { flags?: any; sinceDate?: string; untilDate?: string; sharedParentId?: number | null; customLabel?: string }
+  extra: { flags?: any; sinceDate?: string; untilDate?: string; sharedParentId?: number | null; customLabel?: string; siblingKind?: 'full' | 'half' | 'none' | 'unknown' }
 ): Promise<{ error?: string }> {
   /** Helper: store an associated_with edge with a given kind + optional ended flag. */
   const storeAssociation = async (kind: string, ended = false, label?: string) => {
@@ -826,42 +864,65 @@ async function performDeclarativeCreate(
     }
     case 'sibling':
     case 'adopted_sibling': {
-      // Goal: after this runs, both siblings share exactly TWO parents
-      // (the biological family-tree default). Missing slots get filled
-      // with placeholder "?" ghosts the user can name later. Extras the
-      // user had already stay; user can remove any that don't fit.
-      //
-      // Strategy:
-      //   1. Cross-inherit: each sibling picks up the other's parents,
-      //      so both end up with the union of parent sets.
-      //   2. Count unique parents in that union. Create placeholder
-      //      ghosts (0, 1, or 2) to bring the shared count to 2.
-      const flags = type === 'adopted_sibling' ? { adopted: true } : undefined;
-      const fromParents = parentsOf(fromId);
-      const toParents = parentsOf(toId);
+      // Behaviour depends on siblingKind (provided by the UI dialog):
+      //   'full'    — cross-inherit parents + top up to 2 shared ghosts
+      //               (original behaviour, now opt-in)
+      //   'half'    — store an explicit sibling_of with flags.half.
+      //               If sharedParentId is known, cross-wire just that
+      //               one parent_of edge. No placeholder fill.
+      //   'none'    — store sibling_of only. Don't touch parents.
+      //   'unknown' — same as none.
+      // Default to 'full' when unspecified (keeps legacy callers working).
+      const siblingKind = extra.siblingKind ?? 'full';
+      const baseFlags: any = type === 'adopted_sibling' ? { adopted: true } : {};
 
-      // Step 1 — cross-inherit.
-      for (const pid of toParents) {
-        if (!fromParents.includes(pid)) {
-          await addRelationship({ personAId: pid, personBId: fromId, type: 'parent_of', flags });
+      if (siblingKind === 'full') {
+        // Classic: both end up sharing the union of parents, topped up
+        // to 2 with ghosts if needed.
+        const fromParents = parentsOf(fromId);
+        const toParents = parentsOf(toId);
+        for (const pid of toParents) {
+          if (!fromParents.includes(pid)) {
+            await addRelationship({ personAId: pid, personBId: fromId, type: 'parent_of', flags: baseFlags });
+          }
         }
-      }
-      for (const pid of fromParents) {
-        if (!toParents.includes(pid)) {
-          await addRelationship({ personAId: pid, personBId: toId, type: 'parent_of', flags });
+        for (const pid of fromParents) {
+          if (!toParents.includes(pid)) {
+            await addRelationship({ personAId: pid, personBId: toId, type: 'parent_of', flags: baseFlags });
+          }
         }
+        const shared = new Set<number>([...fromParents, ...toParents]);
+        const missing = Math.max(0, 2 - shared.size);
+        for (let i = 0; i < missing; i++) {
+          const ph = await createPlaceholderPerson();
+          if (!ph.success || ph.data == null) return { error: ph.error ?? 'Could not create placeholder.' };
+          await addRelationship({ personAId: ph.data, personBId: fromId, type: 'parent_of', flags: baseFlags });
+          await addRelationship({ personAId: ph.data, personBId: toId, type: 'parent_of', flags: baseFlags });
+        }
+        return {};
       }
 
-      // Step 2 — top up to 2 parents with ghosts.
-      const sharedParents = new Set<number>([...fromParents, ...toParents]);
-      const missing = Math.max(0, 2 - sharedParents.size);
-      for (let i = 0; i < missing; i++) {
-        const ph = await createPlaceholderPerson();
-        if (!ph.success || ph.data == null) return { error: ph.error ?? 'Could not create placeholder.' };
-        await addRelationship({ personAId: ph.data, personBId: fromId, type: 'parent_of', flags });
-        await addRelationship({ personAId: ph.data, personBId: toId, type: 'parent_of', flags });
+      if (siblingKind === 'half') {
+        // Store the direct sibling_of with half flag. No placeholder fill.
+        const r = await addRelationship({ personAId: fromId, personBId: toId, type: 'sibling_of', flags: { ...baseFlags, half: true } });
+        if (!r.success) return { error: r.error ?? 'Could not save.' };
+        if (extra.sharedParentId != null) {
+          const fromParents = parentsOf(fromId);
+          const toParents = parentsOf(toId);
+          if (!fromParents.includes(extra.sharedParentId)) {
+            await addRelationship({ personAId: extra.sharedParentId, personBId: fromId, type: 'parent_of' });
+          }
+          if (!toParents.includes(extra.sharedParentId)) {
+            await addRelationship({ personAId: extra.sharedParentId, personBId: toId, type: 'parent_of' });
+          }
+        }
+        return {};
       }
-      return {};
+
+      // 'none' or 'unknown' — just link them. Parents stay untouched
+      // (step-siblings, chosen family, or to-be-decided).
+      const r = await addRelationship({ personAId: fromId, personBId: toId, type: 'sibling_of', flags: baseFlags });
+      return r.success ? {} : { error: r.error ?? 'Could not save.' };
     }
     case 'half_sibling': {
       // If the user picked a shared parent, also create the parent_of
