@@ -117,7 +117,7 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
   // Vertical spacing increases to keep branches airy — lines look
   // much cleaner with room to breathe between generations.
   nodeSpacing: 210,
-  rowHeight: 240,
+  rowHeight: 260,
   spouseOffset: 180,
 };
 

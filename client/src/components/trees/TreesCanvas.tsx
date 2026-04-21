@@ -37,16 +37,14 @@ interface Viewport { tx: number; ty: number; scale: number; }
 const NODE_RADIUS = 42; // legacy — kept for spouse-line math and partner-chip positioning
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 150;
-// Card-style node dimensions (replaces the old bare-circle node look).
-// Each person is drawn as a rectangular card containing the avatar,
-// name, and optional birth–death dates. Edges now enter/leave the
-// card at its top/bottom edge, which removes the ugly "extra elbow"
-// that existed when lines started at node center and had to cross the
-// empty area below the circle before the first bend.
+// Card-style node dimensions (royal-chart style). The avatar now
+// dominates the top half of the card (40px radius = 80px diameter)
+// rather than sitting as a small circle above a sea of whitespace.
+// Edges enter/leave at the card's top/bottom edges — no elbow stub.
 const CARD_W = 170;
-const CARD_H = 128;
-const AVATAR_R = 24;
-const AVATAR_CY = -CARD_H / 2 + 30; // y-offset of avatar centre within the card
+const CARD_H = 140;
+const AVATAR_R = 36;
+const AVATAR_CY = -CARD_H / 2 + 8 + AVATAR_R; // tight top margin, then avatar
 
 export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onGraphMutated }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -616,24 +614,21 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
   }
   if (type === 'spouse_of') {
     const dashed = !!until;
-    // For cards, the spouse line should sit in the GAP between the two
-    // cards, not cross through their bodies. Clip endpoints to each
-    // card's right/left edge. Vertical position is the midpoint of the
-    // two cards (handles slight y offsets cleanly).
+    // Royal-chart style: a SINGLE thin neutral line bridging the gap
+    // between the two cards with a small dot at the midpoint. The
+    // midpoint is where any children's vertical drop will originate.
     const xLeft  = Math.min(ax, bx) + CARD_W / 2;
     const xRight = Math.max(ax, bx) - CARD_W / 2;
     const yMid = (ay + by) / 2;
+    const xMid = (xLeft + xRight) / 2;
     return (
       <g onClick={onClick}>
         {hitArea}
-        <line x1={xLeft} y1={yMid - 3} x2={xRight} y2={yMid - 3}
-          stroke="#ec4899" strokeWidth={1.5}
+        <line x1={xLeft} y1={yMid} x2={xRight} y2={yMid}
+          stroke="#64748b" strokeWidth={1.5}
           strokeDasharray={dashed ? '6 4' : undefined}
           opacity={opacity} />
-        <line x1={xLeft} y1={yMid + 3} x2={xRight} y2={yMid + 3}
-          stroke="#ec4899" strokeWidth={1.5}
-          strokeDasharray={dashed ? '6 4' : undefined}
-          opacity={opacity} />
+        <circle cx={xMid} cy={yMid} r={2.5} fill="#64748b" opacity={opacity} />
       </g>
     );
   }
@@ -819,12 +814,12 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onMo
         <BluebellMarker cx={AVATAR_R - 4} cy={AVATAR_CY - AVATAR_R + 4} />
       )}
       {/* Name — centred below avatar, always visible, dark text */}
-      <text x={0} y={AVATAR_CY + AVATAR_R + 18} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
+      <text x={0} y={AVATAR_CY + AVATAR_R + 16} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
         {displayName}
       </text>
       {/* Dates — optional, controlled by the header's Add Info > Dates alive */}
       {showDates && lifeLine && (
-        <text x={0} y={AVATAR_CY + AVATAR_R + 36} textAnchor="middle" fontSize={11} fill="rgba(107,114,128,0.95)">
+        <text x={0} y={AVATAR_CY + AVATAR_R + 32} textAnchor="middle" fontSize={11} fill="rgba(107,114,128,0.95)">
           {lifeLine}
         </text>
       )}
