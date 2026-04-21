@@ -25,17 +25,30 @@ interface TreesCanvasProps {
    *  relationships they'd create probably already exist outside the
    *  (empty) visible window. */
   hideQuickAddChips?: boolean;
+  /** Show the optional birth–death dates line inside each card. Toggled
+   *  from the header's 'Add Info' dropdown. */
+  showDates?: boolean;
   /** Called after an inline edge edit succeeds so the parent can refetch the graph. */
   onGraphMutated: () => void;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
 
-const NODE_RADIUS = 42;
+const NODE_RADIUS = 42; // legacy — kept for spouse-line math and partner-chip positioning
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 150;
+// Card-style node dimensions (replaces the old bare-circle node look).
+// Each person is drawn as a rectangular card containing the avatar,
+// name, and optional birth–death dates. Edges now enter/leave the
+// card at its top/bottom edge, which removes the ugly "extra elbow"
+// that existed when lines started at node center and had to cross the
+// empty area below the circle before the first bend.
+const CARD_W = 170;
+const CARD_H = 128;
+const AVATAR_R = 24;
+const AVATAR_CY = -CARD_H / 2 + 30; // y-offset of avatar centre within the card
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, onGraphMutated }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onGraphMutated }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -349,6 +362,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 isFocus={isFocus}
                 opacity={dimOpacity}
                 hideChips={hideQuickAddChips}
+                showDates={showDates}
                 onMouseDown={(e) => handleNodeMouseDown(e, node)}
                 onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
                 onContextMenu={(e) => handleNodeContextMenu(e, node)}
@@ -429,12 +443,11 @@ function FamilyGroup({ parents, children, bracketOffset, onParentClick }: {
 }) {
   if (parents.length === 0 || children.length === 0) return null;
 
-  // Parent bottom must clear the name label (avatar + name = NODE_RADIUS + 18,
-  // plus some breathing room) — otherwise the marriage bar runs through
-  // the name text. Child top is just above the avatar itself (names sit
-  // BELOW child avatars so they're never crossed from above).
-  const PARENT_BOTTOM_OFFSET = NODE_RADIUS + 38;
-  const CHILD_TOP_OFFSET = NODE_RADIUS + 6;
+  // Cards have their content (avatar + name + dates) INSIDE, so lines
+  // can attach cleanly at the card edges — no gap for a name-below-
+  // node label, no visible stub. Royal-chart style.
+  const PARENT_BOTTOM_OFFSET = CARD_H / 2;
+  const CHILD_TOP_OFFSET = CARD_H / 2;
 
   // Assume parents are at the same y (same generation). Use the first's.
   const parentY = parents[0].renderedY + PARENT_BOTTOM_OFFSET;
@@ -494,14 +507,14 @@ function FamilyGroup({ parents, children, bracketOffset, onParentClick }: {
           strokeWidth={strokeWidth}
         />
       )}
-      {/* Drops to each child */}
+      {/* Drops to each child — end at the card's TOP edge */}
       {children.map(c => (
         <line
           key={c.personId}
           x1={c.renderedX}
           y1={bracketY}
           x2={c.renderedX}
-          y2={c.renderedY - NODE_RADIUS}
+          y2={c.renderedY - CARD_H / 2}
           stroke={stroke}
           strokeWidth={strokeWidth}
         />
@@ -603,19 +616,21 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
   }
   if (type === 'spouse_of') {
     const dashed = !!until;
-    // Anchor the partnership line near the BOTTOM of each avatar rather
-    // than through its centre — it now visually bridges the bottoms
-    // of the two circles (like a classic pedigree-chart couple
-    // connector) instead of drawing across their faces.
-    const yOffset = NODE_RADIUS * 0.72; // just inside the bottom edge
+    // For cards, the spouse line should sit in the GAP between the two
+    // cards, not cross through their bodies. Clip endpoints to each
+    // card's right/left edge. Vertical position is the midpoint of the
+    // two cards (handles slight y offsets cleanly).
+    const xLeft  = Math.min(ax, bx) + CARD_W / 2;
+    const xRight = Math.max(ax, bx) - CARD_W / 2;
+    const yMid = (ay + by) / 2;
     return (
       <g onClick={onClick}>
         {hitArea}
-        <line x1={ax} y1={ay + yOffset - 3} x2={bx} y2={by + yOffset - 3}
+        <line x1={xLeft} y1={yMid - 3} x2={xRight} y2={yMid - 3}
           stroke="#ec4899" strokeWidth={1.5}
           strokeDasharray={dashed ? '6 4' : undefined}
           opacity={opacity} />
-        <line x1={ax} y1={ay + yOffset + 3} x2={bx} y2={by + yOffset + 3}
+        <line x1={xLeft} y1={yMid + 3} x2={xRight} y2={yMid + 3}
           stroke="#ec4899" strokeWidth={1.5}
           strokeDasharray={dashed ? '6 4' : undefined}
           opacity={opacity} />
@@ -696,12 +711,13 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, hideChips, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
   opacity: number;
   hideChips?: boolean;
+  showDates?: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
   onDoubleClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -712,11 +728,11 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, onMouseDown, on
 }) {
   const [hovered, setHovered] = useState(false);
   const ringColor = isFocus ? '#f59e0b' : '#6366f1';
-  const ringWidth = isFocus ? 4 : 2;
   const initials = initialsOf(node.name);
   const bgColor = colorFromId(node.personId);
   const lifeLine = formatLife(node.birthDate, node.deathDate);
   const isDeceased = !!node.deathDate;
+  const displayName = node.name.length > 22 ? node.name.slice(0, 20) + '…' : node.name;
 
   return (
     <g
@@ -729,71 +745,105 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, onMouseDown, on
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Invisible hover buffer — covers the avatar AND the area around
-          it where the + chips sit, so moving from avatar to chip doesn't
-          trigger mouseleave and hide the chips. Drawn first (behind)
-          so it never intercepts clicks meant for visible elements. */}
+      {/* Invisible hover buffer — covers the card AND the chip area
+          around it so moving from card → chip doesn't trigger mouseleave
+          and hide the chips. Drawn first so it never intercepts clicks
+          meant for visible elements. */}
       <rect
-        x={-NODE_RADIUS - 36}
-        y={-NODE_RADIUS - 36}
-        width={(NODE_RADIUS + 36) * 2}
-        height={(NODE_RADIUS + 36) * 2 + 32}
+        x={-CARD_W / 2 - 24}
+        y={-CARD_H / 2 - 24}
+        width={CARD_W + 48}
+        height={CARD_H + 60}
         fill="white"
         fillOpacity={0.001}
       />
-      {/* Outer halo on focus */}
+      {/* Focus halo — slightly larger card outline behind */}
       {isFocus && (
-        <circle r={NODE_RADIUS + 8} fill="rgba(245, 158, 11, 0.12)" />
+        <rect
+          x={-CARD_W / 2 - 6}
+          y={-CARD_H / 2 - 6}
+          width={CARD_W + 12}
+          height={CARD_H + 12}
+          rx={14}
+          ry={14}
+          fill="rgba(245, 158, 11, 0.10)"
+          stroke="rgba(245, 158, 11, 0.55)"
+          strokeWidth={1.5}
+        />
       )}
-      {/* Avatar circle */}
-      <circle r={NODE_RADIUS} fill={avatar ? '#fff' : bgColor} stroke={ringColor} strokeWidth={ringWidth} />
+      {/* Card body — rectangular tile with rounded corners. Inherits
+          theme via currentColor where needed; explicit white so dark-
+          mode users still see a light card (matches royal-chart style). */}
+      <rect
+        x={-CARD_W / 2}
+        y={-CARD_H / 2}
+        width={CARD_W}
+        height={CARD_H}
+        rx={10}
+        ry={10}
+        fill="#ffffff"
+        stroke={isFocus ? ringColor : 'rgba(0,0,0,0.08)'}
+        strokeWidth={isFocus ? 2 : 1}
+      />
+      {/* Card drop-shadow — simple offset rect behind the card for depth */}
+      <rect
+        x={-CARD_W / 2}
+        y={-CARD_H / 2}
+        width={CARD_W}
+        height={CARD_H}
+        rx={10}
+        ry={10}
+        fill="none"
+        stroke="rgba(0,0,0,0.04)"
+        strokeWidth={3}
+        transform="translate(0 1)"
+      />
+      {/* Avatar — small circle near the top of the card */}
+      <circle cx={0} cy={AVATAR_CY} r={AVATAR_R} fill={avatar ? '#fff' : bgColor} stroke="rgba(0,0,0,0.12)" strokeWidth={1} />
       {avatar ? (
         <image
           href={avatar}
-          x={-NODE_RADIUS}
-          y={-NODE_RADIUS}
-          width={NODE_RADIUS * 2}
-          height={NODE_RADIUS * 2}
-          clipPath={`circle(${NODE_RADIUS}px at ${NODE_RADIUS}px ${NODE_RADIUS}px)`}
-          style={{ clipPath: `circle(${NODE_RADIUS}px at 50% 50%)` }}
+          x={-AVATAR_R}
+          y={AVATAR_CY - AVATAR_R}
+          width={AVATAR_R * 2}
+          height={AVATAR_R * 2}
+          style={{ clipPath: `circle(${AVATAR_R}px at 50% ${AVATAR_CY + AVATAR_R}px)` }}
         />
       ) : (
-        <text y={6} textAnchor="middle" fontSize={24} fontWeight={600} fill="#fff">
+        <text x={0} y={AVATAR_CY + 7} textAnchor="middle" fontSize={18} fontWeight={600} fill="#fff">
           {initials}
         </text>
       )}
-      {/* Deceased bluebell marker */}
+      {/* Deceased bluebell marker — top-right of avatar */}
       {isDeceased && (
-        <BluebellMarker cx={NODE_RADIUS - 6} cy={-NODE_RADIUS + 6} />
+        <BluebellMarker cx={AVATAR_R - 4} cy={AVATAR_CY - AVATAR_R + 4} />
       )}
-      {/* Name below */}
-      <text y={NODE_RADIUS + 18} textAnchor="middle" fontSize={13} fontWeight={600} fill="currentColor">
-        {node.name.length > 20 ? node.name.slice(0, 18) + '…' : node.name}
+      {/* Name — centred below avatar, always visible, dark text */}
+      <text x={0} y={AVATAR_CY + AVATAR_R + 18} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
+        {displayName}
       </text>
-      {lifeLine && (
-        <text y={NODE_RADIUS + 34} textAnchor="middle" fontSize={10} fill="rgba(128,128,128,0.9)">
+      {/* Dates — optional, controlled by the header's Add Info > Dates alive */}
+      {showDates && lifeLine && (
+        <text x={0} y={AVATAR_CY + AVATAR_R + 36} textAnchor="middle" fontSize={11} fill="rgba(107,114,128,0.95)">
           {lifeLine}
         </text>
       )}
       {/* Quick-add chips — four plus buttons that appear on hover.
-          Top: add parent. Bottom: add child.
-          Sideways chips (left/right): open a menu with "Partner" and
-          "Sibling" so the same-generation direction isn't locked to
-          one choice (common ask: "I want to add my brother's wife").
-          When any chip is clicked, we force `hovered=false` so the
-          chips disappear under the modal — otherwise they stay sticky
+          Anchored to the four edges of the CARD (not the smaller avatar
+          circle). When any chip is clicked, we force `hovered=false` so
+          the chips disappear under the modal — otherwise they stay sticky
           if the user cancels the picker and moves the mouse away. */}
       {(hovered || isFocus) && !hideChips && (
         <g opacity={hovered ? 1 : 0.6} style={{ pointerEvents: 'all' }}>
-          <QuickAddChip cx={0}                   cy={-NODE_RADIUS - 20} label="parent"  onClick={() => { setHovered(false); onQuickAddParent(); }} />
-          <QuickAddChip cx={0}                   cy={NODE_RADIUS + 52}  label="child"   onClick={() => { setHovered(false); onQuickAddChild(); }} />
+          <QuickAddChip cx={0}                  cy={-CARD_H / 2 - 16} label="parent" onClick={() => { setHovered(false); onQuickAddParent(); }} />
+          <QuickAddChip cx={0}                  cy={ CARD_H / 2 + 16} label="child"  onClick={() => { setHovered(false); onQuickAddChild(); }} />
           <QuickAddChipMenu
-            cx={-NODE_RADIUS - 24} cy={0} label="partner / sibling"
+            cx={-CARD_W / 2 - 20} cy={0} label="partner / sibling"
             onPartner={() => { setHovered(false); onQuickAddPartner(); }}
             onSibling={() => { setHovered(false); onQuickAddSibling(); }}
           />
           <QuickAddChipMenu
-            cx={NODE_RADIUS + 24} cy={0} label="partner / sibling"
+            cx={ CARD_W / 2 + 20} cy={0} label="partner / sibling"
             onPartner={() => { setHovered(false); onQuickAddPartner(); }}
             onSibling={() => { setHovered(false); onQuickAddSibling(); }}
           />

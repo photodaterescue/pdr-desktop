@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info } from 'lucide-react';
 import {
   getFamilyGraph,
   listPersons,
@@ -84,6 +84,19 @@ export function TreesView() {
    *  mode. Distinct from the plain Change Focus picker so we can swap
    *  the onPick behaviour without adding flags. */
   const [newTreePickerOpen, setNewTreePickerOpen] = useState(false);
+  /** Optional-field toggles for inside-card display. Persisted to
+   *  localStorage so the user's choice sticks across sessions. */
+  const [showDates, setShowDates] = useState(
+    typeof window !== 'undefined' && localStorage.getItem('pdr-trees-show-dates') === 'true'
+  );
+  const [addInfoOpen, setAddInfoOpen] = useState(false);
+  const toggleShowDates = useCallback((next: boolean) => {
+    setShowDates(next);
+    try {
+      if (next) localStorage.setItem('pdr-trees-show-dates', 'true');
+      else localStorage.removeItem('pdr-trees-show-dates');
+    } catch {}
+  }, []);
   /** Suppress auto-save while we're applying a loaded tree's settings
    *  (otherwise the act of loading would immediately overwrite the
    *  record we just read). */
@@ -575,6 +588,45 @@ export function TreesView() {
               {graph.nodes.length} {graph.nodes.length === 1 ? 'person' : 'people'} · {graph.edges.filter(e => !e.derived).length} relationships
             </span>
             <div className="flex-1" />
+            {/* Add Info dropdown — per-card optional fields. For now just
+                a 'Dates alive' toggle (off by default). More options can
+                slot in here later. */}
+            <div className="relative">
+              <button
+                onClick={() => setAddInfoOpen(v => !v)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                  showDates
+                    ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20'
+                    : 'bg-background border-border text-foreground hover:bg-accent'
+                }`}
+                title="Show extra details inside each card (dates, etc.)"
+                aria-expanded={addInfoOpen}
+              >
+                <Info className="w-4 h-4" />
+                Add Info{showDates ? ' (1)' : ''}
+              </button>
+              {addInfoOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setAddInfoOpen(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 z-20 min-w-[220px] bg-popover border border-border rounded-lg shadow-lg py-1">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold px-3 pt-2 pb-1">Show below each card</p>
+                    <label className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showDates}
+                        onChange={e => toggleShowDates(e.target.checked)}
+                        className="accent-primary"
+                      />
+                      <span className="flex-1">Dates alive</span>
+                      <span className="text-[10px] text-muted-foreground">e.g. 1948–Living</span>
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               onClick={() => setManageTreesOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
@@ -674,6 +726,7 @@ export function TreesView() {
             onQuickAddChild={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'child' })}
             onQuickAddSibling={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'sibling' })}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
+            showDates={showDates}
           />
         )}
         {/* Empty-state hint — anchored to the top of the canvas so it never

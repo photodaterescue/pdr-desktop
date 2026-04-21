@@ -111,9 +111,14 @@ export interface LayoutOptions {
 }
 
 const DEFAULT_OPTIONS: Required<LayoutOptions> = {
-  nodeSpacing: 180,
-  rowHeight: 200,
-  spouseOffset: 150,
+  // Card-style nodes are wider (~170px) than the old circles, so
+  // horizontal spacing bumps to keep a readable gap between siblings
+  // and to leave room for the spouse connector between partners.
+  // Vertical spacing increases to keep branches airy — lines look
+  // much cleaner with room to breathe between generations.
+  nodeSpacing: 210,
+  rowHeight: 240,
+  spouseOffset: 180,
 };
 
 /**
