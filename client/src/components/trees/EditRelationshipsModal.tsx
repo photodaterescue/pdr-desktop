@@ -98,15 +98,30 @@ export function EditRelationshipsModal({
 
   // Drag-to-reposition — the modal often parks itself over the very
   // person you're editing. Grab the header to drag it out of the way.
+  // Clamped so the modal can never move more than half the viewport in
+  // any direction — otherwise the user can lose the close button off
+  // the edge of the screen.
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
   const onDragStart = (e: React.PointerEvent) => {
+    // Don't start a drag on interactive header children — the X close
+    // button and any future select/input would otherwise get their
+    // click swallowed by pointer capture.
+    const t = e.target as HTMLElement;
+    if (t.closest('button, input, select, textarea, a')) return;
     dragRef.current = { sx: e.clientX, sy: e.clientY, bx: pos.x, by: pos.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onDragMove = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
-    setPos({ x: dragRef.current.bx + e.clientX - dragRef.current.sx, y: dragRef.current.by + e.clientY - dragRef.current.sy });
+    const rawX = dragRef.current.bx + e.clientX - dragRef.current.sx;
+    const rawY = dragRef.current.by + e.clientY - dragRef.current.sy;
+    const halfW = window.innerWidth / 2;
+    const halfH = window.innerHeight / 2;
+    setPos({
+      x: Math.max(-halfW, Math.min(halfW, rawX)),
+      y: Math.max(-halfH, Math.min(halfH, rawY)),
+    });
   };
   const onDragEnd = () => { dragRef.current = null; };
 

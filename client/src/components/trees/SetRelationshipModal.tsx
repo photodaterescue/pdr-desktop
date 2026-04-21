@@ -85,15 +85,28 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
   const [conflictWithId, setConflictWithId] = useState<number | null>(null);
 
   // Drag-to-reposition — modal often lands over the person being edited.
+  // Clamped to ±(viewport/2) on each axis so the close button can never
+  // be dragged off-screen and stranded.
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
   const onDragStart = (e: React.PointerEvent) => {
+    // Skip drag when the press landed on an interactive child (e.g. the
+    // X close button) so its click handler fires normally.
+    const t = e.target as HTMLElement;
+    if (t.closest('button, input, select, textarea, a')) return;
     dragRef.current = { sx: e.clientX, sy: e.clientY, bx: pos.x, by: pos.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onDragMove = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
-    setPos({ x: dragRef.current.bx + e.clientX - dragRef.current.sx, y: dragRef.current.by + e.clientY - dragRef.current.sy });
+    const rawX = dragRef.current.bx + e.clientX - dragRef.current.sx;
+    const rawY = dragRef.current.by + e.clientY - dragRef.current.sy;
+    const halfW = window.innerWidth / 2;
+    const halfH = window.innerHeight / 2;
+    setPos({
+      x: Math.max(-halfW, Math.min(halfW, rawX)),
+      y: Math.max(-halfH, Math.min(halfH, rawY)),
+    });
   };
   const onDragEnd = () => { dragRef.current = null; };
   /** When non-null, the modal is editing an existing stored edge rather
