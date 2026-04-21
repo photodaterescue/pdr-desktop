@@ -599,7 +599,6 @@ export function TreesView() {
             personId={editRelationshipsFor}
             personName={person.name}
             persons={allPersons}
-            graph={graph}
             onClose={() => setEditRelationshipsFor(null)}
             onEditEdge={(otherId) => {
               // Hand off to SetRelationshipModal with the other side

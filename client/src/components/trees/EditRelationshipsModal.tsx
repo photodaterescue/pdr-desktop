@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { X, Pencil, Plus, Trash2, Users } from 'lucide-react';
-import { removeRelationship, type FamilyGraph, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import { removeRelationship, listRelationshipsForPerson, type RelationshipRecord } from '@/lib/electron-bridge';
 import { promptConfirm } from './promptConfirm';
 
 interface PersonSummary { id: number; name: string; }
@@ -9,7 +9,6 @@ interface EditRelationshipsModalProps {
   personId: number;
   personName: string;
   persons: PersonSummary[];
-  graph: FamilyGraph | null;
   onClose: () => void;
   /** Fired when the user clicks Edit on a specific edge — parent opens
    *  SetRelationshipModal with initialToPersonId set. */
@@ -29,7 +28,7 @@ interface EditRelationshipsModalProps {
  * reachable by right-click → Unlink + re-add, which wiped too much.
  */
 export function EditRelationshipsModal({
-  personId, personName, persons, graph, onClose, onEditEdge, onAddNew, onChanged,
+  personId, personName, persons, onClose, onEditEdge, onAddNew, onChanged,
 }: EditRelationshipsModalProps) {
   const nameOf = useMemo(() => {
     const m = new Map<number, string>();
@@ -37,21 +36,37 @@ export function EditRelationshipsModal({
     return (id: number) => m.get(id) ?? 'Unknown';
   }, [persons]);
 
+  // Fetch directly from the DB instead of reading the visible tree
+  // graph — people outside the current viewport (or linked via an
+  // accidental inverted edge the tree can't render) would otherwise
+  // be hidden from this list. Refetch on every remove so the list
+  // stays in sync with the DB.
+  const [edges, setEdges] = useState<RelationshipRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [bump, setBump] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listRelationshipsForPerson(personId).then(r => {
+      if (cancelled) return;
+      if (r.success && r.data) setEdges(r.data);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [personId, bump]);
+
   const rows = useMemo(() => {
-    if (!graph) return [] as Array<{ edge: FamilyGraphEdge; otherId: number; label: string; otherName: string }>;
-    const out: Array<{ edge: FamilyGraphEdge; otherId: number; label: string; otherName: string }> = [];
-    for (const e of graph.edges) {
-      if (e.derived) continue;
-      if (e.id == null) continue; // derived edges have no id; defensive
-      const aIsMe = e.aId === personId;
-      const bIsMe = e.bId === personId;
+    const out: Array<{ edge: RelationshipRecord; otherId: number; label: string; otherName: string }> = [];
+    for (const e of edges) {
+      const aIsMe = e.person_a_id === personId;
+      const bIsMe = e.person_b_id === personId;
       if (!aIsMe && !bIsMe) continue;
-      const otherId = aIsMe ? e.bId : e.aId;
-      out.push({ edge: e, otherId, label: relationshipLabel(e, aIsMe), otherName: nameOf(otherId) });
+      const otherId = aIsMe ? e.person_b_id : e.person_a_id;
+      out.push({ edge: e, otherId, label: relationshipLabelFromRecord(e, aIsMe), otherName: nameOf(otherId) });
     }
     // Group by type for legibility: parent/child first, then partner,
     // then siblings, then everything else. Alpha within group.
-    const typeOrder = (r: { edge: FamilyGraphEdge; label: string }) => {
+    const typeOrder = (r: { label: string }) => {
       if (r.label.startsWith('Parent')) return 0;
       if (r.label.startsWith('Child')) return 1;
       if (r.label.startsWith('Partner') || r.label.startsWith('Ex-partner')) return 2;
@@ -64,10 +79,9 @@ export function EditRelationshipsModal({
       return a.otherName.localeCompare(b.otherName);
     });
     return out;
-  }, [graph, personId, nameOf]);
+  }, [edges, personId, nameOf]);
 
-  const handleRemove = async (edge: FamilyGraphEdge, label: string, otherName: string) => {
-    if (edge.id == null) return;
+  const handleRemove = async (edge: RelationshipRecord, label: string, otherName: string) => {
     const ok = await promptConfirm({
       title: 'Remove relationship?',
       message: `This removes only the "${label.toLowerCase()} — ${otherName}" link. The other person and all of their other relationships are kept.`,
@@ -76,7 +90,10 @@ export function EditRelationshipsModal({
     });
     if (!ok) return;
     const r = await removeRelationship(edge.id);
-    if (r.success) onChanged();
+    if (r.success) {
+      setBump(b => b + 1); // refetch the list
+      onChanged();         // refresh the tree
+    }
   };
 
   return (
@@ -89,12 +106,16 @@ export function EditRelationshipsModal({
           <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
             <X className="w-4 h-4" />
           </button>
-          <h3 className="text-base font-semibold text-center mb-0.5 px-6">Edit relationships</h3>
-          <p className="text-xs text-muted-foreground text-center px-6">{personName}</p>
+          <h3 className="text-center px-10">
+            <span className="text-sm text-muted-foreground">Edit relationships for </span>
+            <span className="text-lg font-bold text-foreground">{personName}</span>
+          </h3>
         </div>
 
         <div className="px-4 py-4 flex flex-col gap-2">
-          {rows.length === 0 ? (
+          {loading ? (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : rows.length === 0 ? (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground">
               {personName} has no relationships yet. Use the button below to add the first one.
             </div>
@@ -145,9 +166,9 @@ export function EditRelationshipsModal({
   );
 }
 
-/** Convert a stored edge into a human label from the perspective of
- *  the person whose modal is open (their side = aIsMe). */
-function relationshipLabel(edge: FamilyGraphEdge, aIsMe: boolean): string {
+/** Convert a stored RelationshipRecord into a human label from the
+ *  perspective of the person whose modal is open (their side = aIsMe). */
+function relationshipLabelFromRecord(edge: RelationshipRecord, aIsMe: boolean): string {
   if (edge.type === 'parent_of') {
     return aIsMe ? 'Parent of' : 'Child of';
   }
