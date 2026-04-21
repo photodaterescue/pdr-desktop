@@ -230,9 +230,33 @@ export function TreesView() {
     setLoading(false);
   }, []);
 
-  // Undo / redo handlers — declared here so their useCallback dep
-  // arrays can reference refetchGraph and reloadPersons (declared
-  // above). Placing them near the top of the component hit a
+  // Total fetch depth = max(whichever filter is active, deepest pinned
+  // pathway). Generations mode needs +1 hop over the deepest shown level
+  // to capture same-generation spouses reached through a spouse_of edge.
+  const fetchDepth = useMemo(() => {
+    const stepsReach = stepsEnabled ? expandedHops : 0;
+    const gensReach = generationsEnabled
+      ? Math.max(ancestorsDepth, descendantsDepth) + 1
+      : 0;
+    let max = Math.max(stepsReach, gensReach, 1); // floor at 1 so "both off" still fetches focus + immediate neighbours for any add-flows
+    for (const hop of pinnedPeople.values()) max = Math.max(max, hop);
+    return Math.min(max, 10); // safety cap
+  }, [stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, pinnedPeople]);
+
+  useEffect(() => {
+    if (focusPersonId == null) return;
+    if (lastFocusRef.current !== focusPersonId) {
+      // Focus changed → pins are from the previous focus's perspective,
+      // so drop them rather than keep stale hop numbers around.
+      setPinnedPeople(new Map());
+      lastFocusRef.current = focusPersonId;
+    }
+    refetchGraph(focusPersonId, fetchDepth);
+  }, [focusPersonId, fetchDepth, refetchGraph]);
+
+  // Undo / redo — declared here because the deps reference refetchGraph,
+  // reloadPersons, AND fetchDepth, which are all defined in the hooks
+  // above this point. Declaring these callbacks earlier caused a
   // temporal-dead-zone crash on mount.
   const handleUndo = useCallback(async () => {
     const r = await undoGraphOperation();
@@ -260,7 +284,7 @@ export function TreesView() {
 
   // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or
   // Ctrl/Cmd+Y = redo. Ignored when a text input is focused so the
-  // user's typing undo still works as expected in name fields.
+  // user's typing-undo still works in name fields.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const inText = (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA');
@@ -279,30 +303,6 @@ export function TreesView() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [handleUndo, handleRedo]);
-
-  // Total fetch depth = max(whichever filter is active, deepest pinned
-  // pathway). Generations mode needs +1 hop over the deepest shown level
-  // to capture same-generation spouses reached through a spouse_of edge.
-  const fetchDepth = useMemo(() => {
-    const stepsReach = stepsEnabled ? expandedHops : 0;
-    const gensReach = generationsEnabled
-      ? Math.max(ancestorsDepth, descendantsDepth) + 1
-      : 0;
-    let max = Math.max(stepsReach, gensReach, 1); // floor at 1 so "both off" still fetches focus + immediate neighbours for any add-flows
-    for (const hop of pinnedPeople.values()) max = Math.max(max, hop);
-    return Math.min(max, 10); // safety cap
-  }, [stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, pinnedPeople]);
-
-  useEffect(() => {
-    if (focusPersonId == null) return;
-    if (lastFocusRef.current !== focusPersonId) {
-      // Focus changed → pins are from the previous focus's perspective,
-      // so drop them rather than keep stale hop numbers around.
-      setPinnedPeople(new Map());
-      lastFocusRef.current = focusPersonId;
-    }
-    refetchGraph(focusPersonId, fetchDepth);
-  }, [focusPersonId, fetchDepth, refetchGraph]);
 
   // ─── Generation-offset BFS ──────────────────────────────────────
   // For each person in the graph, compute their generation relative to
