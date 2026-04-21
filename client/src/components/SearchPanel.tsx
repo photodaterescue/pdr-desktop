@@ -1067,42 +1067,56 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
           {/* Right: status + controls + theme/license */}
           <div className="flex items-center gap-2 pr-3 shrink-0">
+            {/* Indexing pill — takes over the whole status region (it's a
+                distinct phase from AI; showing both simultaneously would
+                just be noise). */}
             {isIndexing && indexingProgress ? (
               <span className="flex items-center gap-1.5 text-xs text-white font-medium bg-white/15 px-2.5 py-1 rounded-full animate-pulse">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 Indexing {indexingProgress.current.toLocaleString()}/{indexingProgress.total.toLocaleString()}
               </span>
-            ) : aiProcessing ? (
-              <span className={`flex items-center gap-1.5 text-xs text-white font-medium ${aiProgress?.phase === 'paused' ? 'bg-amber-500/30' : 'bg-purple-500/30'} px-2.5 py-1 rounded-full ${aiProgress?.phase === 'paused' ? '' : 'animate-pulse'}`}>
-                {aiProgress?.phase === 'paused' ? (
-                  <Pause className="w-3.5 h-3.5" />
-                ) : (
-                  <Brain className="w-3.5 h-3.5 animate-spin" />
-                )}
-                {!aiProgress ? 'Starting AI analysis...' :
-                 aiProgress.phase === 'downloading-models' ? `Downloading AI models${aiProgress.modelDownloadProgress ? ` (${aiProgress.modelDownloadProgress.percent}%)` : ''}...` :
-                 aiProgress.phase === 'clustering' ? 'Clustering faces...' :
-                 aiProgress.phase === 'paused' ? `Paused ${aiProgress.current}/${aiProgress.total}` :
-                 `Analyzing ${aiProgress.current}/${aiProgress.total}`}
-                {aiProgress?.phase === 'paused' ? (
-                  <button onClick={() => resumeAi()} className="ml-1 hover:text-white/90" title="Resume"><Play className="w-3 h-3" /></button>
-                ) : (
-                  <button onClick={() => pauseAi()} className="ml-1 hover:text-white/90" title="Pause"><Pause className="w-3 h-3" /></button>
-                )}
-                <button onClick={() => cancelAi()} className="ml-0.5 hover:text-white/90" title="Cancel"><X className="w-3 h-3" /></button>
-              </span>
-            ) : stats && stats.totalFiles > 0 ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-white/80 flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-full">
-                  <Database className="w-3.5 h-3.5" />{stats.totalFiles.toLocaleString()} in library
-                </span>
-                {aiEnabled && aiStats && aiStats.totalProcessed > 0 && (
-                  <span className="text-xs text-white/80 flex items-center gap-1 bg-purple-500/20 px-2 py-1 rounded-full" title={`${aiStats.totalProcessed} photos analyzed — ${aiStats.totalFaces} faces, ${aiStats.totalTags} tags detected`}>
-                    <Sparkles className="w-3 h-3" />{aiStats.totalProcessed} photos analyzed
+            ) : (
+              <>
+                {/* AI progress pill — left of the stats so the counters
+                    stay visible throughout. Label reads "Tagging" for
+                    tags-only re-analysis runs and "Analyzing" for the
+                    combined faces+tags flow. */}
+                {aiProcessing && (
+                  <span className={`flex items-center gap-1.5 text-xs text-white font-medium ${aiProgress?.phase === 'paused' ? 'bg-amber-500/30' : 'bg-purple-500/30'} px-2.5 py-1 rounded-full ${aiProgress?.phase === 'paused' ? '' : 'animate-pulse'}`}>
+                    {aiProgress?.phase === 'paused' ? (
+                      <Pause className="w-3.5 h-3.5" />
+                    ) : (
+                      <Brain className="w-3.5 h-3.5 animate-spin" />
+                    )}
+                    {!aiProgress ? 'Starting AI analysis...' :
+                     aiProgress.phase === 'downloading-models' ? `Downloading AI models${aiProgress.modelDownloadProgress ? ` (${aiProgress.modelDownloadProgress.percent}%)` : ''}...` :
+                     aiProgress.phase === 'clustering' ? 'Clustering faces...' :
+                     aiProgress.phase === 'paused' ? `Paused ${aiProgress.current}/${aiProgress.total}` :
+                     `${aiProgress.tagsOnly ? 'Tagging' : 'Analyzing'} ${aiProgress.current}/${aiProgress.total}`}
+                    {aiProgress?.phase === 'paused' ? (
+                      <button onClick={() => resumeAi()} className="ml-1 hover:text-white/90" title="Resume"><Play className="w-3 h-3" /></button>
+                    ) : (
+                      <button onClick={() => pauseAi()} className="ml-1 hover:text-white/90" title="Pause"><Pause className="w-3 h-3" /></button>
+                    )}
+                    <button onClick={() => cancelAi()} className="ml-0.5 hover:text-white/90" title="Cancel"><X className="w-3 h-3" /></button>
                   </span>
                 )}
-              </div>
-            ) : null}
+                {/* Stats pills — always shown when the library is populated,
+                    even during AI processing, so users keep their bearings. */}
+                {stats && stats.totalFiles > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-white/80 flex items-center gap-1.5 bg-white/10 px-2.5 py-1 rounded-full">
+                      <Database className="w-3.5 h-3.5" />{stats.totalFiles.toLocaleString()} in library
+                    </span>
+                    {aiEnabled && aiStats && aiStats.totalProcessed > 0 && (
+                      <span className="text-xs text-white/80 flex items-center gap-1 bg-purple-500/20 px-2 py-1 rounded-full" title={`${aiStats.totalProcessed} photos analyzed — ${aiStats.totalFaces} faces, ${aiStats.totalTags} tags detected`}>
+                        <Sparkles className="w-3 h-3" />{aiStats.totalProcessed} photos analyzed
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
             <button onClick={() => setShowCustomise(true)} className="p-1 rounded hover:bg-white/20 text-white/70 hover:text-white transition-colors" title="Customise favourite filters">
               <SlidersHorizontal className="w-3.5 h-3.5" />
             </button>

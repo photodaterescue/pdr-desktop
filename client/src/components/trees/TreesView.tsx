@@ -41,12 +41,16 @@ export function TreesView() {
   const [graph, setGraph] = useState<FamilyGraph | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedHops, setExpandedHops] = useState(3);
-  // 'steps' = undirected hops (the original control). 'generations' =
-  // vertical ancestor/descendant generations with siblings and spouses
-  // of each shown level included automatically. Trees get overwhelming
-  // quickly so both modes are useful: steps for casting a wide net,
-  // generations for the traditional 5-generation wall-chart view.
-  const [viewMode, setViewMode] = useState<'steps' | 'generations'>('steps');
+  // Two independent filters, each can be on or off:
+  //   • Steps — undirected hops from focus (wide net, includes cousins
+  //     and in-laws at each step).
+  //   • Generations — vertical ancestor/descendant depth, with siblings
+  //     and spouses at each level included automatically.
+  // When both are ON, a person must satisfy BOTH criteria (intersection)
+  // to be shown — the two filters compose rather than replace each other.
+  // When both are OFF, only the focus person is visible.
+  const [stepsEnabled, setStepsEnabled] = useState(true);
+  const [generationsEnabled, setGenerationsEnabled] = useState(false);
   const [ancestorsDepth, setAncestorsDepth] = useState(2);
   const [descendantsDepth, setDescendantsDepth] = useState(2);
   const [allPersons, setAllPersons] = useState<PersonSummary[]>([]);
@@ -126,18 +130,18 @@ export function TreesView() {
     setLoading(false);
   }, []);
 
-  // Total fetch depth = max(user's Depth selection, deepest pinned pathway).
-  // In Generations mode we need enough hops to cover the deepest ancestor/
-  // descendant plus one extra for their spouses (same-generation, 1 hop
-  // sideways through a spouse_of edge). Ensures pinned people are in the
-  // returned graph so their shortest-path ancestry can be computed client-side.
+  // Total fetch depth = max(whichever filter is active, deepest pinned
+  // pathway). Generations mode needs +1 hop over the deepest shown level
+  // to capture same-generation spouses reached through a spouse_of edge.
   const fetchDepth = useMemo(() => {
-    let max = viewMode === 'steps'
-      ? expandedHops
-      : Math.max(ancestorsDepth, descendantsDepth) + 1;
+    const stepsReach = stepsEnabled ? expandedHops : 0;
+    const gensReach = generationsEnabled
+      ? Math.max(ancestorsDepth, descendantsDepth) + 1
+      : 0;
+    let max = Math.max(stepsReach, gensReach, 1); // floor at 1 so "both off" still fetches focus + immediate neighbours for any add-flows
     for (const hop of pinnedPeople.values()) max = Math.max(max, hop);
     return Math.min(max, 10); // safety cap
-  }, [viewMode, expandedHops, ancestorsDepth, descendantsDepth, pinnedPeople]);
+  }, [stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, pinnedPeople]);
 
   useEffect(() => {
     if (focusPersonId == null) return;
@@ -203,15 +207,19 @@ export function TreesView() {
   const visibleGraph = useMemo(() => {
     if (!graph || focusPersonId == null) return graph;
     const visible = new Set<number>();
-    if (viewMode === 'generations') {
+    // Always show the focus person regardless of filters — they're the
+    // anchor the view is centred on.
+    visible.add(focusPersonId);
+    // Apply filters: intersection when both on, single when one on,
+    // nothing extra when both off (focus-only).
+    if (stepsEnabled || generationsEnabled) {
       for (const n of graph.nodes) {
+        const passesSteps = !stepsEnabled ? true : n.hopsFromFocus <= expandedHops;
         const gen = generationOffsets.get(n.personId);
-        if (gen == null) continue;
-        if (gen >= -descendantsDepth && gen <= ancestorsDepth) visible.add(n.personId);
-      }
-    } else {
-      for (const n of graph.nodes) {
-        if (n.hopsFromFocus <= expandedHops) visible.add(n.personId);
+        const passesGens = !generationsEnabled
+          ? true
+          : (gen != null && gen >= -descendantsDepth && gen <= ancestorsDepth);
+        if (passesSteps && passesGens) visible.add(n.personId);
       }
     }
     if (pinnedPeople.size > 0) {
@@ -233,15 +241,17 @@ export function TreesView() {
       nodes: graph.nodes.filter(n => visible.has(n.personId)),
       edges: graph.edges.filter(e => visible.has(e.aId) && visible.has(e.bId)),
     };
-  }, [graph, focusPersonId, viewMode, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets, pinnedPeople]);
+  }, [graph, focusPersonId, stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets, pinnedPeople]);
 
   // Augment the visible graph with virtual ghost parents for every named
   // person that has fewer than 2 stored parents (one generation only).
-  // In Generations mode we hand the layout the larger of the two depths
-  // so the spacing accommodates the deepest visible branch.
-  const effectiveLayoutHops = viewMode === 'generations'
-    ? Math.max(ancestorsDepth, descendantsDepth)
-    : expandedHops;
+  // Layout depth uses the widest active filter so spacing accommodates
+  // the deepest visible branch.
+  const effectiveLayoutHops = Math.max(
+    stepsEnabled ? expandedHops : 0,
+    generationsEnabled ? Math.max(ancestorsDepth, descendantsDepth) : 0,
+    1, // never 0 — layout needs breathing room even in focus-only view
+  );
   const layoutGraph = visibleGraph ? augmentWithVirtualGhosts(visibleGraph, effectiveLayoutHops) : null;
   const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops) : null;
 
@@ -377,87 +387,80 @@ export function TreesView() {
                 {pinnedPeople.size} pinned
               </button>
             )}
-            {/* Mode toggle: Steps (undirected hops) vs Generations
-                (vertical ancestor/descendant depth). Both control how
-                much of the graph is rendered, but differently — steps
-                cast a wide net including siblings/cousins/in-laws;
-                generations walk up/down the family tree with siblings
-                and spouses at each level included automatically. */}
-            <div className="inline-flex items-center rounded-lg border border-border p-0.5 text-xs bg-background" role="tablist">
+            {/* Steps filter — toggle + always-visible Depth dropdown.
+                Fields stay rendered (just dimmed) when the toggle is
+                off so the header layout never jumps between states. */}
+            <div className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-lg border border-border bg-background">
               <button
-                onClick={() => setViewMode('steps')}
-                className={`px-2 py-0.5 rounded transition-colors ${viewMode === 'steps' ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-accent'}`}
-                title="Undirected hops out from focus — includes siblings, cousins, and in-laws equally as each step expands."
+                onClick={() => setStepsEnabled(v => !v)}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${stepsEnabled ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-accent'}`}
+                title={stepsEnabled
+                  ? 'Click to turn off the Steps filter. With both filters off, only the focus person is shown.'
+                  : 'Turn on Steps — undirected hops from focus. Includes siblings, cousins, in-laws equally as each step expands.'}
+                aria-pressed={stepsEnabled}
               >
                 Steps
               </button>
+              <select
+                value={expandedHops}
+                onChange={e => setExpandedHops(parseInt(e.target.value, 10))}
+                disabled={!stepsEnabled}
+                className={`bg-background border border-border rounded px-1 py-0 text-xs ${stepsEnabled ? '' : 'opacity-40'}`}
+                title="Hops from focus: 1 = parents/partners/siblings/children only. Higher values reach further."
+              >
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+                <option value={4}>4</option>
+                <option value={5}>5</option>
+                <option value={6}>6</option>
+              </select>
+            </div>
+            {/* Generations filter — toggle + always-visible ↑ / ↓ dials. */}
+            <div className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-lg border border-border bg-background">
               <button
-                onClick={() => setViewMode('generations')}
-                className={`px-2 py-0.5 rounded transition-colors ${viewMode === 'generations' ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-accent'}`}
-                title="Ancestors above, descendants below. Siblings and spouses at each shown generation are included automatically."
+                onClick={() => setGenerationsEnabled(v => !v)}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${generationsEnabled ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-accent'}`}
+                title={generationsEnabled
+                  ? 'Click to turn off the Generations filter.'
+                  : 'Turn on Generations — vertical ancestor/descendant depth. Siblings and spouses at each shown generation come along automatically.'}
+                aria-pressed={generationsEnabled}
               >
                 Generations
               </button>
-            </div>
-            {viewMode === 'steps' ? (
-              <label
-                className="inline-flex items-center gap-2 text-xs text-muted-foreground"
-                title="How many steps out from the focus person to walk. 1 = only parents/partners/siblings/children. 2 = +grandparents, aunts, uncles, nephews, in-laws. Higher numbers reach further."
-              >
-                Depth
+              <label className={`inline-flex items-center gap-0.5 text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`} title="Generations above focus (parents, grandparents…)">
+                ↑
                 <select
-                  value={expandedHops}
-                  onChange={e => setExpandedHops(parseInt(e.target.value, 10))}
-                  className="bg-background border border-border rounded px-1.5 py-0.5 text-sm"
+                  value={ancestorsDepth}
+                  onChange={e => setAncestorsDepth(parseInt(e.target.value, 10))}
+                  disabled={!generationsEnabled}
+                  className={`bg-background border border-border rounded px-1 py-0 text-xs ${generationsEnabled ? '' : 'opacity-40'}`}
                 >
-                  <option value={1}>1 step</option>
-                  <option value={2}>2 steps</option>
-                  <option value={3}>3 steps</option>
-                  <option value={4}>4 steps</option>
-                  <option value={5}>5 steps</option>
-                  <option value={6}>6 steps</option>
+                  <option value={0}>0</option>
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={3}>3</option>
+                  <option value={4}>4</option>
+                  <option value={5}>5</option>
                 </select>
               </label>
-            ) : (
-              <>
-                <label
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-                  title="Generations above the focus person: parents, grandparents, great-grandparents…"
+              <label className={`inline-flex items-center gap-0.5 text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`} title="Generations below focus (children, grandchildren…)">
+                ↓
+                <select
+                  value={descendantsDepth}
+                  onChange={e => setDescendantsDepth(parseInt(e.target.value, 10))}
+                  disabled={!generationsEnabled}
+                  className={`bg-background border border-border rounded px-1 py-0 text-xs ${generationsEnabled ? '' : 'opacity-40'}`}
                 >
-                  ↑
-                  <select
-                    value={ancestorsDepth}
-                    onChange={e => setAncestorsDepth(parseInt(e.target.value, 10))}
-                    className="bg-background border border-border rounded px-1.5 py-0.5 text-sm"
-                  >
-                    <option value={0}>0</option>
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                    <option value={4}>4</option>
-                    <option value={5}>5</option>
-                  </select>
-                </label>
-                <label
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-                  title="Generations below the focus person: children, grandchildren, great-grandchildren…"
-                >
-                  ↓
-                  <select
-                    value={descendantsDepth}
-                    onChange={e => setDescendantsDepth(parseInt(e.target.value, 10))}
-                    className="bg-background border border-border rounded px-1.5 py-0.5 text-sm"
-                  >
-                    <option value={0}>0</option>
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                    <option value={4}>4</option>
-                    <option value={5}>5</option>
-                  </select>
-                </label>
-              </>
-            )}
+                  <option value={0}>0</option>
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={3}>3</option>
+                  <option value={4}>4</option>
+                  <option value={5}>5</option>
+                </select>
+              </label>
+            </div>
             <button
               onClick={() => focusPersonId != null && refetchGraph(focusPersonId, fetchDepth)}
               className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors"

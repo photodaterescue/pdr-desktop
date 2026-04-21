@@ -1216,6 +1216,8 @@ export interface AiProgress {
   facesFound: number;
   tagsApplied: number;
   modelDownloadProgress?: { model: string; percent: number };
+  /** True when the current run is tags-only re-tagging. */
+  tagsOnly?: boolean;
 }
 
 export interface PersonRecord {

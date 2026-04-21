@@ -21,6 +21,9 @@ let worker = null;
 let isProcessing = false;
 let shouldCancel = false;
 let isPaused = false;
+// Track whether the active run is tags-only so every sendProgress call
+// picks up the flag without having to thread it through manually.
+let currentRunTagsOnly = false;
 let mainWindow = null;
 let totalFacesFound = 0;
 let totalTagsApplied = 0;
@@ -106,6 +109,7 @@ export async function startAiProcessing(opts) {
     shouldCancel = false;
     totalFacesFound = 0;
     totalTagsApplied = 0;
+    currentRunTagsOnly = tagsOnly;
     // Prevent the system from sleeping while AI processing is running
     if (powerSaveBlockerId === null) {
         powerSaveBlockerId = powerSaveBlocker.start('prevent-app-suspension');
@@ -460,6 +464,10 @@ function cosineSimilarity(a, b) {
 }
 // ─── Progress IPC ──────────────────────────────────────────────────────────
 function sendProgress(progress) {
+    // Tag every progress payload with the active run's tagsOnly flag so
+    // the renderer can show "Tagging X/Y" vs "Analyzing X/Y" without
+    // having to track state on its side.
+    const payload = { ...progress, tagsOnly: currentRunTagsOnly };
     // Broadcast to EVERY open renderer window — main, People Manager,
     // Date Editor, etc. — so any window subscribed to `ai:progress`
     // sees the same counter updates. Previously only mainWindow got them,
@@ -469,7 +477,7 @@ function sendProgress(progress) {
         if (win.isDestroyed())
             continue;
         try {
-            win.webContents.send('ai:progress', progress);
+            win.webContents.send('ai:progress', payload);
         }
         catch { }
     }

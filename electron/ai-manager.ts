@@ -44,6 +44,9 @@ export interface AiProgress {
   facesFound: number;
   tagsApplied: number;
   modelDownloadProgress?: { model: string; percent: number };
+  /** True when the current run is tags-only (re-tagging). Drives the
+   *  UI label — "Tagging X/Y" vs the generic "Analyzing X/Y". */
+  tagsOnly?: boolean;
 }
 
 interface WorkerMessage {
@@ -82,6 +85,9 @@ let worker: Worker | null = null;
 let isProcessing = false;
 let shouldCancel = false;
 let isPaused = false;
+// Track whether the active run is tags-only so every sendProgress call
+// picks up the flag without having to thread it through manually.
+let currentRunTagsOnly = false;
 let mainWindow: BrowserWindow | null = null;
 let totalFacesFound = 0;
 let totalTagsApplied = 0;
@@ -172,6 +178,7 @@ export async function startAiProcessing(opts?: { tagsOnly?: boolean }): Promise<
   shouldCancel = false;
   totalFacesFound = 0;
   totalTagsApplied = 0;
+  currentRunTagsOnly = tagsOnly;
 
   // Prevent the system from sleeping while AI processing is running
   if (powerSaveBlockerId === null) {
@@ -547,6 +554,10 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 // ─── Progress IPC ──────────────────────────────────────────────────────────
 
 function sendProgress(progress: AiProgress): void {
+  // Tag every progress payload with the active run's tagsOnly flag so
+  // the renderer can show "Tagging X/Y" vs "Analyzing X/Y" without
+  // having to track state on its side.
+  const payload: AiProgress = { ...progress, tagsOnly: currentRunTagsOnly };
   // Broadcast to EVERY open renderer window — main, People Manager,
   // Date Editor, etc. — so any window subscribed to `ai:progress`
   // sees the same counter updates. Previously only mainWindow got them,
@@ -554,6 +565,6 @@ function sendProgress(progress: AiProgress): void {
   // visibility into analysis progress.
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
-    try { win.webContents.send('ai:progress', progress); } catch {}
+    try { win.webContents.send('ai:progress', payload); } catch {}
   }
 }
