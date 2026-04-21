@@ -321,6 +321,25 @@ export function initDatabase() {
         catch (migErr) {
             console.error('[DB] Relationships migration failed:', migErr);
         }
+        // Saved trees — named view presets. Each captures a focus person +
+        // filter state (Steps on/off + depth, Generations on/off + ↑/↓ depths).
+        // Auto-saved as the user tweaks controls. Max 5 enforced at the
+        // application layer (see listSavedTrees / saveTreeAs).
+        db.exec(`
+      CREATE TABLE IF NOT EXISTS saved_trees (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                 TEXT NOT NULL,
+        focus_person_id      INTEGER REFERENCES persons(id) ON DELETE SET NULL,
+        steps_enabled        INTEGER NOT NULL DEFAULT 1,
+        steps_depth          INTEGER NOT NULL DEFAULT 3,
+        generations_enabled  INTEGER NOT NULL DEFAULT 0,
+        ancestors_depth      INTEGER NOT NULL DEFAULT 2,
+        descendants_depth    INTEGER NOT NULL DEFAULT 2,
+        last_opened_at       TEXT,
+        created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
         // Persons life-event + marker columns for Trees.
         if (!personColNames.has('birth_date')) {
             try {
@@ -2885,6 +2904,99 @@ export function getPartnerSuggestionScores(anchorId) {
     GROUP BY p.id, p.name, p.avatar_data, p.representative_face_id
     ORDER BY score DESC, shared_photo_count DESC
   `).all(anchorId, anchorId, anchorId, anchorId);
+}
+const SAVED_TREE_CAP = 5;
+function rowToSavedTree(row) {
+    return {
+        id: row.id,
+        name: row.name,
+        focusPersonId: row.focus_person_id,
+        stepsEnabled: row.steps_enabled === 1,
+        stepsDepth: row.steps_depth,
+        generationsEnabled: row.generations_enabled === 1,
+        ancestorsDepth: row.ancestors_depth,
+        descendantsDepth: row.descendants_depth,
+        lastOpenedAt: row.last_opened_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+    };
+}
+export function listSavedTrees() {
+    const db = getDb();
+    const rows = db.prepare(`
+    SELECT * FROM saved_trees
+    ORDER BY COALESCE(last_opened_at, created_at) DESC
+  `).all();
+    return rows.map(rowToSavedTree);
+}
+export function getSavedTree(id) {
+    const db = getDb();
+    const row = db.prepare(`SELECT * FROM saved_trees WHERE id = ?`).get(id);
+    return row ? rowToSavedTree(row) : null;
+}
+export function createSavedTree(args) {
+    const db = getDb();
+    const count = db.prepare(`SELECT COUNT(*) AS cnt FROM saved_trees`).get().cnt;
+    if (count >= SAVED_TREE_CAP) {
+        return { success: false, error: `You already have ${SAVED_TREE_CAP} saved trees — the maximum. Remove one in Manage Trees to create another.` };
+    }
+    const info = db.prepare(`
+    INSERT INTO saved_trees (
+      name, focus_person_id, steps_enabled, steps_depth,
+      generations_enabled, ancestors_depth, descendants_depth,
+      last_opened_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(args.name.trim() || 'Untitled tree', args.focusPersonId, args.stepsEnabled ? 1 : 0, args.stepsDepth, args.generationsEnabled ? 1 : 0, args.ancestorsDepth, args.descendantsDepth);
+    const record = getSavedTree(info.lastInsertRowid);
+    return record ? { success: true, data: record } : { success: false, error: 'Insert failed.' };
+}
+export function updateSavedTree(id, patch) {
+    const db = getDb();
+    const existing = getSavedTree(id);
+    if (!existing)
+        return { success: false, error: 'Tree not found.' };
+    const sets = [];
+    const values = [];
+    if (patch.name != null) {
+        sets.push('name = ?');
+        values.push(patch.name.trim() || 'Untitled tree');
+    }
+    if (patch.focusPersonId !== undefined) {
+        sets.push('focus_person_id = ?');
+        values.push(patch.focusPersonId);
+    }
+    if (patch.stepsEnabled != null) {
+        sets.push('steps_enabled = ?');
+        values.push(patch.stepsEnabled ? 1 : 0);
+    }
+    if (patch.stepsDepth != null) {
+        sets.push('steps_depth = ?');
+        values.push(patch.stepsDepth);
+    }
+    if (patch.generationsEnabled != null) {
+        sets.push('generations_enabled = ?');
+        values.push(patch.generationsEnabled ? 1 : 0);
+    }
+    if (patch.ancestorsDepth != null) {
+        sets.push('ancestors_depth = ?');
+        values.push(patch.ancestorsDepth);
+    }
+    if (patch.descendantsDepth != null) {
+        sets.push('descendants_depth = ?');
+        values.push(patch.descendantsDepth);
+    }
+    if (patch.markOpened) {
+        sets.push(`last_opened_at = datetime('now')`);
+    }
+    sets.push(`updated_at = datetime('now')`);
+    db.prepare(`UPDATE saved_trees SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
+    const record = getSavedTree(id);
+    return record ? { success: true, data: record } : { success: false, error: 'Update failed.' };
+}
+export function deleteSavedTree(id) {
+    const db = getDb();
+    db.prepare(`DELETE FROM saved_trees WHERE id = ?`).run(id);
+    return { success: true };
 }
 // ═══════════════════════════════════════════════════════════════
 // Trees v1 — placeholder persons (skip-generation bridges)

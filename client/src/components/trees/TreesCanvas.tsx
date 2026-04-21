@@ -239,6 +239,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     <div className="absolute inset-0 select-none">
       <svg
         ref={svgRef}
+        data-tree-canvas="true"
         className="w-full h-full bg-[radial-gradient(circle,_rgba(167,139,250,0.06)_1px,_transparent_1px)] [background-size:24px_24px] cursor-grab active:cursor-grabbing"
         onWheel={handleWheel}
         onMouseDown={handlePanStart}

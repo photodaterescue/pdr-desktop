@@ -1127,6 +1127,58 @@ export async function getPartnerSuggestionScores(anchorId: number): Promise<{ su
   return { success: false, error: 'Not running in Electron' };
 }
 
+export interface SavedTreeRecord {
+  id: number;
+  name: string;
+  focusPersonId: number | null;
+  stepsEnabled: boolean;
+  stepsDepth: number;
+  generationsEnabled: boolean;
+  ancestorsDepth: number;
+  descendantsDepth: number;
+  lastOpenedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedTreeSettings {
+  name: string;
+  focusPersonId: number | null;
+  stepsEnabled: boolean;
+  stepsDepth: number;
+  generationsEnabled: boolean;
+  ancestorsDepth: number;
+  descendantsDepth: number;
+}
+
+export async function listSavedTrees(): Promise<{ success: boolean; data?: SavedTreeRecord[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.savedList();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function createSavedTree(args: SavedTreeSettings): Promise<{ success: boolean; data?: SavedTreeRecord; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.savedCreate(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function updateSavedTree(id: number, patch: Partial<SavedTreeSettings & { markOpened: boolean }>): Promise<{ success: boolean; data?: SavedTreeRecord; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.savedUpdate({ id, patch });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function deleteSavedTree(id: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.savedDelete(id);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export async function createPlaceholderPerson(): Promise<{ success: boolean; data?: number; error?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
     return (window as any).pdr.trees.createPlaceholderPerson();

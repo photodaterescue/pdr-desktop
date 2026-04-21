@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen } from 'lucide-react';
 import {
   getFamilyGraph,
   listPersons,
@@ -10,13 +10,18 @@ import {
   getPersonsCooccurrence,
   getPartnerSuggestionScores,
   listAllRelationships,
+  listSavedTrees,
+  createSavedTree,
+  updateSavedTree,
   type FamilyGraph,
+  type SavedTreeRecord,
 } from '@/lib/electron-bridge';
 import { computeFocusLayout, augmentWithVirtualGhosts } from '@/lib/trees-layout';
 import { TreesCanvas } from './TreesCanvas';
 import { SetRelationshipModal } from './SetRelationshipModal';
 import { EditRelationshipsModal } from './EditRelationshipsModal';
 import { SiblingKindDialog, type SiblingKind } from './SiblingKindDialog';
+import { ManageTreesModal } from './ManageTreesModal';
 import { promptConfirm } from './promptConfirm';
 
 interface PersonSummary {
@@ -66,6 +71,19 @@ export function TreesView() {
    *  Triggered by the +sibling quick-add; on confirm we run the chosen
    *  flavour of sibling wiring instead of the old assume-full default. */
   const [siblingKindDialog, setSiblingKindDialog] = useState<{ fromId: number; toId: number; fromName: string; toName: string } | null>(null);
+  /** Saved trees — named view presets. Loaded on mount; one is always
+   *  active so the user's current focus/filter state has a place to
+   *  persist to. If none exist at first launch we auto-create one. */
+  const [savedTrees, setSavedTrees] = useState<SavedTreeRecord[]>([]);
+  const [currentTreeId, setCurrentTreeId] = useState<number | null>(null);
+  const [manageTreesOpen, setManageTreesOpen] = useState(false);
+  /** Inline rename of the current tree name in the header. */
+  const [editingTreeName, setEditingTreeName] = useState(false);
+  const [treeNameDraft, setTreeNameDraft] = useState('');
+  /** Suppress auto-save while we're applying a loaded tree's settings
+   *  (otherwise the act of loading would immediately overwrite the
+   *  record we just read). */
+  const applyingTreeRef = useRef(false);
   /** Target of an in-flight quick-add (chip around a node). null = no picker open. */
   const [quickAdd, setQuickAdd] = useState<{
     fromPersonId: number;
@@ -80,6 +98,40 @@ export function TreesView() {
    */
   const [pinnedPeople, setPinnedPeople] = useState<Map<number, number>>(new Map());
   const lastFocusRef = useRef<number | null>(null);
+
+  // ── Saved trees: initial load ──────────────────────────────────
+  // On mount, load every saved tree and activate the most-recently-
+  // opened one. If none exist this is the user's first visit — we
+  // auto-create "My Tree" so the settings auto-save has a target.
+  useEffect(() => {
+    (async () => {
+      const r = await listSavedTrees();
+      if (!r.success) return;
+      const list = r.data ?? [];
+      if (list.length === 0) {
+        // Wait for allPersons / auto-focus to settle before creating —
+        // the tree record needs a focusPersonId to be meaningful.
+        return;
+      }
+      setSavedTrees(list);
+      // Activate the most recently opened one.
+      const activate = list[0];
+      applyingTreeRef.current = true;
+      setCurrentTreeId(activate.id);
+      if (activate.focusPersonId != null) setFocusPersonId(activate.focusPersonId);
+      setStepsEnabled(activate.stepsEnabled);
+      setExpandedHops(activate.stepsDepth);
+      setGenerationsEnabled(activate.generationsEnabled);
+      setAncestorsDepth(activate.ancestorsDepth);
+      setDescendantsDepth(activate.descendantsDepth);
+      // Mark as opened so it stays top of the list.
+      updateSavedTree(activate.id, { markOpened: true });
+      // Release the suppression after one tick so setters settle.
+      setTimeout(() => { applyingTreeRef.current = false; }, 0);
+    })();
+    // Intentionally mount-only — further refreshes come from manage modal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load the person list — used by focus picker and relationship-target
   // picker. Exposed as a callback so modals that create new people can
@@ -327,6 +379,78 @@ export function TreesView() {
     if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
   }, [siblingKindDialog, graph, focusPersonId, fetchDepth, refetchGraph]);
 
+  // ── Saved trees: auto-save on state change ────────────────────
+  // Persist the current filter / focus state to the active tree
+  // whenever anything changes. Suppressed while we're applying a
+  // loaded tree (otherwise we'd immediately overwrite it).
+  useEffect(() => {
+    if (applyingTreeRef.current) return;
+    if (currentTreeId == null) return;
+    if (focusPersonId == null) return; // nothing to save yet
+    updateSavedTree(currentTreeId, {
+      focusPersonId,
+      stepsEnabled,
+      stepsDepth: expandedHops,
+      generationsEnabled,
+      ancestorsDepth,
+      descendantsDepth,
+    });
+  }, [currentTreeId, focusPersonId, stepsEnabled, expandedHops, generationsEnabled, ancestorsDepth, descendantsDepth]);
+
+  // First-visit auto-create: once a focus person has been chosen AND
+  // we have no saved trees yet, mint "My Tree" so auto-save has a
+  // target. Runs once; guarded by the list length.
+  useEffect(() => {
+    if (currentTreeId != null) return;
+    if (focusPersonId == null) return;
+    if (savedTrees.length > 0) return;
+    (async () => {
+      const r = await createSavedTree({
+        name: 'My Tree',
+        focusPersonId,
+        stepsEnabled,
+        stepsDepth: expandedHops,
+        generationsEnabled,
+        ancestorsDepth,
+        descendantsDepth,
+      });
+      if (r.success && r.data) {
+        setSavedTrees([r.data]);
+        setCurrentTreeId(r.data.id);
+      }
+    })();
+  }, [currentTreeId, focusPersonId, savedTrees.length, stepsEnabled, expandedHops, generationsEnabled, ancestorsDepth, descendantsDepth]);
+
+  const currentTree = savedTrees.find(t => t.id === currentTreeId) ?? null;
+
+  const switchToTree = useCallback((tree: SavedTreeRecord) => {
+    applyingTreeRef.current = true;
+    setCurrentTreeId(tree.id);
+    if (tree.focusPersonId != null) setFocusPersonId(tree.focusPersonId);
+    setStepsEnabled(tree.stepsEnabled);
+    setExpandedHops(tree.stepsDepth);
+    setGenerationsEnabled(tree.generationsEnabled);
+    setAncestorsDepth(tree.ancestorsDepth);
+    setDescendantsDepth(tree.descendantsDepth);
+    updateSavedTree(tree.id, { markOpened: true });
+    setManageTreesOpen(false);
+    setTimeout(() => { applyingTreeRef.current = false; }, 0);
+  }, []);
+
+  const reloadSavedTrees = useCallback(async () => {
+    const r = await listSavedTrees();
+    if (r.success && r.data) setSavedTrees(r.data);
+  }, []);
+
+  const commitTreeNameRename = useCallback(async () => {
+    if (currentTreeId == null) { setEditingTreeName(false); return; }
+    const trimmed = treeNameDraft.trim();
+    if (!trimmed) { setEditingTreeName(false); return; }
+    await updateSavedTree(currentTreeId, { name: trimmed });
+    await reloadSavedTrees();
+    setEditingTreeName(false);
+  }, [currentTreeId, treeNameDraft, reloadSavedTrees]);
+
   const handleRelationshipCreated = useCallback(() => {
     // A graph mutation can also change the person table (e.g. a ghost
     // placeholder getting named, or a new named person created via the
@@ -413,13 +537,48 @@ export function TreesView() {
       {/* Header bar */}
       <div className="shrink-0 px-4 py-2 border-b border-border flex items-center gap-3">
         <GitBranch className="w-5 h-5 text-primary" />
-        <h2 className="text-base font-semibold">Trees</h2>
+        {/* Current tree name — click to rename inline. Falls back to
+            'Trees' label while nothing is loaded yet. */}
+        {editingTreeName ? (
+          <input
+            autoFocus
+            value={treeNameDraft}
+            onChange={e => setTreeNameDraft(e.target.value)}
+            onBlur={commitTreeNameRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitTreeNameRename();
+              else if (e.key === 'Escape') setEditingTreeName(false);
+            }}
+            className="text-base font-semibold bg-transparent border-b border-primary outline-none min-w-[12ch] max-w-[30ch]"
+          />
+        ) : (
+          <button
+            onClick={() => {
+              if (!currentTree) return;
+              setTreeNameDraft(currentTree.name);
+              setEditingTreeName(true);
+            }}
+            className="group inline-flex items-center gap-1.5 text-base font-semibold hover:text-primary transition-colors"
+            title={currentTree ? 'Click to rename this tree' : undefined}
+          >
+            {currentTree?.name ?? 'Trees'}
+            {currentTree && <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />}
+          </button>
+        )}
         {graph && (
           <>
             <span className="text-xs text-muted-foreground">
               {graph.nodes.length} {graph.nodes.length === 1 ? 'person' : 'people'} · {graph.edges.filter(e => !e.derived).length} relationships
             </span>
             <div className="flex-1" />
+            <button
+              onClick={() => setManageTreesOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+              title="Rename, switch between, create, export, or remove saved trees"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Manage Trees
+            </button>
             <button
               onClick={() => setFocusPickerOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
@@ -647,6 +806,26 @@ export function TreesView() {
           />
         );
       })()}
+
+      {/* Manage Trees — list, rename, switch, (optionally) remove, and
+          export as PNG / PDF. Opened from the header button. */}
+      {manageTreesOpen && (
+        <ManageTreesModal
+          currentTreeId={currentTreeId}
+          currentFocusPersonId={focusPersonId}
+          liveSettings={{
+            stepsEnabled,
+            stepsDepth: expandedHops,
+            generationsEnabled,
+            ancestorsDepth,
+            descendantsDepth,
+          }}
+          getTreeSvg={() => document.querySelector<SVGSVGElement>('svg[data-tree-canvas="true"]')}
+          onSwitch={switchToTree}
+          onChanged={reloadSavedTrees}
+          onClose={() => setManageTreesOpen(false)}
+        />
+      )}
 
       {/* Sibling kind dialog — fires after the +sibling quick-add picks
           a person. Asks full vs half vs none vs unknown before touching

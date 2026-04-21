@@ -7284,6 +7284,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [allowIndexRemoval, setAllowIndexRemoval] = useState(
     localStorage.getItem('pdr-allow-index-removal') === 'true'
   );
+  const [allowTreeRemoval, setAllowTreeRemoval] = useState(
+    localStorage.getItem('pdr-allow-tree-removal') === 'true'
+  );
   const [showLibraryManager, setShowLibraryManager] = useState(
     localStorage.getItem('pdr-show-library-manager') === 'true'
   );
@@ -7426,6 +7429,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     } else {
       localStorage.removeItem('pdr-allow-report-removal');
     }
+  };
+
+  const handleTreeRemovalToggle = (checked: boolean) => {
+    setAllowTreeRemoval(checked);
+    if (checked) localStorage.setItem('pdr-allow-tree-removal', 'true');
+    else localStorage.removeItem('pdr-allow-tree-removal');
   };
 
   const handleIndexRemovalToggle = (checked: boolean) => {
@@ -8004,6 +8013,18 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     checked={allowIndexRemoval}
                     onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
                     data-testid="checkbox-allow-index-removal"
+                  />
+                </label>
+
+                {/* Allow Tree Removal */}
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Allow Tree Removal</span>
+                    <span className="text-xs text-muted-foreground">Show the Remove button for saved trees in the Manage Trees modal. Off by default to prevent accidental deletion — turning on treats deletion as a deliberate, two-step action.</span>
+                  </div>
+                  <Checkbox
+                    checked={allowTreeRemoval}
+                    onCheckedChange={(checked) => handleTreeRemovalToggle(!!checked)}
                   />
                 </label>
 

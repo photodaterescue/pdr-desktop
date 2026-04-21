@@ -125,6 +125,11 @@ import {
   clearAllAiData,
   resetAllTagAnalysis,
   getUnprocessedFileIds,
+  listSavedTrees,
+  getSavedTree,
+  createSavedTree,
+  updateSavedTree,
+  deleteSavedTree,
   rebuildAiFts,
   getPersonClusters,
   getClusterFaces,
@@ -2533,6 +2538,31 @@ ipcMain.handle('trees:getPartnerSuggestionScores', async (_event, anchorId: numb
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
+});
+
+ipcMain.handle('trees:savedList', async () => {
+  try { return { success: true, data: listSavedTrees() }; }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:savedGet', async (_event, id: number) => {
+  try { return { success: true, data: getSavedTree(id) }; }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:savedCreate', async (_event, args: Parameters<typeof createSavedTree>[0]) => {
+  try { return createSavedTree(args); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:savedUpdate', async (_event, args: { id: number; patch: Parameters<typeof updateSavedTree>[1] }) => {
+  try { return updateSavedTree(args.id, args.patch); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:savedDelete', async (_event, id: number) => {
+  try { return deleteSavedTree(id); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
 });
 
 ipcMain.handle('trees:createPlaceholderPerson', async () => {
