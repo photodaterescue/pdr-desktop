@@ -74,7 +74,7 @@ import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexSta
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, } from './ai-manager.js';
-import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
+import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
 // Update checking
 ipcMain.handle('updates:check', async () => {
     return await checkForUpdates();
@@ -153,14 +153,31 @@ function createWindow() {
     // Zoom is handled purely via CSS transform on the content area — keep Electron at 1.0
     mainWindow.webContents.on('did-finish-load', () => {
         mainWindow.webContents.setZoomFactor(1.0);
-        // Auto-start AI processing on launch if enabled AND models already downloaded
+        // Auto-start AI processing on launch if enabled AND models already downloaded.
+        // Picks up wherever processing left off last time the app was closed —
+        // including a Re-analyze tags run in progress. If only tags are pending
+        // (faces already done), kick off a tagsOnly pass so the queue actually
+        // drains; the plain startAiProcessing() call only looks at the faces
+        // queue when face detection is enabled and would exit as a no-op.
         const settings = getSettings();
         console.log(`[AI] Launch check: aiEnabled=${settings.aiEnabled}, modelsReady=${areModelsDownloaded()}`);
         if (settings.aiEnabled && areModelsDownloaded()) {
             setTimeout(async () => {
                 try {
-                    console.log('[AI] Auto-starting AI processing (models already downloaded)...');
-                    await startAiProcessing();
+                    const pendingFaces = getUnprocessedFileIds('faces', 1).length;
+                    const pendingTags = getUnprocessedFileIds('tags', 1).length;
+                    console.log(`[AI] Auto-start check: pendingFaces=${pendingFaces > 0}, pendingTags=${pendingTags > 0}`);
+                    if (pendingFaces > 0) {
+                        console.log('[AI] Auto-starting AI processing (faces pending)...');
+                        await startAiProcessing();
+                    }
+                    else if (pendingTags > 0) {
+                        console.log('[AI] Auto-starting tags-only processing (resuming previous re-analyze)...');
+                        await startAiProcessing({ tagsOnly: true });
+                    }
+                    else {
+                        console.log('[AI] Nothing pending, no auto-start needed');
+                    }
                     console.log('[AI] Auto-start completed or in progress');
                 }
                 catch (err) {

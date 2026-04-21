@@ -124,6 +124,7 @@ import {
   getAiStats,
   clearAllAiData,
   resetAllTagAnalysis,
+  getUnprocessedFileIds,
   rebuildAiFts,
   getPersonClusters,
   getClusterFaces,
@@ -243,14 +244,29 @@ function createWindow() {
 	mainWindow!.webContents.on('did-finish-load', () => {
 	  mainWindow!.webContents.setZoomFactor(1.0);
 
-	  // Auto-start AI processing on launch if enabled AND models already downloaded
+	  // Auto-start AI processing on launch if enabled AND models already downloaded.
+	  // Picks up wherever processing left off last time the app was closed —
+	  // including a Re-analyze tags run in progress. If only tags are pending
+	  // (faces already done), kick off a tagsOnly pass so the queue actually
+	  // drains; the plain startAiProcessing() call only looks at the faces
+	  // queue when face detection is enabled and would exit as a no-op.
 	  const settings = getSettings();
 	  console.log(`[AI] Launch check: aiEnabled=${settings.aiEnabled}, modelsReady=${areModelsDownloaded()}`);
 	  if (settings.aiEnabled && areModelsDownloaded()) {
 	    setTimeout(async () => {
 	      try {
-	        console.log('[AI] Auto-starting AI processing (models already downloaded)...');
-	        await startAiProcessing();
+	        const pendingFaces = getUnprocessedFileIds('faces', 1).length;
+	        const pendingTags = getUnprocessedFileIds('tags', 1).length;
+	        console.log(`[AI] Auto-start check: pendingFaces=${pendingFaces > 0}, pendingTags=${pendingTags > 0}`);
+	        if (pendingFaces > 0) {
+	          console.log('[AI] Auto-starting AI processing (faces pending)...');
+	          await startAiProcessing();
+	        } else if (pendingTags > 0) {
+	          console.log('[AI] Auto-starting tags-only processing (resuming previous re-analyze)...');
+	          await startAiProcessing({ tagsOnly: true });
+	        } else {
+	          console.log('[AI] Nothing pending, no auto-start needed');
+	        }
 	        console.log('[AI] Auto-start completed or in progress');
 	      } catch (err) {
 	        console.error('[AI] Auto-start FAILED:', err);
