@@ -473,7 +473,10 @@ function coparentsOf(fromId: number, graph: FamilyGraph | null): Set<number> {
  *   • + parent: can't be yourself, your siblings, your descendants,
  *     or anyone ALREADY on your parent list (you already have them).
  *   • + child: can't be yourself, your ancestors, or an existing child.
- *   • + partner: can't be yourself, your parents, children, or siblings.
+ *   • + partner: can't be yourself, anyone in your existing family
+ *     graph closure (blood, in-laws, ex-in-laws, exes — anyone reached
+ *     by any chain of recorded relationships), and can't be someone
+ *     currently partnered to a third party.
  *   • + sibling: can't be yourself, your parents, or your children.
  */
 function impossibleCandidates(
@@ -537,12 +540,64 @@ function impossibleCandidates(
     for (const a of ancestors(fromId)) out.add(a);
     for (const c of myChildren) out.add(c);
   } else if (kind === 'partner') {
-    for (const a of ancestors(fromId)) out.add(a);
-    for (const d of descendants(fromId)) out.add(d);
-    for (const s of mySiblings) out.add(s);
+    // Full family-graph closure: anyone reached by walking ANY recorded
+    // relationship edge (parent_of, sibling_of, spouse_of incl. ended,
+    // associated_with) from fromId. This naturally excludes blood
+    // relatives (incest), in-laws (brother's wife's family), ex-in-laws
+    // (brother's ex-wife), and the person's own exes in a single pass.
+    for (const id of familyClosure(fromId, graph)) out.add(id);
+    // Plus anyone currently in an active spouse_of with a third party.
+    for (const id of currentlyPartnered(graph, fromId)) out.add(id);
   } else if (kind === 'sibling') {
     for (const a of ancestors(fromId)) out.add(a);
     for (const d of descendants(fromId)) out.add(d);
+  }
+  return out;
+}
+
+/**
+ * Connected component of `fromId` using every non-derived relationship
+ * edge as an undirected link. Produces the "extended family closure":
+ * blood relatives, in-laws, ex-in-laws, exes, and anyone else already
+ * tied to fromId through a chain of recorded relationships.
+ */
+function familyClosure(fromId: number, graph: FamilyGraph | null): Set<number> {
+  const closure = new Set<number>([fromId]);
+  if (!graph) return closure;
+  const adj = new Map<number, Set<number>>();
+  for (const e of graph.edges) {
+    if (e.derived) continue;
+    if (!adj.has(e.aId)) adj.set(e.aId, new Set());
+    if (!adj.has(e.bId)) adj.set(e.bId, new Set());
+    adj.get(e.aId)!.add(e.bId);
+    adj.get(e.bId)!.add(e.aId);
+  }
+  const queue = [fromId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const next of adj.get(cur) ?? []) {
+      if (closure.has(next)) continue;
+      closure.add(next);
+      queue.push(next);
+    }
+  }
+  return closure;
+}
+
+/**
+ * People currently in an active spouse_of relationship (no `until` date)
+ * with someone OTHER than `exceptId`. Excluded from partner suggestions
+ * so we don't suggest someone already married.
+ */
+function currentlyPartnered(graph: FamilyGraph | null, exceptId: number): Set<number> {
+  const out = new Set<number>();
+  if (!graph) return out;
+  for (const e of graph.edges) {
+    if (e.derived) continue;
+    if (e.type !== 'spouse_of') continue;
+    if (e.until) continue; // ended marriages don't count
+    if (e.aId !== exceptId) out.add(e.aId);
+    if (e.bId !== exceptId) out.add(e.bId);
   }
   return out;
 }
