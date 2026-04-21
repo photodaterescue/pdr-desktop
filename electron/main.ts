@@ -3154,7 +3154,12 @@ ipcMain.handle('ai:clearAll', async () => {
 
 ipcMain.handle('ai:resetTagAnalysis', async () => {
   try {
-    return { success: true, data: resetAllTagAnalysis() };
+    const data = resetAllTagAnalysis();
+    // Kick off tags-only processing right away so the header progress
+    // indicator starts ticking. Non-blocking — the main thread returns
+    // immediately and the worker chews through files in the background.
+    startAiProcessing({ tagsOnly: true });
+    return { success: true, data };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

@@ -81,7 +81,7 @@ export function areModelsDownloaded() {
  * Start processing all unprocessed photos.
  * Non-blocking — runs in background, sends progress via IPC.
  */
-export async function startAiProcessing() {
+export async function startAiProcessing(opts) {
     if (isProcessing) {
         console.log('[AI] Already processing, ignoring start request');
         return;
@@ -91,9 +91,13 @@ export async function startAiProcessing() {
         console.log('[AI] AI is disabled in settings');
         return;
     }
-    const enableFaces = settings.aiFaceDetection;
-    const enableTags = settings.aiObjectTagging;
-    console.log(`[AI] Settings — enableFaces: ${enableFaces}, enableTags: ${enableTags}, aiEnabled: ${settings.aiEnabled}`);
+    const tagsOnly = opts?.tagsOnly === true;
+    // In tagsOnly mode we force the tags leg on regardless of the per-run
+    // feature toggle — the user has explicitly asked for re-tagging and
+    // we're running against the already-reset tags_processed flag.
+    const enableFaces = tagsOnly ? false : settings.aiFaceDetection;
+    const enableTags = tagsOnly ? true : settings.aiObjectTagging;
+    console.log(`[AI] Settings — enableFaces: ${enableFaces}, enableTags: ${enableTags}, aiEnabled: ${settings.aiEnabled}, tagsOnly: ${tagsOnly}`);
     if (!enableFaces && !enableTags) {
         console.log('[AI] Both face detection and object tagging are disabled');
         return;
@@ -108,12 +112,15 @@ export async function startAiProcessing() {
         console.log('[AI] Power save blocker started — system will stay awake during processing');
     }
     try {
-        // Migrate old DETR face data to new model if needed
-        if (enableFaces) {
+        // Migrate old DETR face data to new model if needed. Skip when
+        // re-tagging only — touching face data would blow away verified
+        // assignments users care about.
+        if (enableFaces && !tagsOnly) {
             clearFaceDataForModelUpgrade();
         }
-        // Get unprocessed file IDs
-        const task = enableFaces ? 'faces' : 'tags';
+        // Get unprocessed file IDs. In tagsOnly mode we query the tags
+        // queue even when faces processing would normally take priority.
+        const task = tagsOnly ? 'tags' : (enableFaces ? 'faces' : 'tags');
         const fileIds = getUnprocessedFileIds(task, 10000);
         if (fileIds.length === 0) {
             console.log('[AI] No unprocessed files found');
@@ -159,13 +166,14 @@ export async function startAiProcessing() {
                 const result = await processFileInWorker(file.id, file.file_path);
                 bufferAndSendLog(`[AI] File ${file.id} (${file.filename}): result=${result ? 'OK' : 'null'}, faces=${result?.faces?.length ?? 0}, tags=${result?.tags?.length ?? 0}`);
                 if (result) {
-                    // Wipe any pre-existing UNVERIFIED face rows for this file
-                    // before inserting fresh detections — stops re-processing
-                    // from stacking duplicate rows. User-verified assignments
-                    // (verified=1) are kept.
-                    clearUnverifiedFacesForFile(file.id);
-                    // Store face detections
-                    if (result.faces && result.faces.length > 0) {
+                    // Wipe any pre-existing UNVERIFIED face rows before inserting
+                    // fresh detections — stops re-processing from stacking duplicates.
+                    // Skip when re-tagging only — we must never touch face data.
+                    if (!tagsOnly) {
+                        clearUnverifiedFacesForFile(file.id);
+                    }
+                    // Store face detections — skipped in tagsOnly mode.
+                    if (!tagsOnly && result.faces && result.faces.length > 0) {
                         const faceRecords = result.faces.map(f => ({
                             file_id: file.id,
                             person_id: null,
@@ -192,8 +200,8 @@ export async function startAiProcessing() {
                         insertAiTags(tagRecords);
                         totalTagsApplied += result.tags.length;
                     }
-                    // Mark as processed — only for features that are actually working
-                    if (enableFaces && workerFacesAvailable)
+                    // Mark as processed — only for features that were actually run.
+                    if (!tagsOnly && enableFaces && workerFacesAvailable)
                         markAiProcessed(file.id, 'faces', 'human-v1');
                     if (enableTags && workerTagsAvailable)
                         markAiProcessed(file.id, 'tags', 'transformers-v1');
@@ -209,8 +217,9 @@ export async function startAiProcessing() {
                 await new Promise(resolve => setImmediate(resolve));
             }
         }
-        // Run face clustering after all faces are processed
-        if (enableFaces && totalFacesFound > 0 && !shouldCancel) {
+        // Run face clustering after all faces are processed — skip in
+        // tagsOnly mode where we didn't touch any face data.
+        if (!tagsOnly && enableFaces && totalFacesFound > 0 && !shouldCancel) {
             sendProgress({
                 phase: 'clustering',
                 current: 0,

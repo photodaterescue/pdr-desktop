@@ -8026,8 +8026,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       if (!ok) return;
                       const r = await resetTagAnalysis();
                       if (r.success) {
-                        toast.success(`Queued ${r.data?.filesQueued ?? 0} photos for re-tagging`, {
-                          description: 'The indexer will start picking them up shortly.',
+                        toast.success(`Re-tagging ${r.data?.filesQueued ?? 0} photos`, {
+                          description: 'Progress is shown in the Search & Discovery header (top right). Faces and people are untouched.',
+                          duration: 8000,
                         });
                       } else {
                         toast.error('Could not reset tags', {
