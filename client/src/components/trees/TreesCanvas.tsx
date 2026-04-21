@@ -40,14 +40,17 @@ interface Viewport { tx: number; ty: number; scale: number; }
 const NODE_RADIUS = 42; // legacy — kept for spouse-line math and partner-chip positioning
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 150;
-// Card-style node dimensions (royal-chart style). The avatar now
-// dominates the top half of the card (40px radius = 80px diameter)
-// rather than sitting as a small circle above a sea of whitespace.
-// Edges enter/leave at the card's top/bottom edges — no elbow stub.
+// Card-style node dimensions (royal-chart style). Internal padding is
+// distributed evenly so there's room above the avatar, between avatar
+// and name, and between name and dates — no big empty gap at the
+// bottom as there was in the first pass.
 const CARD_W = 170;
 const CARD_H = 140;
 const AVATAR_R = 36;
-const AVATAR_CY = -CARD_H / 2 + 8 + AVATAR_R; // tight top margin, then avatar
+const CARD_TOP_PAD = 14;
+const AVATAR_TO_NAME = 22;
+const NAME_TO_DATES = 22;
+const AVATAR_CY = -CARD_H / 2 + CARD_TOP_PAD + AVATAR_R;
 
 export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -855,7 +858,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         <BluebellMarker cx={AVATAR_R - 4} cy={AVATAR_CY - AVATAR_R + 4} />
       )}
       {/* Name — centred below avatar, always visible, dark text */}
-      <text x={0} y={AVATAR_CY + AVATAR_R + 16} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
+      <text x={0} y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
         {displayName}
       </text>
       {/* Dates — optional, controlled by the header's Add Info > Dates
@@ -874,15 +877,15 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
           {/* Invisible hit target so the whole bottom strip is clickable */}
           <rect
             x={-CARD_W / 2 + 12}
-            y={AVATAR_CY + AVATAR_R + 22}
+            y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME + 6}
             width={CARD_W - 24}
-            height={16}
+            height={18}
             fill="white"
             fillOpacity={0.001}
           />
           <text
             x={0}
-            y={AVATAR_CY + AVATAR_R + 32}
+            y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME + NAME_TO_DATES}
             textAnchor="middle"
             fontSize={11}
             fill={lifeLine ? 'rgba(107,114,128,0.95)' : 'rgba(148,163,184,0.95)'}
