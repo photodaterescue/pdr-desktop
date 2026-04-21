@@ -50,6 +50,7 @@ import {
   Network
 } from "lucide-react";
 import { toast } from "sonner";
+import { promptConfirm } from "@/components/trees/promptConfirm";
 import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
@@ -8016,12 +8017,22 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     variant="outline"
                     size="sm"
                     onClick={async () => {
-                      if (!confirm('Re-analyze AI tags for every photo?\n\nThis wipes existing AI tags and queues all photos for re-tagging. Faces, people, and relationships are kept. The re-analysis runs in the background and may take a while for large libraries.')) return;
+                      const ok = await promptConfirm({
+                        title: 'Re-analyze AI tags?',
+                        message: 'This wipes existing AI tags and queues every photo for re-tagging against the current label set. Faces, people, and relationships are preserved. The re-analysis runs in the background and may take a while for large libraries.',
+                        confirmLabel: 'Re-analyze',
+                        cancelLabel: 'Cancel',
+                      });
+                      if (!ok) return;
                       const r = await resetTagAnalysis();
                       if (r.success) {
-                        alert(`Queued ${r.data?.filesQueued ?? 0} photos for re-tagging. The indexer will start picking them up shortly.`);
+                        toast.success(`Queued ${r.data?.filesQueued ?? 0} photos for re-tagging`, {
+                          description: 'The indexer will start picking them up shortly.',
+                        });
                       } else {
-                        alert(`Could not reset: ${r.error ?? 'unknown error'}`);
+                        toast.error('Could not reset tags', {
+                          description: r.error ?? 'unknown error',
+                        });
                       }
                     }}
                   >
