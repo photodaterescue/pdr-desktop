@@ -193,6 +193,11 @@ export function EditRelationshipsModal({
         </div>
 
         <div className="px-4 py-4 flex flex-col gap-2">
+          {rows.some(r => r.derived) && (
+            <p className="text-[11px] text-muted-foreground italic -mb-1">
+              Rows marked · auto are shown automatically from other links (e.g. siblings appear when two people share a parent). Change the parent or partner links above to update them.
+            </p>
+          )}
           {loading ? (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</div>
           ) : rows.length === 0 ? (
@@ -210,16 +215,10 @@ export function EditRelationshipsModal({
                   <div className="text-sm text-foreground truncate">{row.otherName}</div>
                   <div className="text-xs text-muted-foreground">
                     {row.label}
-                    {row.derived && (
-                      <span className="italic"> — shown automatically because they share a parent</span>
-                    )}
+                    {row.derived && <span className="italic"> · auto</span>}
                   </div>
                 </div>
-                {row.derived ? (
-                  <span className="text-[11px] text-muted-foreground italic pr-1">
-                    Edit the parent links to change this
-                  </span>
-                ) : (
+                {!row.derived && (
                   <>
                     <button
                       onClick={() => onEditEdge(row.otherId)}
