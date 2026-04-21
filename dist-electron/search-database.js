@@ -2744,20 +2744,30 @@ export function getPersonCooccurrenceStats(limit = 25, minSharedPhotos = 20) {
     }));
 }
 /** Partner-likelihood score per candidate, relative to `anchorId`.
- *  Per shared photo, contributes  (1 / face_count) * tag_multiplier:
- *    - Intimacy: 2-person photo weighs 0.5; 20-person photo weighs 0.05
- *    - Tag boost (×1.5): wedding / couple / engagement / proposal /
- *      honeymoon / romantic / kiss / dating / selfie / portrait
+ *  Per shared photo, contributes  (1 / face_count²) * tag_multiplier:
+ *    - Intimacy² — 2-face = 0.25, 4-face = 0.0625, 10-face = 0.01.
+ *      Squared so that a single 2-person photo can't be drowned out by
+ *      accumulated group-photo volume.
+ *    - Tag boost (×5.0): wedding / bride / groom / bouquet / wedding_dress /
+ *      tuxedo / ceremony / reception / gown / altar / chapel / married /
+ *      newlywed / couple / engagement / proposal / honeymoon / romantic /
+ *      kiss / hug / embrace / dating / selfie / portrait. Partnership
+ *      context is so strong it should dominate non-partnership volume.
  *    - Tag penalty (×0.5): group / crowd / gathering / reunion / party /
- *      conference / classroom / team / concert
- *    - Everything else: ×1.0
- *  Returns candidates sorted by score DESC. A 1-photo intimate match
- *  (score ~1.0) correctly beats multiple group-photo co-occurrences. */
+ *      conference / classroom / team / concert.
+ *    - Only tags at ≥0.70 confidence count.
+ *    - Bonus (+10): when anchor and candidate share the exact same
+ *      profile photo (avatar_data). Deterministic partnership signal —
+ *      pins the real spouse to the top even if the photo's AI tags are
+ *      sparse. */
 export function getPartnerSuggestionScores(anchorId) {
     const db = getDb();
     return db.prepare(`
     WITH anchor_photos AS (
       SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?
+    ),
+    anchor_avatar AS (
+      SELECT avatar_data FROM persons WHERE id = ?
     ),
     shared AS (
       SELECT
@@ -2773,29 +2783,48 @@ export function getPartnerSuggestionScores(anchorId) {
       p.id,
       p.name,
       COUNT(DISTINCT shared.file_id) AS shared_photo_count,
-      SUM(
-        (1.0 / NULLIF(shared.face_count, 0)) *
+      (
+        COALESCE(SUM(
+          (1.0 / (shared.face_count * shared.face_count)) *
+          CASE
+            WHEN EXISTS (
+              SELECT 1 FROM ai_tags t
+              WHERE t.file_id = shared.file_id
+                AND t.confidence >= 0.70
+                AND LOWER(t.tag) IN (
+                  'wedding','bride','groom','bouquet','wedding_dress','tuxedo',
+                  'ceremony','reception','gown','altar','chapel','married','newlywed',
+                  'couple','engagement','proposal','honeymoon','romantic','kiss',
+                  'hug','embrace','dating','selfie','portrait'
+                )
+            ) THEN 5.0
+            WHEN EXISTS (
+              SELECT 1 FROM ai_tags t
+              WHERE t.file_id = shared.file_id
+                AND t.confidence >= 0.70
+                AND LOWER(t.tag) IN (
+                  'group','crowd','gathering','reunion','party','conference',
+                  'classroom','team','concert'
+                )
+            ) THEN 0.5
+            ELSE 1.0
+          END
+        ), 0.0)
+        +
         CASE
-          WHEN EXISTS (
-            SELECT 1 FROM ai_tags t
-            WHERE t.file_id = shared.file_id
-              AND LOWER(t.tag) IN ('wedding','couple','engagement','proposal','honeymoon','romantic','kiss','dating','selfie','portrait')
-          ) THEN 1.5
-          WHEN EXISTS (
-            SELECT 1 FROM ai_tags t
-            WHERE t.file_id = shared.file_id
-              AND LOWER(t.tag) IN ('group','crowd','gathering','reunion','party','conference','classroom','team','concert')
-          ) THEN 0.5
-          ELSE 1.0
+          WHEN p.avatar_data IS NOT NULL
+            AND p.avatar_data = (SELECT avatar_data FROM anchor_avatar)
+          THEN 10.0
+          ELSE 0.0
         END
       ) AS score
     FROM shared
     INNER JOIN persons p ON p.id = shared.candidate_id
     WHERE p.discarded_at IS NULL
       AND p.name NOT LIKE '__%'
-    GROUP BY p.id, p.name
+    GROUP BY p.id, p.name, p.avatar_data
     ORDER BY score DESC, shared_photo_count DESC
-  `).all(anchorId, anchorId);
+  `).all(anchorId, anchorId, anchorId);
 }
 // ═══════════════════════════════════════════════════════════════
 // Trees v1 — placeholder persons (skip-generation bridges)
