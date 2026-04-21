@@ -19,6 +19,12 @@ interface TreesCanvasProps {
   onQuickAddPartner: (personId: number) => void;
   onQuickAddChild: (personId: number) => void;
   onQuickAddSibling: (personId: number) => void;
+  /** Suppress the +parent/+child/+partner/+sibling chips around each
+   *  node. Used when both the Steps and Generations filters are off —
+   *  the user can't see the tree they'd be adding into, and any
+   *  relationships they'd create probably already exist outside the
+   *  (empty) visible window. */
+  hideQuickAddChips?: boolean;
   /** Called after an inline edge edit succeeds so the parent can refetch the graph. */
   onGraphMutated: () => void;
 }
@@ -29,7 +35,7 @@ const NODE_RADIUS = 42;
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 150;
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, onGraphMutated }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, onGraphMutated }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -341,6 +347,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 avatar={avatar}
                 isFocus={isFocus}
                 opacity={dimOpacity}
+                hideChips={hideQuickAddChips}
                 onMouseDown={(e) => handleNodeMouseDown(e, node)}
                 onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
                 onContextMenu={(e) => handleNodeContextMenu(e, node)}
@@ -688,11 +695,12 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
   opacity: number;
+  hideChips?: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
   onDoubleClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -774,7 +782,7 @@ function PersonNode({ node, avatar, isFocus, opacity, onMouseDown, onDoubleClick
           When any chip is clicked, we force `hovered=false` so the
           chips disappear under the modal — otherwise they stay sticky
           if the user cancels the picker and moves the mouse away. */}
-      {(hovered || isFocus) && (
+      {(hovered || isFocus) && !hideChips && (
         <g opacity={hovered ? 1 : 0.6} style={{ pointerEvents: 'all' }}>
           <QuickAddChip cx={0}                   cy={-NODE_RADIUS - 20} label="parent"  onClick={() => { setHovered(false); onQuickAddParent(); }} />
           <QuickAddChip cx={0}                   cy={NODE_RADIUS + 52}  label="child"   onClick={() => { setHovered(false); onQuickAddChild(); }} />

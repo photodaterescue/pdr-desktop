@@ -422,7 +422,7 @@ export function TreesView() {
             <div className="flex-1" />
             <button
               onClick={() => setFocusPickerOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-accent transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
               title="Change the focus person"
             >
               <Users className="w-4 h-4" />
@@ -438,17 +438,14 @@ export function TreesView() {
                 {pinnedPeople.size} pinned
               </button>
             )}
-            {/* Steps filter — toggle + +/- stepper. No dropdown — stepper
-                is faster. Stepper stays rendered (dimmed) when filter is off
-                so the header layout doesn't jump. */}
-            <div className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-lg border border-border bg-background">
-              <button
-                onClick={() => setStepsEnabled(v => !v)}
-                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${stepsEnabled ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-accent'}`}
-                aria-pressed={stepsEnabled}
-              >
-                Steps
-              </button>
+            {/* Steps filter — toggle + +/- stepper. Styled as a clear
+                CTA pill: solid primary background when active, subtle
+                outline when off. */}
+            <FilterPill
+              label="Steps"
+              active={stepsEnabled}
+              onToggle={() => setStepsEnabled(v => !v)}
+            >
               <NumberStepper
                 value={expandedHops}
                 onChange={setExpandedHops}
@@ -456,33 +453,33 @@ export function TreesView() {
                 max={6}
                 disabled={!stepsEnabled}
               />
-            </div>
-            {/* Generations filter — toggle + ↑ / ↓ steppers. */}
-            <div className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-lg border border-border bg-background">
-              <button
-                onClick={() => setGenerationsEnabled(v => !v)}
-                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${generationsEnabled ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-accent'}`}
-                aria-pressed={generationsEnabled}
-              >
-                Generations
-              </button>
-              <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>↑</span>
-              <NumberStepper
-                value={ancestorsDepth}
-                onChange={setAncestorsDepth}
-                min={0}
-                max={5}
-                disabled={!generationsEnabled}
-              />
-              <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>↓</span>
-              <NumberStepper
-                value={descendantsDepth}
-                onChange={setDescendantsDepth}
-                min={0}
-                max={5}
-                disabled={!generationsEnabled}
-              />
-            </div>
+            </FilterPill>
+            {/* Generations filter — same look as Steps, but with two
+                steppers (ancestors / descendants). No ↑/↓ arrows —
+                Terry finds the extra chrome distracting. */}
+            <FilterPill
+              label="Generations"
+              active={generationsEnabled}
+              onToggle={() => setGenerationsEnabled(v => !v)}
+            >
+              <div className="inline-flex items-center gap-1">
+                <NumberStepper
+                  value={ancestorsDepth}
+                  onChange={setAncestorsDepth}
+                  min={0}
+                  max={5}
+                  disabled={!generationsEnabled}
+                />
+                <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>/</span>
+                <NumberStepper
+                  value={descendantsDepth}
+                  onChange={setDescendantsDepth}
+                  min={0}
+                  max={5}
+                  disabled={!generationsEnabled}
+                />
+              </div>
+            </FilterPill>
             <button
               onClick={() => focusPersonId != null && refetchGraph(focusPersonId, fetchDepth)}
               className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors"
@@ -513,11 +510,19 @@ export function TreesView() {
             onQuickAddPartner={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'partner' })}
             onQuickAddChild={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'child' })}
             onQuickAddSibling={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'sibling' })}
+            hideQuickAddChips={!stepsEnabled && !generationsEnabled}
           />
         )}
         {/* Empty-state hint — anchored to the top of the canvas so it never
             overlaps with the centred focus avatar. */}
-        {!loading && graph && graph.nodes.length === 1 && (
+        {!loading && graph && graph.nodes.length === 1 && stepsEnabled === false && generationsEnabled === false ? (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 max-w-lg text-center px-4 py-3 bg-background/95 backdrop-blur rounded-lg shadow-md border border-border pointer-events-none">
+            <h3 className="text-sm font-semibold">Nothing to show</h3>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Both <strong>Steps</strong> and <strong>Generations</strong> are turned off, so only the focus person is visible. Turn one back on to see their family.
+            </p>
+          </div>
+        ) : !loading && graph && graph.nodes.length === 1 && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 max-w-lg text-center px-4 py-3 bg-background/95 backdrop-blur rounded-lg shadow-md border border-border pointer-events-none">
             <h3 className="text-sm font-semibold">Right-click your focus person to set a relationship</h3>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
@@ -671,6 +676,36 @@ export function TreesView() {
  * because they already share kids in the tree, regardless of whether a
  * spouse_of edge has been asserted yet.
  */
+/** Header filter button with its own stepper control tucked to the right.
+ *  Active state looks like a CTA (solid primary tint, primary border);
+ *  off state looks muted but still clearly clickable. Matches the
+ *  'Change focus' button's look so the three header controls read as a
+ *  consistent row of actions, not a mix of labels and inputs. */
+function FilterPill({ label, active, onToggle, children }: {
+  label: string; active: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border transition-colors ${
+        active
+          ? 'bg-primary/10 border-primary/30'
+          : 'bg-background border-border'
+      }`}
+    >
+      <button
+        onClick={onToggle}
+        aria-pressed={active}
+        className={`px-2 py-0.5 rounded text-sm font-medium transition-colors ${
+          active ? 'text-primary' : 'text-muted-foreground hover:bg-accent'
+        }`}
+      >
+        {label}
+      </button>
+      {children}
+    </div>
+  );
+}
+
 /** Compact stepper control — two buttons (−/+) around a centered number.
  *  Replaces a native <select> where quick small adjustments matter.
  *  When disabled, the whole control dims but stays rendered so the
