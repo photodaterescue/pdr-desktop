@@ -30,40 +30,49 @@ export function DateTripleInput({ value, onChange, label, hint }: DateTripleInpu
   const monthRef = useRef<HTMLInputElement>(null);
   const yearRef = useRef<HTMLInputElement>(null);
 
-  // Sync incoming `value` → three fields.
+  // Sync incoming `value` → three fields. Accept any of the three
+  // precisions we emit (YYYY, YYYY-MM, YYYY-MM-DD).
   useEffect(() => {
     if (!value) {
       setDay(''); setMonth(''); setYear('');
       return;
     }
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (m) {
-      setYear(m[1]);
-      setMonth(m[2]);
-      setDay(m[3]);
-    }
+    const full = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (full) { setYear(full[1]); setMonth(full[2]); setDay(full[3]); return; }
+    const ym = /^(\d{4})-(\d{2})$/.exec(value);
+    if (ym) { setYear(ym[1]); setMonth(ym[2]); setDay(''); return; }
+    const y = /^(\d{4})$/.exec(value);
+    if (y) { setYear(y[1]); setMonth(''); setDay(''); return; }
   }, [value]);
 
-  // Emit canonical ISO string when all three parts are complete and valid.
+  // Emit the most precise ISO-ish string we can build. Year is the only
+  // hard requirement; users often only remember "around 1995" for things
+  // like marriages and separations. Filling missing parts with dummy
+  // values (01/01) would lie about precision.
+  //   y only       → "1995"
+  //   y + m        → "1995-06"
+  //   y + m + d    → "1995-06-15"
+  //   no year      → cleared
   const emit = (d: string, mo: string, y: string) => {
-    const dNum = parseInt(d, 10);
-    const mNum = parseInt(mo, 10);
+    if (y.length !== 4) { onChange(''); return; }
     const yNum = parseInt(y, 10);
-    if (!Number.isFinite(dNum) || !Number.isFinite(mNum) || !Number.isFinite(yNum)) {
-      onChange('');
-      return;
-    }
-    if (y.length !== 4 || yNum < 1800 || yNum > 2200) { onChange(''); return; }
-    if (mNum < 1 || mNum > 12) { onChange(''); return; }
-    if (dNum < 1 || dNum > 31) { onChange(''); return; }
-    // Minimal validity — let JS Date do the lift.
+    if (!Number.isFinite(yNum) || yNum < 1800 || yNum > 2200) { onChange(''); return; }
+
+    if (!mo) { onChange(y); return; }
+    const mNum = parseInt(mo, 10);
+    if (!Number.isFinite(mNum) || mNum < 1 || mNum > 12) { onChange(y); return; }
+    const mPad = String(mNum).padStart(2, '0');
+
+    if (!d) { onChange(`${y}-${mPad}`); return; }
+    const dNum = parseInt(d, 10);
+    if (!Number.isFinite(dNum) || dNum < 1 || dNum > 31) { onChange(`${y}-${mPad}`); return; }
+    // Full date — validate real calendar.
     const probe = new Date(yNum, mNum - 1, dNum);
     if (probe.getFullYear() !== yNum || probe.getMonth() !== mNum - 1 || probe.getDate() !== dNum) {
-      onChange('');
+      onChange(`${y}-${mPad}`); // fall back to month-year if day is invalid
       return;
     }
-    const iso = `${y.padStart(4, '0')}-${String(mNum).padStart(2, '0')}-${String(dNum).padStart(2, '0')}`;
-    onChange(iso);
+    onChange(`${y}-${mPad}-${String(dNum).padStart(2, '0')}`);
   };
 
   const handleDayChange = (raw: string) => {
@@ -162,7 +171,9 @@ export function DateTripleInput({ value, onChange, label, hint }: DateTripleInpu
           </button>
         )}
       </div>
-      {hint && <p className="text-[10px] text-muted-foreground mt-1">{hint}</p>}
+      <p className="text-[10px] text-muted-foreground mt-1">
+        Year alone is fine (e.g. <span className="font-mono">1995</span>). Month and day are optional.{hint ? ` ${hint}` : ''}
+      </p>
     </div>
   );
 }
