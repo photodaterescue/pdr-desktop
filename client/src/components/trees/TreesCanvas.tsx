@@ -1232,10 +1232,15 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
   onResolved: () => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<'name' | 'link'>('name');
+  // Default to 'link' — most placeholder resolutions are "this is
+  // already a named person I have elsewhere", not "create a new named
+  // person from scratch". Tab order in the UI puts Link FIRST for
+  // the same reason.
+  const [mode, setMode] = useState<'name' | 'link'>('link');
   const [nameInput, setNameInput] = useState('');
   const [linkQuery, setLinkQuery] = useState('');
-  const [allPersons, setAllPersons] = useState<{ id: number; name: string }[]>([]);
+  const [allPersons, setAllPersons] = useState<{ id: number; name: string; photoCount: number }[]>([]);
+  const [selectedLinkId, setSelectedLinkId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Relationships this placeholder already holds — shown up-top so the
@@ -1247,7 +1252,9 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
   useEffect(() => {
     (async () => {
       const res = await listPersons();
-      if (res.success && res.data) setAllPersons(res.data.map(p => ({ id: p.id, name: p.name })));
+      if (res.success && res.data) setAllPersons(res.data.map(p => ({
+        id: p.id, name: p.name, photoCount: p.photo_count ?? 0,
+      })));
     })();
   }, []);
 
@@ -1296,7 +1303,9 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
   const filtered = allPersons
     .filter(p => !p.name.startsWith('__'))
     .filter(p => p.name.toLowerCase().includes(linkQuery.trim().toLowerCase()))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    // Sort by photo count DESC — the more likely match surfaces first.
+    // Tiebreak alphabetical.
+    .sort((a, b) => (b.photoCount - a.photoCount) || a.name.localeCompare(b.name));
 
   const handleName = async () => {
     setError(null);
@@ -1359,19 +1368,22 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
         </div>
       )}
 
-      {/* Mode switcher */}
+      {/* Mode switcher — Link to existing on the LEFT and default
+          because that's the most common resolution for a placeholder.
+          Name them is the "I have nobody for this yet, create a new
+          named person" secondary action on the RIGHT. */}
       <div className="flex gap-1 mb-3 p-0.5 bg-muted rounded-lg text-xs">
-        <button
-          onClick={() => setMode('name')}
-          className={`flex-1 px-2 py-1 rounded ${mode === 'name' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
-        >
-          Name them
-        </button>
         <button
           onClick={() => setMode('link')}
           className={`flex-1 px-2 py-1 rounded ${mode === 'link' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
         >
           Link to existing
+        </button>
+        <button
+          onClick={() => setMode('name')}
+          className={`flex-1 px-2 py-1 rounded ${mode === 'name' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
+        >
+          Name them
         </button>
       </div>
 
@@ -1392,27 +1404,36 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
         <div>
           <input
             type="text"
+            autoFocus
             value={linkQuery}
             onChange={e => setLinkQuery(e.target.value)}
             placeholder="Search named people…"
             className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
           />
-          <div className="mt-2 max-h-36 overflow-auto flex flex-col gap-0.5 border border-border rounded p-0.5">
+          <div className="mt-2 max-h-40 overflow-auto flex flex-col gap-0.5 border border-border rounded p-0.5">
             {filtered.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-2">No matches.</p>
             )}
-            {filtered.map(p => (
-              <button
-                key={p.id}
-                onClick={() => handleLink(p.id)}
-                disabled={busy}
-                className="px-2 py-1 rounded text-left text-sm hover:bg-accent disabled:opacity-50"
-              >
-                {p.name}
-              </button>
-            ))}
+            {filtered.map(p => {
+              const isSelected = selectedLinkId === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedLinkId(p.id)}
+                  disabled={busy}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm disabled:opacity-50 ${
+                    isSelected ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
+                  }`}
+                >
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className={`text-[10px] shrink-0 ${isSelected ? 'text-primary/80' : 'text-muted-foreground'}`}>
+                    {p.photoCount} {p.photoCount === 1 ? 'photo' : 'photos'}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">All relationships on this placeholder transfer to the chosen person.</p>
+          <p className="text-xs text-muted-foreground mt-1">Pick the person this placeholder should become, then click Done. All relationships on the placeholder transfer to them.</p>
         </div>
       )}
 
@@ -1434,10 +1455,19 @@ function PlaceholderResolver({ personId, x, y, onResolved, onClose }: {
           <button
             onClick={handleName}
             disabled={busy || !nameInput.trim()}
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
           >
             <UserPlus className="w-3 h-3" />
             {busy ? 'Saving…' : 'Save name'}
+          </button>
+        )}
+        {mode === 'link' && (
+          <button
+            onClick={() => selectedLinkId != null && handleLink(selectedLinkId)}
+            disabled={busy || selectedLinkId == null}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
+          >
+            {busy ? 'Linking…' : 'Done'}
           </button>
         )}
       </div>
