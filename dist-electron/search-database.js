@@ -3258,7 +3258,7 @@ export function mergePlaceholderIntoPerson(placeholderId, targetPersonId) {
     if (!target)
         return { success: false, error: 'Target person not found.' };
     const tx = db.transaction(() => {
-        const edges = db.prepare(`SELECT * FROM relationships WHERE person_a_id = ? OR person_b_id = ?`).all(placeholderId);
+        const edges = db.prepare(`SELECT * FROM relationships WHERE person_a_id = ? OR person_b_id = ?`).all(placeholderId, placeholderId);
         for (const edge of edges) {
             const newA = edge.person_a_id === placeholderId ? targetPersonId : edge.person_a_id;
             const newB = edge.person_b_id === placeholderId ? targetPersonId : edge.person_b_id;

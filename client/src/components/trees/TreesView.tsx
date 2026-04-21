@@ -26,6 +26,7 @@ import { SetRelationshipModal } from './SetRelationshipModal';
 import { EditRelationshipsModal } from './EditRelationshipsModal';
 import { SiblingKindDialog, type SiblingKind } from './SiblingKindDialog';
 import { ManageTreesModal } from './ManageTreesModal';
+import { DateQuickEditor } from './DateQuickEditor';
 import { promptConfirm } from './promptConfirm';
 
 interface PersonSummary {
@@ -94,6 +95,9 @@ export function TreesView() {
     typeof window !== 'undefined' && localStorage.getItem('pdr-trees-show-dates') === 'true'
   );
   const [addInfoOpen, setAddInfoOpen] = useState(false);
+  /** Date editor target — { personId, x, y } where x/y are screen
+   *  coords for the popup. Null = editor closed. */
+  const [dateEditor, setDateEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
   /** Undo/redo availability counts from the graph_history table.
    *  Refreshed after every mutation + on app focus. The handlers that
    *  use refetchGraph / reloadPersons are declared AFTER those
@@ -848,6 +852,9 @@ export function TreesView() {
             onQuickAddSibling={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'sibling' })}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
             showDates={showDates}
+            onEditDates={(personId, screenX, screenY) => {
+              setDateEditor({ personId, x: screenX, y: screenY });
+            }}
           />
         )}
         {/* Empty-state hint — anchored to the top of the canvas so it never
@@ -1039,6 +1046,29 @@ export function TreesView() {
           onClose={() => setNewTreePickerOpen(false)}
         />
       )}
+
+      {/* Date quick editor — opens when the user clicks the dates strip
+          inside a card (when Dates Living is on). Year-only entry with
+          a "still living" checkbox. Saves via updatePersonLifeEvents. */}
+      {dateEditor && (() => {
+        const node = graph?.nodes.find(n => n.personId === dateEditor.personId);
+        const name = node?.name ?? allPersons.find(p => p.id === dateEditor.personId)?.name ?? '';
+        return (
+          <DateQuickEditor
+            personId={dateEditor.personId}
+            personName={name}
+            birthDate={node?.birthDate ?? null}
+            deathDate={node?.deathDate ?? null}
+            x={dateEditor.x}
+            y={dateEditor.y}
+            onSaved={() => {
+              setDateEditor(null);
+              if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
+            }}
+            onClose={() => setDateEditor(null)}
+          />
+        );
+      })()}
 
       {/* Sibling kind dialog — fires after the +sibling quick-add picks
           a person. Asks full vs half vs none vs unknown before touching

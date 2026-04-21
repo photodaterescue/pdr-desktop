@@ -3863,7 +3863,7 @@ export function mergePlaceholderIntoPerson(placeholderId: number, targetPersonId
   const tx = db.transaction(() => {
     const edges = db.prepare(
       `SELECT * FROM relationships WHERE person_a_id = ? OR person_b_id = ?`
-    ).all(placeholderId) as { id: number; person_a_id: number; person_b_id: number; type: string }[];
+    ).all(placeholderId, placeholderId) as { id: number; person_a_id: number; person_b_id: number; type: string }[];
     for (const edge of edges) {
       const newA = edge.person_a_id === placeholderId ? targetPersonId : edge.person_a_id;
       const newB = edge.person_b_id === placeholderId ? targetPersonId : edge.person_b_id;

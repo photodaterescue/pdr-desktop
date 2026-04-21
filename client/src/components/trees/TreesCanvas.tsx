@@ -28,6 +28,9 @@ interface TreesCanvasProps {
   /** Show the optional birth–death dates line inside each card. Toggled
    *  from the header's 'Add Info' dropdown. */
   showDates?: boolean;
+  /** Called when the user clicks the date strip on a card to edit
+   *  birth/death years inline. Parent opens DateQuickEditor. */
+  onEditDates?: (personId: number, screenX: number, screenY: number) => void;
   /** Called after an inline edge edit succeeds so the parent can refetch the graph. */
   onGraphMutated: () => void;
 }
@@ -46,7 +49,7 @@ const CARD_H = 140;
 const AVATAR_R = 36;
 const AVATAR_CY = -CARD_H / 2 + 8 + AVATAR_R; // tight top margin, then avatar
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onGraphMutated }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -361,6 +364,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 opacity={dimOpacity}
                 hideChips={hideQuickAddChips}
                 showDates={showDates}
+                onEditDates={onEditDates ? (clientX, clientY) => onEditDates(node.personId, clientX, clientY) : undefined}
                 onMouseDown={(e) => handleNodeMouseDown(e, node)}
                 onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
                 onContextMenu={(e) => handleNodeContextMenu(e, node)}
@@ -737,13 +741,14 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
   opacity: number;
   hideChips?: boolean;
   showDates?: boolean;
+  onEditDates?: (screenX: number, screenY: number) => void;
   onMouseDown: (e: React.MouseEvent) => void;
   onDoubleClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -853,11 +858,39 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onMo
       <text x={0} y={AVATAR_CY + AVATAR_R + 16} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
         {displayName}
       </text>
-      {/* Dates — optional, controlled by the header's Add Info > Dates alive */}
-      {showDates && lifeLine && (
-        <text x={0} y={AVATAR_CY + AVATAR_R + 32} textAnchor="middle" fontSize={11} fill="rgba(107,114,128,0.95)">
-          {lifeLine}
-        </text>
+      {/* Dates — optional, controlled by the header's Add Info > Dates
+          Living. Click to edit. When the dates are blank and the user
+          has Dates Living turned on, we show a subtle 'add years' hint
+          in the same slot so they know where to click. */}
+      {showDates && (
+        <g
+          style={{ cursor: onEditDates ? 'pointer' : 'default' }}
+          onClick={(e) => {
+            if (!onEditDates) return;
+            e.stopPropagation();
+            onEditDates(e.clientX, e.clientY);
+          }}
+        >
+          {/* Invisible hit target so the whole bottom strip is clickable */}
+          <rect
+            x={-CARD_W / 2 + 12}
+            y={AVATAR_CY + AVATAR_R + 22}
+            width={CARD_W - 24}
+            height={16}
+            fill="white"
+            fillOpacity={0.001}
+          />
+          <text
+            x={0}
+            y={AVATAR_CY + AVATAR_R + 32}
+            textAnchor="middle"
+            fontSize={11}
+            fill={lifeLine ? 'rgba(107,114,128,0.95)' : 'rgba(148,163,184,0.95)'}
+            fontStyle={lifeLine ? 'normal' : 'italic'}
+          >
+            {lifeLine || 'add years…'}
+          </text>
+        </g>
       )}
       {/* Quick-add chips — four plus buttons that appear on hover.
           Anchored to the four edges of the CARD (not the smaller avatar
