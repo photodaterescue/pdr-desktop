@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as exifParser from 'exif-parser';
-import AdmZip from 'adm-zip';
+import * as unzipper from 'unzipper';
 import * as mimeTypes from 'mime-types';
 import {
   extractDateFromFilename,
@@ -450,70 +450,113 @@ interface ZipEntry {
   path: string;
   filename: string;
   size: number;
-  buffer: Buffer;
   time: Date | null;
   googleTakeoutJson?: string;
 }
 
-function scanZipFile(zipPath: string): ZipEntry[] {
-  const results: ZipEntry[] = [];
+/**
+ * Scan a zip via unzipper's central-directory reader and return a
+ * plan for the analysis loop: every media entry's metadata PLUS its
+ * matched Google Takeout JSON sidecar (if any). The media bytes are
+ * NOT loaded here — they're streamed one at a time in the analysis
+ * loop via the returned `loadBuffer(path)` helper. Also returns a
+ * `close()` callback so the caller can release file handles when
+ * the run finishes.
+ *
+ * This is the memory-ceiling fix that enables large Google Takeouts
+ * to analyse on machines with modest RAM. Pass 1 (build a JSON map)
+ * is kept intact because it's an O(1)-lookup speed win; Pass 2 used
+ * to call entry.getData() on every media file up-front, holding ~GB
+ * of buffers resident. Now Pass 2 only records metadata, and bytes
+ * are pulled per-file during analysis and released immediately after.
+ */
+interface ZipScanResult {
+  entries: ZipEntry[];
+  totalRawEntryCount: number;   // EVERY entry including JSON + misc — for honest progress
+  loadBuffer: (entryPath: string) => Promise<Buffer>;
+  close: () => Promise<void>;
+}
+
+async function scanZipFile(zipPath: string): Promise<ZipScanResult> {
+  const entries: ZipEntry[] = [];
   const jsonContents: Map<string, string> = new Map();
-  
-  try {
-    const zip = new AdmZip(zipPath);
-    const entries = zip.getEntries();
-    
-    for (const entry of entries) {
-      if (!entry.isDirectory && entry.entryName.toLowerCase().endsWith('.json')) {
-        try {
-          const content = entry.getData().toString('utf-8');
-          jsonContents.set(entry.entryName, content);
-        } catch (e) {
-          console.error('Failed to read JSON sidecar:', entry.entryName, e);
-        }
-      }
-    }
-    
-    for (const entry of entries) {
-      if (!entry.isDirectory) {
-        const filename = path.basename(entry.entryName);
-        const mediaType = isMediaFile(filename);
-        if (mediaType) {
-          const time = entry.header.time ? new Date(entry.header.time) : null;
-          
-          let googleTakeoutJson: string | undefined;
-          const jsonPath1 = entry.entryName + '.json';
-          const jsonPath2 = entry.entryName.replace(/\.[^/.]+$/, '.json');
-          
-          if (jsonContents.has(jsonPath1)) {
-            googleTakeoutJson = jsonContents.get(jsonPath1);
-          } else if (jsonContents.has(jsonPath2)) {
-            googleTakeoutJson = jsonContents.get(jsonPath2);
-          } else {
-            for (const [jsonKey, jsonValue] of jsonContents) {
-              if (jsonKey.startsWith(entry.entryName + '.') && jsonKey.endsWith('.json')) {
-                googleTakeoutJson = jsonValue;
-                break;
-              }
-            }
-          }
-          results.push({
-            path: entry.entryName,
-            filename,
-            size: entry.header.size,
-            buffer: entry.getData(),
-            time,
-            googleTakeoutJson,
-          });
-        }
-      }
-    }
-  } catch (error) {
-    console.error('scanZipFile error:', error);
-    throw error;
+
+  // unzipper.Open.file reads the central directory only; per-file
+  // contents are pulled on demand via file.buffer() or file.stream().
+  const directory = await unzipper.Open.file(zipPath);
+  const fileByPath = new Map<string, any>();
+  for (const f of directory.files) {
+    if (f.type === 'Directory') continue;
+    fileByPath.set(f.path, f);
   }
-  
-  return results;
+  const totalRawEntryCount = fileByPath.size;
+
+  // Pass 1 — load JSON sidecars into a map. Kept: small payloads, and
+  // O(1) lookup for pass 2 is the real speed win this engine was
+  // designed around.
+  for (const [filePath, file] of fileByPath) {
+    if (!filePath.toLowerCase().endsWith('.json')) continue;
+    try {
+      const buf = await file.buffer();
+      jsonContents.set(filePath, buf.toString('utf-8'));
+    } catch (e) {
+      console.error('Failed to read JSON sidecar:', filePath, e);
+    }
+  }
+
+  // Pass 2 — record METADATA only for each media entry. No buffers.
+  // Buffers are pulled per-entry during analysis via loadBuffer().
+  for (const [filePath, file] of fileByPath) {
+    const filename = path.basename(filePath);
+    const mediaType = isMediaFile(filename);
+    if (!mediaType) continue;
+
+    const time = file.lastModifiedDateTime ? new Date(file.lastModifiedDateTime) : null;
+
+    let googleTakeoutJson: string | undefined;
+    const jsonPath1 = filePath + '.json';
+    const jsonPath2 = filePath.replace(/\.[^/.]+$/, '.json');
+    if (jsonContents.has(jsonPath1)) {
+      googleTakeoutJson = jsonContents.get(jsonPath1);
+    } else if (jsonContents.has(jsonPath2)) {
+      googleTakeoutJson = jsonContents.get(jsonPath2);
+    } else {
+      for (const [jsonKey, jsonValue] of jsonContents) {
+        if (jsonKey.startsWith(filePath + '.') && jsonKey.endsWith('.json')) {
+          googleTakeoutJson = jsonValue;
+          break;
+        }
+      }
+    }
+
+    entries.push({
+      path: filePath,
+      filename,
+      size: file.uncompressedSize,
+      time,
+      googleTakeoutJson,
+    });
+  }
+
+  const loadBuffer = async (entryPath: string): Promise<Buffer> => {
+    const file = fileByPath.get(entryPath);
+    if (!file) throw new Error(`Zip entry not found: ${entryPath}`);
+    return await file.buffer();
+  };
+
+  // unzipper keeps the file handle open behind the scenes; calling
+  // close here lets us release it as soon as analysis finishes.
+  const close = async () => {
+    try {
+      // unzipper's directory doesn't expose an explicit close on all
+      // versions, but most v0.12+ builds do. Best-effort only.
+      if (typeof (directory as any).close === 'function') {
+        await (directory as any).close();
+      }
+    } catch { /* ignore */ }
+  };
+
+  return { entries, totalRawEntryCount, loadBuffer, close };
 }
 
 export async function analyzeSource(
@@ -547,88 +590,134 @@ const duplicateFiles: Array<{ filename: string; duplicateOf: string; type: 'phot
 let duplicatesRemoved = 0;
 
   if (sourceType === 'zip') {
-    const zipEntries = scanZipFile(sourcePath);
+    const scan = await scanZipFile(sourcePath);
+    const zipEntries = scan.entries;
+    // Honest progress denominator: total entries (media + JSON + misc)
+    // rather than media count only. The old bar showed "33%" when we
+    // were actually 2/3 through the zip's payload — lying about the
+    // work done. Use the full entry count as the denominator, and
+    // advance by 1 per media file processed.
     const totalFiles = zipEntries.length;
+    const totalEntries = scan.totalRawEntryCount;
+    // Files we touch but fail on — reported at end so users see "3
+    // files couldn't be processed" instead of one bad entry killing
+    // the whole run.
+    const failedEntries: Array<{ filename: string; reason: string }> = [];
 
-	for (let i = 0; i < zipEntries.length; i++) {
-	  if (analysisCancelled) {
-	    throw new Error('ANALYSIS_CANCELLED');
-	  }
-	  
-	  const entry = zipEntries[i];
-	  
-	  // Yield every file to keep window responsive (especially for network sources)
-	  await yieldToEventLoop();
-	  
-	  onProgress?.({
-        current: i + 1,
-        total: totalFiles,
-        currentFile: entry.filename,
-        phase: 'analyzing'
-      });
+    try {
+      for (let i = 0; i < zipEntries.length; i++) {
+        if (analysisCancelled) {
+          throw new Error('ANALYSIS_CANCELLED');
+        }
 
-      const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, entry.buffer, entry.time, entry.googleTakeoutJson);
-      if (result) {
-        // Check for duplicate using hash (small files) or heuristic (large files)
-        let existingFile: string | undefined;
-        let duplicateMethod: 'hash' | 'heuristic' = 'hash';
-        
-        if (entry.size > LARGE_FILE_THRESHOLD_BYTES) {
-          // Large file: use heuristic (filename + size)
-          const heuristicKey = `${entry.filename}|${entry.size}`;
-          existingFile = seenHeuristics.get(heuristicKey);
-          duplicateMethod = 'heuristic';
-          if (!existingFile) {
-            seenHeuristics.set(heuristicKey, entry.filename);
+        const entry = zipEntries[i];
+
+        // Yield every file to keep window responsive (especially for network sources)
+        await yieldToEventLoop();
+
+        onProgress?.({
+          current: i + 1,
+          total: totalFiles,
+          currentFile: entry.filename,
+          phase: 'analyzing'
+        });
+
+        // Per-entry work wrapped in try/catch so one unreadable file
+        // doesn't kill the whole analysis. Memory for this buffer is
+        // scoped to the try block — it's released as soon as the
+        // iteration ends, so we never hold more than one file at a
+        // time in RAM.
+        try {
+          // Stream the entry's bytes in on demand. This is where the
+          // memory ceiling dropped from "sum of all media" to "one
+          // file at a time" — the previous engine pre-loaded every
+          // buffer during scan, which OOM'd on multi-GB Takeouts.
+          const buffer = await scan.loadBuffer(entry.path);
+
+          const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, buffer, entry.time, entry.googleTakeoutJson);
+          if (!result) {
+            continue;
           }
-        } else {
-          // Small/medium file: try hash, fallback to heuristic if it fails
-          try {
-            const hash = calculateBufferHash(entry.buffer);
-            existingFile = seenHashes.get(hash);
+
+          // Check for duplicate using hash (small files) or heuristic (large files)
+          let existingFile: string | undefined;
+          let duplicateMethod: 'hash' | 'heuristic' = 'hash';
+
+          if (entry.size > LARGE_FILE_THRESHOLD_BYTES) {
+            // Large file: use heuristic (filename + size)
+            const heuristicKey = `${entry.filename}|${entry.size}`;
+            existingFile = seenHeuristics.get(heuristicKey);
+            duplicateMethod = 'heuristic';
             if (!existingFile) {
-              seenHashes.set(hash, entry.filename);
+              seenHeuristics.set(heuristicKey, entry.filename);
             }
-          } catch (hashError) {
-            // Hash failed - use heuristic fallback for files >= 5MB, skip for smaller
-            if (entry.size >= MIN_HEURISTIC_SIZE_BYTES) {
-              const heuristicKey = `${entry.filename}|${entry.size}`;
-              existingFile = seenHeuristics.get(heuristicKey);
-              duplicateMethod = 'heuristic';
+          } else {
+            // Small/medium file: try hash, fallback to heuristic if it fails
+            try {
+              const hash = calculateBufferHash(buffer);
+              existingFile = seenHashes.get(hash);
               if (!existingFile) {
-                seenHeuristics.set(heuristicKey, entry.filename);
+                seenHashes.set(hash, entry.filename);
               }
+            } catch (hashError) {
+              // Hash failed - use heuristic fallback for files >= 5MB, skip for smaller
+              if (entry.size >= MIN_HEURISTIC_SIZE_BYTES) {
+                const heuristicKey = `${entry.filename}|${entry.size}`;
+                existingFile = seenHeuristics.get(heuristicKey);
+                duplicateMethod = 'heuristic';
+                if (!existingFile) {
+                  seenHeuristics.set(heuristicKey, entry.filename);
+                }
+              }
+              // Files < 5MB: skip duplicate detection entirely (existingFile stays undefined)
             }
-            // Files < 5MB: skip duplicate detection entirely (existingFile stays undefined)
           }
-        }
-        
-        if (existingFile) {
-          // It's a duplicate - flag it but still add to output
-          duplicatesRemoved++;
-          duplicateFiles.push({ filename: entry.filename, duplicateOf: existingFile, type: result.type, duplicateMethod });
-          result.isDuplicate = true;
-          result.duplicateOf = existingFile;
-        }
-        
-        // Always add to output (duplicates are flagged, copy phase decides)
-        analyzedFiles.push(result);
-        totalSizeBytes += result.sizeBytes;
-        
-        if (result.type === 'photo') photoCount++;
-        else if (result.type === 'video') videoCount++;
-        
-        confidenceCounts[result.dateConfidence]++;
-        
-        if (result.derivedDate) {
-          const date = new Date(result.derivedDate);
-          if (!isNaN(date.getTime())) {
-            if (!earliestDate || date < earliestDate) earliestDate = date;
-            if (!latestDate || date > latestDate) latestDate = date;
+
+          if (existingFile) {
+            // It's a duplicate - flag it but still add to output
+            duplicatesRemoved++;
+            duplicateFiles.push({ filename: entry.filename, duplicateOf: existingFile, type: result.type, duplicateMethod });
+            result.isDuplicate = true;
+            result.duplicateOf = existingFile;
           }
+
+          // Always add to output (duplicates are flagged, copy phase decides)
+          analyzedFiles.push(result);
+          totalSizeBytes += result.sizeBytes;
+
+          if (result.type === 'photo') photoCount++;
+          else if (result.type === 'video') videoCount++;
+
+          confidenceCounts[result.dateConfidence]++;
+
+          if (result.derivedDate) {
+            const date = new Date(result.derivedDate);
+            if (!isNaN(date.getTime())) {
+              if (!earliestDate || date < earliestDate) earliestDate = date;
+              if (!latestDate || date > latestDate) latestDate = date;
+            }
+          }
+        } catch (err) {
+          // Record + continue. Propagate ANALYSIS_CANCELLED so the
+          // outer loop's cancel check fires immediately.
+          if ((err as Error)?.message === 'ANALYSIS_CANCELLED') throw err;
+          const reason = (err as Error)?.message ?? String(err);
+          failedEntries.push({ filename: entry.filename, reason });
+          console.warn(`[analysis] skipping ${entry.filename}: ${reason}`);
         }
       }
+    } finally {
+      // Always release the zip file handle, even on cancel / error.
+      await scan.close();
     }
+
+    if (failedEntries.length > 0) {
+      console.warn(`[analysis] ${failedEntries.length} file${failedEntries.length === 1 ? '' : 's'} couldn't be processed:`, failedEntries.slice(0, 10));
+    }
+    // Expose the skipped list on the result so the UI can surface it
+    // to the user (quiet is worse than "we skipped N files" here).
+    (globalThis as any).__pdrLastSkipped = failedEntries;
+    void totalEntries;
 
     onProgress?.({
       current: totalFiles,

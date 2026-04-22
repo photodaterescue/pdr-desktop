@@ -9,6 +9,17 @@ import { createRequire } from 'module';
 import sharp from 'sharp';
 import log from 'electron-log/main.js';
 
+// Raise V8's old-generation heap ceiling from the default ~1.5 GB to
+// 4 GB. Belt-and-braces against memory pressure on users with less
+// RAM headroom than the developer machine — specifically covers the
+// edge where a large Google Takeout zip's analysis spikes memory and
+// the default heap trips before the OS swap kicks in. The zip engine
+// was rewritten to stream one entry at a time so this ceiling should
+// rarely be approached, but raising it removes a fragile cliff for
+// the handful of paths (sharp thumbnailing, clustering buffers) that
+// still allocate larger transient arrays.
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
+
 // Pin the app name BEFORE electron-log resolves its file path. In
 // production the packaged `productName` from package.json takes
 // effect automatically, but in development `npx electron` reports
