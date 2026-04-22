@@ -7057,9 +7057,9 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                           {onReportProblem && (
                             <button
                               onClick={onReportProblem}
-                              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+                              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-border bg-secondary/30 text-foreground hover:bg-secondary/50 transition-colors cursor-pointer"
                             >
-                              <AlertTriangle className="w-4 h-4" />
+                              <AlertTriangle className="w-4 h-4 text-amber-500" />
                               Report a problem (recommended)
                             </button>
                           )}
