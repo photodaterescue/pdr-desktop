@@ -178,6 +178,19 @@ interface SearchRibbonProps {
   showLibraryManager?: boolean;
   requestClose?: boolean;
   hasSources?: boolean;
+  /** When set, S&D is in "pick a background photo for Trees" mode.
+   *  Renders a banner across the top of results, intercepts the primary
+   *  "Use this photo" action per tile, and on confirm/cancel hands back
+   *  control via the two callbacks. */
+  pickMode?: {
+    kind: 'canvas' | 'card';
+    treeId: number;
+    treeName: string;
+    personId?: number;
+    personName?: string;
+  } | null;
+  onPickCancel?: () => void;
+  onPickConfirm?: (filePath: string) => void;
 }
 
 // ─── Main Search Ribbon Component ────────────────────────────────────────────
@@ -185,7 +198,7 @@ interface SearchRibbonProps {
 // When the user searches or applies filters, results appear below the ribbon
 // and the workspace content is hidden. Collapsing the ribbon hides results.
 
-export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: externalDbReady, zoomLevel = 100, isDarkMode, onToggleDarkMode, licenseStatusBadge, onSearchActiveChange, showLibraryManager = false, requestClose, hasSources }: SearchRibbonProps) {
+export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: externalDbReady, zoomLevel = 100, isDarkMode, onToggleDarkMode, licenseStatusBadge, onSearchActiveChange, showLibraryManager = false, requestClose, hasSources, pickMode, onPickCancel, onPickConfirm }: SearchRibbonProps) {
   // Ribbon state
   const [ribbonExpanded, setRibbonExpanded] = useState(true);
   const [searchActive, setSearchActive] = useState(false); // true when results should show
@@ -253,6 +266,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setShowAllOverride(false); // Reset the show-all opt-in on every close.
     }
   }, [requestClose]);
+
+  // When the parent puts us in "pick a Trees background" mode, auto-
+  // activate the full-library view so the user lands on a thumbnail
+  // grid instead of the empty prompt. Clears the selection on each
+  // pick-mode entry so a stale selection doesn't accidentally get
+  // confirmed.
+  useEffect(() => {
+    if (pickMode) {
+      setSelectedFile(null);
+      setSearchActive(true);
+      setShowAllOverride(true);
+    }
+    // deliberately do NOT restore state on pickMode = null — the parent
+    // navigates away (back to Trees) so this component unmounts/hides.
+  }, [pickMode]);
 
   // Filter state
   const [selectedConfidence, setSelectedConfidence] = useState<string[]>([]);
@@ -2702,6 +2730,57 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               so Edit dates and other actions only ever target the set you meant.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Pick-mode banner — always visible while the user is picking a
+          Trees background via S&D. Sits above the results area so it
+          stays in view while the user explores. Confirm button is
+          enabled once a file is selected (single-click on a tile). */}
+      {pickMode && (
+        <div className="sticky top-0 z-20 border-b-2 border-violet-500/70 bg-violet-50 dark:bg-violet-950/30 px-4 py-2.5 flex items-center gap-3 shrink-0">
+          <div className="shrink-0 w-9 h-9 rounded-md bg-violet-500 flex items-center justify-center text-white shadow-sm">
+            <ImageIcon className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground truncate">
+              {pickMode.kind === 'canvas'
+                ? <>Pick a photo for the canvas on <span className="text-violet-700 dark:text-violet-300">{pickMode.treeName}</span> — Trees</>
+                : <>Pick a photo for <span className="text-violet-700 dark:text-violet-300">{pickMode.personName ?? 'this person'}</span>'s card on <span className="text-violet-700 dark:text-violet-300">{pickMode.treeName}</span> — Trees</>
+              }
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {selectedFile
+                ? <>Selected: <span className="font-medium text-foreground">{selectedFile.filename}</span> — click the purple button to apply.</>
+                : <>Search, filter, then click a photo to select it.</>
+              }
+            </p>
+          </div>
+          {selectedFile ? (
+            <button
+              onClick={() => onPickConfirm?.(selectedFile.file_path)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold shadow-sm transition-colors"
+            >
+              <Check className="w-4 h-4" />
+              {pickMode.kind === 'canvas'
+                ? <>Use for canvas on {pickMode.treeName}</>
+                : <>Use for {pickMode.personName ?? 'card'} on {pickMode.treeName}</>
+              }
+            </button>
+          ) : (
+            <button
+              disabled
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-muted text-muted-foreground text-sm font-medium cursor-not-allowed border border-border"
+            >
+              Select a photo first
+            </button>
+          )}
+          <button
+            onClick={() => onPickCancel?.()}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent"
+          >
+            Cancel
+          </button>
         </div>
       )}
 

@@ -130,6 +130,7 @@ import {
   createSavedTree,
   updateSavedTree,
   deleteSavedTree,
+  toggleHiddenAncestor,
   undoLastGraphOperation,
   redoGraphOperation,
   getGraphHistoryCounts,
@@ -148,6 +149,8 @@ import {
   listRelationshipsForPerson,
   listAllRelationships,
   updatePersonLifeEvents,
+  setPersonCardBackground,
+  setPersonGender,
   getFamilyGraph,
   getPersonCooccurrenceStats,
   getPartnerSuggestionScores,
@@ -2521,6 +2524,22 @@ ipcMain.handle('trees:updatePersonLifeEvents', async (_event, args: { personId: 
   }
 });
 
+ipcMain.handle('trees:setPersonCardBackground', async (_event, args: { personId: number; dataUrl: string | null }) => {
+  try {
+    return setPersonCardBackground(args.personId, args.dataUrl);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('trees:setPersonGender', async (_event, args: { personId: number; gender: string | null }) => {
+  try {
+    return setPersonGender(args.personId, args.gender);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('trees:getFamilyGraph', async (_event, args: { focusPersonId: number; maxHops?: number }) => {
   try {
     return { success: true, data: getFamilyGraph(args.focusPersonId, args.maxHops ?? 3) };
@@ -2567,6 +2586,11 @@ ipcMain.handle('trees:savedUpdate', async (_event, args: { id: number; patch: Pa
 
 ipcMain.handle('trees:savedDelete', async (_event, id: number) => {
   try { return deleteSavedTree(id); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
+ipcMain.handle('trees:toggleHiddenAncestor', async (_event, args: { treeId: number; personId: number }) => {
+  try { return toggleHiddenAncestor(args.treeId, args.personId); }
   catch (err) { return { success: false, error: (err as Error).message }; }
 });
 

@@ -72,14 +72,16 @@ export function SiblingKindDialog({
           <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
             <X className="w-4 h-4" />
           </button>
-          <h3 className="text-center px-6 flex items-center justify-center gap-2">
-            <Users className="w-4 h-4 text-primary" />
-            <span className="text-sm text-muted-foreground">How are</span>
-            <span className="font-bold">{fromPersonName}</span>
-            <span className="text-sm text-muted-foreground">and</span>
-            <span className="font-bold">{toPersonName}</span>
-            <span className="text-sm text-muted-foreground">related?</span>
-          </h3>
+          <div className="flex items-center justify-center gap-2 pr-6">
+            <Users className="w-4 h-4 text-primary shrink-0" />
+            <h3 className="text-sm text-foreground text-center leading-snug">
+              <span className="text-muted-foreground">How are </span>
+              <span className="font-bold">{fromPersonName}</span>
+              <span className="text-muted-foreground"> and </span>
+              <span className="font-bold">{toPersonName}</span>
+              <span className="text-muted-foreground"> related?</span>
+            </h3>
+          </div>
         </div>
 
         <div className="px-4 py-4 flex flex-col gap-2">

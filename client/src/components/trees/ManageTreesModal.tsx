@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { X, Plus, Pencil, Check, Trash2, Image as ImageIcon, FileText, Users, Move, History as HistoryIcon, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { X, Plus, Pencil, Check, Trash2, Image as ImageIcon, FileText, Users, Move, History as HistoryIcon, ChevronDown, ChevronRight, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import {
   listSavedTrees,
   updateSavedTree,
   deleteSavedTree,
+  toggleHiddenAncestor,
   listGraphHistoryEntries,
   revertToGraphHistoryEntry,
   type SavedTreeRecord,
@@ -24,6 +25,13 @@ interface ManageTreesModalProps {
    *  create that prompts for the focus person. Parent handles focus
    *  picking then creates the tree with default filter settings. */
   onRequestNewTree: () => void;
+  /** Ask the parent to route the user to S&D in "pick a photo for this
+   *  tree's canvas background" mode. Parent closes this modal first
+   *  then opens the search view. */
+  onRequestBackgroundPick?: (tree: SavedTreeRecord) => void;
+  /** Lookup person name by id — used to render the hidden-ancestry
+   *  list under each tree. Falls back to "#id" when unknown. */
+  getPersonName?: (id: number) => string;
 }
 
 const MAX_TREES = 5;
@@ -35,7 +43,7 @@ const MAX_TREES = 5;
  * relationship-wiring work.
  */
 export function ManageTreesModal({
-  currentTreeId, currentFocusPersonId, getTreeSvg, onSwitch, onChanged, onClose, onRequestNewTree,
+  currentTreeId, currentFocusPersonId, getTreeSvg, onSwitch, onChanged, onClose, onRequestNewTree, onRequestBackgroundPick, getPersonName,
 }: ManageTreesModalProps) {
   const [trees, setTrees] = useState<SavedTreeRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +51,7 @@ export function ManageTreesModal({
   const [editingName, setEditingName] = useState('');
   const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
   const [busy, setBusy] = useState(false);
+
 
   // History panel — lazy-loaded when expanded so we don't hit the DB
   // for users who just want to rename / switch trees.
@@ -136,6 +145,69 @@ export function ManageTreesModal({
     onChanged();
   };
 
+  const handlePickBackground = (t: SavedTreeRecord) => {
+    if (!onRequestBackgroundPick) return;
+    onRequestBackgroundPick(t);
+  };
+
+  const handleClearBackground = async (t: SavedTreeRecord) => {
+    setBusy(true);
+    await updateSavedTree(t.id, { backgroundImage: null });
+    setBusy(false);
+    await reload();
+    onChanged();
+  };
+
+  // Opacity slider — the earlier version called reload() on every tick,
+  // which re-queried the DB and swapped the trees array; the swap
+  // re-mounted the slider's containing DOM and made the modal flicker
+  // mid-drag. Now:
+  //   • live drag patches the modal's LOCAL trees state (so the row
+  //     stays in sync without hitting the DB)
+  //   • AND fires a no-await updateSavedTree + onChanged() so the canvas
+  //     preview follows the slider in real time
+  //   • no modal reload() mid-drag
+  const handleBackgroundOpacityLive = (t: SavedTreeRecord, value: number) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, backgroundOpacity: value } : x));
+    updateSavedTree(t.id, { backgroundOpacity: value }).then(() => onChanged());
+  };
+  /** Tree contrast slider — boosts card borders/shadows so cards stay
+   *  legible over a busy canvas background. Same live-commit pattern
+   *  as the fade slider. */
+  const handleTreeContrastLive = (t: SavedTreeRecord, value: number) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, treeContrast: value } : x));
+    updateSavedTree(t.id, { treeContrast: value }).then(() => onChanged());
+  };
+
+  /** Tree-scoped toggle for gendered relationship labels — live commit
+   *  pattern same as Fade / Tree pop so there's no modal flicker. */
+  const handleToggleGendered = async (t: SavedTreeRecord, value: boolean) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, useGenderedLabels: value } : x));
+    await updateSavedTree(t.id, { useGenderedLabels: value });
+    onChanged();
+  };
+
+  /** Tree-scoped toggle for hiding the gender marker in the top-right
+   *  corner of cards. Off by default — the marker appears as soon as
+   *  the user sets a gender. */
+  const handleToggleHideMarker = async (t: SavedTreeRecord, value: boolean) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, hideGenderMarker: value } : x));
+    await updateSavedTree(t.id, { hideGenderMarker: value });
+    onChanged();
+  };
+
+  /** Remove a person id from a tree's hidden-ancestry list, restoring
+   *  their family line to the canvas. Goes through toggleHiddenAncestor
+   *  so the flip is logged to graph_history — Ctrl+Z will restore the
+   *  hide, and the history list below picks it up as "Showed X's
+   *  ancestry in Y". */
+  const handleUnhideAncestry = async (t: SavedTreeRecord, personId: number) => {
+    const next = (t.hiddenAncestorPersonIds ?? []).filter(id => id !== personId);
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, hiddenAncestorPersonIds: next } : x));
+    await toggleHiddenAncestor(t.id, personId);
+    onChanged();
+  };
+
   const handleExportPng = async () => {
     const svg = getTreeSvg();
     if (!svg) return;
@@ -204,65 +276,201 @@ export function ManageTreesModal({
           ) : (
             trees.map(t => {
               const isCurrent = t.id === currentTreeId;
+              const hasBg = !!t.backgroundImage;
               return (
                 <div
                   key={t.id}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border transition-colors ${
+                  className={`flex flex-col gap-2 px-3 py-2.5 rounded-lg border transition-colors ${
                     isCurrent
                       ? 'border-primary bg-primary/10'
                       : 'border-border hover:border-primary/40'
                   }`}
                 >
-                  <Users className={`w-4 h-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <div className="flex-1 min-w-0">
-                    {editingId === t.id ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          autoFocus
-                          value={editingName}
-                          onChange={e => setEditingName(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') commitRename();
-                            else if (e.key === 'Escape') setEditingId(null);
-                          }}
-                          className="flex-1 px-2 py-1 rounded border border-primary bg-background text-sm text-foreground"
-                        />
-                        <button onClick={commitRename} disabled={busy} className="p-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90">
-                          <Check className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-2">
+                    <Users className={`w-4 h-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <div className="flex-1 min-w-0">
+                      {editingId === t.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            autoFocus
+                            value={editingName}
+                            onChange={e => setEditingName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') commitRename();
+                              else if (e.key === 'Escape') setEditingId(null);
+                            }}
+                            className="flex-1 px-2 py-1 rounded border border-primary bg-background text-sm text-foreground"
+                          />
+                          <button onClick={commitRename} disabled={busy} className="p-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90">
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => onSwitch(t)}
+                          className="w-full text-left truncate"
+                          title="Switch to this tree"
+                        >
+                          <span className={`text-sm font-medium text-foreground ${isCurrent ? 'font-semibold' : ''}`}>{t.name}</span>
+                          {isCurrent && (
+                            <span className="ml-2 text-[10px] uppercase tracking-wide font-semibold text-foreground bg-primary/20 px-1.5 py-0.5 rounded">
+                              current
+                            </span>
+                          )}
                         </button>
-                      </div>
-                    ) : (
+                      )}
+                    </div>
+                    {editingId !== t.id && (
                       <button
-                        onClick={() => onSwitch(t)}
-                        className="w-full text-left truncate"
-                        title="Switch to this tree"
+                        onClick={() => startRename(t)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/60 border border-border hover:bg-accent text-foreground"
                       >
-                        <span className={`text-sm font-medium text-foreground ${isCurrent ? 'font-semibold' : ''}`}>{t.name}</span>
-                        {isCurrent && (
-                          <span className="ml-2 text-[10px] uppercase tracking-wide font-semibold text-foreground bg-primary/20 px-1.5 py-0.5 rounded">
-                            current
-                          </span>
-                        )}
+                        <Pencil className="w-3.5 h-3.5" />
+                        Rename
+                      </button>
+                    )}
+                    {editingId !== t.id && allowRemove && trees.length > 1 && (
+                      <button
+                        onClick={() => handleRemove(t)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-red-500/10 border border-red-500/40 text-red-600 hover:bg-red-500/20"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remove
                       </button>
                     )}
                   </div>
+
+                  {/* Per-tree background controls — swatch + pick/change/clear,
+                      plus an opacity slider that only appears when a background
+                      is set. */}
                   {editingId !== t.id && (
-                    <button
-                      onClick={() => startRename(t)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/60 border border-border hover:bg-accent text-foreground"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                      Rename
-                    </button>
+                    <div className="flex items-center gap-2 pl-6">
+                      <div
+                        className="w-8 h-8 rounded border border-border bg-muted shrink-0"
+                        style={hasBg ? {
+                          backgroundImage: `url("${t.backgroundImage}")`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                        } : undefined}
+                        aria-hidden
+                      />
+                      <button
+                        onClick={() => handlePickBackground(t)}
+                        disabled={busy}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/60 border border-border hover:bg-accent text-foreground"
+                        title="Pick an image to display behind this tree's canvas"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        {hasBg ? 'Change background' : 'Set background'}
+                      </button>
+                      {hasBg && (
+                        <>
+                          <button
+                            onClick={() => handleClearBackground(t)}
+                            disabled={busy}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/30 border border-border hover:bg-accent text-foreground"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            Clear
+                          </button>
+                          <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-auto">
+                            <span>Fade</span>
+                            <input
+                              type="range"
+                              min={0.05}
+                              max={0.6}
+                              step={0.01}
+                              value={t.backgroundOpacity}
+                              onChange={e => handleBackgroundOpacityLive(t, parseFloat(e.target.value))}
+                              className="w-20"
+                            />
+                          </label>
+                        </>
+                      )}
+                    </div>
                   )}
-                  {editingId !== t.id && allowRemove && trees.length > 1 && (
-                    <button
-                      onClick={() => handleRemove(t)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-red-500/10 border border-red-500/40 text-red-600 hover:bg-red-500/20"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Remove
-                    </button>
+
+                  {/* Tree pop — boosts card borders + shadows so cards
+                      stay legible on a busy backdrop. Always visible
+                      (works even without a background image). */}
+                  {editingId !== t.id && (
+                    <div className="flex items-center gap-2 pl-6">
+                      <span className="text-xs text-muted-foreground w-20 shrink-0">Tree pop</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={t.treeContrast}
+                        onChange={e => handleTreeContrastLive(t, parseFloat(e.target.value))}
+                        className="flex-1"
+                      />
+                      <span className="text-xs text-muted-foreground w-8 text-right">{Math.round(t.treeContrast * 100)}</span>
+                    </div>
+                  )}
+
+                  {/* Gender controls — two independent checkboxes:
+                      • Gendered labels drives the wording under names
+                        (Mother/Father vs Parent).
+                      • Hide gender markers suppresses the Mars/Venus
+                        symbol in the top-right of each card. */}
+                  {editingId !== t.id && (
+                    <div className="flex flex-col gap-1.5 pl-6">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={t.useGenderedLabels}
+                          onChange={e => handleToggleGendered(t, e.target.checked)}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span className="text-foreground">Gendered relationship labels</span>
+                        <span className="ml-1 text-muted-foreground/70">
+                          ({t.useGenderedLabels ? 'Mother / Father / Sister / …' : 'Parent / Sibling / …'})
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={t.hideGenderMarker}
+                          onChange={e => handleToggleHideMarker(t, e.target.checked)}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span className="text-foreground">Hide gender markers on cards</span>
+                        <span className="ml-1 text-muted-foreground/70">
+                          (♂ / ♀ / ⚥ in the top-right corner)
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Hidden ancestries — one row per person whose line
+                      the user has suppressed in this tree. The card
+                      might not be on the canvas any more (their only
+                      tie to the focus may have gone with the branch),
+                      so this list is the guaranteed way back. */}
+                  {editingId !== t.id && (t.hiddenAncestorPersonIds ?? []).length > 0 && (
+                    <div className="pl-6 border-t border-border/60 pt-2 mt-1">
+                      <p className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                        <EyeOff className="w-3 h-3" />
+                        Hidden ancestries
+                      </p>
+                      <ul className="flex flex-col gap-1">
+                        {(t.hiddenAncestorPersonIds ?? []).map(pid => (
+                          <li key={pid} className="flex items-center justify-between gap-2 text-sm">
+                            <span className="text-foreground truncate">
+                              {getPersonName?.(pid) ?? `#${pid}`}
+                            </span>
+                            <button
+                              onClick={() => handleUnhideAncestry(t, pid)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-accent/60 border border-border hover:bg-accent text-foreground shrink-0"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              Show ancestry
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               );
@@ -337,6 +545,7 @@ export function ManageTreesModal({
           <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm hover:bg-accent text-foreground">Done</button>
         </div>
       </div>
+
     </div>
   );
 }

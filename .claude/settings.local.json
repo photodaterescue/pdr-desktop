@@ -73,7 +73,28 @@
       "Bash(git status *)",
       "Bash(git log *)",
       "Bash(git rev-list *)",
-      "Bash(xargs wc *)"
+      "Bash(xargs wc *)",
+      "Bash(git commit -m ' *)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(jq --version)",
+      "Bash(node -e \"const { execSync } = require\\('child_process'\\); let ctx='Git state at session start:'; try { const un = execSync\\('git log --oneline @{u}..HEAD', {encoding:'utf8'}\\).trim\\(\\); if\\(un\\) ctx += '\\\\n\\\\nUnpushed commits:\\\\n' + un; } catch\\(e\\){} try { const st = execSync\\('git status --porcelain', {encoding:'utf8'}\\).trim\\(\\); ctx += st ? '\\\\n\\\\nUncommitted changes:\\\\n' + st : '\\\\n\\\\n\\(working tree clean\\)'; } catch\\(e\\){} process.stdout.write\\(JSON.stringify\\({hookSpecificOutput:{hookEventName:'SessionStart',additionalContext:ctx}}\\)\\);\")",
+      "Bash(node -e \"const s=require\\('./.claude/settings.json'\\); const cmd=s.hooks.SessionStart[0].hooks[0].command; console.log\\('Hook command extracted OK, length:', cmd.length\\); console.log\\('Executing…'\\); require\\('child_process'\\).exec\\(cmd,{cwd:process.cwd\\(\\)},\\(e,o,er\\)=>{console.log\\('stdout:',o\\); if\\(er\\)console.log\\('stderr:',er\\); if\\(e\\)console.log\\('err:',e.message\\);}\\);\")",
+      "Bash(git commit -m 'Settings: use PDR-styled confirm + toast for Re-analyze AI Tags *)",
+      "Bash(git commit -m 'Settings: modal confirmation after Re-analyze, pointing at title bar *)",
+      "Bash(git commit -m 'promptConfirm: center the title header *)",
+      "Bash(git commit -m 'AI: auto-resume tags-only processing on app launch *)",
+      "Bash(git commit -m 'Trees: fix X-button on draggable modals + clamp drag to viewport *)",
+      "Bash(git commit -m 'Trees: tighten derived row — compact '\\\\''· auto'\\\\'' + caption once at the top *)",
+      "Bash(git commit -m 'Trees: make relationship dates forgiving — year alone is fine *)",
+      "Bash(git commit -m 'Trees: Who-is-this? modal shows placeholder'\\\\''s current relationships *)",
+      "Bash(git commit -m 'Trees: fix TDZ crash that blanked the Trees view *)",
+      "Bash(git commit -m 'Trees: fix second TDZ crash — undo/redo deps also referenced fetchDepth *)",
+      "Bash(git commit -m 'Trees: Link-to-existing default + photo counts + Done button in Who is this? *)",
+      "Bash(git commit -m 'Trees: date line reads '\\\\''1978 — Living'\\\\'' / '\\\\''1948 — 2022'\\\\'' \\(royal-chart style\\) *)",
+      "Bash(git commit -m 'Trees: redistribute card internal padding — more breathing room *)",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:claude.ai)"
     ]
   }
 }

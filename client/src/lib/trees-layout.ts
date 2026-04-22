@@ -29,41 +29,102 @@ import type { FamilyGraphEdge, FamilyGraphNode, FamilyGraph } from './electron-b
  * it into a real placeholder_person on the backend before opening
  * the resolver.
  */
-export function augmentWithVirtualGhosts(graph: FamilyGraph, _maxDepth: number): FamilyGraph {
+export function augmentWithVirtualGhosts(
+  graph: FamilyGraph,
+  maxDepth: number,
+  skipPersonIds?: Iterable<number>,
+): FamilyGraph {
   const nodes = [...graph.nodes];
   const edges = [...graph.edges];
 
-  // Count existing parent edges per child.
-  const parentCountByChild = new Map<number, number>();
+  // Collect real parent IDs per child. We use this both to count (to
+  // know how many ghosts are needed) and to SIGNATURE siblings — two
+  // children with the same real-parent set share any remaining ghost
+  // slots, so three confirmed siblings all missing the same 2nd parent
+  // paint one shared ghost instead of three identical-looking ones.
+  const realParentsByChild = new Map<number, number[]>();
   for (const e of edges) {
     if (e.type !== 'parent_of') continue;
-    parentCountByChild.set(e.bId, (parentCountByChild.get(e.bId) ?? 0) + 1);
+    if (!realParentsByChild.has(e.bId)) realParentsByChild.set(e.bId, []);
+    realParentsByChild.get(e.bId)!.push(e.aId);
   }
 
   let virtualId = -1;
+  const skipSet = skipPersonIds ? new Set(skipPersonIds) : null;
+
+  // One entry per unique (sorted-real-parents × needed-slots) signature.
+  // All children matching the signature wire to the SAME ghost IDs, so
+  // the render treats them as one family with shared unnamed parents.
+  const ghostsBySignature = new Map<string, number[]>();
 
   // Snapshot the ORIGINAL named nodes so ghosts added in this pass don't
   // trigger more ghosts above them (no cascade).
   const originalNamedNodes = graph.nodes.filter(n => !n.isPlaceholder);
   for (const node of originalNamedNodes) {
-    const existing = parentCountByChild.get(node.personId) ?? 0;
-    const needed = Math.max(0, 2 - existing);
-    for (let i = 0; i < needed; i++) {
-      const ghostId = virtualId--;
-      nodes.push({
-        personId: ghostId,
-        name: '',
-        avatarData: null,
-        representativeFaceId: null,
-        representativeFaceFilePath: null,
-        representativeFaceBox: null,
-        birthDate: null,
-        deathDate: null,
-        deceasedMarker: null,
-        hopsFromFocus: node.hopsFromFocus + 1,
-        photoCount: 0,
-        isPlaceholder: true,
-      });
+    // Skip ghost generation for anyone the caller has flagged — typically
+    // a partner whose ancestry the user explicitly hid for this tree.
+    // Painting ghosts above them contradicts the hide action and tempts
+    // the user into populating a line that's meant to stay collapsed.
+    if (skipSet && skipSet.has(node.personId)) continue;
+    // People sitting AT the Steps boundary never get ghost slots —
+    // any parents would live one hop past the current view, which is
+    // exactly what the step-count badge on the card signals. Applies
+    // whether or not they have real parents in the DB; without this
+    // rule, boundary people with 0 DB parents still get ghosts painted
+    // in territory the user has deliberately excluded.
+    if (node.hopsFromFocus >= maxDepth) continue;
+    const realParents = realParentsByChild.get(node.personId) ?? [];
+    // If the DB has MORE parents for this person than we can see in
+    // the visible graph, those missing-from-view parents are really
+    // stored — just beyond the Steps window. Don't paint ghost slots
+    // above them; the step-count badge on the card already tells the
+    // user the view is truncated here. Reads TRUE total from the
+    // server (node.totalParentCount) so this works even when the
+    // parents themselves aren't in the fetched graph.
+    if (node.totalParentCount > realParents.length) continue;
+    const needed = Math.max(0, 2 - realParents.length);
+    if (needed === 0) continue;
+
+    // Ghost consolidation only applies when there IS a shared real
+    // parent to key the signature by. With zero real parents visible,
+    // two unrelated children (e.g. Mel and Lindsay, both of whose
+    // real parents sit beyond the Steps window) would otherwise
+    // collide on the same empty signature and end up SHARING ghost
+    // parents — wrongly treated as siblings and pulled out of place
+    // next to their spouses. Per-node unique ghosts in that case.
+    const canShare = realParents.length > 0;
+    const sig = canShare
+      ? [...realParents].sort((a, b) => a - b).join(',') + '|' + needed
+      : `__unique_${node.personId}|${needed}`;
+    let ghostIds = ghostsBySignature.get(sig);
+    if (!ghostIds) {
+      ghostIds = [];
+      for (let i = 0; i < needed; i++) ghostIds.push(virtualId--);
+      ghostsBySignature.set(sig, ghostIds);
+      // Add the ghost NODES once per unique ghost ID — not once per
+      // child that references them. Otherwise siblings would duplicate
+      // the ghost node into the layout.
+      for (const ghostId of ghostIds) {
+        nodes.push({
+          personId: ghostId,
+          name: '',
+          avatarData: null,
+          representativeFaceId: null,
+          representativeFaceFilePath: null,
+          representativeFaceBox: null,
+          birthDate: null,
+          deathDate: null,
+          deceasedMarker: null,
+          cardBackground: null,
+          gender: null,
+          hopsFromFocus: node.hopsFromFocus + 1,
+          photoCount: 0,
+          totalParentCount: 0,
+          isPlaceholder: true,
+        });
+      }
+    }
+    for (const ghostId of ghostIds) {
       edges.push({
         id: null,
         aId: ghostId,
@@ -239,16 +300,80 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       ordered = orderChildGeneration(genNodes, graph, placed);
     }
     const count = ordered.length;
-    const totalWidth = (count - 1) * opts.nodeSpacing;
-    const startX = -totalWidth / 2;
-    ordered.forEach((node, i) => {
-      placed.set(node.personId, {
-        ...node,
-        generation: gen,
-        x: startX + i * opts.nodeSpacing,
-        y: -gen * opts.rowHeight, // positive gen = older = up on screen (negative y)
+    // X-positioning strategy depends on generation:
+    //
+    //   gen > 0 (ancestors) — try to sit each parent ABOVE their own
+    //     children. We compute a desired x per parent (mean of their
+    //     placed children's x), then walk left-to-right enforcing a
+    //     minimum gap: spouseOffset between parents who share a child
+    //     (partners stay close), nodeSpacing between unrelated parent
+    //     groups. This stops a spouse's parents drifting sideways into
+    //     another family's column (the "MD ends up above Terry" bug).
+    //
+    //   gen == 0 (focus row) or gen < 0 (descendants) — keep the
+    //     evenly-spaced row layout. The focus row's ordering already
+    //     handles spouse adjacency, and descendants we'll revisit once
+    //     the ancestor layout is solid.
+    if (gen > 0) {
+      // Build children-by-parent restricted to THIS generation's nodes.
+      const childrenByParent = new Map<number, number[]>();
+      for (const e of graph.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (!ordered.some(n => n.personId === e.aId)) continue;
+        if (!placed.has(e.bId)) continue;
+        if (!childrenByParent.has(e.aId)) childrenByParent.set(e.aId, []);
+        childrenByParent.get(e.aId)!.push(e.bId);
+      }
+      const sharesAnyChild = (a: number, b: number): boolean => {
+        const aKids = childrenByParent.get(a);
+        const bKids = childrenByParent.get(b);
+        if (!aKids || !bKids) return false;
+        for (const k of aKids) if (bKids.includes(k)) return true;
+        return false;
+      };
+      const desired = ordered.map(p => {
+        const kids = childrenByParent.get(p.personId) ?? [];
+        const xs = kids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
+        if (xs.length === 0) return 0;
+        return xs.reduce((a, b) => a + b, 0) / xs.length;
       });
-    });
+      const placedX: number[] = [];
+      for (let i = 0; i < ordered.length; i++) {
+        const want = desired[i];
+        if (i === 0) { placedX.push(want); continue; }
+        const minGap = sharesAnyChild(ordered[i - 1].personId, ordered[i].personId)
+          ? opts.spouseOffset
+          : opts.nodeSpacing;
+        placedX.push(Math.max(want, placedX[i - 1] + minGap));
+      }
+      // Bias-correct: if the whole row drifted (everything pushed right
+      // by the overlap pass), slide it back so the centre of gravity
+      // matches the desired centre. Only slides LEFT — never extends
+      // beyond the natural desired positions.
+      const desiredMean = desired.reduce((a, b) => a + b, 0) / desired.length;
+      const actualMean  = placedX.reduce((a, b) => a + b, 0) / placedX.length;
+      const drift = actualMean - desiredMean;
+      if (drift > 0) for (let i = 0; i < placedX.length; i++) placedX[i] -= drift;
+      ordered.forEach((node, i) => {
+        placed.set(node.personId, {
+          ...node,
+          generation: gen,
+          x: placedX[i],
+          y: -gen * opts.rowHeight,
+        });
+      });
+    } else {
+      const totalWidth = (count - 1) * opts.nodeSpacing;
+      const startX = -totalWidth / 2;
+      ordered.forEach((node, i) => {
+        placed.set(node.personId, {
+          ...node,
+          generation: gen,
+          x: startX + i * opts.nodeSpacing,
+          y: -gen * opts.rowHeight, // positive gen = older = up on screen (negative y)
+        });
+      });
+    }
   }
 
   const laidOutNodes: LaidOutNode[] = Array.from(placed.values());

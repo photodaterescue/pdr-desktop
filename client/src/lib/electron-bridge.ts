@@ -1055,6 +1055,22 @@ export async function updatePersonLifeEvents(personId: number, patch: { birthDat
   return { success: false, error: 'Not running in Electron' };
 }
 
+export async function setPersonCardBackground(personId: number, dataUrl: string | null): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.setPersonCardBackground({ personId, dataUrl });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export type PersonGender = 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | 'unknown' | null;
+
+export async function setPersonGender(personId: number, gender: PersonGender): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.setPersonGender({ personId, gender });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 // Trees v1 — family graph types (shared with trees-layout.ts).
 
 export interface FamilyGraphNode {
@@ -1067,8 +1083,15 @@ export interface FamilyGraphNode {
   birthDate: string | null;
   deathDate: string | null;
   deceasedMarker: string | null;
+  /** Optional per-card background image (data URL). */
+  cardBackground: string | null;
+  /** 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | 'unknown' | null */
+  gender: string | null;
   hopsFromFocus: number;
   photoCount: number;
+  /** Total parent_of count in the full DB — not limited to the
+   *  currently-fetched hop window. */
+  totalParentCount: number;
   /** True for placeholder intermediate nodes (ghost rendered in Trees). */
   isPlaceholder: boolean;
 }
@@ -1136,6 +1159,12 @@ export interface SavedTreeRecord {
   generationsEnabled: boolean;
   ancestorsDepth: number;
   descendantsDepth: number;
+  backgroundImage: string | null;
+  backgroundOpacity: number;
+  treeContrast: number;
+  hiddenAncestorPersonIds: number[];
+  useGenderedLabels: boolean;
+  hideGenderMarker: boolean;
   lastOpenedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1165,7 +1194,7 @@ export async function createSavedTree(args: SavedTreeSettings): Promise<{ succes
   return { success: false, error: 'Not running in Electron' };
 }
 
-export async function updateSavedTree(id: number, patch: Partial<SavedTreeSettings & { markOpened: boolean }>): Promise<{ success: boolean; data?: SavedTreeRecord; error?: string }> {
+export async function updateSavedTree(id: number, patch: Partial<SavedTreeSettings & { backgroundImage: string | null; backgroundOpacity: number; treeContrast: number; hiddenAncestorPersonIds: number[]; useGenderedLabels: boolean; hideGenderMarker: boolean; markOpened: boolean }>): Promise<{ success: boolean; data?: SavedTreeRecord; error?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
     return (window as any).pdr.trees.savedUpdate({ id, patch });
   }
@@ -1175,6 +1204,13 @@ export async function updateSavedTree(id: number, patch: Partial<SavedTreeSettin
 export async function deleteSavedTree(id: number): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
     return (window as any).pdr.trees.savedDelete(id);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export async function toggleHiddenAncestor(treeId: number, personId: number): Promise<{ success: boolean; nowHidden?: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.toggleHiddenAncestor({ treeId, personId });
   }
   return { success: false, error: 'Not running in Electron' };
 }

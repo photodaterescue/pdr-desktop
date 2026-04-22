@@ -538,6 +538,44 @@ export function initDatabase(): { success: boolean; error?: string } {
       );
     `);
 
+    // Per-tree canvas background image (data URL). Optional. Rendered
+    // faded behind the family graph on each saved tree's canvas.
+    const savedTreeCols = db.prepare(`PRAGMA table_info(saved_trees)`).all() as { name: string }[];
+    const savedTreeColNames = new Set(savedTreeCols.map(c => c.name));
+    if (!savedTreeColNames.has('background_image')) {
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN background_image TEXT`); } catch {}
+    }
+    if (!savedTreeColNames.has('background_opacity')) {
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN background_opacity REAL NOT NULL DEFAULT 0.15`); } catch {}
+    }
+    if (!savedTreeColNames.has('tree_contrast')) {
+      // 0 → flat, 1 → maximum boost (stronger card shadow / darker borders
+      // / halo around nodes). Lets the user keep cards legible on busy
+      // background images.
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN tree_contrast REAL NOT NULL DEFAULT 0.3`); } catch {}
+    }
+    if (!savedTreeColNames.has('hidden_ancestor_person_ids')) {
+      // JSON array of person IDs whose ancestry should be hidden from
+      // this tree's view. Used when the user wants to suppress a
+      // partner's family line without removing the partnership edge.
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN hidden_ancestor_person_ids TEXT NOT NULL DEFAULT '[]'`); } catch {}
+    }
+    if (!savedTreeColNames.has('use_gendered_labels')) {
+      // When ON, relationship labels beneath card names render in
+      // gendered form (Mother/Father/Sister/Brother/…) when the person
+      // has a gender set. When OFF, labels stay neutral (Parent/
+      // Sibling/…). Default ON so tree reads naturally once the user
+      // starts filling in genders.
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN use_gendered_labels INTEGER NOT NULL DEFAULT 1`); } catch {}
+    }
+    if (!savedTreeColNames.has('hide_gender_marker')) {
+      // When ON, the Mars/Venus/Combined symbol in the top-right of
+      // each card is suppressed even for people whose gender is set.
+      // Default OFF so the marker appears automatically as soon as the
+      // user records a gender.
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN hide_gender_marker INTEGER NOT NULL DEFAULT 0`); } catch {}
+    }
+
     // Persons life-event + marker columns for Trees.
     if (!personColNames.has('birth_date')) {
       try { db.exec(`ALTER TABLE persons ADD COLUMN birth_date TEXT`); } catch {}
@@ -556,6 +594,19 @@ export function initDatabase(): { success: boolean; error?: string } {
       // isn't yet named. They're hidden from People Manager and render
       // as ghost nodes in Trees until the user names or merges them.
       try { db.exec(`ALTER TABLE persons ADD COLUMN is_placeholder INTEGER NOT NULL DEFAULT 0`); } catch {}
+    }
+    if (!personColNames.has('card_background')) {
+      // Optional per-person card background (data URL). Rendered faded
+      // behind the card content in Trees. Independent of avatar.
+      try { db.exec(`ALTER TABLE persons ADD COLUMN card_background TEXT`); } catch {}
+    }
+    if (!personColNames.has('gender')) {
+      // One of: 'male' | 'female' | 'non_binary' | 'prefer_not_to_say'
+      //       | 'unknown' | NULL. Drives gendered relationship labels
+      // (Mother/Father/…) and the Mars/Venus/Combined symbol on the
+      // card when the tree has gender markers enabled. NULL = not yet
+      // set; no symbol, neutral labels.
+      try { db.exec(`ALTER TABLE persons ADD COLUMN gender TEXT`); } catch {}
     }
 
     // Normalise any legacy double-backslash destination paths
@@ -3098,7 +3149,17 @@ export function removeRelationship(id: number): { success: boolean; error?: stri
 type HistoryOp =
   | { kind: 'add';    personAId: number; personBId: number; type: RelationshipType; since?: string | null; until?: string | null; flags?: RelationshipFlags | null; confidence?: number | null; source?: string | null; note?: string | null }
   | { kind: 'remove'; id?: number; personAId?: number; personBId?: number; type?: RelationshipType }
-  | { kind: 'update'; personAId: number; personBId: number; type: RelationshipType; patch: Partial<RelationshipRecord> };
+  | { kind: 'update'; personAId: number; personBId: number; type: RelationshipType; patch: Partial<RelationshipRecord> }
+  /** Add a person to a tree's hidden_ancestor_person_ids list.
+   *  Inverse is tree_show_ancestor. Applied idempotently — re-running
+   *  a hide on someone already hidden is a no-op, so redo after a
+   *  manual restore doesn't double-insert. */
+  | { kind: 'tree_hide_ancestor'; treeId: number; personId: number }
+  /** Remove a person from a tree's hidden_ancestor_person_ids list. */
+  | { kind: 'tree_show_ancestor'; treeId: number; personId: number }
+  /** Assign (or clear, via null) a person's gender. Inverse flips the
+   *  value back to what it was before. */
+  | { kind: 'person_gender_set'; personId: number; gender: string | null };
 
 function logGraphHistory(kind: string, forward: HistoryOp, inverse: HistoryOp, description: string) {
   const db = getDb();
@@ -3165,6 +3226,33 @@ function applyGraphOp(op: HistoryOp): { success: boolean; error?: string } {
       WHERE person_a_id = ? AND person_b_id = ? AND type = ?
     `).run(...vals, op.personAId, op.personBId, op.type);
     return { success: info.changes > 0 };
+  }
+  if (op.kind === 'person_gender_set') {
+    const exists = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(op.personId);
+    if (!exists) return { success: false, error: 'Person not found.' };
+    db.prepare(`UPDATE persons SET gender = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(op.gender, op.personId);
+    return { success: true };
+  }
+  if (op.kind === 'tree_hide_ancestor' || op.kind === 'tree_show_ancestor') {
+    // Read-modify-write the JSON array on saved_trees. Idempotent:
+    // hiding someone already hidden (or showing someone already shown)
+    // succeeds silently, which keeps redo safe after manual restores.
+    const row = db.prepare(`SELECT hidden_ancestor_person_ids FROM saved_trees WHERE id = ?`).get(op.treeId) as { hidden_ancestor_person_ids: string | null } | undefined;
+    if (!row) return { success: false, error: 'Tree not found.' };
+    let list: number[] = [];
+    try {
+      const parsed = row.hidden_ancestor_person_ids ? JSON.parse(row.hidden_ancestor_person_ids) : [];
+      if (Array.isArray(parsed)) list = parsed.filter(n => typeof n === 'number');
+    } catch {}
+    if (op.kind === 'tree_hide_ancestor') {
+      if (!list.includes(op.personId)) list.push(op.personId);
+    } else {
+      list = list.filter(n => n !== op.personId);
+    }
+    db.prepare(`UPDATE saved_trees SET hidden_ancestor_person_ids = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(JSON.stringify(list), op.treeId);
+    return { success: true };
   }
   return { success: false, error: 'unknown op kind' };
 }
@@ -3313,8 +3401,19 @@ export interface FamilyGraphNode {
   birthDate: string | null;
   deathDate: string | null;
   deceasedMarker: string | null;
+  /** Optional per-card background image (data URL). Rendered faded. */
+  cardBackground: string | null;
+  /** One of: 'male' | 'female' | 'non_binary' | 'prefer_not_to_say'
+   *  | 'unknown' | null. null = not yet set. Drives gendered labels +
+   *  the top-right symbol on the card. */
+  gender: string | null;
   hopsFromFocus: number;
   photoCount: number;
+  /** Total parent_of edges in the FULL DB where this person is the
+   *  child — NOT limited to parents inside the fetched hop window.
+   *  Lets the client suppress ghost placeholders when real parents
+   *  exist but sit beyond Steps, and gate the +parent chip. */
+  totalParentCount: number;
   /** True for placeholder nodes bridging skip-generation relationships
    *  (grandparent, aunt/uncle, cousin) where the intermediate person
    *  isn't yet named. The renderer styles these as ghost circles. */
@@ -3348,6 +3447,8 @@ interface PersonRow {
   birth_date: string | null;
   death_date: string | null;
   deceased_marker: string | null;
+  card_background: string | null;
+  gender: string | null;
   is_placeholder: number;
 }
 
@@ -3377,6 +3478,16 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
     SELECT * FROM relationships
     WHERE person_a_id = ? OR person_b_id = ?
   `);
+  /** Other children of a given parent — used to treat derived siblings
+   *  as 1-hop neighbours. Without this step, "my brother" reads as
+   *  hop 2 via the shared parent intermediate, which contradicts the
+   *  user's intuition (a sibling is 1 step away). We include the path
+   *  through parents for stored info but ALSO jump across siblings in
+   *  the distance metric. */
+  const otherChildrenStmt = db.prepare(`
+    SELECT person_b_id FROM relationships
+    WHERE type = 'parent_of' AND person_a_id = ? AND person_b_id <> ?
+  `);
 
   while (queue.length > 0) {
     const current = queue.shift()!;
@@ -3392,6 +3503,21 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
       if (!visited.has(other)) {
         visited.set(other, currentHops + 1);
         queue.push(other);
+      }
+    }
+    // Derived-sibling 1-hop expansion: for every parent_of row that
+    // makes `current` a child, jump straight to that parent's OTHER
+    // children and mark them as hop+1 (not hop+2 via the parent). Only
+    // affects distance — the edges themselves aren't added here; the
+    // derived sibling_of edges are synthesised later in this function.
+    for (const row of rows) {
+      if (row.type !== 'parent_of') continue;
+      if (row.person_b_id !== current) continue; // only parent_of rows where current is child
+      const siblings = otherChildrenStmt.all(row.person_a_id, current) as { person_b_id: number }[];
+      for (const s of siblings) {
+        if (visited.has(s.person_b_id)) continue;
+        visited.set(s.person_b_id, currentHops + 1);
+        queue.push(s.person_b_id);
       }
     }
   }
@@ -3418,37 +3544,21 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
     }
   }
 
-  // Family-overflow sweep. Adds people who are the DIRECT family
-  // (parent / partner / sibling) of a boundary node but sit one hop
-  // past the BFS limit. Without this, e.g. Dave (Lindsay's dad) is
-  // invisible when Lindsay is at the boundary, even though the whole
-  // point of drawing the tree is to show those relationships. One
-  // extra hop only — no cascade.
-  const boundaryIds = Array.from(visited.entries())
-    .filter(([_, hop]) => hop >= maxHops)
-    .map(([id]) => id);
-  if (boundaryIds.length > 0) {
-    const qs2 = boundaryIds.map(() => '?').join(',');
-    const familyRows = db.prepare(`
-      SELECT * FROM relationships
-      WHERE (person_a_id IN (${qs2}) OR person_b_id IN (${qs2}))
-        AND type IN ('parent_of', 'spouse_of', 'sibling_of')
-    `).all(...boundaryIds, ...boundaryIds) as RelationshipRow[];
-    for (const row of familyRows) {
-      const other = boundaryIds.includes(row.person_a_id) ? row.person_b_id : row.person_a_id;
-      if (!visited.has(other)) visited.set(other, maxHops + 1);
-      if (seenEdgeIds.has(row.id)) continue;
-      seenEdgeIds.add(row.id);
-      collectedEdges.push(rowToRelationship(row));
-    }
-  }
+  // Deliberately NO family-overflow past maxHops. An earlier revision
+  // auto-added direct family (parents / partners / siblings) of
+  // boundary people at hop+1 for convenience, but that produced nodes
+  // whose per-card step badge exceeded the Steps setting — a direct
+  // visual contradiction. "Steps: N" now means exactly that: nothing
+  // past hop N. Users who want to see a partner's family bump Steps
+  // by one.
 
   // Pull person details for every reachable node, plus photo counts.
   const ids = Array.from(visited.keys());
   const placeholders = ids.map(() => '?').join(',');
   const personRows = db.prepare(`
     SELECT id, name, avatar_data, representative_face_id,
-           birth_date, death_date, deceased_marker,
+           birth_date, death_date, deceased_marker, card_background,
+           gender,
            COALESCE(is_placeholder, 0) AS is_placeholder
     FROM persons
     WHERE id IN (${placeholders})
@@ -3462,6 +3572,21 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   `).all(...ids) as { person_id: number; photo_count: number }[];
   const photoCountByPerson = new Map<number, number>();
   for (const r of photoCountRows) photoCountByPerson.set(r.person_id, r.photo_count);
+
+  // TRUE total parent_of count per person — queried against the whole
+  // relationships table, NOT just the edges that fell inside the
+  // fetched hop window. Clients use this to suppress ghost slots
+  // above people whose real parents live beyond Steps, and to hide
+  // the +parent chip on anyone who already has two parents in the
+  // DB (even if only one is currently visible).
+  const totalParentCountRows = db.prepare(`
+    SELECT person_b_id AS child_id, COUNT(*) AS cnt
+    FROM relationships
+    WHERE type = 'parent_of' AND person_b_id IN (${placeholders})
+    GROUP BY person_b_id
+  `).all(...ids) as { child_id: number; cnt: number }[];
+  const totalParentCountByPerson = new Map<number, number>();
+  for (const r of totalParentCountRows) totalParentCountByPerson.set(r.child_id, r.cnt);
 
   // Face thumbnail coords per person — prefer the user-chosen representative
   // face; fall back to any face for that person so a new cluster still
@@ -3500,8 +3625,11 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
       birthDate: row.birth_date,
       deathDate: row.death_date,
       deceasedMarker: row.deceased_marker,
+      cardBackground: row.card_background,
+      gender: row.gender,
       hopsFromFocus: visited.get(row.id) ?? maxHops,
       photoCount: photoCountByPerson.get(row.id) ?? 0,
+      totalParentCount: totalParentCountByPerson.get(row.id) ?? 0,
       isPlaceholder: row.is_placeholder === 1,
     };
   });
@@ -3749,6 +3877,23 @@ export interface SavedTreeRecord {
   generationsEnabled: boolean;
   ancestorsDepth: number;
   descendantsDepth: number;
+  /** Optional data URL rendered faded behind the canvas. */
+  backgroundImage: string | null;
+  /** 0–1. Rendered opacity for the canvas background image. */
+  backgroundOpacity: number;
+  /** 0–1. Strengthens card borders/shadows so the tree stays legible
+   *  on busy backdrops. */
+  treeContrast: number;
+  /** Person IDs whose ancestors (parents, grandparents, …) should be
+   *  hidden from this tree's view. Keyed by partner — hiding Mel's
+   *  ancestry leaves Mel in place but removes her parents et al. */
+  hiddenAncestorPersonIds: number[];
+  /** When true, relationship labels on cards render gendered forms
+   *  (Mother/Father/Brother/Sister/…) for anyone whose gender is set. */
+  useGenderedLabels: boolean;
+  /** When true, the Mars/Venus/Combined symbol in the top-right of
+   *  each card is suppressed regardless of whether the gender is set. */
+  hideGenderMarker: boolean;
   lastOpenedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -3765,12 +3910,25 @@ interface SavedTreeRow {
   generations_enabled: number;
   ancestors_depth: number;
   descendants_depth: number;
+  background_image: string | null;
+  background_opacity: number;
+  tree_contrast: number | null;
+  hidden_ancestor_person_ids: string | null;
+  use_gendered_labels: number | null;
+  hide_gender_marker: number | null;
   last_opened_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
 function rowToSavedTree(row: SavedTreeRow): SavedTreeRecord {
+  let hidden: number[] = [];
+  if (row.hidden_ancestor_person_ids) {
+    try {
+      const parsed = JSON.parse(row.hidden_ancestor_person_ids);
+      if (Array.isArray(parsed)) hidden = parsed.filter(n => typeof n === 'number');
+    } catch {}
+  }
   return {
     id: row.id,
     name: row.name,
@@ -3780,6 +3938,12 @@ function rowToSavedTree(row: SavedTreeRow): SavedTreeRecord {
     generationsEnabled: row.generations_enabled === 1,
     ancestorsDepth: row.ancestors_depth,
     descendantsDepth: row.descendants_depth,
+    backgroundImage: row.background_image,
+    backgroundOpacity: typeof row.background_opacity === 'number' ? row.background_opacity : 0.15,
+    treeContrast: typeof row.tree_contrast === 'number' ? row.tree_contrast : 0.3,
+    hiddenAncestorPersonIds: hidden,
+    useGenderedLabels: row.use_gendered_labels == null ? true : row.use_gendered_labels === 1,
+    hideGenderMarker: row.hide_gender_marker === 1,
     lastOpenedAt: row.last_opened_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -3842,6 +4006,12 @@ export function updateSavedTree(id: number, patch: Partial<{
   generationsEnabled: boolean;
   ancestorsDepth: number;
   descendantsDepth: number;
+  backgroundImage: string | null;
+  backgroundOpacity: number;
+  treeContrast: number;
+  hiddenAncestorPersonIds: number[];
+  useGenderedLabels: boolean;
+  hideGenderMarker: boolean;
   markOpened: boolean;
 }>): { success: boolean; data?: SavedTreeRecord; error?: string } {
   const db = getDb();
@@ -3857,6 +4027,12 @@ export function updateSavedTree(id: number, patch: Partial<{
   if (patch.generationsEnabled != null) { sets.push('generations_enabled = ?'); values.push(patch.generationsEnabled ? 1 : 0); }
   if (patch.ancestorsDepth != null)     { sets.push('ancestors_depth = ?');     values.push(patch.ancestorsDepth); }
   if (patch.descendantsDepth != null)   { sets.push('descendants_depth = ?');   values.push(patch.descendantsDepth); }
+  if (patch.backgroundImage !== undefined) { sets.push('background_image = ?'); values.push(patch.backgroundImage); }
+  if (patch.backgroundOpacity != null)  { sets.push('background_opacity = ?'); values.push(Math.max(0, Math.min(1, patch.backgroundOpacity))); }
+  if (patch.treeContrast != null)       { sets.push('tree_contrast = ?');       values.push(Math.max(0, Math.min(1, patch.treeContrast))); }
+  if (patch.hiddenAncestorPersonIds)    { sets.push('hidden_ancestor_person_ids = ?'); values.push(JSON.stringify(patch.hiddenAncestorPersonIds)); }
+  if (patch.useGenderedLabels != null)  { sets.push('use_gendered_labels = ?');  values.push(patch.useGenderedLabels ? 1 : 0); }
+  if (patch.hideGenderMarker != null)   { sets.push('hide_gender_marker = ?');   values.push(patch.hideGenderMarker ? 1 : 0); }
   if (patch.markOpened)                 { sets.push(`last_opened_at = datetime('now')`); }
   sets.push(`updated_at = datetime('now')`);
 
@@ -3865,10 +4041,59 @@ export function updateSavedTree(id: number, patch: Partial<{
   return record ? { success: true, data: record } : { success: false, error: 'Update failed.' };
 }
 
+export function setPersonCardBackground(personId: number, dataUrl: string | null): { success: boolean; error?: string } {
+  const db = getDb();
+  const existing = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(personId);
+  if (!existing) return { success: false, error: 'Person not found.' };
+  db.prepare(`UPDATE persons SET card_background = ?, updated_at = datetime('now') WHERE id = ?`).run(dataUrl, personId);
+  return { success: true };
+}
+
+/** Set a person's gender. Writes to persons.gender and logs a
+ *  reversible entry in graph_history so Ctrl+Z flips it back. */
+export function setPersonGender(personId: number, gender: string | null): { success: boolean; error?: string } {
+  const db = getDb();
+  const row = db.prepare(`SELECT id, name, gender FROM persons WHERE id = ?`).get(personId) as { id: number; name: string; gender: string | null } | undefined;
+  if (!row) return { success: false, error: 'Person not found.' };
+  const previous = row.gender;
+  if (previous === gender) return { success: true };
+  const forward: HistoryOp = { kind: 'person_gender_set', personId, gender };
+  const inverse: HistoryOp = { kind: 'person_gender_set', personId, gender: previous };
+  const r = applyGraphOp(forward);
+  if (!r.success) return { success: false, error: r.error ?? 'Could not set gender.' };
+  const nm = (row.name ?? '').trim() || `#${personId}`;
+  const label = gender === null ? 'cleared' : `set to ${gender.replace(/_/g, ' ')}`;
+  logGraphHistory('person_gender_set', forward, inverse, `${nm}'s gender ${label}`);
+  return { success: true };
+}
+
 export function deleteSavedTree(id: number): { success: boolean; error?: string } {
   const db = getDb();
   db.prepare(`DELETE FROM saved_trees WHERE id = ?`).run(id);
   return { success: true };
+}
+
+/** Toggle whether a person's ancestry is hidden in a given saved tree,
+ *  AND log a reversible entry in graph_history so Ctrl+Z undoes it like
+ *  any other graph action. Goes through applyGraphOp for the write so
+ *  the same code path is used for forward + undo + redo. */
+export function toggleHiddenAncestor(treeId: number, personId: number): { success: boolean; nowHidden?: boolean; error?: string } {
+  const db = getDb();
+  const tree = getSavedTree(treeId);
+  if (!tree) return { success: false, error: 'Tree not found.' };
+  const currentlyHidden = tree.hiddenAncestorPersonIds.includes(personId);
+  const forwardKind = currentlyHidden ? 'tree_show_ancestor' : 'tree_hide_ancestor';
+  const inverseKind = currentlyHidden ? 'tree_hide_ancestor' : 'tree_show_ancestor';
+  const forward: HistoryOp = { kind: forwardKind as any, treeId, personId };
+  const inverse: HistoryOp = { kind: inverseKind as any, treeId, personId };
+  const r = applyGraphOp(forward);
+  if (!r.success) return { success: false, error: r.error ?? 'Could not update tree.' };
+  // Description uses the person's name for the Manage Trees history list.
+  const nameRow = db.prepare(`SELECT name FROM persons WHERE id = ?`).get(personId) as { name?: string } | undefined;
+  const nm = nameRow?.name?.trim() || `#${personId}`;
+  const verb = currentlyHidden ? 'Showed' : 'Hid';
+  logGraphHistory(forwardKind, forward, inverse, `${verb} ${nm}'s ancestry in "${tree.name}"`);
+  return { success: true, nowHidden: !currentlyHidden };
 }
 
 // ═══════════════════════════════════════════════════════════════

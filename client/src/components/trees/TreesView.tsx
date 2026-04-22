@@ -13,9 +13,11 @@ import {
   listSavedTrees,
   createSavedTree,
   updateSavedTree,
+  toggleHiddenAncestor,
   undoGraphOperation,
   redoGraphOperation,
   getGraphHistoryCounts,
+  listRelationshipsForPerson,
   type FamilyGraph,
   type SavedTreeRecord,
 } from '@/lib/electron-bridge';
@@ -45,7 +47,17 @@ interface PersonSummary {
  *   3. Canvas renders; double-click a node → refocus on that person.
  *   4. Right-click a node → Add parent / partner / child / Remove.
  */
-export function TreesView() {
+export interface TreesViewProps {
+  /** Called when the user asks to set a tree's canvas background.
+   *  The parent routes them to S&D in pick mode; the pick eventually
+   *  writes via updateSavedTree, so TreesView doesn't need to observe
+   *  the result — it re-reads via the normal savedTrees refresh. */
+  onRequestCanvasBackgroundPick?: (args: { treeId: number; treeName: string }) => void;
+  /** Called when the user asks to set a card background via right-click. */
+  onRequestCardBackgroundPick?: (args: { treeId: number; treeName: string; personId: number; personName: string }) => void;
+}
+
+export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgroundPick }: TreesViewProps = {}) {
   const [focusPersonId, setFocusPersonId] = useState<number | null>(null);
   // The picker opens only if we can't auto-pick a sensible focus.
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
@@ -258,6 +270,55 @@ export function TreesView() {
     refetchGraph(focusPersonId, fetchDepth);
   }, [focusPersonId, fetchDepth, refetchGraph]);
 
+  /** Full set of person IDs in the focus's CONNECTED COMPONENT — every
+   *  person reachable from the focus through any chain of relationships
+   *  (parent_of, spouse_of, sibling_of, associated_with), unbounded by
+   *  the Steps / Generations / fetchDepth caps that limit the rendered
+   *  view. Used by the placeholder resolver to exclude already-linked
+   *  people from "Link to existing" suggestions even when they're
+   *  currently hidden, off-screen, or beyond the current fetch depth.
+   *
+   *  Refetched after every mutation via the `reloadConnectedComponent`
+   *  bumper — any relationship add/remove could add or sever someone's
+   *  tie into the tree. */
+  const [connectedPersonIds, setConnectedPersonIds] = useState<Set<number>>(new Set());
+  const [connectedBump, setConnectedBump] = useState(0);
+  useEffect(() => {
+    if (focusPersonId == null) { setConnectedPersonIds(new Set()); return; }
+    let cancelled = false;
+    (async () => {
+      const r = await listAllRelationships();
+      if (cancelled) return;
+      const rels = r.success && r.data ? r.data : [];
+      // Undirected BFS over every relationship type. Stops at anyone
+      // already seen — no depth cap.
+      const adj = new Map<number, Set<number>>();
+      for (const rel of rels) {
+        if (!adj.has(rel.person_a_id)) adj.set(rel.person_a_id, new Set());
+        if (!adj.has(rel.person_b_id)) adj.set(rel.person_b_id, new Set());
+        adj.get(rel.person_a_id)!.add(rel.person_b_id);
+        adj.get(rel.person_b_id)!.add(rel.person_a_id);
+      }
+      const seen = new Set<number>([focusPersonId]);
+      const stack = [focusPersonId];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const n of adj.get(cur) ?? []) {
+          if (seen.has(n)) continue;
+          seen.add(n);
+          stack.push(n);
+        }
+      }
+      if (!cancelled) setConnectedPersonIds(seen);
+    })();
+    return () => { cancelled = true; };
+  }, [focusPersonId, connectedBump]);
+  /** Call after any relationship mutation so the connected-component
+   *  set recomputes. Safe no-op if focus is unset. */
+  const reloadConnectedComponent = useCallback(() => {
+    setConnectedBump(b => b + 1);
+  }, []);
+
   // Undo / redo — declared here because the deps reference refetchGraph,
   // reloadPersons, AND fetchDepth, which are all defined in the hooks
   // above this point. Declaring these callbacks earlier caused a
@@ -268,6 +329,11 @@ export function TreesView() {
       toast(`Undone: ${r.description ?? 'last change'}`);
       if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
       reloadPersons();
+      // Saved trees may have changed too — e.g. undoing a hide-ancestry
+      // flip writes to saved_trees.hidden_ancestor_person_ids, and the
+      // canvas filter reads that off the current tree. Without this
+      // refetch the undo succeeds in the DB but the canvas stays stale.
+      reloadSavedTrees();
       refreshHistoryCounts();
     } else if (r.error) {
       toast.error(r.error);
@@ -280,6 +346,7 @@ export function TreesView() {
       toast(`Redone: ${r.description ?? 'change'}`);
       if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
       reloadPersons();
+      reloadSavedTrees();
       refreshHistoryCounts();
     } else if (r.error) {
       toast.error(r.error);
@@ -403,12 +470,178 @@ export function TreesView() {
         for (const id of path) visible.add(id);
       }
     }
+    // Per-tree "hidden ancestor" trim — when the user says "hide X's
+    // ancestry", we walk every parent_of edge upward from X and remove
+    // the ancestors + their spouses + their siblings from `visible`.
+    // The hidden person themself stays (they're still a partner, child,
+    // etc. — just their family line is collapsed).
+    //
+    // Critical nuance: an ancestor may belong to MORE THAN ONE person's
+    // ancestry. E.g. Mel's Mum is the mother of both Mel AND Nee (half-
+    // siblings sharing one parent). If the user hides Nee's ancestry,
+    // naive removal would also hide Mel's Mum — who's legitimately
+    // Mel's mum, and Mel isn't in the hidden list. So we compute a
+    // "protected" set = ancestry cloud of every OTHER visible person
+    // whose line is NOT hidden, and intersect it out before applying
+    // removal. An ancestor only goes away if nobody visible besides
+    // the hidden person depends on them.
+    const currentTreeEntry = savedTrees.find(t => t.id === currentTreeId);
+    const hiddenAncestorIds = currentTreeEntry?.hiddenAncestorPersonIds ?? [];
+    if (hiddenAncestorIds.length > 0) {
+      // Full upward "family cloud" for a person — direct ancestors via
+      // parent_up chain + spouses/siblings of those ancestors. Used as
+      // the REMOVAL candidate set: hiding X's ancestry should also
+      // strip ancestor-step-parents and great-aunts/uncles that only
+      // sit in the tree because of X.
+      const ancestorCloudFor = (personId: number): Set<number> => {
+        const cloud = new Set<number>();
+        const ancestors = new Set<number>();
+        const stack = [personId];
+        const seen = new Set<number>([personId]);
+        while (stack.length) {
+          const cur = stack.pop()!;
+          for (const e of graph.edges) {
+            if (e.type === 'parent_of' && e.bId === cur && !seen.has(e.aId)) {
+              seen.add(e.aId);
+              ancestors.add(e.aId);
+              stack.push(e.aId);
+            }
+          }
+        }
+        for (const a of ancestors) {
+          cloud.add(a);
+          for (const e of graph.edges) {
+            if (e.type === 'spouse_of' && (e.aId === a || e.bId === a)) {
+              cloud.add(e.aId === a ? e.bId : e.aId);
+            }
+            if (e.type === 'sibling_of' && (e.aId === a || e.bId === a)) {
+              cloud.add(e.aId === a ? e.bId : e.aId);
+            }
+          }
+        }
+        return cloud;
+      };
+
+      // Pure upward ancestor CHAIN — parents, grandparents, etc., no
+      // spouses or siblings. Used as the PROTECTION set: an ancestor
+      // stays visible only if they're somebody non-hidden's direct
+      // upline. Using the cloud here over-protects co-parents of the
+      // hidden person (e.g. Nee's Dad, who appears as a spouse of
+      // Mel's Mum in Mel's cloud — but he's in the tree PURELY because
+      // of Nee, so he shouldn't survive hiding Nee's ancestry).
+      const ancestorChainFor = (personId: number): Set<number> => {
+        const ancestors = new Set<number>();
+        const stack = [personId];
+        const seen = new Set<number>([personId]);
+        while (stack.length) {
+          const cur = stack.pop()!;
+          for (const e of graph.edges) {
+            if (e.type === 'parent_of' && e.bId === cur && !seen.has(e.aId)) {
+              seen.add(e.aId);
+              ancestors.add(e.aId);
+              stack.push(e.aId);
+            }
+          }
+        }
+        return ancestors;
+      };
+
+      const hiddenSet = new Set<number>(hiddenAncestorIds);
+      // Union of ancestor CLOUDS for all HIDDEN targets — candidates
+      // for removal (ancestors + their spouses + their siblings).
+      const hideCloud = new Set<number>();
+      for (const hid of hiddenSet) {
+        if (hid === focusPersonId) continue;
+        for (const id of ancestorCloudFor(hid)) hideCloud.add(id);
+      }
+      // Union of pure ancestor CHAINS for every OTHER visible person —
+      // these are the people whose ancestry the user has NOT hidden,
+      // so their direct upline must remain visible. Deliberately NOT
+      // cloud: a non-hidden person's ancestor's spouse can legitimately
+      // be a hidden-only relative (Nee's Dad co-parented Nee with
+      // Mel's Mum — protecting him because he shows up in Mel's cloud
+      // would defeat the hide).
+      const protectChain = new Set<number>();
+      for (const vid of visible) {
+        if (hiddenSet.has(vid)) continue;
+        for (const id of ancestorChainFor(vid)) protectChain.add(id);
+      }
+      const toHide = new Set<number>();
+      for (const id of hideCloud) {
+        if (protectChain.has(id)) continue; // shared direct ancestry — keep.
+        toHide.add(id);
+      }
+      // Never drop focus; never drop any pinned person the user asked for.
+      toHide.delete(focusPersonId);
+      for (const pid of pinnedPeople.keys()) toHide.delete(pid);
+      for (const id of toHide) visible.delete(id);
+
+      // Derived sibling_of edges are computed from shared parents on
+      // the server, and sit in graph.edges. If we just hid those shared
+      // parents, the derivation no longer holds — but the edge itself
+      // is still in the list, and the BFS would happily walk it and
+      // keep a half-sibling (like Nee) in view just because her only-
+      // hidden parent was shared with a still-visible person (Mel).
+      // So: for BFS purposes, a derived sibling_of edge is only live
+      // if AT LEAST ONE of its shared parents is still in `visible`.
+      const childrenByParent = new Map<number, Set<number>>();
+      for (const e of graph.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (!childrenByParent.has(e.aId)) childrenByParent.set(e.aId, new Set());
+        childrenByParent.get(e.aId)!.add(e.bId);
+      }
+      const derivedSiblingLive = (aId: number, bId: number): boolean => {
+        // There's a visible shared parent iff some parent p in visible
+        // has both aId and bId among its children.
+        for (const [p, kids] of childrenByParent) {
+          if (!visible.has(p)) continue;
+          if (kids.has(aId) && kids.has(bId)) return true;
+        }
+        return false;
+      };
+
+      // Orphan trim — after severing the hidden branch, anyone whose
+      // only connection to the focus ran THROUGH that branch (e.g. a
+      // half-sibling who shared just the now-hidden parent) is left
+      // floating. We run a BFS from focus over edges where both
+      // endpoints are still in `visible`, dropping derived sibling
+      // edges whose shared parent is no longer visible. Focus + pinned
+      // people are exempt so a pin survives even if the user hid
+      // everything between them and the focus.
+      const reachable = new Set<number>([focusPersonId]);
+      const stack: number[] = [focusPersonId];
+      while (stack.length > 0) {
+        const cur = stack.pop()!;
+        for (const e of graph.edges) {
+          if (!visible.has(e.aId) || !visible.has(e.bId)) continue;
+          if (e.type === 'sibling_of' && e.derived && !derivedSiblingLive(e.aId, e.bId)) continue;
+          let other: number | null = null;
+          if (e.aId === cur) other = e.bId;
+          else if (e.bId === cur) other = e.aId;
+          if (other == null || reachable.has(other)) continue;
+          reachable.add(other);
+          stack.push(other);
+        }
+      }
+      // Protect the people whose ancestry was hidden — they're the
+      // subjects of the action, not collateral damage. If hiding a
+      // half-sibling's shared parent severs their only tie to the
+      // focus, we still keep THEM in view (just without their family
+      // line) so the user can right-click them and Show ancestry again.
+      const hiddenSetForProtect = new Set<number>(hiddenAncestorIds);
+      for (const id of Array.from(visible)) {
+        if (id === focusPersonId) continue;
+        if (pinnedPeople.has(id)) continue;
+        if (hiddenSetForProtect.has(id)) continue;
+        if (!reachable.has(id)) visible.delete(id);
+      }
+    }
     return {
       ...graph,
       nodes: graph.nodes.filter(n => visible.has(n.personId)),
       edges: graph.edges.filter(e => visible.has(e.aId) && visible.has(e.bId)),
     };
-  }, [graph, focusPersonId, stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets, pinnedPeople]);
+  }, [graph, focusPersonId, stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets, pinnedPeople, savedTrees, currentTreeId]);
 
   // Augment the visible graph with virtual ghost parents for every named
   // person that has fewer than 2 stored parents (one generation only).
@@ -419,7 +652,20 @@ export function TreesView() {
     generationsEnabled ? Math.max(ancestorsDepth, descendantsDepth) : 0,
     1, // never 0 — layout needs breathing room even in focus-only view
   );
-  const layoutGraph = visibleGraph ? augmentWithVirtualGhosts(visibleGraph, effectiveLayoutHops) : null;
+  const layoutGraph = visibleGraph
+    ? augmentWithVirtualGhosts(
+        visibleGraph,
+        effectiveLayoutHops,
+        // Don't paint ghost parents above anyone the user has asked to
+        // collapse — the whole point of "hide ancestry" is that the line
+        // goes away, not that it's replaced by empty sockets begging to
+        // be filled in. The augmenter reads each node's TOTAL DB parent
+        // count (node.totalParentCount) so truncation detection is
+        // authoritative rather than derived from the already-filtered
+        // visible graph — see search-database.ts for the count's origin.
+        savedTrees.find(t => t.id === currentTreeId)?.hiddenAncestorPersonIds,
+      )
+    : null;
   const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops) : null;
 
   const handleRefocus = useCallback((personId: number) => {
@@ -437,16 +683,23 @@ export function TreesView() {
     const { fromId, toId } = siblingKindDialog;
     setSiblingKindDialog(null);
 
-    const parentsOf = (pid: number): number[] => {
-      if (!graph) return [];
-      return graph.edges
-        .filter(e => e.type === 'parent_of' && e.bId === pid && !e.derived)
-        .map(e => e.aId);
+    // Read parents LIVE from the DB per person, not from the React
+    // graph state — previous adds may not have refetched by the time
+    // the next sibling dialog fires, so reading the React state would
+    // wrongly treat a just-added person as parentless and spin up a
+    // whole new pair of placeholders (Alan → Trisha works, but Trisha
+    // → Peter then mints P3/P4 instead of cross-inheriting P1/P2).
+    const parentsOf = async (pid: number): Promise<number[]> => {
+      const r = await listRelationshipsForPerson(pid);
+      if (!r.success || !r.data) return [];
+      return r.data
+        .filter(row => row.type === 'parent_of' && row.person_b_id === pid)
+        .map(row => row.person_a_id);
     };
 
     if (kind === 'full') {
-      const fromParents = parentsOf(fromId);
-      const toParents = parentsOf(toId);
+      const fromParents = await parentsOf(fromId);
+      const toParents = await parentsOf(toId);
       for (const pid of toParents) {
         if (!fromParents.includes(pid)) await addRelationship({ personAId: pid, personBId: fromId, type: 'parent_of' });
       }
@@ -465,8 +718,8 @@ export function TreesView() {
     } else if (kind === 'half') {
       await addRelationship({ personAId: fromId, personBId: toId, type: 'sibling_of', flags: { half: true } });
       if (sharedParentId != null) {
-        const fromParents = parentsOf(fromId);
-        const toParents = parentsOf(toId);
+        const fromParents = await parentsOf(fromId);
+        const toParents = await parentsOf(toId);
         if (!fromParents.includes(sharedParentId)) {
           await addRelationship({ personAId: sharedParentId, personBId: fromId, type: 'parent_of' });
         }
@@ -481,7 +734,7 @@ export function TreesView() {
 
     // Refresh the graph.
     if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
-  }, [siblingKindDialog, graph, focusPersonId, fetchDepth, refetchGraph]);
+  }, [siblingKindDialog, focusPersonId, fetchDepth, refetchGraph]);
 
   // ── Saved trees: auto-save on state change ────────────────────
   // Persist the current filter / focus state to the active tree
@@ -567,7 +820,7 @@ export function TreesView() {
 
   /** Finalise a quick-add: the user has picked (or created) the other person,
    *  so wire the actual relationship based on the chip direction. */
-  const finaliseQuickAdd = useCallback(async (otherPersonId: number) => {
+  const finaliseQuickAdd = useCallback(async (otherPersonId: number, otherPersonName: string) => {
     if (!quickAdd) return;
     const { fromPersonId, kind } = quickAdd;
     setQuickAdd(null);
@@ -575,14 +828,43 @@ export function TreesView() {
       await addRelationship({ personAId: otherPersonId, personBId: fromPersonId, type: 'parent_of' });
     } else if (kind === 'child') {
       await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'parent_of' });
+      // Co-parent prompt — when the person we're adding FROM has exactly
+      // one current (non-ended) spouse visible, it's almost always the
+      // other parent. Ask once before silently leaving the child with a
+      // ghost second parent. Multi-spouse + no-spouse cases skip the
+      // prompt so we never second-guess a user with a non-obvious
+      // situation (step-parents, solo parents, etc.).
+      const rels = await listRelationshipsForPerson(fromPersonId);
+      const currentSpouses = (rels.success && rels.data ? rels.data : []).filter(r =>
+        r.type === 'spouse_of' && !r.until
+      );
+      if (currentSpouses.length === 1) {
+        const spouseId = currentSpouses[0].person_a_id === fromPersonId
+          ? currentSpouses[0].person_b_id
+          : currentSpouses[0].person_a_id;
+        const spouseName = allPersons.find(p => p.id === spouseId)?.name?.trim() || 'their partner';
+        const fromName = allPersons.find(p => p.id === fromPersonId)?.name?.trim() || 'them';
+        const childName = (otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name || 'this child').trim();
+        const yes = await promptConfirm({
+          title: `Is ${spouseName} also ${childName}'s parent?`,
+          message: `${fromName} has one current partner (${spouseName}). In most cases they're the second parent — choose No if ${childName} has a different co-parent.`,
+          confirmLabel: `Yes, add ${spouseName} as parent`,
+          cancelLabel: 'No, just ' + fromName,
+        });
+        if (yes) {
+          await addRelationship({ personAId: spouseId, personBId: otherPersonId, type: 'parent_of' });
+        }
+      }
     } else if (kind === 'partner') {
       await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of' });
     } else if (kind === 'sibling') {
       // Ask the user what kind of sibling relationship it is, rather
       // than silently assuming full siblings and auto-filling ghost
-      // parents. Pull names so the dialog can show them clearly.
+      // parents. Use the just-typed name (if this was a "Name them"
+      // create) before falling back to allPersons, which may not have
+      // reloaded yet.
       const fromName = allPersons.find(p => p.id === fromPersonId)?.name ?? 'this person';
-      const toName = allPersons.find(p => p.id === otherPersonId)?.name ?? 'this person';
+      const toName = otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name || 'this person';
       setSiblingKindDialog({ fromId: fromPersonId, toId: otherPersonId, fromName, toName });
       return; // dialog confirm handles the rest
     }
@@ -868,6 +1150,31 @@ export function TreesView() {
             onEditDates={(personId, screenX, screenY) => {
               setDateEditor({ personId, x: screenX, y: screenY });
             }}
+            canvasBackground={currentTree?.backgroundImage ?? null}
+            canvasBackgroundOpacity={currentTree?.backgroundOpacity ?? 0.15}
+            treeContrast={currentTree?.treeContrast ?? 0.3}
+            allReachablePersonIds={connectedPersonIds}
+            useGenderedLabels={currentTree?.useGenderedLabels ?? true}
+            hideGenderMarker={currentTree?.hideGenderMarker ?? false}
+            hiddenAncestorPersonIds={currentTree?.hiddenAncestorPersonIds ?? []}
+            onToggleHiddenAncestor={async (personId) => {
+              if (!currentTreeId || !currentTree) return;
+              // Goes through toggleHiddenAncestor so the flip is logged
+              // to graph_history — Ctrl+Z / Redo / "Revert to this
+              // point" all roll it back like any relationship mutation.
+              await toggleHiddenAncestor(currentTreeId, personId);
+              await reloadSavedTrees();
+              await refreshHistoryCounts();
+            }}
+            onRequestCardBackgroundPick={(personId, personName) => {
+              if (!onRequestCardBackgroundPick || !currentTreeId) return;
+              onRequestCardBackgroundPick({
+                treeId: currentTreeId,
+                treeName: currentTree?.name ?? 'tree',
+                personId,
+                personName,
+              });
+            }}
           />
         )}
         {/* Empty-state hint — anchored to the top of the canvas so it never
@@ -904,6 +1211,7 @@ export function TreesView() {
           onClose={() => {
             if (focusPersonId != null) setFocusPickerOpen(false);
           }}
+          // (name argument is accepted by onPick's type but unused here)
         />
       )}
 
@@ -1021,6 +1329,15 @@ export function TreesView() {
             // filters — NOT a clone of the current tree.
             setManageTreesOpen(false);
             setNewTreePickerOpen(true);
+          }}
+          onRequestBackgroundPick={(tree) => {
+            if (!onRequestCanvasBackgroundPick) return;
+            setManageTreesOpen(false);
+            onRequestCanvasBackgroundPick({ treeId: tree.id, treeName: tree.name });
+          }}
+          getPersonName={(id) => {
+            const p = allPersons.find(pp => pp.id === id);
+            return p?.name?.trim() ? p.name : `Person #${id}`;
           }}
         />
       )}
@@ -1390,7 +1707,11 @@ interface FocusPickerModalProps {
    *  instead of raw shared-photo count. Two group photos lose to one
    *  2-person photo; a wedding tag boosts; a 20-person group penalises. */
   partnerScoreAnchorId?: number;
-  onPick: (personId: number) => void;
+  /** Called with the chosen person's id AND their display name. Name is
+   *  passed explicitly because allPersons in the parent may not have
+   *  reloaded yet when a brand-new person was just created via the
+   *  "Name them" path, leaving callers to fall back to "this person". */
+  onPick: (personId: number, personName: string) => void;
   onPersonsChanged?: () => void;
   onClose: () => void;
 }
@@ -1529,7 +1850,7 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
       return;
     }
     if (onPersonsChanged) onPersonsChanged();
-    onPick(r.data);
+    onPick(r.data, trimmed);
   };
 
   return (
@@ -1547,20 +1868,21 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
           </button>
         </div>
 
-        {/* Mode switcher — "Name them" first because for most quick-adds
-            (grandparents etc.), new people aren't in People Manager yet. */}
+        {/* Mode switcher — "Pick existing" on the left (users reach for
+            an already-named person first), "Name them" on the right for
+            the less-common new-person case. */}
         <div className="flex gap-1 mb-3 p-0.5 bg-muted rounded-lg text-xs">
-          <button
-            onClick={() => setMode('name')}
-            className={`flex-1 px-2 py-1 rounded ${mode === 'name' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
-          >
-            Name them
-          </button>
           <button
             onClick={() => setMode('link')}
             className={`flex-1 px-2 py-1 rounded ${mode === 'link' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
           >
             Pick existing
+          </button>
+          <button
+            onClick={() => setMode('name')}
+            className={`flex-1 px-2 py-1 rounded ${mode === 'name' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
+          >
+            Name them
           </button>
         </div>
 

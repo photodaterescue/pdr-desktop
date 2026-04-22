@@ -269,6 +269,17 @@ useEffect(() => {
   // the default (the existing workspace/dashboard hybrid); other options are
   // separate destinations in the sidebar.
   const [activeView, setActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
+  /** Non-null while the user is picking a background image for Trees
+   *  via the S&D view. SearchRibbon reads this to show a pick-mode
+   *  banner + confirm button; on confirm/cancel we switch back to the
+   *  Trees view and clear the pending request. */
+  const [pendingBackgroundPick, setPendingBackgroundPick] = useState<{
+    kind: 'canvas' | 'card';
+    treeId: number;
+    treeName: string;
+    personId?: number;
+    personName?: string;
+  } | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
@@ -1361,6 +1372,24 @@ return (
             requestClose={requestSearchClose}
             hasSources={sources.length > 0}
             showLibraryManager={localStorage.getItem('pdr-show-library-manager') === 'true'}
+            pickMode={pendingBackgroundPick}
+            onPickCancel={() => {
+              setPendingBackgroundPick(null);
+              setActiveView('familytree');
+            }}
+            onPickConfirm={async (filePath: string) => {
+              if (!pendingBackgroundPick) return;
+              const { getThumbnail, updateSavedTree, setPersonCardBackground } = await import('@/lib/electron-bridge');
+              const thumb = await getThumbnail(filePath, 1600);
+              if (!thumb.success || !thumb.dataUrl) return;
+              if (pendingBackgroundPick.kind === 'canvas') {
+                await updateSavedTree(pendingBackgroundPick.treeId, { backgroundImage: thumb.dataUrl });
+              } else if (pendingBackgroundPick.kind === 'card' && pendingBackgroundPick.personId != null) {
+                await setPersonCardBackground(pendingBackgroundPick.personId, thumb.dataUrl);
+              }
+              setPendingBackgroundPick(null);
+              setActiveView('familytree');
+            }}
           />
         </div>
 
@@ -1421,7 +1450,18 @@ return (
         {/* Trees view — family graph explorer (v1). Deliberately not called
             'Family Tree' because later versions will handle friend groups,
             work colleagues, and any other relationships — not just kin. */}
-        {activeView === 'familytree' && <TreesView />}
+        {activeView === 'familytree' && (
+          <TreesView
+            onRequestCanvasBackgroundPick={({ treeId, treeName }) => {
+              setPendingBackgroundPick({ kind: 'canvas', treeId, treeName });
+              setActiveView('search');
+            }}
+            onRequestCardBackgroundPick={({ treeId, treeName, personId, personName }) => {
+              setPendingBackgroundPick({ kind: 'card', treeId, treeName, personId, personName });
+              setActiveView('search');
+            }}
+          />
+        )}
 
       </div>
       </div>{/* close inner flex row */}
@@ -1596,8 +1636,14 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.removeItem('pdr-sidebar-pin');
   }, []);
-  // Compute collapsed state
-  const collapsed = pinState === 'closed' ? true : pinState === 'open' ? false : !!searchResultsActive;
+  // Compute collapsed state. In 'auto' mode the sidebar collapses when
+  // S&D results are showing OR when a full-canvas view (Trees) owns
+  // the main area — both need every horizontal pixel for content.
+  const collapsed = pinState === 'closed'
+    ? true
+    : pinState === 'open'
+    ? false
+    : (!!searchResultsActive || activeView === 'familytree');
 
   // Section-collapse state for Views / Tools / Guidance. Session-only so
   // the sidebar always opens fully expanded in a fresh session. User can

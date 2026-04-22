@@ -1,9 +1,12 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Link2, Trash2, Eye, Pencil, HelpCircle, UserPlus, X } from 'lucide-react';
-import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, addRelationship, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon } from 'lucide-react';
+import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm } from './promptConfirm';
+import { computeRelationshipLabels } from '@/lib/relationship-label';
+import { GenderPickerModal, genderMarkerSymbol } from './GenderPickerModal';
+import { setPersonGender as setPersonGenderApi, type PersonGender } from '@/lib/electron-bridge';
 
 interface TreesCanvasProps {
   layout: TreeLayout & { collapsedCountPerAnchor?: Map<number, number> };
@@ -33,6 +36,37 @@ interface TreesCanvasProps {
   onEditDates?: (personId: number, screenX: number, screenY: number) => void;
   /** Called after an inline edge edit succeeds so the parent can refetch the graph. */
   onGraphMutated: () => void;
+  /** Optional per-tree canvas background image (data URL). Rendered as a
+   *  fixed, faded backdrop behind the family graph. */
+  canvasBackground?: string | null;
+  /** 0–1 opacity for the canvas background image. */
+  canvasBackgroundOpacity?: number;
+  /** 0–1 contrast boost — stronger card border + shadow + edge strokes
+   *  so the tree pops against a busy background. */
+  treeContrast?: number;
+  /** When true, relationship labels under card names use gendered
+   *  forms (Mother/Father/…) for people whose gender is set. */
+  useGenderedLabels?: boolean;
+  /** When true, the Mars/Venus/Combined symbol in the top-right of each
+   *  card is suppressed even when gender is set. The "G" button stays
+   *  visible so the user can still edit gender — it just doesn't
+   *  preview the result. */
+  hideGenderMarker?: boolean;
+  /** Person IDs whose ancestors are hidden in this tree. When set, any
+   *  person reachable ONLY through that person's parent_of↑ chain is
+   *  filtered from the render. */
+  hiddenAncestorPersonIds?: number[];
+  /** Toggle whether a partner's ancestry is hidden in this tree. */
+  onToggleHiddenAncestor?: (personId: number) => void;
+  /** Parent-provided handler that opens the S&D picker flow for a
+   *  specific person's card background. */
+  onRequestCardBackgroundPick?: (personId: number, personName: string) => void;
+  /** Every person ID connected to the focus in the fetched family
+   *  graph — BEFORE Steps / hide-ancestry filtering. Used by the
+   *  placeholder resolver to exclude already-linked people from "Link
+   *  to existing" suggestions, including those currently off-screen
+   *  or hidden. */
+  allReachablePersonIds?: Set<number>;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -45,14 +79,36 @@ const NODE_HEIGHT = 150;
 // and name, and between name and dates — no big empty gap at the
 // bottom as there was in the first pass.
 const CARD_W = 170;
-const CARD_H = 140;
+// 10% taller than v1 to give the relationship label + dates line
+// enough breathing room. Layout row height is bumped in lockstep via
+// trees-layout.ts so vertical gaps don't shrink to nothing.
+const CARD_H = 154;
 const AVATAR_R = 36;
 const CARD_TOP_PAD = 14;
 const AVATAR_TO_NAME = 22;
-const NAME_TO_DATES = 22;
+// Name → relationship label gap (label sits beneath the name, above
+// the dates line). Kept tight so the label reads as name metadata.
+const NAME_TO_LABEL = 15;
+// Name → dates baseline. Includes NAME_TO_LABEL + ~14px for the label
+// itself so dates clear it cleanly.
+const NAME_TO_DATES = 30;
 const AVATAR_CY = -CARD_H / 2 + CARD_TOP_PAD + AVATAR_R;
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated }: TreesCanvasProps) {
+/** Step-distance badge colours. Terry picked the palette: lavender →
+ *  gold → blue → green → pink → yellow → grey → eggshell. Kept as
+ *  tinted pastel fills so the dark number stays legible on top. */
+const STEP_BADGE_FILL: Record<number, string> = {
+  1: '#c4b5fd', // lavender (violet-300)
+  2: '#fcd34d', // gold (amber-300)
+  3: '#93c5fd', // blue (blue-300)
+  4: '#86efac', // green (green-300)
+  5: '#f9a8d4', // pink (pink-300)
+  6: '#fde68a', // yellow (yellow-200)
+  7: '#d1d5db', // grey (gray-300)
+  8: '#f5f5dc', // eggshell
+};
+
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -73,6 +129,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     | { kind: 'virtual'; virtualChildId: number; x: number; y: number }
     | null
   >(null);
+
 
   const panState = useRef<{ active: boolean; startX: number; startY: number; startTx: number; startTy: number }>({
     active: false, startX: 0, startY: 0, startTx: 0, startTy: 0,
@@ -220,6 +277,20 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     });
   }, []);
 
+  // Per-card background picker — defers to the workspace which routes
+  // the user to S&D "pick mode" with a confirmation banner. The pick
+  // is persisted upstream; we just refresh the graph once it returns.
+  const pickCardBackgroundFor = useCallback((personId: number) => {
+    if (!onRequestCardBackgroundPick) return;
+    const name = layout.nodes.find(n => n.personId === personId)?.name ?? 'this person';
+    onRequestCardBackgroundPick(personId, name);
+  }, [onRequestCardBackgroundPick, layout.nodes]);
+
+  const clearCardBackgroundFor = useCallback(async (personId: number) => {
+    await setPersonCardBackground(personId, null);
+    onGraphMutated();
+  }, [onGraphMutated]);
+
   // Rendered positions come straight from the deterministic layout;
   // there are no per-node offsets since individual dragging is disabled.
   const placedNodes = useMemo(() => layout.nodes.map(n => ({
@@ -231,6 +302,28 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     for (const n of placedNodes) m.set(n.personId, n);
     return m;
   }, [placedNodes]);
+
+  /** Relationship label for each person relative to the current
+   *  focus — "Parent", "Sibling", "Grandchild", etc. Gendered when the
+   *  tree has gendered labels enabled AND the target has a gender
+   *  set. Computed client-side so it follows refocus without a
+   *  refetch. */
+  const relationshipLabels = useMemo(() => {
+    const genderByPerson = new Map<number, string | null>();
+    for (const n of layout.nodes) genderByPerson.set(n.personId, n.gender);
+    return computeRelationshipLabels(
+      layout.focusPersonId,
+      layout.edges,
+      layout.nodes.map(n => n.personId),
+      genderByPerson,
+      useGenderedLabels,
+    );
+  }, [layout.focusPersonId, layout.edges, layout.nodes, useGenderedLabels]);
+
+  /** Person whose gender the user is currently editing. null = modal
+   *  closed. The picker commits via setPersonGenderApi which logs
+   *  history; on success we onGraphMutated() to refetch. */
+  const [genderPickerFor, setGenderPickerFor] = useState<number | null>(null);
 
   /**
    * Group parent_of edges into "families": a shared parent-set maps to
@@ -261,10 +354,23 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
 
   return (
     <div className="absolute inset-0 select-none">
+      {canvasBackground && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          aria-hidden="true"
+          style={{
+            backgroundImage: `url("${canvasBackground}")`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            opacity: Math.max(0, Math.min(1, canvasBackgroundOpacity)),
+          }}
+        />
+      )}
       <svg
         ref={svgRef}
         data-tree-canvas="true"
-        className="w-full h-full bg-[radial-gradient(circle,_rgba(167,139,250,0.06)_1px,_transparent_1px)] [background-size:24px_24px] cursor-grab active:cursor-grabbing"
+        className={`w-full h-full cursor-grab active:cursor-grabbing ${canvasBackground ? '' : 'bg-[radial-gradient(circle,_rgba(167,139,250,0.06)_1px,_transparent_1px)] [background-size:24px_24px]'}`}
         onWheel={handleWheel}
         onMouseDown={handlePanStart}
         onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
@@ -290,6 +396,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 // Stagger the bracket Y so different families don't share
                 // the same horizontal line. Deterministic per-group offset.
                 bracketOffset={i * 8}
+                contrast={treeContrast}
                 onParentClick={(parentId) => {
                   const parent = nodeById.get(parentId);
                   if (!parent) return;
@@ -317,6 +424,33 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           {layout.edges.map((edge, idx) => {
             if (!edge.visible) return null;
             if (edge.type === 'parent_of') return null;
+            // Derived sibling_of edges are redundant when the shared
+            // parent is already on-screen — the Alan-Sally bracket
+            // above their children already says "these four are
+            // siblings". Drawing a dotted line across intermediate
+            // cards (a partner's wife, a cousin, …) is more noise
+            // than information. We only keep the derived line when the
+            // shared parent is NOT visible — rare case where you want
+            // a visible cue that two same-gen cards are linked.
+            if (edge.type === 'sibling_of' && edge.derived) {
+              let anySharedParentVisible = false;
+              for (const pe of layout.edges) {
+                if (pe.type !== 'parent_of') continue;
+                const isAChildOfPE = pe.bId === edge.aId;
+                const isBChildOfPE = pe.bId === edge.bId;
+                if (!isAChildOfPE && !isBChildOfPE) continue;
+                // Find matching parent_of for the OTHER sibling.
+                const otherChildId = isAChildOfPE ? edge.bId : edge.aId;
+                for (const pe2 of layout.edges) {
+                  if (pe2.type !== 'parent_of') continue;
+                  if (pe2.aId !== pe.aId) continue;
+                  if (pe2.bId !== otherChildId) continue;
+                  if (nodeById.has(pe.aId)) { anySharedParentVisible = true; break; }
+                }
+                if (anySharedParentVisible) break;
+              }
+              if (anySharedParentVisible) return null;
+            }
             const a = nodeById.get(edge.aId);
             const b = nodeById.get(edge.bId);
             if (!a || !b) return null;
@@ -369,6 +503,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 derived={edge.derived}
                 flags={edge.flags as { half?: boolean; adopted?: boolean } | null}
                 onClick={onClick}
+                contrast={treeContrast}
               />
             );
           })}
@@ -406,6 +541,11 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 onQuickAddPartner={() => onQuickAddPartner(node.personId)}
                 onQuickAddChild={() => onQuickAddChild(node.personId)}
                 onQuickAddSibling={() => onQuickAddSibling(node.personId)}
+                contrast={treeContrast}
+                relationshipLabel={relationshipLabels.get(node.personId) ?? null}
+                hideGenderMarker={hideGenderMarker}
+                onOpenGenderPicker={() => setGenderPickerFor(node.personId)}
+                canAddParent={(node.totalParentCount ?? 0) < 2}
               />
             );
           })}
@@ -426,10 +566,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           y={contextMenu.y}
           personId={contextMenu.personId}
           isFocus={contextMenu.personId === layout.focusPersonId}
+          hasCardBackground={!!nodeById.get(contextMenu.personId)?.cardBackground}
+          ancestryHidden={!!hiddenAncestorPersonIds?.includes(contextMenu.personId)}
+          canHideAncestry={contextMenu.personId !== layout.focusPersonId && !!onToggleHiddenAncestor}
           onSetRelationship={() => { onSetRelationship(contextMenu.personId); setContextMenu(null); }}
           onEditRelationships={() => { onEditRelationships(contextMenu.personId); setContextMenu(null); }}
           onRefocus={() => { onRefocus(contextMenu.personId); setContextMenu(null); }}
           onRemovePerson={() => { onRemovePerson(contextMenu.personId); setContextMenu(null); }}
+          onSetCardBackground={() => { pickCardBackgroundFor(contextMenu.personId); setContextMenu(null); }}
+          onClearCardBackground={() => { clearCardBackgroundFor(contextMenu.personId); setContextMenu(null); }}
+          onToggleAncestry={() => { onToggleHiddenAncestor?.(contextMenu.personId); setContextMenu(null); }}
           onClose={() => setContextMenu(null)}
         />
       )}
@@ -453,8 +599,34 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           y={placeholderEditor.y}
           onResolved={() => { onGraphMutated(); setPlaceholderEditor(null); }}
           onClose={() => setPlaceholderEditor(null)}
+          peopleAlreadyInTree={allReachablePersonIds ?? new Set(
+            // Fallback to laid-out nodes only if the parent didn't
+            // supply the full reachable set. Prefer the parent's set
+            // because it includes people who are currently hidden by
+            // Steps or hide-ancestry — they're still "in the tree"
+            // and shouldn't be re-offered as link targets.
+            layout.nodes
+              .filter(n => !n.isPlaceholder && n.personId > 0)
+              .map(n => n.personId),
+          )}
         />
       )}
+
+      {genderPickerFor != null && (() => {
+        const n = layout.nodes.find(nd => nd.personId === genderPickerFor);
+        return (
+          <GenderPickerModal
+            personName={n?.name?.trim() || 'this person'}
+            currentGender={(n?.gender ?? null) as PersonGender}
+            onSelect={async (gender) => {
+              await setPersonGenderApi(genderPickerFor, gender);
+              setGenderPickerFor(null);
+              onGraphMutated();
+            }}
+            onClose={() => setGenderPickerFor(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -472,7 +644,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
  * Accepts any N parents and any M children. When N=1 the marriage bar
  * is skipped and the drop comes straight from the lone parent.
  */
-function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onParentClick }: {
+function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onParentClick, contrast = 0.3 }: {
   parents: (LaidOutNode & { renderedX: number; renderedY: number; isPlaceholder: boolean })[];
   children: (LaidOutNode & { renderedX: number; renderedY: number })[];
   /** True when a stored spouse_of edge exists between parents. In that
@@ -481,6 +653,7 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
   parentsAreSpouses: boolean;
   bracketOffset: number;
   onParentClick: (parentId: number) => void;
+  contrast?: number;
 }) {
   if (parents.length === 0 || children.length === 0) return null;
 
@@ -510,16 +683,68 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
   const barRightX = rightParent.renderedX - halfWidthFor(rightParent);
   const marriageBarMidX = (leftParent.renderedX + rightParent.renderedX) / 2;
 
-  // Child x extents — bracket horizontal spans them.
+  // Bracket geometry. Two cases:
+  //   • SINGLE child — extend the bracket horizontally to include the
+  //     marriage midpoint, so the drop comes straight down from
+  //     between the two parents and bends via a mini-bracket to the
+  //     child's column. This produces the classic pedigree "T with
+  //     shoulder" look: midpoint centered, child offset to one side.
+  //   • MULTI child — clamp the drop to the children's range so the
+  //     bracket never extends past unrelated cards (otherwise a
+  //     spouse's parents laid out with a wide midpoint could paint
+  //     the bracket horizontal across a non-child's column). A short
+  //     connector at parentY bridges the midpoint to the drop column
+  //     in that edge case.
   const childXs = children.map(c => c.renderedX).sort((a, b) => a - b);
-  const bracketStart = Math.min(childXs[0], marriageBarMidX);
-  const bracketEnd = Math.max(childXs[childXs.length - 1], marriageBarMidX);
+  const childMinX = childXs[0];
+  const childMaxX = childXs[childXs.length - 1];
+  const isSingleChild = childMinX === childMaxX;
+  const bracketStart = isSingleChild ? Math.min(childMinX, marriageBarMidX) : childMinX;
+  const bracketEnd   = isSingleChild ? Math.max(childMaxX, marriageBarMidX) : childMaxX;
+  const dropAnchorX = isSingleChild
+    ? marriageBarMidX
+    : Math.max(childMinX, Math.min(childMaxX, marriageBarMidX));
+  const needsConnector = !isSingleChild && Math.abs(dropAnchorX - marriageBarMidX) > 0.5;
 
-  const stroke = '#64748b'; // slate, matches the EdgeLine spouse_of stroke
-  const strokeWidth = 1.5;
+  // Stroke darkens + thickens with contrast so the family scaffolding
+  // (marriage bar, bracket, child drops) reads clearly against busy
+  // backgrounds. Halo is a wider white underlay drawn first.
+  const strokeBase = '#64748b';
+  const strokeDark = '#1f2937';
+  const stroke = contrast > 0.5 ? strokeDark : strokeBase;
+  const strokeWidth = 1.5 + contrast * 1.5;
+  const haloWidth = strokeWidth + 3 + contrast * 3;
+  const haloOpacity = 0.35 + contrast * 0.5;
+  const withHalo = contrast > 0;
 
   return (
     <g>
+      {/* White halo underlay — drawn first so the coloured scaffolding
+          sits on top. Makes the family lines readable against any
+          canvas background image. */}
+      {withHalo && (
+        <g opacity={haloOpacity} style={{ pointerEvents: 'none' }}>
+          {parents.length >= 2 && !parentsAreSpouses && barLeftX < barRightX && (
+            <line x1={barLeftX} y1={parentY} x2={barRightX} y2={parentY}
+              stroke="#ffffff" strokeWidth={haloWidth} strokeLinecap="round" />
+          )}
+          {needsConnector && (
+            <line x1={marriageBarMidX} y1={parentY} x2={dropAnchorX} y2={parentY}
+              stroke="#ffffff" strokeWidth={haloWidth} strokeLinecap="round" />
+          )}
+          <line x1={dropAnchorX} y1={parentY} x2={dropAnchorX} y2={bracketY}
+            stroke="#ffffff" strokeWidth={haloWidth} strokeLinecap="round" />
+          {bracketStart !== bracketEnd && (
+            <line x1={bracketStart} y1={bracketY} x2={bracketEnd} y2={bracketY}
+              stroke="#ffffff" strokeWidth={haloWidth} strokeLinecap="round" />
+          )}
+          {children.map(c => (
+            <line key={`halo-${c.personId}`} x1={c.renderedX} y1={bracketY}
+              x2={c.renderedX} y2={c.renderedY - CARD_H / 2}
+              stroke="#ffffff" strokeWidth={haloWidth} strokeLinecap="round" />
+          ))}
+        </g>
+      )}
       {/* Partnership bar at AVATAR level — drawn only when parents don't
           already have a stored spouse_of edge (which EdgeLine renders).
           Hugs each parent's side edge so it doesn't cut through cards. */}
@@ -534,16 +759,31 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
             strokeWidth={strokeWidth}
             strokeDasharray="6 4"
           />
-          <circle cx={marriageBarMidX} cy={parentY} r={2.5} fill={stroke} />
+          <circle cx={marriageBarMidX} cy={parentY} r={2.5 + contrast} fill={stroke} />
         </>
       )}
-      {/* Drop from the partnership midpoint (at avatar level) down to
-          the bracket level — this is the vertical line that carries
-          children from the parent connector down to the next row. */}
+      {/* Short horizontal connector from marriage midpoint to the drop
+          column, only when the midpoint doesn't sit above the children
+          already. Kept at parentY so it hugs the parent generation and
+          doesn't intrude on other rows. */}
+      {needsConnector && (
+        <line
+          x1={marriageBarMidX}
+          y1={parentY}
+          x2={dropAnchorX}
+          y2={parentY}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+        />
+      )}
+      {/* Drop from parent column to the bracket level — starts at the
+          drop anchor (which is clamped to the children's x range) so
+          it never runs straight down through a card that isn't a child
+          in this family. */}
       <line
-        x1={marriageBarMidX}
+        x1={dropAnchorX}
         y1={parentY}
-        x2={marriageBarMidX}
+        x2={dropAnchorX}
         y2={bracketY}
         stroke={stroke}
         strokeWidth={strokeWidth}
@@ -577,9 +817,9 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
           you click the drop itself. */}
       {parents.length === 1 && parents[0].isPlaceholder && (
         <line
-          x1={marriageBarMidX}
+          x1={dropAnchorX}
           y1={parentY}
-          x2={marriageBarMidX}
+          x2={dropAnchorX}
           y2={bracketY}
           stroke="transparent"
           strokeWidth={14}
@@ -596,7 +836,7 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
 // Edge rendering
 // ─────────────────────────────────────────────────────────────────
 
-function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClick }: {
+function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClick, contrast = 0.3 }: {
   ax: number; ay: number; bx: number; by: number;
   type: 'parent_of' | 'spouse_of' | 'sibling_of' | 'associated_with';
   until: string | null;
@@ -604,6 +844,7 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
   derived: boolean;
   flags: { half?: boolean; adopted?: boolean; kind?: string; ended?: boolean; label?: string } | null;
   onClick?: (e: React.MouseEvent) => void;
+  contrast?: number;
 }) {
   // parent_of: solid vertical-preferring line, slight curve
   // spouse_of: solid double line between partners, horizontal preferred; dashed if ended
@@ -647,20 +888,41 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
       </g>
     );
   }
+  // Halo helpers — white underlay drawn behind the coloured stroke so
+  // edges stay readable against busy canvas backgrounds. Width and
+  // opacity scale with the Tree pop slider.
+  const haloWidth = (w: number) => w + 3 + contrast * 3;
+  const haloOpacity = 0.35 + contrast * 0.5;
+  const withHalo = contrast > 0;
+
   if (type === 'sibling_of') {
     // Derived sibling edges aren't stored, so they're never clickable.
     if (derived) {
       return (
-        <line x1={ax} y1={ay} x2={bx} y2={by}
-          stroke="#a78bfa" strokeWidth={1} strokeDasharray="2 4" opacity={opacity * 0.6} />
+        <g>
+          {withHalo && (
+            <line x1={ax} y1={ay} x2={bx} y2={by}
+              stroke="#ffffff" strokeWidth={haloWidth(1)} strokeLinecap="round"
+              opacity={haloOpacity * 0.7} />
+          )}
+          <line x1={ax} y1={ay} x2={bx} y2={by}
+            stroke={contrast > 0.5 ? '#7c3aed' : '#a78bfa'}
+            strokeWidth={1 + contrast * 0.75}
+            strokeDasharray="2 4" opacity={opacity * 0.6} />
+        </g>
       );
     }
-    const stroke = flags?.adopted ? '#14b8a6' : '#a78bfa';
+    const stroke = flags?.adopted ? '#14b8a6' : (contrast > 0.5 ? '#7c3aed' : '#a78bfa');
     const dash = flags?.adopted ? '8 4' : flags?.half ? '4 3' : undefined;
-    const width = 1.5;
+    const width = 1.5 + contrast * 1.25;
     return (
       <g onClick={onClick}>
         {hitArea}
+        {withHalo && (
+          <line x1={ax} y1={ay} x2={bx} y2={by}
+            stroke="#ffffff" strokeWidth={haloWidth(width)} strokeLinecap="round"
+            opacity={haloOpacity} />
+        )}
         <line x1={ax} y1={ay} x2={bx} y2={by}
           stroke={stroke} strokeWidth={width} strokeDasharray={dash} opacity={opacity} />
       </g>
@@ -675,14 +937,21 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
     const xRight = Math.max(ax, bx) - CARD_W / 2;
     const yMid = (ay + by) / 2 + AVATAR_CY; // avatar-level horizontal
     const xMid = (xLeft + xRight) / 2;
+    const spouseStroke = contrast > 0.5 ? '#1f2937' : '#64748b';
+    const spouseWidth = 1.5 + contrast * 1.5;
     return (
       <g onClick={onClick}>
         {hitArea}
+        {withHalo && (
+          <line x1={xLeft} y1={yMid} x2={xRight} y2={yMid}
+            stroke="#ffffff" strokeWidth={haloWidth(spouseWidth)} strokeLinecap="round"
+            opacity={haloOpacity} />
+        )}
         <line x1={xLeft} y1={yMid} x2={xRight} y2={yMid}
-          stroke="#64748b" strokeWidth={1.5}
+          stroke={spouseStroke} strokeWidth={spouseWidth}
           strokeDasharray={dashed ? '6 4' : undefined}
           opacity={opacity} />
-        <circle cx={xMid} cy={yMid} r={2.5} fill="#64748b" opacity={opacity} />
+        <circle cx={xMid} cy={yMid} r={2.5 + contrast} fill={spouseStroke} opacity={opacity} />
       </g>
     );
   }
@@ -690,16 +959,23 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
   // between tiers, across to the child's x, then straight down to the
   // child. Classic pedigree-chart elbows rather than chaotic S-curves.
   const orthPath = `M ${ax} ${ay} L ${ax} ${midY} L ${bx} ${midY} L ${bx} ${by}`;
+  const parentStroke = contrast > 0.5 ? '#4338ca' : '#6366f1';
+  const parentWidth = 1.75 + contrast * 1.5;
   return (
     <g onClick={onClick}>
       {onClick && (
         <path d={orthPath} stroke="transparent" strokeWidth={14} fill="none"
           style={{ cursor: 'pointer' }} pointerEvents="stroke" />
       )}
+      {withHalo && (
+        <path d={orthPath} stroke="#ffffff" strokeWidth={haloWidth(parentWidth)}
+          strokeLinecap="round" strokeLinejoin="round" fill="none"
+          opacity={haloOpacity} />
+      )}
       <path
         d={orthPath}
-        stroke="#6366f1"
-        strokeWidth={1.75}
+        stroke={parentStroke}
+        strokeWidth={parentWidth}
         fill="none"
         opacity={opacity}
       />
@@ -760,7 +1036,7 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
@@ -775,6 +1051,18 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
   onQuickAddPartner: () => void;
   onQuickAddChild: () => void;
   onQuickAddSibling: () => void;
+  contrast?: number;
+  relationshipLabel?: string | null;
+  /** When true, the gender symbol preview is suppressed even if the
+   *  person has a gender set. The small "G" button remains so the user
+   *  can still edit — but the card doesn't display the result. */
+  hideGenderMarker?: boolean;
+  /** Opens the gender picker modal for this person. */
+  onOpenGenderPicker?: () => void;
+  /** When false, the +parent chip is hidden — the person already has
+   *  two stored parents and can't take a third (even if only one is
+   *  currently visible due to Steps cutting off the other). */
+  canAddParent?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const ringColor = isFocus ? '#f59e0b' : '#6366f1';
@@ -821,6 +1109,34 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
           strokeWidth={1.5}
         />
       )}
+      {/* Contrast halo — a soft white-ish glow behind the card so it
+          pops against busy canvas backgrounds. Only visible when
+          contrast > 0. Drawn first so it sits under the card body and
+          everything else. */}
+      {contrast > 0 && (
+        <>
+          <rect
+            x={-CARD_W / 2 - 8}
+            y={-CARD_H / 2 - 8}
+            width={CARD_W + 16}
+            height={CARD_H + 16}
+            rx={14}
+            ry={14}
+            fill="#ffffff"
+            fillOpacity={0.35 * contrast}
+          />
+          <rect
+            x={-CARD_W / 2 - 4}
+            y={-CARD_H / 2 - 4}
+            width={CARD_W + 8}
+            height={CARD_H + 8}
+            rx={12}
+            ry={12}
+            fill="#ffffff"
+            fillOpacity={0.55 * contrast}
+          />
+        </>
+      )}
       {/* Card body — rectangular tile with rounded corners. Inherits
           theme via currentColor where needed; explicit white so dark-
           mode users still see a light card (matches royal-chart style). */}
@@ -832,10 +1148,40 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         rx={10}
         ry={10}
         fill="#ffffff"
-        stroke={isFocus ? ringColor : 'rgba(0,0,0,0.08)'}
-        strokeWidth={isFocus ? 2 : 1}
+        stroke={isFocus ? ringColor : `rgba(0,0,0,${0.08 + 0.35 * contrast})`}
+        strokeWidth={isFocus ? 2 : 1 + contrast}
       />
-      {/* Card drop-shadow — simple offset rect behind the card for depth */}
+      {/* Optional per-card background image — faded behind the card
+          contents. Clipped to the card's rounded shape via a per-node
+          clipPath. Only rendered when the person has one set. */}
+      {node.cardBackground && (
+        <>
+          <defs>
+            <clipPath id={`cardclip-${node.personId}`}>
+              <rect
+                x={-CARD_W / 2}
+                y={-CARD_H / 2}
+                width={CARD_W}
+                height={CARD_H}
+                rx={10}
+                ry={10}
+              />
+            </clipPath>
+          </defs>
+          <image
+            href={node.cardBackground}
+            x={-CARD_W / 2}
+            y={-CARD_H / 2}
+            width={CARD_W}
+            height={CARD_H}
+            preserveAspectRatio="xMidYMid slice"
+            opacity={0.28 * (1 - contrast * 0.5)}
+            clipPath={`url(#cardclip-${node.personId})`}
+          />
+        </>
+      )}
+      {/* Card drop-shadow — simple offset rect behind the card for depth.
+          Strength scales with the contrast slider. */}
       <rect
         x={-CARD_W / 2}
         y={-CARD_H / 2}
@@ -844,9 +1190,9 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         rx={10}
         ry={10}
         fill="none"
-        stroke="rgba(0,0,0,0.04)"
-        strokeWidth={3}
-        transform="translate(0 1)"
+        stroke={`rgba(0,0,0,${0.04 + 0.18 * contrast})`}
+        strokeWidth={3 + contrast * 3}
+        transform={`translate(${1 + contrast} ${1 + contrast * 2})`}
       />
       {/* Avatar — small circle near the top of the card */}
       <circle cx={0} cy={AVATAR_CY} r={AVATAR_R} fill={avatar ? '#fff' : bgColor} stroke="rgba(0,0,0,0.12)" strokeWidth={1} />
@@ -877,6 +1223,24 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
       <text x={0} y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
         {displayName}
       </text>
+      {/* Relationship label — small, muted, relative to the focus
+          person. Renders only for non-focus cards that have a resolved
+          path. Hidden for the focus person (they have no "relation to
+          themselves") and for distant / disconnected nodes with no
+          derivable path. */}
+      {!isFocus && relationshipLabel && (
+        <text
+          x={0}
+          y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME + NAME_TO_LABEL}
+          textAnchor="middle"
+          fontSize={10}
+          fontWeight={600}
+          fill="#111827"
+          style={{ letterSpacing: '0.02em' }}
+        >
+          {relationshipLabel}
+        </text>
+      )}
       {/* Dates — optional, controlled by the header's Add Info > Dates
           Living. Click to edit. When the dates are blank and the user
           has Dates Living turned on, we show a subtle 'add years' hint
@@ -904,13 +1268,93 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
             y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME + NAME_TO_DATES}
             textAnchor="middle"
             fontSize={11}
-            fill={lifeLine ? 'rgba(107,114,128,0.95)' : 'rgba(148,163,184,0.95)'}
+            fill={lifeLine ? '#374151' : 'rgba(148,163,184,0.95)'}
             fontStyle={lifeLine ? 'normal' : 'italic'}
+            fontWeight={lifeLine ? 500 : 400}
           >
             {lifeLine || 'add years…'}
           </text>
         </g>
       )}
+      {/* Step count — top-left corner. Tells the user how many hops
+          this person is from the focus. 0 = the focus itself (skipped);
+          placeholder ghosts don't carry a meaningful hop count so we
+          skip them too. Colour-coded per hop distance so the user can
+          see "rings" around the focus at a glance. Purely informational. */}
+      {!node.isPlaceholder && !isFocus && node.hopsFromFocus > 0 && (() => {
+        const r = 10;
+        const cornerX = -CARD_W / 2 + (r + 2);
+        const cornerY = -CARD_H / 2 + (r + 2);
+        const fill = STEP_BADGE_FILL[node.hopsFromFocus] ?? '#ffffff';
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <circle
+              cx={cornerX}
+              cy={cornerY}
+              r={r}
+              fill={fill}
+              stroke="rgba(0,0,0,0.25)"
+              strokeWidth={1}
+            />
+            <text
+              x={cornerX}
+              y={cornerY + 4}
+              textAnchor="middle"
+              fontSize={11}
+              fontWeight={700}
+              fill="#111827"
+              style={{ userSelect: 'none' }}
+            >
+              {node.hopsFromFocus}
+            </text>
+          </g>
+        );
+      })()}
+      {/* Gender marker — top-right corner. Shows a small "G" button
+          when no gender is set, or the Mars/Venus/Combined symbol
+          when it is. Clicking either opens the gender picker. When
+          `hideGenderMarker` is true the filled symbol disappears but
+          the "G" button stays so the user can still edit. Placeholder
+          ghosts don't get this affordance. */}
+      {!node.isPlaceholder && onOpenGenderPicker && (() => {
+        const symbol = genderMarkerSymbol(node.gender);
+        const showSymbol = !!symbol && !hideGenderMarker;
+        // Bigger + bolder corner when a symbol is set — users want to
+        // read the gender at a glance from across the canvas, so the
+        // set state is visually dominant; the unset "G" stays subtle
+        // so empty cards don't feel busy.
+        const r = showSymbol ? 13 : 10;
+        const cornerX = CARD_W / 2 - (r + 2);
+        const cornerY = -CARD_H / 2 + (r + 2);
+        return (
+          <g
+            style={{ cursor: 'pointer' }}
+            onClick={(e) => { e.stopPropagation(); onOpenGenderPicker(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <circle
+              cx={cornerX}
+              cy={cornerY}
+              r={r}
+              fill="#ffffff"
+              stroke={showSymbol ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.18)'}
+              strokeWidth={1}
+            />
+            <text
+              x={cornerX}
+              y={cornerY + (showSymbol ? 6 : 4)}
+              textAnchor="middle"
+              fontSize={showSymbol ? 18 : 10}
+              fontWeight={800}
+              fill={showSymbol ? '#000000' : '#6b7280'}
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
+            >
+              {showSymbol ? symbol : 'G'}
+            </text>
+          </g>
+        );
+      })()}
       {/* Quick-add chips — four plus buttons that appear on hover.
           Anchored to the four edges of the CARD (not the smaller avatar
           circle). When any chip is clicked, we force `hovered=false` so
@@ -918,7 +1362,9 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
           if the user cancels the picker and moves the mouse away. */}
       {(hovered || isFocus) && !hideChips && (
         <g opacity={hovered ? 1 : 0.6} style={{ pointerEvents: 'all' }}>
-          <QuickAddChip cx={0}                  cy={-CARD_H / 2 - 16} label="parent" onClick={() => { setHovered(false); onQuickAddParent(); }} />
+          {canAddParent && (
+            <QuickAddChip cx={0}                  cy={-CARD_H / 2 - 16} label="parent" onClick={() => { setHovered(false); onQuickAddParent(); }} />
+          )}
           <QuickAddChip cx={0}                  cy={ CARD_H / 2 + 16} label="child"  onClick={() => { setHovered(false); onQuickAddChild(); }} />
           <QuickAddChipMenu
             cx={-CARD_W / 2 - 20} cy={0} label="partner / sibling"
@@ -1171,14 +1617,20 @@ function EdgeQuickEditor({ edge, x, y, personNameLookup, onSaved, onClose }: {
   );
 }
 
-function NodeContextMenu({ x, y, isFocus, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onClose }: {
+function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, canHideAncestry, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onToggleAncestry, onClose }: {
   x: number; y: number;
   personId: number;
   isFocus: boolean;
+  hasCardBackground: boolean;
+  ancestryHidden: boolean;
+  canHideAncestry: boolean;
   onSetRelationship: () => void;
   onEditRelationships: () => void;
   onRefocus: () => void;
   onRemovePerson: () => void;
+  onSetCardBackground: () => void;
+  onClearCardBackground: () => void;
+  onToggleAncestry: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -1202,6 +1654,21 @@ function NodeContextMenu({ x, y, isFocus, onSetRelationship, onEditRelationships
       )}
       <MenuItem icon={<Link2 className="w-4 h-4" />} label="Set relationship…" onClick={onSetRelationship} />
       <MenuItem icon={<Pencil className="w-4 h-4" />} label="Edit relationships…" onClick={onEditRelationships} />
+      {canHideAncestry && (
+        <>
+          <div className="border-t border-border my-1" />
+          <MenuItem
+            icon={<EyeOff className="w-4 h-4" />}
+            label={ancestryHidden ? "Show this person's ancestry" : "Hide this person's ancestry"}
+            onClick={onToggleAncestry}
+          />
+        </>
+      )}
+      <div className="border-t border-border my-1" />
+      <MenuItem icon={<ImageIcon className="w-4 h-4" />} label={hasCardBackground ? 'Change card background…' : 'Set card background…'} onClick={onSetCardBackground} />
+      {hasCardBackground && (
+        <MenuItem icon={<X className="w-4 h-4" />} label="Clear card background" onClick={onClearCardBackground} />
+      )}
       <div className="border-t border-border my-1" />
       <MenuItem icon={<Trash2 className="w-4 h-4" />} label="Unlink from the tree" onClick={onRemovePerson} danger />
       {/* Deliberately NOT offering "Delete person" here — deleting a
@@ -1291,12 +1758,17 @@ function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
  *      and the virtual child directly; Cancel/close → NOTHING persists.
  *      This stops accidental 'Unknown' rows from piling up every time
  *      the user opens + dismisses the popup without committing. */
-function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClose }: {
+function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClose, peopleAlreadyInTree }: {
   personId: number | null;
   virtualChildId: number | null;
   x: number; y: number;
   onResolved: () => void;
   onClose: () => void;
+  /** Person IDs already placed somewhere in the current tree. These
+   *  are excluded from the "Link to existing" suggestion list — if
+   *  they're already named and visible, offering them again would
+   *  just let the user create a duplicate link or a self-reference. */
+  peopleAlreadyInTree?: Set<number>;
 }) {
   const isVirtual = personId == null && virtualChildId != null;
   // Default to 'link' — most placeholder resolutions are "this is
@@ -1376,6 +1848,13 @@ function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClo
 
   const filtered = allPersons
     .filter(p => !p.name.startsWith('__'))
+    // Exclude anyone already placed elsewhere in the current tree —
+    // suggesting them would only create a duplicate link or the user
+    // would mistakenly map one person to two slots. The placeholder
+    // being resolved is ALSO in this set when it's persisted; that's
+    // fine because it's an Unknown (empty name) and already excluded
+    // by the name filter above.
+    .filter(p => !peopleAlreadyInTree?.has(p.id))
     .filter(p => p.name.toLowerCase().includes(linkQuery.trim().toLowerCase()))
     // Sort by photo count DESC — the more likely match surfaces first.
     // Tiebreak alphabetical.
@@ -1386,41 +1865,49 @@ function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClo
     const trimmed = nameInput.trim();
     if (!trimmed) { setError('Type a name.'); return; }
     setBusy(true);
-    if (isVirtual && virtualChildId != null) {
-      // Virtual mode: create a named person and wire the parent_of edge.
-      // No placeholder row is created or orphaned on cancel.
-      const np = await createNamedPerson(trimmed);
-      if (!np.success || np.data == null) { setBusy(false); setError(np.error ?? 'Could not create person.'); return; }
-      const r = await addRelationship({ personAId: np.data, personBId: virtualChildId, type: 'parent_of' });
+    try {
+      if (isVirtual && virtualChildId != null) {
+        // Virtual mode: create a named person and wire the parent_of edge.
+        // No placeholder row is created or orphaned on cancel.
+        const np = await createNamedPerson(trimmed);
+        if (!np.success || np.data == null) { setError(np.error ?? 'Could not create person.'); return; }
+        const r = await addRelationship({ personAId: np.data, personBId: virtualChildId, type: 'parent_of' });
+        if (!r.success) { setError(r.error ?? 'Could not save.'); return; }
+        onResolved();
+        return;
+      }
+      if (personId == null) return;
+      const r = await namePlaceholder(personId, trimmed);
+      if (r.success) onResolved();
+      else setError(r.error ?? 'Could not save.');
+    } catch (err) {
+      setError((err as Error)?.message ?? 'Unexpected error while saving.');
+    } finally {
       setBusy(false);
-      if ('error' in r && r.error) { setError(r.error); return; }
-      onResolved();
-      return;
     }
-    if (personId == null) { setBusy(false); return; }
-    const r = await namePlaceholder(personId, trimmed);
-    setBusy(false);
-    if (r.success) onResolved();
-    else setError(r.error ?? 'Could not save.');
   };
 
   const handleLink = async (targetId: number) => {
     setError(null);
     setBusy(true);
-    if (isVirtual && virtualChildId != null) {
-      // Virtual mode: add parent_of edge between chosen person and the
-      // virtual child directly. No placeholder ever exists.
-      const r = await addRelationship({ personAId: targetId, personBId: virtualChildId, type: 'parent_of' });
+    try {
+      if (isVirtual && virtualChildId != null) {
+        // Virtual mode: add parent_of edge between chosen person and the
+        // virtual child directly. No placeholder ever exists.
+        const r = await addRelationship({ personAId: targetId, personBId: virtualChildId, type: 'parent_of' });
+        if (!r.success) { setError(r.error ?? 'Could not link.'); return; }
+        onResolved();
+        return;
+      }
+      if (personId == null) return;
+      const r = await mergePlaceholderIntoPerson(personId, targetId);
+      if (r.success) onResolved();
+      else setError(r.error ?? 'Could not link.');
+    } catch (err) {
+      setError((err as Error)?.message ?? 'Unexpected error while linking.');
+    } finally {
       setBusy(false);
-      if ('error' in r && r.error) { setError(r.error); return; }
-      onResolved();
-      return;
     }
-    if (personId == null) { setBusy(false); return; }
-    const r = await mergePlaceholderIntoPerson(personId, targetId);
-    setBusy(false);
-    if (r.success) onResolved();
-    else setError(r.error ?? 'Could not link.');
   };
 
   const handleRemove = async () => {

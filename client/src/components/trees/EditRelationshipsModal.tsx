@@ -45,6 +45,11 @@ export function EditRelationshipsModal({
   // every remove so the list stays in sync with the DB.
   const [edges, setEdges] = useState<RelationshipRecord[]>([]);
   const [derivedEdges, setDerivedEdges] = useState<FamilyGraphEdge[]>([]);
+  /** All edges in the 2-hop graph around `personId`. Used to annotate
+   *  placeholder-parent rows with "shared with [sibling]" so the user
+   *  can tell which Unknown is their sibling's parent too — handy for
+   *  cleaning up orphan placeholders produced by older sibling-add bugs. */
+  const [twoHopEdges, setTwoHopEdges] = useState<FamilyGraphEdge[]>([]);
   const [loading, setLoading] = useState(true);
   const [bump, setBump] = useState(0);
   useEffect(() => {
@@ -60,6 +65,7 @@ export function EditRelationshipsModal({
         setDerivedEdges(rGraph.data.edges.filter(e =>
           e.derived && (e.aId === personId || e.bId === personId)
         ));
+        setTwoHopEdges(rGraph.data.edges);
       }
       setLoading(false);
     });
@@ -73,7 +79,85 @@ export function EditRelationshipsModal({
     label: string;
     otherName: string;
     derived: boolean;
+    /** For Child-of rows: names of OTHER people who are also children
+     *  of this same parent. Lets the user see at a glance which
+     *  placeholder they actually share with siblings vs. an extra
+     *  orphan left behind by a previous buggy add. */
+    sharedWith?: string[];
+    /** True for Child-of rows pointing at a placeholder parent that has
+     *  NO other named children — i.e. safe to remove. Lets the UI
+     *  display a muted "safe to remove" hint on these rows so users
+     *  know which Unknown to target. */
+    orphanPlaceholder?: boolean;
   }
+
+  // For each (Alan's parent) in the 2-hop graph, list everyone ELSE
+  // who is ALSO a child of that parent — so we can annotate Child-of
+  // rows with the siblings that parent is shared with.
+  const siblingsSharingParent = useMemo(() => {
+    const m = new Map<number, number[]>(); // parentId → otherChildIds[]
+    for (const e of twoHopEdges) {
+      if (e.type !== 'parent_of' || e.derived) continue;
+      if (e.bId === personId) continue; // we want OTHER children
+      const existing = m.get(e.aId) ?? [];
+      existing.push(e.bId);
+      m.set(e.aId, existing);
+    }
+    return m;
+  }, [twoHopEdges, personId]);
+
+  // Per-person parent lists, built from the 2-hop graph. Used by the
+  // derived sibling rows to tell full vs half at a glance: if the two
+  // siblings share every known parent they're full; if either has a
+  // stored parent the other doesn't, they're half. Purely inferential —
+  // a "Full sibling (tentative)" label is picked when both sides only
+  // have one stored parent (could still turn out to be half once the
+  // second parent is filled in).
+  const parentsByChild = useMemo(() => {
+    const m = new Map<number, number[]>();
+    for (const e of twoHopEdges) {
+      if (e.type !== 'parent_of' || e.derived) continue;
+      if (!m.has(e.bId)) m.set(e.bId, []);
+      m.get(e.bId)!.push(e.aId);
+    }
+    return m;
+  }, [twoHopEdges]);
+
+  /** Classify a derived sibling pair as 'full', 'half', or 'tentative'
+   *  based on stored parent overlap. Orphan placeholder parents — ones
+   *  with only a single named child (typically leftover junk from old
+   *  sibling-add bugs) — are filtered out before comparing; otherwise
+   *  one person's stale placeholder would mislabel an intended full
+   *  sibling as half. */
+  const classifySibling = (otherId: number): 'full' | 'half' | 'tentative' => {
+    // Count of named children per parent across the 2-hop graph.
+    // Placeholders with 0 or 1 named children are treated as "ghosts"
+    // and excluded from the comparison.
+    const namedChildrenCount = (parentId: number): number => {
+      let c = 0;
+      for (const e of twoHopEdges) {
+        if (e.type !== 'parent_of' || e.derived) continue;
+        if (e.aId !== parentId) continue;
+        const childName = nameOf(e.bId);
+        if (childName && childName !== 'Unknown') c++;
+      }
+      return c;
+    };
+    const isGhost = (parentId: number): boolean => {
+      const n = nameOf(parentId);
+      if (n && n !== 'Unknown') return false;         // named parent → real
+      return namedChildrenCount(parentId) <= 1;       // orphan ghost
+    };
+    const mine = new Set((parentsByChild.get(personId) ?? []).filter(p => !isGhost(p)));
+    const theirs = new Set((parentsByChild.get(otherId) ?? []).filter(p => !isGhost(p)));
+    let shared = 0;
+    for (const p of mine) if (theirs.has(p)) shared++;
+    const mineOnly = mine.size - shared;
+    const theirsOnly = theirs.size - shared;
+    if (mineOnly > 0 || theirsOnly > 0) return 'half';
+    if (mine.size >= 2 && theirs.size >= 2) return 'full';
+    return 'tentative';
+  };
 
   const rows = useMemo(() => {
     const out: Row[] = [];
@@ -87,7 +171,28 @@ export function EditRelationshipsModal({
       const label = relationshipLabelFromRecord(e, aIsMe);
       const key = `${otherId}:${e.type}`;
       seen.add(key);
-      out.push({ key: `${e.id}`, edge: e, otherId, label, otherName: nameOf(otherId), derived: false });
+      // Child-of: compute which other people also have this parent.
+      // A parent SHARED with named siblings is load-bearing — removing
+      // it severs those sibling links. A parent with NO other named
+      // children is an orphan, usually left behind by an older buggy
+      // add; it's the one the user actually wants to delete. The UI
+      // below uses these to warn on shared rows and gently suggest
+      // removal on orphan rows.
+      let sharedWith: string[] | undefined;
+      let orphanPlaceholder = false;
+      if (label === 'Child of') {
+        const otherChildren = (siblingsSharingParent.get(otherId) ?? [])
+          .map(id => nameOf(id))
+          .filter(n => n && !n.startsWith('Unknown'));
+        if (otherChildren.length > 0) sharedWith = otherChildren;
+        // Orphan = placeholder (Unknown name) parent that has no other
+        // named children. These are the leftover ghosts to clean up.
+        const parentName = nameOf(otherId);
+        if (!sharedWith && (parentName === 'Unknown' || parentName === '')) {
+          orphanPlaceholder = true;
+        }
+      }
+      out.push({ key: `${e.id}`, edge: e, otherId, label, otherName: nameOf(otherId), derived: false, sharedWith, orphanPlaceholder });
     }
     // Append derived edges that aren't already covered by a direct one.
     for (const e of derivedEdges) {
@@ -96,7 +201,17 @@ export function EditRelationshipsModal({
       const key = `${otherId}:${e.type}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const label = relationshipLabelFromGraphEdge(e, aIsMe);
+      let label = relationshipLabelFromGraphEdge(e, aIsMe);
+      // Upgrade derived-sibling rows from a generic "Sibling" to the
+      // specific flavour inferred from stored parent overlap. Full /
+      // Half / Full (tentative) — the last is for pairs where only
+      // one parent is known for both and we can't yet rule out half.
+      if (e.type === 'sibling_of' && e.derived) {
+        const kind = classifySibling(otherId);
+        if (kind === 'full') label = 'Full sibling';
+        else if (kind === 'half') label = 'Half-sibling';
+        else label = 'Full sibling (tentative)';
+      }
       out.push({
         key: `derived-${otherId}-${e.type}`,
         edge: null, otherId, label, otherName: nameOf(otherId), derived: true,
@@ -108,7 +223,11 @@ export function EditRelationshipsModal({
       if (r.label.startsWith('Parent')) return 0;
       if (r.label.startsWith('Child')) return 1;
       if (r.label.startsWith('Partner') || r.label.startsWith('Ex-partner')) return 2;
-      if (r.label.startsWith('Sibling') || r.label.startsWith('Half')) return 3;
+      if (
+        r.label.startsWith('Sibling') ||
+        r.label.startsWith('Half') ||
+        r.label.startsWith('Full sibling')
+      ) return 3;
       return 4;
     };
     out.sort((a, b) => {
@@ -119,11 +238,19 @@ export function EditRelationshipsModal({
     return out;
   }, [edges, derivedEdges, personId, nameOf]);
 
-  const handleRemove = async (edge: RelationshipRecord, label: string, otherName: string) => {
+  const handleRemove = async (edge: RelationshipRecord, label: string, otherName: string, sharedWith?: string[]) => {
+    // Extra-loud warning when the parent is shared with named siblings
+    // — removing it severs those sibling links and leaves people
+    // stranded. Users have previously removed the wrong row here; this
+    // keeps the confirm possible but makes the consequence unmissable.
+    const isSharedParent = !!sharedWith && sharedWith.length > 0;
+    const message = isSharedParent
+      ? `This "Unknown" parent is also the parent of ${sharedWith!.join(', ')}. Removing this link will BREAK the sibling connection between ${personName} and ${sharedWith!.join(' / ')}. Are you sure this isn't the row you meant to keep?`
+      : `This removes only the "${label.toLowerCase()} — ${otherName}" link. The other person and all of their other relationships are kept.`;
     const ok = await promptConfirm({
-      title: 'Remove relationship?',
-      message: `This removes only the "${label.toLowerCase()} — ${otherName}" link. The other person and all of their other relationships are kept.`,
-      confirmLabel: 'Remove',
+      title: isSharedParent ? 'Break sibling link?' : 'Remove relationship?',
+      message,
+      confirmLabel: isSharedParent ? 'Yes, break the sibling link' : 'Remove',
       danger: true,
     });
     if (!ok) return;
@@ -208,14 +335,44 @@ export function EditRelationshipsModal({
             rows.map((row) => (
               <div
                 key={row.key}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors ${row.derived ? 'border-border/50 bg-muted/30' : 'border-border hover:border-primary/40'}`}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors ${
+                  row.derived
+                    ? 'border-border/50 bg-muted/30'
+                    : row.sharedWith
+                    ? 'border-emerald-500/40 bg-emerald-500/5'
+                    : row.orphanPlaceholder
+                    ? 'border-amber-500/40 bg-amber-500/5'
+                    : 'border-border hover:border-primary/40'
+                }`}
               >
                 <Users className={`w-4 h-4 shrink-0 ${row.derived ? 'text-muted-foreground/60' : 'text-muted-foreground'}`} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-foreground truncate">{row.otherName}</div>
+                  <div className="text-sm text-foreground truncate flex items-center gap-1.5">
+                    <span>{row.otherName}</span>
+                    {row.sharedWith && row.sharedWith.length > 0 && (
+                      <span className="text-[10px] uppercase tracking-wide font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded">
+                        Linked
+                      </span>
+                    )}
+                    {row.orphanPlaceholder && (
+                      <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded">
+                        Orphan
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {row.label}
                     {row.derived && <span className="italic"> · auto</span>}
+                    {row.sharedWith && row.sharedWith.length > 0 && (
+                      <span className="ml-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+                        · also parent of {row.sharedWith.join(', ')} — <span className="font-semibold">keep</span> to preserve sibling links
+                      </span>
+                    )}
+                    {row.orphanPlaceholder && (
+                      <span className="ml-1 text-[11px] text-amber-700 dark:text-amber-400">
+                        · no other children — safe to remove
+                      </span>
+                    )}
                   </div>
                 </div>
                 {!row.derived && (
@@ -228,7 +385,7 @@ export function EditRelationshipsModal({
                       Edit
                     </button>
                     <button
-                      onClick={() => row.edge && handleRemove(row.edge, row.label, row.otherName)}
+                      onClick={() => row.edge && handleRemove(row.edge, row.label, row.otherName, row.sharedWith)}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-red-600 hover:bg-red-500/10"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
