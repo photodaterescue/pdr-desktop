@@ -45,7 +45,7 @@ export function ReportProblemModal({ onClose }: ReportProblemModalProps) {
         setSentOk(true);
         if (r.logFilePath) setLogPath(r.logFilePath);
       } else {
-        setError(r.error ?? 'Could not open your mail client. Please send a message to terryclapson@gmail.com manually.');
+        setError(r.error ?? 'Could not open your mail client. Please send a message to admin@photodaterescue.com manually.');
       }
     } finally {
       setSending(false);

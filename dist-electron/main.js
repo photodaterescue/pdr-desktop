@@ -1990,7 +1990,7 @@ ipcMain.handle('app:log', (_e, payload) => {
  */
 ipcMain.handle('app:reportProblem', async (_e, payload) => {
     try {
-        const supportEmail = 'terryclapson@gmail.com';
+        const supportEmail = 'admin@photodaterescue.com';
         const description = (payload?.description ?? '').trim();
         const userEmail = (payload?.userEmail ?? '').trim();
         const logFilePath = log.transports.file.getFile().path;
