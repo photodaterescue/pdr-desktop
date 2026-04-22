@@ -21,6 +21,17 @@ export async function getLogFilePath(reveal: boolean = false): Promise<{ path: s
   try { return await (window as any).pdr?.getLogFilePath?.(reveal); } catch { return null; }
 }
 
+/** Build a one-click support bundle: opens the user's mail client
+ *  with a pre-filled message (system info + recent log tail inline)
+ *  AND reveals the log file in Explorer so the user can drag it in
+ *  as an attachment. Returns the log file path so the calling UI can
+ *  display it. */
+export async function reportProblem(payload: { description: string; userEmail?: string }): Promise<{ success: boolean; logFilePath?: string; error?: string }> {
+  if (!isElectron()) return { success: false, error: 'Not running in Electron' };
+  try { return await (window as any).pdr?.reportProblem?.(payload); }
+  catch (err) { return { success: false, error: (err as Error).message }; }
+}
+
 // Install a one-time console bridge — mirror every console.error and
 // console.warn from the renderer into the persistent log file so we
 // don't need users to open DevTools to get useful bug reports. Keeps

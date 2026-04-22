@@ -236,6 +236,7 @@ contextBridge.exposeInMainWorld('pdr', {
     // email without the user having to hunt for %APPDATA%.
     log: (payload) => ipcRenderer.invoke('app:log', payload),
     getLogFilePath: (reveal) => ipcRenderer.invoke('app:logFilePath', { reveal }),
+    reportProblem: (payload) => ipcRenderer.invoke('app:reportProblem', payload),
     dateEditor: {
         open: (seedQuery) => ipcRenderer.invoke('dateEditor:open', seedQuery),
         onThemeChange: (callback) => {

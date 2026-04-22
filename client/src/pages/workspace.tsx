@@ -89,6 +89,7 @@ import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/Li
 import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesView from "@/components/MemoriesView";
 import { TreesView } from "@/components/trees/TreesView";
+import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
 import type { SourceAnalysisResult } from "../electron";
@@ -269,6 +270,7 @@ useEffect(() => {
   // the default (the existing workspace/dashboard hybrid); other options are
   // separate destinations in the sidebar.
   const [activeView, setActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
+  const [showReportProblem, setShowReportProblem] = useState(false);
   /** Non-null while the user is picking a background image for Trees
    *  via the S&D view. SearchRibbon reads this to show a pick-mode
    *  banner + confirm button; on confirm/cancel we switch back to the
@@ -1342,6 +1344,7 @@ return (
 			}
 		  }}
 		  onSettingsClick={() => setShowSettingsModal(true)}
+		  onReportProblem={() => setShowReportProblem(true)}
 		  isLicensed={isLicensed}
 		  onLicenseRequired={handleLicenseRequired}
 		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
@@ -1489,6 +1492,11 @@ return (
         title="Add Source"
         mode="source"
       />
+
+      {showReportProblem && (
+        <ReportProblemModal onClose={() => setShowReportProblem(false)} />
+      )}
+
       {showSettingsModal && (
 		<SettingsModal
 		  initialTab={initialSettingsTab}
@@ -1618,7 +1626,7 @@ return (
 
 type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, onReportProblem, searchResultsActive, activeView, onViewChange }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, onReportProblem?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -1974,6 +1982,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
             <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
             <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
+            {onReportProblem && (
+              <SidebarItem icon={<AlertTriangle className="w-4 h-4 opacity-70 text-amber-500" />} label="Report a problem" onClick={onReportProblem} />
+            )}
           </div>
         )}
       </div>

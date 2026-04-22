@@ -297,6 +297,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   log: (payload: { level?: 'info' | 'warn' | 'error' | 'debug'; message?: string; data?: unknown }) =>
     ipcRenderer.invoke('app:log', payload),
   getLogFilePath: (reveal?: boolean) => ipcRenderer.invoke('app:logFilePath', { reveal }),
+  reportProblem: (payload: { description?: string; userEmail?: string }) =>
+    ipcRenderer.invoke('app:reportProblem', payload),
 
   dateEditor: {
     open: (seedQuery?: any) => ipcRenderer.invoke('dateEditor:open', seedQuery),

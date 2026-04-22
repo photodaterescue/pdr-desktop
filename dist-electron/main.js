@@ -1971,6 +1971,77 @@ ipcMain.handle('app:log', (_e, payload) => {
     else
         write(`[renderer] ${msg}`);
 });
+/**
+ * Report a Problem — one-click support bundle.
+ *
+ * Composes a pre-filled email to the support address AND reveals the
+ * main.log file in Explorer so the user can drag it into the email
+ * as an attachment. mailto: URIs don't support attachments natively,
+ * so the reveal-in-folder trick is the most reliable cross-Windows
+ * workaround. The email body embeds system info + the last ~200 log
+ * lines inline (capped to fit under the ~2000-char mailto limit) so
+ * even if the user hits Send without attaching, we still get useful
+ * context.
+ *
+ * Input: { description, userEmail? } — the user's optional note +
+ *        return address from the modal.
+ * Returns: { success, logFilePath } — log path is returned so the
+ *          UI can offer a "Copy path" or "Open folder" button too.
+ */
+ipcMain.handle('app:reportProblem', async (_e, payload) => {
+    try {
+        const supportEmail = 'terryclapson@gmail.com';
+        const description = (payload?.description ?? '').trim();
+        const userEmail = (payload?.userEmail ?? '').trim();
+        const logFilePath = log.transports.file.getFile().path;
+        // Collect system info for the body.
+        const totalMemGB = (os.totalmem() / (1024 ** 3)).toFixed(1);
+        const freeMemGB = (os.freemem() / (1024 ** 3)).toFixed(1);
+        const info = [
+            `App version: ${app.getVersion()}`,
+            `Platform: ${process.platform} ${os.release()} (${os.arch()})`,
+            `RAM: ${totalMemGB} GB total / ${freeMemGB} GB free`,
+            `CPU: ${os.cpus()[0]?.model ?? 'unknown'} × ${os.cpus().length}`,
+            `Log file: ${logFilePath}`,
+        ].join('\n');
+        // Tail of the log — last ~200 lines or 1500 chars, whichever's smaller.
+        // Keeps the mailto URL under the typical ~2000-char limit.
+        let logTail = '';
+        try {
+            const raw = fs.readFileSync(logFilePath, 'utf8');
+            const lines = raw.split(/\r?\n/);
+            logTail = lines.slice(-200).join('\n').slice(-1500);
+        }
+        catch { }
+        const body = [
+            description || '(user left description blank)',
+            '',
+            '─── system info ───',
+            info,
+            userEmail ? `Return address: ${userEmail}` : '',
+            '',
+            '─── recent log (last 200 lines) ───',
+            logTail || '(log file unreadable)',
+            '',
+            '─── please attach the full log from the folder that just opened ───',
+            logFilePath,
+        ].filter(Boolean).join('\n');
+        const subject = 'Photo Date Rescue — support request';
+        const mailto = `mailto:${supportEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        // Open default mail client AND reveal log in Explorer. Users then
+        // drag the log into the email manually — mailto can't attach.
+        await shell.openExternal(mailto);
+        try {
+            shell.showItemInFolder(logFilePath);
+        }
+        catch { }
+        log.info(`[report] opened mailto for support request (description ${description.length} chars)`);
+        return { success: true, logFilePath };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 // Resolve the user's well-known Quick Access folders so the Add Source
 // browser can surface them in its sidebar. Electron's app.getPath() already
 // knows the correct localised paths on all platforms.
