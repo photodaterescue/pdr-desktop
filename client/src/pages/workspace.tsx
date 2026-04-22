@@ -3479,7 +3479,7 @@ function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConf
             ) : null}
           </div>
           {elapsed > 15 && (
-            <p className="text-[10px] text-muted-foreground/50 mt-1 italic">
+            <p className="text-xs text-muted-foreground mt-1.5 italic">
               Tip: Close other apps and avoid running intensive tasks on your PC to speed this up.
             </p>
           )}
