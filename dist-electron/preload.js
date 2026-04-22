@@ -229,6 +229,13 @@ contextBridge.exposeInMainWorld('pdr', {
     },
     ping: () => ipcRenderer.invoke('app:ping'),
     quickAccessPaths: () => ipcRenderer.invoke('app:quickAccessPaths'),
+    // Logging bridge — renderer code can push any structured event into
+    // the main-process log file (which is the only persistent log in
+    // production, DevTools being disabled). `getLogFilePath` lets a
+    // future "Report a problem" button attach the file to a support
+    // email without the user having to hunt for %APPDATA%.
+    log: (payload) => ipcRenderer.invoke('app:log', payload),
+    getLogFilePath: (reveal) => ipcRenderer.invoke('app:logFilePath', { reveal }),
     dateEditor: {
         open: (seedQuery) => ipcRenderer.invoke('dateEditor:open', seedQuery),
         onThemeChange: (callback) => {

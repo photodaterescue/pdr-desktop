@@ -6,6 +6,51 @@ export function isElectron(): boolean {
   return typeof window !== 'undefined' && (window as any).pdr !== undefined;
 }
 
+/** Send a log line to the main-process log file (survives app exit,
+ *  visible even when DevTools are disabled in production). Safe to
+ *  call from non-Electron contexts — becomes a no-op. */
+export function logToFile(level: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown): void {
+  if (!isElectron()) return;
+  try { (window as any).pdr?.log?.({ level, message, data }); } catch {}
+}
+
+/** Return the absolute path of the persistent main-process log file.
+ *  `reveal === true` also opens the folder in the OS file explorer. */
+export async function getLogFilePath(reveal: boolean = false): Promise<{ path: string } | null> {
+  if (!isElectron()) return null;
+  try { return await (window as any).pdr?.getLogFilePath?.(reveal); } catch { return null; }
+}
+
+// Install a one-time console bridge — mirror every console.error and
+// console.warn from the renderer into the persistent log file so we
+// don't need users to open DevTools to get useful bug reports. Keeps
+// the original console behaviour intact (for dev).
+if (isElectron() && typeof window !== 'undefined' && !(window as any).__pdrConsoleBridged) {
+  (window as any).__pdrConsoleBridged = true;
+  const origError = console.error.bind(console);
+  const origWarn = console.warn.bind(console);
+  console.error = (...args: unknown[]) => {
+    origError(...args);
+    try { logToFile('error', args.map(a => typeof a === 'string' ? a : safeStringify(a)).join(' ')); } catch {}
+  };
+  console.warn = (...args: unknown[]) => {
+    origWarn(...args);
+    try { logToFile('warn', args.map(a => typeof a === 'string' ? a : safeStringify(a)).join(' ')); } catch {}
+  };
+  // Uncaught exceptions + unhandled promise rejections — the most
+  // common crash signatures, previously lost because DevTools was off.
+  window.addEventListener('error', (e) => {
+    logToFile('error', `window.error: ${e.message}`, { filename: e.filename, lineno: e.lineno, colno: e.colno, stack: e.error?.stack });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    logToFile('error', `unhandledrejection: ${String(e.reason?.message ?? e.reason)}`, { stack: e.reason?.stack });
+  });
+}
+
+function safeStringify(v: unknown): string {
+  try { return JSON.stringify(v); } catch { return String(v); }
+}
+
 export async function openFolderDialog(): Promise<string | null> {
   if (isElectron()) {
     return (window as any).pdr.openFolder();

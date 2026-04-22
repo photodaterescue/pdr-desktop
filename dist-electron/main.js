@@ -7,6 +7,46 @@ import { execSync, execFile } from 'child_process';
 import { spawn } from 'child_process';
 import { createRequire } from 'module';
 import sharp from 'sharp';
+import log from 'electron-log/main.js';
+// Pin the app name BEFORE electron-log resolves its file path. In
+// production the packaged `productName` from package.json takes
+// effect automatically, but in development `npx electron` reports
+// the app as "Electron", which would dump the log into
+// %APPDATA%\Electron\logs — inconsistent with what users see and
+// what support docs reference.
+app.setName('Photo Date Rescue');
+// ───────── Persistent log file ─────────
+// Every console.log / warn / error from the main process is mirrored
+// into %APPDATA%\photo-date-rescue\logs\main.log (Windows) — with
+// daily-rotation archives so the file doesn't grow forever. Renderer
+// processes send their console output here too via the forwarder
+// wired to `contextBridge` in preload.ts.
+//
+// We ship DevTools disabled in production, so these files are the
+// only forensic trail we have for crashes users report. The location
+// is surfaced back to the renderer through `ipc('app:logFilePath')`
+// so a future "Report a problem" button can bundle it straight into
+// a support email. Until that button lands, users / support can grab
+// it manually from:
+//
+//   %APPDATA%\photo-date-rescue\logs\main.log
+//
+// Rotation: file caps at 5 MB; older chunks roll to `main.old.log`
+// so total disk footprint stays bounded at ~10 MB.
+log.transports.file.level = 'info';
+log.transports.file.maxSize = 5 * 1024 * 1024;
+log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
+log.transports.console.level = 'debug';
+// electron-log reads the app name at import time, so app.setName()
+// above doesn't retroactively move the file. Pin an explicit path
+// under %APPDATA%\Photo Date Rescue\logs regardless of whether we're
+// running dev (npx electron, app name = "Electron") or a packaged
+// build. Mirrors what the support docs will tell users.
+log.transports.file.resolvePathFn = (vars) => path.join(app.getPath('appData'), 'Photo Date Rescue', 'logs', vars.fileName ?? 'main.log');
+// Route stdlib console calls through electron-log so every existing
+// console.log/warn/error in the codebase is captured without having
+// to touch the call sites.
+Object.assign(console, log.functions);
 // ffmpeg-static is a CommonJS module; createRequire lets us require it from ESM.
 const esmRequire = createRequire(import.meta.url);
 let ffmpegPath = null;
@@ -377,6 +417,16 @@ protocol.registerSchemesAsPrivileged([
     { scheme: 'pdr-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ]);
 app.whenReady().then(() => {
+    // Surface the log file path at startup so users hitting crashes can
+    // find the file without digging through %APPDATA%. Also makes it
+    // trivial to copy the path from the log itself if the user already
+    // has an older copy open.
+    try {
+        const logPath = log.transports.file.getFile().path;
+        log.info(`[log] file: ${logPath}`);
+        log.info(`[log] app version ${app.getVersion()} starting on ${process.platform} ${os.release()}`);
+    }
+    catch { }
     // Handle pdr-file:// protocol — serves local files to the viewer window
     protocol.handle('pdr-file', (request) => {
         // New canonical form: pdr-file://local/?f=<urlencoded-path>
@@ -1893,6 +1943,34 @@ ipcMain.handle('license:getMachineId', async () => {
 // can surface a banner when main goes dark (hang, not a clean crash — a crash
 // would take the renderer down too).
 ipcMain.handle('app:ping', async () => ({ alive: true, t: Date.now() }));
+// Expose the on-disk path of the log file so a "Report a problem"
+// feature (or a curious user) can grab it. Opens the folder in
+// Explorer when the `reveal` flag is passed.
+ipcMain.handle('app:logFilePath', async (_e, args) => {
+    const filePath = log.transports.file.getFile().path;
+    if (args?.reveal) {
+        try {
+            shell.showItemInFolder(filePath);
+        }
+        catch { }
+    }
+    return { path: filePath };
+});
+// Renderer → main log forwarder. Anything the React side hands us
+// here is written to the same main.log file (prefixed so the origin
+// is obvious), keeping every log line in one place instead of split
+// between DevTools console (which doesn't exist in production) and
+// the main-process file. Invoked from the preload bridge.
+ipcMain.handle('app:log', (_e, payload) => {
+    const level = payload?.level ?? 'info';
+    const msg = String(payload?.message ?? '');
+    const data = payload?.data;
+    const write = log[level] ?? log.info;
+    if (data !== undefined)
+        write(`[renderer] ${msg}`, data);
+    else
+        write(`[renderer] ${msg}`);
+});
 // Resolve the user's well-known Quick Access folders so the Add Source
 // browser can surface them in its sidebar. Electron's app.getPath() already
 // knows the correct localised paths on all platforms.
