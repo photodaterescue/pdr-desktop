@@ -1344,7 +1344,6 @@ return (
 			}
 		  }}
 		  onSettingsClick={() => setShowSettingsModal(true)}
-		  onReportProblem={() => setShowReportProblem(true)}
 		  isLicensed={isLicensed}
 		  onLicenseRequired={handleLicenseRequired}
 		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
@@ -1411,6 +1410,7 @@ return (
             onBackToWorkspace={() => setActivePanel(null)}
             onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
             onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
+            onReportProblem={() => setShowReportProblem(true)}
           />
         ) : (
           <MainContent
@@ -1626,7 +1626,7 @@ return (
 
 type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, onReportProblem, searchResultsActive, activeView, onViewChange }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, onReportProblem?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -1982,9 +1982,6 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
             <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
             <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
-            {onReportProblem && (
-              <SidebarItem icon={<AlertTriangle className="w-4 h-4 opacity-70 text-amber-500" />} label="Report a problem" onClick={onReportProblem} />
-            )}
           </div>
         )}
       </div>
@@ -5972,7 +5969,7 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onStartTour }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void }) {
+function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void }) {
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   
   React.useEffect(() => {
@@ -7056,15 +7053,31 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                         <p className="text-xs text-muted-foreground mb-3">
                           For setup questions, planning advice, or interpretation of results, please use the Guides first — they're faster and more detailed than email.
                         </p>
-                      <button 
-                        onClick={async () => {
-                          const { openExternalUrl } = await import('@/lib/electron-bridge');
-                          await openExternalUrl('https://www.photodaterescue.com/support?source=app');
-                        }}
-                        className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-border bg-secondary/30 text-foreground hover:bg-secondary/50 transition-colors cursor-pointer"
-                      >
-                        Contact Support (Technical Issues Only)
-                      </button>
+                        <div className="flex flex-wrap gap-2">
+                          {onReportProblem && (
+                            <button
+                              onClick={onReportProblem}
+                              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+                            >
+                              <AlertTriangle className="w-4 h-4" />
+                              Report a problem (recommended)
+                            </button>
+                          )}
+                          <button
+                            onClick={async () => {
+                              const { openExternalUrl } = await import('@/lib/electron-bridge');
+                              await openExternalUrl('https://www.photodaterescue.com/support?source=app');
+                            }}
+                            className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-border bg-secondary/30 text-foreground hover:bg-secondary/50 transition-colors cursor-pointer"
+                          >
+                            Contact Support (web form)
+                          </button>
+                        </div>
+                        {onReportProblem && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            The in-app <strong className="text-foreground font-semibold">Report a problem</strong> option pre-fills a support email with your system info and log file — the fastest way for us to diagnose an issue.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </AccordionContent>

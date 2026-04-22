@@ -77,8 +77,8 @@ export function ReportProblemModal({ onClose }: ReportProblemModalProps) {
             <>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Briefly describe what went wrong. We'll include your system info and a
-                recent extract of the log automatically — you just need to drag the log
-                file into the email when your mail client opens.
+                recent extract of the log automatically —{' '}
+                <strong className="text-foreground font-semibold">you just need to drag the log file into the email when your mail client opens.</strong>
               </p>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-foreground">What happened?</span>
