@@ -70,10 +70,19 @@ export function LicenseRequiredModal({ isOpen, onClose, onActivate, feature = "a
               </Button>
               
               {/* Secondary info */}
-              <div className="text-center">
+              <div className="text-center space-y-2">
                 <p className="text-xs text-muted-foreground">
                   Already have a license key? Click above to enter it.
                 </p>
+                <button
+                  onClick={async () => {
+                    const { openExternalUrl } = await import('@/lib/electron-bridge');
+                    await openExternalUrl('https://photodaterescue.com/#pricing');
+                  }}
+                  className="text-sm text-primary hover:underline font-medium cursor-pointer bg-transparent border-none"
+                >
+                  Don't have one? Purchase Photo Date Rescue →
+                </button>
               </div>
               
               {/* Divider */}

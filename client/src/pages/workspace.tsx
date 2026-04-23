@@ -47,7 +47,8 @@ import {
   ZoomIn,
   ZoomOut,
   Search,
-  Network
+  Network,
+  Lock
 } from "lucide-react";
 import { toast } from "sonner";
 import { promptConfirm } from "@/components/trees/promptConfirm";
@@ -83,6 +84,7 @@ import {
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
+import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
 import { FolderBrowserModal } from "@/components/FolderBrowserModal";
 import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
@@ -322,14 +324,20 @@ useEffect(() => {
   }, [sourceAnalysisResults]);
 
 const [showLicenseRequired, setShowLicenseRequired] = useState(false);
+const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
 const { isLicensed } = useLicense();
 
 const handleLicenseRequired = () => {
   setShowLicenseRequired(true);
 };
 
+const handleFeatureLocked = (feature: TeaserFeature) => {
+  setTeaserFeature(feature);
+};
+
 const handleActivateLicense = () => {
   setShowLicenseRequired(false);
+  setTeaserFeature(null);
   setShowLicenseModal(true);
 };
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -1354,6 +1362,7 @@ return (
 		  onSettingsClick={() => setShowSettingsModal(true)}
 		  isLicensed={isLicensed}
 		  onLicenseRequired={handleLicenseRequired}
+		  onFeatureLocked={handleFeatureLocked}
 		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
 		  searchResultsActive={searchResultsActive}
 		/>
@@ -1485,6 +1494,11 @@ return (
 		  onClose={() => setShowLicenseRequired(false)}
 		  onActivate={handleActivateLicense}
 		  feature="add sources"
+		/>
+		<FeatureTeaserModal
+		  feature={teaserFeature}
+		  onClose={() => setTeaserFeature(null)}
+		  onActivate={handleActivateLicense}
 		/>
       {/* Custom Folder Browser for source selection */}
       <FolderBrowserModal
@@ -1634,7 +1648,7 @@ return (
 
 type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -1948,30 +1962,46 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <SidebarItem
                 icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />}
                 label={sources.length > 0 ? "Dashboard" : "Workspace"}
-                onClick={() => onDashboardClick()}
+                onClick={() => {
+                  if (sources.length > 0 && !isLicensed) { onFeatureLocked('dashboard'); return; }
+                  onDashboardClick();
+                }}
                 active={activeView === 'dashboard' && activePanel === null && !sources.some(s => s.active)}
                 selectable={false}
+                locked={sources.length > 0 && !isLicensed}
               />
               <SidebarItem
                 icon={<Search className="w-4 h-4 opacity-70" />}
                 label="Search & Discovery"
-                onClick={() => onViewChange?.('search')}
+                onClick={() => {
+                  if (!isLicensed) { onFeatureLocked('search-discovery'); return; }
+                  onViewChange?.('search');
+                }}
                 active={activeView === 'search'}
                 selectable={false}
+                locked={!isLicensed}
               />
               <SidebarItem
                 icon={<CalendarRange className="w-4 h-4 opacity-70" />}
                 label="Memories"
-                onClick={() => onViewChange?.('memories')}
+                onClick={() => {
+                  if (!isLicensed) { onFeatureLocked('memories'); return; }
+                  onViewChange?.('memories');
+                }}
                 active={activeView === 'memories'}
                 selectable={false}
+                locked={!isLicensed}
               />
               <SidebarItem
                 icon={<Network className="w-4 h-4 opacity-70" />}
                 label="Trees"
-                onClick={() => onViewChange?.('familytree')}
+                onClick={() => {
+                  if (!isLicensed) { onFeatureLocked('trees'); return; }
+                  onViewChange?.('familytree');
+                }}
                 active={activeView === 'familytree'}
                 selectable={false}
+                locked={!isLicensed}
               />
             </div>
           )}
@@ -1987,8 +2017,12 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <SidebarItem
                 icon={<span className="w-4 h-4 rounded-md bg-purple-500/15 flex items-center justify-center"><Users className="w-3 h-3 text-purple-500" /></span>}
                 label="People Manager"
-                onClick={() => { openPeopleWindow(); }}
+                onClick={() => {
+                  if (!isLicensed) { onFeatureLocked('people-manager'); return; }
+                  openPeopleWindow();
+                }}
                 selectable={false}
+                locked={!isLicensed}
               />
             </div>
           )}
@@ -2082,14 +2116,14 @@ function SectionHeader({ label, collapsed, onToggle }: { label: string; collapse
   );
 }
 
-function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean }) {
-  return (
-    <div 
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
-        disabled 
-          ? 'text-muted-foreground/50 cursor-not-allowed' 
-          : active 
-            ? 'text-secondary-foreground font-medium bg-sidebar-accent/50 hover:bg-primary/15' 
+function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false, locked = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean, locked?: boolean }) {
+  const content = (
+    <div
+      className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
+        disabled
+          ? 'text-muted-foreground/50 cursor-not-allowed'
+          : active
+            ? 'text-secondary-foreground font-medium bg-sidebar-accent/50 hover:bg-primary/15'
             : 'text-sidebar-foreground hover:bg-primary/10 hover:text-foreground'
       }`}
       onClick={(e) => !disabled && onClick && onClick(e)}
@@ -2099,20 +2133,38 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
           e.stopPropagation();
           if (!disabled && onClick) onClick(e);
         }}>
-          <Checkbox 
-            checked={selected} 
+          <Checkbox
+            checked={selected}
             onCheckedChange={() => {}} // Checkbox change is handled by parent div click or explicit handler if needed
             disabled={disabled}
             className="mr-1 w-4 h-4 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
           />
         </div>
       )}
-      <div className="flex items-center gap-2 overflow-hidden pointer-events-none">
+      <div className="flex items-center gap-2 overflow-hidden pointer-events-none flex-1">
         {icon}
         <span className="truncate">{label}</span>
       </div>
+      {locked && (
+        <Lock className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary transition-colors flex-shrink-0 pointer-events-none" />
+      )}
     </div>
   );
+
+  if (locked) {
+    return (
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>{content}</TooltipTrigger>
+          <TooltipContent side="right">
+            <p>Premium feature — click for details</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return content;
 }
 
 function MainContent({ 
