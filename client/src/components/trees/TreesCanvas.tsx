@@ -1341,17 +1341,21 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               stroke={showSymbol ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.18)'}
               strokeWidth={1}
             />
-            <text
-              x={cornerX}
-              y={cornerY + (showSymbol ? 6 : 4)}
-              textAnchor="middle"
-              fontSize={showSymbol ? 18 : 10}
-              fontWeight={800}
-              fill={showSymbol ? '#000000' : '#6b7280'}
-              style={{ pointerEvents: 'none', userSelect: 'none' }}
-            >
-              {showSymbol ? symbol : 'G'}
-            </text>
+            {showSymbol ? (
+              <GenderGlyph gender={node.gender} cx={cornerX} cy={cornerY} />
+            ) : (
+              <text
+                x={cornerX}
+                y={cornerY + 4}
+                textAnchor="middle"
+                fontSize={10}
+                fontWeight={800}
+                fill="#6b7280"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                G
+              </text>
+            )}
           </g>
         );
       })()}
@@ -1377,6 +1381,64 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
             onSibling={() => { setHovered(false); onQuickAddSibling(); }}
           />
         </g>
+      )}
+    </g>
+  );
+}
+
+/** Native-SVG gender glyph rendered inside the top-right badge on each
+ *  card. Replaces the Unicode ♂ / ♀ / ⚥ glyphs, which fall back to a
+ *  thin-stroked symbol font on Windows that looks shaded and illegible
+ *  when the Tree is zoomed out. Shapes are pure strokes so they stay
+ *  crisp at any zoom level. */
+function GenderGlyph({ gender, cx, cy }: { gender: PersonGender | null | undefined; cx: number; cy: number }) {
+  const showArrow = gender === 'male' || gender === 'non_binary';
+  const showCross = gender === 'female' || gender === 'non_binary';
+  if (!showArrow && !showCross) return null;
+
+  // Non-binary centres the circle on the badge and attaches both the
+  // NE arrow AND the south cross. Male/female offset the circle so
+  // the outgoing ornament (arrow up, cross down) has room to breathe
+  // inside the 13-radius badge without clipping the edge.
+  const isNB = gender === 'non_binary';
+  const circleCx = cx + (isNB ? 0 : (showArrow ? -2 : 0));
+  const circleCy = cy + (isNB ? 0 : (showArrow ? 2 : -2));
+  const circleR = 4;
+
+  // Arrow tip positioned just inside the badge perimeter (badge r=13
+  // so ~7 from centre keeps the arrowhead clear of the white outline).
+  const arrowTipX = cx + 7;
+  const arrowTipY = cy - 7;
+  // Arrow line starts at the 45°-NE edge of the circle.
+  const arrowStartX = circleCx + circleR * 0.707;
+  const arrowStartY = circleCy - circleR * 0.707;
+
+  // Cross hangs directly below the circle.
+  const crossTop = circleCy + circleR;
+  const crossBottom = cy + 8;
+  const crossMid = (crossTop + crossBottom) / 2 + 0.5;
+
+  return (
+    <g
+      stroke="#111827"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+      style={{ pointerEvents: 'none' }}
+    >
+      <circle cx={circleCx} cy={circleCy} r={circleR} />
+      {showArrow && (
+        <>
+          <line x1={arrowStartX} y1={arrowStartY} x2={arrowTipX} y2={arrowTipY} />
+          <polyline points={`${arrowTipX - 3.5},${arrowTipY} ${arrowTipX},${arrowTipY} ${arrowTipX},${arrowTipY + 3.5}`} />
+        </>
+      )}
+      {showCross && (
+        <>
+          <line x1={circleCx} y1={crossTop} x2={circleCx} y2={crossBottom} />
+          <line x1={circleCx - 3} y1={crossMid} x2={circleCx + 3} y2={crossMid} />
+        </>
       )}
     </g>
   );
