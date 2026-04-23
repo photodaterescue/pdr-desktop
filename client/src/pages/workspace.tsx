@@ -1639,7 +1639,11 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
 
-  const [width, setWidth] = useState(280);
+  // Default sidebar width bumped +10% (280 → 308) so Add Source /
+  // Remove don't look squashed out of the gate. User can still drag
+  // the resize handle to whatever they prefer — this only sets the
+  // initial value for a fresh session.
+  const [width, setWidth] = useState(308);
   const [isResizing, setIsResizing] = useState(false);
 
   // Pin state — user's manual override for this session only. 'auto' = follow searchResultsActive, 'open' = always open, 'closed' = always collapsed.
@@ -1668,27 +1672,48 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
   const [appCollapsed, setAppCollapsed] = useState(false);
-  const [userOverrode, setUserOverrode] = useState<{ tools: boolean; guidance: boolean; app: boolean }>({ tools: false, guidance: false, app: false });
+  const [userOverrode, setUserOverrode] = useState<{ views: boolean; tools: boolean; guidance: boolean; app: boolean }>({ views: false, tools: false, guidance: false, app: false });
 
-  // Auto-collapse the lower sidebar sections under height pressure so the
-  // Source Menu always has room for its contents. Priority of shrinkage:
-  // App first, then Guidance, then Tools. Views stays expanded because
-  // they are the primary navigation. Source Menu also has its own
-  // min-height further down so it can't be squeezed to zero regardless.
+  // Auto-collapse the lower sidebar sections under height pressure so
+  // the Source Menu always has room for its contents WITHOUT forcing
+  // the user to scroll. Two inputs drive this:
+  //   • Window height — short displays fold sections earlier.
+  //   • Source count — each new source adds a row to the top list;
+  //     once the list grows past the comfortable fit for the current
+  //     height we fold lower sections pre-emptively to make room.
   //
-  // Respects user-override: once the user manually opens a section on a
-  // short window, we stop auto-folding it for the session.
+  // Fold priority, least-important first: App → Guidance → Tools →
+  // Views. Views is the primary navigation so it folds last. Source
+  // Menu has its own min-height so it can't be squeezed to zero.
+  //
+  // Respects user-override: once the user manually opens a section
+  // we stop auto-folding it for the session.
   useEffect(() => {
     const autoAdjust = () => {
       const h = window.innerHeight;
-      if (!userOverrode.app)      setAppCollapsed(h < 900);
-      if (!userOverrode.guidance) setGuidanceCollapsed(h < 820);
-      if (!userOverrode.tools)    setToolsCollapsed(h < 740);
+      const n = sources.length;
+
+      // Each source row ~32 px. Estimate how many rows fit before we'd
+      // need the scrollbar with each lower section expanded — fold the
+      // next section before that threshold.
+      // Rough source-count thresholds at 900 px window height, scaled
+      // by (h / 900) so taller windows tolerate more sources before
+      // any folding, shorter windows fold sooner.
+      const scale = Math.max(0.6, Math.min(1.4, h / 900));
+      const foldAppAt       = Math.round(3 * scale);
+      const foldGuidanceAt  = Math.round(5 * scale);
+      const foldToolsAt     = Math.round(7 * scale);
+      const foldViewsAt     = Math.round(10 * scale);
+
+      if (!userOverrode.app)      setAppCollapsed(h < 900 || n >= foldAppAt);
+      if (!userOverrode.guidance) setGuidanceCollapsed(h < 820 || n >= foldGuidanceAt);
+      if (!userOverrode.tools)    setToolsCollapsed(h < 740 || n >= foldToolsAt);
+      if (!userOverrode.views)    setViewsCollapsed(n >= foldViewsAt);
     };
     autoAdjust();
     window.addEventListener('resize', autoAdjust);
     return () => window.removeEventListener('resize', autoAdjust);
-  }, [userOverrode]);
+  }, [userOverrode, sources.length]);
   const effectiveWidth = collapsed ? 48 : width;
 
   // Sync sidebar width to CSS custom property so TitleBar can track it
@@ -1901,7 +1926,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           <SectionHeader
             label="Views"
             collapsed={viewsCollapsed}
-            onToggle={() => setViewsCollapsed((v) => !v)}
+            onToggle={() => { setViewsCollapsed((v) => !v); setUserOverrode((u) => ({ ...u, views: true })); }}
           />
           {!viewsCollapsed && (
             <div className="space-y-1">
