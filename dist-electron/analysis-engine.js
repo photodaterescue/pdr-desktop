@@ -457,6 +457,10 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
     const seenHeuristics = new Map(); // "filename|size" -> first filename
     const duplicateFiles = [];
     let duplicatesRemoved = 0;
+    // Skip-and-continue accumulator — per-file failures during zip
+    // analysis so the UI can show "3 files couldn't be processed" on
+    // the completion card with reasons.
+    const skippedFiles = [];
     if (sourceType === 'zip') {
         const scan = await scanZipFile(sourcePath);
         const zipEntries = scan.entries;
@@ -467,10 +471,6 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
         // advance by 1 per media file processed.
         const totalFiles = zipEntries.length;
         const totalEntries = scan.totalRawEntryCount;
-        // Files we touch but fail on — reported at end so users see "3
-        // files couldn't be processed" instead of one bad entry killing
-        // the whole run.
-        const failedEntries = [];
         try {
             for (let i = 0; i < zipEntries.length; i++) {
                 if (analysisCancelled) {
@@ -565,7 +565,7 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
                     if (err?.message === 'ANALYSIS_CANCELLED')
                         throw err;
                     const reason = err?.message ?? String(err);
-                    failedEntries.push({ filename: entry.filename, reason });
+                    skippedFiles.push({ filename: entry.filename, reason });
                     console.warn(`[analysis] skipping ${entry.filename}: ${reason}`);
                 }
             }
@@ -574,12 +574,9 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
             // Always release the zip file handle, even on cancel / error.
             await scan.close();
         }
-        if (failedEntries.length > 0) {
-            console.warn(`[analysis] ${failedEntries.length} file${failedEntries.length === 1 ? '' : 's'} couldn't be processed:`, failedEntries.slice(0, 10));
+        if (skippedFiles.length > 0) {
+            console.warn(`[analysis] ${skippedFiles.length} file${skippedFiles.length === 1 ? '' : 's'} couldn't be processed:`, skippedFiles.slice(0, 10));
         }
-        // Expose the skipped list on the result so the UI can surface it
-        // to the user (quiet is worse than "we skipped N files" here).
-        globalThis.__pdrLastSkipped = failedEntries;
         void totalEntries;
         onProgress?.({
             current: totalFiles,
@@ -672,6 +669,7 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
         confidenceSummary: confidenceCounts,
         duplicatesRemoved,
         duplicateFiles,
+        skippedFiles,
         files: analyzedFiles,
     };
 }

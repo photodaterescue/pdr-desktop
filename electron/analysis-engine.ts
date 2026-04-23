@@ -90,6 +90,11 @@ export interface SourceAnalysisResult {
   };
   duplicatesRemoved: number;
   duplicateFiles: Array<{ filename: string; duplicateOf: string; type: 'photo' | 'video'; duplicateMethod: 'hash' | 'heuristic' }>;
+  /** Files the engine tried to process but couldn't — corrupt zip
+   *  entries, decompression failures, unreadable bytes. Empty array
+   *  on a clean run. Rendered in the "Source added" card so users
+   *  see exactly which files didn't make it into the destination. */
+  skippedFiles: Array<{ filename: string; reason: string }>;
   files: FileAnalysisResult[];
 }
 
@@ -588,6 +593,10 @@ const seenHashes = new Map<string, string>(); // hash -> first filename
 const seenHeuristics = new Map<string, string>(); // "filename|size" -> first filename
 const duplicateFiles: Array<{ filename: string; duplicateOf: string; type: 'photo' | 'video'; duplicateMethod: 'hash' | 'heuristic' }> = [];
 let duplicatesRemoved = 0;
+// Skip-and-continue accumulator — per-file failures during zip
+// analysis so the UI can show "3 files couldn't be processed" on
+// the completion card with reasons.
+const skippedFiles: Array<{ filename: string; reason: string }> = [];
 
   if (sourceType === 'zip') {
     const scan = await scanZipFile(sourcePath);
@@ -599,10 +608,6 @@ let duplicatesRemoved = 0;
     // advance by 1 per media file processed.
     const totalFiles = zipEntries.length;
     const totalEntries = scan.totalRawEntryCount;
-    // Files we touch but fail on — reported at end so users see "3
-    // files couldn't be processed" instead of one bad entry killing
-    // the whole run.
-    const failedEntries: Array<{ filename: string; reason: string }> = [];
 
     try {
       for (let i = 0; i < zipEntries.length; i++) {
@@ -702,7 +707,7 @@ let duplicatesRemoved = 0;
           // outer loop's cancel check fires immediately.
           if ((err as Error)?.message === 'ANALYSIS_CANCELLED') throw err;
           const reason = (err as Error)?.message ?? String(err);
-          failedEntries.push({ filename: entry.filename, reason });
+          skippedFiles.push({ filename: entry.filename, reason });
           console.warn(`[analysis] skipping ${entry.filename}: ${reason}`);
         }
       }
@@ -711,12 +716,9 @@ let duplicatesRemoved = 0;
       await scan.close();
     }
 
-    if (failedEntries.length > 0) {
-      console.warn(`[analysis] ${failedEntries.length} file${failedEntries.length === 1 ? '' : 's'} couldn't be processed:`, failedEntries.slice(0, 10));
+    if (skippedFiles.length > 0) {
+      console.warn(`[analysis] ${skippedFiles.length} file${skippedFiles.length === 1 ? '' : 's'} couldn't be processed:`, skippedFiles.slice(0, 10));
     }
-    // Expose the skipped list on the result so the UI can surface it
-    // to the user (quiet is worse than "we skipped N files" here).
-    (globalThis as any).__pdrLastSkipped = failedEntries;
     void totalEntries;
 
     onProgress?.({
@@ -818,6 +820,7 @@ let duplicatesRemoved = 0;
     confidenceSummary: confidenceCounts,
     duplicatesRemoved,
     duplicateFiles,
+    skippedFiles,
     files: analyzedFiles,
   };
 }

@@ -129,6 +129,11 @@ interface PreScanStats {
     earliest: string;
     latest: string;
   };
+  /** Files the engine couldn't process (corrupt zip entries, etc.).
+   *  Rendered as a warning callout on the "Source added" card so the
+   *  user knows which files didn't make it through analysis before
+   *  they run the fix. Empty/undefined on a clean run. */
+  skippedFiles?: Array<{ filename: string; reason: string }>;
 }
 
 export default function Workspace() {
@@ -874,13 +879,16 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         videoCount: analysisData.videoCount,
         estimatedSizeGB: formatBytesToGB(analysisData.totalSizeBytes),
         dateRange: {
-          earliest: analysisData.dateRange.earliest 
+          earliest: analysisData.dateRange.earliest
             ? new Date(analysisData.dateRange.earliest).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
             : 'Unknown',
           latest: analysisData.dateRange.latest
             ? new Date(analysisData.dateRange.latest).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
             : 'Unknown'
-        }
+        },
+        // Forward any entries the engine couldn't process so the
+        // Source added card can surface them to the user.
+        skippedFiles: (analysisData as any).skippedFiles ?? [],
       };
       
       const newSource: Source = {
@@ -7287,6 +7295,15 @@ function SourceAddedModal({ source, stats, analysisElapsed, onAddToWorkspace, on
               <span>{storageInfo.description}</span>
             </div>
           )}
+
+          {/* Skipped files — shown only when the engine hit per-file
+              errors during analysis (corrupt zip entries, unreadable
+              bytes). Prior behaviour was to die on the first bad file;
+              the new engine continues and reports them here so the
+              user knows exactly what didn't make it through. */}
+          {stats.skippedFiles && stats.skippedFiles.length > 0 && (
+            <SkippedFilesCallout skippedFiles={stats.skippedFiles} />
+          )}
         </Card>
 
         <div className="space-y-2">
@@ -7319,6 +7336,62 @@ function SourceAddedModal({ source, stats, analysisElapsed, onAddToWorkspace, on
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+/**
+ * Warning callout rendered on the Source added card when the analysis
+ * engine couldn't process one or more files. Collapses to a count by
+ * default; expanding reveals the per-file reason list.
+ *
+ * Amber styling because it's an advisory, not an error — the rest of
+ * the analysis still ran correctly and the user can proceed to Fix;
+ * they just need to know which files won't be copied to the
+ * destination.
+ */
+function SkippedFilesCallout({ skippedFiles }: { skippedFiles: Array<{ filename: string; reason: string }> }) {
+  const [expanded, setExpanded] = useState(false);
+  const n = skippedFiles.length;
+  return (
+    <div className="mt-3 pt-3 border-t border-border/40">
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
+      >
+        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <span className="flex-1 text-left">
+          <span className="font-medium">
+            {n === 1
+              ? "1 file couldn't be processed"
+              : `${n.toLocaleString()} files couldn't be processed`}
+          </span>
+          <span className="text-muted-foreground ml-1">
+            · {expanded ? 'hide details' : 'show details'}
+          </span>
+          <span className="block text-muted-foreground font-normal mt-0.5">
+            These files will not be copied to your destination. The rest of your source analysed normally.
+          </span>
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-2 max-h-40 overflow-y-auto rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+          <ul className="space-y-1.5 text-[11px]">
+            {skippedFiles.slice(0, 50).map((f, i) => (
+              <li key={`${f.filename}-${i}`} className="flex flex-col">
+                <span className="font-mono text-foreground break-all">{f.filename}</span>
+                <span className="text-muted-foreground italic">{f.reason}</span>
+              </li>
+            ))}
+            {skippedFiles.length > 50 && (
+              <li className="text-muted-foreground italic pt-1">
+                …and {(skippedFiles.length - 50).toLocaleString()} more (see main.log for the full list)
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
