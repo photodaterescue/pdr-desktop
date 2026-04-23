@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, Variants } from "framer-motion";
-import { Search, PlayCircle, ShieldCheck, ArrowRight, Check } from "lucide-react";
+import { Search, PlayCircle, ShieldCheck, ArrowRight, Check, LayoutDashboard, Sparkles, CalendarClock, Network, Users } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/custom-card";
@@ -125,6 +125,48 @@ export default function Home() {
 
         </motion.div>
 
+        {/* Capability showcase — the five apps inside PDR. Non-
+            interactive reassurance for first-time users ("this isn't
+            just a renaming tool") and re-discovery for returning
+            users. Deliberately quiet styling so it doesn't compete
+            with the hero CTAs above. */}
+        <motion.div variants={item} className="w-full max-w-[1200px] mb-12">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-px flex-1 bg-border/60" />
+            <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground font-medium">
+              Everything Photo Date Rescue can do
+            </p>
+            <div className="h-px flex-1 bg-border/60" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <ShowcaseCard
+              icon={<LayoutDashboard className="w-5 h-5 text-primary" />}
+              title="Workspace"
+              description="Copy, rename, structure and deduplicate your source libraries chronologically."
+            />
+            <ShowcaseCard
+              icon={<Sparkles className="w-5 h-5 text-primary" />}
+              title="Search & Discovery"
+              description="Find any photo by metadata, AI object tags or facial recognition — and build parallel structures to match."
+            />
+            <ShowcaseCard
+              icon={<CalendarClock className="w-5 h-5 text-primary" />}
+              title="Memories"
+              description="Chronologically browse every photo across the libraries you've built."
+            />
+            <ShowcaseCard
+              icon={<Network className="w-5 h-5 text-primary" />}
+              title="Trees"
+              description="See the people from your photos in family-tree form — a face for every name."
+            />
+            <ShowcaseCard
+              icon={<Users className="w-5 h-5 text-primary" />}
+              title="People"
+              description="Verify the AI's facial recognition with granular precision — never worry about a misidentified face."
+            />
+          </div>
+        </motion.div>
+
         {/* Go to Workspace Link */}
 		<motion.div variants={item} className="mb-8 -mt-8">
 		  <button
@@ -188,7 +230,7 @@ function PrimaryCard({ icon, title, description, onClick }: { icon: React.ReactN
 
 function SecondaryCard({ icon, title, description, onClick }: { icon: React.ReactNode, title: string, description: string, onClick: () => void }) {
   return (
-    <Card 
+    <Card
       className="flex flex-col items-center text-center p-8 cursor-pointer group w-full max-w-[300px] min-h-[240px] justify-center bg-white/60 hover:bg-white transition-colors"
       onClick={onClick}
     >
@@ -199,6 +241,28 @@ function SecondaryCard({ icon, title, description, onClick }: { icon: React.Reac
         <h3 className="text-lg font-medium text-foreground mb-2">{title}</h3>
         <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
       </div>
+    </Card>
+  );
+}
+
+/**
+ * Quiet, non-interactive showcase tile for the "Everything PDR can
+ * do" row. Advertises a feature without pretending to be a launcher
+ * — the user is still funneled through the main CTA above. Cursor
+ * stays default; no click handler. A subtle hover lift + tinted
+ * border only, so returning users can linger without feeling like
+ * they're missing an action.
+ */
+function ShowcaseCard({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) {
+  return (
+    <Card className="flex flex-col p-4 h-full bg-white/40 border-border/70 hover:border-primary/30 hover:bg-white/80 transition-colors">
+      <div className="flex items-center gap-2.5 mb-2">
+        <div className="p-1.5 rounded-md bg-secondary/70">
+          {icon}
+        </div>
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+      </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
     </Card>
   );
 }
