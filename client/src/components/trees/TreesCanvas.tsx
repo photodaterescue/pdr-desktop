@@ -126,7 +126,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
   //                             longer accumulate.
   const [placeholderEditor, setPlaceholderEditor] = useState<
     | { kind: 'persisted'; personId: number; x: number; y: number }
-    | { kind: 'virtual'; virtualChildId: number; x: number; y: number }
+    | { kind: 'virtual'; virtualChildIds: number[]; x: number; y: number }
     | null
   >(null);
 
@@ -255,9 +255,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     // Materialising on click caused orphan 'Unknown' rows to pile up
     // every time the user opened + closed the popup without committing.
     if (node.personId < 0) {
-      const edge = layout.edges.find(ed => ed.aId === node.personId && ed.type === 'parent_of');
-      if (!edge) return;
-      setPlaceholderEditor({ kind: 'virtual', virtualChildId: edge.bId, x: screenX, y: screenY });
+      // Collect EVERY child the ghost parents — a shared ghost for a
+      // sibling group has one parent_of edge per sibling. Previously
+      // used `.find()` which grabbed only the first, silently dropping
+      // the rest and demoting full siblings to half siblings when the
+      // ghost was filled in.
+      const childIds = layout.edges
+        .filter(ed => ed.aId === node.personId && ed.type === 'parent_of')
+        .map(ed => ed.bId);
+      if (childIds.length === 0) return;
+      setPlaceholderEditor({ kind: 'virtual', virtualChildIds: childIds, x: screenX, y: screenY });
     } else {
       setPlaceholderEditor({ kind: 'persisted', personId: node.personId, x: screenX, y: screenY });
     }
@@ -408,9 +415,11 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     // Virtual ghost: defer materialisation; persisted
                     // placeholder: edit the existing row.
                     if (parentId < 0) {
-                      const edge = layout.edges.find(ed => ed.aId === parentId && ed.type === 'parent_of');
-                      if (!edge) return;
-                      setPlaceholderEditor({ kind: 'virtual', virtualChildId: edge.bId, x: screenX, y: screenY });
+                      const childIds = layout.edges
+                        .filter(ed => ed.aId === parentId && ed.type === 'parent_of')
+                        .map(ed => ed.bId);
+                      if (childIds.length === 0) return;
+                      setPlaceholderEditor({ kind: 'virtual', virtualChildIds: childIds, x: screenX, y: screenY });
                     } else {
                       setPlaceholderEditor({ kind: 'persisted', personId: parentId, x: screenX, y: screenY });
                     }
@@ -472,9 +481,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 const screenX = viewport.tx + ghostNode.renderedX * viewport.scale;
                 const screenY = viewport.ty + ghostNode.renderedY * viewport.scale;
                 if (ghostNode.personId < 0) {
-                  // Virtual ghost on this edge — find the child end.
-                  const childId = edge.aId === ghostNode.personId ? edge.bId : edge.aId;
-                  setPlaceholderEditor({ kind: 'virtual', virtualChildId: childId, x: screenX, y: screenY });
+                  // Virtual ghost on this edge — collect EVERY child the
+                  // ghost parents, not just the one at the other end of
+                  // this specific edge. A shared ghost represents a
+                  // shared missing parent, so filling it must complete
+                  // the entire sibling group, not just one sibling.
+                  const childIds = layout.edges
+                    .filter(ed => ed.aId === ghostNode.personId && ed.type === 'parent_of')
+                    .map(ed => ed.bId);
+                  if (childIds.length === 0) return;
+                  setPlaceholderEditor({ kind: 'virtual', virtualChildIds: childIds, x: screenX, y: screenY });
                 } else {
                   setPlaceholderEditor({ kind: 'persisted', personId: ghostNode.personId, x: screenX, y: screenY });
                 }
@@ -594,7 +610,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       {placeholderEditor && (
         <PlaceholderResolver
           personId={placeholderEditor.kind === 'persisted' ? placeholderEditor.personId : null}
-          virtualChildId={placeholderEditor.kind === 'virtual' ? placeholderEditor.virtualChildId : null}
+          virtualChildIds={placeholderEditor.kind === 'virtual' ? placeholderEditor.virtualChildIds : null}
           x={placeholderEditor.x}
           y={placeholderEditor.y}
           onResolved={() => { onGraphMutated(); setPlaceholderEditor(null); }}
@@ -1820,9 +1836,13 @@ function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
  *      and the virtual child directly; Cancel/close → NOTHING persists.
  *      This stops accidental 'Unknown' rows from piling up every time
  *      the user opens + dismisses the popup without committing. */
-function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClose, peopleAlreadyInTree }: {
+function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onClose, peopleAlreadyInTree }: {
   personId: number | null;
-  virtualChildId: number | null;
+  /** When this placeholder is a virtual ghost, the IDs of ALL children
+   *  the ghost parents. A shared ghost across a sibling group must fill
+   *  every sibling on save — otherwise naming the "missing mother"
+   *  silently demotes full siblings to half siblings. */
+  virtualChildIds: number[] | null;
   x: number; y: number;
   onResolved: () => void;
   onClose: () => void;
@@ -1832,7 +1852,7 @@ function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClo
    *  just let the user create a duplicate link or a self-reference. */
   peopleAlreadyInTree?: Set<number>;
 }) {
-  const isVirtual = personId == null && virtualChildId != null;
+  const isVirtual = personId == null && virtualChildIds != null && virtualChildIds.length > 0;
   // Default to 'link' — most placeholder resolutions are "this is
   // already a named person I have elsewhere", not "create a new named
   // person from scratch". Tab order in the UI puts Link FIRST for
@@ -1871,8 +1891,15 @@ function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClo
         for (const p of personsRes.data) nameBy.set(p.id, p.name || '(unnamed)');
       }
       if (isVirtual) {
-        if (virtualChildId != null) {
-          setRelationships([{ label: 'Parent of', otherName: nameBy.get(virtualChildId) ?? '(unknown)' }]);
+        if (virtualChildIds != null && virtualChildIds.length > 0) {
+          // One "Parent of X" line per child the ghost represents, so
+          // the user sees every sibling this fill-in will parent. Hides
+          // the old confusion where a shared ghost claimed to be
+          // "Parent of Alan" only, silently omitting Peter and Trisha.
+          setRelationships(virtualChildIds.map(id => ({
+            label: 'Parent of',
+            otherName: nameBy.get(id) ?? '(unknown)',
+          })));
         }
         return;
       }
@@ -1891,7 +1918,7 @@ function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClo
       }
       setRelationships(out);
     })();
-  }, [personId, virtualChildId, isVirtual]);
+  }, [personId, virtualChildIds, isVirtual]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -1928,13 +1955,17 @@ function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClo
     if (!trimmed) { setError('Type a name.'); return; }
     setBusy(true);
     try {
-      if (isVirtual && virtualChildId != null) {
-        // Virtual mode: create a named person and wire the parent_of edge.
-        // No placeholder row is created or orphaned on cancel.
+      if (isVirtual && virtualChildIds != null && virtualChildIds.length > 0) {
+        // Virtual mode: create a named person and wire a parent_of edge
+        // for EVERY child the ghost represented. Shared ghosts across
+        // sibling groups must complete every sibling — otherwise a full
+        // sibling group silently degrades to half siblings on save.
         const np = await createNamedPerson(trimmed);
         if (!np.success || np.data == null) { setError(np.error ?? 'Could not create person.'); return; }
-        const r = await addRelationship({ personAId: np.data, personBId: virtualChildId, type: 'parent_of' });
-        if (!r.success) { setError(r.error ?? 'Could not save.'); return; }
+        for (const childId of virtualChildIds) {
+          const r = await addRelationship({ personAId: np.data, personBId: childId, type: 'parent_of' });
+          if (!r.success) { setError(r.error ?? 'Could not save.'); return; }
+        }
         onResolved();
         return;
       }
@@ -1953,11 +1984,14 @@ function PlaceholderResolver({ personId, virtualChildId, x, y, onResolved, onClo
     setError(null);
     setBusy(true);
     try {
-      if (isVirtual && virtualChildId != null) {
-        // Virtual mode: add parent_of edge between chosen person and the
-        // virtual child directly. No placeholder ever exists.
-        const r = await addRelationship({ personAId: targetId, personBId: virtualChildId, type: 'parent_of' });
-        if (!r.success) { setError(r.error ?? 'Could not link.'); return; }
+      if (isVirtual && virtualChildIds != null && virtualChildIds.length > 0) {
+        // Virtual mode: add a parent_of edge from the chosen person to
+        // EVERY child the ghost represented — same rule as naming,
+        // preserves full-sibling status across the group.
+        for (const childId of virtualChildIds) {
+          const r = await addRelationship({ personAId: targetId, personBId: childId, type: 'parent_of' });
+          if (!r.success) { setError(r.error ?? 'Could not link.'); return; }
+        }
         onResolved();
         return;
       }
