@@ -1674,6 +1674,21 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [appCollapsed, setAppCollapsed] = useState(false);
   const [userOverrode, setUserOverrode] = useState<{ views: boolean; tools: boolean; guidance: boolean; app: boolean }>({ views: false, tools: false, guidance: false, app: false });
 
+  // Reset the user-override flags whenever a NEW source is added.
+  // Without this, expanding a section manually latches forever —
+  // adding more sources afterwards would no longer collapse it, the
+  // list overflows, and the Add Source button gets pushed off-screen
+  // behind a scrollbar. Adding a source is a strong signal that the
+  // user wants more Source-menu room, so we re-enable auto-fold to
+  // let the pressure algorithm below decide again.
+  const lastSourceCountRef = useRef(sources.length);
+  useEffect(() => {
+    if (sources.length > lastSourceCountRef.current) {
+      setUserOverrode({ views: false, tools: false, guidance: false, app: false });
+    }
+    lastSourceCountRef.current = sources.length;
+  }, [sources.length]);
+
   // Auto-collapse the lower sidebar sections under height pressure so
   // the Source Menu always has room for its contents WITHOUT forcing
   // the user to scroll. Two inputs drive this:
@@ -1903,10 +1918,10 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
             </Button>
             <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
-            <Button 
+            <Button
               variant="outline"
-              size="sm" 
-              className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+              size="sm"
+              className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/50 hover:border-primary/70 hover:bg-primary/5"
               disabled={!hasSelectedSources}
               onClick={onRemoveSource}
             >
