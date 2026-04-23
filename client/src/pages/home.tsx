@@ -67,14 +67,21 @@ export default function Home() {
   };
 
   return (
-    <div className="h-full bg-background flex flex-col items-center justify-center p-6 relative overflow-auto">
+    // Outer wrapper scrolls. Inner flex column is `min-h-full` so it
+    // still vertically-centres when there's room, but once content
+    // exceeds the viewport (narrow / short windows) it grows from the
+    // TOP rather than getting centred with the top cropped. py-12
+    // guarantees clearance above the logo on the smallest heights so
+    // it never appears half-off-screen.
+    <div className="h-full bg-background relative overflow-auto">
       {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-secondary/40 rounded-full blur-3xl" />
       </div>
 
-      <motion.div 
+      <div className="min-h-full flex flex-col items-center justify-center px-6 py-12 relative z-10">
+      <motion.div
         variants={container}
         initial="hidden"
         animate="show"
@@ -150,6 +157,7 @@ export default function Home() {
           </div>
         </motion.div>
       </motion.div>
+      </div>
     </div>
   );
 }
