@@ -4,6 +4,7 @@ import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, m
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm } from './promptConfirm';
+import { HiddenSuggestionsReview } from './HiddenSuggestionsReview';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { GenderPickerModal, genderMarkerSymbol } from './GenderPickerModal';
 import { setPersonGender as setPersonGenderApi, type PersonGender } from '@/lib/electron-bridge';
@@ -67,6 +68,17 @@ interface TreesCanvasProps {
    *  to existing" suggestions, including those currently off-screen
    *  or hidden. */
   allReachablePersonIds?: Set<number>;
+  /** Per-tree "not in this family" exclusion list — same set used by
+   *  the + quick-add picker, so hides in either surface take effect
+   *  everywhere. Includes the toggle + review data for symmetry. */
+  excludedSuggestionIds?: Set<number>;
+  hiddenSuggestions?: { id: number; name: string }[];
+  onHideSuggestion?: (personId: number) => void | Promise<void>;
+  onUnhideSuggestion?: (personId: number) => void | Promise<void>;
+  /** Namesake guard — if the user types a name matching someone
+   *  already on this tree, warn before silently creating a duplicate.
+   *  (Root cause of the double-Dorothy bug.) */
+  nameConflictLookup?: (name: string) => { id: number; name: string } | null;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -108,7 +120,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -625,6 +637,11 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               .filter(n => !n.isPlaceholder && n.personId > 0)
               .map(n => n.personId),
           )}
+          excludedSuggestionIds={excludedSuggestionIds}
+          hiddenSuggestions={hiddenSuggestions}
+          onHideSuggestion={onHideSuggestion}
+          onUnhideSuggestion={onUnhideSuggestion}
+          nameConflictLookup={nameConflictLookup}
         />
       )}
 
@@ -1836,7 +1853,7 @@ function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
  *      and the virtual child directly; Cancel/close → NOTHING persists.
  *      This stops accidental 'Unknown' rows from piling up every time
  *      the user opens + dismisses the popup without committing. */
-function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onClose, peopleAlreadyInTree }: {
+function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onClose, peopleAlreadyInTree, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: {
   personId: number | null;
   /** When this placeholder is a virtual ghost, the IDs of ALL children
    *  the ghost parents. A shared ghost across a sibling group must fill
@@ -1851,6 +1868,19 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
    *  they're already named and visible, offering them again would
    *  just let the user create a duplicate link or a self-reference. */
   peopleAlreadyInTree?: Set<number>;
+  /** Per-tree user-flagged "not part of this family" list. Applied here
+   *  so hides performed in the quick-add picker (+ modal) also take
+   *  effect in this popover — and vice-versa. */
+  excludedSuggestionIds?: Set<number>;
+  /** Hidden persons for the review panel, surfaced under the
+   *  suggestion list so mistakes can be reversed. */
+  hiddenSuggestions?: { id: number; name: string }[];
+  onHideSuggestion?: (personId: number) => void | Promise<void>;
+  onUnhideSuggestion?: (personId: number) => void | Promise<void>;
+  /** Returns matching-name person if one already exists on this tree,
+   *  so the "Name them" flow can warn before silently creating a
+   *  duplicate (the root cause of the double-Dorothy bug). */
+  nameConflictLookup?: (name: string) => { id: number; name: string } | null;
 }) {
   const isVirtual = personId == null && virtualChildIds != null && virtualChildIds.length > 0;
   // Default to 'link' — most placeholder resolutions are "this is
@@ -1976,6 +2006,10 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
     // fine because it's an Unknown (empty name) and already excluded
     // by the name filter above.
     .filter(p => !peopleAlreadyInTree?.has(p.id))
+    // Per-tree "not in this family" exclusions. Shared with the
+    // quick-add picker (+ modal) so hides in either surface propagate
+    // across every picker in the tree.
+    .filter(p => !excludedSuggestionIds?.has(p.id))
     .filter(p => p.name.toLowerCase().includes(linkQuery.trim().toLowerCase()))
     // Sort by photo count DESC — the more likely match surfaces first.
     // Tiebreak alphabetical.
@@ -1985,6 +2019,24 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
     setError(null);
     const trimmed = nameInput.trim();
     if (!trimmed) { setError('Type a name.'); return; }
+    // Namesake guard — same as the + picker. Without this, typing an
+    // existing tree member's name here silently creates a second
+    // person with the same name (the root cause of the double-Dorothy
+    // bug from earlier). Only guard the virtual-ghost path (which
+    // creates a NEW person); the persisted path just renames an
+    // existing placeholder, so duplication isn't possible there.
+    if (isVirtual && nameConflictLookup) {
+      const conflict = nameConflictLookup(trimmed);
+      if (conflict) {
+        const proceed = await promptConfirm({
+          title: `"${conflict.name}" is already on this tree`,
+          message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name. To reuse the existing person, switch to "Link to existing" instead.`,
+          confirmLabel: `Yes, create another "${trimmed}"`,
+          cancelLabel: 'Cancel',
+        });
+        if (!proceed) return;
+      }
+    }
     setBusy(true);
     try {
       if (isVirtual && virtualChildIds != null && virtualChildIds.length > 0) {
@@ -2060,7 +2112,7 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
   return (
     <div
       ref={modalRef}
-      className="placeholder-resolver absolute z-30 bg-popover border border-border rounded-xl shadow-2xl p-3 min-w-[300px] max-w-[340px]"
+      className="placeholder-resolver absolute z-30 bg-popover border border-border rounded-xl shadow-2xl p-4 w-[28rem] max-w-[90vw]"
       style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
     >
       <div
@@ -2142,22 +2194,39 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
             {filtered.map(p => {
               const isSelected = selectedLinkId === p.id;
               return (
-                <button
+                <div
                   key={p.id}
-                  onClick={() => setSelectedLinkId(p.id)}
-                  disabled={busy}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm disabled:opacity-50 ${
+                  className={`group flex items-center gap-1 px-2 py-1.5 rounded text-sm ${
                     isSelected ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
-                  }`}
+                  } ${busy ? 'opacity-50' : ''}`}
                 >
-                  <span className="flex-1 truncate">{p.name}</span>
-                  <span className={`text-[10px] shrink-0 ${isSelected ? 'text-primary/80' : 'text-muted-foreground'}`}>
-                    {p.photoCount} {p.photoCount === 1 ? 'photo' : 'photos'}
-                  </span>
-                </button>
+                  <button
+                    onClick={() => !busy && setSelectedLinkId(p.id)}
+                    disabled={busy}
+                    className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                  >
+                    <span className="flex-1 truncate">{p.name}</span>
+                    <span className={`text-[10px] shrink-0 ${isSelected ? 'text-primary/80' : 'text-muted-foreground'}`}>
+                      {p.photoCount} {p.photoCount === 1 ? 'photo' : 'photos'}
+                    </span>
+                  </button>
+                  {onHideSuggestion && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
+                      title="Not in this family — hide from suggestions"
+                      aria-label={`Hide ${p.name} from suggestions`}
+                    >
+                      <EyeOff className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
+          {hiddenSuggestions && onUnhideSuggestion && (
+            <HiddenSuggestionsReview hidden={hiddenSuggestions} onUnhide={onUnhideSuggestion} />
+          )}
           <p className="text-xs text-muted-foreground mt-1">Pick the person this placeholder should become, then click Done. All relationships on the placeholder transfer to them.</p>
         </div>
       )}

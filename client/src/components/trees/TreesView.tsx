@@ -27,6 +27,7 @@ import { TreesCanvas } from './TreesCanvas';
 import { SetRelationshipModal } from './SetRelationshipModal';
 import { EditRelationshipsModal } from './EditRelationshipsModal';
 import { SiblingKindDialog, type SiblingKind } from './SiblingKindDialog';
+import { HiddenSuggestionsReview } from './HiddenSuggestionsReview';
 import { ManageTreesModal } from './ManageTreesModal';
 import { DateQuickEditor } from './DateQuickEditor';
 import { promptConfirm } from './promptConfirm';
@@ -808,6 +809,50 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     setEditingTreeName(false);
   }, [currentTreeId, treeNameDraft, reloadSavedTrees]);
 
+  // Per-tree suggestion-exclusion plumbing. Shared between the + quick-add
+  // picker (FocusPickerModal) and the "Who is this?" placeholder resolver
+  // (PlaceholderResolver) so a hide in either surface takes effect in
+  // both — one tree, one exclusion list.
+  const toggleExcludedSuggestion = useCallback(async (personId: number) => {
+    if (currentTreeId == null) return;
+    const tree = savedTrees.find(t => t.id === currentTreeId);
+    const current = new Set(tree?.excludedSuggestionPersonIds ?? []);
+    if (current.has(personId)) current.delete(personId);
+    else current.add(personId);
+    await updateSavedTree(currentTreeId, { excludedSuggestionPersonIds: [...current] });
+    await reloadSavedTrees();
+  }, [currentTreeId, savedTrees, reloadSavedTrees]);
+
+  // Namesake lookup against the current tree — if the typed name matches
+  // someone already in the family closure, return them so the caller can
+  // warn. Root cause of the double-Dorothy bug: no warning fired in the
+  // placeholder resolver's Name-them path.
+  const nameConflictLookup = useCallback((typed: string) => {
+    const needle = typed.trim().toLowerCase();
+    if (!needle) return null;
+    for (const p of allPersons) {
+      if (!connectedPersonIds.has(p.id)) continue;
+      if (p.name.trim().toLowerCase() === needle) {
+        return { id: p.id, name: p.name };
+      }
+    }
+    return null;
+  }, [allPersons, connectedPersonIds]);
+
+  // Hidden-person list for the review panel. Computed from the current
+  // tree's exclusion IDs + the allPersons name lookup so both modals
+  // can render the same "N hidden — review" footer.
+  const hiddenSuggestions = (() => {
+    const ids = currentTree?.excludedSuggestionPersonIds ?? [];
+    return ids
+      .map(id => allPersons.find(p => p.id === id))
+      .filter((p): p is PersonSummary => p != null)
+      .map(p => ({ id: p.id, name: p.name }));
+  })();
+
+  // Exclusion set as a Set<number> for O(1) filter checks.
+  const excludedSuggestionIdSet = new Set(currentTree?.excludedSuggestionPersonIds ?? []);
+
   const handleRelationshipCreated = useCallback(() => {
     // A graph mutation can also change the person table (e.g. a ghost
     // placeholder getting named, or a new named person created via the
@@ -1158,6 +1203,11 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             canvasBackgroundOpacity={currentTree?.backgroundOpacity ?? 0.15}
             treeContrast={currentTree?.treeContrast ?? 0.3}
             allReachablePersonIds={connectedPersonIds}
+            excludedSuggestionIds={excludedSuggestionIdSet}
+            hiddenSuggestions={hiddenSuggestions}
+            onHideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
+            onUnhideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
+            nameConflictLookup={nameConflictLookup}
             useGenderedLabels={currentTree?.useGenderedLabels ?? true}
             hideGenderMarker={currentTree?.hideGenderMarker ?? false}
             hiddenAncestorPersonIds={currentTree?.hiddenAncestorPersonIds ?? []}
@@ -1237,16 +1287,6 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         //   • For + sibling: exclude your own parents/children
         const excludedSuggestions = currentTree?.excludedSuggestionPersonIds ?? [];
         const excluded = impossibleCandidates(quickAdd.fromPersonId, quickAdd.kind, graph, connectedPersonIds, excludedSuggestions);
-        const toggleExcludedSuggestion = async (personId: number) => {
-          if (currentTreeId == null) return;
-          const current = new Set(currentTree?.excludedSuggestionPersonIds ?? []);
-          if (current.has(personId)) current.delete(personId);
-          else current.add(personId);
-          await updateSavedTree(currentTreeId, { excludedSuggestionPersonIds: [...current] });
-          // Refresh the saved-trees list so currentTree reflects the new state.
-          const r = await listSavedTrees();
-          if (r.success && r.data) setSavedTrees(r.data);
-        };
         // For + partner: compute the set of co-parents — people who are
         // already a parent of at least one of fromPerson's children.
         // These are the strongest partner suggestions (Alan is Sally's
@@ -1269,28 +1309,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onPersonsChanged={reloadPersons}
             onClose={() => setQuickAdd(null)}
             onHideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
-            hiddenSuggestions={
-              currentTreeId != null
-                ? (currentTree?.excludedSuggestionPersonIds ?? [])
-                  .map(id => allPersons.find(p => p.id === id))
-                  .filter((p): p is PersonSummary => p != null)
-                : []
-            }
+            hiddenSuggestions={hiddenSuggestions}
             onUnhideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
-            nameConflictLookup={(typed) => {
-              // Case-insensitive match against anyone already on this tree.
-              // We match by exact-trimmed-lower name (not substring) to
-              // avoid false positives like "Alan" matching "Alan Clapson".
-              const needle = typed.trim().toLowerCase();
-              if (!needle) return null;
-              for (const p of allPersons) {
-                if (!connectedPersonIds.has(p.id)) continue;
-                if (p.name.trim().toLowerCase() === needle) {
-                  return { id: p.id, name: p.name };
-                }
-              }
-              return null;
-            }}
+            nameConflictLookup={nameConflictLookup}
           />
         );
       })()}
@@ -1965,7 +1986,7 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
     if (conflict) {
       const proceed = await promptConfirm({
         title: `"${conflict.name}" is already on this tree`,
-        message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name. To reuse the existing person, switch to "Pick existing" instead.`,
+        message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name. To reuse the existing person, switch to "Link to existing" instead.`,
         confirmLabel: `Yes, create another "${trimmed}"`,
         cancelLabel: 'Cancel',
       });
@@ -2014,7 +2035,7 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
             onClick={() => setMode('link')}
             className={`flex-1 px-2 py-1 rounded ${mode === 'link' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
           >
-            Pick existing
+            Link to existing
           </button>
           <button
             onClick={() => setMode('name')}
@@ -2078,6 +2099,9 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                 const coCount = cooccurrence?.get(p.id);
                 const connCount = connectionCounts.get(p.id) ?? 0;
                 const isCoparent = coparentIds?.has(p.id) ?? false;
+                // Context-specific rich label (shares children / shared
+                // photos / connection count) takes priority when it
+                // carries more signal than the raw photo count.
                 let rightLabel: string | null = null;
                 if (isCoparent) {
                   rightLabel = 'shares children';
@@ -2086,6 +2110,14 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                 } else if (showSortOptions) {
                   if (sortMode === 'connections' && connCount > 0) rightLabel = `${connCount} connection${connCount === 1 ? '' : 's'}`;
                   else if (sortMode === 'photos' && p.photoCount > 0) rightLabel = `${p.photoCount} photo${p.photoCount === 1 ? '' : 's'}`;
+                }
+                // Fallback: plain photo count, matching the placeholder
+                // resolver's row format so users see the same signal
+                // ("N photos") across both pickers — helps them spot
+                // which candidate is the right match when names are
+                // identical or similar.
+                if (!rightLabel) {
+                  rightLabel = `${p.photoCount} ${p.photoCount === 1 ? 'photo' : 'photos'}`;
                 }
                 return (
                   <div
@@ -2150,47 +2182,3 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
   );
 }
 
-/** Inline review list for persons hidden from this tree's suggestions.
- *  Collapsed by default — a one-line summary ("N hidden — review") until
- *  the user explicitly opens it. Keeps the picker footprint small when
- *  they're not actively untangling a mistake. */
-function HiddenSuggestionsReview({
-  hidden, onUnhide,
-}: {
-  hidden: PersonSummary[];
-  onUnhide: (personId: number) => void | Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-2 border-t border-border pt-2">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <EyeOff className="w-3 h-3" />
-        <span>
-          {hidden.length} hidden from this tree {open ? '— close' : '— review'}
-        </span>
-      </button>
-      {open && (
-        <div className="mt-1.5 flex flex-col gap-0.5 max-h-32 overflow-auto">
-          {hidden.map(p => (
-            <div
-              key={p.id}
-              className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-muted/40 text-xs"
-            >
-              <span className="truncate">{p.name}</span>
-              <button
-                onClick={() => onUnhide(p.id)}
-                className="inline-flex items-center gap-1 text-primary hover:underline shrink-0"
-              >
-                <Eye className="w-3 h-3" />
-                Un-hide
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
