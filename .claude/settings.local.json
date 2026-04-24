@@ -23,6 +23,8 @@
       "Bash(powershell -c \"Get-Item 'C:\\\\Users\\\\Terry\\\\pdr-desktop\\\\dist-electron\\\\ai-manager.js','C:\\\\Users\\\\Terry\\\\pdr-desktop\\\\dist-electron\\\\ai-worker.js' | Select-Object Name,Length,LastWriteTime\")",
       "Bash(npx vite:*)",
       "Bash(npx electron:*)",
+      "Bash(npx electron dist-electron/main.js)",
+      "Bash(tail:*)",
       "Bash(ls -la dist-electron/ai-worker.*)",
       "Bash(xargs grep:*)",
       "Bash(npx tsc:*)",
@@ -99,7 +101,12 @@
       "Bash(tasklist //FI \"IMAGENAME eq electron.exe\")",
       "Bash(grep -E \"\\\\.ts$\")",
       "Bash(grep -v \"//\")",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "PowerShell(npm run build)",
+      "PowerShell(cmd /c \"npm run build\")",
+      "PowerShell(cmd /c \"npm run build:electron\")",
+      "PowerShell(npx electron dist-electron/main.js)",
+      "PowerShell(git add -A)"
     ]
   }
 }

@@ -335,14 +335,26 @@ async function processFile(fileId, filePath) {
         // Face detection using @vladmandic/human
         if (config.enableFaces && humanInstance) {
             try {
-                // Resize image to manageable size and get both JPEG buffer and dimensions
+                // Resize image to manageable size and get both JPEG buffer and dimensions.
+                //
+                // CRITICAL: `.rotate()` (no args) applies EXIF auto-rotation. Without
+                // this, sharp processes pixels in storage order — so a portrait photo
+                // shot on a phone (stored as landscape with an "Orientation: 6" flag)
+                // gets analysed as landscape, while the browser auto-rotates the
+                // <img> back to portrait. Box coords stored in storage-orientation
+                // space then render in the wrong place on the rotated display, and
+                // worse, face embeddings are computed from sideways faces — Human.js
+                // expects upright faces, so the descriptors are garbage and clusters
+                // bundle people together that don't actually look alike.
                 const resized = (0, sharp_1.default)(filePath, { failOnError: false })
+                    .rotate()
                     .resize(640, 640, { fit: 'inside', withoutEnlargement: true });
                 const metadata = await resized.toBuffer({ resolveWithObject: true });
                 const imgWidth = metadata.info.width;
                 const imgHeight = metadata.info.height;
                 // Convert to raw tensor for Human: [height, width, 3] RGB
                 const { data: rawData } = await (0, sharp_1.default)(filePath, { failOnError: false })
+                    .rotate()
                     .resize(640, 640, { fit: 'inside', withoutEnlargement: true })
                     .removeAlpha()
                     .raw()

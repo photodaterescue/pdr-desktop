@@ -869,10 +869,17 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath, size) => {
                 console.warn('[ffmpeg] frame→sharp failed for', filePath, e.message);
             }
         }
-        // Use sharp for robust thumbnail generation (handles TIF, large files, RAW formats)
+        // Use sharp for robust thumbnail generation (handles TIF, large files, RAW formats).
+        // .rotate() applies EXIF auto-rotation. Without it, sharp re-encodes
+        // pixels in storage order and strips the EXIF flag — so the resulting
+        // JPEG displays sideways for any phone shot taken in portrait. That
+        // also breaks face-box overlays in the grid: detection now stores box
+        // coords in rotated space, so an un-rotated thumbnail puts the box on
+        // the wrong region of the same photo.
         if (!jpegBuffer) {
             try {
                 jpegBuffer = await sharp(filePath, { failOnError: false })
+                    .rotate()
                     .resize(size, size, { fit: 'inside', withoutEnlargement: true })
                     .jpeg({ quality: 80 })
                     .toBuffer();
@@ -3297,7 +3304,11 @@ ipcMain.handle('ai:recluster', async (_event, threshold) => {
 ipcMain.handle('ai:faceCrop', async (_event, filePath, boxX, boxY, boxW, boxH, size = 96) => {
     try {
         const sharp = (await import('sharp')).default;
-        const metadata = await sharp(filePath, { failOnError: false }).metadata();
+        // .rotate() applies EXIF auto-rotation. Must be present here AND when
+        // extracting so width/height match the rotated pixel buffer that the
+        // detector saw — otherwise normalised box coords (which were computed
+        // in rotated space by ai-worker.ts) extract from the wrong region.
+        const metadata = await sharp(filePath, { failOnError: false }).rotate().metadata();
         if (!metadata.width || !metadata.height)
             return { success: false, error: 'Could not read image' };
         const imgW = metadata.width;
@@ -3324,6 +3335,7 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath, boxX, boxY, boxW, boxH, s
         if (pw <= 0 || ph <= 0)
             return { success: false, error: 'Invalid crop area' };
         const buffer = await sharp(filePath, { failOnError: false })
+            .rotate()
             .extract({ left: px, top: py, width: pw, height: ph })
             .resize(size, size, { fit: 'cover' })
             .jpeg({ quality: 85 })
@@ -3338,7 +3350,9 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath, boxX, boxY, boxW, boxH, s
 ipcMain.handle('ai:faceContext', async (_event, filePath, boxX, boxY, boxW, boxH, size = 240) => {
     try {
         const sharp = (await import('sharp')).default;
-        const metadata = await sharp(filePath, { failOnError: false }).metadata();
+        // EXIF auto-rotate so we work in the same coordinate space as the
+        // detector — see ai:faceCrop above for the long-form rationale.
+        const metadata = await sharp(filePath, { failOnError: false }).rotate().metadata();
         if (!metadata.width || !metadata.height)
             return { success: false, error: 'Could not read image' };
         const imgW = metadata.width;
@@ -3372,6 +3386,7 @@ ipcMain.handle('ai:faceContext', async (_event, filePath, boxX, boxY, boxW, boxH
         const boxPx = { x: Math.round(relX * scale), y: Math.round(relY * scale), w: Math.round(faceW * scale), h: Math.round(faceH * scale) };
         // Create the crop
         const cropped = await sharp(filePath, { failOnError: false })
+            .rotate()
             .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
             .resize(size, size, { fit: 'cover' })
             .jpeg({ quality: 85 })
