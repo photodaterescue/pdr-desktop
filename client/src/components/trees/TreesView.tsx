@@ -828,31 +828,35 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       await addRelationship({ personAId: otherPersonId, personBId: fromPersonId, type: 'parent_of' });
     } else if (kind === 'child') {
       await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'parent_of' });
-      // Co-parent prompt — when the person we're adding FROM has exactly
-      // one current (non-ended) spouse visible, it's almost always the
-      // other parent. Ask once before silently leaving the child with a
-      // ghost second parent. Multi-spouse + no-spouse cases skip the
-      // prompt so we never second-guess a user with a non-obvious
-      // situation (step-parents, solo parents, etc.).
+      // Co-parent prompt — for every CURRENT (non-ended) spouse of the
+      // person we're adding FROM, ask whether they're also the child's
+      // parent. Previously this only fired when there was exactly ONE
+      // current spouse, silently skipping every partner in polyamorous
+      // or multi-partner configurations — so the user had to manually
+      // wire each co-parent afterwards. Now we ask per partner so no
+      // one gets silently left out.
       const rels = await listRelationshipsForPerson(fromPersonId);
       const currentSpouses = (rels.success && rels.data ? rels.data : []).filter(r =>
         r.type === 'spouse_of' && !r.until
       );
-      if (currentSpouses.length === 1) {
-        const spouseId = currentSpouses[0].person_a_id === fromPersonId
-          ? currentSpouses[0].person_b_id
-          : currentSpouses[0].person_a_id;
-        const spouseName = allPersons.find(p => p.id === spouseId)?.name?.trim() || 'their partner';
+      if (currentSpouses.length > 0) {
         const fromName = allPersons.find(p => p.id === fromPersonId)?.name?.trim() || 'them';
         const childName = (otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name || 'this child').trim();
-        const yes = await promptConfirm({
-          title: `Is ${spouseName} also ${childName}'s parent?`,
-          message: `${fromName} has one current partner (${spouseName}). In most cases they're the second parent — choose No if ${childName} has a different co-parent.`,
-          confirmLabel: `Yes, add ${spouseName} as parent`,
-          cancelLabel: 'No, just ' + fromName,
-        });
-        if (yes) {
-          await addRelationship({ personAId: spouseId, personBId: otherPersonId, type: 'parent_of' });
+        const multi = currentSpouses.length > 1;
+        for (const rel of currentSpouses) {
+          const spouseId = rel.person_a_id === fromPersonId ? rel.person_b_id : rel.person_a_id;
+          const spouseName = allPersons.find(p => p.id === spouseId)?.name?.trim() || 'their partner';
+          const yes = await promptConfirm({
+            title: `Is ${spouseName} also ${childName}'s parent?`,
+            message: multi
+              ? `${fromName} has multiple current partners. Answer for each — choose Yes for every partner who's also ${childName}'s parent.`
+              : `${fromName} has one current partner (${spouseName}). In most cases they're the second parent — choose No if ${childName} has a different co-parent.`,
+            confirmLabel: `Yes, add ${spouseName} as parent`,
+            cancelLabel: multi ? `No, skip ${spouseName}` : 'No, just ' + fromName,
+          });
+          if (yes) {
+            await addRelationship({ personAId: spouseId, personBId: otherPersonId, type: 'parent_of' });
+          }
         }
       }
     } else if (kind === 'partner') {

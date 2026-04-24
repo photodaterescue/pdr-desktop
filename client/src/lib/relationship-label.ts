@@ -56,6 +56,18 @@ const LABELS: Record<string, LabelEntry> = {
 
   'parent_up,sibling':      { neutral: 'Aunt / Uncle', male: 'Uncle', female: 'Aunt' },
   'sibling,parent_down':    { neutral: 'Niece / Nephew', male: 'Nephew', female: 'Niece' },
+  // Your parent's sibling's spouse — aunt / uncle by marriage. English
+  // everyday usage doesn't distinguish from blood aunts/uncles, so the
+  // label is the same; only the path differs. Gendered on the spouse
+  // (target) since that's whose card the label lands on.
+  'parent_up,sibling,spouse': { neutral: 'Aunt / Uncle', male: 'Uncle', female: 'Aunt' },
+  // Your parent's spouse's child — a step-sibling (child of your
+  // parent's current or former partner). Distinct from a half-sibling
+  // (shared biological parent).
+  'parent_up,spouse,parent_down': { neutral: 'Step-sibling', male: 'Stepbrother', female: 'Stepsister' },
+  // Your step-sibling's child — step-niece / step-nephew. Reached via
+  // parent_up → spouse → parent_down → parent_down.
+  'parent_up,spouse,parent_down,parent_down': { neutral: 'Step-niece / Step-nephew', male: 'Step-nephew', female: 'Step-niece' },
   // NOTE: cousin-family labels (1st cousin, 2nd cousin, Nth cousin M
   // times removed, …) are handled generically in `cousinLabel` below
   // so we don't have to enumerate the whole matrix.

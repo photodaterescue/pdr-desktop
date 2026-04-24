@@ -561,7 +561,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 relationshipLabel={relationshipLabels.get(node.personId) ?? null}
                 hideGenderMarker={hideGenderMarker}
                 onOpenGenderPicker={() => setGenderPickerFor(node.personId)}
-                canAddParent={(node.totalParentCount ?? 0) < 2}
+                canAddParent={true}
               />
             );
           })}
