@@ -1809,10 +1809,14 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     ) => (
       <button
         onClick={onClick}
-        className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors relative ${
+        className={`w-9 h-9 flex items-center justify-center transition-colors relative ${
           active
-            ? 'bg-amber-500/15 ring-2 ring-amber-500/60 text-foreground'
-            : 'hover:bg-secondary/60 text-muted-foreground hover:text-foreground'
+            // Active app: solid amber-tinted rounded square (rounded-md
+            // is a proper square with softened edges; previously this
+            // used ring-2 which read as a circle because of how the
+            // stroke wrapped the small icon at this size).
+            ? 'bg-amber-500/20 border border-amber-500/60 rounded-md text-foreground'
+            : 'hover:bg-secondary/60 rounded-lg text-muted-foreground hover:text-foreground'
         }`}
         title={title + (locked ? ' (Premium feature)' : '')}
       >
@@ -1833,15 +1837,20 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 sidebar-animated overflow-y-auto"
         style={{ width: '48px' }}
       >
-        {/* Expand button — temporarily expands the sidebar for the
-            current view WITHOUT touching pin state. The pin button
-            (in the expanded sidebar) is the only control that flips
-            pinState. This means expanding in Memories, then switching
-            to Dashboard, then back to Memories, returns to collapsed
-            — the user's temporary expansion doesn't stick unless
-            they explicitly pin. */}
+        {/* Expand button — must ALWAYS expand the sidebar, including
+            when the user previously hit the chevron to collapse
+            (pinState === 'closed'). Without this reset, clicking the
+            burger did nothing because 'closed' beats tempExpanded in
+            the collapse logic. Sets pinState back to 'auto' (undoes
+            an explicit collapse) AND flips tempExpanded so auto-
+            collapse views (Memories/Trees/S&D) still open. The pin
+            button remains the only way to ACTIVATE 'open' — this
+            button only ever moves pinState towards auto. */}
         <button
-          onClick={() => setTempExpanded(true)}
+          onClick={() => {
+            if (pinState === 'closed') setPinStatePersisted('auto');
+            setTempExpanded(true);
+          }}
           className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
           title="Show Source Menu"
         >
