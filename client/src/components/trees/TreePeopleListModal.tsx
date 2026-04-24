@@ -38,6 +38,7 @@ export function TreePeopleListModal({
   onClose,
   onPersonsChanged,
   useGenderedLabels,
+  simplifyHalfLabels,
 }: {
   focusPersonId: number | null;
   treeName: string;
@@ -55,6 +56,7 @@ export function TreePeopleListModal({
   onClose: () => void;
   onPersonsChanged: () => void;
   useGenderedLabels?: boolean;
+  simplifyHalfLabels?: boolean;
 }) {
   // Shared drag hook — clamps the drag so the header can't be pushed
   // above/below the viewport, which used to strand the modal off-
@@ -115,8 +117,9 @@ export function TreePeopleListModal({
       graph.nodes.map(n => n.personId),
       genderByPerson,
       !!useGenderedLabels,
+      !!simplifyHalfLabels,
     );
-  }, [focusPersonId, graph, useGenderedLabels]);
+  }, [focusPersonId, graph, useGenderedLabels, simplifyHalfLabels]);
 
   // Generation anchor: among CONNECTED persons with a stored birth_date,
   // pick the one with the latest birth — that's the youngest. BFS from

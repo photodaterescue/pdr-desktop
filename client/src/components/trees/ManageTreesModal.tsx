@@ -175,6 +175,16 @@ export function ManageTreesModal({
     onChanged();
   };
 
+  /** Tree-scoped preference for collapsing Half-brother / Half-sister
+   *  labels down to the plain Brother / Sister terms. Off by default —
+   *  relationship labels stay technically accurate unless the user opts
+   *  into the simpler wording. */
+  const handleToggleSimplifyHalf = async (t: SavedTreeRecord, value: boolean) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, simplifyHalfLabels: value } : x));
+    await updateSavedTree(t.id, { simplifyHalfLabels: value });
+    onChanged();
+  };
+
   /** Remove a person id from a tree's hidden-ancestry list, restoring
    *  their family line to the canvas. Goes through toggleHiddenAncestor
    *  so the flip is logged to graph_history — Ctrl+Z will restore the
@@ -320,15 +330,32 @@ export function ManageTreesModal({
                       is set. */}
                   {editingId !== t.id && (
                     <div className="flex items-center gap-2 pl-6">
-                      <div
-                        className="w-8 h-8 rounded border border-border bg-muted shrink-0"
-                        style={hasBg ? {
-                          backgroundImage: `url("${t.backgroundImage}")`,
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center',
-                        } : undefined}
-                        aria-hidden
-                      />
+                      <div className="relative group shrink-0">
+                        <div
+                          className="w-8 h-8 rounded border border-border bg-muted"
+                          style={hasBg ? {
+                            backgroundImage: `url("${t.backgroundImage}")`,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                          } : undefined}
+                          aria-hidden
+                        />
+                        {hasBg && (
+                          // Hover-enlarge preview — the 8x8 swatch is too
+                          // small to judge how the image will look behind
+                          // the tree. On hover a larger (224x140) version
+                          // pops up to the right of the swatch.
+                          <div
+                            className="pointer-events-none absolute left-10 top-0 z-10 w-56 h-36 rounded-lg border border-border shadow-xl bg-muted opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150"
+                            style={{
+                              backgroundImage: `url("${t.backgroundImage}")`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }}
+                            aria-hidden
+                          />
+                        )}
+                      </div>
                       <button
                         onClick={() => handlePickBackground(t)}
                         disabled={busy}
@@ -413,6 +440,18 @@ export function ManageTreesModal({
                         <span className="text-foreground">Hide gender markers on cards</span>
                         <span className="ml-1 text-muted-foreground/70">
                           (♂ / ♀ / ⚥ in the top-right corner)
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={t.simplifyHalfLabels}
+                          onChange={e => handleToggleSimplifyHalf(t, e.target.checked)}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span className="text-foreground">Show half-siblings as plain Brother / Sister</span>
+                        <span className="ml-1 text-muted-foreground/70">
+                          (hides the technically-accurate "Half-" prefix)
                         </span>
                       </label>
                     </div>

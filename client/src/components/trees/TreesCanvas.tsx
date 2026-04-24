@@ -49,6 +49,10 @@ interface TreesCanvasProps {
   /** When true, relationship labels under card names use gendered
    *  forms (Mother/Father/…) for people whose gender is set. */
   useGenderedLabels?: boolean;
+  /** When true, half-sibling relationships render as plain Brother /
+   *  Sister / Sibling instead of the technically-accurate Half-*
+   *  forms. Tree-level preference set from Manage Trees. */
+  simplifyHalfLabels?: boolean;
   /** When true, the Mars/Venus/Combined symbol in the top-right of each
    *  card is suppressed even when gender is set. The "G" button stays
    *  visible so the user can still edit gender — it just doesn't
@@ -121,7 +125,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -337,8 +341,9 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       layout.nodes.map(n => n.personId),
       genderByPerson,
       useGenderedLabels,
+      simplifyHalfLabels,
     );
-  }, [layout.focusPersonId, layout.edges, layout.nodes, useGenderedLabels]);
+  }, [layout.focusPersonId, layout.edges, layout.nodes, useGenderedLabels, simplifyHalfLabels]);
 
   /** Person whose gender the user is currently editing. null = modal
    *  closed. The picker commits via setPersonGenderApi which logs

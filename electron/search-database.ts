@@ -583,6 +583,14 @@ export function initDatabase(): { success: boolean; error?: string } {
       // family can still be a valid candidate on a different tree.
       try { db.exec(`ALTER TABLE saved_trees ADD COLUMN excluded_suggestion_person_ids TEXT NOT NULL DEFAULT '[]'`); } catch {}
     }
+    if (!savedTreeColNames.has('simplify_half_labels')) {
+      // When ON, half-sibling relationships render as plain
+      // Brother / Sister / Sibling rather than Half-brother /
+      // Half-sister / Half-sibling. Terry's option for users who
+      // prefer the everyday term over the technically-accurate one.
+      // Data model isn't touched; only the rendered label changes.
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN simplify_half_labels INTEGER NOT NULL DEFAULT 0`); } catch {}
+    }
 
     // Persons life-event + marker columns for Trees.
     if (!personColNames.has('birth_date')) {
@@ -3981,6 +3989,11 @@ export interface SavedTreeRecord {
    *  excluded here while remaining a valid candidate on a different
    *  tree. */
   excludedSuggestionPersonIds: number[];
+  /** When true, half-sibling relationships render as plain
+   *  Brother / Sister / Sibling rather than the technically accurate
+   *  Half-brother / Half-sister. Per-tree preference for users who
+   *  prefer the everyday term. */
+  simplifyHalfLabels: boolean;
   /** When true, relationship labels on cards render gendered forms
    *  (Mother/Father/Brother/Sister/…) for anyone whose gender is set. */
   useGenderedLabels: boolean;
@@ -4008,6 +4021,7 @@ interface SavedTreeRow {
   tree_contrast: number | null;
   hidden_ancestor_person_ids: string | null;
   excluded_suggestion_person_ids: string | null;
+  simplify_half_labels: number | null;
   use_gendered_labels: number | null;
   hide_gender_marker: number | null;
   last_opened_at: string | null;
@@ -4044,6 +4058,7 @@ function rowToSavedTree(row: SavedTreeRow): SavedTreeRecord {
     treeContrast: typeof row.tree_contrast === 'number' ? row.tree_contrast : 0.3,
     hiddenAncestorPersonIds: hidden,
     excludedSuggestionPersonIds: excludedSuggestions,
+    simplifyHalfLabels: row.simplify_half_labels === 1,
     useGenderedLabels: row.use_gendered_labels == null ? true : row.use_gendered_labels === 1,
     hideGenderMarker: row.hide_gender_marker === 1,
     lastOpenedAt: row.last_opened_at,
@@ -4113,6 +4128,7 @@ export function updateSavedTree(id: number, patch: Partial<{
   treeContrast: number;
   hiddenAncestorPersonIds: number[];
   excludedSuggestionPersonIds: number[];
+  simplifyHalfLabels: boolean;
   useGenderedLabels: boolean;
   hideGenderMarker: boolean;
   markOpened: boolean;
@@ -4135,6 +4151,7 @@ export function updateSavedTree(id: number, patch: Partial<{
   if (patch.treeContrast != null)       { sets.push('tree_contrast = ?');       values.push(Math.max(0, Math.min(1, patch.treeContrast))); }
   if (patch.hiddenAncestorPersonIds)    { sets.push('hidden_ancestor_person_ids = ?'); values.push(JSON.stringify(patch.hiddenAncestorPersonIds)); }
   if (patch.excludedSuggestionPersonIds) { sets.push('excluded_suggestion_person_ids = ?'); values.push(JSON.stringify(patch.excludedSuggestionPersonIds)); }
+  if (patch.simplifyHalfLabels != null) { sets.push('simplify_half_labels = ?'); values.push(patch.simplifyHalfLabels ? 1 : 0); }
   if (patch.useGenderedLabels != null)  { sets.push('use_gendered_labels = ?');  values.push(patch.useGenderedLabels ? 1 : 0); }
   if (patch.hideGenderMarker != null)   { sets.push('hide_gender_marker = ?');   values.push(patch.hideGenderMarker ? 1 : 0); }
   if (patch.markOpened)                 { sets.push(`last_opened_at = datetime('now')`); }

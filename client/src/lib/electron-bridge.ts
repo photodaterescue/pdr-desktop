@@ -1220,6 +1220,7 @@ export interface SavedTreeRecord {
   treeContrast: number;
   hiddenAncestorPersonIds: number[];
   excludedSuggestionPersonIds: number[];
+  simplifyHalfLabels: boolean;
   useGenderedLabels: boolean;
   hideGenderMarker: boolean;
   lastOpenedAt: string | null;
@@ -1251,7 +1252,7 @@ export async function createSavedTree(args: SavedTreeSettings): Promise<{ succes
   return { success: false, error: 'Not running in Electron' };
 }
 
-export async function updateSavedTree(id: number, patch: Partial<SavedTreeSettings & { backgroundImage: string | null; backgroundOpacity: number; treeContrast: number; hiddenAncestorPersonIds: number[]; excludedSuggestionPersonIds: number[]; useGenderedLabels: boolean; hideGenderMarker: boolean; markOpened: boolean }>): Promise<{ success: boolean; data?: SavedTreeRecord; error?: string }> {
+export async function updateSavedTree(id: number, patch: Partial<SavedTreeSettings & { backgroundImage: string | null; backgroundOpacity: number; treeContrast: number; hiddenAncestorPersonIds: number[]; excludedSuggestionPersonIds: number[]; simplifyHalfLabels: boolean; useGenderedLabels: boolean; hideGenderMarker: boolean; markOpened: boolean }>): Promise<{ success: boolean; data?: SavedTreeRecord; error?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
     return (window as any).pdr.trees.savedUpdate({ id, patch });
   }

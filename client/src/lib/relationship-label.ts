@@ -238,6 +238,11 @@ export function computeRelationshipLabels(
   allNodeIds: readonly number[],
   genderByPerson?: Map<number, string | null>,
   gendered: boolean = false,
+  /** When true, half-sibling relationships render as plain
+   *  Brother / Sister / Sibling — the tree-level preference for users
+   *  who prefer the everyday term. Data stays accurate; only the
+   *  rendered label is collapsed. */
+  simplifyHalfLabels: boolean = false,
 ): Map<number, string> {
   const out = new Map<number, string>();
   if (focusPersonId == null) return out;
@@ -294,7 +299,14 @@ export function computeRelationshipLabels(
   while (queue.length > 0) {
     const { id, path } = queue.shift()!;
     if (id !== focusPersonId) {
-      const label = labelFromPath(path, genderByPerson, gendered);
+      // When the tree is set to simplify half labels, collapse
+      // 'half_sibling' steps to 'sibling' before label lookup so the
+      // target gets the plain Brother/Sister/Sibling form. Data model
+      // is unchanged — only the rendered string differs.
+      const pathForLabel = simplifyHalfLabels
+        ? path.map(p => p.step === 'half_sibling' ? { ...p, step: 'sibling' as RelStep } : p)
+        : path;
+      const label = labelFromPath(pathForLabel, genderByPerson, gendered);
       if (label && !out.has(id)) out.set(id, label);
     }
     const neighbours = adj.get(id);

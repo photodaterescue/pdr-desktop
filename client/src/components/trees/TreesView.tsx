@@ -1238,6 +1238,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onUnhideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
             nameConflictLookup={nameConflictLookup}
             useGenderedLabels={currentTree?.useGenderedLabels ?? true}
+            simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}
             hideGenderMarker={currentTree?.hideGenderMarker ?? false}
             hiddenAncestorPersonIds={currentTree?.hiddenAncestorPersonIds ?? []}
             onToggleHiddenAncestor={async (personId) => {
@@ -1488,6 +1489,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             setFocusPersonId(personId);
           }}
           useGenderedLabels={currentTree?.useGenderedLabels ?? true}
+          simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}
           onClose={() => setTreePeopleOpen(false)}
           onPersonsChanged={async () => {
             await reloadPersons();
