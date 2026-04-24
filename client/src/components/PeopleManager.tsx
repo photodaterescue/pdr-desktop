@@ -127,10 +127,14 @@ export default function PeopleManager() {
   const loadClusters = async () => {
     setIsLoading(true);
     // Render the cluster list AS SOON AS the DB queries return. Face
-    // thumbnails are now fetched PER-CLUSTER when the row enters the
-    // viewport — previously a 6-worker mount-time loop churned through
-    // every cluster's samples regardless of visibility, which wasted
-    // ~500ms-1s per off-screen cluster row.
+    // thumbnails are fetched in two waves:
+    //   1. Foreground: per-cluster when the row enters the viewport.
+    //      Visible rows get priority and populate within ~1–2s.
+    //   2. Background: idle-callback-driven pass over ALL other
+    //      clusters, so by the time the user scrolls, rows are
+    //      already fully populated and appear instantly. Both waves
+    //      go through ensureClusterCrops which dedups atomically, so
+    //      they can race without double-fetching.
     const [clustersRes, personsRes, discardedRes] = await Promise.all([
       getPersonClusters(),
       listPersons(),
@@ -143,6 +147,30 @@ export default function PeopleManager() {
     // Reset the per-open "I've fetched this cluster" dedup tracker so a
     // refresh re-populates rows that come back into view.
     fetchedClusterKeysRef.current.clear();
+    // Bump the load id so any still-running background loop from a
+    // previous load bails out instead of fighting for I/O.
+    const myLoadId = ++loadIdRef.current;
+
+    // Background idle fetch: process every remaining cluster in order,
+    // one at a time, yielding to the browser between clusters so
+    // user scrolls, clicks, and edits stay responsive.
+    if (clustersRes.success && clustersRes.data) {
+      const queue = [...clustersRes.data];
+      const idle: (cb: () => void) => void = (window as any).requestIdleCallback
+        ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 2000 })
+        : (cb) => setTimeout(cb, 100);
+      const processNext = () => {
+        if (loadIdRef.current !== myLoadId) return; // cancelled by re-load
+        if (queue.length === 0) return;
+        idle(async () => {
+          if (loadIdRef.current !== myLoadId) return;
+          const cluster = queue.shift();
+          if (cluster) await ensureClusterCrops(cluster);
+          processNext();
+        });
+      };
+      processNext();
+    }
   };
 
   /** Per-cluster thumbnail fetcher. Fires when a row enters the
@@ -152,6 +180,11 @@ export default function PeopleManager() {
    *  costs nothing. Small local worker pool so we don't try to open
    *  25 file handles in parallel for a single row. */
   const fetchedClusterKeysRef = useRef<Set<string>>(new Set());
+  // Monotonic counter bumped per loadClusters() call so the background
+  // idle loop from an earlier load can detect it's been superseded and
+  // bail out — prevents stale loops from competing with a fresh load's
+  // workers after a refresh / AI-complete re-load.
+  const loadIdRef = useRef<number>(0);
   const ensureClusterCrops = async (cluster: PersonCluster) => {
     const key = clusterKey(cluster);
     if (fetchedClusterKeysRef.current.has(key)) return;
