@@ -1892,19 +1892,13 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
   // Shared drag hook — header stays on-screen even after drag.
   const { modalRef, dragHandleProps } = useDraggableModal();
 
-  // Tabbed design mirroring the "Who is this?" placeholder resolver:
-  //   Tab 1: Name them       — type a new name, creates a real named person
-  //   Tab 2: Pick existing   — search the already-named people list
-  // Default to "Pick existing" when either
-  //   a) the modal has a co-occurrence anchor (quick-add, where the best
-  //      pick is almost always someone already named), or
-  //   b) sort options are enabled (Change focus, same reasoning).
-  // Otherwise default to Name them.
-  const [mode, setMode] = useState<'name' | 'link'>(
-    (cooccurrenceAnchorId != null || partnerScoreAnchorId != null || showSortOptions) ? 'link' : 'name'
-  );
-  const [nameInput, setNameInput] = useState('');
-  const [linkQuery, setLinkQuery] = useState('');
+  // Single-flow picker: one search input drives BOTH existing-person
+  // filtering AND the "+ Add X to PDR" create affordance that appears
+  // at the bottom of the results when the query doesn't exactly match
+  // any existing person. Replaces the older tabbed design (Link to
+  // existing / Name them) that split the same intent across two
+  // surfaces and forced the user to pick a mode before typing.
+  const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** personId → co-occurrence photo count with the anchor, or null until loaded. */
@@ -1964,7 +1958,7 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
 
   const filtered = persons
     .filter(p => !p.name.startsWith('__'))
-    .filter(p => p.name.toLowerCase().includes(linkQuery.trim().toLowerCase()))
+    .filter(p => p.name.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => {
       // Partner quick-add — weighted score wins over raw photo count.
       //   1. Co-parents to the top (they already share a child).
@@ -2011,21 +2005,19 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
       return a.name.localeCompare(b.name);
     });
 
-  const handleName = async () => {
+  const handleCreate = async (rawName: string) => {
     setError(null);
-    const trimmed = nameInput.trim();
+    const trimmed = rawName.trim();
     if (!trimmed) { setError('Type a name first.'); return; }
-    // Name-conflict guard: if someone on this tree already has this
-    // exact name, confirm with the user before creating a namesake.
-    // Catches the common mistake of typing a name that matches someone
-    // already placed elsewhere on the tree — previously we'd silently
-    // create a second "Dorothy Ada Clapson" and leave the user with
-    // two of her to untangle.
+    // Namesake guard: if someone on this tree already has this exact
+    // name, ask the user to confirm a genuine namesake before we
+    // create a second person with the same name. Without this the
+    // single-flow picker would cheerfully create a second Dorothy.
     const conflict = nameConflictLookup?.(trimmed);
     if (conflict) {
       const proceed = await promptConfirm({
         title: `"${conflict.name}" is already on this tree`,
-        message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name. To reuse the existing person, switch to "Link to existing" instead.`,
+        message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name.`,
         confirmLabel: `Yes, create another "${trimmed}"`,
         cancelLabel: 'Cancel',
       });
@@ -2041,6 +2033,16 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
     if (onPersonsChanged) onPersonsChanged();
     onPick(r.data, trimmed);
   };
+
+  // Exact-match check used to decide whether to show the "+ Add X"
+  // create row. If the user has typed a name that exactly matches an
+  // existing candidate (case/whitespace insensitive), we skip the
+  // create row — the existing person is already right there to click.
+  const trimmedQuery = query.trim();
+  const hasExactMatch = trimmedQuery.length > 0 && filtered.some(
+    p => p.name.trim().toLowerCase() === trimmedQuery.toLowerCase()
+  );
+  const showCreateRow = trimmedQuery.length > 0 && !hasExactMatch && !busy;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
@@ -2062,55 +2064,25 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
           </button>
         </div>
 
-        {/* Mode switcher — "Pick existing" on the left (users reach for
-            an already-named person first), "Name them" on the right for
-            the less-common new-person case. */}
-        <div className="flex gap-1 mb-3 p-0.5 bg-muted rounded-lg text-xs">
-          <button
-            onClick={() => setMode('link')}
-            className={`flex-1 px-2 py-1 rounded ${mode === 'link' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
-          >
-            Link to existing
-          </button>
-          <button
-            onClick={() => setMode('name')}
-            className={`flex-1 px-2 py-1 rounded ${mode === 'name' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
-          >
-            Name them
-          </button>
-        </div>
-
-        {mode === 'name' ? (
-          <div>
-            <input
+        {/* Single-flow picker: one search input, existing matches
+            filtered below, a "+ Add X to PDR" create row appended at
+            the bottom when the query doesn't match anyone. */}
+        <div>
+          <input
               type="text"
               autoFocus
-              value={nameInput}
-              onChange={e => setNameInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleName(); } }}
-              placeholder="e.g. Grandma Eileen"
-              className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
-            />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Creates a new named person. They'll appear in People Manager so you can link photos later.
-            </p>
-          </div>
-        ) : (
-          <div>
-            <input
-              type="text"
-              autoFocus
-              value={linkQuery}
-              onChange={e => setLinkQuery(e.target.value)}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  const exact = filtered.find(p => p.name.toLowerCase() === linkQuery.trim().toLowerCase());
+                  const exact = filtered.find(p => p.name.trim().toLowerCase() === trimmedQuery.toLowerCase());
                   if (exact) onPick(exact.id);
                   else if (filtered.length === 1) onPick(filtered[0].id);
+                  else if (showCreateRow) handleCreate(trimmedQuery);
                 }
               }}
-              placeholder="Search named people…"
+              placeholder="Search or type a new name…"
               className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
             />
             {showSortOptions && cooccurrenceAnchorId == null && (
@@ -2184,6 +2156,20 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                   </div>
                 );
               })}
+              {showCreateRow && (
+                <button
+                  onClick={() => handleCreate(trimmedQuery)}
+                  disabled={busy}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
+                >
+                  <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">
+                    <span className="text-muted-foreground">This person isn't on PDR yet. Add </span>
+                    <strong className="text-foreground">{trimmedQuery}</strong>
+                    <span className="text-muted-foreground"> as a new person?</span>
+                  </span>
+                </button>
+              )}
             </div>
             {hiddenSuggestions && hiddenSuggestions.length > 0 && onUnhideSuggestion && (
               <HiddenSuggestionsReview
@@ -2192,7 +2178,6 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
               />
             )}
           </div>
-        )}
 
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
@@ -2201,16 +2186,6 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
           <button onClick={onClose} className="px-2.5 py-1 rounded text-xs hover:bg-accent">
             Cancel
           </button>
-          {mode === 'name' && (
-            <button
-              onClick={handleName}
-              disabled={busy || !nameInput.trim()}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
-            >
-              <UserPlus className="w-3 h-3" />
-              {busy ? 'Saving…' : 'Save name'}
-            </button>
-          )}
         </div>
       </div>
     </div>

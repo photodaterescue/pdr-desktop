@@ -1889,12 +1889,9 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
   nameConflictLookup?: (name: string) => { id: number; name: string } | null;
 }) {
   const isVirtual = personId == null && virtualChildIds != null && virtualChildIds.length > 0;
-  // Default to 'link' — most placeholder resolutions are "this is
-  // already a named person I have elsewhere", not "create a new named
-  // person from scratch". Tab order in the UI puts Link FIRST for
-  // the same reason.
-  const [mode, setMode] = useState<'name' | 'link'>('link');
-  const [nameInput, setNameInput] = useState('');
+  // Single-flow picker — no more tab switcher. The input below does
+  // double duty: filters existing people as the user types AND feeds
+  // the "+ Add X to PDR" create row when the query doesn't match.
   const [linkQuery, setLinkQuery] = useState('');
   const [allPersons, setAllPersons] = useState<{ id: number; name: string; photoCount: number }[]>([]);
   const [selectedLinkId, setSelectedLinkId] = useState<number | null>(null);
@@ -1992,9 +1989,17 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
     // Tiebreak alphabetical.
     .sort((a, b) => (b.photoCount - a.photoCount) || a.name.localeCompare(b.name));
 
-  const handleName = async () => {
+  // "+ Add X to PDR" create-row gating. Appears when the user has typed
+  // a query that doesn't exactly match anyone in the filtered list.
+  const trimmedLinkQuery = linkQuery.trim();
+  const hasExactMatch = trimmedLinkQuery.length > 0 && filtered.some(
+    p => p.name.trim().toLowerCase() === trimmedLinkQuery.toLowerCase()
+  );
+  const showCreateRow = trimmedLinkQuery.length > 0 && !hasExactMatch && !busy;
+
+  const handleName = async (rawName: string) => {
     setError(null);
-    const trimmed = nameInput.trim();
+    const trimmed = rawName.trim();
     if (!trimmed) { setError('Type a name.'); return; }
     // Namesake guard — same as the + picker. Without this, typing an
     // existing tree member's name here silently creates a second
@@ -2007,7 +2012,7 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
       if (conflict) {
         const proceed = await promptConfirm({
           title: `"${conflict.name}" is already on this tree`,
-          message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name. To reuse the existing person, switch to "Link to existing" instead.`,
+          message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name.`,
           confirmLabel: `Yes, create another "${trimmed}"`,
           cancelLabel: 'Cancel',
         });
@@ -2122,91 +2127,90 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
         </div>
       )}
 
-      {/* Mode switcher — Link to existing on the LEFT and default
-          because that's the most common resolution for a placeholder.
-          Name them is the "I have nobody for this yet, create a new
-          named person" secondary action on the RIGHT. */}
-      <div className="flex gap-1 mb-3 p-0.5 bg-muted rounded-lg text-xs">
-        <button
-          onClick={() => setMode('link')}
-          className={`flex-1 px-2 py-1 rounded ${mode === 'link' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
-        >
-          Link to existing
-        </button>
-        <button
-          onClick={() => setMode('name')}
-          className={`flex-1 px-2 py-1 rounded ${mode === 'name' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`}
-        >
-          Name them
-        </button>
-      </div>
-
-      {mode === 'name' ? (
-        <div>
-          <input
-            type="text"
-            autoFocus
-            value={nameInput}
-            onChange={e => setNameInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleName(); }}
-            placeholder="e.g. Grandma Eileen"
-            className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
-          />
-          <p className="text-[10px] text-muted-foreground mt-1">Creates a new named person. They'll appear in People Manager so you can link photos later.</p>
-        </div>
-      ) : (
-        <div>
-          <input
-            type="text"
-            autoFocus
-            value={linkQuery}
-            onChange={e => setLinkQuery(e.target.value)}
-            placeholder="Search named people…"
-            className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
-          />
-          <div className="mt-2 max-h-40 overflow-auto flex flex-col gap-0.5 border border-border rounded p-0.5">
-            {filtered.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-2">No matches.</p>
-            )}
-            {filtered.map(p => {
-              const isSelected = selectedLinkId === p.id;
-              return (
-                <div
-                  key={p.id}
-                  className={`group flex items-center gap-1 px-2 py-1.5 rounded text-sm ${
-                    isSelected ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
-                  } ${busy ? 'opacity-50' : ''}`}
-                >
-                  <button
-                    onClick={() => !busy && setSelectedLinkId(p.id)}
-                    disabled={busy}
-                    className="flex-1 min-w-0 flex items-center gap-2 text-left"
-                  >
-                    <span className="flex-1 truncate">{p.name}</span>
-                    <span className={`text-[10px] shrink-0 ${isSelected ? 'text-primary/80' : 'text-muted-foreground'}`}>
-                      {p.photoCount} {p.photoCount === 1 ? 'photo' : 'photos'}
-                    </span>
-                  </button>
-                  {onHideSuggestion && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
-                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
-                      title="Not in this family — hide from suggestions"
-                      aria-label={`Hide ${p.name} from suggestions`}
-                    >
-                      <EyeOff className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {hiddenSuggestions && onUnhideSuggestion && (
-            <HiddenSuggestionsReview hidden={hiddenSuggestions} onUnhide={onUnhideSuggestion} />
+      {/* Single-flow picker — type to search existing people; if the
+          query doesn't match anyone, a "+ Add X to PDR" create row
+          appears at the bottom of the list. Replaces the older
+          Link-to-existing / Name-them tab split which forced the user
+          to pick a mode before typing. */}
+      <div>
+        <input
+          type="text"
+          autoFocus
+          value={linkQuery}
+          onChange={e => { setLinkQuery(e.target.value); setSelectedLinkId(null); }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const typed = linkQuery.trim();
+              const exact = filtered.find(p => p.name.trim().toLowerCase() === typed.toLowerCase());
+              if (exact) setSelectedLinkId(exact.id);
+              else if (filtered.length === 1) setSelectedLinkId(filtered[0].id);
+              else if (typed.length > 0) handleName(typed);
+            }
+          }}
+          placeholder="Search or type a new name…"
+          className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
+        />
+        <div className="mt-2 max-h-40 overflow-auto flex flex-col gap-0.5 border border-border rounded p-0.5">
+          {filtered.length === 0 && !showCreateRow && (
+            <p className="text-xs text-muted-foreground text-center py-2">No matches.</p>
           )}
-          <p className="text-xs text-muted-foreground mt-1">Pick the person this placeholder should become, then click Done. All relationships on the placeholder transfer to them.</p>
+          {filtered.map(p => {
+            const isSelected = selectedLinkId === p.id;
+            return (
+              <div
+                key={p.id}
+                className={`group flex items-center gap-1 px-2 py-1.5 rounded text-sm ${
+                  isSelected ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
+                } ${busy ? 'opacity-50' : ''}`}
+              >
+                <button
+                  onClick={() => !busy && setSelectedLinkId(p.id)}
+                  disabled={busy}
+                  className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                >
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className={`text-[10px] shrink-0 ${isSelected ? 'text-primary/80' : 'text-muted-foreground'}`}>
+                    {p.photoCount} {p.photoCount === 1 ? 'photo' : 'photos'}
+                  </span>
+                </button>
+                {onHideSuggestion && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
+                    title="Not in this family — hide from suggestions"
+                    aria-label={`Hide ${p.name} from suggestions`}
+                  >
+                    <EyeOff className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {showCreateRow && (
+            <button
+              onClick={() => handleName(linkQuery.trim())}
+              disabled={busy}
+              className="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
+            >
+              <UserPlus className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">
+                <span className="text-muted-foreground">This person isn't on PDR yet. Add </span>
+                <strong className="text-foreground">{linkQuery.trim()}</strong>
+                <span className="text-muted-foreground"> as a new person?</span>
+              </span>
+            </button>
+          )}
         </div>
-      )}
+        {hiddenSuggestions && onUnhideSuggestion && (
+          <HiddenSuggestionsReview hidden={hiddenSuggestions} onUnhide={onUnhideSuggestion} />
+        )}
+        <p className="text-xs text-muted-foreground mt-1">
+          {selectedLinkId != null
+            ? 'Click Done to turn this placeholder into the selected person. All relationships on the placeholder transfer to them.'
+            : 'Click a name to link this placeholder to them, or type a new name and press Enter to create a new person.'}
+        </p>
+      </div>
 
       {error && (
         <div className="mt-2 text-xs text-red-600">{error}</div>
@@ -2224,25 +2228,17 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
           </button>
         )}
         <div className="flex-1" />
-        {mode === 'name' && (
-          <button
-            onClick={handleName}
-            disabled={busy || !nameInput.trim()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
-          >
-            <UserPlus className="w-3 h-3" />
-            {busy ? 'Saving…' : 'Save name'}
-          </button>
-        )}
-        {mode === 'link' && (
-          <button
-            onClick={() => selectedLinkId != null && handleLink(selectedLinkId)}
-            disabled={busy || selectedLinkId == null}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
-          >
-            {busy ? 'Linking…' : 'Done'}
-          </button>
-        )}
+        {/* Done commits the selected existing person (merge placeholder
+            into them). Creating a new person uses the "+ Add X to PDR"
+            row inside the list itself — no separate Save-name button
+            needed now that the flow is unified. */}
+        <button
+          onClick={() => selectedLinkId != null && handleLink(selectedLinkId)}
+          disabled={busy || selectedLinkId == null}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
+        >
+          {busy ? 'Linking…' : 'Done'}
+        </button>
       </div>
       </div>
     </div>

@@ -1947,25 +1947,29 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container sidebar-animated"
       style={{ width: `${width}px` }}
     >
-      {/* Pin / collapse controls */}
+      {/* Pin / collapse controls — icons sized up from 3.5 to 4, padding
+          bumped from 1 to 1.5, and unpinned state promoted from 60% to
+          90% muted-foreground so they read more strongly at a glance.
+          Also adds a soft border so the click target is visible even
+          against similar-shade backgrounds. */}
       <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
         <button
           onClick={() => setPinStatePersisted(pinState === 'open' ? 'auto' : 'open')}
-          className={`p-1 rounded transition-colors ${
+          className={`p-1.5 rounded-md border transition-colors ${
             pinState === 'open'
-              ? 'bg-primary/15 text-primary ring-1 ring-primary/40'
-              : 'text-muted-foreground/60 hover:bg-secondary/60 hover:text-foreground'
+              ? 'bg-primary/15 text-primary border-primary/50 ring-1 ring-primary/40'
+              : 'text-muted-foreground border-border/60 hover:bg-secondary/60 hover:text-foreground hover:border-border'
           }`}
           title={pinState === 'open' ? 'Pinned open — click to unpin (follow S&D)' : 'Pin sidebar open (stay open during S&D)'}
         >
-          <Pin className="w-3.5 h-3.5" />
+          <Pin className="w-4 h-4" />
         </button>
         <button
           onClick={() => setPinStatePersisted('closed')}
-          className="p-1 rounded hover:bg-secondary/60 text-muted-foreground/60 hover:text-foreground transition-colors"
+          className="p-1.5 rounded-md border border-border/60 text-muted-foreground hover:bg-secondary/60 hover:text-foreground hover:border-border transition-colors"
           title="Collapse sidebar"
         >
-          <ChevronLeft className="w-3.5 h-3.5" />
+          <ChevronLeft className="w-4 h-4" />
         </button>
       </div>
 
