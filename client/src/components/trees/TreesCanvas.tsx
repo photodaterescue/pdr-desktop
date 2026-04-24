@@ -1895,12 +1895,7 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Drag-to-reposition. This popover starts anchored at the clicked
-  // ghost's screen position (x,y) with a translate(-50%,-50%) centering
-  // offset, so drag deltas need to stack on top of that existing
-  // transform rather than replacing it. Dragging lets the user nudge
-  // the popover aside to see the cards it's covering — same affordance
-  // the other Trees modals got.
+  // Drag-to-reposition. Same pattern as the other Trees modals.
   const modalRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
   const onDragStart = (e: React.PointerEvent) => {
@@ -1921,9 +1916,7 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
     const halfH = window.innerHeight / 2;
     d.x = Math.max(-halfW, Math.min(halfW, rawX));
     d.y = Math.max(-halfH, Math.min(halfH, rawY));
-    if (modalRef.current) {
-      modalRef.current.style.transform = `translate(-50%, -50%) translate3d(${d.x}px, ${d.y}px, 0)`;
-    }
+    if (modalRef.current) modalRef.current.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
   };
   const onDragEnd = () => { dragRef.current.dragging = false; };
   /** Relationships this placeholder already holds — shown up-top so the
@@ -2111,10 +2104,14 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
 
   return (
     <div
-      ref={modalRef}
-      className="placeholder-resolver absolute z-30 bg-popover border border-border rounded-xl shadow-2xl p-4 w-[28rem] max-w-[90vw]"
-      style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
     >
+      <div
+        ref={modalRef}
+        className="placeholder-resolver bg-popover border border-border rounded-xl shadow-2xl p-4 w-[28rem] max-w-[90vw]"
+        onClick={e => e.stopPropagation()}
+      >
       <div
         className="flex items-center gap-2 mb-3 select-none cursor-grab active:cursor-grabbing"
         style={{ touchAction: 'none' }}
@@ -2266,6 +2263,7 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
             {busy ? 'Linking…' : 'Done'}
           </button>
         )}
+      </div>
       </div>
     </div>
   );
