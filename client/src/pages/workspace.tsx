@@ -1899,6 +1899,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           // reliable "is it focused" signal, so no active highlight.
         )}
 
+        {/* Flex spacer — pushes Guidance + App groups to the bottom of
+            the sidebar so they're not visually bunched up against the
+            primary Apps / Tools at the top. Mirrors the expanded
+            sidebar's feel where Settings / About / Help sit at the
+            bottom of the column. */}
+        <div className="flex-1" />
+
         {divider}
 
         {/* GUIDANCE */}
