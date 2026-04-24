@@ -126,26 +126,52 @@ export default function PeopleManager() {
 
   const loadClusters = async () => {
     setIsLoading(true);
-    const result = await getPersonClusters();
-    if (result.success && result.data) {
-      setClusters(result.data);
-      const crops: Record<string, string> = {};
-      await Promise.all(result.data.map(async (cluster) => {
-        const key = clusterKey(cluster);
-        if (cluster.sample_faces) {
-          for (const face of cluster.sample_faces) {
-            const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
-            if (crop.success && crop.dataUrl) crops[face.face_id] = crop.dataUrl;
+    // Render the cluster list AS SOON AS the DB queries return. Face
+    // thumbnails are filled in afterwards in the background — each
+    // getFaceCrop call is slow (sharp decode + crop + resize + JPEG
+    // encode; ~20–50ms per face), and at full library scale the
+    // thumbnail loop was blocking the UI for 20–45 seconds before a
+    // single pixel of the list rendered. Now the list appears when
+    // the DB settles (~1–3s) and thumbnails pop in as they arrive.
+    const [clustersRes, personsRes, discardedRes] = await Promise.all([
+      getPersonClusters(),
+      listPersons(),
+      listDiscardedPersons(),
+    ]);
+    if (clustersRes.success && clustersRes.data) setClusters(clustersRes.data);
+    if (personsRes.success && personsRes.data) setExistingPersons(personsRes.data);
+    if (discardedRes.success && discardedRes.data) setDiscardedPersons(discardedRes.data);
+    setIsLoading(false);
+
+    // Background thumbnail fetch. Runs in parallel batches so we don't
+    // ship the main thread through ~50ms × N_faces serially, but also
+    // doesn't try to open N_faces file handles at once. Skips anything
+    // already cached in faceCropsMap so repeat loads are fast.
+    if (clustersRes.success && clustersRes.data) {
+      const jobs: Array<{ face_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number }> = [];
+      const seen = new Set<number>();
+      for (const cluster of clustersRes.data) {
+        if (!cluster.sample_faces) continue;
+        for (const face of cluster.sample_faces) {
+          if (seen.has(face.face_id)) continue;
+          seen.add(face.face_id);
+          jobs.push(face);
+        }
+      }
+      const CONCURRENCY = 6;
+      let next = 0;
+      const worker = async () => {
+        while (next < jobs.length) {
+          const i = next++;
+          const face = jobs[i];
+          const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
+          if (crop.success && crop.dataUrl) {
+            setFaceCropsMap(prev => ({ ...prev, [face.face_id]: crop.dataUrl! }));
           }
         }
-      }));
-      setFaceCropsMap(crops);
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
     }
-    const persons = await listPersons();
-    if (persons.success && persons.data) setExistingPersons(persons.data);
-    const discarded = await listDiscardedPersons();
-    if (discarded.success && discarded.data) setDiscardedPersons(discarded.data);
-    setIsLoading(false);
   };
 
   useEffect(() => { loadClusters(); }, []);

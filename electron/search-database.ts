@@ -2291,92 +2291,109 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
 
   const clusters = [...namedClusters, ...unnamedClusters];
 
-  // For named: prefer user-chosen representative, fall back to highest confidence
-  const repByPersonChosenStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
+  // Before: for every cluster we ran 1–2 tiny queries (rep + samples),
+  // meaning a library with 200 clusters issued 200–400 round-trips
+  // here. Now we fetch EVERY face in every cluster in one batch query,
+  // plus one batch query for user-chosen representative overrides, and
+  // resolve rep / samples in JS. That takes the N+1 pattern down to
+  // a constant 5 queries regardless of cluster count.
+  const allClusterFaces = database.prepare(`
+    SELECT
+      fd.id as face_id,
+      fd.person_id,
+      fd.cluster_id,
+      fd.file_id,
+      f.file_path,
+      fd.box_x, fd.box_y, fd.box_w, fd.box_h,
+      fd.confidence,
+      fd.verified
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
-    INNER JOIN persons p ON p.id = ?
-    WHERE fd.id = p.representative_face_id
-    LIMIT 1
-  `);
-  const repByPersonAutoStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.person_id = ?
+    LEFT JOIN persons p ON fd.person_id = p.id
+    WHERE fd.cluster_id IS NOT NULL
+      AND (fd.person_id IS NULL OR p.discarded_at IS NULL)
     ORDER BY fd.confidence DESC
-    LIMIT 1
-  `);
-  // For unnamed: representative face is the highest confidence face in that cluster (with no person)
-  const repByClusterStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id IS NULL
-    ORDER BY fd.confidence DESC
-    LIMIT 1
-  `);
-  // Sample faces for named: by person_id
-  const facesByPersonStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.person_id = ?
-    ORDER BY fd.confidence ASC
-  `);
-  // Sample faces for unnamed: by cluster_id (only unassigned)
-  const facesByClusterStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id IS NULL
-    ORDER BY fd.confidence ASC
-  `);
-  // Sample faces for special categories: by cluster_id AND person_id
-  const facesByClusterWithPersonStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id = ?
-    ORDER BY fd.confidence ASC
-  `);
-  // Representative for special categories: by cluster_id AND person_id
-  const repByClusterWithPersonStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id = ?
-    ORDER BY fd.confidence DESC
-    LIMIT 1
-  `);
+  `).all() as Array<{
+    face_id: number; person_id: number | null; cluster_id: number;
+    file_id: number; file_path: string;
+    box_x: number; box_y: number; box_w: number; box_h: number;
+    confidence: number; verified: number;
+  }>;
+
+  // Index the faces three ways matching the three grouping schemes:
+  // by person_id (named), by cluster_id+person_id (special), by
+  // cluster_id (unnamed). Since the SELECT is ordered by confidence
+  // DESC, faces[0] is always the highest-confidence (= representative)
+  // candidate for the group.
+  const facesByPerson = new Map<number, typeof allClusterFaces>();
+  const facesByClusterPerson = new Map<string, typeof allClusterFaces>();
+  const facesByCluster = new Map<number, typeof allClusterFaces>();
+  for (const f of allClusterFaces) {
+    if (f.person_id != null) {
+      if (!facesByPerson.has(f.person_id)) facesByPerson.set(f.person_id, []);
+      facesByPerson.get(f.person_id)!.push(f);
+      const k = `${f.cluster_id}_${f.person_id}`;
+      if (!facesByClusterPerson.has(k)) facesByClusterPerson.set(k, []);
+      facesByClusterPerson.get(k)!.push(f);
+    } else {
+      if (!facesByCluster.has(f.cluster_id)) facesByCluster.set(f.cluster_id, []);
+      facesByCluster.get(f.cluster_id)!.push(f);
+    }
+  }
+
+  // User-chosen representative face overrides: one batch fetch keyed
+  // by the named-person IDs we're about to render. A value of NULL
+  // means "use automatic pick (highest confidence)".
+  const namedPersonIds = realNamedClusters.map(c => c.person_id).filter((id): id is number => id != null);
+  const repOverrides = new Map<number, number | null>();
+  if (namedPersonIds.length > 0) {
+    const placeholders = namedPersonIds.map(() => '?').join(',');
+    const rows = database.prepare(
+      `SELECT id, representative_face_id FROM persons WHERE id IN (${placeholders})`
+    ).all(...namedPersonIds) as Array<{ id: number; representative_face_id: number | null }>;
+    for (const r of rows) repOverrides.set(r.id, r.representative_face_id);
+  }
 
   return clusters.map((c: any) => {
     const isNamed = c.person_id != null;
     const isSpecial = isNamed && (c.person_name === '__ignored__' || c.person_name === '__unsure__');
-    const rep = isSpecial
-      ? (repByClusterWithPersonStmt.get(c.cluster_id, c.person_id) as any || {})
+    const faces = isSpecial
+      ? (facesByClusterPerson.get(`${c.cluster_id}_${c.person_id}`) ?? [])
       : isNamed
-        ? ((repByPersonChosenStmt.get(c.person_id) as any) || (repByPersonAutoStmt.get(c.person_id) as any) || {})
-        : (repByClusterStmt.get(c.cluster_id) as any || {});
-    const samples = isSpecial
-      ? (facesByClusterWithPersonStmt.all(c.cluster_id, c.person_id) as any[])
-      : isNamed
-        ? (facesByPersonStmt.all(c.person_id) as any[])
-        : (facesByClusterStmt.all(c.cluster_id) as any[]);
+        ? (facesByPerson.get(c.person_id) ?? [])
+        : (facesByCluster.get(c.cluster_id) ?? []);
+
+    // Rep = the faces[0] (highest confidence). For named persons, a
+    // user-chosen override wins IF that face is actually in the group
+    // (if the override face has since been moved to another person,
+    // the stale override is ignored).
+    let rep: typeof allClusterFaces[number] | undefined = faces[0];
+    if (isNamed && !isSpecial) {
+      const overrideId = repOverrides.get(c.person_id as number);
+      if (overrideId != null) {
+        const chosen = faces.find(f => f.face_id === overrideId);
+        if (chosen) rep = chosen;
+      }
+    }
+
+    // Samples order matches the previous behaviour (confidence ASC).
+    // The DB fetch returned DESC, so reverse for consistency with
+    // existing consumers.
+    const samples = [...faces].reverse();
+
     return {
       cluster_id: c.cluster_id,
       person_id: c.person_id,
       person_name: c.person_name,
       face_count: c.face_count,
       photo_count: c.photo_count,
-      representative_face_id: rep.face_id || c.representative_face_id,
-      representative_file_id: rep.file_id,
-      representative_file_path: rep.file_path || '',
-      box_x: rep.box_x || 0,
-      box_y: rep.box_y || 0,
-      box_w: rep.box_w || 0,
-      box_h: rep.box_h || 0,
+      representative_face_id: rep?.face_id ?? c.representative_face_id,
+      representative_file_id: rep?.file_id ?? 0,
+      representative_file_path: rep?.file_path ?? '',
+      box_x: rep?.box_x ?? 0,
+      box_y: rep?.box_y ?? 0,
+      box_w: rep?.box_w ?? 0,
+      box_h: rep?.box_h ?? 0,
       sample_faces: samples,
     };
   });
