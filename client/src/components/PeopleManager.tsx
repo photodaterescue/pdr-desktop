@@ -57,6 +57,8 @@ import {
   importXmpFaces,
   onAiProgress,
   removeAiProgressListener,
+  recordPmOpen,
+  dismissPmStartupPrompt,
   type AiProgress,
 } from '@/lib/electron-bridge';
 
@@ -180,6 +182,13 @@ export default function PeopleManager() {
   const [aiRefineEnabled, setAiRefineEnabled] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [isImportingXmp, setIsImportingXmp] = useState(false);
+
+  // "Open PM on startup" onboarding banner state. We wait until the
+  // user has used PM enough to understand its value — 3+ distinct
+  // calendar days OR 3+ opens in one session — before asking them to
+  // change their startup preference. Once they enable it or dismiss
+  // it, pmStartupPromptDismissed in settings keeps it away forever.
+  const [showStartupPrompt, setShowStartupPrompt] = useState(false);
 
   // Load saved threshold from settings on mount
   useEffect(() => {
@@ -305,6 +314,21 @@ export default function PeopleManager() {
   };
 
   useEffect(() => { loadClusters(); }, []);
+
+  // Onboarding: record this open and decide whether to surface the
+  // "launch PM on startup" banner. Thresholds: 3+ distinct calendar
+  // days OR 3+ opens in one session. Skipped entirely if the user
+  // already enabled the setting or dismissed the prompt.
+  useEffect(() => {
+    (async () => {
+      const r = await recordPmOpen();
+      if (!r.success) return;
+      if (r.alreadyEnabled || r.dismissed) return;
+      if ((r.distinctDays ?? 0) >= 3 || (r.sessionCount ?? 0) >= 3) {
+        setShowStartupPrompt(true);
+      }
+    })();
+  }, []);
 
   // Subscribe to AI progress so the header badge updates in real-time
   // while files are being analysed. Auto-refresh the cluster list when
@@ -623,6 +647,44 @@ export default function PeopleManager() {
           </div>
         </div>
       </div>
+
+      {/* Onboarding banner — surfaces after real adoption (3+ calendar
+          days OR 3+ opens this session). Informational, non-blocking:
+          users can enable the setting inline or dismiss it forever. */}
+      {showStartupPrompt && (
+        <div className="mx-6 mb-3 px-3.5 py-2.5 rounded-lg border border-purple-300/50 dark:border-purple-500/30 bg-purple-50/60 dark:bg-purple-900/15 flex items-center gap-3">
+          <div className="w-7 h-7 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-medium text-foreground">Using People Manager a lot?</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">You can have it launch with PDR automatically.</div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={async () => {
+                await setSetting('openPeopleOnStartup' as any, true);
+                await dismissPmStartupPrompt();
+                setShowStartupPrompt(false);
+              }}
+              className="px-3 py-1 rounded-md text-[11px] font-medium bg-purple-500 hover:bg-purple-600 text-white border border-purple-600 transition-colors"
+            >
+              Enable
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await dismissPmStartupPrompt();
+                setShowStartupPrompt(false);
+              }}
+              className="px-2.5 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tab Bar */}
       <div className="flex border-b border-border mx-6 mb-0">

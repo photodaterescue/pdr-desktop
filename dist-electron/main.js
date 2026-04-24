@@ -2885,6 +2885,7 @@ ipcMain.handle('ai:namePerson', async (_event, name, clusterId, avatarData) => {
             for (const f of files)
                 rebuildAiFts(f.file_id);
         }
+        invalidatePersonClustersCache();
         return { success: true, data: { personId } };
     }
     catch (err) {
@@ -2900,6 +2901,7 @@ ipcMain.handle('ai:assignFace', async (_event, faceId, personId, verified = fals
         const face = database.prepare(`SELECT file_id FROM face_detections WHERE id = ?`).get(faceId);
         if (face)
             rebuildAiFts(face.file_id);
+        invalidatePersonClustersCache();
         return { success: true };
     }
     catch (err) {
@@ -2921,6 +2923,7 @@ ipcMain.handle('ai:batchVerify', async (_event, personIds) => {
         }
         for (const fileId of affectedFiles)
             rebuildAiFts(fileId);
+        invalidatePersonClustersCache();
         return { success: true };
     }
     catch (err) {
@@ -2959,6 +2962,7 @@ ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold) => {
 ipcMain.handle('ai:unnameFace', async (_event, faceId) => {
     try {
         unnameFace(faceId);
+        invalidatePersonClustersCache();
         return { success: true };
     }
     catch (err) {
@@ -2974,6 +2978,7 @@ ipcMain.handle('ai:renamePerson', async (_event, personId, newName) => {
         const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(personId);
         for (const f of files)
             rebuildAiFts(f.file_id);
+        invalidatePersonClustersCache();
         return { success: true };
     }
     catch (err) {
@@ -2984,6 +2989,7 @@ ipcMain.handle('ai:setRepresentativeFace', async (_event, personId, faceId) => {
     try {
         const { setPersonRepresentativeFace } = await import('./search-database.js');
         setPersonRepresentativeFace(personId, faceId);
+        invalidatePersonClustersCache();
         return { success: true };
     }
     catch (err) {
@@ -2999,6 +3005,7 @@ ipcMain.handle('ai:mergePersons', async (_event, targetPersonId, sourcePersonId)
         const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(targetPersonId);
         for (const f of files)
             rebuildAiFts(f.file_id);
+        invalidatePersonClustersCache();
         return { success: true, data: { facesReassigned } };
     }
     catch (err) {
@@ -3020,6 +3027,7 @@ ipcMain.handle('ai:deletePerson', async (_event, personId) => {
         // Rebuild FTS for affected files
         for (const f of affectedFiles)
             rebuildAiFts(f.file_id);
+        invalidatePersonClustersCache();
         return { success: true, data: { ...result, personName: person.name } };
     }
     catch (err) {
@@ -3132,10 +3140,78 @@ ipcMain.handle('ai:resetTagAnalysis', async () => {
         return { success: false, error: err.message };
     }
 });
+// PM open-count: session-scoped counter that resets each PDR launch.
+// Used alongside settings.pmOpenDays to decide when to show the "open
+// PM on startup" onboarding banner — we wait until adoption is real
+// (3+ distinct calendar days OR 3+ opens in one session) before
+// asking the user to change their startup preference.
+let pmOpenSessionCount = 0;
+ipcMain.handle('pm:recordOpen', async () => {
+    pmOpenSessionCount += 1;
+    const today = new Date().toISOString().slice(0, 10);
+    const settings = getSettings();
+    const existingDays = Array.isArray(settings.pmOpenDays) ? settings.pmOpenDays : [];
+    const daysSet = new Set(existingDays);
+    if (!daysSet.has(today)) {
+        daysSet.add(today);
+        setSetting('pmOpenDays', Array.from(daysSet));
+    }
+    return {
+        success: true,
+        sessionCount: pmOpenSessionCount,
+        distinctDays: daysSet.size,
+        dismissed: !!settings.pmStartupPromptDismissed,
+        alreadyEnabled: !!settings.openPeopleOnStartup,
+    };
+});
+ipcMain.handle('pm:dismissStartupPrompt', async () => {
+    setSetting('pmStartupPromptDismissed', true);
+    return { success: true };
+});
+// Main-process cache for getPersonClusters results. Pre-warming from
+// the main PDR window (see ai:prewarmPersonClusters) fills this while
+// PM is closed; when the user opens PM the cluster list comes back
+// instantly from memory instead of waiting for the full query chain
+// every time. Cache lives for the lifetime of the main process and is
+// invalidated explicitly by any IPC handler that mutates cluster
+// state (namePerson, assignFace, discardPerson, etc.).
+let cachedPersonClusters = null;
+let cachedPersonClustersAt = 0;
+const PERSON_CLUSTERS_TTL_MS = 30000;
+function invalidatePersonClustersCache() {
+    cachedPersonClusters = null;
+    cachedPersonClustersAt = 0;
+}
+function computePersonClustersFresh() {
+    cleanupOrphanedPersons();
+    const data = getPersonClusters();
+    cachedPersonClusters = data;
+    cachedPersonClustersAt = Date.now();
+    return data;
+}
 ipcMain.handle('ai:personClusters', async () => {
     try {
-        cleanupOrphanedPersons();
-        return { success: true, data: getPersonClusters() };
+        // Use cached value if fresh. The cache is invalidated by every
+        // mutation handler below, so a fresh value here is safe even when
+        // the DB has changed since last fetch.
+        const age = Date.now() - cachedPersonClustersAt;
+        if (cachedPersonClusters && age < PERSON_CLUSTERS_TTL_MS) {
+            return { success: true, data: cachedPersonClusters };
+        }
+        return { success: true, data: computePersonClustersFresh() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// Pre-warm handler — called from the main PDR window when it's idle,
+// so PM opens with a hot cache. Same code path as ai:personClusters
+// but always forces a fresh fetch to keep the cache from going
+// stale due to mutations we might have missed.
+ipcMain.handle('ai:prewarmPersonClusters', async () => {
+    try {
+        computePersonClustersFresh();
+        return { success: true };
     }
     catch (err) {
         return { success: false, error: err.message };

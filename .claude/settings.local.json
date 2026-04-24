@@ -94,7 +94,11 @@
       "Bash(git commit -m 'Trees: date line reads '\\\\''1978 — Living'\\\\'' / '\\\\''1948 — 2022'\\\\'' \\(royal-chart style\\) *)",
       "Bash(git commit -m 'Trees: redistribute card internal padding — more breathing room *)",
       "WebFetch(domain:www.anthropic.com)",
-      "WebFetch(domain:claude.ai)"
+      "WebFetch(domain:claude.ai)",
+      "Bash(node -e \"const u = require\\('unzipper'\\); console.log\\('Open:', typeof u.Open, 'Open.file:', typeof u.Open?.file\\);\")",
+      "Bash(tasklist //FI \"IMAGENAME eq electron.exe\")",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(grep -v \"//\")"
     ]
   }
 }

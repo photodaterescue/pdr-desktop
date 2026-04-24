@@ -40,6 +40,18 @@ export interface PDRSettings {
    *  main PDR window on launch. Default off — users who rely on PM
    *  daily can opt in once to skip the manual open every session. */
   openPeopleOnStartup: boolean;
+  /** Calendar days (YYYY-MM-DD) on which the user has opened People
+   *  Manager. Used to decide when to surface the "open PM on startup"
+   *  onboarding banner — only show it once adoption is real, not on
+   *  a user's first curious click. */
+  pmOpenDays: string[];
+  /** Once true, the "open PM on startup" onboarding banner is never
+   *  shown again regardless of open counts. Set when the user either
+   *  enables the setting from the banner or explicitly dismisses it. */
+  pmStartupPromptDismissed: boolean;
+  /** PM hosting mode — separate BrowserWindow (current default) or
+   *  docked as a right-side panel inside the main PDR window. */
+  peopleMode: 'window' | 'docked';
 
   // User-curated scanner overrides. Each entry defines a per-camera
   // decision that trumps the automatic rule — key is the EXIF Make/Model
@@ -83,6 +95,9 @@ export const optimisedDefaults: PDRSettings = {
   showManualReportExports: false,
   matchThreshold: 0.72,
   openPeopleOnStartup: false,
+  pmOpenDays: [],
+  pmStartupPromptDismissed: false,
+  peopleMode: 'window',
   scannerOverrides: [],
 };
 
@@ -114,6 +129,9 @@ export function getSettings(): PDRSettings {
     showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
     matchThreshold: store.get('matchThreshold', optimisedDefaults.matchThreshold),
     openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
+    pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
+    pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
+    peopleMode: store.get('peopleMode', optimisedDefaults.peopleMode),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
   };
 }

@@ -415,6 +415,28 @@ export function initDatabase() {
             }
             catch { }
         }
+        if (!savedTreeColNames.has('excluded_suggestion_person_ids')) {
+            // JSON array of person IDs the user has manually flagged as "not
+            // part of this family" so they stop appearing as quick-add
+            // suggestions. Hiding is reversible via the picker's review list.
+            // Stored per tree so a person who's irrelevant to the Clapson
+            // family can still be a valid candidate on a different tree.
+            try {
+                db.exec(`ALTER TABLE saved_trees ADD COLUMN excluded_suggestion_person_ids TEXT NOT NULL DEFAULT '[]'`);
+            }
+            catch { }
+        }
+        if (!savedTreeColNames.has('simplify_half_labels')) {
+            // When ON, half-sibling relationships render as plain
+            // Brother / Sister / Sibling rather than Half-brother /
+            // Half-sister / Half-sibling. Terry's option for users who
+            // prefer the everyday term over the technically-accurate one.
+            // Data model isn't touched; only the rendered label changes.
+            try {
+                db.exec(`ALTER TABLE saved_trees ADD COLUMN simplify_half_labels INTEGER NOT NULL DEFAULT 0`);
+            }
+            catch { }
+        }
         // Persons life-event + marker columns for Trees.
         if (!personColNames.has('birth_date')) {
             try {
@@ -853,7 +875,7 @@ export function searchFiles(query) {
       UNION
       SELECT file_id FROM ai_tags WHERE LOWER(tag) LIKE ?
       UNION
-      SELECT fd.file_id FROM face_detections fd JOIN persons p ON fd.person_id = p.id WHERE LOWER(p.name) LIKE ?
+      SELECT fd.file_id FROM face_detections fd JOIN persons p ON fd.person_id = p.id WHERE LOWER(p.name) LIKE ? AND p.discarded_at IS NULL
     )`);
         params.push(searchTerm, searchTerm, likePattern, likePattern);
     }
@@ -1400,7 +1422,7 @@ export function repairAiFts() {
     const personStmt = database.prepare(`
     SELECT DISTINCT p.name FROM face_detections fd
     JOIN persons p ON fd.person_id = p.id
-    WHERE fd.file_id = ?
+    WHERE fd.file_id = ? AND p.discarded_at IS NULL
   `);
     const insertStmt = database.prepare(`INSERT INTO files_ai_fts(rowid, ai_tags, person_names) VALUES (?, ?, ?)`);
     let rebuilt = 0;
@@ -1447,7 +1469,7 @@ function rebuildAiFtsInner(fileId) {
     const persons = database.prepare(`
     SELECT DISTINCT p.name FROM face_detections fd
     JOIN persons p ON fd.person_id = p.id
-    WHERE fd.file_id = ?
+    WHERE fd.file_id = ? AND p.discarded_at IS NULL
   `).all(fileId)
         .map(r => r.name).join(' ');
     // Delete existing entry, then insert
@@ -1456,11 +1478,15 @@ function rebuildAiFtsInner(fileId) {
         database.prepare(`INSERT INTO files_ai_fts(rowid, ai_tags, person_names) VALUES (?, ?, ?)`).run(fileId, tags, persons);
     }
 }
-/** Get all face detections for a file */
+/** Get all face detections for a file. Discarded persons' names are
+ *  hidden (person_name comes back NULL) so the viewer UI doesn't show
+ *  names of people the user has deleted; the face record itself stays
+ *  intact so restorePerson brings the name back. */
 export function getFacesForFile(fileId) {
     const database = getDb();
     return database.prepare(`
-    SELECT fd.*, p.name as person_name
+    SELECT fd.*,
+           CASE WHEN p.discarded_at IS NULL THEN p.name ELSE NULL END as person_name
     FROM face_detections fd
     LEFT JOIN persons p ON fd.person_id = p.id
     WHERE fd.file_id = ?
@@ -1471,11 +1497,19 @@ export function getAiTagsForFile(fileId) {
     const database = getDb();
     return database.prepare(`SELECT * FROM ai_tags WHERE file_id = ? ORDER BY confidence DESC`).all(fileId);
 }
-/** List all active (non-discarded) persons with photo counts */
+/** List all active (non-discarded) persons with photo counts. Returns
+ *  TWO counts per person: photo_count = every photo any face links them
+ *  to (including unverified AI guesses), and verified_photo_count =
+ *  only photos where the face has been user-confirmed. The Trees
+ *  People-list modal shows verified_photo_count since that's the
+ *  measure of real work invested in this person. */
 export function listPersons() {
     const database = getDb();
     return database.prepare(`
-    SELECT p.*, COUNT(DISTINCT fd.file_id) as photo_count
+    SELECT
+      p.*,
+      COUNT(DISTINCT fd.file_id) as photo_count,
+      COUNT(DISTINCT CASE WHEN fd.verified = 1 THEN fd.file_id END) as verified_photo_count
     FROM persons p
     LEFT JOIN face_detections fd ON fd.person_id = p.id
     WHERE p.discarded_at IS NULL
@@ -1640,7 +1674,7 @@ export function getVisualSuggestions(faceId, limit = 5) {
     SELECT fd.embedding, p.id as person_id, p.name as person_name
     FROM face_detections fd
     JOIN persons p ON fd.person_id = p.id
-    WHERE fd.embedding IS NOT NULL AND fd.id != ?
+    WHERE fd.embedding IS NOT NULL AND fd.id != ? AND p.discarded_at IS NULL
   `).all(faceId);
     if (namedFaces.length === 0)
         return [];
@@ -1700,15 +1734,38 @@ export function mergePersons(targetPersonId, sourcePersonId) {
     return result.changes;
 }
 /**
- * Soft-delete (discard) a person — unlinks all their faces and marks the person as discarded.
- * The person record is kept so the name can be restored or permanently deleted later.
+ * Soft-delete (discard) a person — marks the person as discarded while
+ * KEEPING their face-detection links intact. Queries that surface
+ * persons (family graph, relationship lists, search, FTS) filter out
+ * rows where discarded_at IS NOT NULL, so the person effectively
+ * disappears from every UI. But the underlying face links survive, so
+ * restorePerson() brings back every photo tag cleanly — critical for
+ * the "I accidentally deleted grandma" recovery story.
+ *
+ * Previously this function also UPDATE'd face_detections.person_id = NULL
+ * which meant discard was irreversible in practice (restoring the name
+ * didn't bring back the photo tags). That's now fixed.
+ *
+ * Also nulls saved_trees.focus_person_id for any tree pointing at the
+ * discarded person — otherwise the tree would try to render around a
+ * ghost focus. The focus can be re-assigned after restore.
  */
 export function discardPerson(personId) {
     const database = getDb();
     const photosAffected = database.prepare(`SELECT COUNT(DISTINCT file_id) as cnt FROM face_detections WHERE person_id = ?`).get(personId).cnt;
-    const result = database.prepare(`UPDATE face_detections SET person_id = NULL WHERE person_id = ?`).run(personId);
-    database.prepare(`UPDATE persons SET discarded_at = datetime('now') WHERE id = ?`).run(personId);
-    return { facesUnlinked: result.changes, photosAffected };
+    const tx = database.transaction(() => {
+        // Clear focus on any saved tree that was centred on this person —
+        // a discarded person can't be a valid focus. Trees become focus-less
+        // until the user either picks a new focus or restores this one.
+        database.prepare(`UPDATE saved_trees SET focus_person_id = NULL WHERE focus_person_id = ?`).run(personId);
+        database.prepare(`UPDATE persons SET discarded_at = datetime('now') WHERE id = ?`).run(personId);
+    });
+    tx();
+    // facesUnlinked is preserved as 0 in the return signature for API
+    // compatibility — callers that logged this count now always see 0
+    // because face links are preserved. photosAffected still reflects
+    // how many photos visually lose this person's tag from all UI.
+    return { facesUnlinked: 0, photosAffected };
 }
 /**
  * Permanently delete a discarded person — removes the person record entirely.
@@ -1762,14 +1819,16 @@ export function listDiscardedPersons() {
 export function deletePerson(personId) {
     return discardPerson(personId);
 }
-/** Get a person by ID */
+/** Get a person by ID. Returns null for soft-deleted (discarded) persons
+ *  — regular UI shouldn't surface them. The Recycle Bin flow queries
+ *  listDiscardedPersons() directly when it needs them. */
 export function getPersonById(personId) {
     const database = getDb();
     const row = database.prepare(`
     SELECT p.*, COUNT(DISTINCT fd.file_id) as photo_count
     FROM persons p
     LEFT JOIN face_detections fd ON fd.person_id = p.id
-    WHERE p.id = ?
+    WHERE p.id = ? AND p.discarded_at IS NULL
     GROUP BY p.id
   `).get(personId);
     return row ?? null;
@@ -1917,91 +1976,102 @@ export function getPersonClusters() {
     ORDER BY face_count DESC
   `).all();
     const clusters = [...namedClusters, ...unnamedClusters];
-    // For named: prefer user-chosen representative, fall back to highest confidence
-    const repByPersonChosenStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
+    // Before: for every cluster we ran 1–2 tiny queries (rep + samples),
+    // meaning a library with 200 clusters issued 200–400 round-trips
+    // here. Now we fetch EVERY face in every cluster in one batch query,
+    // plus one batch query for user-chosen representative overrides, and
+    // resolve rep / samples in JS. That takes the N+1 pattern down to
+    // a constant 5 queries regardless of cluster count.
+    const allClusterFaces = database.prepare(`
+    SELECT
+      fd.id as face_id,
+      fd.person_id,
+      fd.cluster_id,
+      fd.file_id,
+      f.file_path,
+      fd.box_x, fd.box_y, fd.box_w, fd.box_h,
+      fd.confidence,
+      fd.verified
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
-    INNER JOIN persons p ON p.id = ?
-    WHERE fd.id = p.representative_face_id
-    LIMIT 1
-  `);
-    const repByPersonAutoStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.person_id = ?
+    LEFT JOIN persons p ON fd.person_id = p.id
+    WHERE fd.cluster_id IS NOT NULL
+      AND (fd.person_id IS NULL OR p.discarded_at IS NULL)
     ORDER BY fd.confidence DESC
-    LIMIT 1
-  `);
-    // For unnamed: representative face is the highest confidence face in that cluster (with no person)
-    const repByClusterStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id IS NULL
-    ORDER BY fd.confidence DESC
-    LIMIT 1
-  `);
-    // Sample faces for named: by person_id
-    const facesByPersonStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.person_id = ?
-    ORDER BY fd.confidence ASC
-  `);
-    // Sample faces for unnamed: by cluster_id (only unassigned)
-    const facesByClusterStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id IS NULL
-    ORDER BY fd.confidence ASC
-  `);
-    // Sample faces for special categories: by cluster_id AND person_id
-    const facesByClusterWithPersonStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id = ?
-    ORDER BY fd.confidence ASC
-  `);
-    // Representative for special categories: by cluster_id AND person_id
-    const repByClusterWithPersonStmt = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence
-    FROM face_detections fd
-    INNER JOIN indexed_files f ON fd.file_id = f.id
-    WHERE fd.cluster_id = ? AND fd.person_id = ?
-    ORDER BY fd.confidence DESC
-    LIMIT 1
-  `);
+  `).all();
+    // Index the faces three ways matching the three grouping schemes:
+    // by person_id (named), by cluster_id+person_id (special), by
+    // cluster_id (unnamed). Since the SELECT is ordered by confidence
+    // DESC, faces[0] is always the highest-confidence (= representative)
+    // candidate for the group.
+    const facesByPerson = new Map();
+    const facesByClusterPerson = new Map();
+    const facesByCluster = new Map();
+    for (const f of allClusterFaces) {
+        if (f.person_id != null) {
+            if (!facesByPerson.has(f.person_id))
+                facesByPerson.set(f.person_id, []);
+            facesByPerson.get(f.person_id).push(f);
+            const k = `${f.cluster_id}_${f.person_id}`;
+            if (!facesByClusterPerson.has(k))
+                facesByClusterPerson.set(k, []);
+            facesByClusterPerson.get(k).push(f);
+        }
+        else {
+            if (!facesByCluster.has(f.cluster_id))
+                facesByCluster.set(f.cluster_id, []);
+            facesByCluster.get(f.cluster_id).push(f);
+        }
+    }
+    // User-chosen representative face overrides: one batch fetch keyed
+    // by the named-person IDs we're about to render. A value of NULL
+    // means "use automatic pick (highest confidence)".
+    const namedPersonIds = realNamedClusters.map(c => c.person_id).filter((id) => id != null);
+    const repOverrides = new Map();
+    if (namedPersonIds.length > 0) {
+        const placeholders = namedPersonIds.map(() => '?').join(',');
+        const rows = database.prepare(`SELECT id, representative_face_id FROM persons WHERE id IN (${placeholders})`).all(...namedPersonIds);
+        for (const r of rows)
+            repOverrides.set(r.id, r.representative_face_id);
+    }
     return clusters.map((c) => {
         const isNamed = c.person_id != null;
         const isSpecial = isNamed && (c.person_name === '__ignored__' || c.person_name === '__unsure__');
-        const rep = isSpecial
-            ? (repByClusterWithPersonStmt.get(c.cluster_id, c.person_id) || {})
+        const faces = isSpecial
+            ? (facesByClusterPerson.get(`${c.cluster_id}_${c.person_id}`) ?? [])
             : isNamed
-                ? (repByPersonChosenStmt.get(c.person_id) || repByPersonAutoStmt.get(c.person_id) || {})
-                : (repByClusterStmt.get(c.cluster_id) || {});
-        const samples = isSpecial
-            ? facesByClusterWithPersonStmt.all(c.cluster_id, c.person_id)
-            : isNamed
-                ? facesByPersonStmt.all(c.person_id)
-                : facesByClusterStmt.all(c.cluster_id);
+                ? (facesByPerson.get(c.person_id) ?? [])
+                : (facesByCluster.get(c.cluster_id) ?? []);
+        // Rep = the faces[0] (highest confidence). For named persons, a
+        // user-chosen override wins IF that face is actually in the group
+        // (if the override face has since been moved to another person,
+        // the stale override is ignored).
+        let rep = faces[0];
+        if (isNamed && !isSpecial) {
+            const overrideId = repOverrides.get(c.person_id);
+            if (overrideId != null) {
+                const chosen = faces.find(f => f.face_id === overrideId);
+                if (chosen)
+                    rep = chosen;
+            }
+        }
+        // Samples order matches the previous behaviour (confidence ASC).
+        // The DB fetch returned DESC, so reverse for consistency with
+        // existing consumers.
+        const samples = [...faces].reverse();
         return {
             cluster_id: c.cluster_id,
             person_id: c.person_id,
             person_name: c.person_name,
             face_count: c.face_count,
             photo_count: c.photo_count,
-            representative_face_id: rep.face_id || c.representative_face_id,
-            representative_file_id: rep.file_id,
-            representative_file_path: rep.file_path || '',
-            box_x: rep.box_x || 0,
-            box_y: rep.box_y || 0,
-            box_w: rep.box_w || 0,
-            box_h: rep.box_h || 0,
+            representative_face_id: rep?.face_id ?? c.representative_face_id,
+            representative_file_id: rep?.file_id ?? 0,
+            representative_file_path: rep?.file_path ?? '',
+            box_x: rep?.box_x ?? 0,
+            box_y: rep?.box_y ?? 0,
+            box_w: rep?.box_w ?? 0,
+            box_h: rep?.box_h ?? 0,
             sample_faces: samples,
         };
     });
@@ -2875,17 +2945,35 @@ export function revertToGraphHistoryEntry(targetId) {
 /** All relationships touching a person (as either endpoint). */
 export function listRelationshipsForPerson(personId) {
     const db = getDb();
+    // Exclude relationships where either endpoint has been soft-deleted.
+    // Without this, a discarded person's edges would still surface in the
+    // edit-relationships list, in sibling auto-inheritance, etc. —
+    // ghost edges pointing at someone the user thinks they've deleted.
     const rows = db.prepare(`
-    SELECT * FROM relationships
-    WHERE person_a_id = ? OR person_b_id = ?
-    ORDER BY type, since
+    SELECT r.* FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE (r.person_a_id = ? OR r.person_b_id = ?)
+      AND a.discarded_at IS NULL
+      AND b.discarded_at IS NULL
+    ORDER BY r.type, r.since
   `).all(personId, personId);
     return rows.map(rowToRelationship);
 }
 /** Every relationship in the database. Used for full-tree rendering. */
 export function listAllRelationships() {
     const db = getDb();
-    const rows = db.prepare(`SELECT * FROM relationships ORDER BY id`).all();
+    // Same soft-delete filter — the full-tree render must not show edges
+    // leading to discarded persons, otherwise the tree would paint ghost
+    // cards for deleted people.
+    const rows = db.prepare(`
+    SELECT r.* FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE a.discarded_at IS NULL
+      AND b.discarded_at IS NULL
+    ORDER BY r.id
+  `).all();
     return rows.map(rowToRelationship);
 }
 /** Update a person's life-event fields: birth_date, death_date, deceased_marker. */
@@ -2933,9 +3021,19 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
     const queue = [focusPersonId];
     const collectedEdges = [];
     const seenEdgeIds = new Set();
+    // All relationship queries below filter BOTH endpoints against
+    // discarded_at. Without this, a soft-deleted person's edges still
+    // show up in the fetched graph — they'd render as ghost cards on
+    // the canvas (or worse, as real cards with stale names/photos from
+    // before the delete). Matching filter pattern used by
+    // listRelationshipsForPerson / listAllRelationships.
     const neighbourStmt = db.prepare(`
-    SELECT * FROM relationships
-    WHERE person_a_id = ? OR person_b_id = ?
+    SELECT r.* FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE (r.person_a_id = ? OR r.person_b_id = ?)
+      AND a.discarded_at IS NULL
+      AND b.discarded_at IS NULL
   `);
     /** Other children of a given parent — used to treat derived siblings
      *  as 1-hop neighbours. Without this step, "my brother" reads as
@@ -2944,8 +3042,10 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
      *  through parents for stored info but ALSO jump across siblings in
      *  the distance metric. */
     const otherChildrenStmt = db.prepare(`
-    SELECT person_b_id FROM relationships
-    WHERE type = 'parent_of' AND person_a_id = ? AND person_b_id <> ?
+    SELECT r.person_b_id FROM relationships r
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE r.type = 'parent_of' AND r.person_a_id = ? AND r.person_b_id <> ?
+      AND b.discarded_at IS NULL
   `);
     while (queue.length > 0) {
         const current = queue.shift();
@@ -2995,8 +3095,12 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
         const visitedIds = Array.from(visited.keys());
         const qs = visitedIds.map(() => '?').join(',');
         const boundary = db.prepare(`
-      SELECT * FROM relationships
-      WHERE person_a_id IN (${qs}) AND person_b_id IN (${qs})
+      SELECT r.* FROM relationships r
+      JOIN persons a ON a.id = r.person_a_id
+      JOIN persons b ON b.id = r.person_b_id
+      WHERE r.person_a_id IN (${qs}) AND r.person_b_id IN (${qs})
+        AND a.discarded_at IS NULL
+        AND b.discarded_at IS NULL
     `).all(...visitedIds, ...visitedIds);
         for (const row of boundary) {
             if (seenEdgeIds.has(row.id))
@@ -3021,7 +3125,7 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
            gender,
            COALESCE(is_placeholder, 0) AS is_placeholder
     FROM persons
-    WHERE id IN (${placeholders})
+    WHERE id IN (${placeholders}) AND discarded_at IS NULL
   `).all(...ids);
     const photoCountRows = db.prepare(`
     SELECT person_id, COUNT(DISTINCT file_id) AS photo_count
@@ -3039,10 +3143,12 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
     // the +parent chip on anyone who already has two parents in the
     // DB (even if only one is currently visible).
     const totalParentCountRows = db.prepare(`
-    SELECT person_b_id AS child_id, COUNT(*) AS cnt
-    FROM relationships
-    WHERE type = 'parent_of' AND person_b_id IN (${placeholders})
-    GROUP BY person_b_id
+    SELECT r.person_b_id AS child_id, COUNT(*) AS cnt
+    FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    WHERE r.type = 'parent_of' AND r.person_b_id IN (${placeholders})
+      AND a.discarded_at IS NULL
+    GROUP BY r.person_b_id
   `).all(...ids);
     const totalParentCountByPerson = new Map();
     for (const r of totalParentCountRows)
@@ -3320,6 +3426,15 @@ function rowToSavedTree(row) {
         }
         catch { }
     }
+    let excludedSuggestions = [];
+    if (row.excluded_suggestion_person_ids) {
+        try {
+            const parsed = JSON.parse(row.excluded_suggestion_person_ids);
+            if (Array.isArray(parsed))
+                excludedSuggestions = parsed.filter(n => typeof n === 'number');
+        }
+        catch { }
+    }
     return {
         id: row.id,
         name: row.name,
@@ -3333,6 +3448,8 @@ function rowToSavedTree(row) {
         backgroundOpacity: typeof row.background_opacity === 'number' ? row.background_opacity : 0.15,
         treeContrast: typeof row.tree_contrast === 'number' ? row.tree_contrast : 0.3,
         hiddenAncestorPersonIds: hidden,
+        excludedSuggestionPersonIds: excludedSuggestions,
+        simplifyHalfLabels: row.simplify_half_labels === 1,
         useGenderedLabels: row.use_gendered_labels == null ? true : row.use_gendered_labels === 1,
         hideGenderMarker: row.hide_gender_marker === 1,
         lastOpenedAt: row.last_opened_at,
@@ -3419,6 +3536,14 @@ export function updateSavedTree(id, patch) {
     if (patch.hiddenAncestorPersonIds) {
         sets.push('hidden_ancestor_person_ids = ?');
         values.push(JSON.stringify(patch.hiddenAncestorPersonIds));
+    }
+    if (patch.excludedSuggestionPersonIds) {
+        sets.push('excluded_suggestion_person_ids = ?');
+        values.push(JSON.stringify(patch.excludedSuggestionPersonIds));
+    }
+    if (patch.simplifyHalfLabels != null) {
+        sets.push('simplify_half_labels = ?');
+        values.push(patch.simplifyHalfLabels ? 1 : 0);
     }
     if (patch.useGenderedLabels != null) {
         sets.push('use_gendered_labels = ?');

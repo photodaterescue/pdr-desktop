@@ -1736,6 +1736,30 @@ export async function prewarmPersonClusters(): Promise<{ success: boolean }> {
   return { success: false };
 }
 
+/** Records that the user has opened People Manager. Used to decide
+ *  when to surface the "open on startup" onboarding banner. Returns
+ *  the counts + whether the user has already enabled / dismissed. */
+export async function recordPmOpen(): Promise<{
+  success: boolean;
+  sessionCount?: number;
+  distinctDays?: number;
+  dismissed?: boolean;
+  alreadyEnabled?: boolean;
+}> {
+  if (isElectron() && (window as any).pdr?.ai?.recordPmOpen) {
+    return (window as any).pdr.ai.recordPmOpen();
+  }
+  return { success: false };
+}
+
+/** Permanently dismisses the "open on startup" onboarding banner. */
+export async function dismissPmStartupPrompt(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai?.dismissPmStartupPrompt) {
+    return (window as any).pdr.ai.dismissPmStartupPrompt();
+  }
+  return { success: false };
+}
+
 export async function getFaceCrop(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 96): Promise<{ success: boolean; dataUrl?: string }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.faceCrop(filePath, boxX, boxY, boxW, boxH, size);

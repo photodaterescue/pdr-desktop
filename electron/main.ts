@@ -3439,6 +3439,35 @@ ipcMain.handle('ai:resetTagAnalysis', async () => {
   }
 });
 
+// PM open-count: session-scoped counter that resets each PDR launch.
+// Used alongside settings.pmOpenDays to decide when to show the "open
+// PM on startup" onboarding banner — we wait until adoption is real
+// (3+ distinct calendar days OR 3+ opens in one session) before
+// asking the user to change their startup preference.
+let pmOpenSessionCount = 0;
+ipcMain.handle('pm:recordOpen', async () => {
+  pmOpenSessionCount += 1;
+  const today = new Date().toISOString().slice(0, 10);
+  const settings = getSettings();
+  const existingDays = Array.isArray(settings.pmOpenDays) ? settings.pmOpenDays : [];
+  const daysSet = new Set(existingDays);
+  if (!daysSet.has(today)) {
+    daysSet.add(today);
+    setSetting('pmOpenDays', Array.from(daysSet));
+  }
+  return {
+    success: true,
+    sessionCount: pmOpenSessionCount,
+    distinctDays: daysSet.size,
+    dismissed: !!settings.pmStartupPromptDismissed,
+    alreadyEnabled: !!settings.openPeopleOnStartup,
+  };
+});
+ipcMain.handle('pm:dismissStartupPrompt', async () => {
+  setSetting('pmStartupPromptDismissed', true);
+  return { success: true };
+});
+
 // Main-process cache for getPersonClusters results. Pre-warming from
 // the main PDR window (see ai:prewarmPersonClusters) fills this while
 // PM is closed; when the user opens PM the cluster list comes back
