@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye } from 'lucide-react';
 import {
   getFamilyGraph,
   listPersons,
@@ -1235,7 +1235,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         //   • For + child: exclude ancestors
         //   • For + partner: exclude blood relatives
         //   • For + sibling: exclude your own parents/children
-        const excluded = impossibleCandidates(quickAdd.fromPersonId, quickAdd.kind, graph, connectedPersonIds);
+        const excludedSuggestions = currentTree?.excludedSuggestionPersonIds ?? [];
+        const excluded = impossibleCandidates(quickAdd.fromPersonId, quickAdd.kind, graph, connectedPersonIds, excludedSuggestions);
+        const toggleExcludedSuggestion = async (personId: number) => {
+          if (currentTreeId == null) return;
+          const current = new Set(currentTree?.excludedSuggestionPersonIds ?? []);
+          if (current.has(personId)) current.delete(personId);
+          else current.add(personId);
+          await updateSavedTree(currentTreeId, { excludedSuggestionPersonIds: [...current] });
+          // Refresh the saved-trees list so currentTree reflects the new state.
+          const r = await listSavedTrees();
+          if (r.success && r.data) setSavedTrees(r.data);
+        };
         // For + partner: compute the set of co-parents — people who are
         // already a parent of at least one of fromPerson's children.
         // These are the strongest partner suggestions (Alan is Sally's
@@ -1257,6 +1268,15 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onPick={finaliseQuickAdd}
             onPersonsChanged={reloadPersons}
             onClose={() => setQuickAdd(null)}
+            onHideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
+            hiddenSuggestions={
+              currentTreeId != null
+                ? (currentTree?.excludedSuggestionPersonIds ?? [])
+                  .map(id => allPersons.find(p => p.id === id))
+                  .filter((p): p is PersonSummary => p != null)
+                : []
+            }
+            onUnhideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
             nameConflictLookup={(typed) => {
               // Case-insensitive match against anyone already on this tree.
               // We match by exact-trimmed-lower name (not substring) to
@@ -1550,6 +1570,10 @@ function impossibleCandidates(
    *  in the Edit Relationships flow, not a casual quick-add. Optional
    *  because the caller may not have it loaded yet on first render. */
   connectedPersonIds?: Set<number>,
+  /** Per-tree user-flagged "not part of this family" list. Persists
+   *  across sessions via the saved_trees.excluded_suggestion_person_ids
+   *  column. Reversible via the picker's review list. */
+  excludedSuggestionPersonIds?: Iterable<number>,
 ): Set<number> {
   const out = new Set<number>([fromId]);
   // Primary filter: exclude everyone already on this family tree via
@@ -1558,6 +1582,13 @@ function impossibleCandidates(
   // defensively for any case where the closure is stale.
   if (connectedPersonIds) {
     for (const id of connectedPersonIds) out.add(id);
+  }
+  // User-curated exclusions — people they've manually flagged as not
+  // part of this family (e.g. Michael Gentleman for a Clapson tree).
+  // These apply to every kind (parent/child/partner/sibling) because
+  // "not in this family" means not in any role.
+  if (excludedSuggestionPersonIds) {
+    for (const id of excludedSuggestionPersonIds) out.add(id);
   }
   if (!graph) return out;
 
@@ -1755,11 +1786,23 @@ interface FocusPickerModalProps {
    *  whether they really intended to create a new namesake. null = no
    *  conflict. When omitted, no name-conflict warning is shown. */
   nameConflictLookup?: (name: string) => { id: number; name: string } | null;
+  /** Hide a suggested person from future picker lists in this tree.
+   *  Used for the "Michael Gentleman isn't in this family" case — one
+   *  click removes them from every picker until the user un-hides via
+   *  the review list. When omitted, per-row hide buttons don't render. */
+  onHideSuggestion?: (personId: number) => void | Promise<void>;
+  /** Persons currently hidden from suggestions in this tree. Surfaced
+   *  in the "N hidden — review" footer so mistakes can be reversed. */
+  hiddenSuggestions?: PersonSummary[];
+  /** Counterpart of onHideSuggestion — removes a person from the hidden
+   *  list, bringing them back into the suggestion pool. Called from the
+   *  review list. */
+  onUnhideSuggestion?: (personId: number) => void | Promise<void>;
 }
 
 type PickerSortMode = 'connections' | 'photos' | 'alpha';
 
-function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId, showSortOptions, coparentIds, partnerScoreAnchorId, onPick, onPersonsChanged, onClose, nameConflictLookup }: FocusPickerModalProps) {
+function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId, showSortOptions, coparentIds, partnerScoreAnchorId, onPick, onPersonsChanged, onClose, nameConflictLookup, onHideSuggestion, hiddenSuggestions, onUnhideSuggestion }: FocusPickerModalProps) {
   // Drag-to-reposition — same pattern as GenderPickerModal /
   // SetRelationshipModal / EditRelationshipsModal / ManageTreesModal.
   // Lets the user shove the picker aside to see what's behind it
@@ -2045,22 +2088,42 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                   else if (sortMode === 'photos' && p.photoCount > 0) rightLabel = `${p.photoCount} photo${p.photoCount === 1 ? '' : 's'}`;
                 }
                 return (
-                  <button
+                  <div
                     key={p.id}
-                    onClick={() => onPick(p.id)}
-                    disabled={busy}
-                    className={`flex items-center justify-between gap-2 px-2 py-1 rounded text-left text-sm disabled:opacity-50 ${
+                    className={`group flex items-center gap-1 px-2 py-1 rounded text-sm ${
                       p.id === currentFocusId ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
-                    }`}
+                    } ${busy ? 'opacity-50' : ''}`}
                   >
-                    <span className="truncate">{p.name}</span>
-                    {rightLabel && (
-                      <span className="text-[10px] text-muted-foreground shrink-0">{rightLabel}</span>
+                    <button
+                      onClick={() => !busy && onPick(p.id)}
+                      disabled={busy}
+                      className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left"
+                    >
+                      <span className="truncate">{p.name}</span>
+                      {rightLabel && (
+                        <span className="text-[10px] text-muted-foreground shrink-0">{rightLabel}</span>
+                      )}
+                    </button>
+                    {onHideSuggestion && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
+                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
+                        title="Not in this family — hide from suggestions"
+                        aria-label={`Hide ${p.name} from suggestions`}
+                      >
+                        <EyeOff className="w-3 h-3" />
+                      </button>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
+            {hiddenSuggestions && hiddenSuggestions.length > 0 && onUnhideSuggestion && (
+              <HiddenSuggestionsReview
+                hidden={hiddenSuggestions}
+                onUnhide={onUnhideSuggestion}
+              />
+            )}
           </div>
         )}
 
@@ -2083,6 +2146,51 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Inline review list for persons hidden from this tree's suggestions.
+ *  Collapsed by default — a one-line summary ("N hidden — review") until
+ *  the user explicitly opens it. Keeps the picker footprint small when
+ *  they're not actively untangling a mistake. */
+function HiddenSuggestionsReview({
+  hidden, onUnhide,
+}: {
+  hidden: PersonSummary[];
+  onUnhide: (personId: number) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2 border-t border-border pt-2">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <EyeOff className="w-3 h-3" />
+        <span>
+          {hidden.length} hidden from this tree {open ? '— close' : '— review'}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-1.5 flex flex-col gap-0.5 max-h-32 overflow-auto">
+          {hidden.map(p => (
+            <div
+              key={p.id}
+              className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-muted/40 text-xs"
+            >
+              <span className="truncate">{p.name}</span>
+              <button
+                onClick={() => onUnhide(p.id)}
+                className="inline-flex items-center gap-1 text-primary hover:underline shrink-0"
+              >
+                <Eye className="w-3 h-3" />
+                Un-hide
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

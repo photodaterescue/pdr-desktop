@@ -575,6 +575,14 @@ export function initDatabase(): { success: boolean; error?: string } {
       // user records a gender.
       try { db.exec(`ALTER TABLE saved_trees ADD COLUMN hide_gender_marker INTEGER NOT NULL DEFAULT 0`); } catch {}
     }
+    if (!savedTreeColNames.has('excluded_suggestion_person_ids')) {
+      // JSON array of person IDs the user has manually flagged as "not
+      // part of this family" so they stop appearing as quick-add
+      // suggestions. Hiding is reversible via the picker's review list.
+      // Stored per tree so a person who's irrelevant to the Clapson
+      // family can still be a valid candidate on a different tree.
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN excluded_suggestion_person_ids TEXT NOT NULL DEFAULT '[]'`); } catch {}
+    }
 
     // Persons life-event + marker columns for Trees.
     if (!personColNames.has('birth_date')) {
@@ -3888,6 +3896,12 @@ export interface SavedTreeRecord {
    *  hidden from this tree's view. Keyed by partner — hiding Mel's
    *  ancestry leaves Mel in place but removes her parents et al. */
   hiddenAncestorPersonIds: number[];
+  /** Person IDs the user has flagged as "not part of this family" so
+   *  they stop surfacing as quick-add suggestions. Reversible via the
+   *  picker's review list. Per-tree scope: the same person can be
+   *  excluded here while remaining a valid candidate on a different
+   *  tree. */
+  excludedSuggestionPersonIds: number[];
   /** When true, relationship labels on cards render gendered forms
    *  (Mother/Father/Brother/Sister/…) for anyone whose gender is set. */
   useGenderedLabels: boolean;
@@ -3914,6 +3928,7 @@ interface SavedTreeRow {
   background_opacity: number;
   tree_contrast: number | null;
   hidden_ancestor_person_ids: string | null;
+  excluded_suggestion_person_ids: string | null;
   use_gendered_labels: number | null;
   hide_gender_marker: number | null;
   last_opened_at: string | null;
@@ -3929,6 +3944,13 @@ function rowToSavedTree(row: SavedTreeRow): SavedTreeRecord {
       if (Array.isArray(parsed)) hidden = parsed.filter(n => typeof n === 'number');
     } catch {}
   }
+  let excludedSuggestions: number[] = [];
+  if (row.excluded_suggestion_person_ids) {
+    try {
+      const parsed = JSON.parse(row.excluded_suggestion_person_ids);
+      if (Array.isArray(parsed)) excludedSuggestions = parsed.filter(n => typeof n === 'number');
+    } catch {}
+  }
   return {
     id: row.id,
     name: row.name,
@@ -3942,6 +3964,7 @@ function rowToSavedTree(row: SavedTreeRow): SavedTreeRecord {
     backgroundOpacity: typeof row.background_opacity === 'number' ? row.background_opacity : 0.15,
     treeContrast: typeof row.tree_contrast === 'number' ? row.tree_contrast : 0.3,
     hiddenAncestorPersonIds: hidden,
+    excludedSuggestionPersonIds: excludedSuggestions,
     useGenderedLabels: row.use_gendered_labels == null ? true : row.use_gendered_labels === 1,
     hideGenderMarker: row.hide_gender_marker === 1,
     lastOpenedAt: row.last_opened_at,
@@ -4010,6 +4033,7 @@ export function updateSavedTree(id: number, patch: Partial<{
   backgroundOpacity: number;
   treeContrast: number;
   hiddenAncestorPersonIds: number[];
+  excludedSuggestionPersonIds: number[];
   useGenderedLabels: boolean;
   hideGenderMarker: boolean;
   markOpened: boolean;
@@ -4031,6 +4055,7 @@ export function updateSavedTree(id: number, patch: Partial<{
   if (patch.backgroundOpacity != null)  { sets.push('background_opacity = ?'); values.push(Math.max(0, Math.min(1, patch.backgroundOpacity))); }
   if (patch.treeContrast != null)       { sets.push('tree_contrast = ?');       values.push(Math.max(0, Math.min(1, patch.treeContrast))); }
   if (patch.hiddenAncestorPersonIds)    { sets.push('hidden_ancestor_person_ids = ?'); values.push(JSON.stringify(patch.hiddenAncestorPersonIds)); }
+  if (patch.excludedSuggestionPersonIds) { sets.push('excluded_suggestion_person_ids = ?'); values.push(JSON.stringify(patch.excludedSuggestionPersonIds)); }
   if (patch.useGenderedLabels != null)  { sets.push('use_gendered_labels = ?');  values.push(patch.useGenderedLabels ? 1 : 0); }
   if (patch.hideGenderMarker != null)   { sets.push('hide_gender_marker = ?');   values.push(patch.hideGenderMarker ? 1 : 0); }
   if (patch.markOpened)                 { sets.push(`last_opened_at = datetime('now')`); }
