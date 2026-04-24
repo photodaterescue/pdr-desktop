@@ -1,8 +1,8 @@
-import { useRef, useState, useMemo } from 'react';
-import { Move, Users, X, Trash2, ArrowUp, ArrowDown, Minus, Plus, Target, Undo2 } from 'lucide-react';
+import { useRef, useState, useMemo, useEffect } from 'react';
+import { Move, Users, X, Trash2, ArrowUp, ArrowDown, Minus, Plus, Target, Undo2, Archive, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import type { FamilyGraph } from '@/lib/electron-bridge';
-import { deletePersonRecord, restorePerson } from '@/lib/electron-bridge';
+import type { FamilyGraph, DiscardedPerson } from '@/lib/electron-bridge';
+import { deletePersonRecord, restorePerson, listDiscardedPersons, permanentlyDeletePerson } from '@/lib/electron-bridge';
 import { promptConfirm } from './promptConfirm';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { useDraggableModal } from './useDraggableModal';
@@ -79,6 +79,20 @@ export function TreePeopleListModal({
   // in-row target button we push the previous focus here; clicking
   // Undo walks back through the stack until we run out.
   const [focusHistory, setFocusHistory] = useState<(number | null)[]>([]);
+
+  // Recycle Bin: persons the user has soft-deleted. Fetched on open
+  // and after any delete/restore. Terry lost track of the two
+  // Dorothys because the toast 30s expired and we had no UI showing
+  // where they'd gone — this section answers "where did my deleted
+  // person go?" and lets the user bring them back or remove them
+  // for good.
+  const [discarded, setDiscarded] = useState<DiscardedPerson[]>([]);
+  const [recycleOpen, setRecycleOpen] = useState(false);
+  const reloadDiscarded = async () => {
+    const r = await listDiscardedPersons();
+    if (r.success && r.data) setDiscarded(r.data);
+  };
+  useEffect(() => { reloadDiscarded(); }, []);
   const handleSetFocus = (newId: number) => {
     if (newId === focusPersonId) return;
     setFocusHistory(h => [...h, focusPersonId]);
@@ -254,6 +268,7 @@ export function TreePeopleListModal({
       return;
     }
     onPersonsChanged();
+    reloadDiscarded();
 
     toast.success(`Deleted ${person.name.trim() || 'person'}.`, {
       duration: 30000,
@@ -264,12 +279,42 @@ export function TreePeopleListModal({
           if (r.success) {
             toast.success(`Restored ${person.name.trim() || 'person'}.`);
             onPersonsChanged();
+            reloadDiscarded();
           } else {
             toast.error(`Could not restore ${person.name.trim() || 'person'}.`);
           }
         },
       },
     });
+  };
+
+  const handleRestoreDiscarded = async (p: DiscardedPerson) => {
+    const r = await restorePerson(p.id);
+    if (r.success) {
+      toast.success(`Restored ${p.name.trim() || 'person'}.`);
+      onPersonsChanged();
+      reloadDiscarded();
+    } else {
+      toast.error(`Could not restore ${p.name.trim() || 'person'}.`);
+    }
+  };
+
+  const handlePurgeDiscarded = async (p: DiscardedPerson) => {
+    const proceed = await promptConfirm({
+      title: `Permanently delete ${p.name.trim() || 'this person'}?`,
+      message: `This removes them from the Recycle Bin forever. You can't get them back, and any remaining photo-tag links are cleared. Photos themselves are not deleted.`,
+      confirmLabel: 'Permanently delete',
+      cancelLabel: 'Cancel',
+      danger: true,
+    });
+    if (!proceed) return;
+    const r = await permanentlyDeletePerson(p.id);
+    if (r.success) {
+      toast.success(`Permanently deleted ${p.name.trim() || 'person'}.`);
+      reloadDiscarded();
+    } else {
+      toast.error(`Could not permanently delete.`);
+    }
   };
 
   const total = connected.length + orphaned.length;
@@ -438,6 +483,57 @@ export function TreePeopleListModal({
             <p className="text-xs text-muted-foreground text-center py-6">
               {query ? `No people match "${query}".` : 'No people on this tree yet.'}
             </p>
+          )}
+
+          {discarded.length > 0 && (
+            <div className="mt-3 border-t border-border pt-2">
+              <button
+                onClick={() => setRecycleOpen(v => !v)}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Archive className="w-3 h-3" />
+                <span>
+                  Recycle Bin: {discarded.length} deleted {recycleOpen ? '— close' : '— review'}
+                </span>
+              </button>
+              {recycleOpen && (
+                <div className="mt-1.5 flex flex-col gap-0.5">
+                  <p className="text-[11px] text-muted-foreground mb-1">
+                    Restore brings the person (and their photo tags) back. Permanent delete removes them forever.
+                  </p>
+                  {discarded.map(p => {
+                    const when = p.discarded_at ? new Date(p.discarded_at).toLocaleString() : '';
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-muted/40 text-xs"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="truncate font-medium">{p.name.trim() || '(unnamed)'}</span>
+                          {when && <span className="text-muted-foreground/70 ml-2 text-[10px]">deleted {when}</span>}
+                        </div>
+                        <button
+                          onClick={() => handleRestoreDiscarded(p)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-primary hover:bg-primary/10"
+                          title="Restore to the tree and People Manager"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Restore
+                        </button>
+                        <button
+                          onClick={() => handlePurgeDiscarded(p)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-destructive hover:bg-destructive/10"
+                          title="Delete forever"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Delete forever
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
         </div>
 

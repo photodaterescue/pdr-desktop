@@ -1,23 +1,27 @@
 import { useRef } from 'react';
 
+interface DraggableModalOptions {
+  /** Pixels reserved at the top of the viewport the modal must never
+   *  overlap. Used to keep draggable modals clear of the workspace's
+   *  purple app-header bar (~56px). Defaults to 60px which covers
+   *  every current header variant. */
+  topSafeZone?: number;
+}
+
 /**
  * Shared drag-to-reposition hook for Trees modals. Clamps the drag so
- * the modal's drag handle stays inside the viewport — without this,
- * shoving the modal up too far can hide the header that the user
- * needs to drag it back, stranding the modal off-screen (the exact
- * bug Terry hit with the People modal).
+ * the modal's drag handle stays inside the viewport AND clear of the
+ * workspace's top header bar — both bugs Terry hit (modal stranded
+ * off-screen; modal overlapping the banner).
  *
  * Returns:
  *   modalRef       — attach to the inner modal container div.
  *   dragHandleProps — spread onto the header div that should grab
  *                     drag events. The returned className already
  *                     includes cursor-grab/grabbing and select-none.
- *
- * The caller is responsible for rendering the header content and any
- * close button inside the handle element (button clicks bubble up but
- * the hook skips drag init when the target is an interactive child).
  */
-export function useDraggableModal() {
+export function useDraggableModal(options: DraggableModalOptions = {}) {
+  const topSafe = options.topSafeZone ?? 60;
   const modalRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
 
@@ -37,25 +41,19 @@ export function useDraggableModal() {
     const rawX = d.bx + e.clientX - d.sx;
     const rawY = d.by + e.clientY - d.sy;
 
-    // Clamp so the drag handle never leaves the viewport. The old
-    // ±half-window clamp let the user shove the modal so far up that
-    // the header disappeared above the top edge, making the modal
-    // unreachable. New clamp is based on the modal's CURRENT bounding
-    // rect — we allow the user to move it far, but never past the
-    // point where at least MIN_VISIBLE_TOP px of the modal top stays
-    // on-screen (and the header lives inside those top pixels).
+    // Clamp so the drag handle never leaves the viewport AND never
+    // overlaps the top safe-zone (workspace banner). Without the top
+    // safe-zone the modal could partially cover the app header.
     const rect = modalRef.current?.getBoundingClientRect();
     let newX = rawX;
     let newY = rawY;
     if (rect) {
       const winW = window.innerWidth;
       const winH = window.innerHeight;
-      const MIN_VISIBLE_TOP = 40;     // enough of the header stays visible at bottom edge
-      const MIN_VISIBLE_SIDE = 80;    // minimum horizontal visibility on each side
-      // Derive min/max translate deltas from the current rect:
-      //   new top  = rect.top + (newY - d.y) => constrain between 0 and winH-MIN_VISIBLE_TOP
-      //   new left = rect.left + (newX - d.x) similarly
-      const minY = d.y - rect.top;
+      const MIN_VISIBLE_TOP = 40;
+      const MIN_VISIBLE_SIDE = 80;
+      // new top = rect.top + (newY - d.y) must be >= topSafe
+      const minY = d.y + topSafe - rect.top;
       const maxY = d.y + winH - MIN_VISIBLE_TOP - rect.top;
       const minX = d.x + MIN_VISIBLE_SIDE - rect.right;
       const maxX = d.x + winW - MIN_VISIBLE_SIDE - rect.left;

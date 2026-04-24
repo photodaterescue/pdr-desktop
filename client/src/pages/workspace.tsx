@@ -1660,12 +1660,23 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [width, setWidth] = useState(308);
   const [isResizing, setIsResizing] = useState(false);
 
-  // Pin state — user's manual override for this session only. 'auto' = follow searchResultsActive, 'open' = always open, 'closed' = always collapsed.
-  // Always starts as 'auto' on app launch (not persisted) so the app never opens with an unexpected pin state.
+  // Pin state — user's EXPLICIT pin intent, only changed by the pin
+  // button. 'auto' = follow searchResultsActive + view, 'open' =
+  // always open, 'closed' = always collapsed.
   const [pinState, setPinState] = useState<'auto' | 'open' | 'closed'>('auto');
   const setPinStatePersisted = (state: 'auto' | 'open' | 'closed') => {
     setPinState(state);
   };
+
+  // Session-local "temporarily expanded" flag set by the menu button
+  // in the collapsed sidebar. The menu button used to flip pinState
+  // to 'open', which silently pinned the sidebar. That was wrong —
+  // the pin should only flip when the user ACTUALLY clicks the pin.
+  // Instead the menu button just expands for the current view, and
+  // we reset the flag whenever the active view changes so the
+  // expansion doesn't bleed into views that auto-collapse.
+  const [tempExpanded, setTempExpanded] = useState(false);
+  useEffect(() => { setTempExpanded(false); }, [activeView, searchResultsActive]);
   // Clean up any stale persisted key from previous versions
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.removeItem('pdr-sidebar-pin');
@@ -1677,6 +1688,8 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const collapsed = pinState === 'closed'
     ? true
     : pinState === 'open'
+    ? false
+    : tempExpanded
     ? false
     : (!!searchResultsActive || activeView === 'familytree' || activeView === 'memories');
 
@@ -1806,10 +1819,15 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 sidebar-animated overflow-y-auto"
         style={{ width: '48px' }}
       >
-        {/* Expand button — always promotes pin state to 'open' for a
-            one-click restore. */}
+        {/* Expand button — temporarily expands the sidebar for the
+            current view WITHOUT touching pin state. The pin button
+            (in the expanded sidebar) is the only control that flips
+            pinState. This means expanding in Memories, then switching
+            to Dashboard, then back to Memories, returns to collapsed
+            — the user's temporary expansion doesn't stick unless
+            they explicitly pin. */}
         <button
-          onClick={() => setPinStatePersisted('open')}
+          onClick={() => setTempExpanded(true)}
           className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
           title="Show Source Menu"
         >
