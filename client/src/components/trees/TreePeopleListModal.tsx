@@ -1,5 +1,5 @@
 import { useRef, useState, useMemo } from 'react';
-import { Move, Users, X, Trash2, Image as ImageIcon, ArrowUp, ArrowDown } from 'lucide-react';
+import { Move, Users, X, Trash2, ArrowUp, ArrowDown, Minus, Plus, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import type { FamilyGraph } from '@/lib/electron-bridge';
 import { deletePersonRecord, restorePerson } from '@/lib/electron-bridge';
@@ -10,15 +10,19 @@ interface PersonSummary {
   id: number;
   name: string;
   photoCount: number;
+  verifiedPhotoCount: number;
   gender: string | null;
+  birthDate: string | null;
 }
 
 type SortColumn = 'name' | 'gen' | 'photos' | 'gender' | 'relationship';
 type SortDirection = 'asc' | 'desc';
+interface SortKey { column: SortColumn; direction: SortDirection; }
 
-/** Modal listing everyone connected to the current tree plus any
- *  orphaned persons, with sortable columns and a delete flow that's
- *  intentionally timid for anyone with verified photo tags. */
+/** Modal listing everyone connected to the current tree plus orphans,
+ *  with sortable columns (shift+click for secondary), in-modal focus
+ *  and Steps controls, and a delete flow that's timid for anyone with
+ *  verified photo tags. */
 export function TreePeopleListModal({
   focusPersonId,
   treeName,
@@ -26,6 +30,10 @@ export function TreePeopleListModal({
   allPersons,
   connectedPersonIds,
   excludedSuggestionIds,
+  stepsEnabled,
+  steps,
+  onStepsChange,
+  onOpenFocusPicker,
   onClose,
   onPersonsChanged,
   useGenderedLabels,
@@ -35,12 +43,15 @@ export function TreePeopleListModal({
   graph: FamilyGraph | null;
   allPersons: PersonSummary[];
   connectedPersonIds: Set<number>;
-  /** Persons the user has flagged as "not in this family" via the
-   *  suggestion pickers. Excluded from the Not-Connected section —
-   *  they're deliberately not family, so they shouldn't clutter the
-   *  family list either. Still visible in People Manager though; the
-   *  hide action is about suggestion pickers, not about existence. */
   excludedSuggestionIds?: Set<number>;
+  stepsEnabled: boolean;
+  steps: number;
+  onStepsChange: (next: number) => void;
+  /** Opens the existing focus picker so the user can change who this
+   *  tree is centred on without leaving the People list. The caller
+   *  is responsible for closing the people modal if they'd rather
+   *  the user land on the canvas after picking. */
+  onOpenFocusPicker: () => void;
   onClose: () => void;
   onPersonsChanged: () => void;
   useGenderedLabels?: boolean;
@@ -50,7 +61,7 @@ export function TreePeopleListModal({
   const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
   const onDragStart = (e: React.PointerEvent) => {
     const t = e.target as HTMLElement;
-    if (t.closest('button, input, textarea, a')) return;
+    if (t.closest('button, input, textarea, a, select')) return;
     const d = dragRef.current;
     d.dragging = true;
     d.sx = e.clientX; d.sy = e.clientY;
@@ -70,12 +81,18 @@ export function TreePeopleListModal({
   };
   const onDragEnd = () => { dragRef.current.dragging = false; };
 
-  const [query, setQuery] = useState('');
-  const [sortColumn, setSortColumn] = useState<SortColumn>('gen');
-  const [sortDir, setSortDir] = useState<SortDirection>('asc');
+  // Backdrop close safety: only dismiss if BOTH pointerdown AND the
+  // resulting click happened on the backdrop itself. Without this,
+  // starting a CSS resize from the bottom-right corner and releasing
+  // the pointer outside the modal closes the modal — a correction
+  // I've had to apply more than once.
+  const downOnBackdrop = useRef(false);
 
-  // Relationship labels computed the same way the canvas computes them
-  // — so "Brother" here matches "Brother" on the card.
+  const [query, setQuery] = useState('');
+  const [sortStack, setSortStack] = useState<SortKey[]>([
+    { column: 'gen', direction: 'asc' },
+  ]);
+
   const labels = useMemo(() => {
     if (focusPersonId == null || !graph) return new Map<number, string>();
     const genderByPerson = new Map<number, string | null>();
@@ -89,19 +106,27 @@ export function TreePeopleListModal({
     );
   }, [focusPersonId, graph, useGenderedLabels]);
 
-  // Generation number per person, BFS from focus. Simple scheme for
-  // this iteration: focus = 1, each parent_up hop adds 1, each
-  // parent_down hop subtracts 1, siblings/spouses stay at the same
-  // gen. After computing relatively, we shift so the SMALLEST gen is
-  // 1 — which means the youngest generation in the visible tree is
-  // labelled Gen 1 and older generations get higher numbers.
-  //
-  // TODO (follow-up): anchor on the youngest by birth_date instead of
-  // focus, so Gen stays stable regardless of who the current focus is.
+  // Generation anchor: among CONNECTED persons with a stored birth_date,
+  // pick the one with the latest birth — that's the youngest. BFS from
+  // them with parent_up = +1 gen, parent_down = -1 gen, sibling/spouse =
+  // same gen. Shift so the youngest reads as Gen 1. Fallback: if no
+  // connected person has a birth_date, use the focus as anchor so at
+  // least the immediate family gets sensible numbers. Disconnected
+  // persons remain ungen'd (show "—").
   const generations = useMemo(() => {
-    const rel = new Map<number, number>();
-    if (focusPersonId == null || !graph) return rel;
-    rel.set(focusPersonId, 0);
+    const gen = new Map<number, number>();
+    if (!graph) return gen;
+    const connectedWithBirth = allPersons
+      .filter(p => connectedPersonIds.has(p.id) && p.birthDate && !Number.isNaN(Date.parse(p.birthDate)));
+    let anchor: number | null = null;
+    if (connectedWithBirth.length > 0) {
+      connectedWithBirth.sort((a, b) => Date.parse(b.birthDate!) - Date.parse(a.birthDate!));
+      anchor = connectedWithBirth[0].id;
+    } else if (focusPersonId != null) {
+      anchor = focusPersonId;
+    }
+    if (anchor == null) return gen;
+
     const adj = new Map<number, Array<{ to: number; delta: number }>>();
     const add = (from: number, to: number, delta: number) => {
       if (!adj.has(from)) adj.set(from, []);
@@ -109,36 +134,31 @@ export function TreePeopleListModal({
     };
     for (const e of graph.edges) {
       if (e.type === 'parent_of') {
-        add(e.aId, e.bId, -1); // parent → child, generation descends
-        add(e.bId, e.aId, +1); // child → parent, generation ascends
+        add(e.aId, e.bId, -1);
+        add(e.bId, e.aId, +1);
       } else if (e.type === 'sibling_of' || e.type === 'spouse_of') {
         add(e.aId, e.bId, 0);
         add(e.bId, e.aId, 0);
       }
     }
-    const queue = [focusPersonId];
+    gen.set(anchor, 0);
+    const queue = [anchor];
     while (queue.length) {
       const cur = queue.shift()!;
-      const curGen = rel.get(cur)!;
+      const curGen = gen.get(cur)!;
       for (const { to, delta } of adj.get(cur) ?? []) {
-        if (rel.has(to)) continue;
-        rel.set(to, curGen + delta);
+        if (gen.has(to)) continue;
+        gen.set(to, curGen + delta);
         queue.push(to);
       }
     }
-    // Shift so the min is 1 (youngest gen in the visible tree = 1).
-    if (rel.size === 0) return rel;
-    const min = Math.min(...rel.values());
+    if (gen.size === 0) return gen;
+    const min = Math.min(...gen.values());
     const shifted = new Map<number, number>();
-    for (const [id, g] of rel) shifted.set(id, g - min + 1);
+    for (const [id, g] of gen) shifted.set(id, g - min + 1);
     return shifted;
-  }, [focusPersonId, graph]);
+  }, [allPersons, connectedPersonIds, graph, focusPersonId]);
 
-  // Partition persons. Connected = reachable from focus via any edge
-  // chain. Orphaned = in the DB but not on this tree. People the user
-  // has explicitly hidden from this tree's pickers are excluded from
-  // both sections — they're not part of this family by the user's own
-  // declaration. They still live in People Manager.
   const { connected, orphaned } = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const matches = (p: PersonSummary) => !needle || p.name.toLowerCase().includes(needle);
@@ -154,48 +174,67 @@ export function TreePeopleListModal({
     return { connected, orphaned };
   }, [allPersons, connectedPersonIds, excludedSuggestionIds, query]);
 
-  // Sort function used by both sections — keyed off the current sort
-  // column + direction. Focus always pinned to the top regardless of
-  // sort (it's the anchor for everyone else's relationship label).
+  const compareByColumn = (a: PersonSummary, b: PersonSummary, col: SortColumn): number => {
+    if (col === 'name') return a.name.localeCompare(b.name);
+    if (col === 'gen') {
+      const ga = generations.get(a.id) ?? Number.POSITIVE_INFINITY;
+      const gb = generations.get(b.id) ?? Number.POSITIVE_INFINITY;
+      return ga - gb;
+    }
+    if (col === 'photos') return a.verifiedPhotoCount - b.verifiedPhotoCount;
+    if (col === 'gender') return (a.gender ?? 'zz').localeCompare(b.gender ?? 'zz');
+    if (col === 'relationship') return (labels.get(a.id) ?? 'zzz').localeCompare(labels.get(b.id) ?? 'zzz');
+    return 0;
+  };
+
+  // Walk the sort stack primary-first; first non-zero comparator wins.
+  // If every level ties, fall back to name for a stable order. No focus
+  // pinning — Terry rightly called out that pinning the focus to the
+  // top makes sort unpredictable ("Gen 1 rows should start at the top
+  // of a Gen-ascending sort, not whoever happens to be focus").
   const sortRows = (rows: PersonSummary[]) => {
     const sorted = [...rows].sort((a, b) => {
-      if (a.id === focusPersonId) return -1;
-      if (b.id === focusPersonId) return 1;
-      let cmp = 0;
-      if (sortColumn === 'name') cmp = a.name.localeCompare(b.name);
-      else if (sortColumn === 'gen') {
-        const ga = generations.get(a.id) ?? Number.POSITIVE_INFINITY;
-        const gb = generations.get(b.id) ?? Number.POSITIVE_INFINITY;
-        cmp = ga - gb;
-      } else if (sortColumn === 'photos') cmp = a.photoCount - b.photoCount;
-      else if (sortColumn === 'gender') cmp = (a.gender ?? 'zz').localeCompare(b.gender ?? 'zz');
-      else if (sortColumn === 'relationship') {
-        cmp = (labels.get(a.id) ?? 'zzz').localeCompare(labels.get(b.id) ?? 'zzz');
+      for (const { column, direction } of sortStack) {
+        const cmp = compareByColumn(a, b, column);
+        if (cmp !== 0) return direction === 'asc' ? cmp : -cmp;
       }
-      if (cmp === 0) cmp = a.name.localeCompare(b.name);
-      return sortDir === 'asc' ? cmp : -cmp;
+      return a.name.localeCompare(b.name);
     });
     return sorted;
   };
+  const connectedSorted = useMemo(() => sortRows(connected), [connected, sortStack, generations, labels]);
+  const orphanedSorted = useMemo(() => sortRows(orphaned), [orphaned, sortStack, generations, labels]);
 
-  const connectedSorted = useMemo(() => sortRows(connected), [connected, sortColumn, sortDir, generations, labels]);
-  const orphanedSorted = useMemo(() => sortRows(orphaned), [orphaned, sortColumn, sortDir, generations, labels]);
-
-  const toggleSort = (col: SortColumn) => {
-    if (sortColumn === col) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+  const clickHeader = (col: SortColumn, shiftKey: boolean) => {
+    const existing = sortStack.find(k => k.column === col);
+    if (!shiftKey) {
+      // Primary sort replace. If already primary, flip direction; else
+      // reset stack to just this column ascending.
+      if (sortStack[0]?.column === col) {
+        setSortStack([{ column: col, direction: sortStack[0].direction === 'asc' ? 'desc' : 'asc' }]);
+      } else {
+        setSortStack([{ column: col, direction: 'asc' }]);
+      }
+      return;
+    }
+    // Shift-click adds secondary/tertiary or flips direction if already present.
+    if (existing) {
+      setSortStack(sortStack.map(k =>
+        k.column === col ? { ...k, direction: k.direction === 'asc' ? 'desc' : 'asc' } : k
+      ));
     } else {
-      setSortColumn(col);
-      setSortDir('asc');
+      // Cap at 3 levels — beyond that is noise.
+      const next = [...sortStack, { column: col, direction: 'asc' as SortDirection }];
+      setSortStack(next.slice(-3));
     }
   };
 
   const handleDelete = async (person: PersonSummary) => {
-    const hasPhotos = person.photoCount > 0;
-    if (hasPhotos) {
+    const hasVerified = person.verifiedPhotoCount > 0;
+    if (hasVerified) {
       await promptConfirm({
         title: `Delete ${person.name.trim() || 'this person'}?`,
-        message: `${person.photoCount} photo${person.photoCount === 1 ? ' is' : 's are'} tagged to this person. Because verifying photos represents real time investment, deletion of anyone with photo tags happens from People Manager — not from here. (That flow is coming soon.)`,
+        message: `${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? ' is' : 's are'} tagged to this person. Because verifying photos represents real time investment, deletion of anyone with verified tags happens from People Manager — not from here. (That flow is coming soon.)`,
         confirmLabel: 'OK',
         hideCancel: true,
       });
@@ -203,7 +242,7 @@ export function TreePeopleListModal({
     }
     const proceed = await promptConfirm({
       title: `Delete ${person.name.trim() || 'this person'}?`,
-      message: `${person.name.trim() || 'They'} currently has no photos tagged. Deleting here removes them from this tree and from People Manager (they go to the Recycle Bin — undo within 30 seconds or restore from there later).`,
+      message: `${person.name.trim() || 'They'} currently has no verified photos tagged. Deleting here removes them from this tree and from People Manager (they go to the Recycle Bin — undo within 30 seconds or restore from there later).`,
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
       danger: true,
@@ -235,16 +274,27 @@ export function TreePeopleListModal({
   };
 
   const total = connected.length + orphaned.length;
+  const focusName = (() => {
+    if (focusPersonId == null) return null;
+    return allPersons.find(p => p.id === focusPersonId)?.name?.trim() || null;
+  })();
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
+        downOnBackdrop.current = false;
+      }}
+    >
       <div
         ref={modalRef}
         className="bg-background rounded-xl shadow-2xl border border-border flex flex-col overflow-hidden"
         style={{
-          width: 'min(640px, 95vw)',
-          height: 'min(640px, 85vh)',
-          minWidth: '480px',
+          width: 'min(700px, 95vw)',
+          height: 'min(680px, 85vh)',
+          minWidth: '520px',
           minHeight: '360px',
           resize: 'both',
         }}
@@ -275,7 +325,47 @@ export function TreePeopleListModal({
           </p>
         </div>
 
-        <div className="px-4 pt-3 pb-2 shrink-0">
+        {/* Tree controls: Focus + Steps. Changing either here updates
+            the whole tree — identical to using the header buttons —
+            so the list reflects the new state immediately. */}
+        <div className="flex items-center gap-2 px-4 pt-2 pb-1.5 text-xs shrink-0">
+          <span className="text-muted-foreground shrink-0">Focus:</span>
+          <button
+            onClick={onOpenFocusPicker}
+            className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-border hover:bg-accent transition-colors max-w-[180px]"
+            title="Change the focus person"
+          >
+            <span className="truncate font-medium text-foreground">
+              {focusName || '(none)'}
+            </span>
+            <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+          </button>
+          <span className="text-muted-foreground shrink-0 ml-2">Steps:</span>
+          <div className="inline-flex items-center gap-0.5 border border-border rounded">
+            <button
+              onClick={() => onStepsChange(Math.max(1, steps - 1))}
+              disabled={!stepsEnabled || steps <= 1}
+              className="p-0.5 hover:bg-accent rounded-l disabled:opacity-40"
+              title="Fewer steps from focus"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <span className="px-2 font-medium text-foreground min-w-[20px] text-center">
+              {stepsEnabled ? steps : '∞'}
+            </span>
+            <button
+              onClick={() => onStepsChange(steps + 1)}
+              disabled={!stepsEnabled}
+              className="p-0.5 hover:bg-accent rounded-r disabled:opacity-40"
+              title="More steps from focus"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="flex-1" />
+        </div>
+
+        <div className="px-4 pt-1 pb-2 shrink-0">
           <input
             type="text"
             value={query}
@@ -283,20 +373,20 @@ export function TreePeopleListModal({
             placeholder="Search by name…"
             className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm"
           />
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Click a column to sort. Shift-click a second column to chain sorts (e.g. Sex, then Name).
+          </p>
         </div>
 
-        {/* Column headers — clickable for sort. Grid columns kept in
-            lock-step with the row layout below so headers + cells
-            line up without a real <table>. */}
         <div
           className="px-4 text-[10px] uppercase tracking-wide text-muted-foreground font-semibold border-b border-border/60 py-1.5 grid gap-2 items-center shrink-0"
-          style={{ gridTemplateColumns: '1.7fr 42px 52px 40px 1.2fr 28px' }}
+          style={{ gridTemplateColumns: '1.7fr 42px 60px 40px 1.2fr 28px' }}
         >
-          <SortHeader label="Name" active={sortColumn === 'name'} dir={sortDir} onClick={() => toggleSort('name')} />
-          <SortHeader label="Gen" active={sortColumn === 'gen'} dir={sortDir} onClick={() => toggleSort('gen')} />
-          <SortHeader label="Photos" active={sortColumn === 'photos'} dir={sortDir} onClick={() => toggleSort('photos')} align="right" />
-          <SortHeader label="Sex" active={sortColumn === 'gender'} dir={sortDir} onClick={() => toggleSort('gender')} align="center" />
-          <SortHeader label="Relationship" active={sortColumn === 'relationship'} dir={sortDir} onClick={() => toggleSort('relationship')} />
+          <SortHeader label="Name" column="name" stack={sortStack} onClick={clickHeader} />
+          <SortHeader label="Gen" column="gen" stack={sortStack} onClick={clickHeader} />
+          <SortHeader label="Photos" column="photos" stack={sortStack} onClick={clickHeader} align="right" />
+          <SortHeader label="Sex" column="gender" stack={sortStack} onClick={clickHeader} align="center" />
+          <SortHeader label="Relationship" column="relationship" stack={sortStack} onClick={clickHeader} />
           <span />
         </div>
 
@@ -356,22 +446,35 @@ export function TreePeopleListModal({
 }
 
 function SortHeader({
-  label, active, dir, onClick, align = 'left',
+  label, column, stack, onClick, align = 'left',
 }: {
   label: string;
-  active: boolean;
-  dir: SortDirection;
-  onClick: () => void;
+  column: SortColumn;
+  stack: SortKey[];
+  onClick: (col: SortColumn, shiftKey: boolean) => void;
   align?: 'left' | 'right' | 'center';
 }) {
   const alignClass = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start';
+  const idx = stack.findIndex(k => k.column === column);
+  const active = idx !== -1;
+  const dir = active ? stack[idx].direction : null;
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => onClick(column, e.shiftKey)}
       className={`flex items-center gap-1 ${alignClass} ${active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+      title={active
+        ? `Sort level ${idx + 1} · ${dir}. Click to flip direction or drop to primary. Shift-click to cycle shift-level.`
+        : 'Click to sort. Shift-click to add as secondary sort.'}
     >
       <span className="truncate">{label}</span>
-      {active && (dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+      {active && (
+        <span className="inline-flex items-center">
+          {dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+          {stack.length > 1 && (
+            <span className="text-[8px] ml-0.5 font-bold">{idx + 1}</span>
+          )}
+        </span>
+      )}
     </button>
   );
 }
@@ -384,17 +487,16 @@ function PersonRow({
   relationshipLabel: string | null;
   onDelete: () => void;
 }) {
-  const hasPhotos = person.photoCount > 0;
+  const hasVerified = person.verifiedPhotoCount > 0;
   return (
     <div
       className="group grid gap-2 items-center px-2 py-1.5 rounded hover:bg-accent/50 text-sm"
-      style={{ gridTemplateColumns: '1.7fr 42px 52px 40px 1.2fr 28px' }}
+      style={{ gridTemplateColumns: '1.7fr 42px 60px 40px 1.2fr 28px' }}
     >
       <p className="truncate font-medium">{person.name || '(unnamed)'}</p>
       <span className="text-xs text-muted-foreground">{gen != null ? gen : '—'}</span>
-      <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
-        <ImageIcon className="w-3 h-3" />
-        <span>{person.photoCount}</span>
+      <div className="flex items-center justify-end text-xs text-muted-foreground tabular-nums">
+        {person.verifiedPhotoCount}
       </div>
       <div className="flex items-center justify-center">
         <GenderGlyph gender={person.gender} />
@@ -403,13 +505,13 @@ function PersonRow({
       <button
         onClick={onDelete}
         className={`p-1 rounded shrink-0 transition-colors ${
-          hasPhotos
-            ? 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-background'
-            : 'text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-destructive hover:bg-destructive/10'
+          hasVerified
+            ? 'text-muted-foreground/40 hover:text-muted-foreground/70 hover:bg-background cursor-help'
+            : 'text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10'
         }`}
-        title={hasPhotos
-          ? `${person.photoCount} photo${person.photoCount === 1 ? ' tagged' : 's tagged'} — delete from People Manager`
-          : 'Delete this person (no photos tagged)'}
+        title={hasVerified
+          ? `${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? ' tagged' : 's tagged'} — delete from People Manager instead`
+          : 'Delete this person (no verified photos)'}
         aria-label={`Delete ${person.name}`}
       >
         <Trash2 className="w-3.5 h-3.5" />
@@ -418,15 +520,14 @@ function PersonRow({
   );
 }
 
-/** Miniature native-SVG gender glyph — same shapes as the card badge
- *  (Mars / Venus / combined), scaled to fit a 16x16 inline slot. */
+/** Miniature native-SVG gender glyph — same shapes as the card badge,
+ *  scaled to fit a 16x16 inline slot. */
 function GenderGlyph({ gender }: { gender: string | null }) {
   if (!gender) return <span className="text-muted-foreground/50 text-xs">—</span>;
   const showArrow = gender === 'male' || gender === 'non_binary';
   const showCross = gender === 'female' || gender === 'non_binary';
   if (!showArrow && !showCross) return <span className="text-muted-foreground/50 text-xs">—</span>;
   const isNB = gender === 'non_binary';
-  // Coords chosen for a 16x16 viewBox with the circle roughly centred.
   const cx = 8 + (isNB ? 0 : (showArrow ? -1 : 0));
   const cy = 8 + (isNB ? 0 : (showArrow ? 1 : -1));
   const r = 3;

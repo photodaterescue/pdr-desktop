@@ -1502,7 +1502,13 @@ export interface PersonRecord {
   id: number;
   name: string;
   avatar_data: string | null;
+  /** Total count of photos any face detection links to this person —
+   *  includes AI-suggested faces the user hasn't confirmed yet. */
   photo_count?: number;
+  /** Photos where the linking face has been user-verified. This is the
+   *  "real work invested" metric; the Trees People-list modal shows
+   *  this number, not the total, so deletions reflect true cost. */
+  verified_photo_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -1750,11 +1756,19 @@ export function getAiTagsForFile(fileId: number): AiTagRecord[] {
   return database.prepare(`SELECT * FROM ai_tags WHERE file_id = ? ORDER BY confidence DESC`).all(fileId) as AiTagRecord[];
 }
 
-/** List all active (non-discarded) persons with photo counts */
+/** List all active (non-discarded) persons with photo counts. Returns
+ *  TWO counts per person: photo_count = every photo any face links them
+ *  to (including unverified AI guesses), and verified_photo_count =
+ *  only photos where the face has been user-confirmed. The Trees
+ *  People-list modal shows verified_photo_count since that's the
+ *  measure of real work invested in this person. */
 export function listPersons(): PersonRecord[] {
   const database = getDb();
   return database.prepare(`
-    SELECT p.*, COUNT(DISTINCT fd.file_id) as photo_count
+    SELECT
+      p.*,
+      COUNT(DISTINCT fd.file_id) as photo_count,
+      COUNT(DISTINCT CASE WHEN fd.verified = 1 THEN fd.file_id END) as verified_photo_count
     FROM persons p
     LEFT JOIN face_detections fd ON fd.person_id = p.id
     WHERE p.discarded_at IS NULL

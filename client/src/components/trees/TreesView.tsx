@@ -36,11 +36,19 @@ import { promptConfirm } from './promptConfirm';
 interface PersonSummary {
   id: number;
   name: string;
-  /** Photos this person appears in — used for the Photos sort option. */
+  /** Total photos this person is linked to via face detections —
+   *  includes AI-suggested faces the user hasn't confirmed. Kept for
+   *  legacy sorting in the picker. */
   photoCount: number;
+  /** Photos where the linking face has been user-verified. Shown in
+   *  the People-list modal as the real measure of invested work. */
+  verifiedPhotoCount: number;
   /** Stored gender string ('male' / 'female' / 'non_binary' / …). Used
    *  by the People-list modal to render the gender column. */
   gender: string | null;
+  /** Stored birth date (YYYY-MM-DD or partial). Used to anchor the
+   *  Gen-from-youngest calculation in the People-list modal. */
+  birthDate: string | null;
 }
 
 /**
@@ -202,7 +210,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         id: p.id,
         name: p.name,
         photoCount: p.photo_count ?? 0,
+        verifiedPhotoCount: (p as any).verified_photo_count ?? 0,
         gender: (p as any).gender ?? null,
+        birthDate: (p as any).birth_date ?? null,
       })));
     }
   }, []);
@@ -1467,12 +1477,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           allPersons={allPersons}
           connectedPersonIds={connectedPersonIds}
           excludedSuggestionIds={excludedSuggestionIdSet}
+          stepsEnabled={stepsEnabled}
+          steps={expandedHops}
+          onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(12, next)))}
+          onOpenFocusPicker={() => {
+            // Close the people modal before opening the focus picker
+            // so they're not stacked on top of each other. Re-opening
+            // People after focus change is the user's choice.
+            setTreePeopleOpen(false);
+            setFocusPickerOpen(true);
+          }}
           useGenderedLabels={currentTree?.useGenderedLabels ?? true}
           onClose={() => setTreePeopleOpen(false)}
           onPersonsChanged={async () => {
             await reloadPersons();
-            // Re-fetch the graph too so any deleted person's edges
-            // disappear from the canvas without a manual refresh.
             if (focusPersonId != null) {
               const r = await getFamilyGraph(focusPersonId, fetchDepth);
               if (r.success && r.data) setGraph(r.data);
