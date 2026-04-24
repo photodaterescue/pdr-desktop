@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon } from 'lucide-react';
+import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move } from 'lucide-react';
 import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
@@ -1864,6 +1864,38 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
   const [selectedLinkId, setSelectedLinkId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Drag-to-reposition. This popover starts anchored at the clicked
+  // ghost's screen position (x,y) with a translate(-50%,-50%) centering
+  // offset, so drag deltas need to stack on top of that existing
+  // transform rather than replacing it. Dragging lets the user nudge
+  // the popover aside to see the cards it's covering — same affordance
+  // the other Trees modals got.
+  const modalRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
+  const onDragStart = (e: React.PointerEvent) => {
+    const t = e.target as HTMLElement;
+    if (t.closest('button, input, textarea, a')) return;
+    const d = dragRef.current;
+    d.dragging = true;
+    d.sx = e.clientX; d.sy = e.clientY;
+    d.bx = d.x; d.by = d.y;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d.dragging) return;
+    const rawX = d.bx + e.clientX - d.sx;
+    const rawY = d.by + e.clientY - d.sy;
+    const halfW = window.innerWidth / 2;
+    const halfH = window.innerHeight / 2;
+    d.x = Math.max(-halfW, Math.min(halfW, rawX));
+    d.y = Math.max(-halfH, Math.min(halfH, rawY));
+    if (modalRef.current) {
+      modalRef.current.style.transform = `translate(-50%, -50%) translate3d(${d.x}px, ${d.y}px, 0)`;
+    }
+  };
+  const onDragEnd = () => { dragRef.current.dragging = false; };
   /** Relationships this placeholder already holds — shown up-top so the
    *  user knows WHAT this "?" represents before naming/linking. Answers
    *  the common confusion "why is there an extra placeholder?" — at a
@@ -2027,10 +2059,19 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
 
   return (
     <div
+      ref={modalRef}
       className="placeholder-resolver absolute z-30 bg-popover border border-border rounded-xl shadow-2xl p-3 min-w-[300px] max-w-[340px]"
       style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
     >
-      <div className="flex items-center gap-2 mb-3">
+      <div
+        className="flex items-center gap-2 mb-3 select-none cursor-grab active:cursor-grabbing"
+        style={{ touchAction: 'none' }}
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+      >
+        <Move className="w-3 h-3 text-muted-foreground/60 shrink-0" aria-hidden />
         <HelpCircle className="w-4 h-4 text-primary" />
         <span className="text-sm font-semibold">Who is this?</span>
         <div className="flex-1" />
