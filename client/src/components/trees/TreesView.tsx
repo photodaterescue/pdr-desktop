@@ -28,6 +28,7 @@ import { SetRelationshipModal } from './SetRelationshipModal';
 import { EditRelationshipsModal } from './EditRelationshipsModal';
 import { SiblingKindDialog, type SiblingKind } from './SiblingKindDialog';
 import { HiddenSuggestionsReview } from './HiddenSuggestionsReview';
+import { TreePeopleListModal } from './TreePeopleListModal';
 import { ManageTreesModal } from './ManageTreesModal';
 import { DateQuickEditor } from './DateQuickEditor';
 import { promptConfirm } from './promptConfirm';
@@ -95,6 +96,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [savedTrees, setSavedTrees] = useState<SavedTreeRecord[]>([]);
   const [currentTreeId, setCurrentTreeId] = useState<number | null>(null);
   const [manageTreesOpen, setManageTreesOpen] = useState(false);
+  const [treePeopleOpen, setTreePeopleOpen] = useState(false);
   /** Inline rename of the current tree name in the header. */
   const [editingTreeName, setEditingTreeName] = useState(false);
   const [treeNameDraft, setTreeNameDraft] = useState('');
@@ -1105,6 +1107,14 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               Manage Trees
             </button>
             <button
+              onClick={() => setTreePeopleOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+              title="List everyone on this tree, see photo counts, and delete mistakes"
+            >
+              <Users className="w-4 h-4" />
+              People
+            </button>
+            <button
               onClick={() => setFocusPickerOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
               title="Change the focus person"
@@ -1433,6 +1443,32 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           }}
           onPersonsChanged={reloadPersons}
           onClose={() => setNewTreePickerOpen(false)}
+        />
+      )}
+
+      {/* Tree people list — shows everyone on the tree plus any
+          orphaned persons (created in Trees but not reachable from the
+          current focus). Lets the user delete mistakes with a 30-second
+          undo toast; deletion of persons with photo tags is routed to
+          People Manager so Trees can't casually destroy verified work. */}
+      {treePeopleOpen && (
+        <TreePeopleListModal
+          focusPersonId={focusPersonId}
+          treeName={currentTree?.name ?? 'this tree'}
+          graph={graph}
+          allPersons={allPersons}
+          connectedPersonIds={connectedPersonIds}
+          useGenderedLabels={currentTree?.useGenderedLabels ?? true}
+          onClose={() => setTreePeopleOpen(false)}
+          onPersonsChanged={async () => {
+            await reloadPersons();
+            // Re-fetch the graph too so any deleted person's edges
+            // disappear from the canvas without a manual refresh.
+            if (focusPersonId != null) {
+              const r = await getFamilyGraph(focusPersonId, fetchDepth);
+              if (r.success && r.data) setGraph(r.data);
+            }
+          }}
         />
       )}
 
