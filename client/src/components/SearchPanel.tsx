@@ -67,6 +67,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import ParallelStructureModal from '@/components/ParallelStructureModal';
 import StaleRunsModal from '@/components/StaleRunsModal';
@@ -1114,23 +1115,28 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <Database className="w-3.5 h-3.5" />{stats.totalFiles.toLocaleString()} in library
                   </span>
                   {aiEnabled && aiStats && aiStats.totalProcessed > 0 && (
-                    <span className="text-xs text-white/80 flex items-center gap-1 bg-purple-500/20 px-2 py-1 rounded-full" title={`${aiStats.totalProcessed} photos analyzed — ${aiStats.totalFaces} faces, ${aiStats.totalTags} tags detected`}>
-                      <Sparkles className="w-3 h-3" />{aiStats.totalProcessed} photos analyzed
-                    </span>
+                    <IconTooltip label={`${aiStats.totalProcessed} photos analyzed — ${aiStats.totalFaces} faces, ${aiStats.totalTags} tags detected`} side="bottom">
+                      <span className="text-xs text-white/80 flex items-center gap-1 bg-purple-500/20 px-2 py-1 rounded-full">
+                        <Sparkles className="w-3 h-3" />{aiStats.totalProcessed} photos analyzed
+                      </span>
+                    </IconTooltip>
                   )}
                 </div>
               )
             )}
-            <button onClick={() => setShowCustomise(true)} className="p-1 rounded hover:bg-white/20 text-white/70 hover:text-white transition-colors" title="Customise favourite filters">
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setRibbonExpanded(!ribbonExpanded)}
-              className="p-1 rounded hover:bg-white/20 text-white/70 hover:text-white transition-colors"
-              title={ribbonExpanded ? 'Collapse ribbon (Ctrl+F to search)' : 'Expand ribbon'}
-            >
-              {ribbonExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
+            <IconTooltip label="Customise favourite filters" side="bottom">
+              <button onClick={() => setShowCustomise(true)} className="p-1 rounded hover:bg-white/20 text-white/70 hover:text-white transition-colors">
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+              </button>
+            </IconTooltip>
+            <IconTooltip label={ribbonExpanded ? 'Collapse ribbon (Ctrl+F to search)' : 'Expand ribbon'} side="bottom">
+              <button
+                onClick={() => setRibbonExpanded(!ribbonExpanded)}
+                className="p-1 rounded hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+              >
+                {ribbonExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </IconTooltip>
             {/* Theme toggle + Licensed badge have moved to the global
                 TitleBar so they stay visible on every view, not only S&D.
                 The onToggleDarkMode / licenseStatusBadge props remain on the
@@ -1597,21 +1603,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold leading-none">GPS</span>
                           <div className="flex flex-col rounded-md border border-border overflow-hidden bg-background w-[40px]">
-                            <button
-                              onClick={() => setHasGps(true)}
-                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${hasGps === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-                              title="Only photos with GPS data"
-                            >On</button>
-                            <button
-                              onClick={() => setHasGps(undefined)}
-                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-y border-border ${hasGps === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-                              title="All photos"
-                            >Both</button>
-                            <button
-                              onClick={() => setHasGps(false)}
-                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${hasGps === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-                              title="Only photos without GPS data"
-                            >Off</button>
+                            <IconTooltip label="Only photos with GPS data" side="right">
+                              <button
+                                onClick={() => setHasGps(true)}
+                                className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${hasGps === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              >On</button>
+                            </IconTooltip>
+                            <IconTooltip label="All photos" side="right">
+                              <button
+                                onClick={() => setHasGps(undefined)}
+                                className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-y border-border ${hasGps === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              >Both</button>
+                            </IconTooltip>
+                            <IconTooltip label="Only photos without GPS data" side="right">
+                              <button
+                                onClick={() => setHasGps(false)}
+                                className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${hasGps === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              >Off</button>
+                            </IconTooltip>
                           </div>
                         </div>
                         {/* Country / City dropdowns — matching widths */}
@@ -1685,21 +1694,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             header above the buttons. */}
                         <div className="flex flex-col items-center gap-0.5">
                           <div className="flex flex-col rounded-md border border-border overflow-hidden bg-background w-[40px]">
-                            <button
-                              onClick={() => setFlashFired(true)}
-                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${flashFired === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-                              title="Only photos where the flash fired"
-                            >On</button>
-                            <button
-                              onClick={() => setFlashFired(undefined)}
-                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-y border-border ${flashFired === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-                              title="All photos, regardless of flash"
-                            >Both</button>
-                            <button
-                              onClick={() => setFlashFired(false)}
-                              className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${flashFired === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-                              title="Only photos where the flash did not fire"
-                            >Off</button>
+                            <IconTooltip label="Only photos where the flash fired" side="right">
+                              <button
+                                onClick={() => setFlashFired(true)}
+                                className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${flashFired === true ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              >On</button>
+                            </IconTooltip>
+                            <IconTooltip label="All photos, regardless of flash" side="right">
+                              <button
+                                onClick={() => setFlashFired(undefined)}
+                                className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors border-y border-border ${flashFired === undefined ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              >Both</button>
+                            </IconTooltip>
+                            <IconTooltip label="Only photos where the flash did not fire" side="right">
+                              <button
+                                onClick={() => setFlashFired(false)}
+                                className={`px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase transition-colors ${flashFired === false ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              >Off</button>
+                            </IconTooltip>
                           </div>
                         </div>
                       </div>
@@ -1930,14 +1942,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                       />
                                     </div>
                                     {/* Sort toggle */}
-                                    <button
-                                      onClick={() => setPeopleSortMode(prev => prev === 'freq' ? 'az' : prev === 'az' ? 'recent' : 'freq')}
-                                      className="shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-md border border-border hover:bg-secondary text-[10px] font-medium text-muted-foreground transition-colors"
-                                      title={`Sort by: ${peopleSortMode === 'freq' ? 'Most photos' : peopleSortMode === 'az' ? 'A\u2013Z' : 'Recently added'} (click to change)`}
-                                    >
-                                      <ArrowUpDown className="w-3 h-3" />
-                                      <span>{peopleSortMode === 'freq' ? 'Most' : peopleSortMode === 'az' ? 'A–Z' : 'New'}</span>
-                                    </button>
+                                    <IconTooltip label={`Sort by: ${peopleSortMode === 'freq' ? 'Most photos' : peopleSortMode === 'az' ? 'A\u2013Z' : 'Recently added'} (click to change)`} side="bottom">
+                                      <button
+                                        onClick={() => setPeopleSortMode(prev => prev === 'freq' ? 'az' : prev === 'az' ? 'recent' : 'freq')}
+                                        className="shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-md border border-border hover:bg-secondary text-[10px] font-medium text-muted-foreground transition-colors"
+                                      >
+                                        <ArrowUpDown className="w-3 h-3" />
+                                        <span>{peopleSortMode === 'freq' ? 'Most' : peopleSortMode === 'az' ? 'A–Z' : 'New'}</span>
+                                      </button>
+                                    </IconTooltip>
                                   </div>
                                   <p className="text-[10px] text-muted-foreground mt-1.5 px-1">
                                     {selectedPersonIds.length === 0
@@ -2296,14 +2309,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="People">
                       <div className="flex items-center gap-1 flex-1 py-1.5">
-                        <button
-                          onClick={() => openPeopleWindow()}
-                          className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-600 dark:hover:text-purple-400 transition-all text-[11px] font-medium min-w-[42px]"
-                          title="View and name face clusters"
-                        >
-                          <Users className="w-[18px] h-[18px]" />
-                          <span>Manage</span>
-                        </button>
+                        <IconTooltip label="View and name face clusters" side="bottom">
+                          <button
+                            onClick={() => openPeopleWindow()}
+                            className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-600 dark:hover:text-purple-400 transition-all text-[11px] font-medium min-w-[42px]"
+                          >
+                            <Users className="w-[18px] h-[18px]" />
+                            <span>Manage</span>
+                          </button>
+                        </IconTooltip>
                       </div>
                     </RibbonGroup>
                   </>
@@ -2330,12 +2344,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         <option value="focal_length">Focal Length</option>
                         <option value="megapixels">Megapixels</option>
                       </select>
-                      <button onClick={() => setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
-                        className="flex flex-col items-center justify-center px-1.5 border-l border-border hover:bg-secondary/60 transition-colors h-full py-0.5"
-                        title={sortDir === 'asc' ? 'Ascending' : 'Descending'}>
-                        <ChevronUp className={`w-3 h-3 ${sortDir === 'asc' ? 'text-foreground' : 'text-muted-foreground/40'}`} />
-                        <ChevronDown className={`w-3 h-3 -mt-1 ${sortDir === 'desc' ? 'text-foreground' : 'text-muted-foreground/40'}`} />
-                      </button>
+                      <IconTooltip label={sortDir === 'asc' ? 'Ascending' : 'Descending'} side="bottom">
+                        <button onClick={() => setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
+                          className="flex flex-col items-center justify-center px-1.5 border-l border-border hover:bg-secondary/60 transition-colors h-full py-0.5">
+                          <ChevronUp className={`w-3 h-3 ${sortDir === 'asc' ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+                          <ChevronDown className={`w-3 h-3 -mt-1 ${sortDir === 'desc' ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+                        </button>
+                      </IconTooltip>
                     </div>
                   </div>
                 </RibbonGroup>
@@ -2347,17 +2362,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonGroup label="Actions">
                       <div className="flex items-center gap-1 flex-1 py-1.5">
                         {hasActiveFilters && (
-                          <button onClick={clearFilters} className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]" title="Clear all filters">
-                            <RotateCcw className="w-[18px] h-[18px]" />
-                            <span>Clear</span>
-                          </button>
+                          <IconTooltip label="Clear all filters" side="bottom">
+                            <button onClick={clearFilters} className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]">
+                              <RotateCcw className="w-[18px] h-[18px]" />
+                              <span>Clear</span>
+                            </button>
+                          </IconTooltip>
                         )}
                         {hasActiveFilters && !showSaveFavourite && (
-                          <button onClick={() => setShowSaveFavourite(true)}
-                            className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]" title="Save filters as favourite">
-                            <Star className="w-[18px] h-[18px]" />
-                            <span>Save</span>
-                          </button>
+                          <IconTooltip label="Save filters as favourite" side="bottom">
+                            <button onClick={() => setShowSaveFavourite(true)}
+                              className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]">
+                              <Star className="w-[18px] h-[18px]" />
+                              <span>Save</span>
+                            </button>
+                          </IconTooltip>
                         )}
                         {hasActiveFilters && showSaveFavourite && (
                           <div className="flex items-center gap-1">
@@ -2369,10 +2388,12 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           </div>
                         )}
                         {showLibraryManager && (
-                          <button onClick={() => setShowIndexManager(true)} className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]" title="Library Manager">
-                            <Database className="w-[18px] h-[18px]" />
-                            <span>Library</span>
-                          </button>
+                          <IconTooltip label="Library Manager" side="bottom">
+                            <button onClick={() => setShowIndexManager(true)} className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]">
+                              <Database className="w-[18px] h-[18px]" />
+                              <span>Library</span>
+                            </button>
+                          </IconTooltip>
                         )}
                       </div>
                     </RibbonGroup>
@@ -2693,13 +2714,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             <Sparkles className="w-4 h-4" />
             Enable AI & Download Models
           </button>
-          <button
-            onClick={() => { setAiPromptDismissed(true); localStorage.setItem('pdr-ai-prompt-dismissed', 'true'); }}
-            className="shrink-0 p-1.5 rounded-lg hover:bg-violet-200/50 dark:hover:bg-violet-800/30 text-violet-400 hover:text-violet-600 dark:hover:text-violet-300 transition-colors"
-            title="Dismiss"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <IconTooltip label="Dismiss" side="left">
+            <button
+              onClick={() => { setAiPromptDismissed(true); localStorage.setItem('pdr-ai-prompt-dismissed', 'true'); }}
+              className="shrink-0 p-1.5 rounded-lg hover:bg-violet-200/50 dark:hover:bg-violet-800/30 text-violet-400 hover:text-violet-600 dark:hover:text-violet-300 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </IconTooltip>
         </div>
       )}
 
@@ -2794,17 +2816,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {/* Date Editor button — inherits the current S&D query so the
                   dedicated window operates on exactly these photos. Enabled
                   only while there's something to edit. */}
-              <button
-                onClick={() => openDateEditor(query)}
-                disabled={results.total === 0}
-                className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-primary border border-primary/30 hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                title="Open these photos in the Date Editor to review and correct their dates"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                {selectedFiles.size > 0
-                  ? `Edit dates (${selectedFiles.size} selected)`
-                  : `Edit dates (${results.total.toLocaleString()})`}
-              </button>
+              <IconTooltip label="Open these photos in the Date Editor to review and correct their dates" side="bottom">
+                <button
+                  onClick={() => openDateEditor(query)}
+                  disabled={results.total === 0}
+                  className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-primary border border-primary/30 hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  {selectedFiles.size > 0
+                    ? `Edit dates (${selectedFiles.size} selected)`
+                    : `Edit dates (${results.total.toLocaleString()})`}
+                </button>
+              </IconTooltip>
               {selectedFiles.size > 0 && (
                 <>
                   <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
@@ -2845,13 +2868,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {/* Tile size slider (grid view only) + List + Details */}
               <div className="flex items-center gap-2">
                 {/* Grid tile size slider — styled like the People Match slider */}
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                </button>
+                <IconTooltip label="Grid view" side="bottom">
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                  </button>
+                </IconTooltip>
                 {viewMode === 'grid' && (
                   <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-border bg-background min-w-[160px]">
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap">0%</span>
@@ -2879,16 +2903,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </div>
                 )}
                 <div className="flex items-center border border-border rounded-lg overflow-hidden">
-                  <button onClick={() => setViewMode('list')}
-                    className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                    title="List">
-                    <List className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => setViewMode('details')}
-                    className={`p-1.5 transition-colors border-l border-border ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                    title="Details">
-                    <Table2 className="w-3.5 h-3.5" />
-                  </button>
+                  <IconTooltip label="List" side="bottom">
+                    <button onClick={() => setViewMode('list')}
+                      className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+                      <List className="w-3.5 h-3.5" />
+                    </button>
+                  </IconTooltip>
+                  <IconTooltip label="Details" side="bottom">
+                    <button onClick={() => setViewMode('details')}
+                      className={`p-1.5 transition-colors border-l border-border ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+                      <Table2 className="w-3.5 h-3.5" />
+                    </button>
+                  </IconTooltip>
                 </div>
               </div>
 
@@ -2948,26 +2974,28 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               )}
 
               {/* Selection mode toggle — shows checkboxes on tiles for multi-select */}
-              <button
-                onClick={() => {
-                  setSelectionMode(prev => {
-                    const next = !prev;
-                    if (!next) setSelectedFiles(new Set()); // clear selections when leaving selection mode
-                    return next;
-                  });
-                }}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
-                title={selectionMode ? 'Exit selection mode' : 'Enable checkbox selection'}
-              >
-                <CheckSquare className="w-3.5 h-3.5" />
-                <span>Select{selectedFiles.size > 0 ? ` (${selectedFiles.size})` : ''}</span>
-              </button>
+              <IconTooltip label={selectionMode ? 'Exit selection mode' : 'Enable checkbox selection'} side="bottom">
+                <button
+                  onClick={() => {
+                    setSelectionMode(prev => {
+                      const next = !prev;
+                      if (!next) setSelectedFiles(new Set()); // clear selections when leaving selection mode
+                      return next;
+                    });
+                  }}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  <span>Select{selectedFiles.size > 0 ? ` (${selectedFiles.size})` : ''}</span>
+                </button>
+              </IconTooltip>
 
-              <button onClick={() => setShowPreviewPanel(!showPreviewPanel)}
-                className={`p-1 rounded-lg transition-colors ${showPreviewPanel ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                title={showPreviewPanel ? 'Hide preview' : 'Show preview'}>
-                {showPreviewPanel ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
-              </button>
+              <IconTooltip label={showPreviewPanel ? 'Hide preview' : 'Show preview'} side="bottom">
+                <button onClick={() => setShowPreviewPanel(!showPreviewPanel)}
+                  className={`p-1 rounded-lg transition-colors ${showPreviewPanel ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+                  {showPreviewPanel ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
+                </button>
+              </IconTooltip>
               <button onClick={clearFilters} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-all flex items-center gap-1.5 ml-1 border border-primary/40">
                 <ArrowLeft className="w-3.5 h-3.5" />
                 {hasSources ? 'Back to Dashboard' : 'Back to Workspace'}
@@ -3222,17 +3250,20 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
       <div className="flex items-center justify-center flex-1 [&>div]:justify-center">{children}</div>
       <div className="flex items-center justify-center gap-1 border-t mt-0.5 pt-0.5 pb-0.5 ribbon-group-border">
         {groupId && onToggleFavourite && (
-          <button onClick={() => onToggleFavourite(groupId)}
-            className={`p-0 leading-none transition-colors ${isFavourited ? 'text-amber-500 hover:text-amber-400' : 'text-foreground/25 hover:text-amber-400'}`}
-            title={isFavourited ? 'Remove from Favourites' : 'Add to Favourites'}>
-            <Star className={`w-2.5 h-2.5 ${isFavourited ? 'fill-amber-500' : ''}`} />
-          </button>
+          <IconTooltip label={isFavourited ? 'Remove from Favourites' : 'Add to Favourites'} side="top">
+            <button onClick={() => onToggleFavourite(groupId)}
+              className={`p-0 leading-none transition-colors ${isFavourited ? 'text-amber-500 hover:text-amber-400' : 'text-foreground/25 hover:text-amber-400'}`}>
+              <Star className={`w-2.5 h-2.5 ${isFavourited ? 'fill-amber-500' : ''}`} />
+            </button>
+          </IconTooltip>
         )}
         <span className="text-[10px] text-foreground/60 text-center font-semibold uppercase tracking-wider">{label}</span>
         {onExpand && (
-          <button onClick={onExpand} className="p-0 leading-none text-foreground/40 hover:text-foreground/70 transition-colors" title={`Open ${label} panel`}>
-            <ExternalLink className="w-2.5 h-2.5" />
-          </button>
+          <IconTooltip label={`Open ${label} panel`} side="top">
+            <button onClick={onExpand} className="p-0 leading-none text-foreground/40 hover:text-foreground/70 transition-colors">
+              <ExternalLink className="w-2.5 h-2.5" />
+            </button>
+          </IconTooltip>
         )}
       </div>
     </div>
@@ -3357,17 +3388,18 @@ function FilterDropdown({
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        onClick={() => setOpen(!open)}
-        title={title}
-        className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] transition-all ${
-          active ? 'border-primary/50 bg-primary/10 text-primary font-medium' : 'border-border text-foreground hover:border-primary/30 hover:text-primary'
-        }`}
-      >
-        <span className="max-w-[110px] truncate">{display}</span>
-        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+      <IconTooltip label={title ?? ''} side="bottom" disabled={!title}>
+        <button
+          ref={triggerRef}
+          onClick={() => setOpen(!open)}
+          className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] transition-all ${
+            active ? 'border-primary/50 bg-primary/10 text-primary font-medium' : 'border-border text-foreground hover:border-primary/30 hover:text-primary'
+          }`}
+        >
+          <span className="max-w-[110px] truncate">{display}</span>
+          <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </IconTooltip>
       {open && popoverPos && createPortal(
         <div
           ref={popoverRef}
@@ -3494,13 +3526,14 @@ function VideoSpeedPicker({ rate, onChange }: { rate: number; onChange: (r: numb
   const label = rate === 1 ? '1x' : `${rate}x`;
   return (
     <div ref={ref} className="absolute top-2 right-2 z-20">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="px-2 py-1 rounded bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold tracking-wide shadow-lg backdrop-blur-sm transition-colors"
-        title="Playback speed"
-      >
-        {label}
-      </button>
+      <IconTooltip label="Playback speed" side="bottom">
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="px-2 py-1 rounded bg-black/60 hover:bg-black/80 text-white text-[11px] font-semibold tracking-wide shadow-lg backdrop-blur-sm transition-colors"
+        >
+          {label}
+        </button>
+      </IconTooltip>
       {open && (
         <div className="absolute top-full right-0 mt-1 py-1 rounded-md bg-black/90 shadow-xl backdrop-blur-sm min-w-[68px]">
           {PLAYBACK_RATES.map(r => (
@@ -3647,14 +3680,22 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             )}
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
-            <button onClick={onPrev} disabled={!onPrev}
-              className={`p-1.5 rounded-lg transition-colors ${onPrev ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
-              title="Previous (←)"><ArrowLeft className="w-4 h-4" /></button>
-            <button onClick={onNext} disabled={!onNext}
-              className={`p-1.5 rounded-lg transition-colors ${onNext ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
-              title="Next (→)"><ArrowRight className="w-4 h-4" /></button>
-            {onOpenInExplorer && <button onClick={onOpenInExplorer} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors" title="Open in Explorer"><ExternalLink className="w-4 h-4" /></button>}
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors" title="Close (Esc)"><X className="w-4 h-4" /></button>
+            <IconTooltip label="Previous (←)" side="bottom">
+              <button onClick={onPrev} disabled={!onPrev}
+                className={`p-1.5 rounded-lg transition-colors ${onPrev ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}><ArrowLeft className="w-4 h-4" /></button>
+            </IconTooltip>
+            <IconTooltip label="Next (→)" side="bottom">
+              <button onClick={onNext} disabled={!onNext}
+                className={`p-1.5 rounded-lg transition-colors ${onNext ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}><ArrowRight className="w-4 h-4" /></button>
+            </IconTooltip>
+            {onOpenInExplorer && (
+              <IconTooltip label="Open in Explorer" side="bottom">
+                <button onClick={onOpenInExplorer} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"><ExternalLink className="w-4 h-4" /></button>
+              </IconTooltip>
+            )}
+            <IconTooltip label="Close (Esc)" side="bottom">
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"><X className="w-4 h-4" /></button>
+            </IconTooltip>
           </div>
         </div>
         {/* Preview image/video with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
@@ -3805,14 +3846,18 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
           {/* Face overlay toggle moved to the People header below */}
           {/* Overlay prev/next arrows on the image */}
           {onPrev && (
-            <button onClick={onPrev} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all" title="Previous (←)">
-              <ArrowLeft className="w-4 h-4" />
-            </button>
+            <IconTooltip label="Previous (←)" side="right">
+              <button onClick={onPrev} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            </IconTooltip>
           )}
           {onNext && (
-            <button onClick={onNext} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all" title="Next (→)">
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            <IconTooltip label="Next (→)" side="left">
+              <button onClick={onNext} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </IconTooltip>
           )}
         </div>
         {(onOpenViewer || onOpenInExplorer) && (
@@ -3888,28 +3933,30 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                           className="flex-1 text-xs bg-transparent border-b border-purple-300 dark:border-purple-600 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
                           autoFocus
                         />
-                        <button
-                          onClick={async () => {
-                            if (faceNameInput.trim()) {
-                              await handleNameFace(faceNameInput.trim(), face);
-                            } else {
-                              setEditingFaceId(null);
-                              setFaceNameInput('');
-                              setShowPersonSuggestions(false);
-                            }
-                          }}
-                          className="p-0.5 rounded hover:bg-purple-200/50 dark:hover:bg-purple-800/30 transition-colors shrink-0"
-                          title="Save name"
-                        >
-                          <Check className="w-3.5 h-3.5 text-purple-500" />
-                        </button>
-                        <button
-                          onClick={() => { setEditingFaceId(null); setFaceNameInput(''); setShowPersonSuggestions(false); }}
-                          className="p-0.5 rounded hover:bg-secondary transition-colors shrink-0"
-                          title="Cancel"
-                        >
-                          <X className="w-3.5 h-3.5 text-muted-foreground" />
-                        </button>
+                        <IconTooltip label="Save name" side="top">
+                          <button
+                            onClick={async () => {
+                              if (faceNameInput.trim()) {
+                                await handleNameFace(faceNameInput.trim(), face);
+                              } else {
+                                setEditingFaceId(null);
+                                setFaceNameInput('');
+                                setShowPersonSuggestions(false);
+                              }
+                            }}
+                            className="p-0.5 rounded hover:bg-purple-200/50 dark:hover:bg-purple-800/30 transition-colors shrink-0"
+                          >
+                            <Check className="w-3.5 h-3.5 text-purple-500" />
+                          </button>
+                        </IconTooltip>
+                        <IconTooltip label="Cancel" side="top">
+                          <button
+                            onClick={() => { setEditingFaceId(null); setFaceNameInput(''); setShowPersonSuggestions(false); }}
+                            className="p-0.5 rounded hover:bg-secondary transition-colors shrink-0"
+                          >
+                            <X className="w-3.5 h-3.5 text-muted-foreground" />
+                          </button>
+                        </IconTooltip>
                       </div>
                       {/* Existing person suggestions — show all when input is empty */}
                       {showPersonSuggestions && existingPersons.length > 0 && (
@@ -3967,37 +4014,39 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                       <span className={face.person_name ? 'text-foreground font-medium flex-1 min-w-0 truncate text-sm' : 'text-muted-foreground italic flex-1 min-w-0 truncate text-sm'}>
                         {face.person_name || 'Unknown person'}
                       </span>
-                      <button
-                        onClick={() => {
-                          setEditingFaceId(face.id);
-                          setFaceNameInput(face.person_name || '');
-                          listPersons().then(r => { if (r.success && r.data) setExistingPersons(r.data); });
-                          setTimeout(() => faceNameInputRef.current?.focus(), 50);
-                        }}
-                        className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all shrink-0"
-                        title={face.person_name ? 'Rename person' : 'Name this person'}
-                      >
-                        <Pencil className="w-3 h-3 text-purple-400" />
-                      </button>
-                      {face.person_name && face.person_id && (
+                      <IconTooltip label={face.person_name ? 'Rename person' : 'Name this person'} side="top">
                         <button
                           onClick={() => {
-                            // Get photo count for this person to show in confirmation
-                            listPersons().then(r => {
-                              const person = r.data?.find(p => p.id === face.person_id);
-                              setConfirmDeletePerson({
-                                personId: face.person_id!,
-                                personName: face.person_name!,
-                                faceId: face.id,
-                                photoCount: (person as any)?.photo_count ?? 0,
-                              });
-                            });
+                            setEditingFaceId(face.id);
+                            setFaceNameInput(face.person_name || '');
+                            listPersons().then(r => { if (r.success && r.data) setExistingPersons(r.data); });
+                            setTimeout(() => faceNameInputRef.current?.focus(), 50);
                           }}
-                          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all shrink-0"
-                          title="Remove name"
+                          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all shrink-0"
                         >
-                          <Trash2 className="w-3 h-3 text-red-400" />
+                          <Pencil className="w-3 h-3 text-purple-400" />
                         </button>
+                      </IconTooltip>
+                      {face.person_name && face.person_id && (
+                        <IconTooltip label="Remove name" side="top">
+                          <button
+                            onClick={() => {
+                              // Get photo count for this person to show in confirmation
+                              listPersons().then(r => {
+                                const person = r.data?.find(p => p.id === face.person_id);
+                                setConfirmDeletePerson({
+                                  personId: face.person_id!,
+                                  personName: face.person_name!,
+                                  faceId: face.id,
+                                  photoCount: (person as any)?.photo_count ?? 0,
+                                });
+                              });
+                            }}
+                            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all shrink-0"
+                          >
+                            <Trash2 className="w-3 h-3 text-red-400" />
+                          </button>
+                        </IconTooltip>
                       )}
                       <span className="text-sm text-muted-foreground shrink-0 ml-2">{Math.round(face.confidence * 100)}%</span>
                     </div>
@@ -4443,24 +4492,25 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
               </div>
               <div className="flex items-center gap-2">
                 {runs.length > 0 && searchableOpen && (
-                  <span
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const res = await runSearchCleanup();
-                      if (res.success) {
-                        await loadData();
-                        onRefresh();
-                        if (res.data?.staleRuns && res.data.staleRuns.length > 0 && onStaleRunsDetected) {
-                          onStaleRunsDetected(res.data.staleRuns);
+                  <IconTooltip label="Clean up stale entries and duplicates" side="left">
+                    <span
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const res = await runSearchCleanup();
+                        if (res.success) {
+                          await loadData();
+                          onRefresh();
+                          if (res.data?.staleRuns && res.data.staleRuns.length > 0 && onStaleRunsDetected) {
+                            onStaleRunsDetected(res.data.staleRuns);
+                          }
                         }
-                      }
-                    }}
-                    className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Clean up stale entries and duplicates"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    Clean Up
-                  </span>
+                      }}
+                      className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Clean Up
+                    </span>
+                  </IconTooltip>
                 )}
                 {searchableOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
               </div>
@@ -4484,7 +4534,7 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
                         <p className="text-sm font-medium text-foreground truncate" title={run.destination_path.replace(/\\\\/g, '\\')}>{run.destination_path.replace(/\\\\/g, '\\')}</p>
                         <p className="text-xs text-muted-foreground">{run.file_count.toLocaleString()} files · {new Date(run.indexed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}{run.source_labels ? ` · ${run.source_labels}` : ''}</p>
                       </div>
-                      {allowIndexRemoval && <button onClick={() => handleRemoveRun(run.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0" title="Remove from library"><Trash2 className="w-3.5 h-3.5" /></button>}
+                      {allowIndexRemoval && <IconTooltip label="Remove from library" side="left"><button onClick={() => handleRemoveRun(run.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /></button></IconTooltip>}
                     </div>
                   ))}</div>
                 )}
@@ -4591,13 +4641,14 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
                           {!report.destinationStatus && <span className="ml-1.5 text-amber-600 dark:text-amber-400 font-medium">· Location not found</span>}
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleDeleteReports([report.id])}
-                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0"
-                        title="Remove this report"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <IconTooltip label="Remove this report" side="left">
+                        <button
+                          onClick={() => handleDeleteReports([report.id])}
+                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </IconTooltip>
                     </div>
                   ))}
                   <p className="text-[10px] text-muted-foreground/60 pt-1">
@@ -4955,30 +5006,33 @@ function PeopleManagerModal({ onClose, onRefresh }: { onClose: () => void; onRef
                 </div>
               )}
               {activeTab === 'named' && (
-                <button
-                  onClick={() => setShowUnverifiedOnly(!showUnverifiedOnly)}
-                  className={`p-1 rounded transition-all ${showUnverifiedOnly ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-500' : 'text-muted-foreground hover:text-foreground'}`}
-                  title={showUnverifiedOnly ? 'Showing unverified only' : 'Show all faces'}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                </button>
+                <IconTooltip label={showUnverifiedOnly ? 'Showing unverified only' : 'Show all faces'} side="bottom">
+                  <button
+                    onClick={() => setShowUnverifiedOnly(!showUnverifiedOnly)}
+                    className={`p-1 rounded transition-all ${showUnverifiedOnly ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-500' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
+                </IconTooltip>
               )}
               {(activeTab === 'named' || activeTab === 'unnamed') && (
                 <div className="flex items-center bg-secondary/40 rounded-md p-0.5">
-                  <button
-                    onClick={() => setViewMode('card')}
-                    className={`p-1 rounded transition-all ${viewMode === 'card' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                    title="Card view"
-                  >
-                    <Grid3X3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-1 rounded transition-all ${viewMode === 'list' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                    title="List view"
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />
-                  </button>
+                  <IconTooltip label="Card view" side="bottom">
+                    <button
+                      onClick={() => setViewMode('card')}
+                      className={`p-1 rounded transition-all ${viewMode === 'card' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      <Grid3X3 className="w-3.5 h-3.5" />
+                    </button>
+                  </IconTooltip>
+                  <IconTooltip label="List view" side="bottom">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`p-1 rounded transition-all ${viewMode === 'list' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      <LayoutList className="w-3.5 h-3.5" />
+                    </button>
+                  </IconTooltip>
                 </div>
               )}
             </div>
@@ -5265,22 +5319,24 @@ function PeopleManagerModal({ onClose, onRefresh }: { onClose: () => void; onRef
                               )}
                               {/* Actions */}
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  onClick={() => handleRestoreToUnnamed(cluster.cluster_id, cluster.person_id)}
-                                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-border bg-background hover:bg-secondary text-foreground transition-colors"
-                                  title="Move back to Unnamed"
-                                >
-                                  <Undo2 className="w-3.5 h-3.5" />
-                                  Restore
-                                </button>
-                                <button
-                                  onClick={() => cluster.person_id && setConfirmPermanentDelete({ personId: cluster.person_id, personName: 'Ignored face group' })}
-                                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-red-300/50 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                                  title="Delete permanently"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  Delete
-                                </button>
+                                <IconTooltip label="Move back to Unnamed" side="left">
+                                  <button
+                                    onClick={() => handleRestoreToUnnamed(cluster.cluster_id, cluster.person_id)}
+                                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-border bg-background hover:bg-secondary text-foreground transition-colors"
+                                  >
+                                    <Undo2 className="w-3.5 h-3.5" />
+                                    Restore
+                                  </button>
+                                </IconTooltip>
+                                <IconTooltip label="Delete permanently" side="left">
+                                  <button
+                                    onClick={() => cluster.person_id && setConfirmPermanentDelete({ personId: cluster.person_id, personName: 'Ignored face group' })}
+                                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-red-300/50 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Delete
+                                  </button>
+                                </IconTooltip>
                               </div>
                             </div>
                           ))}

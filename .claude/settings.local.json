@@ -98,7 +98,8 @@
       "Bash(node -e \"const u = require\\('unzipper'\\); console.log\\('Open:', typeof u.Open, 'Open.file:', typeof u.Open?.file\\);\")",
       "Bash(tasklist //FI \"IMAGENAME eq electron.exe\")",
       "Bash(grep -E \"\\\\.ts$\")",
-      "Bash(grep -v \"//\")"
+      "Bash(grep -v \"//\")",
+      "Bash(tasklist)"
     ]
   }
 }

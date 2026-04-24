@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { onAiProgress, pauseAi, resumeAi, cancelAi, type AiProgress } from '@/lib/electron-bridge';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 /**
  * Custom title bar — PDR branding left, lavender right.
@@ -136,23 +137,25 @@ export function TitleBar() {
             pill down to just an icon (no pulse). */}
         {aiProcessing && (
           pillCollapsed ? (
-            <button
-              onClick={() => setPillCollapsed(false)}
-              className="flex items-center gap-1 text-xs text-white font-medium bg-purple-500/30 hover:bg-purple-500/45 px-2 py-1 rounded-full transition-colors"
-              title={aiProgress ? `Expand — ${aiProgress.tagsOnly ? 'Tagging' : 'Analyzing'} ${aiProgress.current}/${aiProgress.total}` : 'Expand'}
-            >
-              <ChevronLeft className="w-3 h-3 opacity-80" />
-              <Brain className="w-3.5 h-3.5" />
-            </button>
+            <IconTooltip label={aiProgress ? `Expand — ${aiProgress.tagsOnly ? 'Tagging' : 'Analyzing'} ${aiProgress.current}/${aiProgress.total}` : 'Expand'} side="bottom">
+              <button
+                onClick={() => setPillCollapsed(false)}
+                className="flex items-center gap-1 text-xs text-white font-medium bg-purple-500/30 hover:bg-purple-500/45 px-2 py-1 rounded-full transition-colors"
+              >
+                <ChevronLeft className="w-3 h-3 opacity-80" />
+                <Brain className="w-3.5 h-3.5" />
+              </button>
+            </IconTooltip>
           ) : (
             <span className={`flex items-center gap-1.5 text-xs text-white font-medium ${aiProgress?.phase === 'paused' ? 'bg-amber-500/30' : 'bg-purple-500/30'} px-2.5 py-1 rounded-full ${aiProgress?.phase === 'paused' ? '' : 'animate-pulse'}`}>
-              <button
-                onClick={() => setPillCollapsed(true)}
-                className="-ml-0.5 mr-0.5 hover:text-white/90"
-                title="Collapse — keeps the pill out of your peripheral vision while the run continues in the background."
-              >
-                <ChevronRight className="w-3 h-3" />
-              </button>
+              <IconTooltip label="Collapse — keeps the pill out of your peripheral vision while the run continues in the background." side="bottom">
+                <button
+                  onClick={() => setPillCollapsed(true)}
+                  className="-ml-0.5 mr-0.5 hover:text-white/90"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </IconTooltip>
               {aiProgress?.phase === 'paused' ? (
                 <Pause className="w-3.5 h-3.5" />
               ) : (
@@ -164,21 +167,28 @@ export function TitleBar() {
                aiProgress.phase === 'paused' ? `Paused ${aiProgress.current}/${aiProgress.total}` :
                `${aiProgress.tagsOnly ? 'Tagging' : 'Analyzing'} ${aiProgress.current}/${aiProgress.total}`}
               {aiProgress?.phase === 'paused' ? (
-                <button onClick={() => resumeAi()} className="ml-1 hover:text-white/90" title="Resume"><Play className="w-3 h-3" /></button>
+                <IconTooltip label="Resume" side="bottom">
+                  <button onClick={() => resumeAi()} className="ml-1 hover:text-white/90"><Play className="w-3 h-3" /></button>
+                </IconTooltip>
               ) : (
-                <button onClick={() => pauseAi()} className="ml-1 hover:text-white/90" title="Pause"><Pause className="w-3 h-3" /></button>
+                <IconTooltip label="Pause" side="bottom">
+                  <button onClick={() => pauseAi()} className="ml-1 hover:text-white/90"><Pause className="w-3 h-3" /></button>
+                </IconTooltip>
               )}
-              <button onClick={() => cancelAi()} className="ml-0.5 hover:text-white/90" title="Cancel"><XIcon className="w-3 h-3" /></button>
+              <IconTooltip label="Cancel" side="bottom">
+                <button onClick={() => cancelAi()} className="ml-0.5 hover:text-white/90"><XIcon className="w-3 h-3" /></button>
+              </IconTooltip>
             </span>
           )
         )}
-        <button
-          onClick={toggleDarkMode}
-          className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all"
-          title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-        </button>
+        <IconTooltip label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'} side="bottom">
+          <button
+            onClick={toggleDarkMode}
+            className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all"
+          >
+            {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+          </button>
+        </IconTooltip>
         <LicenseStatusBadge
           onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLicenseModal'))}
         />

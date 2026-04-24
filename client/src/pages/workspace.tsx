@@ -84,6 +84,7 @@ import {
 } from "@/lib/electron-bridge";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { DockedPeopleManager } from "@/components/DockedPeopleManager";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
@@ -1897,22 +1898,23 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       locked: boolean = false,
       active: boolean = false,
     ) => (
-      <button
-        onClick={onClick}
-        className={`w-9 h-9 flex items-center justify-center transition-colors relative ${
-          active
-            // Active app: solid amber-tinted rounded square (rounded-md
-            // is a proper square with softened edges; previously this
-            // used ring-2 which read as a circle because of how the
-            // stroke wrapped the small icon at this size).
-            ? 'bg-amber-500/20 border border-amber-500/60 rounded-md text-foreground'
-            : 'hover:bg-secondary/60 rounded-lg text-muted-foreground hover:text-foreground'
-        }`}
-        title={title + (locked ? ' (Premium feature)' : '')}
-      >
-        {icon}
-        {locked && <Lock className="absolute top-0.5 right-0.5 w-2 h-2 text-muted-foreground/60" />}
-      </button>
+      <IconTooltip label={title + (locked ? ' (Premium feature)' : '')} side="right">
+        <button
+          onClick={onClick}
+          className={`w-9 h-9 flex items-center justify-center transition-colors relative ${
+            active
+              // Active app: solid amber-tinted rounded square (rounded-md
+              // is a proper square with softened edges; previously this
+              // used ring-2 which read as a circle because of how the
+              // stroke wrapped the small icon at this size).
+              ? 'bg-amber-500/20 border border-amber-500/60 rounded-md text-foreground'
+              : 'hover:bg-secondary/60 rounded-lg text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {icon}
+          {locked && <Lock className="absolute top-0.5 right-0.5 w-2 h-2 text-muted-foreground/60" />}
+        </button>
+      </IconTooltip>
     );
     // Active-app resolution: activePanel (guidance pages) wins over
     // activeView (main canvas views) because opening a panel overlays
@@ -1936,16 +1938,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             collapse views (Memories/Trees/S&D) still open. The pin
             button remains the only way to ACTIVATE 'open' — this
             button only ever moves pinState towards auto. */}
-        <button
-          onClick={() => {
-            if (pinState === 'closed') setPinStatePersisted('auto');
-            setTempExpanded(true);
-          }}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
-          title="Show Source Menu"
-        >
-          <Menu className="w-4 h-4" />
-        </button>
+        <IconTooltip label="Show Source Menu" side="right">
+          <button
+            onClick={() => {
+              if (pinState === 'closed') setPinStatePersisted('auto');
+              setTempExpanded(true);
+            }}
+            className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        </IconTooltip>
 
         {divider}
 
@@ -2060,24 +2063,26 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           Also adds a soft border so the click target is visible even
           against similar-shade backgrounds. */}
       <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
-        <button
-          onClick={() => setPinStatePersisted(pinState === 'open' ? 'auto' : 'open')}
-          className={`p-1.5 rounded-md border transition-colors ${
-            pinState === 'open'
-              ? 'bg-primary/15 text-primary border-primary/50 ring-1 ring-primary/40'
-              : 'text-muted-foreground border-border/60 hover:bg-secondary/60 hover:text-foreground hover:border-border'
-          }`}
-          title={pinState === 'open' ? 'Pinned open — click to unpin (follow S&D)' : 'Pin sidebar open (stay open during S&D)'}
-        >
-          <Pin className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => setPinStatePersisted('closed')}
-          className="p-1.5 rounded-md border border-border/60 text-muted-foreground hover:bg-secondary/60 hover:text-foreground hover:border-border transition-colors"
-          title="Collapse sidebar"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
+        <IconTooltip label={pinState === 'open' ? 'Pinned open — click to unpin (follow S&D)' : 'Pin sidebar open (stay open during S&D)'} side="bottom">
+          <button
+            onClick={() => setPinStatePersisted(pinState === 'open' ? 'auto' : 'open')}
+            className={`p-1.5 rounded-md border transition-colors ${
+              pinState === 'open'
+                ? 'bg-primary/15 text-primary border-primary/50 ring-1 ring-primary/40'
+                : 'text-muted-foreground border-border/60 hover:bg-secondary/60 hover:text-foreground hover:border-border'
+            }`}
+          >
+            <Pin className="w-4 h-4" />
+          </button>
+        </IconTooltip>
+        <IconTooltip label="Collapse sidebar" side="bottom">
+          <button
+            onClick={() => setPinStatePersisted('closed')}
+            className="p-1.5 rounded-md border border-border/60 text-muted-foreground hover:bg-secondary/60 hover:text-foreground hover:border-border transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        </IconTooltip>
       </div>
 
       <div 
@@ -2914,13 +2919,14 @@ function DashboardPanel({
                     <>
                       <div className="flex items-center gap-1 mb-1.5">
                         <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded truncate max-w-full" title={destinationPath}>{destinationPath}</p>
-                        <button
-                          onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
-                          className="p-1 text-muted-foreground/50 hover:text-rose-500 transition-colors shrink-0"
-                          title="Clear destination"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <IconTooltip label="Clear destination" side="top">
+                          <button
+                            onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
+                            className="p-1 text-muted-foreground/50 hover:text-rose-500 transition-colors shrink-0"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </IconTooltip>
                       </div>
                       {/* Visual space bar */}
                       {destinationTotalGB > 0 && (

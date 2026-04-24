@@ -33,6 +33,7 @@ import { useDraggableModal } from './useDraggableModal';
 import { ManageTreesModal } from './ManageTreesModal';
 import { DateQuickEditor } from './DateQuickEditor';
 import { promptConfirm } from './promptConfirm';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface PersonSummary {
   id: number;
@@ -1036,18 +1037,19 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             className="text-base font-semibold bg-transparent border-b border-primary outline-none min-w-[12ch] max-w-[30ch]"
           />
         ) : (
-          <button
-            onClick={() => {
-              if (!currentTree) return;
-              setTreeNameDraft(currentTree.name);
-              setEditingTreeName(true);
-            }}
-            className="group inline-flex items-center gap-1.5 text-base font-semibold hover:text-primary transition-colors"
-            title={currentTree ? 'Click to rename this tree' : undefined}
-          >
-            {currentTree?.name ?? 'Trees'}
-            {currentTree && <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />}
-          </button>
+          <IconTooltip label="Click to rename this tree" side="bottom" disabled={!currentTree}>
+            <button
+              onClick={() => {
+                if (!currentTree) return;
+                setTreeNameDraft(currentTree.name);
+                setEditingTreeName(true);
+              }}
+              className="group inline-flex items-center gap-1.5 text-base font-semibold hover:text-primary transition-colors"
+            >
+              {currentTree?.name ?? 'Trees'}
+              {currentTree && <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />}
+            </button>
+          </IconTooltip>
         )}
         {graph && (
           <>
@@ -1059,19 +1061,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 a 'Dates alive' toggle (off by default). More options can
                 slot in here later. */}
             <div className="relative">
-              <button
-                onClick={() => setAddInfoOpen(v => !v)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-                  showDates
-                    ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20'
-                    : 'bg-background border-border text-foreground hover:bg-accent'
-                }`}
-                title="Show extra details inside each card (dates, etc.)"
-                aria-expanded={addInfoOpen}
-              >
-                <Info className="w-4 h-4" />
-                Add Info{showDates ? ' (1)' : ''}
-              </button>
+              <IconTooltip label="Show extra details inside each card (dates, etc.)" side="bottom">
+                <button
+                  onClick={() => setAddInfoOpen(v => !v)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                    showDates
+                      ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20'
+                      : 'bg-background border-border text-foreground hover:bg-accent'
+                  }`}
+                  aria-expanded={addInfoOpen}
+                >
+                  <Info className="w-4 h-4" />
+                  Add Info{showDates ? ' (1)' : ''}
+                </button>
+              </IconTooltip>
               {addInfoOpen && (
                 <>
                   <div
@@ -1099,57 +1102,63 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 was first used. Buttons disable when the respective
                 stack is empty; keyboard shortcut Ctrl/Cmd+Z also works. */}
             <div className="inline-flex items-center rounded-lg border border-border bg-background">
-              <button
-                onClick={handleUndo}
-                disabled={historyCounts.canUndo === 0}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed rounded-l-lg"
-                title={historyCounts.canUndo > 0 ? `Undo (Ctrl+Z) — ${historyCounts.canUndo} change${historyCounts.canUndo === 1 ? '' : 's'} available` : 'Nothing to undo'}
-              >
-                <Undo2 className="w-4 h-4" />
-              </button>
+              <IconTooltip label={historyCounts.canUndo > 0 ? `Undo (Ctrl+Z) — ${historyCounts.canUndo} change${historyCounts.canUndo === 1 ? '' : 's'} available` : 'Nothing to undo'} side="bottom">
+                <button
+                  onClick={handleUndo}
+                  disabled={historyCounts.canUndo === 0}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed rounded-l-lg"
+                >
+                  <Undo2 className="w-4 h-4" />
+                </button>
+              </IconTooltip>
               <div className="w-px h-5 bg-border" />
-              <button
-                onClick={handleRedo}
-                disabled={historyCounts.canRedo === 0}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed rounded-r-lg"
-                title={historyCounts.canRedo > 0 ? `Redo (Ctrl+Y) — ${historyCounts.canRedo} change${historyCounts.canRedo === 1 ? '' : 's'} available` : 'Nothing to redo'}
-              >
-                <Redo2 className="w-4 h-4" />
-              </button>
+              <IconTooltip label={historyCounts.canRedo > 0 ? `Redo (Ctrl+Y) — ${historyCounts.canRedo} change${historyCounts.canRedo === 1 ? '' : 's'} available` : 'Nothing to redo'} side="bottom">
+                <button
+                  onClick={handleRedo}
+                  disabled={historyCounts.canRedo === 0}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed rounded-r-lg"
+                >
+                  <Redo2 className="w-4 h-4" />
+                </button>
+              </IconTooltip>
             </div>
-            <button
-              onClick={() => setManageTreesOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-              title="Rename, switch between, create, export, or remove saved trees"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Manage Trees
-            </button>
-            <button
-              onClick={() => setTreePeopleOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-              title="List everyone on this tree, see photo counts, and delete mistakes"
-            >
-              <Users className="w-4 h-4" />
-              People
-            </button>
-            <button
-              onClick={() => setFocusPickerOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-              title="Change the focus person"
-            >
-              <Users className="w-4 h-4" />
-              Change focus
-            </button>
-            {pinnedPeople.size > 0 && (
+            <IconTooltip label="Rename, switch between, create, export, or remove saved trees" side="bottom">
               <button
-                onClick={() => setPinnedPeople(new Map())}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
-                title={`${pinnedPeople.size} person${pinnedPeople.size === 1 ? ' is' : 's are'} pinned beyond your current Depth. Click to reset and re-hide them.`}
+                onClick={() => setManageTreesOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
               >
-                <Pin className="w-3 h-3" />
-                {pinnedPeople.size} pinned
+                <FolderOpen className="w-4 h-4" />
+                Manage Trees
               </button>
+            </IconTooltip>
+            <IconTooltip label="List everyone on this tree, see photo counts, and delete mistakes" side="bottom">
+              <button
+                onClick={() => setTreePeopleOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+              >
+                <Users className="w-4 h-4" />
+                People
+              </button>
+            </IconTooltip>
+            <IconTooltip label="Change the focus person" side="bottom">
+              <button
+                onClick={() => setFocusPickerOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+              >
+                <Users className="w-4 h-4" />
+                Change focus
+              </button>
+            </IconTooltip>
+            {pinnedPeople.size > 0 && (
+              <IconTooltip label={`${pinnedPeople.size} person${pinnedPeople.size === 1 ? ' is' : 's are'} pinned beyond your current Depth. Click to reset and re-hide them.`} side="bottom">
+                <button
+                  onClick={() => setPinnedPeople(new Map())}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
+                >
+                  <Pin className="w-3 h-3" />
+                  {pinnedPeople.size} pinned
+                </button>
+              </IconTooltip>
             )}
             {/* Steps filter — toggle + +/- stepper. Styled as a clear
                 CTA pill: solid primary background when active, subtle
@@ -1193,13 +1202,14 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 />
               </div>
             </FilterPill>
-            <button
-              onClick={() => focusPersonId != null && refetchGraph(focusPersonId, fetchDepth)}
-              className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            <IconTooltip label="Refresh" side="bottom">
+              <button
+                onClick={() => focusPersonId != null && refetchGraph(focusPersonId, fetchDepth)}
+                className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </IconTooltip>
           </>
         )}
       </div>
@@ -2144,14 +2154,15 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                       )}
                     </button>
                     {onHideSuggestion && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
-                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
-                        title="Not in this family — hide from suggestions"
-                        aria-label={`Hide ${p.name} from suggestions`}
-                      >
-                        <EyeOff className="w-3 h-3" />
-                      </button>
+                      <IconTooltip label="Not in this family — hide from suggestions" side="left">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
+                          className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
+                          aria-label={`Hide ${p.name} from suggestions`}
+                        >
+                          <EyeOff className="w-3 h-3" />
+                        </button>
+                      </IconTooltip>
                     )}
                   </div>
                 );

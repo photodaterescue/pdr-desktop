@@ -28,6 +28,7 @@ import {
   Sparkle,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
 import { MainAliveBanner } from './MainAliveBanner';
 import {
@@ -496,13 +497,14 @@ export default function PeopleManager() {
               N/M" indicator so progress is visible while you're looking
               at People Manager (the very place the results land). */}
           {aiProgress && aiProgress.phase === 'processing' && aiProgress.total > 0 && (
-            <div
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-400/40 text-xs text-violet-700 dark:text-violet-300"
-              title={`Analysing ${aiProgress.currentFile || ''}`}
-            >
-              <Sparkle className="w-3 h-3 animate-pulse" />
-              <span>Analysing {aiProgress.current}/{aiProgress.total}</span>
-            </div>
+            <IconTooltip label={`Analysing ${aiProgress.currentFile || ''}`} side="bottom">
+              <div
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-400/40 text-xs text-violet-700 dark:text-violet-300"
+              >
+                <Sparkle className="w-3 h-3 animate-pulse" />
+                <span>Analysing {aiProgress.current}/{aiProgress.total}</span>
+              </div>
+            </IconTooltip>
           )}
 
           {/* Refresh — re-queries clusters without closing/reopening the
@@ -736,30 +738,33 @@ export default function PeopleManager() {
             </div>
           )}
           {activeTab === 'named' && (
-            <button
-              onClick={() => setShowUnverifiedOnly(!showUnverifiedOnly)}
-              className={`p-1 rounded transition-all ${showUnverifiedOnly ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-500' : 'text-muted-foreground hover:text-foreground'}`}
-              title={showUnverifiedOnly ? 'Showing unverified only' : 'Show all faces'}
-            >
-              <Eye className="w-3.5 h-3.5" />
-            </button>
+            <IconTooltip label={showUnverifiedOnly ? 'Showing unverified only' : 'Show all faces'} side="bottom">
+              <button
+                onClick={() => setShowUnverifiedOnly(!showUnverifiedOnly)}
+                className={`p-1 rounded transition-all ${showUnverifiedOnly ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-500' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </button>
+            </IconTooltip>
           )}
           {(activeTab === 'named' || activeTab === 'unnamed') && (
             <div className="flex items-center bg-secondary/40 rounded-md p-0.5">
-              <button
-                onClick={() => setViewMode('card')}
-                className={`p-1 rounded transition-all ${viewMode === 'card' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                title="Card view"
-              >
-                <Grid3X3 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1 rounded transition-all ${viewMode === 'list' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                title="List view"
-              >
-                <LayoutList className="w-3.5 h-3.5" />
-              </button>
+              <IconTooltip label="Card view" side="bottom">
+                <button
+                  onClick={() => setViewMode('card')}
+                  className={`p-1 rounded transition-all ${viewMode === 'card' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <Grid3X3 className="w-3.5 h-3.5" />
+                </button>
+              </IconTooltip>
+              <IconTooltip label="List view" side="bottom">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-1 rounded transition-all ${viewMode === 'list' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <LayoutList className="w-3.5 h-3.5" />
+                </button>
+              </IconTooltip>
             </div>
           )}
         </div>

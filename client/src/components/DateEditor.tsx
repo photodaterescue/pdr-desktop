@@ -28,6 +28,7 @@ import {
   type DateSuggestion,
 } from '../lib/electron-bridge';
 import { MainAliveBanner } from './MainAliveBanner';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 /**
  * Compact pill-row summary of the inherited SearchQuery — keeps the user
@@ -288,13 +289,14 @@ export default function DateEditor() {
         <h1 className="text-base font-semibold">Date Editor</h1>
         <span className="text-xs text-muted-foreground">Review low-confidence dates and apply corrections backed by PDR's context engine.</span>
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={handleUndo}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
-            title="Undo the most recent correction (Ctrl+Z)"
-          >
-            <Undo2 className="w-3.5 h-3.5" />Undo last
-          </button>
+          <IconTooltip label="Undo the most recent correction (Ctrl+Z)" side="bottom">
+            <button
+              onClick={handleUndo}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+            >
+              <Undo2 className="w-3.5 h-3.5" />Undo last
+            </button>
+          </IconTooltip>
         </div>
       </header>
 
@@ -363,25 +365,27 @@ export default function DateEditor() {
           {selected ? (
             <div className="h-full flex flex-col">
               <div className="shrink-0 px-5 py-3 border-b border-border flex items-center gap-3">
-                <button
-                  onClick={() => setSelectedIdx((i) => Math.max(0, i - 1))}
-                  disabled={selectedIdx === 0}
-                  className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default"
-                  title="Previous (←)"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
+                <IconTooltip label="Previous (←)" side="bottom">
+                  <button
+                    onClick={() => setSelectedIdx((i) => Math.max(0, i - 1))}
+                    disabled={selectedIdx === 0}
+                    className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                </IconTooltip>
                 <span className="text-xs font-medium text-muted-foreground">
                   {selectedIdx + 1} of {files.length}
                 </span>
-                <button
-                  onClick={() => setSelectedIdx((i) => Math.min(files.length - 1, i + 1))}
-                  disabled={selectedIdx >= files.length - 1}
-                  className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default"
-                  title="Next (→)"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                <IconTooltip label="Next (→)" side="bottom">
+                  <button
+                    onClick={() => setSelectedIdx((i) => Math.min(files.length - 1, i + 1))}
+                    disabled={selectedIdx >= files.length - 1}
+                    className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </IconTooltip>
                 <div className="ml-2 min-w-0">
                   <div className="text-sm font-semibold text-foreground truncate">{selected.filename}</div>
                   <div className="text-[11px] text-muted-foreground truncate">{selected.file_path}</div>
@@ -444,11 +448,10 @@ export default function DateEditor() {
                     const meta = SOURCE_META[s.source] || SOURCE_META.folder;
                     const Icon = meta.icon;
                     return (
+                      <IconTooltip key={s.id} label={meta.explain} side="left">
                       <button
-                        key={s.id}
                         onClick={() => pickSuggestion(s)}
                         className="w-full text-left rounded-lg border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors p-3 group"
-                        title={meta.explain}
                       >
                         <div className="flex items-center gap-2 mb-1">
                           <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wide px-1.5 py-0.5 rounded ${meta.colour}`}>
@@ -461,6 +464,7 @@ export default function DateEditor() {
                         <div className="text-sm font-mono font-semibold text-foreground">{s.label}</div>
                         <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{s.reason}</div>
                       </button>
+                      </IconTooltip>
                     );
                   })}
                 </div>

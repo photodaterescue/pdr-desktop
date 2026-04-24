@@ -21,6 +21,7 @@ import {
   type IndexedFile,
   type IndexedRun,
 } from '../lib/electron-bridge';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -242,14 +243,14 @@ export default function MemoriesView() {
           {yearGroups.length > 1 && (
             <aside className="w-[68px] shrink-0 border-r border-border/60 overflow-y-auto py-4 px-1 text-center">
               {yearGroups.map(([year]) => (
-                <button
-                  key={year}
-                  onClick={() => jumpToYear(year)}
-                  className="w-full px-1 py-1.5 mb-0.5 rounded text-xs font-mono text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                  title={`Jump to ${year}`}
-                >
-                  {year}
-                </button>
+                <IconTooltip key={year} label={`Jump to ${year}`} side="right">
+                  <button
+                    onClick={() => jumpToYear(year)}
+                    className="w-full px-1 py-1.5 mb-0.5 rounded text-xs font-mono text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                  >
+                    {year}
+                  </button>
+                </IconTooltip>
               ))}
             </aside>
           )}
@@ -335,20 +336,22 @@ export default function MemoriesView() {
 function DensityToggle({ value, onChange }: { value: Density; onChange: (d: Density) => void }) {
   return (
     <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
-      <button
-        onClick={() => onChange('spacious')}
-        className={`px-2 py-1 text-[11px] font-medium transition-colors ${value === 'spacious' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-        title="Space between photos"
-      >
-        Spacious
-      </button>
-      <button
-        onClick={() => onChange('tight')}
-        className={`px-2 py-1 text-[11px] font-medium transition-colors border-l border-border ${value === 'tight' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-        title="No gaps between photos — dense wall view"
-      >
-        Tight
-      </button>
+      <IconTooltip label="Space between photos" side="bottom">
+        <button
+          onClick={() => onChange('spacious')}
+          className={`px-2 py-1 text-[11px] font-medium transition-colors ${value === 'spacious' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+        >
+          Spacious
+        </button>
+      </IconTooltip>
+      <IconTooltip label="No gaps between photos — dense wall view" side="bottom">
+        <button
+          onClick={() => onChange('tight')}
+          className={`px-2 py-1 text-[11px] font-medium transition-colors border-l border-border ${value === 'tight' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+        >
+          Tight
+        </button>
+      </IconTooltip>
     </div>
   );
 }
@@ -387,10 +390,10 @@ function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBuc
   const total = (bucket.photoCount || 0) + (bucket.videoCount || 0);
   const tight = density === 'tight';
   return (
+    <IconTooltip label={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year} · ${total.toLocaleString()} files`} side="top">
     <button
       onClick={() => onOpen(1)}
       className={`group relative aspect-[4/3] overflow-hidden bg-secondary/30 transition-all text-left ${tight ? '' : 'rounded-xl ring-1 ring-border hover:ring-primary/50'}`}
-      title={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year} · ${total.toLocaleString()} files`}
     >
       {thumb ? (
         <img src={thumb} alt={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year}`} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105" />
@@ -409,6 +412,7 @@ function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBuc
         </div>
       </div>
     </button>
+    </IconTooltip>
   );
 }
 
