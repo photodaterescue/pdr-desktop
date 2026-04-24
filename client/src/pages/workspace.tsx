@@ -79,7 +79,8 @@ import {
   formatBytesToGB,
   PreScanResult,
   openPeopleWindow,
-  resetTagAnalysis
+  resetTagAnalysis,
+  prewarmPersonClusters
 } from "@/lib/electron-bridge";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
@@ -185,6 +186,31 @@ useEffect(() => {
   };
   window.addEventListener('wheel', handleWheel, { passive: false });
   return () => window.removeEventListener('wheel', handleWheel);
+}, []);
+
+// People Manager pre-warm. The main-process cache for
+// getPersonClusters is refreshed in the background while PDR is open,
+// so by the time the user clicks the People Manager button, the
+// cluster list is already warm in memory and comes back from the
+// first IPC call near-instantly (instead of running the full query
+// chain from cold). Fires on mount via requestIdleCallback, then
+// repeats every 60s to stay ahead of user mutations that invalidate
+// the cache.
+useEffect(() => {
+  const idle: (cb: () => void) => void = (window as any).requestIdleCallback
+    ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 3000 })
+    : (cb) => setTimeout(cb, 500);
+  let cancelled = false;
+  const fire = () => {
+    if (cancelled) return;
+    idle(() => {
+      if (cancelled) return;
+      prewarmPersonClusters().catch(() => { /* best-effort; ignore */ });
+    });
+  };
+  fire();
+  const interval = setInterval(fire, 60_000);
+  return () => { cancelled = true; clearInterval(interval); };
 }, []);
 
   const [location, setLocation] = useLocation();

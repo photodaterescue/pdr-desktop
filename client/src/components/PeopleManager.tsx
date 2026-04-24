@@ -69,8 +69,26 @@ function notifyChange() {
 
 // ─── Main People Manager (standalone page, not modal) ─────────────────────
 export default function PeopleManager() {
-  const [activeTab, setActiveTab] = useState<'named' | 'unnamed' | 'unsure' | 'ignored'>('named');
-  const [viewMode, setViewMode] = useState<'list' | 'card'>('card');
+  // Persisted tab + view-mode selections — reopening PM drops the
+  // user back on whatever tab/view they were using last, rather than
+  // always starting on Named / Card. Zero cost beyond the initial
+  // localStorage read.
+  const [activeTab, setActiveTab] = useState<'named' | 'unnamed' | 'unsure' | 'ignored'>(() => {
+    if (typeof window === 'undefined') return 'named';
+    const saved = localStorage.getItem('pdr-pm-active-tab');
+    return saved === 'unnamed' || saved === 'unsure' || saved === 'ignored' || saved === 'named' ? saved : 'named';
+  });
+  const [viewMode, setViewMode] = useState<'list' | 'card'>(() => {
+    if (typeof window === 'undefined') return 'card';
+    const saved = localStorage.getItem('pdr-pm-view-mode');
+    return saved === 'list' ? 'list' : 'card';
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-pm-active-tab', activeTab); } catch {}
+  }, [activeTab]);
+  useEffect(() => {
+    try { localStorage.setItem('pdr-pm-view-mode', viewMode); } catch {}
+  }, [viewMode]);
   const [zoomLevel, setZoomLevel] = useState(() => {
     const saved = localStorage.getItem('pdr-people-zoom');
     return saved ? parseInt(saved, 10) : 100;
@@ -91,10 +109,66 @@ export default function PeopleManager() {
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState<{ personId: number; personName: string } | null>(null);
   const [pendingIgnore, setPendingIgnore] = useState<string | null>(null);
   const [pendingUnsure, setPendingUnsure] = useState<string | null>(null);
-  const [searchFilter, setSearchFilter] = useState('');
+  const [searchFilter, setSearchFilter] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('pdr-pm-search') ?? '';
+  });
   const [clusterThreshold, setClusterThreshold] = useState(0.70);
   const [isReclustering, setIsReclustering] = useState(false);
-  const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
+  const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('pdr-pm-unverified-only') === 'true';
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-pm-search', searchFilter); } catch {}
+  }, [searchFilter]);
+  useEffect(() => {
+    try { localStorage.setItem('pdr-pm-unverified-only', String(showUnverifiedOnly)); } catch {}
+  }, [showUnverifiedOnly]);
+
+  // Scroll-position restore. Each tab keeps its own scrollTop so
+  // switching between Named and Unnamed keeps your place in each.
+  // Values are written with a small debounce so rapid scroll events
+  // don't hammer localStorage.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollRestoredForLoadRef = useRef(false);
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        try { localStorage.setItem(`pdr-pm-scroll-${activeTab}`, String(el.scrollTop)); } catch {}
+      }, 150);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      if (timer) clearTimeout(timer);
+      el.removeEventListener('scroll', onScroll);
+    };
+  }, [activeTab]);
+  // Restore scroll AFTER the cluster data has populated (otherwise
+  // there's nothing to scroll through yet and the scrollTop reverts).
+  useEffect(() => {
+    if (isLoading || scrollRestoredForLoadRef.current) return;
+    scrollRestoredForLoadRef.current = true;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const saved = localStorage.getItem(`pdr-pm-scroll-${activeTab}`);
+    if (saved) {
+      const y = parseInt(saved, 10);
+      if (!Number.isNaN(y)) {
+        // Delay one frame so the list has laid out.
+        requestAnimationFrame(() => { el.scrollTop = y; });
+      }
+    }
+  }, [isLoading, activeTab]);
+  // Reset the "already restored" latch when the tab changes so the
+  // scroll-restore effect re-runs for the newly-active tab.
+  useEffect(() => {
+    scrollRestoredForLoadRef.current = false;
+  }, [activeTab]);
 
   // Cross-row face selection state (shared across all PersonCardRow instances)
   const [globalSelectedFaces, setGlobalSelectedFaces] = useState<Set<number>>(new Set());
@@ -631,7 +705,7 @@ export default function PeopleManager() {
 
       {/* Main content area — scrollable content + optional side panel */}
       <div className="flex-1 flex overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-6 pt-4 pb-6" style={{ zoom: `${zoomLevel}%` }}>
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 pt-4 pb-6" style={{ zoom: `${zoomLevel}%` }}>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-purple-500" />

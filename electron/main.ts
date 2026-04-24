@@ -3192,6 +3192,7 @@ ipcMain.handle('ai:namePerson', async (_event, name: string, clusterId?: number,
       const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE cluster_id = ?`).all(clusterId) as { file_id: number }[];
       for (const f of files) rebuildAiFts(f.file_id);
     }
+    invalidatePersonClustersCache();
     return { success: true, data: { personId } };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3206,6 +3207,7 @@ ipcMain.handle('ai:assignFace', async (_event, faceId: number, personId: number,
     const database = getDb();
     const face = database.prepare(`SELECT file_id FROM face_detections WHERE id = ?`).get(faceId) as { file_id: number } | undefined;
     if (face) rebuildAiFts(face.file_id);
+    invalidatePersonClustersCache();
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3225,6 +3227,7 @@ ipcMain.handle('ai:batchVerify', async (_event, personIds: number[]) => {
       for (const f of files) affectedFiles.add(f.file_id);
     }
     for (const fileId of affectedFiles) rebuildAiFts(fileId);
+    invalidatePersonClustersCache();
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3262,6 +3265,7 @@ ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold?: num
 ipcMain.handle('ai:unnameFace', async (_event, faceId: number) => {
   try {
     unnameFace(faceId);
+    invalidatePersonClustersCache();
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3276,6 +3280,7 @@ ipcMain.handle('ai:renamePerson', async (_event, personId: number, newName: stri
     const database = getDb();
     const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(personId) as { file_id: number }[];
     for (const f of files) rebuildAiFts(f.file_id);
+    invalidatePersonClustersCache();
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3286,6 +3291,7 @@ ipcMain.handle('ai:setRepresentativeFace', async (_event, personId: number, face
   try {
     const { setPersonRepresentativeFace } = await import('./search-database.js');
     setPersonRepresentativeFace(personId, faceId);
+    invalidatePersonClustersCache();
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3300,6 +3306,7 @@ ipcMain.handle('ai:mergePersons', async (_event, targetPersonId: number, sourceP
     const database = getDb();
     const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(targetPersonId) as { file_id: number }[];
     for (const f of files) rebuildAiFts(f.file_id);
+    invalidatePersonClustersCache();
     return { success: true, data: { facesReassigned } };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3319,6 +3326,7 @@ ipcMain.handle('ai:deletePerson', async (_event, personId: number) => {
     const result = deletePerson(personId);
     // Rebuild FTS for affected files
     for (const f of affectedFiles) rebuildAiFts(f.file_id);
+    invalidatePersonClustersCache();
     return { success: true, data: { ...result, personName: person.name } };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -3431,10 +3439,51 @@ ipcMain.handle('ai:resetTagAnalysis', async () => {
   }
 });
 
+// Main-process cache for getPersonClusters results. Pre-warming from
+// the main PDR window (see ai:prewarmPersonClusters) fills this while
+// PM is closed; when the user opens PM the cluster list comes back
+// instantly from memory instead of waiting for the full query chain
+// every time. Cache lives for the lifetime of the main process and is
+// invalidated explicitly by any IPC handler that mutates cluster
+// state (namePerson, assignFace, discardPerson, etc.).
+let cachedPersonClusters: ReturnType<typeof getPersonClusters> | null = null;
+let cachedPersonClustersAt = 0;
+const PERSON_CLUSTERS_TTL_MS = 30_000;
+function invalidatePersonClustersCache() {
+  cachedPersonClusters = null;
+  cachedPersonClustersAt = 0;
+}
+function computePersonClustersFresh() {
+  cleanupOrphanedPersons();
+  const data = getPersonClusters();
+  cachedPersonClusters = data;
+  cachedPersonClustersAt = Date.now();
+  return data;
+}
+
 ipcMain.handle('ai:personClusters', async () => {
   try {
-    cleanupOrphanedPersons();
-    return { success: true, data: getPersonClusters() };
+    // Use cached value if fresh. The cache is invalidated by every
+    // mutation handler below, so a fresh value here is safe even when
+    // the DB has changed since last fetch.
+    const age = Date.now() - cachedPersonClustersAt;
+    if (cachedPersonClusters && age < PERSON_CLUSTERS_TTL_MS) {
+      return { success: true, data: cachedPersonClusters };
+    }
+    return { success: true, data: computePersonClustersFresh() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Pre-warm handler — called from the main PDR window when it's idle,
+// so PM opens with a hot cache. Same code path as ai:personClusters
+// but always forces a fresh fetch to keep the cache from going
+// stale due to mutations we might have missed.
+ipcMain.handle('ai:prewarmPersonClusters', async () => {
+  try {
+    computePersonClustersFresh();
+    return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

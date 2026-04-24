@@ -1725,6 +1725,17 @@ export async function getPersonClusters(): Promise<{ success: boolean; data?: Pe
   return { success: false };
 }
 
+/** Pre-warm the main-process getPersonClusters cache without waiting
+ *  for a result. Call this from the main PDR window on idle so when
+ *  the user opens People Manager the cluster list returns instantly
+ *  from memory instead of cold-querying the DB. */
+export async function prewarmPersonClusters(): Promise<{ success: boolean }> {
+  if (isElectron() && (window as any).pdr?.ai?.prewarmPersonClusters) {
+    return (window as any).pdr.ai.prewarmPersonClusters();
+  }
+  return { success: false };
+}
+
 export async function getFaceCrop(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 96): Promise<{ success: boolean; dataUrl?: string }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.faceCrop(filePath, boxX, boxY, boxW, boxH, size);
