@@ -151,11 +151,29 @@ export default function PeopleManager() {
     // previous load bails out instead of fighting for I/O.
     const myLoadId = ++loadIdRef.current;
 
-    // Background idle fetch: process every remaining cluster in order,
-    // one at a time, yielding to the browser between clusters so
-    // user scrolls, clicks, and edits stay responsive.
+    // Background idle fetch: process every remaining cluster in
+    // interleaved order, one at a time, yielding to the browser
+    // between clusters so user scrolls, clicks, and edits stay
+    // responsive.
+    //
+    // Interleave matters: getPersonClusters returns named first then
+    // unnamed, so a naive queue processes all 10 named → all 157
+    // unnamed in order. If the user switches to Unnamed after a few
+    // seconds, they'd see blank rows until the loop got that far.
+    // Round-robin instead: named[0], unnamed[0], special[0], named[1],
+    // unnamed[1], … so every tab's top clusters populate early.
     if (clustersRes.success && clustersRes.data) {
-      const queue = [...clustersRes.data];
+      const all = clustersRes.data;
+      const named = all.filter(c => c.person_name && c.person_name !== '__ignored__' && c.person_name !== '__unsure__');
+      const unnamed = all.filter(c => !c.person_name);
+      const special = all.filter(c => c.person_name === '__ignored__' || c.person_name === '__unsure__');
+      const queue: typeof all = [];
+      const maxLen = Math.max(named.length, unnamed.length, special.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (named[i]) queue.push(named[i]);
+        if (unnamed[i]) queue.push(unnamed[i]);
+        if (special[i]) queue.push(special[i]);
+      }
       const idle: (cb: () => void) => void = (window as any).requestIdleCallback
         ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 2000 })
         : (cb) => setTimeout(cb, 100);
@@ -164,8 +182,12 @@ export default function PeopleManager() {
         if (queue.length === 0) return;
         idle(async () => {
           if (loadIdRef.current !== myLoadId) return;
-          const cluster = queue.shift();
-          if (cluster) await ensureClusterCrops(cluster);
+          // Pull 2 clusters per idle slot and fetch concurrently —
+          // doubles background throughput without starving the main
+          // thread, since each ensureClusterCrops is already mostly
+          // waiting on IPC + sharp, not CPU.
+          const batch = [queue.shift(), queue.shift()].filter(Boolean) as typeof all;
+          await Promise.all(batch.map(c => ensureClusterCrops(c)));
           processNext();
         });
       };
