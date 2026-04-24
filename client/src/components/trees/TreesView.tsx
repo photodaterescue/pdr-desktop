@@ -38,6 +38,9 @@ interface PersonSummary {
   name: string;
   /** Photos this person appears in — used for the Photos sort option. */
   photoCount: number;
+  /** Stored gender string ('male' / 'female' / 'non_binary' / …). Used
+   *  by the People-list modal to render the gender column. */
+  gender: string | null;
 }
 
 /**
@@ -195,7 +198,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const reloadPersons = useCallback(async () => {
     const res = await listPersons();
     if (res.success && res.data) {
-      setAllPersons(res.data.map(p => ({ id: p.id, name: p.name, photoCount: p.photo_count ?? 0 })));
+      setAllPersons(res.data.map(p => ({
+        id: p.id,
+        name: p.name,
+        photoCount: p.photo_count ?? 0,
+        gender: (p as any).gender ?? null,
+      })));
     }
   }, []);
 
@@ -1458,6 +1466,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           graph={graph}
           allPersons={allPersons}
           connectedPersonIds={connectedPersonIds}
+          excludedSuggestionIds={excludedSuggestionIdSet}
           useGenderedLabels={currentTree?.useGenderedLabels ?? true}
           onClose={() => setTreePeopleOpen(false)}
           onPersonsChanged={async () => {
