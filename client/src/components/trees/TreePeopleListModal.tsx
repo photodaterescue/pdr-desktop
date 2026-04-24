@@ -1,5 +1,5 @@
 import { useRef, useState, useMemo } from 'react';
-import { Move, Users, X, Trash2, ArrowUp, ArrowDown, Minus, Plus, ArrowRight } from 'lucide-react';
+import { Move, Users, X, Trash2, ArrowUp, ArrowDown, Minus, Plus, Target, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { FamilyGraph } from '@/lib/electron-bridge';
 import { deletePersonRecord, restorePerson } from '@/lib/electron-bridge';
@@ -33,7 +33,7 @@ export function TreePeopleListModal({
   stepsEnabled,
   steps,
   onStepsChange,
-  onOpenFocusPicker,
+  onSetFocus,
   onClose,
   onPersonsChanged,
   useGenderedLabels,
@@ -47,11 +47,10 @@ export function TreePeopleListModal({
   stepsEnabled: boolean;
   steps: number;
   onStepsChange: (next: number) => void;
-  /** Opens the existing focus picker so the user can change who this
-   *  tree is centred on without leaving the People list. The caller
-   *  is responsible for closing the people modal if they'd rather
-   *  the user land on the canvas after picking. */
-  onOpenFocusPicker: () => void;
+  /** Set the tree's focus person inline — no external picker modal,
+   *  no canvas navigation. The People list re-renders around the new
+   *  focus immediately. */
+  onSetFocus: (personId: number) => void;
   onClose: () => void;
   onPersonsChanged: () => void;
   useGenderedLabels?: boolean;
@@ -92,6 +91,24 @@ export function TreePeopleListModal({
   const [sortStack, setSortStack] = useState<SortKey[]>([
     { column: 'gen', direction: 'asc' },
   ]);
+
+  // Modal-local focus-change undo stack. Kept separate from the
+  // canvas undo history so it doesn't pollute graph_history or clash
+  // with Ctrl+Z on the tree. When the user changes focus via the
+  // in-row target button we push the previous focus here; clicking
+  // Undo walks back through the stack until we run out.
+  const [focusHistory, setFocusHistory] = useState<(number | null)[]>([]);
+  const handleSetFocus = (newId: number) => {
+    if (newId === focusPersonId) return;
+    setFocusHistory(h => [...h, focusPersonId]);
+    onSetFocus(newId);
+  };
+  const handleUndoFocus = () => {
+    if (focusHistory.length === 0) return;
+    const previous = focusHistory[focusHistory.length - 1];
+    setFocusHistory(h => h.slice(0, -1));
+    if (previous != null) onSetFocus(previous);
+  };
 
   const labels = useMemo(() => {
     if (focusPersonId == null || !graph) return new Map<number, string>();
@@ -230,20 +247,21 @@ export function TreePeopleListModal({
   };
 
   const handleDelete = async (person: PersonSummary) => {
+    const name = person.name.trim() || 'this person';
     const hasVerified = person.verifiedPhotoCount > 0;
-    if (hasVerified) {
-      await promptConfirm({
-        title: `Delete ${person.name.trim() || 'this person'}?`,
-        message: `${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? ' is' : 's are'} tagged to this person. Because verifying photos represents real time investment, deletion of anyone with verified tags happens from People Manager — not from here. (That flow is coming soon.)`,
-        confirmLabel: 'OK',
-        hideCancel: true,
-      });
-      return;
-    }
+    // Every delete goes through the same soft-delete path — high- and
+    // low-stakes alike — because the Recycle Bin is the real safety
+    // net. The difference is the confirmation weight: if the person
+    // has verified photos, show the exact cost in the dialog so the
+    // user sees what they're about to spend. If zero, a lighter confirm
+    // is enough.
+    const message = hasVerified
+      ? `${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? ' is' : 's are'} tagged to ${name}. Deleting moves them to the Recycle Bin — restoring them from there brings every tag back. The photos themselves are never deleted.`
+      : `${name} currently has no verified photos tagged. Deleting moves them to the Recycle Bin — restorable there, or one-click undo via the toast.`;
     const proceed = await promptConfirm({
-      title: `Delete ${person.name.trim() || 'this person'}?`,
-      message: `${person.name.trim() || 'They'} currently has no verified photos tagged. Deleting here removes them from this tree and from People Manager (they go to the Recycle Bin — undo within 30 seconds or restore from there later).`,
-      confirmLabel: 'Delete',
+      title: `Delete ${name}?`,
+      message,
+      confirmLabel: hasVerified ? `Delete ${name}` : 'Delete',
       cancelLabel: 'Cancel',
       danger: true,
     });
@@ -325,20 +343,27 @@ export function TreePeopleListModal({
           </p>
         </div>
 
-        {/* Tree controls: Focus + Steps. Changing either here updates
-            the whole tree — identical to using the header buttons —
-            so the list reflects the new state immediately. */}
+        {/* Tree controls: Focus indicator + Steps + modal-local undo.
+            Focus is not changed from this strip — use the target
+            icon next to any row in the list. The strip just shows
+            the current focus and offers a local undo for recent
+            changes. */}
         <div className="flex items-center gap-2 px-4 pt-2 pb-1.5 text-xs shrink-0">
           <span className="text-muted-foreground shrink-0">Focus:</span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary font-medium max-w-[180px]">
+            <Target className="w-3 h-3 shrink-0" />
+            <span className="truncate">{focusName || '(none)'}</span>
+          </span>
           <button
-            onClick={onOpenFocusPicker}
-            className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-border hover:bg-accent transition-colors max-w-[180px]"
-            title="Change the focus person"
+            onClick={handleUndoFocus}
+            disabled={focusHistory.length === 0}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            title={focusHistory.length === 0
+              ? 'No focus changes to undo'
+              : `Undo the last focus change (${focusHistory.length} in history)`}
           >
-            <span className="truncate font-medium text-foreground">
-              {focusName || '(none)'}
-            </span>
-            <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+            <Undo2 className="w-3 h-3" />
+            <span>Undo focus</span>
           </button>
           <span className="text-muted-foreground shrink-0 ml-2">Steps:</span>
           <div className="inline-flex items-center gap-0.5 border border-border rounded">
@@ -380,8 +405,9 @@ export function TreePeopleListModal({
 
         <div
           className="px-4 text-[10px] uppercase tracking-wide text-muted-foreground font-semibold border-b border-border/60 py-1.5 grid gap-2 items-center shrink-0"
-          style={{ gridTemplateColumns: '1.7fr 42px 60px 40px 1.2fr 28px' }}
+          style={{ gridTemplateColumns: '28px 1.7fr 42px 60px 40px 1.2fr 28px' }}
         >
+          <span />
           <SortHeader label="Name" column="name" stack={sortStack} onClick={clickHeader} />
           <SortHeader label="Gen" column="gen" stack={sortStack} onClick={clickHeader} />
           <SortHeader label="Photos" column="photos" stack={sortStack} onClick={clickHeader} align="right" />
@@ -397,10 +423,12 @@ export function TreePeopleListModal({
                 <PersonRow
                   key={p.id}
                   person={p}
+                  isFocus={p.id === focusPersonId}
                   gen={generations.get(p.id) ?? null}
                   relationshipLabel={
                     p.id === focusPersonId ? 'Focus' : (labels.get(p.id) ?? null)
                   }
+                  onSetFocus={() => handleSetFocus(p.id)}
                   onDelete={() => handleDelete(p)}
                 />
               ))}
@@ -419,8 +447,10 @@ export function TreePeopleListModal({
                   <PersonRow
                     key={p.id}
                     person={p}
+                    isFocus={false}
                     gen={null}
                     relationshipLabel={null}
+                    onSetFocus={() => handleSetFocus(p.id)}
                     onDelete={() => handleDelete(p)}
                   />
                 ))}
@@ -480,19 +510,38 @@ function SortHeader({
 }
 
 function PersonRow({
-  person, gen, relationshipLabel, onDelete,
+  person, isFocus, gen, relationshipLabel, onSetFocus, onDelete,
 }: {
   person: PersonSummary;
+  isFocus: boolean;
   gen: number | null;
   relationshipLabel: string | null;
+  onSetFocus: () => void;
   onDelete: () => void;
 }) {
   const hasVerified = person.verifiedPhotoCount > 0;
   return (
     <div
-      className="group grid gap-2 items-center px-2 py-1.5 rounded hover:bg-accent/50 text-sm"
-      style={{ gridTemplateColumns: '1.7fr 42px 60px 40px 1.2fr 28px' }}
+      className={`group grid gap-2 items-center px-2 py-1.5 rounded text-sm transition-colors ${
+        isFocus
+          ? 'bg-amber-500/10 ring-1 ring-amber-500/50 hover:bg-amber-500/15'
+          : 'hover:bg-accent/50'
+      }`}
+      style={{ gridTemplateColumns: '28px 1.7fr 42px 60px 40px 1.2fr 28px' }}
     >
+      <button
+        onClick={onSetFocus}
+        disabled={isFocus}
+        className={`p-1 rounded shrink-0 transition-colors ${
+          isFocus
+            ? 'text-amber-600 dark:text-amber-400 cursor-default'
+            : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-primary/10 focus:opacity-100'
+        }`}
+        title={isFocus ? 'Current focus' : `Make ${person.name} the focus of this tree`}
+        aria-label={isFocus ? `${person.name} — current focus` : `Make ${person.name} the focus`}
+      >
+        <Target className="w-3.5 h-3.5" />
+      </button>
       <p className="truncate font-medium">{person.name || '(unnamed)'}</p>
       <span className="text-xs text-muted-foreground">{gen != null ? gen : '—'}</span>
       <div className="flex items-center justify-end text-xs text-muted-foreground tabular-nums">
@@ -504,14 +553,10 @@ function PersonRow({
       <p className="text-xs text-muted-foreground truncate">{relationshipLabel ?? '—'}</p>
       <button
         onClick={onDelete}
-        className={`p-1 rounded shrink-0 transition-colors ${
-          hasVerified
-            ? 'text-muted-foreground/40 hover:text-muted-foreground/70 hover:bg-background cursor-help'
-            : 'text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10'
-        }`}
+        className="p-1 rounded shrink-0 text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
         title={hasVerified
-          ? `${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? ' tagged' : 's tagged'} — delete from People Manager instead`
-          : 'Delete this person (no verified photos)'}
+          ? `Delete ${person.name} (${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? '' : 's'} — strong confirmation required)`
+          : `Delete ${person.name} (no verified photos)`}
         aria-label={`Delete ${person.name}`}
       >
         <Trash2 className="w-3.5 h-3.5" />

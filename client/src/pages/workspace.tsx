@@ -1671,13 +1671,14 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     if (typeof window !== 'undefined') localStorage.removeItem('pdr-sidebar-pin');
   }, []);
   // Compute collapsed state. In 'auto' mode the sidebar collapses when
-  // S&D results are showing OR when a full-canvas view (Trees) owns
-  // the main area — both need every horizontal pixel for content.
+  // S&D results are showing OR when a full-canvas view (Trees,
+  // Memories) owns the main area — all three benefit from every
+  // horizontal pixel for content.
   const collapsed = pinState === 'closed'
     ? true
     : pinState === 'open'
     ? false
-    : (!!searchResultsActive || activeView === 'familytree');
+    : (!!searchResultsActive || activeView === 'familytree' || activeView === 'memories');
 
   // Section-collapse state for Views / Tools / Guidance. Session-only so
   // the sidebar always opens fully expanded in a fresh session. User can
@@ -1776,17 +1777,37 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   }, [isResizing]);
 
   if (collapsed) {
+    // Helper: gate a click on the licence state for the items that
+    // live behind the paywall. Matches the expanded sidebar's gating
+    // so the user's experience doesn't change based on sidebar width.
+    const gateLocked = (feature: TeaserFeature, onClickIfOk: () => void) => () => {
+      if (!isLicensed) { onFeatureLocked(feature); return; }
+      onClickIfOk();
+    };
+    const iconBtn = (
+      title: string,
+      icon: React.ReactNode,
+      onClick: () => void,
+      locked: boolean = false,
+    ) => (
+      <button
+        onClick={onClick}
+        className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors relative"
+        title={title + (locked ? ' (Premium feature)' : '')}
+      >
+        {icon}
+        {locked && <Lock className="absolute top-0.5 right-0.5 w-2 h-2 text-muted-foreground/60" />}
+      </button>
+    );
+    const divider = <div className="w-6 border-t border-border/60 my-1" />;
     return (
       <div
         data-tour="sd-sidebar-collapse"
-        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-4 gap-1.5 sidebar-animated"
+        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 sidebar-animated overflow-y-auto"
         style={{ width: '48px' }}
       >
-        {/* Menu / expand button — restores the Source Menu sidebar.
-            Always goes to 'open' with a single click, regardless of the
-            previous pin state. Two clicks to expand felt like friction
-            (previously 'closed' → 'auto' could leave the sidebar still
-            collapsed if search-results auto-collapse was active). */}
+        {/* Expand button — always promotes pin state to 'open' for a
+            one-click restore. */}
         <button
           onClick={() => setPinStatePersisted('open')}
           className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
@@ -1795,44 +1816,76 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           <Menu className="w-4 h-4" />
         </button>
 
-        <div className="flex-1" />
+        {divider}
 
-        {/* Guidance icons */}
-        <button
-          onClick={onStartTour}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
-          title="Quick Tour"
-        >
-          <PlayCircle className="w-4 h-4 opacity-70" />
-        </button>
-        <button
-          onClick={() => onPanelChange('getting-started')}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors"
-          title="Getting Started"
-        >
-          <img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="" />
-        </button>
-        <button
-          onClick={() => onPanelChange('best-practices')}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors"
-          title="Best Practices"
-        >
-          <img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="" />
-        </button>
-        <button
-          onClick={() => onPanelChange('what-next')}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 transition-colors"
-          title="What Happens Next"
-        >
-          <img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="" />
-        </button>
-        <button
-          onClick={onSettingsClick}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
-          title="Settings"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+        {/* VIEWS (Dashboard, S&D, Memories, Trees) + TOOLS (People
+            Manager) — same order as the expanded sidebar so the icon
+            positions stay stable when the user collapses/expands. */}
+        {iconBtn(
+          sources.length > 0 ? 'Dashboard' : 'Workspace',
+          <img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="" />,
+          gateLocked('dashboard', () => onDashboardClick()),
+          sources.length > 0 && !isLicensed,
+        )}
+        {iconBtn(
+          'Search & Discovery',
+          <Search className="w-4 h-4 opacity-70" />,
+          gateLocked('search-discovery', () => onViewChange?.('search')),
+          !isLicensed,
+        )}
+        {iconBtn(
+          'Memories',
+          <CalendarRange className="w-4 h-4 opacity-70" />,
+          gateLocked('memories', () => onViewChange?.('memories')),
+          !isLicensed,
+        )}
+        {iconBtn(
+          'Trees',
+          <Network className="w-4 h-4 opacity-70" />,
+          gateLocked('trees', () => onViewChange?.('familytree')),
+          !isLicensed,
+        )}
+        {iconBtn(
+          'People Manager',
+          <Users className="w-4 h-4 text-purple-500" />,
+          gateLocked('people-manager', () => openPeopleWindow()),
+          !isLicensed,
+        )}
+
+        {divider}
+
+        {/* GUIDANCE */}
+        {iconBtn('Quick Tour', <PlayCircle className="w-4 h-4 opacity-70" />, onStartTour)}
+        {iconBtn(
+          'Getting Started',
+          <img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="" />,
+          () => onPanelChange('getting-started'),
+        )}
+        {iconBtn(
+          'Best Practices',
+          <img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="" />,
+          () => onPanelChange('best-practices'),
+        )}
+        {iconBtn(
+          'What Happens Next',
+          <img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="" />,
+          () => onPanelChange('what-next'),
+        )}
+
+        {divider}
+
+        {/* APP */}
+        {iconBtn(
+          'Settings',
+          <img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="" />,
+          onSettingsClick,
+        )}
+        {iconBtn('About PDR', <Info className="w-4 h-4 opacity-60" />, () => onPanelChange('about-pdr'))}
+        {iconBtn(
+          'Help & Support',
+          <img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="" />,
+          () => onPanelChange('help-support'),
+        )}
       </div>
     );
   }
@@ -2066,33 +2119,6 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Placeholder panel used by upcoming views (Memories, Family Tree) that ship
- * as sidebar destinations before the real functionality exists. Gives the
- * user something informative instead of a blank pane and makes it clear the
- * feature is on the roadmap rather than broken.
- */
-function ComingSoonView({ title, subtitle, description, iconName }: { title: string; subtitle: string; description: string; iconName: 'memories' | 'familytree' }) {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center p-12 text-center overflow-auto">
-      <div className="max-w-xl space-y-4">
-        <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center">
-          {iconName === 'memories'
-            ? <CalendarRange className="w-7 h-7 text-primary" />
-            : <Sparkles className="w-7 h-7 text-primary" />}
-        </div>
-        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-        <p className="text-base text-muted-foreground">{subtitle}</p>
-        <p className="text-sm text-muted-foreground/80 leading-relaxed">{description}</p>
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/5 text-primary text-xs font-medium">
-          <Sparkles className="w-3 h-3" />
-          Coming soon
-        </div>
       </div>
     </div>
   );

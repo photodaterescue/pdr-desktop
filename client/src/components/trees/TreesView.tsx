@@ -1480,12 +1480,11 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           stepsEnabled={stepsEnabled}
           steps={expandedHops}
           onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(12, next)))}
-          onOpenFocusPicker={() => {
-            // Close the people modal before opening the focus picker
-            // so they're not stacked on top of each other. Re-opening
-            // People after focus change is the user's choice.
-            setTreePeopleOpen(false);
-            setFocusPickerOpen(true);
+          onSetFocus={(personId) => {
+            // Inline focus change — the modal stays open; only the tree
+            // state changes. The modal re-renders with the new focus
+            // anchor and relationship labels.
+            setFocusPersonId(personId);
           }}
           useGenderedLabels={currentTree?.useGenderedLabels ?? true}
           onClose={() => setTreePeopleOpen(false)}
