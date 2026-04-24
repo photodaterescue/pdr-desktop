@@ -244,12 +244,13 @@ export function TreePeopleListModal({
   const handleDelete = async (person: PersonSummary) => {
     const name = person.name.trim() || 'this person';
     const hasVerified = person.verifiedPhotoCount > 0;
-    // Every delete goes through the same soft-delete path — high- and
-    // low-stakes alike — because the Recycle Bin is the real safety
-    // net. The difference is the confirmation weight: if the person
-    // has verified photos, show the exact cost in the dialog so the
-    // user sees what they're about to spend. If zero, a lighter confirm
-    // is enough.
+    // Every delete goes through the same soft-delete path (Recycle
+    // Bin is the real safety net), but the confirmation weight scales
+    // with cost:
+    //   * 0 verified photos  — simple Yes/No
+    //   * 1+ verified photos — type-to-confirm gate (user must type
+    //     the person's name) so muscle-memory clicks can't nuke
+    //     real tagging work.
     const message = hasVerified
       ? `${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? ' is' : 's are'} tagged to ${name}. Deleting moves them to the Recycle Bin — restoring them from there brings every tag back. The photos themselves are never deleted.`
       : `${name} currently has no verified photos tagged. Deleting moves them to the Recycle Bin — restorable there, or one-click undo via the toast.`;
@@ -259,6 +260,7 @@ export function TreePeopleListModal({
       confirmLabel: hasVerified ? `Delete ${name}` : 'Delete',
       cancelLabel: 'Cancel',
       danger: true,
+      typeToConfirm: hasVerified ? (person.name.trim() || undefined) : undefined,
     });
     if (!proceed) return;
 
@@ -300,12 +302,18 @@ export function TreePeopleListModal({
   };
 
   const handlePurgeDiscarded = async (p: DiscardedPerson) => {
+    const name = p.name.trim();
     const proceed = await promptConfirm({
-      title: `Permanently delete ${p.name.trim() || 'this person'}?`,
+      title: `Permanently delete ${name || 'this person'}?`,
       message: `This removes them from the Recycle Bin forever. You can't get them back, and any remaining photo-tag links are cleared. Photos themselves are not deleted.`,
       confirmLabel: 'Permanently delete',
       cancelLabel: 'Cancel',
       danger: true,
+      // Permanent deletion is truly irreversible — type-gate it by
+      // the person's name. Falls back to simple confirmation if
+      // the record has no name (edge case: an unnamed discarded
+      // row has nothing meaningful to type).
+      typeToConfirm: name || undefined,
     });
     if (!proceed) return;
     const r = await permanentlyDeletePerson(p.id);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, X } from 'lucide-react';
 
@@ -33,6 +33,7 @@ export function promptConfirm(options: string | ConfirmOptions): Promise<boolean
         cancelLabel={opts.cancelLabel}
         danger={opts.danger}
         hideCancel={opts.hideCancel}
+        typeToConfirm={opts.typeToConfirm}
         onConfirm={() => close(true)}
         onCancel={() => close(false)}
       />
@@ -51,22 +52,46 @@ export interface ConfirmOptions {
    *  where there's nothing to cancel. Clicking the backdrop or Escape
    *  still dismisses, but the footer shows only the confirm button. */
   hideCancel?: boolean;
+  /** When set, the user must type this exact string (case-insensitive,
+   *  trimmed) into an input field before the Confirm button activates.
+   *  Used for high-stakes destructive actions where a plain Yes/No
+   *  could be clicked by accident — typing requires intent. */
+  typeToConfirm?: string;
 }
 
 function ConfirmDialog({
-  message, title, confirmLabel, cancelLabel, danger, hideCancel, onConfirm, onCancel,
+  message, title, confirmLabel, cancelLabel, danger, hideCancel, typeToConfirm, onConfirm, onCancel,
 }: ConfirmOptions & { onConfirm: () => void; onCancel: () => void }) {
   const [mounted, setMounted] = useState(false);
+  const [typedValue, setTypedValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // For a type-to-confirm dialog, the confirm is enabled only when the
+  // user's typed input matches (trimmed + lower-cased) the target
+  // string. Case- and whitespace-insensitive keeps the gate effective
+  // for intent while forgiving for minor fumbles.
+  const requiresTyping = !!typeToConfirm;
+  const typedMatches = requiresTyping
+    ? typedValue.trim().toLowerCase() === typeToConfirm!.trim().toLowerCase()
+    : true;
 
   useEffect(() => {
     setMounted(true);
+    // Focus the type-to-confirm input when one's present so the user
+    // can start typing immediately without hunting for the field.
+    if (requiresTyping && inputRef.current) {
+      inputRef.current.focus();
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      else if (e.key === 'Enter') onConfirm();
+      // Only auto-confirm on Enter when the gate is passed. Without
+      // this, a user hitting Enter before typing would bypass the
+      // whole point of the confirmation.
+      else if (e.key === 'Enter' && typedMatches) onConfirm();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel, onConfirm]);
+  }, [onCancel, onConfirm, requiresTyping, typedMatches]);
 
   return (
     <div
@@ -97,6 +122,27 @@ function ConfirmDialog({
           )}
           <p className="text-sm text-foreground">{message}</p>
         </div>
+        {requiresTyping && (
+          <div className="mb-4">
+            <p className="text-xs text-muted-foreground mb-1.5">
+              To confirm, type <strong className="text-foreground">{typeToConfirm}</strong> below:
+            </p>
+            <input
+              ref={inputRef}
+              type="text"
+              value={typedValue}
+              onChange={e => setTypedValue(e.target.value)}
+              placeholder={typeToConfirm}
+              className={`w-full px-3 py-1.5 rounded-lg border bg-background text-sm font-mono ${
+                typedMatches
+                  ? 'border-primary/50'
+                  : typedValue.length > 0
+                  ? 'border-red-400/50'
+                  : 'border-border'
+              }`}
+            />
+          </div>
+        )}
         <div className="flex items-center justify-end gap-2">
           {!hideCancel && (
             <button
@@ -107,9 +153,10 @@ function ConfirmDialog({
             </button>
           )}
           <button
-            onClick={onConfirm}
-            autoFocus
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
+            onClick={() => { if (typedMatches) onConfirm(); }}
+            autoFocus={!requiresTyping}
+            disabled={!typedMatches}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-opacity disabled:opacity-40 disabled:cursor-not-allowed ${
               danger
                 ? 'bg-red-600 text-white hover:bg-red-700'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90'
