@@ -8,6 +8,8 @@ import { useLicense } from "@/contexts/LicenseContext";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { LicenseModal } from "@/components/LicenseModal";
 import { FolderBrowserModal } from "@/components/FolderBrowserModal";
+import { useZoomLevel } from "@/hooks/useZoomLevel";
+import { ZoomControls } from "@/components/ZoomControls";
 
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
@@ -16,6 +18,9 @@ export default function SourceSelection() {
   const [showLicenseModal, setShowLicenseModal] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [pendingPath, setPendingPath] = useState<{ path: string; type: 'folder' | 'drive' | 'zip'; name: string } | null>(null);
+  // Shares pdr-zoom-level with Welcome and Workspace — whatever zoom
+  // level the user picks here carries across.
+  const zoom = useZoomLevel();
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -99,7 +104,16 @@ export default function SourceSelection() {
   };
 
   return (
-    <div className="h-full bg-background flex flex-col items-center justify-center p-6 relative overflow-auto">
+    <>
+    <ZoomControls
+      zoomLevel={zoom.zoomLevel}
+      onZoomIn={zoom.zoomIn}
+      onZoomOut={zoom.zoomOut}
+      onReset={zoom.zoomReset}
+      canZoomIn={zoom.canZoomIn}
+      canZoomOut={zoom.canZoomOut}
+    />
+    <div className="h-full bg-background flex flex-col items-center justify-center p-6 relative overflow-auto" style={{ zoom: zoom.zoomLevel / 100 }}>
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-secondary/40 rounded-full blur-3xl" />
@@ -166,6 +180,7 @@ export default function SourceSelection() {
         <LicenseModal onClose={handleLicenseModalClose} />
       )}
     </div>
+    </>
   );
 }
 
