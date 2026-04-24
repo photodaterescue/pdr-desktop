@@ -127,12 +127,10 @@ export default function PeopleManager() {
   const loadClusters = async () => {
     setIsLoading(true);
     // Render the cluster list AS SOON AS the DB queries return. Face
-    // thumbnails are filled in afterwards in the background — each
-    // getFaceCrop call is slow (sharp decode + crop + resize + JPEG
-    // encode; ~20–50ms per face), and at full library scale the
-    // thumbnail loop was blocking the UI for 20–45 seconds before a
-    // single pixel of the list rendered. Now the list appears when
-    // the DB settles (~1–3s) and thumbnails pop in as they arrive.
+    // thumbnails are now fetched PER-CLUSTER when the row enters the
+    // viewport — previously a 6-worker mount-time loop churned through
+    // every cluster's samples regardless of visibility, which wasted
+    // ~500ms-1s per off-screen cluster row.
     const [clustersRes, personsRes, discardedRes] = await Promise.all([
       getPersonClusters(),
       listPersons(),
@@ -142,36 +140,39 @@ export default function PeopleManager() {
     if (personsRes.success && personsRes.data) setExistingPersons(personsRes.data);
     if (discardedRes.success && discardedRes.data) setDiscardedPersons(discardedRes.data);
     setIsLoading(false);
+    // Reset the per-open "I've fetched this cluster" dedup tracker so a
+    // refresh re-populates rows that come back into view.
+    fetchedClusterKeysRef.current.clear();
+  };
 
-    // Background thumbnail fetch. Runs in parallel batches so we don't
-    // ship the main thread through ~50ms × N_faces serially, but also
-    // doesn't try to open N_faces file handles at once. Skips anything
-    // already cached in faceCropsMap so repeat loads are fast.
-    if (clustersRes.success && clustersRes.data) {
-      const jobs: Array<{ face_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number }> = [];
-      const seen = new Set<number>();
-      for (const cluster of clustersRes.data) {
-        if (!cluster.sample_faces) continue;
-        for (const face of cluster.sample_faces) {
-          if (seen.has(face.face_id)) continue;
-          seen.add(face.face_id);
-          jobs.push(face);
+  /** Per-cluster thumbnail fetcher. Fires when a row enters the
+   *  viewport (IntersectionObserver in PersonCardRow / PersonListRow).
+   *  Idempotent: subsequent calls for the same cluster are no-ops, and
+   *  faces already in faceCropsMap are skipped so the second scroll-in
+   *  costs nothing. Small local worker pool so we don't try to open
+   *  25 file handles in parallel for a single row. */
+  const fetchedClusterKeysRef = useRef<Set<string>>(new Set());
+  const ensureClusterCrops = async (cluster: PersonCluster) => {
+    const key = clusterKey(cluster);
+    if (fetchedClusterKeysRef.current.has(key)) return;
+    fetchedClusterKeysRef.current.add(key);
+    const faces = cluster.sample_faces ?? [];
+    if (faces.length === 0) return;
+    const todo = faces.filter(f => !faceCropsMap[f.face_id]);
+    if (todo.length === 0) return;
+    const CONCURRENCY = 4;
+    let next = 0;
+    const worker = async () => {
+      while (next < todo.length) {
+        const i = next++;
+        const face = todo[i];
+        const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
+        if (crop.success && crop.dataUrl) {
+          setFaceCropsMap(prev => ({ ...prev, [face.face_id]: crop.dataUrl! }));
         }
       }
-      const CONCURRENCY = 6;
-      let next = 0;
-      const worker = async () => {
-        while (next < jobs.length) {
-          const i = next++;
-          const face = jobs[i];
-          const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
-          if (crop.success && crop.dataUrl) {
-            setFaceCropsMap(prev => ({ ...prev, [face.face_id]: crop.dataUrl! }));
-          }
-        }
-      };
-      await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-    }
+    };
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
   };
 
   useEffect(() => { loadClusters(); }, []);
@@ -633,7 +634,7 @@ export default function PeopleManager() {
                     {filteredNamed.map((cluster, idx) => (
                       <PersonCardRow
                         rowIndex={idx}
-                        key={clusterKey(cluster)}
+                        key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
                         cluster={cluster}
                         cropUrl={faceCropsMap[clusterKey(cluster)]}
                         sampleCrops={faceCropsMap}
@@ -663,7 +664,7 @@ export default function PeopleManager() {
                   <div className="space-y-0.5">
                     {filteredNamed.map((cluster, idx) => (
                       <PersonListRow
-                        key={clusterKey(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
+                        key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
                         isEditing={editingCluster === clusterKey(cluster)} nameInput={nameInput}
                         onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(cluster.person_name || ''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                         onNameChange={setNameInput}
@@ -700,7 +701,7 @@ export default function PeopleManager() {
                         {unnamedClusters.map((cluster, idx) => (
                           <PersonCardRow
                             rowIndex={idx}
-                            key={clusterKey(cluster)}
+                            key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
                             cluster={cluster}
                             cropUrl={faceCropsMap[clusterKey(cluster)]}
                             sampleCrops={faceCropsMap}
@@ -736,7 +737,7 @@ export default function PeopleManager() {
                       <div className="space-y-0.5">
                         {unnamedClusters.map((cluster) => (
                           <PersonListRow
-                            key={clusterKey(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
+                            key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
                             isEditing={editingCluster === clusterKey(cluster)} nameInput={nameInput}
                             onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                             onNameChange={setNameInput}
@@ -783,7 +784,7 @@ export default function PeopleManager() {
                       {unsureClusters.map((cluster, idx) => (
                         <PersonCardRow
                           rowIndex={idx}
-                          key={clusterKey(cluster)}
+                          key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
                           cluster={cluster}
                           cropUrl={faceCropsMap[clusterKey(cluster)]}
                           sampleCrops={faceCropsMap}
@@ -840,7 +841,7 @@ export default function PeopleManager() {
                       {ignoredClusters.map((cluster, idx) => (
                         <PersonCardRow
                           rowIndex={idx}
-                          key={clusterKey(cluster)}
+                          key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
                           cluster={cluster}
                           cropUrl={faceCropsMap[clusterKey(cluster)]}
                           sampleCrops={faceCropsMap}
@@ -1377,7 +1378,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 
 /* ─── Card Row — name LEFT, scrollable thumbnails RIGHT ─────────────────── */
 
-function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, existingPersons, onSelectPerson, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, currentTab, rowIndex }: {
+function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, existingPersons, onSelectPerson, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, currentTab, rowIndex, onVisible }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
@@ -1412,6 +1413,12 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   onGlobalReassignNameChange: (name: string) => void;
   currentTab?: 'named' | 'unnamed' | 'unsure' | 'ignored';
   rowIndex?: number;
+  /** Fired the first time this row's DOM element becomes visible
+   *  within the scroll viewport. Used by the parent to request face-
+   *  thumbnail crops lazily — off-screen rows never pay the I/O cost
+   *  until scrolled to. Safe to call repeatedly; the parent's
+   *  ensureClusterCrops already dedups. */
+  onVisible?: () => void;
 }) {
   // Ring colour for verified faces based on which category the cluster belongs to
   const getVerifiedBorderClass = (): string => {
@@ -1587,6 +1594,29 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const [scrollPosition, setScrollPosition] = useState(0); // index of first visible thumbnail
 
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // Lazy-fetch trigger — fire onVisible the first time this row's DOM
+  // element enters (or is about to enter) the viewport. Latest-ref
+  // pattern so the handler identity doesn't recreate the observer on
+  // every parent render. rootMargin of 200px prefetches just before
+  // the row scrolls into actual view so thumbnails are ready by the
+  // time the user's eye lands on the row. The parent's
+  // ensureClusterCrops dedups, so repeated triggers are harmless.
+  const onVisibleRef = useRef(onVisible);
+  onVisibleRef.current = onVisible;
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          onVisibleRef.current?.();
+        }
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const thumbStripRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1954,7 +1984,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
 
 /* ─── List View ─────────────────────────────────────────────────────────── */
 
-function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure }: {
+function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onVisible }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
@@ -1974,6 +2004,9 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   onUnsure?: () => void;
   onConfirmUnsure?: () => void;
   onCancelUnsure?: () => void;
+  /** Fired when this row first becomes visible — same contract as
+   *  PersonCardRow so the parent can lazy-fetch crops. */
+  onVisible?: () => void;
 }) {
   const getVerifiedBorderClass = (): string => {
     if (!cluster.person_name) return 'border-2 border-amber-400/70';
@@ -1985,6 +2018,24 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const verifiedBorder = getVerifiedBorderClass();
 
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Lazy-fetch trigger — same pattern as PersonCardRow. See there for
+  // commentary on the latest-ref approach.
+  const onVisibleRef = useRef(onVisible);
+  onVisibleRef.current = onVisible;
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          onVisibleRef.current?.();
+        }
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!isEditing) return;
