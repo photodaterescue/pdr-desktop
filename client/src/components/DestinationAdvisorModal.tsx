@@ -7,6 +7,7 @@ import {
   MonitorSmartphone, ChevronDown, ChevronUp, Lightbulb,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { listDrives, type DriveInfo } from '@/lib/electron-bridge';
 
 interface DestinationAdvisorModalProps {
@@ -503,14 +504,15 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                 <div className="flex items-center gap-1">
                   {loading && <span className="text-xs text-muted-foreground mr-2">Scanning...</span>}
                   {!loading && (
-                    <button
-                      onClick={() => setSortMode(prev => prev === 'ranked' ? 'alpha' : 'ranked')}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-secondary/50 transition-colors"
-                      title={sortMode === 'ranked' ? 'Sort alphabetically' : 'Sort by best ranked'}
-                    >
-                      <ArrowUpDown className="w-3.5 h-3.5" />
-                      {sortMode === 'ranked' ? 'Best ranked' : 'A–Z'}
-                    </button>
+                    <IconTooltip label={sortMode === 'ranked' ? 'Sort alphabetically' : 'Sort by best ranked'} side="bottom">
+                      <button
+                        onClick={() => setSortMode(prev => prev === 'ranked' ? 'alpha' : 'ranked')}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-secondary/50 transition-colors"
+                      >
+                        <ArrowUpDown className="w-3.5 h-3.5" />
+                        {sortMode === 'ranked' ? 'Best ranked' : 'A–Z'}
+                      </button>
+                    </IconTooltip>
                   )}
                 </div>
               </div>

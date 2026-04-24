@@ -8,6 +8,7 @@ import { HiddenSuggestionsReview } from './HiddenSuggestionsReview';
 import { useDraggableModal } from './useDraggableModal';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { GenderPickerModal, genderMarkerSymbol } from './GenderPickerModal';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { setPersonGender as setPersonGenderApi, type PersonGender } from '@/lib/electron-bridge';
 
 interface TreesCanvasProps {
@@ -1325,8 +1326,10 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         const cornerX = -CARD_W / 2 + (r + 2);
         const cornerY = -CARD_H / 2 + (r + 2);
         const fill = STEP_BADGE_FILL[node.hopsFromFocus] ?? '#ffffff';
+        const stepsLabel = `${node.hopsFromFocus} step${node.hopsFromFocus === 1 ? '' : 's'} from focus`;
         return (
-          <g style={{ pointerEvents: 'none' }}>
+          <g style={{ pointerEvents: 'all' }}>
+            <title>{stepsLabel}</title>
             <circle
               cx={cornerX}
               cy={cornerY}
@@ -1365,6 +1368,10 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         const r = showSymbol ? 13 : 10;
         const cornerX = CARD_W / 2 - (r + 2);
         const cornerY = -CARD_H / 2 + (r + 2);
+        const genderLabel = node.gender === 'male' ? 'Male — click to change'
+          : node.gender === 'female' ? 'Female — click to change'
+          : node.gender === 'combined' ? 'Mixed — click to change'
+          : 'Click to set gender';
         return (
           <g
             style={{ cursor: 'pointer' }}
@@ -1372,6 +1379,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
             onMouseDown={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
           >
+            <title>{genderLabel}</title>
             <circle
               cx={cornerX}
               cy={cornerY}
@@ -2175,14 +2183,15 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
                   </span>
                 </button>
                 {onHideSuggestion && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
-                    title="Not in this family — hide from suggestions"
-                    aria-label={`Hide ${p.name} from suggestions`}
-                  >
-                    <EyeOff className="w-3 h-3" />
-                  </button>
+                  <IconTooltip label="Not in this family — hide from suggestions" side="left">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onHideSuggestion(p.id); }}
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-background shrink-0 transition-opacity"
+                      aria-label={`Hide ${p.name} from suggestions`}
+                    >
+                      <EyeOff className="w-3 h-3" />
+                    </button>
+                  </IconTooltip>
                 )}
               </div>
             );

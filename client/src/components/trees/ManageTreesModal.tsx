@@ -12,6 +12,7 @@ import {
   type GraphHistoryEntry,
 } from '@/lib/electron-bridge';
 import { promptConfirm } from './promptConfirm';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface ManageTreesModalProps {
   currentTreeId: number | null;
@@ -291,18 +292,19 @@ export function ManageTreesModal({
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => onSwitch(t)}
-                          className="w-full text-left truncate"
-                          title="Switch to this tree"
-                        >
-                          <span className={`text-sm font-medium text-foreground ${isCurrent ? 'font-semibold' : ''}`}>{t.name}</span>
-                          {isCurrent && (
-                            <span className="ml-2 text-[10px] uppercase tracking-wide font-semibold text-foreground bg-primary/20 px-1.5 py-0.5 rounded">
-                              current
-                            </span>
-                          )}
-                        </button>
+                        <IconTooltip label="Switch to this tree" side="right">
+                          <button
+                            onClick={() => onSwitch(t)}
+                            className="w-full text-left truncate"
+                          >
+                            <span className={`text-sm font-medium text-foreground ${isCurrent ? 'font-semibold' : ''}`}>{t.name}</span>
+                            {isCurrent && (
+                              <span className="ml-2 text-[10px] uppercase tracking-wide font-semibold text-foreground bg-primary/20 px-1.5 py-0.5 rounded">
+                                current
+                              </span>
+                            )}
+                          </button>
+                        </IconTooltip>
                       )}
                     </div>
                     {editingId !== t.id && (
@@ -356,15 +358,16 @@ export function ManageTreesModal({
                           />
                         )}
                       </div>
-                      <button
-                        onClick={() => handlePickBackground(t)}
-                        disabled={busy}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/60 border border-border hover:bg-accent text-foreground"
-                        title="Pick an image to display behind this tree's canvas"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        {hasBg ? 'Change background' : 'Set background'}
-                      </button>
+                      <IconTooltip label="Pick an image to display behind this tree's canvas" side="top">
+                        <button
+                          onClick={() => handlePickBackground(t)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-accent/60 border border-border hover:bg-accent text-foreground"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          {hasBg ? 'Change background' : 'Set background'}
+                        </button>
+                      </IconTooltip>
                       {hasBg && (
                         <>
                           <button
@@ -684,14 +687,15 @@ function HistorySection({ open, onToggle, loading, entries, onRevert }: {
                       <span className="text-[9px] uppercase tracking-wide text-muted-foreground">undone</span>
                     )}
                     {!e.undone && (
-                      <button
-                        onClick={() => onRevert(e.id, e.description)}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Revert to the state just after this change (undo everything newer)"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        Revert to here
-                      </button>
+                      <IconTooltip label="Revert to the state just after this change (undo everything newer)" side="left">
+                        <button
+                          onClick={() => onRevert(e.id, e.description)}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Revert to here
+                        </button>
+                      </IconTooltip>
                     )}
                   </div>
                 ))}

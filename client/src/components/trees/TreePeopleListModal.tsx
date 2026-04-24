@@ -6,6 +6,7 @@ import { deletePersonRecord, restorePerson, listDiscardedPersons, permanentlyDel
 import { promptConfirm } from './promptConfirm';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { useDraggableModal } from './useDraggableModal';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface PersonSummary {
   id: number;
@@ -387,38 +388,41 @@ export function TreePeopleListModal({
             <Target className="w-3 h-3 shrink-0" />
             <span className="truncate">{focusName || '(none)'}</span>
           </span>
-          <button
-            onClick={handleUndoFocus}
-            disabled={focusHistory.length === 0}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
-            title={focusHistory.length === 0
-              ? 'No focus changes to undo'
-              : `Undo the last focus change (${focusHistory.length} in history)`}
-          >
-            <Undo2 className="w-3 h-3" />
-            <span>Undo focus</span>
-          </button>
+          <IconTooltip label={focusHistory.length === 0
+            ? 'No focus changes to undo'
+            : `Undo the last focus change (${focusHistory.length} in history)`} side="bottom">
+            <button
+              onClick={handleUndoFocus}
+              disabled={focusHistory.length === 0}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            >
+              <Undo2 className="w-3 h-3" />
+              <span>Undo focus</span>
+            </button>
+          </IconTooltip>
           <span className="text-muted-foreground shrink-0 ml-2">Steps:</span>
           <div className="inline-flex items-center gap-0.5 border border-border rounded">
-            <button
-              onClick={() => onStepsChange(Math.max(1, steps - 1))}
-              disabled={!stepsEnabled || steps <= 1}
-              className="p-0.5 hover:bg-accent rounded-l disabled:opacity-40"
-              title="Fewer steps from focus"
-            >
-              <Minus className="w-3 h-3" />
-            </button>
+            <IconTooltip label="Fewer steps from focus" side="bottom">
+              <button
+                onClick={() => onStepsChange(Math.max(1, steps - 1))}
+                disabled={!stepsEnabled || steps <= 1}
+                className="p-0.5 hover:bg-accent rounded-l disabled:opacity-40"
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+            </IconTooltip>
             <span className="px-2 font-medium text-foreground min-w-[20px] text-center">
               {stepsEnabled ? steps : '∞'}
             </span>
-            <button
-              onClick={() => onStepsChange(steps + 1)}
-              disabled={!stepsEnabled}
-              className="p-0.5 hover:bg-accent rounded-r disabled:opacity-40"
-              title="More steps from focus"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
+            <IconTooltip label="More steps from focus" side="bottom">
+              <button
+                onClick={() => onStepsChange(steps + 1)}
+                disabled={!stepsEnabled}
+                className="p-0.5 hover:bg-accent rounded-r disabled:opacity-40"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </IconTooltip>
           </div>
           <div className="flex-1" />
         </div>
@@ -523,22 +527,24 @@ export function TreePeopleListModal({
                           <span className="truncate font-medium">{p.name.trim() || '(unnamed)'}</span>
                           {when && <span className="text-muted-foreground/70 ml-2 text-[10px]">deleted {when}</span>}
                         </div>
-                        <button
-                          onClick={() => handleRestoreDiscarded(p)}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-primary hover:bg-primary/10"
-                          title="Restore to the tree and People Manager"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          Restore
-                        </button>
-                        <button
-                          onClick={() => handlePurgeDiscarded(p)}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-destructive hover:bg-destructive/10"
-                          title="Delete forever"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Delete forever
-                        </button>
+                        <IconTooltip label="Restore to the tree and People Manager" side="left">
+                          <button
+                            onClick={() => handleRestoreDiscarded(p)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-primary hover:bg-primary/10"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            Restore
+                          </button>
+                        </IconTooltip>
+                        <IconTooltip label="Delete forever" side="left">
+                          <button
+                            onClick={() => handlePurgeDiscarded(p)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Delete forever
+                          </button>
+                        </IconTooltip>
                       </div>
                     );
                   })}
@@ -613,19 +619,20 @@ function PersonRow({
       }`}
       style={{ gridTemplateColumns: '28px 1.7fr 42px 60px 40px 1.2fr 28px' }}
     >
-      <button
-        onClick={onSetFocus}
-        disabled={isFocus}
-        className={`p-1 rounded shrink-0 transition-colors ${
-          isFocus
-            ? 'text-amber-600 dark:text-amber-400 cursor-default'
-            : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-primary/10 focus:opacity-100'
-        }`}
-        title={isFocus ? 'Current focus' : `Make ${person.name} the focus of this tree`}
-        aria-label={isFocus ? `${person.name} — current focus` : `Make ${person.name} the focus`}
-      >
-        <Target className="w-3.5 h-3.5" />
-      </button>
+      <IconTooltip label={isFocus ? 'Current focus' : `Make ${person.name} the focus of this tree`} side="right">
+        <button
+          onClick={onSetFocus}
+          disabled={isFocus}
+          className={`p-1 rounded shrink-0 transition-colors ${
+            isFocus
+              ? 'text-amber-600 dark:text-amber-400 cursor-default'
+              : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-primary/10 focus:opacity-100'
+          }`}
+          aria-label={isFocus ? `${person.name} — current focus` : `Make ${person.name} the focus`}
+        >
+          <Target className="w-3.5 h-3.5" />
+        </button>
+      </IconTooltip>
       <p className="truncate font-medium">{person.name || '(unnamed)'}</p>
       <span className="text-xs text-muted-foreground">{gen != null ? gen : '—'}</span>
       <div className="flex items-center justify-end text-xs text-muted-foreground tabular-nums">
@@ -635,16 +642,17 @@ function PersonRow({
         <GenderGlyph gender={person.gender} />
       </div>
       <p className="text-xs text-muted-foreground truncate">{relationshipLabel ?? '—'}</p>
-      <button
-        onClick={onDelete}
-        className="p-1 rounded shrink-0 text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
-        title={hasVerified
-          ? `Delete ${person.name} (${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? '' : 's'} — strong confirmation required)`
-          : `Delete ${person.name} (no verified photos)`}
-        aria-label={`Delete ${person.name}`}
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
+      <IconTooltip label={hasVerified
+        ? `Delete ${person.name} (${person.verifiedPhotoCount} verified photo${person.verifiedPhotoCount === 1 ? '' : 's'} — strong confirmation required)`
+        : `Delete ${person.name} (no verified photos)`} side="left">
+        <button
+          onClick={onDelete}
+          className="p-1 rounded shrink-0 text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
+          aria-label={`Delete ${person.name}`}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </IconTooltip>
     </div>
   );
 }

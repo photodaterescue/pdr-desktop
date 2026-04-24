@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface DateTripleInputProps {
   /** ISO date string (YYYY-MM-DD) or empty. */
@@ -161,14 +162,15 @@ export function DateTripleInput({ value, onChange, label, hint }: DateTripleInpu
           maxLength={4}
         />
         {(day || month || year) && (
-          <button
-            type="button"
-            onClick={clear}
-            className="ml-auto text-xs text-muted-foreground hover:text-foreground px-1"
-            title="Clear date"
-          >
-            ×
-          </button>
+          <IconTooltip label="Clear date" side="top">
+            <button
+              type="button"
+              onClick={clear}
+              className="ml-auto text-xs text-muted-foreground hover:text-foreground px-1"
+            >
+              ×
+            </button>
+          </IconTooltip>
         )}
       </div>
       <p className="text-[10px] text-muted-foreground mt-1">

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import PeopleManager from './PeopleManager';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface DockedPeopleManagerProps {
   open: boolean;
@@ -71,24 +72,26 @@ export function DockedPeopleManager({ open, onClose }: DockedPeopleManagerProps)
       data-testid="docked-people-manager"
     >
       {/* Resize handle — sits on the left edge of the drawer */}
-      <div
-        onMouseDown={beginDrag}
-        className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-purple-400/40 transition-colors"
-        title="Drag to resize"
-      />
+      <IconTooltip label="Drag to resize" side="right">
+        <div
+          onMouseDown={beginDrag}
+          className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-purple-400/40 transition-colors"
+        />
+      </IconTooltip>
 
       {/* Collapse button — floats on top-left so it doesn't collide with
           PeopleManager's own header controls. Collapses the drawer back
           to the sidebar click toggle. */}
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute top-2 left-2 z-10 w-7 h-7 rounded-lg hover:bg-accent flex items-center justify-center transition-colors"
-        aria-label="Collapse People Manager"
-        title="Collapse panel"
-      >
-        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-      </button>
+      <IconTooltip label="Collapse panel" side="right">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-2 left-2 z-10 w-7 h-7 rounded-lg hover:bg-accent flex items-center justify-center transition-colors"
+          aria-label="Collapse People Manager"
+        >
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        </button>
+      </IconTooltip>
 
       <div className="flex-1 min-w-0 h-full overflow-hidden">
         <PeopleManager />

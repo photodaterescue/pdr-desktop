@@ -7,6 +7,7 @@ import {
   FileText, Download, Music, Film, User
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { listDrives, readDirectory, getThumbnail, createDirectory, getQuickAccessPaths, DriveInfo, DirectoryEntry, QuickAccessPaths } from '@/lib/electron-bridge';
 
 // Drive scoring for colour coding (mirrors DestinationAdvisorModal logic)
@@ -613,30 +614,33 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
 
           {/* Toolbar - Navigation + Breadcrumbs/Path input */}
           <div className="flex items-center gap-2 px-5 py-2.5 border-b border-border bg-card/50">
-            <button
-              onClick={goBack}
-              disabled={historyIndex <= 0}
-              className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-              title="Back"
-            >
-              <ArrowLeft className="w-5 h-5 text-muted-foreground" />
-            </button>
-            <button
-              onClick={goForward}
-              disabled={historyIndex >= history.length - 1}
-              className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-              title="Forward"
-            >
-              <ArrowRight className="w-5 h-5 text-muted-foreground" />
-            </button>
-            <button
-              onClick={goUp}
-              disabled={!currentPath || currentPath.replace(/[\\/]+$/, '').split(/[\\/]/).length <= 1}
-              className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-              title="Up one level"
-            >
-              <ChevronLeft className="w-5 h-5 text-muted-foreground" />
-            </button>
+            <IconTooltip label="Back" side="bottom">
+              <button
+                onClick={goBack}
+                disabled={historyIndex <= 0}
+                className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </IconTooltip>
+            <IconTooltip label="Forward" side="bottom">
+              <button
+                onClick={goForward}
+                disabled={historyIndex >= history.length - 1}
+                className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              >
+                <ArrowRight className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </IconTooltip>
+            <IconTooltip label="Up one level" side="bottom">
+              <button
+                onClick={goUp}
+                disabled={!currentPath || currentPath.replace(/[\\/]+$/, '').split(/[\\/]/).length <= 1}
+                className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </IconTooltip>
 
             {/* Breadcrumbs / Path input */}
             <div
@@ -688,27 +692,29 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                       </button>
                     </React.Fragment>
                   ))}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); startEditingPath(); }}
-                    className="ml-auto p-1 hover:bg-secondary rounded transition-colors shrink-0"
-                    title="Edit path"
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
+                  <IconTooltip label="Edit path" side="left">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); startEditingPath(); }}
+                      className="ml-auto p-1 hover:bg-secondary rounded transition-colors shrink-0"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                  </IconTooltip>
                 </>
               )}
             </div>
 
             {/* New Folder button */}
             {!isArchiveMode && (
-              <button
-                onClick={startCreatingFolder}
-                disabled={!currentPath}
-                className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors shrink-0"
-                title="New Folder"
-              >
-                <FolderPlus className="w-5 h-5 text-muted-foreground" />
-              </button>
+              <IconTooltip label="New Folder" side="bottom">
+                <button
+                  onClick={startCreatingFolder}
+                  disabled={!currentPath}
+                  className="p-2 rounded-lg hover:bg-secondary disabled:opacity-30 disabled:hover:bg-transparent transition-colors shrink-0"
+                >
+                  <FolderPlus className="w-5 h-5 text-muted-foreground" />
+                </button>
+              </IconTooltip>
             )}
           </div>
 
@@ -847,17 +853,18 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                                   {(matchedDrive.freeBytes / (1024 * 1024 * 1024)).toFixed(0)} GB free
                                 </span>
                               )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeFromSavedDestinations(dest);
-                                  setSavedDestinations(prev => prev.filter(p => p.toLowerCase() !== dest.toLowerCase()));
-                                }}
-                                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-secondary rounded transition-all shrink-0"
-                                title="Remove saved destination"
-                              >
-                                <X className="w-3 h-3 text-muted-foreground" />
-                              </button>
+                              <IconTooltip label="Remove saved destination" side="left">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeFromSavedDestinations(dest);
+                                    setSavedDestinations(prev => prev.filter(p => p.toLowerCase() !== dest.toLowerCase()));
+                                  }}
+                                  className="p-1 opacity-0 group-hover:opacity-100 hover:bg-secondary rounded transition-all shrink-0"
+                                >
+                                  <X className="w-3 h-3 text-muted-foreground" />
+                                </button>
+                              </IconTooltip>
                             </div>
                           );
                         })}
@@ -936,9 +943,9 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                   {entries.length > 0 && (
                     <div className="flex items-center gap-2.5 px-2 py-2 mb-1 sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
                       <div className="flex items-center border border-border rounded-lg overflow-hidden shrink-0">
-                        <button onClick={() => setFileViewMode('grid')} className={`p-1.5 transition-colors ${fileViewMode === 'grid' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="Grid view"><LayoutGrid className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => setFileViewMode('list')} className={`p-1.5 transition-colors ${fileViewMode === 'list' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="List view"><List className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => setFileViewMode('details')} className={`p-1.5 transition-colors ${fileViewMode === 'details' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`} title="Details view"><Table2 className="w-3.5 h-3.5" /></button>
+                        <IconTooltip label="Grid view" side="bottom"><button onClick={() => setFileViewMode('grid')} className={`p-1.5 transition-colors ${fileViewMode === 'grid' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}><LayoutGrid className="w-3.5 h-3.5" /></button></IconTooltip>
+                        <IconTooltip label="List view" side="bottom"><button onClick={() => setFileViewMode('list')} className={`p-1.5 transition-colors ${fileViewMode === 'list' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}><List className="w-3.5 h-3.5" /></button></IconTooltip>
+                        <IconTooltip label="Details view" side="bottom"><button onClick={() => setFileViewMode('details')} className={`p-1.5 transition-colors ${fileViewMode === 'details' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}><Table2 className="w-3.5 h-3.5" /></button></IconTooltip>
                       </div>
                       {/* Sort is driven by clicking the column headers in the
                           Details view, matching the File Explorer pattern. */}
@@ -985,20 +992,22 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-xs text-muted-foreground border-b border-border/50 select-none">
-                              <th
-                                onClick={() => handleHeaderSort('name')}
-                                className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
-                                title="Click to sort by name"
-                              >
-                                Name{sortIndicator('name')}
-                              </th>
-                              <th
-                                onClick={() => handleHeaderSort('date')}
-                                className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
-                                title="Click to sort by modified date"
-                              >
-                                Modified{sortIndicator('date')}
-                              </th>
+                              <IconTooltip label="Click to sort by name" side="bottom">
+                                <th
+                                  onClick={() => handleHeaderSort('name')}
+                                  className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                                >
+                                  Name{sortIndicator('name')}
+                                </th>
+                              </IconTooltip>
+                              <IconTooltip label="Click to sort by modified date" side="bottom">
+                                <th
+                                  onClick={() => handleHeaderSort('date')}
+                                  className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                                >
+                                  Modified{sortIndicator('date')}
+                                </th>
+                              </IconTooltip>
                               <th className="text-left py-1.5 px-3 font-medium">Type</th>
                             </tr>
                           </thead>
@@ -1166,21 +1175,23 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-xs text-muted-foreground border-b border-border/50 select-none">
-                            <th
-                              onClick={() => handleHeaderSort('name')}
-                              className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
-                              title="Click to sort by name"
-                            >
-                              Name{sortIndicator('name')}
-                            </th>
+                            <IconTooltip label="Click to sort by name" side="bottom">
+                              <th
+                                onClick={() => handleHeaderSort('name')}
+                                className="text-left py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                              >
+                                Name{sortIndicator('name')}
+                              </th>
+                            </IconTooltip>
                             <th className="text-left py-1.5 px-3 font-medium">Type</th>
-                            <th
-                              onClick={() => handleHeaderSort('size')}
-                              className="text-right py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
-                              title="Click to sort by size"
-                            >
-                              Size{sortIndicator('size')}
-                            </th>
+                            <IconTooltip label="Click to sort by size" side="bottom">
+                              <th
+                                onClick={() => handleHeaderSort('size')}
+                                className="text-right py-1.5 px-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                              >
+                                Size{sortIndicator('size')}
+                              </th>
+                            </IconTooltip>
                           </tr>
                         </thead>
                         <tbody>
@@ -1241,16 +1252,17 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
           </div>
 
           {/* Resize handle */}
-          <div
-            onMouseDown={handleResizeMouseDown}
-            className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-10"
-            style={{
-              background: 'linear-gradient(135deg, transparent 50%, hsl(249, 100%, 81%) 50%)',
-              borderRadius: '0 0 16px 0',
-              opacity: 0.5,
-            }}
-            title="Drag to resize"
-          />
+          <IconTooltip label="Drag to resize" side="top">
+            <div
+              onMouseDown={handleResizeMouseDown}
+              className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-10"
+              style={{
+                background: 'linear-gradient(135deg, transparent 50%, hsl(249, 100%, 81%) 50%)',
+                borderRadius: '0 0 16px 0',
+                opacity: 0.5,
+              }}
+            />
+          </IconTooltip>
 
           {/* Drive suitability warning overlay */}
           <AnimatePresence>
@@ -1369,16 +1381,17 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
 
 function QuickAccessItem({ icon: Icon, label, path, isSelected, onClick }: { icon: any; label: string; path: string; isSelected: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      title={path}
-      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
-        isSelected ? 'bg-primary/10 text-primary' : 'text-foreground/80 hover:bg-secondary/50 hover:text-foreground'
-      }`}
-    >
-      <Icon className="w-4 h-4 shrink-0" />
-      <span className="text-sm font-medium truncate">{label}</span>
-    </button>
+    <IconTooltip label={path} side="right">
+      <button
+        onClick={onClick}
+        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
+          isSelected ? 'bg-primary/10 text-primary' : 'text-foreground/80 hover:bg-secondary/50 hover:text-foreground'
+        }`}
+      >
+        <Icon className="w-4 h-4 shrink-0" />
+        <span className="text-sm font-medium truncate">{label}</span>
+      </button>
+    </IconTooltip>
   );
 }
 

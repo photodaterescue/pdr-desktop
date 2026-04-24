@@ -2904,15 +2904,16 @@ function DashboardPanel({
                       <FolderOpen className="w-3.5 h-3.5" /> Open
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowDestAdvisor(true)}
-                    className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5 shrink-0"
-                    title="Destination Advisor — recommendations and guidance"
-                  >
-                    <Info className="w-3.5 h-3.5" /> {destinationPath ? 'DA' : 'Drive Advisor'}
-                  </Button>
+                  <IconTooltip label="Destination Advisor — recommendations and guidance" side="top">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowDestAdvisor(true)}
+                      className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5 shrink-0"
+                    >
+                      <Info className="w-3.5 h-3.5" /> {destinationPath ? 'DA' : 'Drive Advisor'}
+                    </Button>
+                  </IconTooltip>
                 </div>
                 <div className="flex-1">
                   {destinationPath ? (

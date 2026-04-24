@@ -5,6 +5,7 @@ import { addRelationship, updateRelationship, removeRelationship, createPlacehol
 import { UserPlus } from 'lucide-react';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm } from './promptConfirm';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface PersonSummary { id: number; name: string; }
 
@@ -581,15 +582,16 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
 
         <div className="sticky bottom-0 bg-background border-t border-border px-4 py-3 flex items-center gap-2">
           {editingEdge && (
-            <button
-              onClick={handleRemoveEditing}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-600 hover:bg-red-500/10 disabled:opacity-50"
-              title="Delete just this one relationship"
-            >
-              <Trash2 className="w-4 h-4" />
-              Remove this
-            </button>
+            <IconTooltip label="Delete just this one relationship" side="top">
+              <button
+                onClick={handleRemoveEditing}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-600 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                Remove this
+              </button>
+            </IconTooltip>
           )}
           <div className="flex-1" />
           <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm hover:bg-accent">Cancel</button>
