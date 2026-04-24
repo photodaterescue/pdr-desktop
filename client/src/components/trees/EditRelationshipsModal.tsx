@@ -1,4 +1,5 @@
-import { useMemo, useEffect, useState, useRef } from 'react';
+import { useMemo, useEffect, useState } from 'react';
+import { useDraggableModal } from './useDraggableModal';
 import { X, Pencil, Plus, Trash2, Users, Move } from 'lucide-react';
 import { removeRelationship, listRelationshipsForPerson, getFamilyGraph, type RelationshipRecord, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import { promptConfirm } from './promptConfirm';
@@ -262,37 +263,8 @@ export function EditRelationshipsModal({
   };
 
   // Drag-to-reposition — modal often lands over the person being edited.
-  // Ref-based transform so dragging doesn't trigger React re-renders on
-  // every pointermove (with a full relationships list below, that causes
-  // visible lag). Clamped to ±(viewport/2) on each axis so the close
-  // button can't be stranded off-screen.
-  const modalRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
-  const onDragStart = (e: React.PointerEvent) => {
-    // Skip drag when the press landed on an interactive child (the X
-    // close button etc.) so its click handler fires normally.
-    const t = e.target as HTMLElement;
-    if (t.closest('button, input, select, textarea, a')) return;
-    const d = dragRef.current;
-    d.dragging = true;
-    d.sx = e.clientX; d.sy = e.clientY;
-    d.bx = d.x; d.by = d.y;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onDragMove = (e: React.PointerEvent) => {
-    const d = dragRef.current;
-    if (!d.dragging) return;
-    const rawX = d.bx + e.clientX - d.sx;
-    const rawY = d.by + e.clientY - d.sy;
-    const halfW = window.innerWidth / 2;
-    const halfH = window.innerHeight / 2;
-    d.x = Math.max(-halfW, Math.min(halfW, rawX));
-    d.y = Math.max(-halfH, Math.min(halfH, rawY));
-    if (modalRef.current) {
-      modalRef.current.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
-    }
-  };
-  const onDragEnd = () => { dragRef.current.dragging = false; };
+  // Shared drag hook — header stays on-screen.
+  const { modalRef, dragHandleProps } = useDraggableModal();
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
@@ -302,12 +274,8 @@ export function EditRelationshipsModal({
         onClick={e => e.stopPropagation()}
       >
         <div
-          className="sticky top-0 bg-background border-b border-border px-4 py-3 relative select-none cursor-grab active:cursor-grabbing"
-          style={{ touchAction: 'none' }}
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
+          {...dragHandleProps}
+          className={`sticky top-0 bg-background border-b border-border px-4 py-3 relative ${dragHandleProps.className}`}
         >
           <Move className="absolute left-3 top-3 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
           <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">

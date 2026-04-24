@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useDraggableModal } from './useDraggableModal';
 import { X, Users, AlertCircle, Info, Pencil, Trash2, ChevronDown, ChevronRight, Move } from 'lucide-react';
 import { addRelationship, updateRelationship, removeRelationship, createPlaceholderPerson, createNamedPerson, listRelationshipsForPerson, type FamilyGraph, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import { UserPlus } from 'lucide-react';
@@ -89,34 +90,8 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
    *  stale link can be removed or flipped. */
   const [conflictWithId, setConflictWithId] = useState<number | null>(null);
 
-  // Drag-to-reposition — ref-based transform (no React re-renders on
-  // every pointermove, which visibly lagged with the full form below).
-  // Clamped to ±(viewport/2) so the close button can't be stranded.
-  const modalRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
-  const onDragStart = (e: React.PointerEvent) => {
-    const t = e.target as HTMLElement;
-    if (t.closest('button, input, select, textarea, a')) return;
-    const d = dragRef.current;
-    d.dragging = true;
-    d.sx = e.clientX; d.sy = e.clientY;
-    d.bx = d.x; d.by = d.y;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onDragMove = (e: React.PointerEvent) => {
-    const d = dragRef.current;
-    if (!d.dragging) return;
-    const rawX = d.bx + e.clientX - d.sx;
-    const rawY = d.by + e.clientY - d.sy;
-    const halfW = window.innerWidth / 2;
-    const halfH = window.innerHeight / 2;
-    d.x = Math.max(-halfW, Math.min(halfW, rawX));
-    d.y = Math.max(-halfH, Math.min(halfH, rawY));
-    if (modalRef.current) {
-      modalRef.current.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
-    }
-  };
-  const onDragEnd = () => { dragRef.current.dragging = false; };
+  // Shared drag hook — clamps so header stays on-screen.
+  const { modalRef, dragHandleProps } = useDraggableModal();
   /** When non-null, the modal is editing an existing stored edge rather
    *  than creating a new one. Populated whenever the user picks a
    *  `toPersonId` for whom a relationship already exists. */
@@ -343,12 +318,8 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
         onClick={e => e.stopPropagation()}
       >
         <div
-          className="sticky top-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between select-none cursor-grab active:cursor-grabbing"
-          style={{ touchAction: 'none' }}
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
+          {...dragHandleProps}
+          className={`sticky top-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between ${dragHandleProps.className}`}
         >
           <div className="flex items-center gap-2">
             <Move className="w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />

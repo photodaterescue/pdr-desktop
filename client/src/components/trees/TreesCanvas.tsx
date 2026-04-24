@@ -5,6 +5,7 @@ import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm } from './promptConfirm';
 import { HiddenSuggestionsReview } from './HiddenSuggestionsReview';
+import { useDraggableModal } from './useDraggableModal';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { GenderPickerModal, genderMarkerSymbol } from './GenderPickerModal';
 import { setPersonGender as setPersonGenderApi, type PersonGender } from '@/lib/electron-bridge';
@@ -1895,30 +1896,8 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Drag-to-reposition. Same pattern as the other Trees modals.
-  const modalRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef({ x: 0, y: 0, dragging: false, sx: 0, sy: 0, bx: 0, by: 0 });
-  const onDragStart = (e: React.PointerEvent) => {
-    const t = e.target as HTMLElement;
-    if (t.closest('button, input, textarea, a')) return;
-    const d = dragRef.current;
-    d.dragging = true;
-    d.sx = e.clientX; d.sy = e.clientY;
-    d.bx = d.x; d.by = d.y;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onDragMove = (e: React.PointerEvent) => {
-    const d = dragRef.current;
-    if (!d.dragging) return;
-    const rawX = d.bx + e.clientX - d.sx;
-    const rawY = d.by + e.clientY - d.sy;
-    const halfW = window.innerWidth / 2;
-    const halfH = window.innerHeight / 2;
-    d.x = Math.max(-halfW, Math.min(halfW, rawX));
-    d.y = Math.max(-halfH, Math.min(halfH, rawY));
-    if (modalRef.current) modalRef.current.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
-  };
-  const onDragEnd = () => { dragRef.current.dragging = false; };
+  // Shared drag hook — clamps so the header stays on-screen.
+  const { modalRef, dragHandleProps } = useDraggableModal();
   /** Relationships this placeholder already holds — shown up-top so the
    *  user knows WHAT this "?" represents before naming/linking. Answers
    *  the common confusion "why is there an extra placeholder?" — at a
@@ -2113,12 +2092,8 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
         onClick={e => e.stopPropagation()}
       >
       <div
-        className="flex items-center gap-2 mb-3 select-none cursor-grab active:cursor-grabbing"
-        style={{ touchAction: 'none' }}
-        onPointerDown={onDragStart}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
-        onPointerCancel={onDragEnd}
+        {...dragHandleProps}
+        className={`flex items-center gap-2 mb-3 ${dragHandleProps.className}`}
       >
         <Move className="w-3 h-3 text-muted-foreground/60 shrink-0" aria-hidden />
         <HelpCircle className="w-4 h-4 text-primary" />
