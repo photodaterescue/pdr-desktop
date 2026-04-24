@@ -1060,7 +1060,7 @@ export function searchFiles(query: SearchQuery): SearchResult {
       UNION
       SELECT file_id FROM ai_tags WHERE LOWER(tag) LIKE ?
       UNION
-      SELECT fd.file_id FROM face_detections fd JOIN persons p ON fd.person_id = p.id WHERE LOWER(p.name) LIKE ?
+      SELECT fd.file_id FROM face_detections fd JOIN persons p ON fd.person_id = p.id WHERE LOWER(p.name) LIKE ? AND p.discarded_at IS NULL
     )`);
     params.push(searchTerm, searchTerm, likePattern, likePattern);
   }
@@ -1669,7 +1669,7 @@ export function repairAiFts(): { rebuilt: number } {
   const personStmt = database.prepare(`
     SELECT DISTINCT p.name FROM face_detections fd
     JOIN persons p ON fd.person_id = p.id
-    WHERE fd.file_id = ?
+    WHERE fd.file_id = ? AND p.discarded_at IS NULL
   `);
   const insertStmt = database.prepare(`INSERT INTO files_ai_fts(rowid, ai_tags, person_names) VALUES (?, ?, ?)`);
 
@@ -1718,7 +1718,7 @@ function rebuildAiFtsInner(fileId: number): void {
   const persons = (database.prepare(`
     SELECT DISTINCT p.name FROM face_detections fd
     JOIN persons p ON fd.person_id = p.id
-    WHERE fd.file_id = ?
+    WHERE fd.file_id = ? AND p.discarded_at IS NULL
   `).all(fileId) as { name: string }[])
     .map(r => r.name).join(' ');
 
@@ -1729,11 +1729,15 @@ function rebuildAiFtsInner(fileId: number): void {
   }
 }
 
-/** Get all face detections for a file */
+/** Get all face detections for a file. Discarded persons' names are
+ *  hidden (person_name comes back NULL) so the viewer UI doesn't show
+ *  names of people the user has deleted; the face record itself stays
+ *  intact so restorePerson brings the name back. */
 export function getFacesForFile(fileId: number): (FaceDetectionRecord & { person_name?: string })[] {
   const database = getDb();
   return database.prepare(`
-    SELECT fd.*, p.name as person_name
+    SELECT fd.*,
+           CASE WHEN p.discarded_at IS NULL THEN p.name ELSE NULL END as person_name
     FROM face_detections fd
     LEFT JOIN persons p ON fd.person_id = p.id
     WHERE fd.file_id = ?
@@ -1926,7 +1930,7 @@ export function getVisualSuggestions(faceId: number, limit = 5): { personId: num
     SELECT fd.embedding, p.id as person_id, p.name as person_name
     FROM face_detections fd
     JOIN persons p ON fd.person_id = p.id
-    WHERE fd.embedding IS NOT NULL AND fd.id != ?
+    WHERE fd.embedding IS NOT NULL AND fd.id != ? AND p.discarded_at IS NULL
   `).all(faceId) as { embedding: Buffer; person_id: number; person_name: string }[];
 
   if (namedFaces.length === 0) return [];
@@ -1993,17 +1997,40 @@ export function mergePersons(targetPersonId: number, sourcePersonId: number): nu
 }
 
 /**
- * Soft-delete (discard) a person — unlinks all their faces and marks the person as discarded.
- * The person record is kept so the name can be restored or permanently deleted later.
+ * Soft-delete (discard) a person — marks the person as discarded while
+ * KEEPING their face-detection links intact. Queries that surface
+ * persons (family graph, relationship lists, search, FTS) filter out
+ * rows where discarded_at IS NOT NULL, so the person effectively
+ * disappears from every UI. But the underlying face links survive, so
+ * restorePerson() brings back every photo tag cleanly — critical for
+ * the "I accidentally deleted grandma" recovery story.
+ *
+ * Previously this function also UPDATE'd face_detections.person_id = NULL
+ * which meant discard was irreversible in practice (restoring the name
+ * didn't bring back the photo tags). That's now fixed.
+ *
+ * Also nulls saved_trees.focus_person_id for any tree pointing at the
+ * discarded person — otherwise the tree would try to render around a
+ * ghost focus. The focus can be re-assigned after restore.
  */
 export function discardPerson(personId: number): { facesUnlinked: number; photosAffected: number } {
   const database = getDb();
   const photosAffected = (database.prepare(
     `SELECT COUNT(DISTINCT file_id) as cnt FROM face_detections WHERE person_id = ?`
   ).get(personId) as { cnt: number }).cnt;
-  const result = database.prepare(`UPDATE face_detections SET person_id = NULL WHERE person_id = ?`).run(personId);
-  database.prepare(`UPDATE persons SET discarded_at = datetime('now') WHERE id = ?`).run(personId);
-  return { facesUnlinked: result.changes, photosAffected };
+  const tx = database.transaction(() => {
+    // Clear focus on any saved tree that was centred on this person —
+    // a discarded person can't be a valid focus. Trees become focus-less
+    // until the user either picks a new focus or restores this one.
+    database.prepare(`UPDATE saved_trees SET focus_person_id = NULL WHERE focus_person_id = ?`).run(personId);
+    database.prepare(`UPDATE persons SET discarded_at = datetime('now') WHERE id = ?`).run(personId);
+  });
+  tx();
+  // facesUnlinked is preserved as 0 in the return signature for API
+  // compatibility — callers that logged this count now always see 0
+  // because face links are preserved. photosAffected still reflects
+  // how many photos visually lose this person's tag from all UI.
+  return { facesUnlinked: 0, photosAffected };
 }
 
 /**
@@ -2063,14 +2090,16 @@ export function deletePerson(personId: number): { facesUnlinked: number; photosA
   return discardPerson(personId);
 }
 
-/** Get a person by ID */
+/** Get a person by ID. Returns null for soft-deleted (discarded) persons
+ *  — regular UI shouldn't surface them. The Recycle Bin flow queries
+ *  listDiscardedPersons() directly when it needs them. */
 export function getPersonById(personId: number): PersonRecord | null {
   const database = getDb();
   const row = database.prepare(`
     SELECT p.*, COUNT(DISTINCT fd.file_id) as photo_count
     FROM persons p
     LEFT JOIN face_detections fd ON fd.person_id = p.id
-    WHERE p.id = ?
+    WHERE p.id = ? AND p.discarded_at IS NULL
     GROUP BY p.id
   `).get(personId) as PersonRecord | undefined;
   return row ?? null;
@@ -3361,10 +3390,18 @@ export function revertToGraphHistoryEntry(targetId: number): { success: boolean;
 /** All relationships touching a person (as either endpoint). */
 export function listRelationshipsForPerson(personId: number): RelationshipRecord[] {
   const db = getDb();
+  // Exclude relationships where either endpoint has been soft-deleted.
+  // Without this, a discarded person's edges would still surface in the
+  // edit-relationships list, in sibling auto-inheritance, etc. —
+  // ghost edges pointing at someone the user thinks they've deleted.
   const rows = db.prepare(`
-    SELECT * FROM relationships
-    WHERE person_a_id = ? OR person_b_id = ?
-    ORDER BY type, since
+    SELECT r.* FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE (r.person_a_id = ? OR r.person_b_id = ?)
+      AND a.discarded_at IS NULL
+      AND b.discarded_at IS NULL
+    ORDER BY r.type, r.since
   `).all(personId, personId) as RelationshipRow[];
   return rows.map(rowToRelationship);
 }
@@ -3372,7 +3409,17 @@ export function listRelationshipsForPerson(personId: number): RelationshipRecord
 /** Every relationship in the database. Used for full-tree rendering. */
 export function listAllRelationships(): RelationshipRecord[] {
   const db = getDb();
-  const rows = db.prepare(`SELECT * FROM relationships ORDER BY id`).all() as RelationshipRow[];
+  // Same soft-delete filter — the full-tree render must not show edges
+  // leading to discarded persons, otherwise the tree would paint ghost
+  // cards for deleted people.
+  const rows = db.prepare(`
+    SELECT r.* FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE a.discarded_at IS NULL
+      AND b.discarded_at IS NULL
+    ORDER BY r.id
+  `).all() as RelationshipRow[];
   return rows.map(rowToRelationship);
 }
 
@@ -3482,9 +3529,19 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   const collectedEdges: RelationshipRecord[] = [];
   const seenEdgeIds = new Set<number>();
 
+  // All relationship queries below filter BOTH endpoints against
+  // discarded_at. Without this, a soft-deleted person's edges still
+  // show up in the fetched graph — they'd render as ghost cards on
+  // the canvas (or worse, as real cards with stale names/photos from
+  // before the delete). Matching filter pattern used by
+  // listRelationshipsForPerson / listAllRelationships.
   const neighbourStmt = db.prepare(`
-    SELECT * FROM relationships
-    WHERE person_a_id = ? OR person_b_id = ?
+    SELECT r.* FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE (r.person_a_id = ? OR r.person_b_id = ?)
+      AND a.discarded_at IS NULL
+      AND b.discarded_at IS NULL
   `);
   /** Other children of a given parent — used to treat derived siblings
    *  as 1-hop neighbours. Without this step, "my brother" reads as
@@ -3493,8 +3550,10 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
    *  through parents for stored info but ALSO jump across siblings in
    *  the distance metric. */
   const otherChildrenStmt = db.prepare(`
-    SELECT person_b_id FROM relationships
-    WHERE type = 'parent_of' AND person_a_id = ? AND person_b_id <> ?
+    SELECT r.person_b_id FROM relationships r
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE r.type = 'parent_of' AND r.person_a_id = ? AND r.person_b_id <> ?
+      AND b.discarded_at IS NULL
   `);
 
   while (queue.length > 0) {
@@ -3542,8 +3601,12 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
     const visitedIds = Array.from(visited.keys());
     const qs = visitedIds.map(() => '?').join(',');
     const boundary = db.prepare(`
-      SELECT * FROM relationships
-      WHERE person_a_id IN (${qs}) AND person_b_id IN (${qs})
+      SELECT r.* FROM relationships r
+      JOIN persons a ON a.id = r.person_a_id
+      JOIN persons b ON b.id = r.person_b_id
+      WHERE r.person_a_id IN (${qs}) AND r.person_b_id IN (${qs})
+        AND a.discarded_at IS NULL
+        AND b.discarded_at IS NULL
     `).all(...visitedIds, ...visitedIds) as RelationshipRow[];
     for (const row of boundary) {
       if (seenEdgeIds.has(row.id)) continue;
@@ -3569,7 +3632,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
            gender,
            COALESCE(is_placeholder, 0) AS is_placeholder
     FROM persons
-    WHERE id IN (${placeholders})
+    WHERE id IN (${placeholders}) AND discarded_at IS NULL
   `).all(...ids) as PersonRow[];
 
   const photoCountRows = db.prepare(`
@@ -3588,10 +3651,12 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   // the +parent chip on anyone who already has two parents in the
   // DB (even if only one is currently visible).
   const totalParentCountRows = db.prepare(`
-    SELECT person_b_id AS child_id, COUNT(*) AS cnt
-    FROM relationships
-    WHERE type = 'parent_of' AND person_b_id IN (${placeholders})
-    GROUP BY person_b_id
+    SELECT r.person_b_id AS child_id, COUNT(*) AS cnt
+    FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    WHERE r.type = 'parent_of' AND r.person_b_id IN (${placeholders})
+      AND a.discarded_at IS NULL
+    GROUP BY r.person_b_id
   `).all(...ids) as { child_id: number; cnt: number }[];
   const totalParentCountByPerson = new Map<number, number>();
   for (const r of totalParentCountRows) totalParentCountByPerson.set(r.child_id, r.cnt);
