@@ -1235,7 +1235,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         //   • For + child: exclude ancestors
         //   • For + partner: exclude blood relatives
         //   • For + sibling: exclude your own parents/children
-        const excluded = impossibleCandidates(quickAdd.fromPersonId, quickAdd.kind, graph);
+        const excluded = impossibleCandidates(quickAdd.fromPersonId, quickAdd.kind, graph, connectedPersonIds);
         // For + partner: compute the set of co-parents — people who are
         // already a parent of at least one of fromPerson's children.
         // These are the strongest partner suggestions (Alan is Sally's
@@ -1257,6 +1257,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onPick={finaliseQuickAdd}
             onPersonsChanged={reloadPersons}
             onClose={() => setQuickAdd(null)}
+            nameConflictLookup={(typed) => {
+              // Case-insensitive match against anyone already on this tree.
+              // We match by exact-trimmed-lower name (not substring) to
+              // avoid false positives like "Alan" matching "Alan Clapson".
+              const needle = typed.trim().toLowerCase();
+              if (!needle) return null;
+              for (const p of allPersons) {
+                if (!connectedPersonIds.has(p.id)) continue;
+                if (p.name.trim().toLowerCase() === needle) {
+                  return { id: p.id, name: p.name };
+                }
+              }
+              return null;
+            }}
           />
         );
       })()}
@@ -1527,9 +1541,24 @@ function coparentsOf(fromId: number, graph: FamilyGraph | null): Set<number> {
 function impossibleCandidates(
   fromId: number,
   kind: 'parent' | 'partner' | 'child' | 'sibling',
-  graph: FamilyGraph | null
+  graph: FamilyGraph | null,
+  /** Full DB-level family closure of the current tree (every person
+   *  reachable from the focus by any relationship chain, no depth cap).
+   *  Anyone already in the tree in some role is a poor quick-add
+   *  candidate — adding them as a new role is almost always either a
+   *  mistake (namesake confusion) or a structural change that belongs
+   *  in the Edit Relationships flow, not a casual quick-add. Optional
+   *  because the caller may not have it loaded yet on first render. */
+  connectedPersonIds?: Set<number>,
 ): Set<number> {
   const out = new Set<number>([fromId]);
+  // Primary filter: exclude everyone already on this family tree via
+  // the DB closure. The graph-based checks further down are a safety
+  // net for the narrow window before connectedPersonIds resolves, plus
+  // defensively for any case where the closure is stale.
+  if (connectedPersonIds) {
+    for (const id of connectedPersonIds) out.add(id);
+  }
   if (!graph) return out;
 
   const parentsOf = (pid: number): number[] =>
@@ -1585,23 +1614,26 @@ function impossibleCandidates(
     for (const a of ancestors(fromId)) out.add(a);
     for (const c of myChildren) out.add(c);
   } else if (kind === 'partner') {
-    // Full family-graph closure: anyone reached by walking ANY recorded
-    // relationship edge (parent_of, sibling_of, spouse_of incl. ended,
-    // associated_with) from fromId. This naturally excludes blood
-    // relatives (incest), in-laws (brother's wife's family), ex-in-laws
-    // (brother's ex-wife), and the person's own exes in a single pass.
+    // The outer loop already excluded the full family closure (via
+    // connectedPersonIds). Belt-and-braces: also exclude the fetched
+    // graph closure in case connectedPersonIds is stale.
     const closure = familyClosure(fromId, graph);
-    // BUT: co-parents of fromId's children are exactly the couples the
-    // user is likely trying to formalize as partners (e.g. Sally and
-    // Alan, who share Colin as a child, but whose spouse_of edge hasn't
-    // been asserted yet). Exempt them from the closure — they're valid
-    // candidates, not hidden relatives.
-    const coparents = coparentsOf(fromId, graph);
-    for (const cp of coparents) closure.delete(cp);
     for (const id of closure) out.add(id);
-    // Plus anyone currently in an active spouse_of with a third party.
-    // Co-parents are not exempt from this — if Alan's already married
-    // to Louise, don't suggest him as Sally's partner.
+    // Co-parents of fromId's children are exactly the couples the
+    // user is likely trying to formalize as partners (e.g. Sally and
+    // Alan, who share Colin as a child, but whose spouse_of edge
+    // hasn't been asserted yet). Exempt them from BOTH the DB-level
+    // closure AND the graph-level closure — they're valid candidates,
+    // not hidden relatives.
+    const coparents = coparentsOf(fromId, graph);
+    for (const cp of coparents) out.delete(cp);
+    // Self is never a valid partner, even if somehow flagged as a
+    // co-parent of their own child (duplicate edge shouldn't exist
+    // but we guard anyway).
+    out.add(fromId);
+    // Block anyone currently in an active spouse_of with a third
+    // party — already-married people aren't valid partner suggestions
+    // even if they're a co-parent.
     for (const id of currentlyPartnered(graph, fromId)) out.add(id);
   } else if (kind === 'sibling') {
     for (const a of ancestors(fromId)) out.add(a);
@@ -1718,11 +1750,16 @@ interface FocusPickerModalProps {
   onPick: (personId: number, personName: string) => void;
   onPersonsChanged?: () => void;
   onClose: () => void;
+  /** When a typed name in the "Name them" tab matches an existing person
+   *  already on this tree, return that person so the user can confirm
+   *  whether they really intended to create a new namesake. null = no
+   *  conflict. When omitted, no name-conflict warning is shown. */
+  nameConflictLookup?: (name: string) => { id: number; name: string } | null;
 }
 
 type PickerSortMode = 'connections' | 'photos' | 'alpha';
 
-function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId, showSortOptions, coparentIds, partnerScoreAnchorId, onPick, onPersonsChanged, onClose }: FocusPickerModalProps) {
+function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId, showSortOptions, coparentIds, partnerScoreAnchorId, onPick, onPersonsChanged, onClose, nameConflictLookup }: FocusPickerModalProps) {
   // Tabbed design mirroring the "Who is this?" placeholder resolver:
   //   Tab 1: Name them       — type a new name, creates a real named person
   //   Tab 2: Pick existing   — search the already-named people list
@@ -1846,6 +1883,22 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
     setError(null);
     const trimmed = nameInput.trim();
     if (!trimmed) { setError('Type a name first.'); return; }
+    // Name-conflict guard: if someone on this tree already has this
+    // exact name, confirm with the user before creating a namesake.
+    // Catches the common mistake of typing a name that matches someone
+    // already placed elsewhere on the tree — previously we'd silently
+    // create a second "Dorothy Ada Clapson" and leave the user with
+    // two of her to untangle.
+    const conflict = nameConflictLookup?.(trimmed);
+    if (conflict) {
+      const proceed = await promptConfirm({
+        title: `"${conflict.name}" is already on this tree`,
+        message: `Someone named "${conflict.name}" already exists on your tree. Creating a new person here will add a second person with the same name — only do this if they're genuinely different people who happen to share a name. To reuse the existing person, switch to "Pick existing" instead.`,
+        confirmLabel: `Yes, create another "${trimmed}"`,
+        cancelLabel: 'Cancel',
+      });
+      if (!proceed) return;
+    }
     setBusy(true);
     const r = await createNamedPerson(trimmed);
     setBusy(false);
