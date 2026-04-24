@@ -36,6 +36,10 @@ export interface PDRSettings {
 
   // People Manager
   matchThreshold: number;
+  /** When true, the People Manager window auto-opens alongside the
+   *  main PDR window on launch. Default off — users who rely on PM
+   *  daily can opt in once to skip the manual open every session. */
+  openPeopleOnStartup: boolean;
 
   // User-curated scanner overrides. Each entry defines a per-camera
   // decision that trumps the automatic rule — key is the EXIF Make/Model
@@ -78,6 +82,7 @@ export const optimisedDefaults: PDRSettings = {
   autoSaveCatalogue: true,
   showManualReportExports: false,
   matchThreshold: 0.72,
+  openPeopleOnStartup: false,
   scannerOverrides: [],
 };
 
@@ -108,6 +113,7 @@ export function getSettings(): PDRSettings {
     autoSaveCatalogue: store.get('autoSaveCatalogue', optimisedDefaults.autoSaveCatalogue),
     showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
     matchThreshold: store.get('matchThreshold', optimisedDefaults.matchThreshold),
+    openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
   };
 }

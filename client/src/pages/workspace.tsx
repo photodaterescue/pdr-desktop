@@ -213,6 +213,29 @@ useEffect(() => {
   return () => { cancelled = true; clearInterval(interval); };
 }, []);
 
+// Auto-open People Manager on startup when the user has opted in via
+// Settings. Fires once per PDR launch, gated by a session-local
+// sessionStorage flag so hot-reloads or route changes during
+// development don't re-open the window. Delayed slightly so the main
+// window is visible first — avoids a flash of two simultaneously
+// appearing windows that feels chaotic.
+useEffect(() => {
+  const key = 'pdr-people-autoopen-fired';
+  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(key)) return;
+  let cancelled = false;
+  const timer = setTimeout(async () => {
+    if (cancelled) return;
+    try {
+      const settings = await getSettings();
+      if ((settings as any)?.openPeopleOnStartup) {
+        try { sessionStorage.setItem(key, '1'); } catch {}
+        openPeopleWindow();
+      }
+    } catch { /* best-effort */ }
+  }, 600);
+  return () => { cancelled = true; clearTimeout(timer); };
+}, []);
+
   const [location, setLocation] = useLocation();
   // For HashRouter, query params are inside the hash (e.g., #/workspace?tour=true)
   const hashParts = window.location.hash.split('?');
@@ -7672,6 +7695,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [aiRefineFromVerified, setAiRefineFromVerified] = useState(false);
   const [autoSaveCatalogue, setAutoSaveCatalogue] = useState(true);
   const [showManualReportExports, setShowManualReportExports] = useState(false);
+  const [openPeopleOnStartup, setOpenPeopleOnStartup] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -7693,6 +7717,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setAiRefineFromVerified((settings as any).aiRefineFromVerified ?? false);
       setAutoSaveCatalogue(settings.autoSaveCatalogue);
       setShowManualReportExports(settings.showManualReportExports);
+      setOpenPeopleOnStartup((settings as any).openPeopleOnStartup ?? false);
     });
   }, []);
 
@@ -7769,6 +7794,10 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleAiRefineFromVerifiedToggle = (checked: boolean) => {
     setAiRefineFromVerified(checked);
     setSetting('aiRefineFromVerified' as any, checked);
+  };
+  const handleOpenPeopleOnStartupToggle = (checked: boolean) => {
+    setOpenPeopleOnStartup(checked);
+    setSetting('openPeopleOnStartup' as any, checked);
   };
 
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
@@ -8306,6 +8335,27 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <strong>Privacy:</strong> AI models run entirely on your device — your photos are never uploaded, shared, or sent anywhere. AI analysis applies to photos only (not videos). A one-time download (~300 MB) is required the first time you analyze. After that, everything works fully offline.
                   </p>
                 </div>
+              </div>
+
+              {/* People Manager */}
+              <div className="pt-4 border-t border-border space-y-3">
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  People Manager
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  How People Manager behaves alongside PDR.
+                </p>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Open People Manager on startup</span>
+                    <span className="text-xs text-muted-foreground">Auto-launch the People Manager window whenever PDR opens, so it's ready without having to click it each time.</span>
+                  </div>
+                  <Checkbox
+                    checked={openPeopleOnStartup}
+                    onCheckedChange={(checked) => handleOpenPeopleOnStartupToggle(!!checked)}
+                    data-testid="checkbox-open-people-on-startup"
+                  />
+                </label>
               </div>
 
               {/* Catalogue */}
