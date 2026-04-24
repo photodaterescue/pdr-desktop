@@ -1691,7 +1691,10 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     ? false
     : tempExpanded
     ? false
-    : (!!searchResultsActive || activeView === 'familytree' || activeView === 'memories');
+    : (!!searchResultsActive
+       || activeView === 'familytree'
+       || activeView === 'memories'
+       || activeView === 'search');
 
   // Section-collapse state for Views / Tools / Guidance. Session-only so
   // the sidebar always opens fully expanded in a fresh session. User can
@@ -1802,17 +1805,28 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       icon: React.ReactNode,
       onClick: () => void,
       locked: boolean = false,
+      active: boolean = false,
     ) => (
       <button
         onClick={onClick}
-        className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors relative"
+        className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors relative ${
+          active
+            ? 'bg-amber-500/15 ring-2 ring-amber-500/60 text-foreground'
+            : 'hover:bg-secondary/60 text-muted-foreground hover:text-foreground'
+        }`}
         title={title + (locked ? ' (Premium feature)' : '')}
       >
         {icon}
         {locked && <Lock className="absolute top-0.5 right-0.5 w-2 h-2 text-muted-foreground/60" />}
       </button>
     );
-    const divider = <div className="w-6 border-t border-border/60 my-1" />;
+    // Active-app resolution: activePanel (guidance pages) wins over
+    // activeView (main canvas views) because opening a panel overlays
+    // the canvas. Dashboard/Workspace is active only when no panel is
+    // open and the active view is 'dashboard'.
+    const isActiveView = (v: string) => activePanel == null && activeView === v;
+    const isActivePanel = (p: string) => activePanel === p;
+    const divider = <div className="w-7 border-t-2 border-border my-1.5" />;
     return (
       <div
         data-tour="sd-sidebar-collapse"
@@ -1844,30 +1858,36 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           <img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="" />,
           gateLocked('dashboard', () => onDashboardClick()),
           sources.length > 0 && !isLicensed,
+          isActiveView('dashboard'),
         )}
         {iconBtn(
           'Search & Discovery',
           <Search className="w-4 h-4 opacity-70" />,
           gateLocked('search-discovery', () => onViewChange?.('search')),
           !isLicensed,
+          isActiveView('search'),
         )}
         {iconBtn(
           'Memories',
           <CalendarRange className="w-4 h-4 opacity-70" />,
           gateLocked('memories', () => onViewChange?.('memories')),
           !isLicensed,
+          isActiveView('memories'),
         )}
         {iconBtn(
           'Trees',
           <Network className="w-4 h-4 opacity-70" />,
           gateLocked('trees', () => onViewChange?.('familytree')),
           !isLicensed,
+          isActiveView('familytree'),
         )}
         {iconBtn(
           'People Manager',
           <Users className="w-4 h-4 text-purple-500" />,
           gateLocked('people-manager', () => openPeopleWindow()),
           !isLicensed,
+          // People Manager opens in a separate window; we don't have a
+          // reliable "is it focused" signal, so no active highlight.
         )}
 
         {divider}
@@ -1878,16 +1898,22 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           'Getting Started',
           <img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="" />,
           () => onPanelChange('getting-started'),
+          false,
+          isActivePanel('getting-started'),
         )}
         {iconBtn(
           'Best Practices',
           <img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="" />,
           () => onPanelChange('best-practices'),
+          false,
+          isActivePanel('best-practices'),
         )}
         {iconBtn(
           'What Happens Next',
           <img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="" />,
           () => onPanelChange('what-next'),
+          false,
+          isActivePanel('what-next'),
         )}
 
         {divider}
@@ -1898,11 +1924,19 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           <img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="" />,
           onSettingsClick,
         )}
-        {iconBtn('About PDR', <Info className="w-4 h-4 opacity-60" />, () => onPanelChange('about-pdr'))}
+        {iconBtn(
+          'About PDR',
+          <Info className="w-4 h-4 opacity-60" />,
+          () => onPanelChange('about-pdr'),
+          false,
+          isActivePanel('about-pdr'),
+        )}
         {iconBtn(
           'Help & Support',
           <img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="" />,
           () => onPanelChange('help-support'),
+          false,
+          isActivePanel('help-support'),
         )}
       </div>
     );

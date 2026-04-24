@@ -19,7 +19,7 @@ import type { FamilyGraphEdge } from './electron-bridge';
  *  chains, "Distant in-law" (spouse step anywhere) or "Distant
  *  relative" so every non-focus node still gets something meaningful.
  */
-export type RelStep = 'parent_up' | 'parent_down' | 'spouse' | 'sibling';
+export type RelStep = 'parent_up' | 'parent_down' | 'spouse' | 'sibling' | 'half_sibling';
 
 /** One step in a BFS path — the edge type taken AND the person it
  *  reached. Intermediate-gender labels read landed-on-ids to pick the
@@ -50,6 +50,17 @@ const LABELS: Record<string, LabelEntry> = {
   'parent_up':          { neutral: 'Parent', male: 'Father', female: 'Mother' },
   'parent_down':        { neutral: 'Child', male: 'Son', female: 'Daughter' },
   'sibling':            { neutral: 'Sibling', male: 'Brother', female: 'Sister' },
+  // Half-siblings — people who share exactly ONE parent with focus.
+  // Derived from shared-parent count at BFS time (or taken from
+  // flags.half when the user has explicitly tagged the relationship).
+  'half_sibling':       { neutral: 'Half-sibling', male: 'Half-brother', female: 'Half-sister' },
+  // Safety-net mapping for when siblings are reached via the
+  // two-hop parent_up,parent_down path instead of a direct sibling_of
+  // edge (happens when the graph has no stored sibling edge between
+  // two children of the same parent — e.g. derived sibling edges
+  // weren't synthesised). Without this the path fell through to
+  // "Distant relative", which was misleading.
+  'parent_up,parent_down': { neutral: 'Sibling', male: 'Brother', female: 'Sister' },
 
   'parent_up,parent_up':    { neutral: 'Grandparent', male: 'Grandfather', female: 'Grandmother' },
   'parent_down,parent_down': { neutral: 'Grandchild', male: 'Grandson', female: 'Granddaughter' },
@@ -231,6 +242,26 @@ export function computeRelationshipLabels(
   const out = new Map<number, string>();
   if (focusPersonId == null) return out;
 
+  // Build parentsByPerson so we can classify sibling edges as full or
+  // half from shared-parent count. Without this, every sibling_of
+  // edge walked as 'sibling' regardless of whether the two share one
+  // parent or two — which is why Nee and Bro Bike Accident showed as
+  // plain "Brother" / "Sister" when they only share their mother.
+  const parentsByPerson = new Map<number, Set<number>>();
+  for (const e of edges) {
+    if (e.type !== 'parent_of') continue;
+    if (!parentsByPerson.has(e.bId)) parentsByPerson.set(e.bId, new Set());
+    parentsByPerson.get(e.bId)!.add(e.aId);
+  }
+  const sharedParentCount = (aId: number, bId: number): number => {
+    const pa = parentsByPerson.get(aId);
+    const pb = parentsByPerson.get(bId);
+    if (!pa || !pb) return 0;
+    let shared = 0;
+    for (const p of pa) if (pb.has(p)) shared++;
+    return shared;
+  };
+
   const adj = new Map<number, Array<{ to: number; step: RelStep }>>();
   const add = (from: number, to: number, step: RelStep) => {
     if (!adj.has(from)) adj.set(from, []);
@@ -244,8 +275,16 @@ export function computeRelationshipLabels(
       add(e.aId, e.bId, 'spouse');
       add(e.bId, e.aId, 'spouse');
     } else if (e.type === 'sibling_of') {
-      add(e.aId, e.bId, 'sibling');
-      add(e.bId, e.aId, 'sibling');
+      // Explicit flags.half wins; otherwise derive from shared-parent
+      // count. Exactly-one shared parent = half. Zero shared parents
+      // (sibling_of with no parent link — step / chosen family) stays
+      // as plain sibling until we add an explicit step label.
+      const flagHalf = e.flags?.half;
+      const isHalf = flagHalf === true
+        || (flagHalf !== false && sharedParentCount(e.aId, e.bId) === 1);
+      const step: RelStep = isHalf ? 'half_sibling' : 'sibling';
+      add(e.aId, e.bId, step);
+      add(e.bId, e.aId, step);
     }
   }
 
