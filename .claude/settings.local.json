@@ -109,7 +109,15 @@
       "PowerShell(git add -A)",
       "PowerShell(cmd /c \"npx electron dist-electron/main.js\")",
       "PowerShell(git push)",
-      "PowerShell(Stop-Process -Name electron -Force -ErrorAction SilentlyContinue)"
+      "PowerShell(Stop-Process -Name electron -Force -ErrorAction SilentlyContinue)",
+      "PowerShell($dbPath = Join-Path $env:APPDATA 'Electron/search-index/pdr-search.db'; $cmd = Get-Command sqlite3 -ErrorAction SilentlyContinue; if \\($cmd\\) { Write-Output \"sqlite3 found at $\\($cmd.Path\\)\" } else { Write-Output \"sqlite3 not on PATH\" }; Test-Path $dbPath)",
+      "PowerShell(git log --format=\"%h %ad %s\" --date=iso 04dccf7 -1; Write-Output \"---\"; $dbPath = Join-Path $env:APPDATA 'Electron/search-index/pdr-search.db'; Get-Item $dbPath | Select-Object Name, LastWriteTime, @{Name='SizeMB';Expression={[Math]::Round\\($_.Length/1MB,1\\)}}; Write-Output \"---\"; Get-ChildItem \\(Split-Path $dbPath\\) | Select-Object Name, LastWriteTime)",
+      "PowerShell($dbPath = Join-Path $env:APPDATA 'Electron/search-index/pdr-search.db'; Get-Item $dbPath | Format-List Name, LastWriteTime, Length)",
+      "PowerShell(cmd /c \"npx electron --no-sandbox .tmp-wipe-faces.js\")",
+      "PowerShell(cmd /c \"npx electron .tmp-wipe-faces.cjs\")",
+      "PowerShell(cmd /c \"npx electron .tmp-inspect-face.cjs\")",
+      "PowerShell(cmd /c \"npx electron .tmp-human-direct.cjs\")",
+      "PowerShell(cmd /c \"npx electron .tmp-shrink-boxes.cjs\")"
     ]
   }
 }

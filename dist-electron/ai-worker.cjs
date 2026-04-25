@@ -254,6 +254,21 @@ async function init() {
                             maxDetected: 50,
                             minConfidence: config.minFaceConfidence,
                             iouThreshold: 0.3,
+                            // square=true: pad the input image to a square BEFORE the
+                            // detector resizes it to 256×256, instead of letting Human
+                            // distort the aspect ratio. Without this, a portrait phone
+                            // photo gets squashed into a wide square and the detector
+                            // sees stretched faces — which both hurts detection
+                            // accuracy AND skews where the box lands when the result
+                            // is mapped back. See blazeface.ts:60-69.
+                            square: true,
+                            // scale=1.0: keep the detector's reported face box tight
+                            // to the actual face. Default is 1.4, which is designed
+                            // for the face-mesh network (it needs padding for
+                            // landmarks). We have mesh disabled, so the 40% padding
+                            // just produces enormous purple boxes that cover the
+                            // user's chest. See blazeface.ts:117 + facemeshutil.ts:59.
+                            scale: 1.0,
                         },
                         mesh: {
                             enabled: false, // Not needed for embeddings — saves processing time
