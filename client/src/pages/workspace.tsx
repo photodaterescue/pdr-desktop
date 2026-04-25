@@ -8662,7 +8662,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   >
                     <div className="flex flex-col items-start pr-3">
                       <span className="text-sm font-medium text-foreground">Restore from backup</span>
-                      <span className="text-xs text-muted-foreground">Roll the database back to a previous state. Up to five rolling snapshots are taken at every PDR launch, plus any pre-action snapshots from destructive operations above.</span>
+                      <span className="text-xs text-muted-foreground">Roll the entire PDR database back to a previous state — covers indexed photos, faces, named people, AI tags, family trees and relationships, and fix-run history. Original photo files on disk are not touched. Up to five rolling snapshots are taken at every PDR launch, plus any pre-action snapshots from destructive operations above.</span>
                     </div>
                     <span className="text-xs text-muted-foreground">{backupsExpanded ? '▾' : '▸'}</span>
                   </button>
@@ -8692,7 +8692,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                               onClick={async () => {
                                 const ok = await promptConfirm({
                                   title: 'Restore this snapshot?',
-                                  message: `This replaces the entire live database with the contents of ${b.filename} (taken ${tsLabel}). Any verifications or naming you've done since then will be lost. PDR will reload its data from disk after the restore.`,
+                                  message: `This replaces the entire live database with the contents of ${b.filename} (taken ${tsLabel}). Anything you've added or changed since then will be lost — face verifications, named people, AI tags, family tree edits, new fixed-run history. Original photo files on disk are not affected. Please relaunch PDR after the restore so every window picks up the new state cleanly.`,
                                   confirmLabel: 'Restore',
                                   cancelLabel: 'Cancel',
                                   danger: true,

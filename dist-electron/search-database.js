@@ -2188,19 +2188,29 @@ export function resetAllTagAnalysis() {
  */
 export function resetFaceAnalysis() {
     const database = getDb();
-    database.exec(`
-    DELETE FROM face_detections;
-    DELETE FROM persons;
-    UPDATE ai_processing_status SET face_processed = 0, face_model_ver = NULL;
-  `);
+    // Wrap in a transaction so partial failures roll back cleanly.
+    // Without this, a typo or schema mismatch in any one statement
+    // leaves the DB in a half-wiped state — face_detections gone but
+    // ai_processing_status still claiming everything is processed.
+    // We learned this the hard way: an earlier version of this helper
+    // referenced a non-existent column on the UPDATE leg, and by the
+    // time the error surfaced, face_detections + persons had already
+    // committed. better-sqlite3's exec() doesn't auto-rollback across
+    // statement boundaries — the BEGIN/COMMIT here makes the whole
+    // wipe atomic.
+    const wipe = database.transaction(() => {
+        database.exec(`DELETE FROM face_detections`);
+        database.exec(`DELETE FROM persons`);
+        database.exec(`UPDATE ai_processing_status SET face_processed = 0, face_model_ver = NULL`);
+        try {
+            database.exec(`DELETE FROM files_ai_fts`);
+        }
+        catch { }
+    });
+    wipe();
     const row = database.prepare(`
     SELECT COUNT(*) AS cnt FROM indexed_files WHERE file_type = 'photo'
   `).get();
-    // FTS rows include person names; rebuild lazily as the indexer re-runs.
-    try {
-        database.exec(`DELETE FROM files_ai_fts`);
-    }
-    catch { }
     return { filesQueued: row.cnt };
 }
 /**
