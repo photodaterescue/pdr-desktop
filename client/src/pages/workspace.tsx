@@ -399,7 +399,7 @@ const handleActivateLicense = () => {
   setShowLicenseModal(true);
 };
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'fix' | 'pro'>('general');
+  const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup'>('general');
 
   // People Manager hosting mode. 'window' = separate BrowserWindow
   // (legacy default), 'docked' = right-side drawer inside this
@@ -433,7 +433,7 @@ const handleActivateLicense = () => {
   // Listen for open-settings events from other windows (e.g., People window)
   useEffect(() => {
     const handler = (_event: any, tab: string) => {
-      const validTab = (tab === 'general' || tab === 'fix' || tab === 'pro') ? tab : 'general';
+      const validTab = (tab === 'general' || tab === 'workspace' || tab === 'sd' || tab === 'people' || tab === 'ai' || tab === 'backup') ? tab : 'general';
       setInitialSettingsTab(validTab as any);
       setShowSettingsModal(true);
     };
@@ -7704,7 +7704,7 @@ export function setSkipWelcomeScreen(skip: boolean): void {
 }
 
 function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange }: {
-  initialTab?: 'general' | 'fix' | 'pro',
+  initialTab?: 'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup',
   onClose: () => void,
   folderStructure: 'year' | 'year-month' | 'year-month-day',
   onFolderStructureChange: (value: 'year' | 'year-month' | 'year-month-day') => void,
@@ -7951,7 +7951,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     setAutoAddToSD('ask');
   };
 
-  const [settingsTab, setSettingsTab] = useState<'general' | 'fix' | 'pro'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
   const [folderStructureOpen, setFolderStructureOpen] = useState(false);
 
   // Backup list — fetched on demand when the user expands the Restore
@@ -7976,12 +7976,15 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     { value: 'year-month-day' as const, label: 'Year / Month / Day', example: '2024/03/15/' },
   ];
 
+  // Settings tab classes — compact since we now host 6 tabs in a 2xl
+  // modal. Padding/font slightly tighter than before so all six fit
+  // without horizontal scrolling at typical zoom levels.
   const tabClass = (tab: string) =>
-    `px-4 py-2.5 text-sm font-medium cursor-pointer transition-all duration-200 border-b-2 ${
+    `flex-1 px-2 py-2 text-xs font-medium cursor-pointer transition-all duration-200 border-b-2 whitespace-nowrap ${
       settingsTab === tab
         ? 'border-primary text-primary bg-background'
         : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30 bg-muted/40'
-    } ${tab === 'general' ? 'rounded-tl-lg' : ''} ${tab === 'pro' ? 'rounded-tr-lg' : ''}`;
+    } ${tab === 'general' ? 'rounded-tl-lg' : ''} ${tab === 'backup' ? 'rounded-tr-lg' : ''}`;
 
   return (
     <motion.div
@@ -8014,19 +8017,33 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           </button>
         </div>
 
-        {/* ===== TAB BAR ===== */}
+        {/* ===== TAB BAR =====
+            Six tabs, one per app area. Order roughly mirrors a user's
+            journey through PDR: General settings, then Workspace
+            (where they spend most of their time fixing), then the
+            search/discovery / people / AI tooling, then Backup as the
+            recovery escape hatch. */}
         <div className="flex border-b border-border mb-0">
           <button type="button" className={tabClass('general')} onClick={() => setSettingsTab('general')} data-testid="tab-general">
             General
           </button>
-          <button type="button" className={tabClass('fix')} onClick={() => setSettingsTab('fix')} data-testid="tab-fix">
-            Fix Engine
+          <button type="button" className={tabClass('workspace')} onClick={() => setSettingsTab('workspace')} data-testid="tab-workspace">
+            Workspace
           </button>
-          <button type="button" className={tabClass('pro')} onClick={() => setSettingsTab('pro')} data-testid="tab-pro">
-            <span className="flex items-center gap-1.5">
+          <button type="button" className={tabClass('sd')} onClick={() => setSettingsTab('sd')} data-testid="tab-sd">
+            S&amp;D
+          </button>
+          <button type="button" className={tabClass('people')} onClick={() => setSettingsTab('people')} data-testid="tab-people">
+            People
+          </button>
+          <button type="button" className={tabClass('ai')} onClick={() => setSettingsTab('ai')} data-testid="tab-ai">
+            <span className="flex items-center justify-center gap-1">
               AI
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className="w-3 h-3" />
             </span>
+          </button>
+          <button type="button" className={tabClass('backup')} onClick={() => setSettingsTab('backup')} data-testid="tab-backup">
+            Backup
           </button>
         </div>
 
@@ -8037,7 +8054,51 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               ═══════════════════════════════════════════════════════════════ */}
           {settingsTab === 'general' && (
             <>
-              {/* Folder Structure — collapsible */}
+              {/* General — true cross-app preferences only. Folder
+                  structure, sources, fix-engine behaviour all moved
+                  to the Workspace tab where they belong. */}
+
+              {/* Notifications */}
+              <div>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Play completion sound</span>
+                    <span className="text-xs text-muted-foreground">Play a sound and flash taskbar when fixes complete</span>
+                  </div>
+                  <Checkbox
+                    checked={playSound}
+                    onCheckedChange={(checked) => onPlaySoundChange(!!checked)}
+                    data-testid="checkbox-completion-sound"
+                  />
+                </label>
+              </div>
+
+              {/* Welcome Screen */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Show Welcome Screen on launch</span>
+                    <span className="text-xs text-muted-foreground">Display the onboarding screen when the app starts</span>
+                  </div>
+                  <Checkbox
+                    checked={showWelcome}
+                    onCheckedChange={(checked) => handleWelcomeToggle(!!checked)}
+                    data-testid="checkbox-show-welcome"
+                  />
+                </label>
+              </div>
+            </>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              WORKSPACE TAB
+              Everything that affects the Workspace / Dashboard area:
+              folder layout of the destination, source management,
+              duplicate handling, EXIF writing, catalogue output.
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'workspace' && (
+            <>
+              {/* Folder Structure — collapsible (moved from General) */}
               <div>
                 <button
                   type="button"
@@ -8083,37 +8144,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 )}
               </div>
 
-              {/* Notifications */}
-              <div className="pt-4 border-t border-border">
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Play completion sound</span>
-                    <span className="text-xs text-muted-foreground">Play a sound and flash taskbar when fixes complete</span>
-                  </div>
-                  <Checkbox
-                    checked={playSound}
-                    onCheckedChange={(checked) => onPlaySoundChange(!!checked)}
-                    data-testid="checkbox-completion-sound"
-                  />
-                </label>
-              </div>
-
-              {/* Welcome Screen */}
-              <div className="pt-4 border-t border-border">
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Show Welcome Screen on launch</span>
-                    <span className="text-xs text-muted-foreground">Display the onboarding screen when the app starts</span>
-                  </div>
-                  <Checkbox
-                    checked={showWelcome}
-                    onCheckedChange={(checked) => handleWelcomeToggle(!!checked)}
-                    data-testid="checkbox-show-welcome"
-                  />
-                </label>
-              </div>
-
-              {/* Sources */}
+              {/* Sources (moved from General) */}
               <div className="pt-4 border-t border-border">
                 <label className="block text-sm font-medium text-foreground mb-3">Sources</label>
                 <div className="space-y-2">
@@ -8141,16 +8172,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   </label>
                 </div>
               </div>
-            </>
-          )}
 
-          {/* ═══════════════════════════════════════════════════════════════
-              FIX ENGINE TAB
-              ═══════════════════════════════════════════════════════════════ */}
-          {settingsTab === 'fix' && (
-            <>
               {/* Duplicate Handling — standard */}
-              <div>
+              <div className="pt-4 border-t border-border">
                 <label className="block text-sm font-medium text-foreground mb-3">
                   Duplicate Handling
                 </label>
@@ -8315,121 +8339,90 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   </div>
                 )}
               </div>
+
+              {/* Catalogue (moved from Pro — fix-engine output behaviour) */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Catalogue
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Automatically save a cumulative record of all fixed files to your destination.
+                </p>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Save catalogue after each fix</span>
+                    <span className="text-xs text-muted-foreground">Write PDR_Catalogue.csv and .txt to your destination — updates dynamically</span>
+                  </div>
+                  <Checkbox
+                    checked={autoSaveCatalogue}
+                    onCheckedChange={(checked) => handleAutoSaveCatalogueToggle(!!checked)}
+                    data-testid="checkbox-auto-save-catalogue"
+                  />
+                </label>
+              </div>
             </>
           )}
 
           {/* ═══════════════════════════════════════════════════════════════
-              PRO TAB
+              SEARCH & DISCOVERY TAB
+              How fixed files reach the search index, and what the
+              Library Manager surfaces for power-user index management.
               ═══════════════════════════════════════════════════════════════ */}
-          {settingsTab === 'pro' && (
+          {settingsTab === 'sd' && (
             <>
-              {/* AI Photo Analysis */}
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  AI Photo Analysis
-                </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Use on-device AI to detect faces and tag content in your photos. Videos are not included — AI analysis applies to photos only. All processing happens locally — nothing is ever uploaded.
-                </p>
+                <label className="block text-sm font-medium text-foreground mb-1">Search & Discovery</label>
+                <p className="text-xs text-muted-foreground mb-3">Control how fixed files are added to your search library and what management tools are surfaced.</p>
                 <div className="space-y-2">
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-violet-500" />
-                        <span className="text-sm font-medium text-foreground">Enable AI Analysis</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground ml-6">Unlock face recognition and object tagging in Search (photos only)</span>
+                      <span className="text-sm font-medium text-foreground">Always add fixes to Search & Discovery</span>
+                      <span className="text-xs text-muted-foreground">Skip the prompt and automatically index every fix. When off, you'll be asked each time.</span>
                     </div>
                     <Checkbox
-                      checked={aiEnabled}
-                      onCheckedChange={(checked) => handleAiEnabledToggle(!!checked)}
-                      data-testid="checkbox-ai-enabled"
+                      checked={autoAddToSD === 'always'}
+                      onCheckedChange={(checked) => handleAutoAddToSDChange(checked ? 'always' : 'ask')}
                     />
                   </label>
-
-                  {aiEnabled && (
-                    <div className="ml-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Face Detection</span>
-                          <span className="text-xs text-muted-foreground">Detect and cluster faces to identify people in photos</span>
-                        </div>
-                        <Checkbox
-                          checked={aiFaceDetection}
-                          onCheckedChange={(checked) => handleAiFaceDetectionToggle(!!checked)}
-                          data-testid="checkbox-ai-face-detection"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Object & Scene Tagging</span>
-                          <span className="text-xs text-muted-foreground">Auto-tag photos with content labels (sunset, beach, pet, etc.)</span>
-                        </div>
-                        <Checkbox
-                          checked={aiObjectTagging}
-                          onCheckedChange={(checked) => handleAiObjectTaggingToggle(!!checked)}
-                          data-testid="checkbox-ai-object-tagging"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Auto-process new photos</span>
-                          <span className="text-xs text-muted-foreground">Automatically analyze photos when new files are added to the library</span>
-                        </div>
-                        <Checkbox
-                          checked={aiAutoProcess}
-                          onCheckedChange={(checked) => handleAiAutoProcessToggle(!!checked)}
-                          data-testid="checkbox-ai-auto-process"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Visual face suggestions</span>
-                          <span className="text-xs text-muted-foreground">When naming a face, suggest visually similar people from your library</span>
-                        </div>
-                        <Checkbox
-                          checked={aiVisualSuggestions}
-                          onCheckedChange={(checked) => handleAiVisualSuggestionsToggle(!!checked)}
-                          data-testid="checkbox-ai-visual-suggestions"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Improve facial recognition from verified faces</span>
-                          <span className="text-xs text-muted-foreground">Enables a button in the People window that uses your verified faces to refine matching. Only turn this on once you're sure the verified faces are correct.</span>
-                        </div>
-                        <Checkbox
-                          checked={aiRefineFromVerified}
-                          onCheckedChange={(checked) => handleAiRefineFromVerifiedToggle(!!checked)}
-                          data-testid="checkbox-ai-refine-from-verified"
-                        />
-                      </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Show Library Manager</span>
+                      <span className="text-xs text-muted-foreground">Show the Library Manager button in Search & Discovery for advanced index management.</span>
                     </div>
-                  )}
-                </div>
-
-                <div className="flex items-start gap-2 p-3 mt-3 rounded-lg bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
-                  <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
-                  <p className="text-xs text-violet-700 dark:text-violet-300">
-                    <strong>Privacy:</strong> AI models run entirely on your device — your photos are never uploaded, shared, or sent anywhere. AI analysis applies to photos only (not videos). A one-time download (~300 MB) is required the first time you analyze. After that, everything works fully offline.
-                  </p>
+                    <Checkbox
+                      checked={showLibraryManager}
+                      onCheckedChange={(checked) => handleShowLibraryManagerToggle(!!checked)}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
+                      <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-indexing requires running the fix again.</span>
+                    </div>
+                    <Checkbox
+                      checked={allowIndexRemoval}
+                      onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
+                      data-testid="checkbox-allow-index-removal"
+                    />
+                  </label>
                 </div>
               </div>
+            </>
+          )}
 
-              {/* People Manager */}
-              <div className="pt-4 border-t border-border space-y-3">
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  People Manager
-                </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  How People Manager behaves alongside PDR.
-                </p>
-
-                {/* Hosting mode — docked panel vs separate window. Two
-                    radio-style cards so the tradeoff reads at a glance:
-                    the docked panel keeps PM inside PDR and follows the
-                    main zoom level; the separate window can be moved
-                    to another monitor. */}
+          {/* ═══════════════════════════════════════════════════════════════
+              PEOPLE & TREES TAB
+              People Manager hosting + face-recognition refinements +
+              tree management. Face Detection master toggle stays on
+              the AI tab; the per-feature refinements live here next
+              to the apps that consume them.
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'people' && (
+            <>
+              {/* People Manager hosting */}
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-foreground mb-1">People Manager</label>
+                <p className="text-xs text-muted-foreground mb-3">How People Manager behaves alongside PDR.</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -8458,10 +8451,6 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <div className="text-xs text-muted-foreground mt-0.5">Standalone window — move it to another monitor or full-screen it.</div>
                   </button>
                 </div>
-
-                {/* Open-on-startup only applies to window mode. In docked
-                    mode the panel is always mounted on demand, so there's
-                    no equivalent meaning. */}
                 {peopleMode === 'window' && (
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
@@ -8477,74 +8466,54 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 )}
               </div>
 
-              {/* Catalogue */}
+              {/* Face recognition refinements — only meaningful when AI
+                  is enabled in the AI tab. We still render them but
+                  show a hint when the master toggle is off so the user
+                  knows where to flip it. */}
               <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  Catalogue
-                </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Automatically save a cumulative record of all fixed files to your destination.
-                </p>
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Save catalogue after each fix</span>
-                    <span className="text-xs text-muted-foreground">Write PDR_Catalogue.csv and .txt to your destination — updates dynamically</span>
-                  </div>
-                  <Checkbox
-                    checked={autoSaveCatalogue}
-                    onCheckedChange={(checked) => handleAutoSaveCatalogueToggle(!!checked)}
-                    data-testid="checkbox-auto-save-catalogue"
-                  />
-                </label>
+                <label className="block text-sm font-medium text-foreground mb-1">Face recognition</label>
+                <p className="text-xs text-muted-foreground mb-3">How PDR detects, refines, and suggests people. Requires AI to be enabled in the AI tab.</p>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Face Detection</span>
+                      <span className="text-xs text-muted-foreground">Detect and cluster faces to identify people in photos</span>
+                    </div>
+                    <Checkbox
+                      checked={aiFaceDetection}
+                      onCheckedChange={(checked) => handleAiFaceDetectionToggle(!!checked)}
+                      data-testid="checkbox-ai-face-detection"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Visual face suggestions</span>
+                      <span className="text-xs text-muted-foreground">When naming a face, suggest visually similar people from your library</span>
+                    </div>
+                    <Checkbox
+                      checked={aiVisualSuggestions}
+                      onCheckedChange={(checked) => handleAiVisualSuggestionsToggle(!!checked)}
+                      data-testid="checkbox-ai-visual-suggestions"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Improve facial recognition from verified faces</span>
+                      <span className="text-xs text-muted-foreground">Enables a button in the People window that uses your verified faces to refine matching. Only turn this on once you're sure the verified faces are correct.</span>
+                    </div>
+                    <Checkbox
+                      checked={aiRefineFromVerified}
+                      onCheckedChange={(checked) => handleAiRefineFromVerifiedToggle(!!checked)}
+                      data-testid="checkbox-ai-refine-from-verified"
+                    />
+                  </label>
+                </div>
               </div>
 
-              {/* Search & Discovery */}
-              <div className="pt-4 border-t border-border space-y-3">
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  Search & Discovery
-                </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Control how fixed files are added to your search library.
-                </p>
-
-                {/* Auto-add preference */}
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Always add fixes to Search & Discovery</span>
-                    <span className="text-xs text-muted-foreground">Skip the prompt and automatically index every fix. When off, you'll be asked each time.</span>
-                  </div>
-                  <Checkbox
-                    checked={autoAddToSD === 'always'}
-                    onCheckedChange={(checked) => handleAutoAddToSDChange(checked ? 'always' : 'ask')}
-                  />
-                </label>
-
-                {/* Show Library Manager */}
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Show Library Manager</span>
-                    <span className="text-xs text-muted-foreground">Show the Library Manager button in Search & Discovery for advanced index management.</span>
-                  </div>
-                  <Checkbox
-                    checked={showLibraryManager}
-                    onCheckedChange={(checked) => handleShowLibraryManagerToggle(!!checked)}
-                  />
-                </label>
-
-                {/* Allow Index Removal */}
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
-                    <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-indexing requires running the fix again.</span>
-                  </div>
-                  <Checkbox
-                    checked={allowIndexRemoval}
-                    onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
-                    data-testid="checkbox-allow-index-removal"
-                  />
-                </label>
-
-                {/* Allow Tree Removal */}
+              {/* Trees */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">Trees</label>
+                <p className="text-xs text-muted-foreground mb-3">Family-tree management.</p>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">Allow Tree Removal</span>
@@ -8555,8 +8524,83 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     onCheckedChange={(checked) => handleTreeRemovalToggle(!!checked)}
                   />
                 </label>
+              </div>
+            </>
+          )}
 
-                {/* Re-analyze AI Tags */}
+          {/* ═══════════════════════════════════════════════════════════════
+              AI TAB — master toggles + tag-side controls
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'ai' && (
+            <>
+              {/* AI Photo Analysis */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  AI Photo Analysis
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Use on-device AI to detect faces and tag content in your photos. Videos are not included — AI analysis applies to photos only. All processing happens locally — nothing is ever uploaded.
+                </p>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-violet-500" />
+                        <span className="text-sm font-medium text-foreground">Enable AI Analysis</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground ml-6">Unlock face recognition and object tagging in Search (photos only)</span>
+                    </div>
+                    <Checkbox
+                      checked={aiEnabled}
+                      onCheckedChange={(checked) => handleAiEnabledToggle(!!checked)}
+                      data-testid="checkbox-ai-enabled"
+                    />
+                  </label>
+
+                  {aiEnabled && (
+                    <div className="ml-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                      {/* Face Detection sub-toggle is on the People tab,
+                          alongside the rest of the face refinements
+                          (visual suggestions, refine-from-verified).
+                          Tag and run-control toggles live here. */}
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Object & Scene Tagging</span>
+                          <span className="text-xs text-muted-foreground">Auto-tag photos with content labels (sunset, beach, pet, etc.)</span>
+                        </div>
+                        <Checkbox
+                          checked={aiObjectTagging}
+                          onCheckedChange={(checked) => handleAiObjectTaggingToggle(!!checked)}
+                          data-testid="checkbox-ai-object-tagging"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Auto-process new photos</span>
+                          <span className="text-xs text-muted-foreground">Automatically analyze photos when new files are added to the library</span>
+                        </div>
+                        <Checkbox
+                          checked={aiAutoProcess}
+                          onCheckedChange={(checked) => handleAiAutoProcessToggle(!!checked)}
+                          data-testid="checkbox-ai-auto-process"
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-start gap-2 p-3 mt-3 rounded-lg bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
+                  <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-violet-700 dark:text-violet-300">
+                    <strong>Privacy:</strong> AI models run entirely on your device — your photos are never uploaded, shared, or sent anywhere. AI analysis applies to photos only (not videos). A one-time download (~300 MB) is required the first time you analyze. After that, everything works fully offline.
+                  </p>
+                </div>
+              </div>
+
+              {/* Re-analyze AI Tags — kept on the AI tab since this is
+                  an AI processing operation. Faces / people / trees
+                  are preserved (this only wipes tags). */}
+              <div className="pt-4 border-t border-border">
                 <div className="flex items-center justify-between p-3 rounded-lg border border-border">
                   <div className="flex flex-col pr-3">
                     <span className="text-sm font-medium text-foreground">Re-analyze AI Tags</span>
@@ -8595,12 +8639,19 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     Re-analyze
                   </Button>
                 </div>
+              </div>
+            </>
+          )}
 
-                {/* Restore from backup — collapsible list of every DB
-                    snapshot on disk. Rolling startup backups (5 generations)
-                    plus any pre-reanalyze snapshots that have accumulated.
-                    Restore is destructive (replaces the live DB) so the
-                    confirm warns plainly. */}
+          {/* ═══════════════════════════════════════════════════════════════
+              BACKUP TAB
+              The dedicated home for Restore from backup. Lifted out
+              of the old Pro/AI tab so it's discoverable in its own
+              right — recovery shouldn't be hidden behind an AI label.
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'backup' && (
+            <>
+              <div>
                 <div className="rounded-lg border border-border overflow-hidden">
                   <button
                     type="button"

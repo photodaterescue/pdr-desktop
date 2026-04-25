@@ -533,9 +533,9 @@ export default function PeopleManager() {
                   onClick={async () => {
                     if (!aiRefineEnabled) {
                       if ((window as any).pdr?.openSettings) {
-                        (window as any).pdr.openSettings('pro');
+                        (window as any).pdr.openSettings('people');
                       } else {
-                        window.opener?.postMessage({ type: 'pdr:openSettings', tab: 'pro' }, '*');
+                        window.opener?.postMessage({ type: 'pdr:openSettings', tab: 'people' }, '*');
                       }
                       return;
                     }
