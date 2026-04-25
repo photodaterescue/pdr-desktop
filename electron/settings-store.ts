@@ -36,6 +36,20 @@ export interface PDRSettings {
 
   // People Manager
   matchThreshold: number;
+  /** S&D-side match threshold for face matching, independent of PM's
+   *  clustering threshold above. Drives the score cutoff inside
+   *  refineFromVerifiedFaces (was hardcoded 0.72) so the user can
+   *  trade recall for precision without re-clustering everything in
+   *  PM. Default 0.72 — same as the previous hardcoded value, so
+   *  existing behaviour is unchanged until the slider is touched. */
+  aiSearchMatchThreshold: number;
+  /** S&D filter mode when the user picks people to search by:
+   *    'ai'       — include any face the AI has linked to that person
+   *                 (verified + auto-matched via refineFromVerifiedFaces)
+   *    'verified' — only photos where the user explicitly confirmed
+   *                 the face (face_detections.verified = 1)
+   *  Defaults to 'ai' — preserves existing behaviour. */
+  aiSearchMatchMode: 'ai' | 'verified';
   /** When true, the People Manager window auto-opens alongside the
    *  main PDR window on launch. Default off — users who rely on PM
    *  daily can opt in once to skip the manual open every session. */
@@ -94,6 +108,8 @@ export const optimisedDefaults: PDRSettings = {
   autoSaveCatalogue: true,
   showManualReportExports: false,
   matchThreshold: 0.72,
+  aiSearchMatchThreshold: 0.72,
+  aiSearchMatchMode: 'ai',
   openPeopleOnStartup: false,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
@@ -128,6 +144,8 @@ export function getSettings(): PDRSettings {
     autoSaveCatalogue: store.get('autoSaveCatalogue', optimisedDefaults.autoSaveCatalogue),
     showManualReportExports: store.get('showManualReportExports', optimisedDefaults.showManualReportExports),
     matchThreshold: store.get('matchThreshold', optimisedDefaults.matchThreshold),
+    aiSearchMatchThreshold: store.get('aiSearchMatchThreshold', optimisedDefaults.aiSearchMatchThreshold),
+    aiSearchMatchMode: store.get('aiSearchMatchMode', optimisedDefaults.aiSearchMatchMode),
     openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),

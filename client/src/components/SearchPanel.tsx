@@ -430,6 +430,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // Preview count for the Show button (updates as selections change)
   const [peoplePreviewCount, setPeoplePreviewCount] = useState<number | null>(null);
 
+  // S&D Match: AI vs Verified toggle + threshold slider. These are
+  // INDEPENDENT of the PM clustering threshold — the slider here drives
+  // the S&D-side refine threshold (so "Improve Facial Recognition"
+  // honours it) and the toggle gates person filtering on verified=1
+  // when set to 'verified'. Loaded once on mount; persisted on change.
+  const [aiSearchMatchMode, setAiSearchMatchMode] = useState<'ai' | 'verified'>('ai');
+  const [aiSearchMatchThreshold, setAiSearchMatchThreshold] = useState<number>(0.72);
+  useEffect(() => {
+    getSettings().then((s) => {
+      const mode = (s as any)?.aiSearchMatchMode;
+      if (mode === 'ai' || mode === 'verified') setAiSearchMatchMode(mode);
+      const t = (s as any)?.aiSearchMatchThreshold;
+      if (typeof t === 'number' && t >= 0.65 && t <= 0.95) setAiSearchMatchThreshold(t);
+    });
+  }, []);
+
   // Update preview count whenever person selection or mode changes
   useEffect(() => {
     if (selectedPersonIds.length === 0) {
@@ -445,13 +461,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         offset: 0,
         personId: selectedPersonIds,
         personIdMode: multiModeActive ? 'and' : 'or',
+        personVerifiedOnly: aiSearchMatchMode === 'verified',
       } as any);
       if (!cancelled && result.success && result.data) {
         setPeoplePreviewCount(result.data.total);
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedPersonIds, multiModeActive]);
+  }, [selectedPersonIds, multiModeActive, aiSearchMatchMode]);
 
   const [peopleFilterSearch, setPeopleFilterSearch] = useState('');
   const [peopleList, setPeopleList] = useState<PersonRecord[]>([]);
@@ -804,6 +821,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       : (fallbackText || undefined),
     personId: opParsed ? peopleFromOps : undefined,
     personIdMode: opParsed ? opParsed.mode : undefined,
+    personVerifiedOnly: aiSearchMatchMode === 'verified' ? true : undefined,
     aiTagMode: opParsed && tagsFromOps.length > 1 ? opParsed.mode : undefined,
     // When both people AND tags came from a single OR-mode query, tell the
     // backend to OR the two conditions together ("Mel, beach" = Mel OR
@@ -2091,7 +2109,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     onClick={() => {
                                       if (selectedPersonIds.length > 0) {
                                         clearFilters();
-                                        executeSearch({ sortBy, sortDir, limit: 60, offset: 0, personId: selectedPersonIds, personIdMode: multiModeActive ? 'and' : 'or' } as SearchQuery);
+                                        executeSearch({ sortBy, sortDir, limit: 60, offset: 0, personId: selectedPersonIds, personIdMode: multiModeActive ? 'and' : 'or', personVerifiedOnly: aiSearchMatchMode === 'verified' } as SearchQuery);
                                       } else {
                                         clearFilters();
                                         executeSearch({ sortBy, sortDir, limit: 60, offset: 0, hasNamedPeople: true } as SearchQuery);
@@ -2318,6 +2336,59 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             <span>Manage</span>
                           </button>
                         </IconTooltip>
+                      </div>
+                    </RibbonGroup>
+
+                    {/* S&D Match — independent of PM clustering threshold.
+                        Toggle decides whether person filters require an
+                        explicit verification (verified=1) or accept any AI
+                        link. Slider drives the score cutoff used by
+                        refineFromVerifiedFaces so the user can tighten or
+                        loosen auto-matching from this surface. */}
+                    <RibbonSeparator />
+                    <RibbonGroup label="Match">
+                      <div className="flex items-center gap-2 flex-1 py-1.5">
+                        {/* AI / Verified segmented toggle */}
+                        <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
+                          <IconTooltip label="Include any face the AI has linked to the selected person — verified plus auto-matched" side="bottom">
+                            <button
+                              onClick={() => {
+                                setAiSearchMatchMode('ai');
+                                setSetting('aiSearchMatchMode' as any, 'ai');
+                              }}
+                              className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${aiSearchMatchMode === 'ai' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                            >AI</button>
+                          </IconTooltip>
+                          <IconTooltip label="Only photos where the user explicitly confirmed the face — auto-matches excluded" side="bottom">
+                            <button
+                              onClick={() => {
+                                setAiSearchMatchMode('verified');
+                                setSetting('aiSearchMatchMode' as any, 'verified');
+                              }}
+                              className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide border-l border-border transition-colors ${aiSearchMatchMode === 'verified' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                            >Verified</button>
+                          </IconTooltip>
+                        </div>
+                        {/* Match Sensitivity slider — separate value from PM */}
+                        <div className="flex flex-col items-center gap-0.5 min-w-[110px]">
+                          <div className="flex items-center gap-1 w-full">
+                            <span className="text-[9px] text-muted-foreground">Loose</span>
+                            <input
+                              type="range"
+                              min="0.65"
+                              max="0.95"
+                              step="0.01"
+                              value={aiSearchMatchThreshold}
+                              onChange={(e) => setAiSearchMatchThreshold(parseFloat(e.target.value))}
+                              onMouseUp={() => setSetting('aiSearchMatchThreshold' as any, aiSearchMatchThreshold)}
+                              onTouchEnd={() => setSetting('aiSearchMatchThreshold' as any, aiSearchMatchThreshold)}
+                              className="flex-1 h-1 accent-purple-500 cursor-pointer"
+                              title={`Match Sensitivity: ${Math.round(((aiSearchMatchThreshold - 0.65) / 0.30) * 100)}% — drives Improve Facial Recognition cutoff`}
+                            />
+                            <span className="text-[9px] text-muted-foreground">Strict</span>
+                          </div>
+                          <span className="text-[9px] text-muted-foreground/70">{Math.round(((aiSearchMatchThreshold - 0.65) / 0.30) * 100)}%</span>
+                        </div>
                       </div>
                     </RibbonGroup>
                   </>

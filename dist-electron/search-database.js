@@ -1061,14 +1061,18 @@ export function searchFiles(query) {
         if (!query.personId || query.personId.length === 0)
             return null;
         const ph = query.personId.map(() => '?').join(',');
+        // S&D AI/Verified toggle: when "Verified only" is on, gate every
+        // face match on verified=1 so auto-matches from refineFromVerified
+        // are excluded. Default ('AI matches') keeps the legacy behaviour.
+        const verifiedClause = query.personVerifiedOnly ? ' AND fd.verified = 1' : '';
         if (query.personIdMode === 'and' && query.personId.length > 1) {
             return {
-                sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph}) GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`,
+                sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph})${verifiedClause} GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`,
                 params: [...query.personId, query.personId.length],
             };
         }
         return {
-            sql: `f.id IN (SELECT file_id FROM face_detections WHERE person_id IN (${ph}))`,
+            sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph})${verifiedClause})`,
             params: [...query.personId],
         };
     })();

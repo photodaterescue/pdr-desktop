@@ -106,7 +106,9 @@
       "PowerShell(cmd /c \"npm run build\")",
       "PowerShell(cmd /c \"npm run build:electron\")",
       "PowerShell(npx electron dist-electron/main.js)",
-      "PowerShell(git add -A)"
+      "PowerShell(git add -A)",
+      "PowerShell(cmd /c \"npx electron dist-electron/main.js\")",
+      "PowerShell(git push)"
     ]
   }
 }

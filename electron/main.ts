@@ -3254,7 +3254,11 @@ ipcMain.handle('ai:importXmpFaces', async () => {
 ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold?: number) => {
   try {
     const { refineFromVerifiedFaces, getDb } = await import('./search-database.js');
-    const result = refineFromVerifiedFaces(similarityThreshold ?? 0.72);
+    // Caller may override (e.g. PM slider during a manual refine) but
+    // when omitted we honour the user's S&D Match slider value so the
+    // two surfaces stay in sync for the auto-refine path.
+    const threshold = similarityThreshold ?? getSettings().aiSearchMatchThreshold ?? 0.72;
+    const result = refineFromVerifiedFaces(threshold);
     // Rebuild FTS for all files whose faces were newly assigned
     const database = getDb();
     const personIds = result.perPerson.filter(p => p.matched > 0).map(p => p.personId);
