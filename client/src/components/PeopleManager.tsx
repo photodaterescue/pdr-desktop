@@ -118,6 +118,18 @@ export default function PeopleManager() {
   });
   const [clusterThreshold, setClusterThreshold] = useState(0.70);
   const [isReclustering, setIsReclustering] = useState(false);
+  /** Threshold the in-flight recluster was kicked off with. We use this
+   *  to (a) detect that the user has moved the slider since, so a new
+   *  recluster supersedes the old, and (b) discard a loadClusters
+   *  result that was queued under a now-stale threshold — that's the
+   *  bug where a 1018-row count from a 60-seconds-ago recluster
+   *  suddenly appears after a tab switch. */
+  const reclusterTokenRef = useRef<number>(0);
+  const pendingThresholdRef = useRef<number | null>(null);
+  /** Debounce timer for keyboard / programmatic slider changes —
+   *  onChange fires per arrow-key press but onMouseUp doesn't, so we
+   *  schedule the recluster ourselves with a short tail-delay. */
+  const reclusterDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('pdr-pm-unverified-only') === 'true';
@@ -393,13 +405,38 @@ export default function PeopleManager() {
   };
 
   const handleRecluster = async (threshold: number) => {
+    // Cancel-on-restart: bump the token so any in-flight recluster
+    // result becomes stale and won't be applied. The actual backend
+    // call can't be aborted (no IPC abort plumbed), so we let it run
+    // to completion but discard its loadClusters() output.
+    const myToken = ++reclusterTokenRef.current;
+    pendingThresholdRef.current = threshold;
     setIsReclustering(true);
-    // Persist the threshold to settings
     await setSetting('matchThreshold', threshold);
     await reclusterFaces(threshold);
+    // If a newer recluster has started since we kicked off, ignore
+    // our results — the newer call will refresh the cluster list with
+    // its own (correct) data.
+    if (reclusterTokenRef.current !== myToken) return;
     await loadClusters();
+    if (reclusterTokenRef.current !== myToken) return;
     notifyChange();
+    pendingThresholdRef.current = null;
     setIsReclustering(false);
+  };
+
+  /** Schedule a recluster for the current slider value, debounced so
+   *  rapid keyboard input (arrow keys, scroll wheel) doesn't fire one
+   *  recluster per tick. Also wired into onChange so keyboard input
+   *  works the same as mouse-up — the previous version only triggered
+   *  on onMouseUp / onTouchEnd, leaving keyboard sliders silently
+   *  doing nothing. */
+  const scheduleRecluster = (threshold: number) => {
+    if (reclusterDebounceRef.current) clearTimeout(reclusterDebounceRef.current);
+    reclusterDebounceRef.current = setTimeout(() => {
+      reclusterDebounceRef.current = null;
+      handleRecluster(threshold);
+    }, 400);
   };
 
   const handleIgnoreCluster = async (clusterId: number) => {
@@ -618,10 +655,18 @@ export default function PeopleManager() {
           </TooltipProvider>
         </div>
 
-        <div className="flex flex-col items-center flex-1 mx-4 max-w-[220px]">
-          <span className="text-[11px] text-foreground/60 font-semibold uppercase tracking-wider mb-0.5">Match</span>
+        <div className="flex flex-col items-center flex-1 mx-4 max-w-[260px]">
+          <div className="flex items-center gap-2 mb-0.5 h-[14px]">
+            <span className="text-[11px] text-foreground/60 font-semibold uppercase tracking-wider">Match</span>
+            {isReclustering && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-purple-500">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                Reclustering…
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 w-full">
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">0%</span>
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">Loose</span>
             <div className="relative flex-1">
               <input
                 type="range"
@@ -629,12 +674,31 @@ export default function PeopleManager() {
                 max="0.90"
                 step="0.01"
                 value={clusterThreshold}
-                onChange={(e) => setClusterThreshold(parseFloat(e.target.value))}
-                onMouseUp={() => handleRecluster(clusterThreshold)}
-                onTouchEnd={() => handleRecluster(clusterThreshold)}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  setClusterThreshold(v);
+                  // Schedule a debounced recluster so keyboard /
+                  // programmatic changes also fire the backend pass.
+                  // Mouse-up / touch-end below short-circuits the
+                  // wait by triggering immediately.
+                  scheduleRecluster(v);
+                }}
+                onMouseUp={() => {
+                  if (reclusterDebounceRef.current) {
+                    clearTimeout(reclusterDebounceRef.current);
+                    reclusterDebounceRef.current = null;
+                  }
+                  handleRecluster(clusterThreshold);
+                }}
+                onTouchEnd={() => {
+                  if (reclusterDebounceRef.current) {
+                    clearTimeout(reclusterDebounceRef.current);
+                    reclusterDebounceRef.current = null;
+                  }
+                  handleRecluster(clusterThreshold);
+                }}
                 className="w-full h-1 accent-purple-500 cursor-pointer relative z-10"
-                title={`Match: ${Math.round(((clusterThreshold - 0.55) / 0.35) * 100)}%`}
-                disabled={isReclustering}
+                title={`Match strictness: ${Math.round(((clusterThreshold - 0.55) / 0.35) * 100)}%`}
               />
               {/* Tick marks at 25%, 50%, 75% */}
               <div className="absolute top-1/2 left-0 right-0 flex justify-between px-[2px] pointer-events-none" style={{ transform: 'translateY(-50%)' }}>
@@ -645,8 +709,11 @@ export default function PeopleManager() {
                 <div className="w-px h-2 bg-transparent" /> {/* 100% spacer */}
               </div>
             </div>
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">100%</span>
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">Strict</span>
           </div>
+          <p className="text-[9px] text-muted-foreground/70 mt-1 text-center leading-tight">
+            Loose merges more faces into one person. Strict keeps similar faces in separate groups.
+          </p>
         </div>
       </div>
 
