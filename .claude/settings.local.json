@@ -108,7 +108,8 @@
       "PowerShell(npx electron dist-electron/main.js)",
       "PowerShell(git add -A)",
       "PowerShell(cmd /c \"npx electron dist-electron/main.js\")",
-      "PowerShell(git push)"
+      "PowerShell(git push)",
+      "PowerShell(Stop-Process -Name electron -Force -ErrorAction SilentlyContinue)"
     ]
   }
 }

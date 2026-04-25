@@ -2191,7 +2191,7 @@ export function resetFaceAnalysis() {
     database.exec(`
     DELETE FROM face_detections;
     DELETE FROM persons;
-    UPDATE ai_processing_status SET faces_processed = 0, faces_model_ver = NULL;
+    UPDATE ai_processing_status SET face_processed = 0, face_model_ver = NULL;
   `);
     const row = database.prepare(`
     SELECT COUNT(*) AS cnt FROM indexed_files WHERE file_type = 'photo'
