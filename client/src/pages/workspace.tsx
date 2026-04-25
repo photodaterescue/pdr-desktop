@@ -80,6 +80,10 @@ import {
   PreScanResult,
   openPeopleWindow,
   resetTagAnalysis,
+  resetFaceAnalysis,
+  listBackups,
+  restoreFromBackup,
+  type DbBackup,
   prewarmPersonClusters
 } from "@/lib/electron-bridge";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
@@ -7951,6 +7955,22 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [settingsTab, setSettingsTab] = useState<'general' | 'fix' | 'pro'>(initialTab ?? 'general');
   const [folderStructureOpen, setFolderStructureOpen] = useState(false);
 
+  // Backup list — fetched on demand when the user expands the Restore
+  // section so we don't pay a stat()-of-the-backup-dir cost every time
+  // Settings opens.
+  const [backupsExpanded, setBackupsExpanded] = useState(false);
+  const [backups, setBackups] = useState<DbBackup[] | null>(null);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const refreshBackups = async () => {
+    setBackupsLoading(true);
+    try {
+      const r = await listBackups();
+      if (r.success && r.data) setBackups(r.data);
+    } finally {
+      setBackupsLoading(false);
+    }
+  };
+
   const options = [
     { value: 'year' as const, label: 'Year', example: '2024/' },
     { value: 'year-month' as const, label: 'Year / Month', example: '2024/03/' },
@@ -8575,6 +8595,135 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   >
                     Re-analyze
                   </Button>
+                </div>
+
+                {/* Re-analyze faces — destructive. Wipes face data and
+                    forces detection to re-run on every photo. Hidden in
+                    Pro behind a typed-strength confirmation so accidental
+                    clicks can't blow away verified people. The pre-action
+                    snapshot is named in the success toast so the user
+                    always knows the rollback file path. */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-rose-300/40 dark:border-rose-700/40 bg-rose-50/30 dark:bg-rose-950/10">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-sm font-medium text-rose-700 dark:text-rose-300">Re-analyze faces (destructive)</span>
+                    <span className="text-xs text-muted-foreground">Wipes every face detection and named person, then re-runs detection from scratch. Use this after a model upgrade or to recover from a face-pipeline bug. <strong>You will need to re-name everyone afterwards.</strong> A pre-action snapshot of the database is taken automatically so the change can be rolled back from "Restore from backup" below.</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                    onClick={async () => {
+                      const ok = await promptConfirm({
+                        title: 'Re-analyze every face?',
+                        message: 'This wipes every face detection and every named person. The AI then re-runs face detection on every photo. You will need to re-name people afterwards.\n\nA snapshot of the database is taken automatically before the wipe — you can restore it from "Restore from backup" below if you change your mind.',
+                        confirmLabel: 'Re-analyze faces',
+                        cancelLabel: 'Cancel',
+                        danger: true,
+                      });
+                      if (!ok) return;
+                      const r = await resetFaceAnalysis();
+                      if (r.success) {
+                        await refreshBackups();
+                        await promptConfirm({
+                          title: 'Face re-analysis started',
+                          message: `${r.data?.filesQueued ?? 0} photos have been queued for re-detection. Progress shows in the title bar.\n\nA pre-action snapshot was saved at:\n${r.data?.snapshotPath ?? '(unknown)'}`,
+                          confirmLabel: 'Got it',
+                          hideCancel: true,
+                        });
+                      } else {
+                        await promptConfirm({
+                          title: 'Could not re-analyze faces',
+                          message: r.error ?? 'Unknown error',
+                          confirmLabel: 'OK',
+                          hideCancel: true,
+                          danger: true,
+                        });
+                      }
+                    }}
+                  >
+                    Re-analyze faces
+                  </Button>
+                </div>
+
+                {/* Restore from backup — collapsible list of every DB
+                    snapshot on disk. Rolling startup backups (5 generations)
+                    plus any pre-reanalyze snapshots that have accumulated.
+                    Restore is destructive (replaces the live DB) so the
+                    confirm warns plainly. */}
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const next = !backupsExpanded;
+                      setBackupsExpanded(next);
+                      if (next && backups === null) await refreshBackups();
+                    }}
+                    className="w-full flex items-center justify-between p-3 hover:bg-secondary/40 transition-colors"
+                  >
+                    <div className="flex flex-col items-start pr-3">
+                      <span className="text-sm font-medium text-foreground">Restore from backup</span>
+                      <span className="text-xs text-muted-foreground">Roll the database back to a previous state. Up to five rolling snapshots are taken at every PDR launch, plus any pre-action snapshots from destructive operations above.</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{backupsExpanded ? '▾' : '▸'}</span>
+                  </button>
+                  {backupsExpanded && (
+                    <div className="border-t border-border p-3 space-y-2">
+                      {backupsLoading && <div className="text-xs text-muted-foreground italic">Loading…</div>}
+                      {!backupsLoading && backups && backups.length === 0 && (
+                        <div className="text-xs text-muted-foreground italic">No backups found yet — they appear here automatically after the first app launch.</div>
+                      )}
+                      {!backupsLoading && backups && backups.map((b) => {
+                        const ts = new Date(b.mtime);
+                        const tsLabel = ts.toLocaleString();
+                        const sizeMb = (b.sizeBytes / (1024 * 1024)).toFixed(1);
+                        return (
+                          <div key={b.path} className="flex items-center justify-between gap-3 p-2 rounded-md bg-secondary/30">
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-xs font-medium text-foreground truncate">
+                                {b.kind === 'pre-reanalyze' ? 'Pre-reanalyze snapshot' : `Rolling backup`}
+                                <span className="text-muted-foreground font-normal"> · {tsLabel} · {sizeMb} MB</span>
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/70 truncate font-mono">{b.filename}</span>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30 shrink-0"
+                              onClick={async () => {
+                                const ok = await promptConfirm({
+                                  title: 'Restore this snapshot?',
+                                  message: `This replaces the entire live database with the contents of ${b.filename} (taken ${tsLabel}). Any verifications or naming you've done since then will be lost. PDR will reload its data from disk after the restore.`,
+                                  confirmLabel: 'Restore',
+                                  cancelLabel: 'Cancel',
+                                  danger: true,
+                                });
+                                if (!ok) return;
+                                const r = await restoreFromBackup(b.path);
+                                if (r.success) {
+                                  await promptConfirm({
+                                    title: 'Restored',
+                                    message: 'The database has been restored from the snapshot. Please relaunch PDR so every window picks up the new state cleanly.',
+                                    confirmLabel: 'OK',
+                                    hideCancel: true,
+                                  });
+                                } else {
+                                  await promptConfirm({
+                                    title: 'Restore failed',
+                                    message: r.error ?? 'Unknown error',
+                                    confirmLabel: 'OK',
+                                    hideCancel: true,
+                                    danger: true,
+                                  });
+                                }
+                              }}
+                            >
+                              Restore
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </>

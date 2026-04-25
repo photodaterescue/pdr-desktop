@@ -3151,6 +3151,57 @@ ipcMain.handle('ai:resetTagAnalysis', async () => {
         return { success: false, error: err.message };
     }
 });
+/**
+ * Re-analyze faces — destructive recovery action. Used to flush face
+ * detections that were stored under buggy assumptions (e.g. the EXIF
+ * rotation bug where boxes/embeddings were computed sideways) and
+ * re-run detection with current code on every photo.
+ *
+ * Flow:
+ *  1. Snapshot the live DB to a timestamped pre-reanalyze backup so
+ *     the user has a guaranteed roll-back point. The snapshot survives
+ *     the rolling 5-generation rotation forever.
+ *  2. Wipe face_detections + persons + faces processing flags.
+ *  3. Kick off a fresh AI run that will re-detect every photo.
+ *
+ * Returns the snapshot path so the UI can show it in the toast.
+ */
+ipcMain.handle('ai:resetFaceAnalysis', async () => {
+    try {
+        const { resetFaceAnalysis, takePreReanalyzeSnapshot } = await import('./search-database.js');
+        const snap = takePreReanalyzeSnapshot();
+        const data = resetFaceAnalysis();
+        invalidatePersonClustersCache();
+        // Full AI run (faces + tags depending on settings) — the user
+        // explicitly asked for a re-detect, so honour the per-leg toggles
+        // they set up in Settings → Pro rather than forcing tagsOnly off.
+        startAiProcessing();
+        return { success: true, data: { ...data, snapshotPath: snap.snapshotPath } };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('db:listBackups', async () => {
+    try {
+        const { listDbBackups } = await import('./search-database.js');
+        return { success: true, data: listDbBackups() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('db:restoreFromBackup', async (_event, snapshotPath) => {
+    try {
+        const { restoreDbFromBackup } = await import('./search-database.js');
+        const r = restoreDbFromBackup(snapshotPath);
+        invalidatePersonClustersCache();
+        return r.restored ? { success: true } : { success: false, error: r.error };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 // PM open-count: session-scoped counter that resets each PDR launch.
 // Used alongside settings.pmOpenDays to decide when to show the "open
 // PM on startup" onboarding banner — we wait until adoption is real

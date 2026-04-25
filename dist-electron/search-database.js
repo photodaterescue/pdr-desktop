@@ -2166,6 +2166,123 @@ export function resetAllTagAnalysis() {
     catch { }
     return { filesQueued: row.cnt };
 }
+/**
+ * Wipe all face data so the next AI run re-detects everything from
+ * scratch. Used by the "Re-analyze faces" advanced action.
+ *
+ *   - face_detections: removed entirely (boxes, embeddings, person_id
+ *                      links, verified flags — all gone). Required so
+ *                      the EXIF-rotation fix actually takes effect on
+ *                      previously-analysed photos.
+ *   - persons:         hard-deleted. Names and avatars are lost; the
+ *                      user re-names new clusters from scratch. We
+ *                      could soft-discard via discarded_at instead,
+ *                      but that leaves dangling 0-photo entries in
+ *                      every UI that lists persons. Cleaner to wipe
+ *                      and rely on the pre-action snapshot for undo.
+ *   - faces processing flags: reset so the queue picks every photo
+ *                      back up. Tags are preserved.
+ *
+ * Returns the number of files queued for re-detection so the caller
+ * can show a "X photos queued" confirmation toast.
+ */
+export function resetFaceAnalysis() {
+    const database = getDb();
+    database.exec(`
+    DELETE FROM face_detections;
+    DELETE FROM persons;
+    UPDATE ai_processing_status SET faces_processed = 0, faces_model_ver = NULL;
+  `);
+    const row = database.prepare(`
+    SELECT COUNT(*) AS cnt FROM indexed_files WHERE file_type = 'photo'
+  `).get();
+    // FTS rows include person names; rebuild lazily as the indexer re-runs.
+    try {
+        database.exec(`DELETE FROM files_ai_fts`);
+    }
+    catch { }
+    return { filesQueued: row.cnt };
+}
+/**
+ * Take an explicit pre-action snapshot of the live DB. Stored alongside
+ * the rolling startup backups but with a distinct "pre-reanalyze"
+ * filename + timestamp so it survives the 5-generation rotation. Uses
+ * SQLite's VACUUM INTO so writes in flight are captured cleanly (a
+ * plain file copy of an open DB risks corruption from the WAL).
+ */
+export function takePreReanalyzeSnapshot() {
+    const dbPath = getDbPath();
+    const backupDir = path.join(path.dirname(dbPath), 'backups');
+    if (!fs.existsSync(backupDir))
+        fs.mkdirSync(backupDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const snapshotPath = path.join(backupDir, `pdr-search.pre-reanalyze-${ts}.db`);
+    const database = getDb();
+    database.prepare(`VACUUM INTO ?`).run(snapshotPath);
+    return { snapshotPath };
+}
+/**
+ * Enumerate all DB backups available for restore — both the rolling
+ * startup snapshots (backup-0..4) and any explicit pre-action snapshots
+ * (pre-reanalyze-*). Returns newest first by mtime so the UI list reads
+ * naturally.
+ */
+export function listDbBackups() {
+    const dbPath = getDbPath();
+    const backupDir = path.join(path.dirname(dbPath), 'backups');
+    if (!fs.existsSync(backupDir))
+        return [];
+    const entries = [];
+    for (const name of fs.readdirSync(backupDir)) {
+        if (!name.endsWith('.db'))
+            continue;
+        const full = path.join(backupDir, name);
+        let stat;
+        try {
+            stat = fs.statSync(full);
+        }
+        catch {
+            continue;
+        }
+        const kind = name.includes('pre-reanalyze') ? 'pre-reanalyze' : 'rolling';
+        entries.push({ path: full, filename: name, sizeBytes: stat.size, mtime: stat.mtime.toISOString(), kind });
+    }
+    entries.sort((a, b) => b.mtime.localeCompare(a.mtime));
+    return entries;
+}
+/**
+ * Restore the live DB from a backup snapshot. The caller is expected to
+ * confirm with the user first — this is destructive and replaces every
+ * row in the live DB. Closes the current DB connection, copies the
+ * snapshot over the live file, and re-opens. Caller should reload UI
+ * state after a successful restore so any cached cluster lists / face
+ * crops are flushed.
+ */
+export function restoreDbFromBackup(snapshotPath) {
+    if (!fs.existsSync(snapshotPath))
+        return { restored: false, error: 'Snapshot file not found' };
+    const dbPath = getDbPath();
+    try {
+        closeDatabase();
+        // Belt-and-braces: also nuke the WAL/SHM sidecars so SQLite doesn't
+        // try to replay journal pages from the OLD DB onto the freshly-copied
+        // backup. Without this, the restored content can be silently rolled
+        // forward by stale WAL frames.
+        for (const sidecar of [`${dbPath}-wal`, `${dbPath}-shm`]) {
+            try {
+                if (fs.existsSync(sidecar))
+                    fs.unlinkSync(sidecar);
+            }
+            catch { }
+        }
+        fs.copyFileSync(snapshotPath, dbPath);
+        initDatabase();
+        return { restored: true };
+    }
+    catch (err) {
+        return { restored: false, error: err.message };
+    }
+}
 /** Clear all AI data (faces, tags, processing status) */
 export function clearAllAiData() {
     const database = getDb();

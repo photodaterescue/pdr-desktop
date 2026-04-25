@@ -1692,6 +1692,44 @@ export async function resetTagAnalysis(): Promise<{ success: boolean; data?: { f
   return { success: false, error: 'Not running in Electron' };
 }
 
+/** Re-detect every face from scratch — destructive. Wipes face_detections
+ *  and persons, takes a pre-action DB snapshot first, kicks off a fresh
+ *  AI run. Returns the snapshot path so the caller can show the user
+ *  exactly where the rollback file lives. */
+export async function resetFaceAnalysis(): Promise<{ success: boolean; data?: { filesQueued: number; snapshotPath: string }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.resetFaceAnalysis) {
+    return (window as any).pdr.ai.resetFaceAnalysis();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export interface DbBackup {
+  path: string;
+  filename: string;
+  sizeBytes: number;
+  mtime: string;
+  kind: 'rolling' | 'pre-reanalyze';
+}
+
+/** List every restorable DB snapshot — both rolling startup backups
+ *  and any explicit pre-reanalyze snapshots. Newest first. */
+export async function listBackups(): Promise<{ success: boolean; data?: DbBackup[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.listBackups) {
+    return (window as any).pdr.ai.listBackups();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+/** Replace the live DB with the contents of the chosen snapshot. The
+ *  caller MUST confirm with the user first — this is irreversible
+ *  beyond what other backups are still on disk. */
+export async function restoreFromBackup(snapshotPath: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.restoreFromBackup) {
+    return (window as any).pdr.ai.restoreFromBackup(snapshotPath);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export interface PersonCluster {
   cluster_id: number;
   person_id: number | null;
