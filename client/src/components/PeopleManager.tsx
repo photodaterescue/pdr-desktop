@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -488,9 +488,81 @@ export default function PeopleManager() {
   };
 
   const namedClusters = clusters.filter(c => c.person_name && c.person_name !== '__ignored__' && c.person_name !== '__unsure__');
-  const unnamedClusters = clusters.filter(c => !c.person_name);
+  const unnamedClustersRaw = clusters.filter(c => !c.person_name);
   const ignoredClusters = clusters.filter(c => c.person_name === '__ignored__');
   const unsureClusters = clusters.filter(c => c.person_name === '__unsure__');
+
+  // ── Drag-to-reorder for the Unnamed tab ────────────────────────────
+  // The user often has multiple unnamed clusters that turn out to be
+  // the same person. Letting them drag those rows next to each other
+  // makes the verify-and-merge flow a lot less click-heavy. Order is
+  // persisted in localStorage by clusterKey so it survives PM open/
+  // close — but a fresh detection / new clusters slot in at the end
+  // (Infinity rank for unranked entries).
+  const CLUSTER_ORDER_KEY = 'pdr-pm-cluster-order';
+  const [clusterOrder, setClusterOrder] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(CLUSTER_ORDER_KEY) || '{}'); } catch { return {}; }
+  });
+  const [draggedClusterKey, setDraggedClusterKey] = useState<string | null>(null);
+  const [dragOverClusterKey, setDragOverClusterKey] = useState<string | null>(null);
+
+  const persistClusterOrder = (next: Record<string, number>) => {
+    setClusterOrder(next);
+    try { localStorage.setItem(CLUSTER_ORDER_KEY, JSON.stringify(next)); } catch { /* quota — ignore */ }
+  };
+
+  const unnamedClusters = useMemo(() => {
+    const arr = [...unnamedClustersRaw];
+    arr.sort((a, b) => {
+      const oa = clusterOrder[clusterKey(a)] ?? Number.POSITIVE_INFINITY;
+      const ob = clusterOrder[clusterKey(b)] ?? Number.POSITIVE_INFINITY;
+      if (oa !== ob) return oa - ob;
+      return 0; // stable for unranked → keep backend order (largest cluster first)
+    });
+    return arr;
+  }, [unnamedClustersRaw, clusterOrder]);
+
+  const handleClusterDragStart = (e: React.DragEvent, key: string) => {
+    setDraggedClusterKey(key);
+    e.dataTransfer.effectAllowed = 'move';
+    // Use the row's parent as the drag preview so users see the whole
+    // row being dragged, not just the small grip icon.
+    const parent = (e.currentTarget as HTMLElement).closest('[data-cluster-row]') as HTMLElement | null;
+    if (parent) e.dataTransfer.setDragImage(parent, 20, 20);
+  };
+  const handleClusterDragOver = (e: React.DragEvent, key: string) => {
+    if (!draggedClusterKey || draggedClusterKey === key) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverClusterKey !== key) setDragOverClusterKey(key);
+  };
+  const handleClusterDragLeave = (key: string) => {
+    if (dragOverClusterKey === key) setDragOverClusterKey(null);
+  };
+  const handleClusterDrop = (e: React.DragEvent, targetKey: string) => {
+    e.preventDefault();
+    setDragOverClusterKey(null);
+    if (!draggedClusterKey || draggedClusterKey === targetKey) {
+      setDraggedClusterKey(null);
+      return;
+    }
+    const currentList = unnamedClusters.map(clusterKey);
+    const fromIdx = currentList.indexOf(draggedClusterKey);
+    const toIdx = currentList.indexOf(targetKey);
+    if (fromIdx === -1 || toIdx === -1) { setDraggedClusterKey(null); return; }
+    const reordered = [...currentList];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    const next: Record<string, number> = {};
+    reordered.forEach((k, i) => { next[k] = i; });
+    persistClusterOrder(next);
+    setDraggedClusterKey(null);
+  };
+  const handleClusterDragEnd = () => {
+    setDraggedClusterKey(null);
+    setDragOverClusterKey(null);
+  };
 
   const prepareFaces = (cluster: PersonCluster): PersonCluster => {
     if (!cluster.sample_faces) return cluster;
@@ -961,10 +1033,38 @@ export default function PeopleManager() {
                     </div>
                     {viewMode === 'card' ? (
                       <div className="space-y-2">
-                        {unnamedClusters.map((cluster, idx) => (
+                        {unnamedClusters.map((cluster, idx) => {
+                          const ck = clusterKey(cluster);
+                          return (
+                          <div
+                            key={ck}
+                            data-cluster-row
+                            onDragOver={(e) => handleClusterDragOver(e, ck)}
+                            onDragLeave={() => handleClusterDragLeave(ck)}
+                            onDrop={(e) => handleClusterDrop(e, ck)}
+                            className={`relative transition-opacity ${draggedClusterKey === ck ? 'opacity-40' : ''} ${dragOverClusterKey === ck ? 'ring-2 ring-purple-400/60 rounded-lg' : ''}`}
+                          >
+                            {/* Drag handle — small grip icon on the left edge.
+                                Only the handle is draggable, so clicking on
+                                thumbnails / name fields elsewhere works as
+                                normal. The drag preview is set to the parent
+                                row in handleClusterDragStart. */}
+                            <div
+                              draggable
+                              onDragStart={(e) => handleClusterDragStart(e, ck)}
+                              onDragEnd={handleClusterDragEnd}
+                              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-4 h-10 flex items-center justify-center opacity-30 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
+                              title="Drag to reorder"
+                            >
+                              <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className="text-muted-foreground">
+                                <circle cx="2.5" cy="3" r="1.2" /><circle cx="7.5" cy="3" r="1.2" />
+                                <circle cx="2.5" cy="8" r="1.2" /><circle cx="7.5" cy="8" r="1.2" />
+                                <circle cx="2.5" cy="13" r="1.2" /><circle cx="7.5" cy="13" r="1.2" />
+                              </svg>
+                            </div>
                           <PersonCardRow
                             rowIndex={idx}
-                            key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
+                            onVisible={() => ensureClusterCrops(cluster)}
                             cluster={cluster}
                             cropUrl={faceCropsMap[clusterKey(cluster)]}
                             sampleCrops={faceCropsMap}
@@ -994,13 +1094,38 @@ export default function PeopleManager() {
                             onGlobalReassignNameChange={setGlobalReassignName}
                             currentTab={activeTab}
                           />
-                        ))}
+                          </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="space-y-0.5">
-                        {unnamedClusters.map((cluster) => (
+                        {unnamedClusters.map((cluster) => {
+                          const ck = clusterKey(cluster);
+                          return (
+                          <div
+                            key={ck}
+                            data-cluster-row
+                            onDragOver={(e) => handleClusterDragOver(e, ck)}
+                            onDragLeave={() => handleClusterDragLeave(ck)}
+                            onDrop={(e) => handleClusterDrop(e, ck)}
+                            className={`relative transition-opacity ${draggedClusterKey === ck ? 'opacity-40' : ''} ${dragOverClusterKey === ck ? 'ring-2 ring-purple-400/60 rounded' : ''}`}
+                          >
+                            <div
+                              draggable
+                              onDragStart={(e) => handleClusterDragStart(e, ck)}
+                              onDragEnd={handleClusterDragEnd}
+                              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-4 h-7 flex items-center justify-center opacity-30 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
+                              title="Drag to reorder"
+                            >
+                              <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className="text-muted-foreground">
+                                <circle cx="2.5" cy="3" r="1.2" /><circle cx="7.5" cy="3" r="1.2" />
+                                <circle cx="2.5" cy="8" r="1.2" /><circle cx="7.5" cy="8" r="1.2" />
+                                <circle cx="2.5" cy="13" r="1.2" /><circle cx="7.5" cy="13" r="1.2" />
+                              </svg>
+                            </div>
                           <PersonListRow
-                            key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
+                            onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
                             isEditing={editingCluster === clusterKey(cluster)} nameInput={nameInput}
                             onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                             onNameChange={setNameInput}
@@ -1016,7 +1141,9 @@ export default function PeopleManager() {
                             onConfirmUnsure={() => handleUnsureCluster(cluster.cluster_id)}
                             onCancelUnsure={() => setPendingUnsure(null)}
                           />
-                        ))}
+                          </div>
+                          );
+                        })}
                       </div>
                     )}
                   </>
@@ -1984,7 +2111,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
             }`}>{rowIndex + 1}</span>
           )}
           {/* Main face thumbnail — uses user-chosen rep for Named, else first sample face */}
-          <TooltipProvider delayDuration={500}>
+          <TooltipProvider delayDuration={0}>
             <Tooltip onOpenChange={(open) => {
               const isNamed = cluster.person_name && !cluster.person_name.startsWith('__');
               const repFace = isNamed ? cluster.sample_faces?.find(f => f.face_id === cluster.representative_face_id) : null;
@@ -2111,7 +2238,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                 onClick={(e) => e.stopPropagation()}
               >
                 {cluster.sample_faces.map((face, faceIdx) => (
-                    <TooltipProvider key={face.face_id} delayDuration={500}>
+                    <TooltipProvider key={face.face_id} delayDuration={0}>
                       <Tooltip onOpenChange={(open) => {
                         if (open && face.file_path) {
                           loadContextCrop(`face_${face.face_id}`, face.file_path, face.box_x, face.box_y, face.box_w, face.box_h);

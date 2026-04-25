@@ -3501,10 +3501,10 @@ ipcMain.handle('ai:faceContext', async (_event, filePath, boxX, boxY, boxW, boxH
             .jpeg({ quality: 85 })
             .toBuffer();
         // Draw a face indicator box using SVG overlay
-        const strokeW = 2;
+        const strokeW = 4;
         const svgBox = Buffer.from(`<svg width="${size}" height="${size}">
       <rect x="${boxPx.x}" y="${boxPx.y}" width="${boxPx.w}" height="${boxPx.h}"
-            fill="none" stroke="#a855f7" stroke-width="${strokeW}" rx="3" opacity="0.85"/>
+            fill="none" stroke="#a855f7" stroke-width="${strokeW}" rx="3" opacity="0.9"/>
     </svg>`);
         const final = await sharp(cropped)
             .composite([{ input: svgBox, top: 0, left: 0 }])
