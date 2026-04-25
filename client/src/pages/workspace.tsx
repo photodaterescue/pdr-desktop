@@ -80,7 +80,6 @@ import {
   PreScanResult,
   openPeopleWindow,
   resetTagAnalysis,
-  resetFaceAnalysis,
   listBackups,
   restoreFromBackup,
   type DbBackup,
@@ -8597,54 +8596,6 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   </Button>
                 </div>
 
-                {/* Re-analyze faces — destructive. Wipes face data and
-                    forces detection to re-run on every photo. Hidden in
-                    Pro behind a typed-strength confirmation so accidental
-                    clicks can't blow away verified people. The pre-action
-                    snapshot is named in the success toast so the user
-                    always knows the rollback file path. */}
-                <div className="flex items-center justify-between p-3 rounded-lg border border-rose-300/40 dark:border-rose-700/40 bg-rose-50/30 dark:bg-rose-950/10">
-                  <div className="flex flex-col pr-3">
-                    <span className="text-sm font-medium text-rose-700 dark:text-rose-300">Re-analyze faces (destructive)</span>
-                    <span className="text-xs text-muted-foreground">Wipes every face detection and named person, then re-runs detection from scratch. Use this after a model upgrade or to recover from a face-pipeline bug. <strong>You will need to re-name everyone afterwards.</strong> A pre-action snapshot of the database is taken automatically so the change can be rolled back from "Restore from backup" below.</span>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                    onClick={async () => {
-                      const ok = await promptConfirm({
-                        title: 'Re-analyze every face?',
-                        message: 'This wipes every face detection and every named person. The AI then re-runs face detection on every photo. You will need to re-name people afterwards.\n\nA snapshot of the database is taken automatically before the wipe — you can restore it from "Restore from backup" below if you change your mind.',
-                        confirmLabel: 'Re-analyze faces',
-                        cancelLabel: 'Cancel',
-                        danger: true,
-                      });
-                      if (!ok) return;
-                      const r = await resetFaceAnalysis();
-                      if (r.success) {
-                        await refreshBackups();
-                        await promptConfirm({
-                          title: 'Face re-analysis started',
-                          message: `${r.data?.filesQueued ?? 0} photos have been queued for re-detection. Progress shows in the title bar.\n\nA pre-action snapshot was saved at:\n${r.data?.snapshotPath ?? '(unknown)'}`,
-                          confirmLabel: 'Got it',
-                          hideCancel: true,
-                        });
-                      } else {
-                        await promptConfirm({
-                          title: 'Could not re-analyze faces',
-                          message: r.error ?? 'Unknown error',
-                          confirmLabel: 'OK',
-                          hideCancel: true,
-                          danger: true,
-                        });
-                      }
-                    }}
-                  >
-                    Re-analyze faces
-                  </Button>
-                </div>
-
                 {/* Restore from backup — collapsible list of every DB
                     snapshot on disk. Rolling startup backups (5 generations)
                     plus any pre-reanalyze snapshots that have accumulated.
@@ -8660,14 +8611,21 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     }}
                     className="w-full flex items-center justify-between p-3 hover:bg-secondary/40 transition-colors"
                   >
-                    <div className="flex flex-col items-start pr-3">
+                    <div className="flex flex-col items-start text-left pr-3 min-w-0">
                       <span className="text-sm font-medium text-foreground">Restore from backup</span>
-                      <span className="text-xs text-muted-foreground">Roll the entire PDR database back to a previous state — covers indexed photos, faces, named people, AI tags, family trees and relationships, and fix-run history. Original photo files on disk are not touched. Up to five rolling snapshots are taken at every PDR launch, plus any pre-action snapshots from destructive operations above.</span>
+                      <span className="text-xs text-muted-foreground text-left">Roll PDR back to an earlier saved copy of its database. Click to see the snapshots available.</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">{backupsExpanded ? '▾' : '▸'}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{backupsExpanded ? '▾' : '▸'}</span>
                   </button>
                   {backupsExpanded && (
                     <div className="border-t border-border p-3 space-y-2">
+                      {/* Plain-English explainer — kept inside the expanded
+                          panel so the collapsed header stays terse. */}
+                      <div className="text-[11px] text-muted-foreground space-y-1 mb-2">
+                        <p><strong className="text-foreground/80">What gets restored:</strong> the PDR database — your libraries, named people, AI tags, family trees, and fix-run history.</p>
+                        <p><strong className="text-foreground/80">What's NOT touched:</strong> the actual photo files on your drives.</p>
+                        <p><strong className="text-foreground/80">Where these come from:</strong> PDR saves one snapshot every time you launch and keeps the most recent 5 (so the 6th launch overwrites the oldest).</p>
+                      </div>
                       {backupsLoading && <div className="text-xs text-muted-foreground italic">Loading…</div>}
                       {!backupsLoading && backups && backups.length === 0 && (
                         <div className="text-xs text-muted-foreground italic">No backups found yet — they appear here automatically after the first app launch.</div>
@@ -8692,7 +8650,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                               onClick={async () => {
                                 const ok = await promptConfirm({
                                   title: 'Restore this snapshot?',
-                                  message: `This replaces the entire live database with the contents of ${b.filename} (taken ${tsLabel}). Anything you've added or changed since then will be lost — face verifications, named people, AI tags, family tree edits, new fixed-run history. Original photo files on disk are not affected. Please relaunch PDR after the restore so every window picks up the new state cleanly.`,
+                                  message: `This replaces the entire live database with the contents of ${b.filename} (taken ${tsLabel}). Anything you've added or changed since then will be lost — face verifications, named people, AI tags, family tree edits, library changes, new fixed-run history. Original photo files on your drives are not affected. Please relaunch PDR after the restore so every window picks up the new state cleanly.`,
                                   confirmLabel: 'Restore',
                                   cancelLabel: 'Cancel',
                                   danger: true,

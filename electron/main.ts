@@ -3450,36 +3450,12 @@ ipcMain.handle('ai:resetTagAnalysis', async () => {
   }
 });
 
-/**
- * Re-analyze faces — destructive recovery action. Used to flush face
- * detections that were stored under buggy assumptions (e.g. the EXIF
- * rotation bug where boxes/embeddings were computed sideways) and
- * re-run detection with current code on every photo.
- *
- * Flow:
- *  1. Snapshot the live DB to a timestamped pre-reanalyze backup so
- *     the user has a guaranteed roll-back point. The snapshot survives
- *     the rolling 5-generation rotation forever.
- *  2. Wipe face_detections + persons + faces processing flags.
- *  3. Kick off a fresh AI run that will re-detect every photo.
- *
- * Returns the snapshot path so the UI can show it in the toast.
- */
-ipcMain.handle('ai:resetFaceAnalysis', async () => {
-  try {
-    const { resetFaceAnalysis, takePreReanalyzeSnapshot } = await import('./search-database.js');
-    const snap = takePreReanalyzeSnapshot();
-    const data = resetFaceAnalysis();
-    invalidatePersonClustersCache();
-    // Full AI run (faces + tags depending on settings) — the user
-    // explicitly asked for a re-detect, so honour the per-leg toggles
-    // they set up in Settings → Pro rather than forcing tagsOnly off.
-    startAiProcessing();
-    return { success: true, data: { ...data, snapshotPath: snap.snapshotPath } };
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-});
+// Re-analyze faces was intentionally removed — see
+// memory/feedback_face_reanalyze_design.md. End users have hours of
+// emotional investment in their People Manager verifications and we
+// don't ship a button that can wipe that. Recovery for mass mis-naming
+// goes through Restore from backup. Future model upgrades are tested
+// by the dev locally and shipped as an updated build.
 
 ipcMain.handle('db:listBackups', async () => {
   try {

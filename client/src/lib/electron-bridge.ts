@@ -1692,17 +1692,6 @@ export async function resetTagAnalysis(): Promise<{ success: boolean; data?: { f
   return { success: false, error: 'Not running in Electron' };
 }
 
-/** Re-detect every face from scratch — destructive. Wipes face_detections
- *  and persons, takes a pre-action DB snapshot first, kicks off a fresh
- *  AI run. Returns the snapshot path so the caller can show the user
- *  exactly where the rollback file lives. */
-export async function resetFaceAnalysis(): Promise<{ success: boolean; data?: { filesQueued: number; snapshotPath: string }; error?: string }> {
-  if (isElectron() && (window as any).pdr?.ai?.resetFaceAnalysis) {
-    return (window as any).pdr.ai.resetFaceAnalysis();
-  }
-  return { success: false, error: 'Not running in Electron' };
-}
-
 export interface DbBackup {
   path: string;
   filename: string;

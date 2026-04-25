@@ -182,7 +182,6 @@ contextBridge.exposeInMainWorld('pdr', {
         tagOptions: () => ipcRenderer.invoke('ai:tagOptions'),
         clearAll: () => ipcRenderer.invoke('ai:clearAll'),
         resetTagAnalysis: () => ipcRenderer.invoke('ai:resetTagAnalysis'),
-        resetFaceAnalysis: () => ipcRenderer.invoke('ai:resetFaceAnalysis'),
         listBackups: () => ipcRenderer.invoke('db:listBackups'),
         restoreFromBackup: (snapshotPath) => ipcRenderer.invoke('db:restoreFromBackup', snapshotPath),
         personClusters: () => ipcRenderer.invoke('ai:personClusters'),

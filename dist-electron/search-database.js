@@ -2167,75 +2167,17 @@ export function resetAllTagAnalysis() {
     return { filesQueued: row.cnt };
 }
 /**
- * Wipe all face data so the next AI run re-detects everything from
- * scratch. Used by the "Re-analyze faces" advanced action.
- *
- *   - face_detections: removed entirely (boxes, embeddings, person_id
- *                      links, verified flags — all gone). Required so
- *                      the EXIF-rotation fix actually takes effect on
- *                      previously-analysed photos.
- *   - persons:         hard-deleted. Names and avatars are lost; the
- *                      user re-names new clusters from scratch. We
- *                      could soft-discard via discarded_at instead,
- *                      but that leaves dangling 0-photo entries in
- *                      every UI that lists persons. Cleaner to wipe
- *                      and rely on the pre-action snapshot for undo.
- *   - faces processing flags: reset so the queue picks every photo
- *                      back up. Tags are preserved.
- *
- * Returns the number of files queued for re-detection so the caller
- * can show a "X photos queued" confirmation toast.
- */
-export function resetFaceAnalysis() {
-    const database = getDb();
-    // Wrap in a transaction so partial failures roll back cleanly.
-    // Without this, a typo or schema mismatch in any one statement
-    // leaves the DB in a half-wiped state — face_detections gone but
-    // ai_processing_status still claiming everything is processed.
-    // We learned this the hard way: an earlier version of this helper
-    // referenced a non-existent column on the UPDATE leg, and by the
-    // time the error surfaced, face_detections + persons had already
-    // committed. better-sqlite3's exec() doesn't auto-rollback across
-    // statement boundaries — the BEGIN/COMMIT here makes the whole
-    // wipe atomic.
-    const wipe = database.transaction(() => {
-        database.exec(`DELETE FROM face_detections`);
-        database.exec(`DELETE FROM persons`);
-        database.exec(`UPDATE ai_processing_status SET face_processed = 0, face_model_ver = NULL`);
-        try {
-            database.exec(`DELETE FROM files_ai_fts`);
-        }
-        catch { }
-    });
-    wipe();
-    const row = database.prepare(`
-    SELECT COUNT(*) AS cnt FROM indexed_files WHERE file_type = 'photo'
-  `).get();
-    return { filesQueued: row.cnt };
-}
-/**
- * Take an explicit pre-action snapshot of the live DB. Stored alongside
- * the rolling startup backups but with a distinct "pre-reanalyze"
- * filename + timestamp so it survives the 5-generation rotation. Uses
- * SQLite's VACUUM INTO so writes in flight are captured cleanly (a
- * plain file copy of an open DB risks corruption from the WAL).
- */
-export function takePreReanalyzeSnapshot() {
-    const dbPath = getDbPath();
-    const backupDir = path.join(path.dirname(dbPath), 'backups');
-    if (!fs.existsSync(backupDir))
-        fs.mkdirSync(backupDir, { recursive: true });
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const snapshotPath = path.join(backupDir, `pdr-search.pre-reanalyze-${ts}.db`);
-    const database = getDb();
-    database.prepare(`VACUUM INTO ?`).run(snapshotPath);
-    return { snapshotPath };
-}
-/**
- * Enumerate all DB backups available for restore — both the rolling
- * startup snapshots (backup-0..4) and any explicit pre-action snapshots
- * (pre-reanalyze-*). Returns newest first by mtime so the UI list reads
+ * Enumerate all DB backups available for restore — the rolling startup
+ * snapshots (backup-0..4) and any leftover pre-reanalyze snapshots from
+ * an earlier build. Returns newest first by mtime so the UI list reads
  * naturally.
+ *
+ * Pre-reanalyze snapshots are no longer created (the user-facing
+ * Re-analyze faces action that triggered them was removed — see
+ * memory/feedback_face_reanalyze_design.md). We still list any that
+ * exist so users can restore from them, and we cap the count at 5:
+ * if more than 5 exist, the oldest are deleted from disk to keep the
+ * backups directory from drifting.
  */
 export function listDbBackups() {
     const dbPath = getDbPath();
@@ -2258,6 +2200,21 @@ export function listDbBackups() {
         entries.push({ path: full, filename: name, sizeBytes: stat.size, mtime: stat.mtime.toISOString(), kind });
     }
     entries.sort((a, b) => b.mtime.localeCompare(a.mtime));
+    // Cap pre-reanalyze snapshots at 5 — if there are more, delete the
+    // oldest from disk and drop them from the returned list. Rolling
+    // backups are managed by initDatabase()'s own rotation so we leave
+    // them alone here.
+    const preReanalyze = entries.filter(e => e.kind === 'pre-reanalyze');
+    if (preReanalyze.length > 5) {
+        const evict = preReanalyze.slice(5); // oldest beyond the 5-cap
+        for (const e of evict) {
+            try {
+                fs.unlinkSync(e.path);
+            }
+            catch { /* best-effort; leave on disk if removal fails */ }
+        }
+        return entries.filter(e => !evict.includes(e));
+    }
     return entries;
 }
 /**
