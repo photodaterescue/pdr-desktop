@@ -28,7 +28,6 @@ export const optimisedDefaults = {
     openPeopleOnStartup: false,
     pmOpenDays: [],
     pmStartupPromptDismissed: false,
-    peopleMode: 'window',
     scannerOverrides: [],
 };
 const store = new Store({
@@ -62,7 +61,6 @@ export function getSettings() {
         openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
         pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
         pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
-        peopleMode: store.get('peopleMode', optimisedDefaults.peopleMode),
         scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
     };
 }

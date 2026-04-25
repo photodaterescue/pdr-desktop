@@ -315,6 +315,18 @@ function createWindow() {
 	mainWindow!.webContents.on('did-finish-load', () => {
 	  mainWindow!.webContents.setZoomFactor(1.0);
 
+	  // Pre-warm the People Manager window in the background. We wait
+	  // ~4 seconds after the main window finishes loading so the user's
+	  // first impression isn't slowed down by an extra renderer
+	  // boot. By the time most users have decided which folder to add
+	  // as a source, PM is already invisibly mounted and ready — when
+	  // they later click the People icon it shows instantly. RAM cost
+	  // is ~150 MB while PDR is open; the speed payoff for power users
+	  // (especially after auto-process AI runs) outweighs it.
+	  setTimeout(() => {
+	    try { prewarmPeopleWindow(); } catch { /* best-effort */ }
+	  }, 4000);
+
 	  // Auto-start AI processing on launch if enabled AND models already downloaded.
 	  // Picks up wherever processing left off last time the app was closed —
 	  // including a Re-analyze tags run in progress. If only tags are pending
@@ -2970,59 +2982,122 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
 });
 
 // ═══ People Manager Window ═══════════════════════════════════════════════════
+//
+// Two-stage open flow:
+//
+//   1. PRE-WARM (background, after main window paints): we create the PM
+//      BrowserWindow with `show: false` so the renderer process boots,
+//      mounts <PeopleManager>, fetches the cluster list (already cached by
+//      prewarmPersonClusters), and pre-loads face crops — all invisibly.
+//
+//   2. OPEN (user clicks the People sidebar icon or S&D Manage): we just
+//      `.show()` + `.focus()` the warm window. From the user's perspective
+//      PM appears instantly because every expensive load has already
+//      happened in the background while they were browsing folders.
+//
+//   - If the user clicks before pre-warm has fired (cold path), we fall
+//     back to creating a window with `show: true` immediately — same
+//     behaviour as before this change.
+//   - If the user closes PM, the window is destroyed; the next click
+//     creates fresh (we don't auto-re-warm — the user opted out).
 
 let peopleWindow: BrowserWindow | null = null;
+let peopleWindowIsWarm = false; // true while window exists but never been shown
+
+function createPeopleWindow(opts: { show: boolean }): BrowserWindow {
+  // Detect dark mode synchronously from a cached value if main window is
+  // available; otherwise default light. Pre-warm fires a few seconds after
+  // mainWindow loads so the cached classList is reliable by then.
+  const isDark = !!mainWindow && !mainWindow.isDestroyed()
+    ? false  // overridden below via async query when opts.show=true
+    : false;
+
+  const win = new BrowserWindow({
+    width: 1120,
+    height: 780,
+    minWidth: 700,
+    minHeight: 500,
+    show: opts.show,
+    // paintWhenInitiallyHidden lets the renderer actually do its layout +
+    // network even though the window is hidden. Without this, Electron may
+    // suspend painting and our pre-warm becomes useless.
+    paintWhenInitiallyHidden: true,
+    backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
+    title: 'People Manager — Photo Date Rescue',
+    // Independent top-level window. We deliberately do NOT set
+    // `skipTaskbar: true` on Windows: that flag also excludes the window
+    // from Alt-Tab and makes minimised windows impossible to restore (no
+    // taskbar icon to click). The extra taskbar icon is the accepted price
+    // for Alt-Tab working and the user being able to un-minimise.
+    // The main window's 'close' handler explicitly destroys this window so
+    // it never outlives the app.
+    roundedCorners: true,
+    thickFrame: true,
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
+      : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      zoomFactor: 1.0,
+    },
+  });
+
+  const peoplePage = path.join(__dirname, '../dist/public/people.html');
+  // Best-effort dark-mode query — for the warm path we won't have the
+  // result before loadFile, so the renderer also reads the live value
+  // from document on its own. The query string is just a hint.
+  mainWindow?.webContents.executeJavaScript(
+    'document.documentElement.classList.contains("dark")'
+  ).then((dark: boolean) => {
+    win.loadFile(peoplePage, { query: { dark: dark ? '1' : '0' } });
+  }).catch(() => {
+    win.loadFile(peoplePage, { query: { dark: '0' } });
+  });
+
+  win.on('closed', () => {
+    if (peopleWindow === win) {
+      peopleWindow = null;
+      peopleWindowIsWarm = false;
+    }
+  });
+
+  return win;
+}
+
+/**
+ * Pre-warm the PM window in the background. Safe to call multiple times —
+ * it's a no-op if a window already exists. Called a short delay after the
+ * main window paints so initial app launch isn't slowed down.
+ */
+function prewarmPeopleWindow(): void {
+  if (peopleWindow && !peopleWindow.isDestroyed()) return;
+  try {
+    peopleWindow = createPeopleWindow({ show: false });
+    peopleWindowIsWarm = true;
+    console.log('[PM] Pre-warmed People Manager window in the background');
+  } catch (err) {
+    console.warn('[PM] Pre-warm failed (will fall back to cold open):', (err as Error).message);
+    peopleWindow = null;
+    peopleWindowIsWarm = false;
+  }
+}
 
 ipcMain.handle('people:open', async () => {
   try {
-    // If already open, focus it
+    // Warm path: window already exists. Show + focus instantly.
     if (peopleWindow && !peopleWindow.isDestroyed()) {
+      if (!peopleWindow.isVisible()) peopleWindow.show();
       peopleWindow.focus();
+      peopleWindowIsWarm = false; // it's been shown — no longer "warm" in the pre-load sense
       return { success: true };
     }
 
-    // Detect dark mode from main window's document class
-    const isDark = await mainWindow?.webContents.executeJavaScript(
-      'document.documentElement.classList.contains("dark")'
-    ).catch(() => false) ?? false;
-
-    peopleWindow = new BrowserWindow({
-      width: 1120,
-      height: 780,
-      minWidth: 700,
-      minHeight: 500,
-      backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
-      title: 'People Manager — Photo Date Rescue',
-      // Independent top-level window. We deliberately do NOT set
-      // `skipTaskbar: true` on Windows: that flag also excludes the window
-      // from Alt-Tab and makes minimised windows impossible to restore (no
-      // taskbar icon to click). The extra taskbar icon is the accepted price
-      // for Alt-Tab working and the user being able to un-minimise.
-      // The main window's 'close' handler explicitly destroys this window so
-      // it never outlives the app.
-      roundedCorners: true,
-      thickFrame: true,
-      icon: app.isPackaged
-        ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
-        : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        zoomFactor: 1.0,
-      },
-    });
-
-    const peoplePage = path.join(__dirname, '../dist/public/people.html');
-
-    peopleWindow.loadFile(peoplePage, {
-      query: { dark: isDark ? '1' : '0' },
-    });
-
-    peopleWindow.on('closed', () => {
-      peopleWindow = null;
-    });
-
+    // Cold path: pre-warm hadn't fired yet (user clicked very fast).
+    // Build the window normally and show it.
+    peopleWindow = createPeopleWindow({ show: true });
+    peopleWindowIsWarm = false;
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };

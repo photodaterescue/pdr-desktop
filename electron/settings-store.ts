@@ -63,9 +63,6 @@ export interface PDRSettings {
    *  shown again regardless of open counts. Set when the user either
    *  enables the setting from the banner or explicitly dismisses it. */
   pmStartupPromptDismissed: boolean;
-  /** PM hosting mode — separate BrowserWindow (current default) or
-   *  docked as a right-side panel inside the main PDR window. */
-  peopleMode: 'window' | 'docked';
 
   // User-curated scanner overrides. Each entry defines a per-camera
   // decision that trumps the automatic rule — key is the EXIF Make/Model
@@ -113,7 +110,6 @@ export const optimisedDefaults: PDRSettings = {
   openPeopleOnStartup: false,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
-  peopleMode: 'window',
   scannerOverrides: [],
 };
 
@@ -149,7 +145,6 @@ export function getSettings(): PDRSettings {
     openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
-    peopleMode: store.get('peopleMode', optimisedDefaults.peopleMode),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
   };
 }

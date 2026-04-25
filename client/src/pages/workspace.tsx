@@ -86,7 +86,6 @@ import {
   prewarmPersonClusters
 } from "@/lib/electron-bridge";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
-import { DockedPeopleManager } from "@/components/DockedPeopleManager";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
@@ -234,11 +233,7 @@ useEffect(() => {
       const settings = await getSettings();
       if ((settings as any)?.openPeopleOnStartup) {
         try { sessionStorage.setItem(key, '1'); } catch {}
-        // Auto-open only applies in window mode. Docked mode always
-        // renders the panel on demand via the sidebar toggle, so
-        // "open on startup" has no meaning there.
-        const mode = ((settings as any)?.peopleMode as 'window' | 'docked') ?? 'window';
-        if (mode === 'window') openPeopleWindow();
+        openPeopleWindow();
       }
     } catch { /* best-effort */ }
   }, 600);
@@ -401,33 +396,13 @@ const handleActivateLicense = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup'>('general');
 
-  // People Manager hosting mode. 'window' = separate BrowserWindow
-  // (legacy default), 'docked' = right-side drawer inside this
-  // window. Loaded from settings on mount; the Settings radio
-  // updates via window event below so the sidebar click follows the
-  // current mode without a reload.
-  const [peopleMode, setPeopleModeState] = useState<'window' | 'docked'>('window');
-  const [dockedPeopleOpen, setDockedPeopleOpen] = useState(false);
-  useEffect(() => {
-    getSettings().then((s) => {
-      setPeopleModeState(((s as any)?.peopleMode as 'window' | 'docked') ?? 'window');
-    });
-    const onModeChange = (e: Event) => {
-      const mode = (e as CustomEvent<'window' | 'docked'>).detail;
-      if (mode === 'window' || mode === 'docked') {
-        setPeopleModeState(mode);
-        if (mode === 'window') setDockedPeopleOpen(false);
-      }
-    };
-    window.addEventListener('pdr:peopleModeChanged', onModeChange as EventListener);
-    return () => window.removeEventListener('pdr:peopleModeChanged', onModeChange as EventListener);
-  }, []);
+  // PM is always hosted as a separate BrowserWindow. The window is
+  // pre-warmed in the background by the main process a few seconds
+  // after launch (electron/main.ts → prewarmPeopleWindow), so the
+  // sidebar click feels instant — the renderer is already mounted,
+  // cluster data is already cached, face crops are already loaded.
   const handleOpenPeople = () => {
-    if (peopleMode === 'docked') {
-      setDockedPeopleOpen((v) => !v);
-    } else {
-      openPeopleWindow();
-    }
+    openPeopleWindow();
   };
 
   // Listen for open-settings events from other windows (e.g., People window)
@@ -1576,12 +1551,6 @@ return (
 	  {isScanning && <ScanningOverlay message={scanProgress.message} percent={scanProgress.percent} onCancel={handleCancelAnalysis} showCancelConfirm={showCancelConfirm} onConfirmCancel={handleConfirmCancelAnalysis} onDismissCancel={handleDismissCancelConfirm} />}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
-      {peopleMode === 'docked' && isLicensed && (
-        <DockedPeopleManager
-          open={dockedPeopleOpen}
-          onClose={() => setDockedPeopleOpen(false)}
-        />
-      )}
       {showLicenseModal && <LicenseModal onClose={() => setShowLicenseModal(false)} />}
 		<LicenseRequiredModal
 		  isOpen={showLicenseRequired}
@@ -7748,7 +7717,6 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [autoSaveCatalogue, setAutoSaveCatalogue] = useState(true);
   const [showManualReportExports, setShowManualReportExports] = useState(false);
   const [openPeopleOnStartup, setOpenPeopleOnStartup] = useState(false);
-  const [peopleMode, setPeopleMode] = useState<'window' | 'docked'>('window');
 
   // Load settings on mount
   useEffect(() => {
@@ -7771,7 +7739,6 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setAutoSaveCatalogue(settings.autoSaveCatalogue);
       setShowManualReportExports(settings.showManualReportExports);
       setOpenPeopleOnStartup((settings as any).openPeopleOnStartup ?? false);
-      setPeopleMode(((settings as any).peopleMode as 'window' | 'docked') ?? 'window');
     });
   }, []);
 
@@ -7852,15 +7819,6 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleOpenPeopleOnStartupToggle = (checked: boolean) => {
     setOpenPeopleOnStartup(checked);
     setSetting('openPeopleOnStartup' as any, checked);
-  };
-  const handlePeopleModeChange = (mode: 'window' | 'docked') => {
-    setPeopleMode(mode);
-    setSetting('peopleMode' as any, mode);
-    // Notify Workspace so the sidebar toggle behaviour flips
-    // immediately without requiring a settings reload.
-    try {
-      window.dispatchEvent(new CustomEvent('pdr:peopleModeChanged', { detail: mode }));
-    } catch { /* best-effort */ }
   };
 
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
@@ -8419,51 +8377,26 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               ═══════════════════════════════════════════════════════════════ */}
           {settingsTab === 'people' && (
             <>
-              {/* People Manager hosting */}
+              {/* People Manager — single setting, the launch-on-start
+                  preference. Hosting mode used to be configurable
+                  (window vs docked panel) but the docked panel idea
+                  didn't pay for the screen real estate it cost; PM is
+                  now always a separate window, pre-warmed in the
+                  background so opening it feels instant regardless. */}
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-foreground mb-1">People Manager</label>
-                <p className="text-xs text-muted-foreground mb-3">How People Manager behaves alongside PDR.</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handlePeopleModeChange('docked')}
-                    className={`text-left p-3 rounded-lg border transition-colors ${
-                      peopleMode === 'docked'
-                        ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-900/10'
-                        : 'border-border hover:border-primary/50'
-                    }`}
-                    data-testid="radio-people-mode-docked"
-                  >
-                    <div className="text-sm font-medium text-foreground">Docked panel</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">Right-side drawer inside PDR — toggle with the sidebar button.</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePeopleModeChange('window')}
-                    className={`text-left p-3 rounded-lg border transition-colors ${
-                      peopleMode === 'window'
-                        ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-900/10'
-                        : 'border-border hover:border-primary/50'
-                    }`}
-                    data-testid="radio-people-mode-window"
-                  >
-                    <div className="text-sm font-medium text-foreground">Separate window</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">Standalone window — move it to another monitor or full-screen it.</div>
-                  </button>
-                </div>
-                {peopleMode === 'window' && (
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Open People Manager on startup</span>
-                      <span className="text-xs text-muted-foreground">Auto-launch the People Manager window whenever PDR opens, so it's ready without having to click it each time.</span>
-                    </div>
-                    <Checkbox
-                      checked={openPeopleOnStartup}
-                      onCheckedChange={(checked) => handleOpenPeopleOnStartupToggle(!!checked)}
-                      data-testid="checkbox-open-people-on-startup"
-                    />
-                  </label>
-                )}
+                <p className="text-xs text-muted-foreground mb-3">PM opens in its own window. PDR pre-loads it in the background a few seconds after launch so the icon click feels instant.</p>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Open People Manager on startup</span>
+                    <span className="text-xs text-muted-foreground">Show the People Manager window automatically whenever PDR opens, instead of waiting for you to click the icon.</span>
+                  </div>
+                  <Checkbox
+                    checked={openPeopleOnStartup}
+                    onCheckedChange={(checked) => handleOpenPeopleOnStartupToggle(!!checked)}
+                    data-testid="checkbox-open-people-on-startup"
+                  />
+                </label>
               </div>
 
               {/* Face recognition refinements — only meaningful when AI
