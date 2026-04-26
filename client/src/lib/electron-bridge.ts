@@ -1131,7 +1131,11 @@ export async function setPersonGender(personId: number, gender: PersonGender): P
 
 export interface FamilyGraphNode {
   personId: number;
+  /** Short name (the same value as `persons.name`). Always set. */
   name: string;
+  /** Optional long-form name (`persons.full_name`). Used by the
+   *  Trees card label when present; falls back to `name` when null. */
+  fullName: string | null;
   avatarData: string | null;
   representativeFaceId: number | null;
   representativeFaceFilePath: string | null;
@@ -1410,7 +1414,11 @@ export interface AiProgress {
 
 export interface PersonRecord {
   id: number;
+  /** Short name. Required. Shown in PM rows + S&D filter chips. */
   name: string;
+  /** Optional long-form name. Shown on Trees cards. Falls back to
+   *  `name` when null. */
+  full_name?: string | null;
   avatar_data: string | null;
   photo_count?: number;
   created_at: string;
@@ -1518,9 +1526,9 @@ export async function listPersons(): Promise<{ success: boolean; data?: PersonRe
   return { success: false };
 }
 
-export async function namePerson(name: string, clusterId?: number, avatarData?: string): Promise<{ success: boolean; data?: { personId: number } }> {
+export async function namePerson(name: string, clusterId?: number, avatarData?: string, fullName?: string | null): Promise<{ success: boolean; data?: { personId: number } }> {
   if (isElectron() && (window as any).pdr?.ai) {
-    return (window as any).pdr.ai.namePerson(name, clusterId, avatarData);
+    return (window as any).pdr.ai.namePerson(name, clusterId, avatarData, fullName);
   }
   return { success: false };
 }
@@ -1600,9 +1608,9 @@ export async function getClusterFaces(clusterId: number, page: number = 0, perPa
   return { success: false };
 }
 
-export async function renamePerson(personId: number, newName: string): Promise<{ success: boolean }> {
+export async function renamePerson(personId: number, newName: string, newFullName?: string | null): Promise<{ success: boolean }> {
   if (isElectron() && (window as any).pdr?.ai) {
-    return (window as any).pdr.ai.renamePerson(personId, newName);
+    return (window as any).pdr.ai.renamePerson(personId, newName, newFullName);
   }
   return { success: false };
 }
@@ -1722,7 +1730,12 @@ export async function restoreFromBackup(snapshotPath: string): Promise<{ success
 export interface PersonCluster {
   cluster_id: number;
   person_id: number | null;
+  /** Short name (`persons.name`). Shown in PM rows and S&D chips. */
   person_name: string | null;
+  /** Optional long-form name (`persons.full_name`). Shown on Trees
+   *  cards. Null when the user hasn't provided one — UI falls back
+   *  to the short name. */
+  person_full_name: string | null;
   face_count: number;
   photo_count: number;
   representative_face_id: number;

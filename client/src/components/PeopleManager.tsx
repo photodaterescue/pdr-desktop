@@ -109,6 +109,13 @@ export default function PeopleManager() {
   const [faceCropsMap, setFaceCropsMap] = useState<Record<string, string>>({});
   const [editingCluster, setEditingCluster] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState('');
+  /** Optional long-form name input — sits alongside the short-name
+   *  input when the user is editing a cluster. Empty string means
+   *  "no full name on file" (Trees will fall back to the short
+   *  name); we send null in that case so the DB stores NULL rather
+   *  than an empty string. */
+  const [fullNameInput, setFullNameInput] = useState('');
+  const fullNameInputRef = useRef<HTMLInputElement>(null);
   const [existingPersons, setExistingPersons] = useState<PersonRecord[]>([]);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [confirmDiscard, setConfirmDiscard] = useState<{ personId: number; personName: string; photoCount: number } | null>(null);
@@ -386,18 +393,24 @@ export default function PeopleManager() {
     return () => window.removeEventListener('wheel', handler);
   }, []);
 
-  const handleNameCluster = async (clusterId: number, name: string) => {
+  const handleNameCluster = async (clusterId: number, name: string, fullName?: string) => {
     if (!name.trim()) return;
     setEditingCluster(null);
     setNameInput('');
-    const result = await namePerson(name.trim(), clusterId);
+    setFullNameInput('');
+    // Empty full-name input → null in the DB so Trees falls back to
+    // the short name. Trim before saving so trailing whitespace
+    // doesn't get stored.
+    const fn = fullName !== undefined ? (fullName.trim() || null) : undefined;
+    const result = await namePerson(name.trim(), clusterId, undefined, fn);
     if (result.success) { await loadClusters(); notifyChange(); }
   };
 
-  const handleRename = async (personId: number, newName: string) => {
+  const handleRename = async (personId: number, newName: string, newFullName?: string) => {
     if (!newName.trim()) return;
-    await renamePerson(personId, newName.trim());
-    setEditingCluster(null); setNameInput('');
+    const fn = newFullName !== undefined ? (newFullName.trim() || null) : undefined;
+    await renamePerson(personId, newName.trim(), fn);
+    setEditingCluster(null); setNameInput(''); setFullNameInput('');
     await loadClusters(); notifyChange();
   };
 
@@ -1005,11 +1018,14 @@ export default function PeopleManager() {
                         sampleCrops={faceCropsMap}
                         isEditing={editingCluster === clusterKey(cluster)}
                         nameInput={nameInput}
-                        onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(cluster.person_name || ''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
+                        fullNameInput={fullNameInput}
+                        onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(cluster.person_name || ''); setFullNameInput(cluster.person_full_name || ''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                         onNameChange={setNameInput}
-                        onSubmit={() => cluster.person_id ? handleRename(cluster.person_id, nameInput) : handleNameCluster(cluster.cluster_id, nameInput)}
-                        onCancel={() => { setEditingCluster(null); setNameInput(''); }}
+                        onFullNameChange={setFullNameInput}
+                        onSubmit={() => cluster.person_id ? handleRename(cluster.person_id, nameInput, fullNameInput) : handleNameCluster(cluster.cluster_id, nameInput, fullNameInput)}
+                        onCancel={() => { setEditingCluster(null); setNameInput(''); setFullNameInput(''); }}
                         inputRef={nameInputRef}
+                        fullInputRef={fullNameInputRef}
                         existingPersons={existingPersons}
                         onSelectPerson={(name) => handleNameCluster(cluster.cluster_id, name)}
                         onDiscard={cluster.person_id ? () => { setConfirmDiscard({ personId: cluster.person_id!, personName: cluster.person_name!, photoCount: cluster.photo_count }); } : undefined}
@@ -1031,11 +1047,14 @@ export default function PeopleManager() {
                       <PersonListRow
                         key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
                         isEditing={editingCluster === clusterKey(cluster)} nameInput={nameInput}
-                        onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(cluster.person_name || ''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
+                        fullNameInput={fullNameInput}
+                        onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(cluster.person_name || ''); setFullNameInput(cluster.person_full_name || ''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                         onNameChange={setNameInput}
-                        onSubmit={() => cluster.person_id ? handleRename(cluster.person_id, nameInput) : handleNameCluster(cluster.cluster_id, nameInput)}
-                        onCancel={() => { setEditingCluster(null); setNameInput(''); }}
+                        onFullNameChange={setFullNameInput}
+                        onSubmit={() => cluster.person_id ? handleRename(cluster.person_id, nameInput, fullNameInput) : handleNameCluster(cluster.cluster_id, nameInput, fullNameInput)}
+                        onCancel={() => { setEditingCluster(null); setNameInput(''); setFullNameInput(''); }}
                         inputRef={nameInputRef}
+                        fullInputRef={fullNameInputRef}
                         onDiscard={cluster.person_id ? () => { setConfirmDiscard({ personId: cluster.person_id!, personName: cluster.person_name!, photoCount: cluster.photo_count }); } : undefined}
                       />
                     ))}
@@ -1113,11 +1132,14 @@ export default function PeopleManager() {
                             sampleCrops={faceCropsMap}
                             isEditing={editingCluster === clusterKey(cluster)}
                             nameInput={nameInput}
-                            onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
+                            fullNameInput={fullNameInput}
+                            onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setFullNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                             onNameChange={setNameInput}
-                            onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput)}
-                            onCancel={() => { setEditingCluster(null); setNameInput(''); }}
+                            onFullNameChange={setFullNameInput}
+                            onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput, fullNameInput)}
+                            onCancel={() => { setEditingCluster(null); setNameInput(''); setFullNameInput(''); }}
                             inputRef={nameInputRef}
+                            fullInputRef={fullNameInputRef}
                             existingPersons={existingPersons}
                             onSelectPerson={(name) => handleNameCluster(cluster.cluster_id, name)}
                             pendingIgnore={pendingIgnore === clusterKey(cluster)}
@@ -1175,11 +1197,14 @@ export default function PeopleManager() {
                           <PersonListRow
                             onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
                             isEditing={editingCluster === clusterKey(cluster)} nameInput={nameInput}
-                            onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
+                            fullNameInput={fullNameInput}
+                            onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setFullNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                             onNameChange={setNameInput}
-                            onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput)}
-                            onCancel={() => { setEditingCluster(null); setNameInput(''); }}
+                            onFullNameChange={setFullNameInput}
+                            onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput, fullNameInput)}
+                            onCancel={() => { setEditingCluster(null); setNameInput(''); setFullNameInput(''); }}
                             inputRef={nameInputRef}
+                            fullInputRef={fullNameInputRef}
                             pendingIgnore={pendingIgnore === clusterKey(cluster)}
                             onIgnore={() => setPendingIgnore(clusterKey(cluster))}
                             onConfirmIgnore={() => handleIgnoreCluster(cluster.cluster_id)}
@@ -1228,11 +1253,14 @@ export default function PeopleManager() {
                           sampleCrops={faceCropsMap}
                           isEditing={editingCluster === clusterKey(cluster)}
                           nameInput={nameInput}
-                          onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
+                          fullNameInput={fullNameInput}
+                          onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setFullNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                           onNameChange={setNameInput}
-                          onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput)}
-                          onCancel={() => { setEditingCluster(null); setNameInput(''); }}
+                          onFullNameChange={setFullNameInput}
+                          onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput, fullNameInput)}
+                          onCancel={() => { setEditingCluster(null); setNameInput(''); setFullNameInput(''); }}
                           inputRef={nameInputRef}
+                          fullInputRef={fullNameInputRef}
                           existingPersons={existingPersons}
                           onSelectPerson={(name) => handleNameCluster(cluster.cluster_id, name)}
                           pendingIgnore={pendingIgnore === clusterKey(cluster)}
@@ -1285,11 +1313,14 @@ export default function PeopleManager() {
                           sampleCrops={faceCropsMap}
                           isEditing={editingCluster === clusterKey(cluster)}
                           nameInput={nameInput}
-                          onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
+                          fullNameInput={fullNameInput}
+                          onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setFullNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                           onNameChange={setNameInput}
-                          onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput)}
-                          onCancel={() => { setEditingCluster(null); setNameInput(''); }}
+                          onFullNameChange={setFullNameInput}
+                          onSubmit={() => handleNameCluster(cluster.cluster_id, nameInput, fullNameInput)}
+                          onCancel={() => { setEditingCluster(null); setNameInput(''); setFullNameInput(''); }}
                           inputRef={nameInputRef}
+                          fullInputRef={fullNameInputRef}
                           existingPersons={existingPersons}
                           onSelectPerson={(name) => handleNameCluster(cluster.cluster_id, name)}
                           onRestore={() => handleRestoreToUnnamed(cluster.cluster_id, cluster.person_id)}
@@ -1816,17 +1847,23 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 
 /* ─── Card Row — name LEFT, scrollable thumbnails RIGHT ─────────────────── */
 
-function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, existingPersons, onSelectPerson, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, currentTab, rowIndex, onVisible }: {
+function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, existingPersons, onSelectPerson, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, currentTab, rowIndex, onVisible }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
   isEditing: boolean;
   nameInput: string;
+  /** Optional long-form name input. Edited alongside the short name
+   *  when the user is renaming a cluster. Empty = no full name on
+   *  file (Trees falls back to short). */
+  fullNameInput: string;
   onStartEdit: () => void;
   onNameChange: (name: string) => void;
+  onFullNameChange: (name: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  fullInputRef: React.RefObject<HTMLInputElement | null>;
   existingPersons?: PersonRecord[];
   onSelectPerson?: (name: string) => void;
   onDiscard?: () => void;
@@ -2250,35 +2287,52 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
           >
             {isEditing ? (
               <div onClick={(e) => e.stopPropagation()}>
-                <form onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) onSubmit(); }} className="flex items-center gap-3">
+                <form onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) onSubmit(); }} className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={nameInput}
+                      onChange={(e) => { onNameChange(e.target.value); setSelectedSuggestionIdx(-1); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                        if (e.key === 'ArrowDown' && filteredPersons.length > 0) {
+                          e.preventDefault();
+                          setSelectedSuggestionIdx(prev => Math.min(prev + 1, filteredPersons.length - 1));
+                        }
+                        if (e.key === 'ArrowUp' && filteredPersons.length > 0) {
+                          e.preventDefault();
+                          setSelectedSuggestionIdx(prev => Math.max(prev - 1, -1));
+                        }
+                        if (e.key === 'Enter' && selectedSuggestionIdx >= 0 && filteredPersons[selectedSuggestionIdx]) {
+                          e.preventDefault();
+                          onSelectPerson?.(filteredPersons[selectedSuggestionIdx].name);
+                          setSelectedSuggestionIdx(-1);
+                        }
+                      }}
+                      placeholder="Name (short) — e.g. Terry"
+                      className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
+                      autoFocus
+                    />
+                    <button type="submit" disabled={!nameInput.trim()} className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors whitespace-nowrap">
+                      Save
+                    </button>
+                  </div>
+                  {/* Optional full name. Shown on Trees cards; PM and
+                      S&D keep using the short name above. Empty =
+                      Trees falls back to the short name. */}
                   <input
-                    ref={inputRef}
+                    ref={fullInputRef}
                     type="text"
-                    value={nameInput}
-                    onChange={(e) => { onNameChange(e.target.value); setSelectedSuggestionIdx(-1); }}
+                    value={fullNameInput}
+                    onChange={(e) => onFullNameChange(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-                      if (e.key === 'ArrowDown' && filteredPersons.length > 0) {
-                        e.preventDefault();
-                        setSelectedSuggestionIdx(prev => Math.min(prev + 1, filteredPersons.length - 1));
-                      }
-                      if (e.key === 'ArrowUp' && filteredPersons.length > 0) {
-                        e.preventDefault();
-                        setSelectedSuggestionIdx(prev => Math.max(prev - 1, -1));
-                      }
-                      if (e.key === 'Enter' && selectedSuggestionIdx >= 0 && filteredPersons[selectedSuggestionIdx]) {
-                        e.preventDefault();
-                        onSelectPerson?.(filteredPersons[selectedSuggestionIdx].name);
-                        setSelectedSuggestionIdx(-1);
-                      }
+                      if (e.key === 'Enter') { e.preventDefault(); if (nameInput.trim()) onSubmit(); }
                     }}
-                    placeholder="Type a name..."
-                    className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
-                    autoFocus
+                    placeholder="Name (full) — e.g. Terry John Filmer Clapson (optional)"
+                    className="text-sm bg-transparent border-b border-border outline-none text-foreground/80 placeholder:text-muted-foreground/40 pb-0.5"
                   />
-                  <button type="submit" disabled={!nameInput.trim()} className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors whitespace-nowrap">
-                    Update name
-                  </button>
                 </form>
                 {filteredPersons.length > 0 && (
                   <div className="mt-1.5 space-y-0.5">
@@ -2298,6 +2352,15 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                 <p className={`text-base font-medium truncate ${(cluster.person_name && !cluster.person_name.startsWith('__') && !displayName) ? 'text-foreground' : 'text-muted-foreground italic'}`}>
                   {displayName || (cluster.person_name && !cluster.person_name.startsWith('__') ? cluster.person_name : 'Unknown person')}
                 </p>
+                {/* Full name hint — shown only when set, so user can
+                    see at a glance which clusters already have a
+                    long-form name on file (used by Trees) without
+                    cluttering rows that don't. */}
+                {cluster.person_full_name && cluster.person_full_name !== cluster.person_name && (
+                  <p className="text-[11px] text-muted-foreground/70 truncate" title={cluster.person_full_name}>
+                    {cluster.person_full_name}
+                  </p>
+                )}
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
                   {currentTab === 'named' && cluster.sample_faces && (() => {
@@ -2490,17 +2553,20 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
 
 /* ─── List View ─────────────────────────────────────────────────────────── */
 
-function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, onStartEdit, onNameChange, onSubmit, onCancel, inputRef, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onVisible }: {
+function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onVisible }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
   isEditing: boolean;
   nameInput: string;
+  fullNameInput: string;
   onStartEdit: () => void;
   onNameChange: (name: string) => void;
+  onFullNameChange: (name: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  fullInputRef: React.RefObject<HTMLInputElement | null>;
   onDiscard?: () => void;
   pendingIgnore?: boolean;
   onIgnore?: () => void;
@@ -2597,16 +2663,24 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
 
       <div className="flex-1 min-w-0">
         {isEditing ? (
-          <form onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) onSubmit(); }} className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            <input ref={inputRef} type="text" value={nameInput} onChange={(e) => onNameChange(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } }}
-              placeholder="Type a name..." className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0" autoFocus />
-            <Tooltip><TooltipTrigger asChild>
-              <button type="submit" className="p-1 rounded hover:bg-purple-200/50 dark:hover:bg-purple-800/30"><Check className="w-3.5 h-3.5 text-purple-500" /></button>
-            </TooltipTrigger><TooltipContent>Save</TooltipContent></Tooltip>
-            <Tooltip><TooltipTrigger asChild>
-              <button type="button" onClick={onCancel} className="p-1 rounded hover:bg-secondary"><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
-            </TooltipTrigger><TooltipContent>Cancel</TooltipContent></Tooltip>
+          <form onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) onSubmit(); }} className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5">
+              <input ref={inputRef} type="text" value={nameInput} onChange={(e) => onNameChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } }}
+                placeholder="Name (short) — e.g. Terry" className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0" autoFocus />
+              <Tooltip><TooltipTrigger asChild>
+                <button type="submit" className="p-1 rounded hover:bg-purple-200/50 dark:hover:bg-purple-800/30"><Check className="w-3.5 h-3.5 text-purple-500" /></button>
+              </TooltipTrigger><TooltipContent>Save</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild>
+                <button type="button" onClick={onCancel} className="p-1 rounded hover:bg-secondary"><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
+              </TooltipTrigger><TooltipContent>Cancel</TooltipContent></Tooltip>
+            </div>
+            <input ref={fullInputRef} type="text" value={fullNameInput} onChange={(e) => onFullNameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                if (e.key === 'Enter') { e.preventDefault(); if (nameInput.trim()) onSubmit(); }
+              }}
+              placeholder="Name (full) — optional, used in Trees" className="text-sm bg-transparent border-b border-border outline-none text-foreground/80 placeholder:text-muted-foreground/40 pb-0.5" />
           </form>
         ) : (
           <p className={`text-base truncate ${cluster.person_name ? 'font-medium text-foreground' : 'text-muted-foreground italic'}`}>

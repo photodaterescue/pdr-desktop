@@ -3263,9 +3263,13 @@ ipcMain.handle('ai:personsCooccurrence', async (_event, selectedPersonIds: numbe
   }
 });
 
-ipcMain.handle('ai:namePerson', async (_event, name: string, clusterId?: number, avatarData?: string) => {
+ipcMain.handle('ai:namePerson', async (_event, name: string, clusterId?: number, avatarData?: string, fullName?: string | null) => {
   try {
-    const personId = upsertPerson(name, avatarData);
+    // upsertPerson takes care of writing full_name when provided, or
+    // populating it on an existing row that doesn't have one yet.
+    // Older callers omit fullName entirely — that's still supported,
+    // they just keep the legacy short-name-only behaviour.
+    const personId = upsertPerson(name, avatarData, fullName);
     if (clusterId != null) {
       assignPersonToCluster(clusterId, personId);
       // Rebuild FTS for all files in the cluster
@@ -3358,9 +3362,11 @@ ipcMain.handle('ai:unnameFace', async (_event, faceId: number) => {
   }
 });
 
-ipcMain.handle('ai:renamePerson', async (_event, personId: number, newName: string) => {
+ipcMain.handle('ai:renamePerson', async (_event, personId: number, newName: string, newFullName?: string | null) => {
   try {
-    renamePerson(personId, newName);
+    // newFullName: undefined = leave existing full_name alone (legacy
+    // callers); null or '' = clear it; non-empty string = write it.
+    renamePerson(personId, newName, newFullName);
     // Rebuild FTS for all affected files
     const { getDb } = await import('./search-database.js');
     const database = getDb();

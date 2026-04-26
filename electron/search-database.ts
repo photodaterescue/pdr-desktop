@@ -628,6 +628,14 @@ export function initDatabase(): { success: boolean; error?: string } {
       // card when the tree has gender markers enabled. NULL = not yet
       // set; no symbol, neutral labels.
       try { db.exec(`ALTER TABLE persons ADD COLUMN gender TEXT`); } catch {}
+
+      // Optional long-form name. The existing `name` column is the
+      // SHORT form ("Terry" / "Terry Clapson") shown in PM rows and
+      // S&D filter chips. `full_name` is the OPTIONAL longer form
+      // ("Terry John Filmer Clapson") shown on Trees cards where
+      // historical / genealogical detail matters. NULL means "no
+      // separate full name on file" — Trees falls back to `name`.
+      try { db.exec(`ALTER TABLE persons ADD COLUMN full_name TEXT`); } catch {}
     }
 
     // Normalise any legacy double-backslash destination paths
@@ -1517,7 +1525,13 @@ export interface FaceDetectionRecord {
 
 export interface PersonRecord {
   id: number;
+  /** Short name. Required. Shown in PM rows and S&D filter chips.
+   *  E.g. "Terry" or "Terry Clapson". */
   name: string;
+  /** Optional long-form name shown on Trees cards where
+   *  historical / genealogical detail matters. E.g. "Terry John
+   *  Filmer Clapson". Trees falls back to `name` when null. */
+  full_name?: string | null;
   avatar_data: string | null;
   /** Total count of photos any face detection links to this person —
    *  includes AI-suggested faces the user hasn't confirmed yet. */
@@ -1859,15 +1873,22 @@ export function cleanupOrphanedPersons(): number {
 }
 
 /** Create or get a person by name */
-export function upsertPerson(name: string, avatarData?: string): number {
+export function upsertPerson(name: string, avatarData?: string, fullName?: string | null): number {
   const database = getDb();
   const existing = database.prepare(`SELECT id FROM persons WHERE name = ? COLLATE NOCASE`).get(name) as { id: number } | undefined;
   if (existing) {
-    // Clear discarded_at in case this person was previously discarded
+    // Clear discarded_at in case this person was previously discarded.
+    // If the caller passed a full_name and the existing row doesn't
+    // have one, populate it — handy for "I'm naming this cluster
+    // again with a richer full name" without losing existing data.
     database.prepare(`UPDATE persons SET discarded_at = NULL WHERE id = ? AND discarded_at IS NOT NULL`).run(existing.id);
+    if (fullName !== undefined && fullName !== null && fullName.trim() !== '') {
+      database.prepare(`UPDATE persons SET full_name = COALESCE(full_name, ?) WHERE id = ?`).run(fullName.trim(), existing.id);
+    }
     return existing.id;
   }
-  const result = database.prepare(`INSERT INTO persons (name, avatar_data) VALUES (?, ?)`).run(name, avatarData ?? null);
+  const trimmedFull = (fullName !== undefined && fullName !== null && fullName.trim() !== '') ? fullName.trim() : null;
+  const result = database.prepare(`INSERT INTO persons (name, avatar_data, full_name) VALUES (?, ?, ?)`).run(name, avatarData ?? null, trimmedFull);
   return result.lastInsertRowid as number;
 }
 
@@ -2003,14 +2024,24 @@ export function unnameFace(faceId: number): void {
 }
 
 /** Rename a person — updates the name everywhere it appears */
-export function renamePerson(personId: number, newName: string): void {
+export function renamePerson(personId: number, newName: string, newFullName?: string | null): void {
   const database = getDb();
-  // Check if the new name already exists as a different person
+  // Check if the new short name already exists as a different person
   const existing = database.prepare(`SELECT id FROM persons WHERE name = ? COLLATE NOCASE AND id != ?`).get(newName, personId) as { id: number } | undefined;
   if (existing) {
-    // Merge into the existing person with that name
+    // Merge into the existing person with that name. Full name on
+    // the source row is dropped — the merge winner keeps its own
+    // existing full_name. (If the user wants to switch to the new
+    // full_name they can edit the merged row afterwards.)
     mergePersons(existing.id, personId);
+  } else if (newFullName !== undefined) {
+    // Caller passed a full_name — write it (NULL allowed → "no full
+    // name on file", Trees falls back to the short name).
+    const trimmed = newFullName === null ? null : (newFullName.trim() || null);
+    database.prepare(`UPDATE persons SET name = ?, full_name = ? WHERE id = ?`).run(newName, trimmed, personId);
   } else {
+    // Legacy callers that only update the short name — leave
+    // full_name untouched so older code paths keep working.
     database.prepare(`UPDATE persons SET name = ? WHERE id = ?`).run(newName, personId);
   }
 }
@@ -2242,7 +2273,7 @@ export function updateFaceCluster(faceId: number, clusterId: number): void {
 }
 
 /** Get all face clusters with representative face data for the People management view */
-export function getPersonClusters(): { cluster_id: number; person_id: number | null; person_name: string | null; face_count: number; photo_count: number; representative_face_id: number; representative_file_id: number; representative_file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; sample_faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[] }[] {
+export function getPersonClusters(): { cluster_id: number; person_id: number | null; person_name: string | null; person_full_name: string | null; face_count: number; photo_count: number; representative_face_id: number; representative_file_id: number; representative_file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; sample_faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[] }[] {
   const database = getDb();
 
   // Named clusters: group by person_id (so individually reassigned faces appear under their new person)
@@ -2252,6 +2283,7 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       fd.cluster_id,
       p.id as person_id,
       p.name as person_name,
+      p.full_name as person_full_name,
       COUNT(fd.id) as face_count,
       COUNT(DISTINCT fd.file_id) as photo_count,
       MIN(fd.id) as representative_face_id
@@ -2270,6 +2302,7 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       fd.cluster_id,
       p.id as person_id,
       p.name as person_name,
+      p.full_name as person_full_name,
       COUNT(fd.id) as face_count,
       COUNT(DISTINCT fd.file_id) as photo_count,
       MIN(fd.id) as representative_face_id
@@ -2394,6 +2427,7 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       cluster_id: c.cluster_id,
       person_id: c.person_id,
       person_name: c.person_name,
+      person_full_name: c.person_full_name ?? null,
       face_count: c.face_count,
       photo_count: c.photo_count,
       representative_face_id: rep?.face_id ?? c.representative_face_id,
@@ -3564,7 +3598,11 @@ export function updatePersonLifeEvents(personId: number, patch: { birthDate?: st
 
 export interface FamilyGraphNode {
   personId: number;
+  /** Short name (`persons.name`). Always set. */
   name: string;
+  /** Optional long-form name (`persons.full_name`). Trees uses this
+   *  on the card label when present; falls back to `name` otherwise. */
+  fullName: string | null;
   avatarData: string | null;
   representativeFaceId: number | null;
   /** File path + face-box coords so the renderer can call getFaceCrop()
@@ -3746,7 +3784,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   const ids = Array.from(visited.keys());
   const placeholders = ids.map(() => '?').join(',');
   const personRows = db.prepare(`
-    SELECT id, name, avatar_data, representative_face_id,
+    SELECT id, name, full_name, avatar_data, representative_face_id,
            birth_date, death_date, deceased_marker, card_background,
            gender,
            COALESCE(is_placeholder, 0) AS is_placeholder
@@ -3810,6 +3848,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
     return {
       personId: row.id,
       name: row.name,
+      fullName: (row as any).full_name ?? null,
       avatarData: row.avatar_data,
       representativeFaceId: row.representative_face_id,
       representativeFaceFilePath: face ? face.file_path : null,

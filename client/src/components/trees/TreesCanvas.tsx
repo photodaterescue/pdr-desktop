@@ -37,6 +37,10 @@ interface TreesCanvasProps {
   /** Called when the user clicks the date strip on a card to edit
    *  birth/death years inline. Parent opens DateQuickEditor. */
   onEditDates?: (personId: number, screenX: number, screenY: number) => void;
+  /** Called when the user clicks the name on a card to edit short
+   *  + full names. Parent opens NameQuickEditor anchored to the
+   *  click point. */
+  onEditName?: (personId: number, screenX: number, screenY: number) => void;
   /** Called after an inline edge edit succeeds so the parent can refetch the graph. */
   onGraphMutated: () => void;
   /** Optional per-tree canvas background image (data URL). Rendered as a
@@ -126,7 +130,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -569,6 +573,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 hideChips={hideQuickAddChips}
                 showDates={showDates}
                 onEditDates={onEditDates ? (clientX, clientY) => onEditDates(node.personId, clientX, clientY) : undefined}
+                onEditName={onEditName ? (clientX, clientY) => onEditName(node.personId, clientX, clientY) : undefined}
                 onMouseDown={(e) => handleNodeMouseDown(e, node)}
                 onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
                 onContextMenu={(e) => handleNodeContextMenu(e, node)}
@@ -1076,7 +1081,7 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onEditName, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
@@ -1084,6 +1089,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
   hideChips?: boolean;
   showDates?: boolean;
   onEditDates?: (screenX: number, screenY: number) => void;
+  onEditName?: (screenX: number, screenY: number) => void;
   onMouseDown: (e: React.MouseEvent) => void;
   onDoubleClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -1106,11 +1112,15 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
 }) {
   const [hovered, setHovered] = useState(false);
   const ringColor = isFocus ? '#f59e0b' : '#6366f1';
-  const initials = initialsOf(node.name);
+  // Trees prefers the long-form name when set — that's where
+  // genealogical detail (middle names, surnames) actually matters.
+  // Falls back to the short name when full_name is null.
+  const treeName = (node.fullName && node.fullName.trim()) || node.name;
+  const initials = initialsOf(treeName);
   const bgColor = colorFromId(node.personId);
   const lifeLine = formatLife(node.birthDate, node.deathDate);
   const isDeceased = !!node.deathDate;
-  const displayName = node.name.length > 22 ? node.name.slice(0, 20) + '…' : node.name;
+  const displayName = treeName.length > 22 ? treeName.slice(0, 20) + '…' : treeName;
 
   return (
     <g
@@ -1259,8 +1269,32 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
       {isDeceased && (
         <BluebellMarker cx={AVATAR_R - 4} cy={AVATAR_CY - AVATAR_R + 4} />
       )}
-      {/* Name — centred below avatar, always visible, dark text */}
-      <text x={0} y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME} textAnchor="middle" fontSize={13} fontWeight={600} fill="#1f2937">
+      {/* Name — centred below avatar, always visible, dark text.
+          Clicking it (when onEditName is provided) opens the
+          NameQuickEditor so the user can fill in middle / surname
+          without leaving Trees. Cursor stays default for read-only
+          contexts (e.g. placeholder ghosts) so we don't suggest
+          interactivity that isn't there. */}
+      <text
+        x={0}
+        y={AVATAR_CY + AVATAR_R + AVATAR_TO_NAME}
+        textAnchor="middle"
+        fontSize={13}
+        fontWeight={600}
+        fill="#1f2937"
+        style={{ cursor: onEditName && !node.isPlaceholder ? 'pointer' : 'default' }}
+        onMouseDown={(e) => {
+          if (!onEditName || node.isPlaceholder) return;
+          // Stop propagation so the canvas's pan/drag handler doesn't
+          // start a drag — this is purely a click-to-edit.
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          if (!onEditName || node.isPlaceholder) return;
+          e.stopPropagation();
+          onEditName(e.clientX, e.clientY);
+        }}
+      >
         {displayName}
       </text>
       {/* Relationship label — small, muted, relative to the focus

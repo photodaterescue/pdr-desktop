@@ -32,6 +32,7 @@ import { TreePeopleListModal } from './TreePeopleListModal';
 import { useDraggableModal } from './useDraggableModal';
 import { ManageTreesModal } from './ManageTreesModal';
 import { DateQuickEditor } from './DateQuickEditor';
+import { NameQuickEditor } from './NameQuickEditor';
 import { promptConfirm } from './promptConfirm';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 
@@ -126,6 +127,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   /** Date editor target — { personId, x, y } where x/y are screen
    *  coords for the popup. Null = editor closed. */
   const [dateEditor, setDateEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
+  /** Name editor — opened when the user clicks a person's name on
+   *  a Trees card. Lets them edit the short and long-form names
+   *  without leaving Trees. Same anchor model as the date editor. */
+  const [nameEditor, setNameEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
   /** Undo/redo availability counts from the graph_history table.
    *  Refreshed after every mutation + on app focus. The handlers that
    *  use refetchGraph / reloadPersons are declared AFTER those
@@ -1238,6 +1243,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onEditDates={(personId, screenX, screenY) => {
               setDateEditor({ personId, x: screenX, y: screenY });
             }}
+            onEditName={(personId, screenX, screenY) => {
+              setNameEditor({ personId, x: screenX, y: screenY });
+            }}
             canvasBackground={currentTree?.backgroundImage ?? null}
             canvasBackgroundOpacity={currentTree?.backgroundOpacity ?? 0.15}
             treeContrast={currentTree?.treeContrast ?? 0.3}
@@ -1530,6 +1538,27 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
             }}
             onClose={() => setDateEditor(null)}
+          />
+        );
+      })()}
+
+      {nameEditor && (() => {
+        const node = graph?.nodes.find(n => n.personId === nameEditor.personId);
+        const initialName = node?.name ?? allPersons.find(p => p.id === nameEditor.personId)?.name ?? '';
+        const initialFullName = node?.fullName ?? null;
+        return (
+          <NameQuickEditor
+            personId={nameEditor.personId}
+            initialName={initialName}
+            initialFullName={initialFullName}
+            x={nameEditor.x}
+            y={nameEditor.y}
+            onSaved={() => {
+              setNameEditor(null);
+              if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
+              reloadPersons();
+            }}
+            onClose={() => setNameEditor(null)}
           />
         );
       })()}
