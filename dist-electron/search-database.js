@@ -486,12 +486,21 @@ export function initDatabase() {
                 db.exec(`ALTER TABLE persons ADD COLUMN gender TEXT`);
             }
             catch { }
-            // Optional long-form name. The existing `name` column is the
-            // SHORT form ("Terry" / "Terry Clapson") shown in PM rows and
-            // S&D filter chips. `full_name` is the OPTIONAL longer form
-            // ("Terry John Filmer Clapson") shown on Trees cards where
-            // historical / genealogical detail matters. NULL means "no
-            // separate full name on file" — Trees falls back to `name`.
+        }
+        // Optional long-form name. Sits OUTSIDE the gender guard above
+        // because gender shipped first — by the time full_name was
+        // added, every existing DB already had `gender`, so a nested
+        // gate would never fire. Standalone `if (!has('full_name'))`
+        // ensures the migration runs once per DB regardless of which
+        // earlier columns are already present.
+        //
+        // The existing `name` column is the SHORT form ("Terry" /
+        // "Terry Clapson") shown in PM rows and S&D filter chips.
+        // `full_name` is the OPTIONAL longer form ("Terry John Filmer
+        // Clapson") shown on Trees cards where historical /
+        // genealogical detail matters. NULL = no separate full name on
+        // file; Trees falls back to `name`.
+        if (!personColNames.has('full_name')) {
             try {
                 db.exec(`ALTER TABLE persons ADD COLUMN full_name TEXT`);
             }
