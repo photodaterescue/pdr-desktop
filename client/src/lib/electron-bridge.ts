@@ -1808,6 +1808,22 @@ export async function getFaceContext(filePath: string, boxX: number, boxY: numbe
   return { success: false };
 }
 
+/** Fetch the small slice of indexed_files metadata that the People
+ *  Manager hover preview needs to overlay (filename + derived date +
+ *  geo country + geo city). Lookup keyed by file_path. */
+export interface FileMetaSlice {
+  filename: string;
+  derived_date: string | null;
+  geo_country: string | null;
+  geo_city: string | null;
+}
+export async function getFileMetaByPath(filePath: string): Promise<{ success: boolean; data?: FileMetaSlice; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.getFileMetaByPath(filePath);
+  }
+  return { success: false };
+}
+
 /** Subscribe to AI progress events. Returns an unsubscribe function —
  *  call it on component unmount so you don't clobber other subscribers. */
 export function onAiProgress(callback: (progress: AiProgress) => void): () => void {

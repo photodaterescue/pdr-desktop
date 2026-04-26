@@ -41,6 +41,9 @@ import {
   getClusterFaces,
   getFaceCrop,
   getFaceContext,
+  getFileMetaByPath,
+  openSearchViewer,
+  type FileMetaSlice,
   deletePersonRecord,
   permanentlyDeletePerson,
   restorePerson,
@@ -2017,12 +2020,45 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
   const [reassignSuggestionIdx, setReassignSuggestionIdx] = useState(-1);
 
   const [contextCrops, setContextCrops] = useState<Record<string, string>>({});
+  /** Metadata cache for the PM hover preview overlay — filename,
+   *  derived date, country, city. Keyed identically to contextCrops
+   *  so a single hover request can populate both in parallel. */
+  const [contextMeta, setContextMeta] = useState<Record<string, FileMetaSlice>>({});
   const loadContextCrop = async (key: string, filePath: string, bx: number, by: number, bw: number, bh: number) => {
-    if (contextCrops[key]) return;
-    const result = await getFaceContext(filePath, bx, by, bw, bh, 200);
-    if (result.success && result.dataUrl) {
-      setContextCrops(prev => ({ ...prev, [key]: result.dataUrl! }));
+    // Fetch image + metadata in parallel; cache both keyed identically.
+    const tasks: Promise<unknown>[] = [];
+    if (!contextCrops[key]) {
+      tasks.push((async () => {
+        const result = await getFaceContext(filePath, bx, by, bw, bh, 200);
+        if (result.success && result.dataUrl) {
+          setContextCrops(prev => ({ ...prev, [key]: result.dataUrl! }));
+        }
+      })());
     }
+    if (!contextMeta[key]) {
+      tasks.push((async () => {
+        const result = await getFileMetaByPath(filePath);
+        if (result.success && result.data) {
+          setContextMeta(prev => ({ ...prev, [key]: result.data! }));
+        }
+      })());
+    }
+    await Promise.all(tasks);
+  };
+
+  /** Render the human-readable date for the PM hover overlay. We only
+   *  care about Y-M-D — the time component would just be visual noise
+   *  in a small overlay. Fall back gracefully to "—" if the row has
+   *  no derived date (early-import or recovered-failed files). */
+  const formatHoverDate = (s: string | null | undefined): string => {
+    if (!s) return '—';
+    // derived_date can be 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'
+    const ymd = s.slice(0, 10);
+    const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return ymd;
+    const [, y, mo, d] = m;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d, 10)} ${months[parseInt(mo, 10) - 1] || mo} ${y}`;
   };
 
   const [showFaceGrid, setShowFaceGrid] = useState(false);
@@ -2327,8 +2363,43 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                             </div>
                         </TooltipTrigger>
                         {contextCrops[`face_${face.face_id}`] && (
-                          <TooltipContent side="top" avoidCollisions={false} className="p-0.5 border border-purple-400/30 bg-background shadow-lg rounded-xl z-[80]">
-                            <img src={contextCrops[`face_${face.face_id}`]} alt="" className="w-[150px] h-[150px] rounded-lg object-cover" />
+                          <TooltipContent side="top" avoidCollisions={false} className="p-1.5 border border-purple-400/30 bg-background shadow-lg rounded-xl z-[80] max-w-[260px]">
+                            {/* Click the enlarged photo to open it in
+                                the full viewer — useful when a small
+                                head + box still leaves the user
+                                unsure who the person is. */}
+                            <img
+                              src={contextCrops[`face_${face.face_id}`]}
+                              alt=""
+                              className="w-[200px] h-[200px] rounded-lg object-cover cursor-zoom-in"
+                              title="Click to open in viewer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (face.file_path) {
+                                  const meta = contextMeta[`face_${face.face_id}`];
+                                  openSearchViewer(face.file_path, meta?.filename || face.file_path.split(/[\\/]/).pop() || '');
+                                }
+                              }}
+                            />
+                            {/* Metadata strip — filename, date, location.
+                                Displayed only for the enlarged hover so
+                                the small thumbnail row stays uncluttered.
+                                Helps the user place the photo in space
+                                and time when figuring out who's in it. */}
+                            {(() => {
+                              const meta = contextMeta[`face_${face.face_id}`];
+                              if (!meta) return null;
+                              const place = [meta.geo_city, meta.geo_country].filter(Boolean).join(', ');
+                              return (
+                                <div className="mt-1.5 px-1 pb-0.5 space-y-0.5 text-[10px]">
+                                  <div className="font-medium text-foreground/90 truncate" title={meta.filename}>{meta.filename || '—'}</div>
+                                  <div className="flex items-center gap-2 text-muted-foreground">
+                                    <span>{formatHoverDate(meta.derived_date)}</span>
+                                    {place && <span className="truncate">· {place}</span>}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </TooltipContent>
                         )}
                       </Tooltip>

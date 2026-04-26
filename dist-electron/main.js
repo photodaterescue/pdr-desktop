@@ -3456,6 +3456,31 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath, boxX, boxY, boxW, boxH, s
         return { success: false, error: err.message };
     }
 });
+/**
+ * Fetch the small slice of indexed_files metadata that the People
+ * Manager hover preview wants to overlay on the enlarged photo:
+ * filename, derived date, geo country, geo city. Keyed by file_path
+ * because the PM already passes file_path around with each face;
+ * adding a file_id to the face wire format would be a wider change.
+ */
+ipcMain.handle('search:getFileMetaByPath', async (_event, filePath) => {
+    try {
+        const { getDb } = await import('./search-database.js');
+        const db = getDb();
+        const row = db.prepare(`
+      SELECT filename, derived_date, geo_country, geo_city
+      FROM indexed_files
+      WHERE file_path = ?
+      LIMIT 1
+    `).get(filePath);
+        if (!row)
+            return { success: false, error: 'File not in index' };
+        return { success: true, data: row };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 ipcMain.handle('ai:faceContext', async (_event, filePath, boxX, boxY, boxW, boxH, size = 240) => {
     try {
         const sharp = (await import('sharp')).default;
@@ -3487,17 +3512,41 @@ ipcMain.handle('ai:faceContext', async (_event, filePath, boxX, boxY, boxW, boxH
         cropH = Math.min(cropH, imgH - cropY);
         if (cropW <= 0 || cropH <= 0)
             return { success: false, error: 'Invalid crop' };
-        // Calculate face box position relative to the crop
+        // Calculate face box position relative to the crop, scaled to output.
+        //
+        // CRITICAL: the resize below uses `fit: 'contain'` so the image
+        // letterboxes inside the size×size output — preserving aspect
+        // ratio without cropping. The box scale must match: we use
+        // `scale = size / max(cropW, cropH)` (fit-inside) and offset the
+        // box by half the letterbox padding on each axis. With `fit:
+        // 'cover'` (the previous behaviour) the axis-min was stretched
+        // to fill and the other axis was cropped, but our SVG math used
+        // the fit-inside scale — net effect was the box landed several
+        // dozen pixels off the face whenever the crop was non-square
+        // (which is most photos, especially when the face sits near an
+        // image edge). S&D didn't have this bug because the browser
+        // applies normalised coords directly to the rendered image.
         const relX = faceX - cropX;
         const relY = faceY - cropY;
-        // Scale factor from crop to output size
         const scale = size / Math.max(cropW, cropH);
-        const boxPx = { x: Math.round(relX * scale), y: Math.round(relY * scale), w: Math.round(faceW * scale), h: Math.round(faceH * scale) };
-        // Create the crop
+        // Letterbox offset: with fit:contain, sharp centres the image,
+        // so we need to push the box by the same amount sharp pushes
+        // the pixels.
+        const padX = Math.round((size - cropW * scale) / 2);
+        const padY = Math.round((size - cropH * scale) / 2);
+        const boxPx = {
+            x: Math.round(relX * scale) + padX,
+            y: Math.round(relY * scale) + padY,
+            w: Math.round(faceW * scale),
+            h: Math.round(faceH * scale),
+        };
+        // Create the crop (fit:contain preserves aspect; soft neutral
+        // background fills the letterbox bars so the preview doesn't
+        // look broken on portrait/landscape source crops).
         const cropped = await sharp(filePath, { failOnError: false })
             .rotate()
             .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
-            .resize(size, size, { fit: 'cover' })
+            .resize(size, size, { fit: 'contain', background: { r: 245, g: 243, b: 250, alpha: 1 } })
             .jpeg({ quality: 85 })
             .toBuffer();
         // Draw a face indicator box using SVG overlay

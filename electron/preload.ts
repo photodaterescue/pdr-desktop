@@ -186,6 +186,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
     cleanup: () => ipcRenderer.invoke('search:cleanup'),
     relocateRun: (runId: number, newPath: string) => ipcRenderer.invoke('search:relocateRun', runId, newPath),
+    getFileMetaByPath: (filePath: string) => ipcRenderer.invoke('search:getFileMetaByPath', filePath),
     onStaleRuns: (callback: (runs: any[]) => void) => {
       const handler = (_event: any, runs: any[]) => callback(runs);
       ipcRenderer.on('search:staleRuns', handler);

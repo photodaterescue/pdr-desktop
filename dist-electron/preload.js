@@ -133,6 +133,7 @@ contextBridge.exposeInMainWorld('pdr', {
         rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
         cleanup: () => ipcRenderer.invoke('search:cleanup'),
         relocateRun: (runId, newPath) => ipcRenderer.invoke('search:relocateRun', runId, newPath),
+        getFileMetaByPath: (filePath) => ipcRenderer.invoke('search:getFileMetaByPath', filePath),
         onStaleRuns: (callback) => {
             const handler = (_event, runs) => callback(runs);
             ipcRenderer.on('search:staleRuns', handler);
