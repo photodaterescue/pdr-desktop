@@ -252,14 +252,18 @@ async function init(): Promise<void> {
             maxDetected: 50,
             minConfidence: config.minFaceConfidence,
             iouThreshold: 0.3,
-            // square=true: pad the input image to a square BEFORE the
-            // detector resizes it to 256×256, instead of letting Human
-            // distort the aspect ratio. Without this, a portrait phone
-            // photo gets squashed into a wide square and the detector
-            // sees stretched faces — which both hurts detection
-            // accuracy AND skews where the box lands when the result
-            // is mapped back. See blazeface.ts:60-69.
-            square: true,
+            // square left at default (false). It's tempting to set
+            // square=true so the detector receives a non-distorted
+            // input — but blazeface.ts has a coordinate-math bug in
+            // that path: when the image isn't square the un-pad +
+            // un-resize composition under-corrects, shifting every
+            // box leftward (portrait) or upward (landscape) by a
+            // fraction proportional to (xy/iw)². With square=false
+            // (the default) Human just resizes directly to 256×256,
+            // distorting the aspect ratio. The detector sees a
+            // stretched image but the coordinate math after detection
+            // is straightforward and correct. Slight detection
+            // accuracy cost; correct box placement gain.
             // scale=1.0: keep the detector's reported face box tight
             // to the actual face. Default is 1.4, which is designed
             // for the face-mesh network (it needs padding for

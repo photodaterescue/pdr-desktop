@@ -524,12 +524,37 @@ export default function PeopleManager() {
   }, [unnamedClustersRaw, clusterOrder]);
 
   const handleClusterDragStart = (e: React.DragEvent, key: string) => {
-    setDraggedClusterKey(key);
     e.dataTransfer.effectAllowed = 'move';
-    // Use the row's parent as the drag preview so users see the whole
-    // row being dragged, not just the small grip icon.
+    // Use a CLONE of the row as the drag image, not the row itself.
+    // The browser captures the drag image asynchronously, so by the
+    // time it samples the source element, our React state update has
+    // already faded it (opacity-30) and the dragged preview ends up
+    // looking like a ghost. The clone is a snapshot of the row as it
+    // was BEFORE the state update — proper drop-shadow card that
+    // visibly follows the cursor.
     const parent = (e.currentTarget as HTMLElement).closest('[data-cluster-row]') as HTMLElement | null;
-    if (parent) e.dataTransfer.setDragImage(parent, 20, 20);
+    if (parent) {
+      const clone = parent.cloneNode(true) as HTMLElement;
+      clone.style.position = 'absolute';
+      clone.style.top = '-9999px';
+      clone.style.left = '-9999px';
+      clone.style.width = `${parent.offsetWidth}px`;
+      clone.style.opacity = '0.95';
+      clone.style.boxShadow = '0 12px 28px rgba(168, 85, 247, 0.35), 0 4px 12px rgba(0,0,0,0.2)';
+      clone.style.borderRadius = '12px';
+      clone.style.background = 'var(--background, white)';
+      clone.style.transform = 'rotate(-1deg)';
+      clone.style.pointerEvents = 'none';
+      // Strip any leftover state classes from the clone so it doesn't
+      // inherit a "being dragged" appearance.
+      clone.classList.remove('opacity-30', 'opacity-40', 'scale-[0.98]', 'ring-1', 'ring-purple-500/50');
+      document.body.appendChild(clone);
+      e.dataTransfer.setDragImage(clone, 20, 20);
+      // Remove the clone after the browser has had a chance to
+      // snapshot it. setTimeout(0) is enough on every modern engine.
+      setTimeout(() => { try { clone.remove(); } catch {} }, 0);
+    }
+    setDraggedClusterKey(key);
   };
   const handleClusterDragOver = (e: React.DragEvent, key: string) => {
     if (!draggedClusterKey || draggedClusterKey === key) return;
@@ -584,7 +609,7 @@ export default function PeopleManager() {
   };
 
   const pmTabClass = (tab: string) =>
-    `flex-1 text-center px-3 py-2.5 text-sm font-medium cursor-pointer transition-all duration-200 border-b-2 ${
+    `flex-1 text-center px-3 py-2.5 text-base font-medium cursor-pointer transition-all duration-200 border-b-2 ${
       activeTab === tab
         ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-background'
         : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30 bg-muted/40'
@@ -600,7 +625,7 @@ export default function PeopleManager() {
           <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center">
             <Users className="w-4 h-4 text-purple-500" />
           </div>
-          <h2 className="text-base font-semibold text-foreground">People Manager</h2>
+          <h2 className="text-lg font-semibold text-foreground">People Manager</h2>
 
           {/* AI analysis progress — mirrors the main window's "Analyzing
               N/M" indicator so progress is visible while you're looking
@@ -608,7 +633,7 @@ export default function PeopleManager() {
           {aiProgress && aiProgress.phase === 'processing' && aiProgress.total > 0 && (
             <IconTooltip label={`Analysing ${aiProgress.currentFile || ''}`} side="bottom">
               <div
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-400/40 text-xs text-violet-700 dark:text-violet-300"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-400/40 text-sm text-violet-700 dark:text-violet-300"
               >
                 <Sparkle className="w-3 h-3 animate-pulse" />
                 <span>Analysing {aiProgress.current}/{aiProgress.total}</span>
@@ -663,7 +688,7 @@ export default function PeopleManager() {
                     }
                   }}
                   disabled={isRefining}
-                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
                     aiRefineEnabled
                       ? 'bg-purple-500 hover:bg-purple-600 text-white border-purple-600 shadow-sm'
                       : 'bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10'
@@ -711,7 +736,7 @@ export default function PeopleManager() {
                     }
                   }}
                   disabled={isImportingXmp}
-                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isImportingXmp ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isImportingXmp ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
                 >
                   {isImportingXmp ? (
                     <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing...</>
@@ -729,16 +754,16 @@ export default function PeopleManager() {
 
         <div className="flex flex-col items-center flex-1 mx-4 max-w-[260px]">
           <div className="flex items-center gap-2 mb-0.5 h-[14px]">
-            <span className="text-[11px] text-foreground/60 font-semibold uppercase tracking-wider">Match</span>
+            <span className="text-xs text-foreground/60 font-semibold uppercase tracking-wider">Match</span>
             {isReclustering && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-purple-500">
+              <span className="inline-flex items-center gap-1 text-[11px] text-purple-500">
                 <Loader2 className="w-2.5 h-2.5 animate-spin" />
                 Reclustering…
               </span>
             )}
           </div>
           <div className="flex items-center gap-2 w-full">
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">Loose</span>
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">Loose</span>
             <div className="relative flex-1">
               <input
                 type="range"
@@ -781,9 +806,9 @@ export default function PeopleManager() {
                 <div className="w-px h-2 bg-transparent" /> {/* 100% spacer */}
               </div>
             </div>
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">Strict</span>
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">Strict</span>
           </div>
-          <p className="text-[9px] text-muted-foreground/70 mt-1 text-center leading-tight">
+          <p className="text-[10px] text-muted-foreground/70 mt-1 text-center leading-tight">
             Loose merges more faces into one person. Strict keeps similar faces in separate groups.
           </p>
         </div>
@@ -798,8 +823,8 @@ export default function PeopleManager() {
             <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-foreground">Using People Manager a lot?</div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">You can have it launch with PDR automatically.</div>
+            <div className="text-sm font-medium text-foreground">Using People Manager a lot?</div>
+            <div className="text-xs text-muted-foreground mt-0.5">You can have it launch with PDR automatically.</div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <button
@@ -809,7 +834,7 @@ export default function PeopleManager() {
                 await dismissPmStartupPrompt();
                 setShowStartupPrompt(false);
               }}
-              className="px-3 py-1 rounded-md text-[11px] font-medium bg-purple-500 hover:bg-purple-600 text-white border border-purple-600 transition-colors"
+              className="px-3 py-1 rounded-md text-xs font-medium bg-purple-500 hover:bg-purple-600 text-white border border-purple-600 transition-colors"
             >
               Enable
             </button>
@@ -819,7 +844,7 @@ export default function PeopleManager() {
                 await dismissPmStartupPrompt();
                 setShowStartupPrompt(false);
               }}
-              className="px-2.5 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              className="px-2.5 py-1 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
               Not now
             </button>
@@ -827,34 +852,36 @@ export default function PeopleManager() {
         </div>
       )}
 
-      {/* Tab Bar */}
+      {/* Tab Bar — count pills get a coloured filled background and
+          slightly bolder text so they read clearly against the muted
+          tab strip behind them, including for the empty / 0 case. */}
       <div className="flex border-b border-border mx-6 mb-0">
         <div className="flex flex-1">
           <button type="button" className={pmTabClass('named')} onClick={() => { setActiveTab('named'); setSearchFilter(''); }}>
             <span className="flex items-center justify-center gap-1.5">
               Named
-              {tabCounts.named > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">{tabCounts.named}</span>}
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-500/15 text-purple-600 dark:text-purple-300 ring-1 ring-purple-500/30">{tabCounts.named}</span>
             </span>
           </button>
           <div className="w-px bg-border/60 my-2" />
           <button type="button" className={pmTabClass('unnamed')} onClick={() => { setActiveTab('unnamed'); setSearchFilter(''); }}>
             <span className="flex items-center justify-center gap-1.5">
               Unnamed
-              {tabCounts.unnamed > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">{tabCounts.unnamed}</span>}
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30">{tabCounts.unnamed}</span>
             </span>
           </button>
           <div className="w-px bg-border/60 my-2" />
           <button type="button" className={pmTabClass('unsure')} onClick={() => { setActiveTab('unsure'); setSearchFilter(''); }}>
             <span className="flex items-center justify-center gap-1.5">
               Unsure
-              {tabCounts.unsure > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">{tabCounts.unsure}</span>}
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-500/15 text-blue-700 dark:text-blue-300 ring-1 ring-blue-500/30">{tabCounts.unsure}</span>
             </span>
           </button>
           <div className="w-px bg-border/60 my-2" />
           <button type="button" className={pmTabClass('ignored')} onClick={() => { setActiveTab('ignored'); setSearchFilter(''); }}>
             <span className="flex items-center justify-center gap-1.5">
               Ignored
-              {tabCounts.ignored > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-[#76899F]/20 text-[#76899F]">{tabCounts.ignored}</span>}
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-500/20 text-slate-700 dark:text-slate-300 ring-1 ring-slate-500/30">{tabCounts.ignored}</span>
             </span>
           </button>
         </div>
@@ -867,7 +894,7 @@ export default function PeopleManager() {
                 value={searchFilter}
                 onChange={e => setSearchFilter(e.target.value)}
                 placeholder="Filter..."
-                className="pl-8 pr-3 py-1 text-xs rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 w-[120px] focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                className="pl-8 pr-3 py-1 text-sm rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 w-[120px] focus:outline-none focus:ring-1 focus:ring-purple-400/50"
               />
               {searchFilter && (
                 <button onClick={() => setSearchFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -915,13 +942,13 @@ export default function PeopleManager() {
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
-            <span className="ml-2 text-sm text-muted-foreground">Loading face clusters...</span>
+            <span className="ml-2 text-base text-muted-foreground">Loading face clusters...</span>
           </div>
         ) : clusters.length === 0 && discardedPersons.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Users className="w-12 h-12 text-muted-foreground/20 mb-3" />
-            <h3 className="text-sm font-semibold text-foreground mb-1">No faces detected yet</h3>
-            <p className="text-xs text-muted-foreground max-w-xs">
+            <h3 className="text-base font-semibold text-foreground mb-1">No faces detected yet</h3>
+            <p className="text-sm text-muted-foreground max-w-xs">
               Run AI analysis on your photos to detect faces. Similar faces will be automatically grouped together.
             </p>
           </div>
@@ -933,18 +960,18 @@ export default function PeopleManager() {
                 <div className="flex items-start gap-3 mb-3">
                   <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="text-sm font-semibold text-foreground mb-1">Discard "{confirmDiscard.personName}"?</h4>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
+                    <h4 className="text-base font-semibold text-foreground mb-1">Discard "{confirmDiscard.personName}"?</h4>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
                       This will remove the name from <strong>{confirmDiscard.photoCount} photo{confirmDiscard.photoCount !== 1 ? 's' : ''}</strong> and send {confirmDiscard.photoCount === 1 ? 'it' : 'them'} to the Unnamed tab.
                       Face detections are kept — you can re-name faces later.
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 ml-8">
-                  <button onClick={() => handleDiscardPerson(confirmDiscard.personId)} className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors">
+                  <button onClick={() => handleDiscardPerson(confirmDiscard.personId)} className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition-colors">
                     Discard
                   </button>
-                  <button onClick={() => setConfirmDiscard(null)} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors">
+                  <button onClick={() => setConfirmDiscard(null)} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-sm font-medium transition-colors">
                     Cancel
                   </button>
                 </div>
@@ -957,10 +984,10 @@ export default function PeopleManager() {
 {filteredNamed.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <Users className="w-10 h-10 text-muted-foreground/20 mb-3" />
-                    <h3 className="text-sm font-medium text-foreground mb-1">
+                    <h3 className="text-base font-medium text-foreground mb-1">
                       {searchFilter ? 'No matches' : 'No named people yet'}
                     </h3>
-                    <p className="text-xs text-muted-foreground max-w-xs">
+                    <p className="text-sm text-muted-foreground max-w-xs">
                       {searchFilter ? `No names matching "${searchFilter}".` : 'Switch to the Unnamed tab to start naming detected faces.'}
                     </p>
                   </div>
@@ -1020,14 +1047,14 @@ export default function PeopleManager() {
                 {unnamedClusters.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <CheckCircle2 className="w-10 h-10 text-green-400/40 mb-3" />
-                    <h3 className="text-sm font-medium text-foreground mb-1">All groups are named</h3>
-                    <p className="text-xs text-muted-foreground max-w-xs">Every detected face group has been assigned a name, marked unsure, or ignored.</p>
+                    <h3 className="text-base font-medium text-foreground mb-1">All groups are named</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs">Every detected face group has been assigned a name, marked unsure, or ignored.</p>
                   </div>
                 ) : (
                   <>
                     <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/30 dark:border-purple-800/20 mb-4">
                       <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-muted-foreground leading-relaxed">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
                         Click a group to name it. Don't recognise someone? Use <strong>Unsure</strong> to revisit later, or <strong>Ignore</strong> to hide them permanently.
                       </p>
                     </div>
@@ -1044,7 +1071,7 @@ export default function PeopleManager() {
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
                             onDragLeave={() => handleClusterDragLeave(ck)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
-                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-40 scale-[0.98] shadow-lg ring-1 ring-purple-500/50 rounded-xl' : ''}`}
+                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-25 scale-[0.97] border-2 border-dashed border-purple-400/70 rounded-xl' : ''}`}
                           >
                             {/* Insertion-line drop indicator — appears above
                                 the row that's currently being hovered, like
@@ -1124,7 +1151,7 @@ export default function PeopleManager() {
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
                             onDragLeave={() => handleClusterDragLeave(ck)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
-                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-40 scale-[0.98] shadow-lg ring-1 ring-purple-500/50 rounded' : ''}`}
+                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-25 scale-[0.97] border-2 border-dashed border-purple-400/70 rounded' : ''}`}
                           >
                             {isDropTarget && (
                               <div className="absolute left-0 right-0 -top-0.5 h-1 bg-purple-500 rounded-full shadow-[0_0_6px_rgba(168,85,247,0.6)] z-20 pointer-events-none" />
@@ -1175,8 +1202,8 @@ export default function PeopleManager() {
                 {unsureClusters.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <HelpCircle className="w-10 h-10 text-muted-foreground/20 mb-3" />
-                    <h3 className="text-sm font-medium text-foreground mb-1">No unsure faces</h3>
-                    <p className="text-xs text-muted-foreground max-w-xs">
+                    <h3 className="text-base font-medium text-foreground mb-1">No unsure faces</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs">
                       Faces you mark as "Unsure" from the Unnamed tab will appear here so you can revisit them later.
                     </p>
                   </div>
@@ -1184,7 +1211,7 @@ export default function PeopleManager() {
                   <>
                     <div className="flex items-start gap-3 p-3 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/30 dark:border-blue-800/20 mb-4">
                       <HelpCircle className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-muted-foreground leading-relaxed">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
                         These are faces you weren't sure about. Click to name them, or move them to Ignored if you'll never know.
                       </p>
                     </div>
@@ -1232,8 +1259,8 @@ export default function PeopleManager() {
                 {ignoredClusters.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <UserX className="w-10 h-10 text-muted-foreground/20 mb-3" />
-                    <h3 className="text-sm font-medium text-foreground mb-1">No ignored faces</h3>
-                    <p className="text-xs text-muted-foreground max-w-xs">
+                    <h3 className="text-base font-medium text-foreground mb-1">No ignored faces</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs">
                       Faces you ignore from the Unnamed tab will appear here. You can restore them or delete permanently.
                     </p>
                   </div>
@@ -1241,7 +1268,7 @@ export default function PeopleManager() {
                   <>
                     <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50/50 dark:bg-slate-900/20 border border-slate-200/30 dark:border-slate-700/20 mb-4">
                       <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-muted-foreground leading-relaxed">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
                         These faces have been ignored. You can restore them back to Unnamed, or delete them permanently.
                       </p>
                     </div>
@@ -1283,17 +1310,17 @@ export default function PeopleManager() {
                     <div className="flex items-start gap-3 mb-3">
                       <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                       <div>
-                        <h4 className="text-sm font-semibold text-foreground mb-1">Permanently delete?</h4>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
+                        <h4 className="text-base font-semibold text-foreground mb-1">Permanently delete?</h4>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
                           This will permanently remove this face group and all associated AI data. This action cannot be undone.
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-8">
-                      <button onClick={() => handlePermanentDelete(confirmPermanentDelete.personId)} className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition-colors">
+                      <button onClick={() => handlePermanentDelete(confirmPermanentDelete.personId)} className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors">
                         Permanently delete
                       </button>
-                      <button onClick={() => setConfirmPermanentDelete(null)} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors">
+                      <button onClick={() => setConfirmPermanentDelete(null)} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-sm font-medium transition-colors">
                         Cancel
                       </button>
                     </div>
@@ -1310,7 +1337,7 @@ export default function PeopleManager() {
         <div className="w-[280px] shrink-0 border-l border-border bg-background p-4 overflow-y-auto">
           <div className="space-y-2">
             {globalSelectedFaces.size > 1 && (
-              <div className="bg-green-500 text-white text-xs font-medium text-center py-1 px-3 rounded-md">
+              <div className="bg-green-500 text-white text-sm font-medium text-center py-1 px-3 rounded-md">
                 {globalSelectedFaces.size} faces selected
               </div>
             )}
@@ -1320,7 +1347,7 @@ export default function PeopleManager() {
               </div>
             )}
             {globalSelectedFaces.size <= 1 && (
-              <p className="text-xs text-muted-foreground text-center">Choose an action for this face</p>
+              <p className="text-sm text-muted-foreground text-center">Choose an action for this face</p>
             )}
             <div className="relative">
               {(() => {
@@ -1382,16 +1409,16 @@ export default function PeopleManager() {
                         }
                       }}
                       placeholder="Type person name..."
-                      className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                      className="w-full text-base px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                       autoFocus
                     />
                     {panelSuggestions.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
                         {panelSuggestions.map((p, idx) => (
                           <button key={p.id} onMouseDown={(e) => { e.preventDefault(); setGlobalReassignName(p.name); setPanelSuggestionIdx(-1); }}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors text-left ${idx === panelSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}>
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-sm transition-colors text-left ${idx === panelSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}>
                             <span className="truncate">{p.name}</span>
-                            <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
+                            <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
                           </button>
                         ))}
                       </div>
@@ -1425,13 +1452,13 @@ export default function PeopleManager() {
                       })();
                     }}
                     disabled={!effectiveName}
-                    className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
+                    className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
                   >
                     Verify{globalSelectedFaces.size > 1 ? ` (${globalSelectedFaces.size})` : ''}
                   </button>
                   <button
                     onClick={() => { setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set()); }}
-                    className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors"
+                    className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-sm font-medium transition-colors"
                   >
                     Cancel
                   </button>
@@ -1445,7 +1472,7 @@ export default function PeopleManager() {
                   if (targets.length === 0) return;
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unsure__', false, i < targets.length - 1); })();
-                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-xs font-medium transition-colors">
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm font-medium transition-colors">
                   <HelpCircle className="w-3 h-3" /> Unsure
                 </button>
               )}
@@ -1455,7 +1482,7 @@ export default function PeopleManager() {
                   if (targets.length === 0) return;
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unnamed__', false, i < targets.length - 1); })();
-                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs font-medium transition-colors">
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-medium transition-colors">
                   <Users className="w-3 h-3" /> Unnamed
                 </button>
               )}
@@ -1465,7 +1492,7 @@ export default function PeopleManager() {
                   if (targets.length === 0) return;
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__ignored__', false, i < targets.length - 1); })();
-                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-xs font-medium transition-colors">
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-sm font-medium transition-colors">
                   <UserX className="w-3 h-3" /> Ignore
                 </button>
               )}
@@ -1482,7 +1509,7 @@ export default function PeopleManager() {
                     await handleSetRepresentative(ownerCluster.person_id!, faceId);
                     setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalSelectedFaces(new Set());
                   }}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-medium transition-colors"
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium transition-colors"
                 >
                   <ImageIcon className="w-3 h-3" /> Set as main photo
                 </button>
@@ -1495,11 +1522,11 @@ export default function PeopleManager() {
 
       {/* Footer status bar */}
       <div className="px-6 py-3 border-t border-border bg-muted/30 flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {namedClusters.length} named · {unnamedClusters.length} unnamed · {unsureClusters.length} unsure · {ignoredClusters.length} ignored
           {isReclustering && <span className="ml-2 text-purple-500"><Loader2 className="w-3 h-3 animate-spin inline-block" /> Reclustering...</span>}
         </p>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <button onClick={() => { const z = Math.max(60, zoomLevel - 10); setZoomLevel(z); localStorage.setItem('pdr-people-zoom', String(z)); }} className="p-0.5 hover:text-foreground transition-colors">−</button>
           <span className="w-8 text-center">{zoomLevel}%</span>
           <button onClick={() => { const z = Math.min(150, zoomLevel + 10); setZoomLevel(z); localStorage.setItem('pdr-people-zoom', String(z)); }} className="p-0.5 hover:text-foreground transition-colors">+</button>
@@ -1632,7 +1659,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                     ? cluster.person_name
                     : 'Unknown person'}
                 </h2>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   {cluster.face_count} faces across {cluster.photo_count} photos · sorted by confidence (lowest first)
                 </p>
               </div>
@@ -1647,7 +1674,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
-                <span className="ml-2 text-sm text-muted-foreground">Loading faces...</span>
+                <span className="ml-2 text-base text-muted-foreground">Loading faces...</span>
               </div>
             ) : data && data.faces.length > 0 ? (
               <div className="grid grid-cols-8 gap-2">
@@ -1677,10 +1704,10 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                             <img src={faceCrops[face.face_id]} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-purple-400/40" />
                           </div>
                         )}
-                        <p className="text-[10px] text-center text-muted-foreground">
+                        <p className="text-[11px] text-center text-muted-foreground">
                           Confidence: <span className={`font-semibold ${confidenceColor(face.confidence)}`}>{confidenceLabel(face.confidence)} ({Math.round(face.confidence * 100)}%)</span>
                         </p>
-                        <p className="text-xs text-muted-foreground text-center">Choose an action for this face</p>
+                        <p className="text-sm text-muted-foreground text-center">Choose an action for this face</p>
                         <div className="relative">
                         <input
                           ref={reassignInputRef}
@@ -1691,16 +1718,16 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                           onBlur={() => setTimeout(() => setReassignInputFocused(false), 150)}
                           onKeyDown={(e) => { if (e.key === 'Enter' && reassignName.trim()) handleReassign(face.face_id, reassignName); if (e.key === 'Escape') { setReassignFaceId(null); setReassignName(''); } }}
                           placeholder="Type person name..."
-                          className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                          className="w-full text-base px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                           autoFocus
                         />
                         {reassignSuggestions.length > 0 && (
                           <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
                             {reassignSuggestions.map(p => (
                               <button key={p.id} onMouseDown={(e) => { e.preventDefault(); setReassignName(p.name); setReassignInputFocused(false); }}
-                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors text-left">
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors text-left">
                                 <span className="truncate">{p.name}</span>
-                                <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
+                                <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
                               </button>
                             ))}
                           </div>
@@ -1708,31 +1735,31 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                         </div>
                         <div className="flex gap-1.5">
                           <button onClick={() => handleReassign(face.face_id, reassignName)} disabled={!reassignName.trim()}
-                            className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors">
+                            className="flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
                             Verify
                           </button>
                           <button onClick={() => { setReassignFaceId(null); setReassignName(''); }}
-                            className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors">
+                            className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-sm font-medium transition-colors">
                             Cancel
                           </button>
                         </div>
                         <div className="flex gap-1.5 pt-1 border-t border-border">
                           <button onClick={() => handleReassign(face.face_id, '__unsure__', false)}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-xs font-medium transition-colors">
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm font-medium transition-colors">
                             <HelpCircle className="w-3 h-3" /> Unsure
                           </button>
                           <button onClick={() => handleReassign(face.face_id, '__unnamed__', false)}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs font-medium transition-colors">
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-medium transition-colors">
                             <Users className="w-3 h-3" /> Unnamed
                           </button>
                           <button onClick={() => handleReassign(face.face_id, '__ignored__', false)}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-xs font-medium transition-colors">
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-sm font-medium transition-colors">
                             <UserX className="w-3 h-3" /> Ignore
                           </button>
                         </div>
                         {onSetRepresentative && cluster.person_id && (
                           <button onClick={async () => { await onSetRepresentative(face.face_id); setReassignFaceId(null); setReassignName(''); }}
-                            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-green-300/50 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 text-xs font-medium transition-colors">
+                            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-green-300/50 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 text-sm font-medium transition-colors">
                             <ImageIcon className="w-3 h-3" /> Set as main photo
                           </button>
                         )}
@@ -1744,7 +1771,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Users className="w-10 h-10 text-muted-foreground/20 mb-3" />
-                <p className="text-sm text-muted-foreground">No faces found</p>
+                <p className="text-base text-muted-foreground">No faces found</p>
               </div>
             )}
           </div>
@@ -1755,17 +1782,17 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
               <button
                 onClick={() => { const p = Math.max(0, page - 1); setPage(p); loadPage(p); }}
                 disabled={page === 0}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-base font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" /> Previous
               </button>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-base text-muted-foreground">
                 Page {page + 1} of {data.totalPages} · {data.total} faces
               </span>
               <button
                 onClick={() => { const p = Math.min(data.totalPages - 1, page + 1); setPage(p); loadPage(p); }}
                 disabled={page >= data.totalPages - 1}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-base font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 Next <ChevronRight className="w-4 h-4" />
               </button>
@@ -1774,7 +1801,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 
           {/* Footer */}
           <div className="mt-4 pt-3 border-t border-border">
-            <button onClick={onClose} className="w-full px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
+            <button onClick={onClose} className="w-full px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-base font-medium hover:bg-primary/90 transition-colors">
               Done
             </button>
           </div>
@@ -2072,11 +2099,11 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               <UserX className="w-4 h-4 text-slate-400" />
             </div>
           )}
-          <p className="text-sm text-foreground flex-1">Ignore this person?</p>
-          <button onClick={onConfirmIgnore} className="px-3 py-1.5 rounded-lg bg-slate-500 hover:bg-slate-600 text-white text-xs font-medium transition-colors">
+          <p className="text-base text-foreground flex-1">Ignore this person?</p>
+          <button onClick={onConfirmIgnore} className="px-3 py-1.5 rounded-lg bg-slate-500 hover:bg-slate-600 text-white text-sm font-medium transition-colors">
             Yes, ignore
           </button>
-          <button onClick={onCancelIgnore} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors">
+          <button onClick={onCancelIgnore} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-sm font-medium transition-colors">
             Cancel
           </button>
         </div>
@@ -2095,11 +2122,11 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               <HelpCircle className="w-4 h-4 text-blue-400" />
             </div>
           )}
-          <p className="text-sm text-foreground flex-1">Move to Unsure?</p>
-          <button onClick={onConfirmUnsure} className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium transition-colors">
+          <p className="text-base text-foreground flex-1">Move to Unsure?</p>
+          <button onClick={onConfirmUnsure} className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors">
             Yes
           </button>
-          <button onClick={onCancelUnsure} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-xs font-medium transition-colors">
+          <button onClick={onCancelUnsure} className="px-3 py-1.5 rounded-lg border border-border hover:bg-secondary text-sm font-medium transition-colors">
             Cancel
           </button>
         </div>
@@ -2121,7 +2148,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
         <div className="flex items-center gap-3">
           {/* Row number */}
           {rowIndex != null && (
-            <span className={`text-xs font-bold shrink-0 w-5 text-center ${
+            <span className={`text-sm font-bold shrink-0 w-5 text-center ${
               cluster.person_name === '__ignored__' ? 'text-[#76899F]'
               : cluster.person_name === '__unsure__' ? 'text-blue-600'
               : !cluster.person_name ? 'text-amber-600'
@@ -2210,10 +2237,10 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                       }
                     }}
                     placeholder="Type a name..."
-                    className="flex-1 text-sm bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
+                    className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
                     autoFocus
                   />
-                  <button type="submit" disabled={!nameInput.trim()} className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors whitespace-nowrap">
+                  <button type="submit" disabled={!nameInput.trim()} className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors whitespace-nowrap">
                     Update name
                   </button>
                 </form>
@@ -2221,10 +2248,10 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                   <div className="mt-1.5 space-y-0.5">
                     {filteredPersons.map((p, idx) => (
                       <button key={p.id} onClick={(e) => { e.stopPropagation(); onSelectPerson?.(p.name); }}
-                        className={`w-full flex items-center gap-2 px-1.5 py-1 rounded text-xs transition-colors text-left ${idx === selectedSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}>
+                        className={`w-full flex items-center gap-2 px-1.5 py-1 rounded text-sm transition-colors text-left ${idx === selectedSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}>
                         <Users className="w-3 h-3 text-purple-400 shrink-0" />
                         <span className="truncate">{p.name}</span>
-                        {p.photo_count != null && <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>}
+                        {p.photo_count != null && <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>}
                       </button>
                     ))}
                   </div>
@@ -2232,10 +2259,10 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               </div>
             ) : (
               <>
-                <p className={`text-sm font-medium truncate ${(cluster.person_name && !cluster.person_name.startsWith('__') && !displayName) ? 'text-foreground' : 'text-muted-foreground italic'}`}>
+                <p className={`text-base font-medium truncate ${(cluster.person_name && !cluster.person_name.startsWith('__') && !displayName) ? 'text-foreground' : 'text-muted-foreground italic'}`}>
                   {displayName || (cluster.person_name && !cluster.person_name.startsWith('__') ? cluster.person_name : 'Unknown person')}
                 </p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <p className="text-[11px] text-muted-foreground mt-0.5">
                   {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
                   {currentTab === 'named' && cluster.sample_faces && (() => {
                     const verifiedCount = cluster.sample_faces.filter(f => f.verified).length;
@@ -2310,7 +2337,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
               </div>
               {/* Scroll position counter */}
               {cluster.sample_faces && cluster.sample_faces.length > 6 && (
-                <div className="text-[9px] text-muted-foreground/60 text-right pr-1 mt-0.5">
+                <div className="text-[10px] text-muted-foreground/60 text-right pr-1 mt-0.5">
                   {Math.min(scrollPosition + 1, cluster.sample_faces.length)}–{Math.min(scrollPosition + Math.floor((thumbStripRef.current?.clientWidth || 300) / 46), cluster.sample_faces.length)} of {cluster.sample_faces.length}
                 </div>
               )}
@@ -2460,9 +2487,9 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
     return (
       <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-50/30 dark:bg-slate-900/20 border border-slate-300/40">
         {cropUrl ? <img src={cropUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 opacity-60" /> : <div className="w-7 h-7 rounded-full bg-slate-200 shrink-0" />}
-        <span className="text-sm text-foreground flex-1">Ignore?</span>
-        <button onClick={onConfirmIgnore} className="px-2.5 py-1 rounded-md bg-slate-500 hover:bg-slate-600 text-white text-xs font-medium transition-colors">Yes</button>
-        <button onClick={onCancelIgnore} className="px-2.5 py-1 rounded-md border border-border hover:bg-secondary text-xs font-medium transition-colors">No</button>
+        <span className="text-base text-foreground flex-1">Ignore?</span>
+        <button onClick={onConfirmIgnore} className="px-2.5 py-1 rounded-md bg-slate-500 hover:bg-slate-600 text-white text-sm font-medium transition-colors">Yes</button>
+        <button onClick={onCancelIgnore} className="px-2.5 py-1 rounded-md border border-border hover:bg-secondary text-sm font-medium transition-colors">No</button>
       </div>
     );
   }
@@ -2470,9 +2497,9 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
     return (
       <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-blue-50/30 dark:bg-blue-900/20 border border-blue-300/40">
         {cropUrl ? <img src={cropUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 opacity-60" /> : <div className="w-7 h-7 rounded-full bg-blue-200 shrink-0" />}
-        <span className="text-sm text-foreground flex-1">Mark as unsure?</span>
-        <button onClick={onConfirmUnsure} className="px-2.5 py-1 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium transition-colors">Yes</button>
-        <button onClick={onCancelUnsure} className="px-2.5 py-1 rounded-md border border-border hover:bg-secondary text-xs font-medium transition-colors">No</button>
+        <span className="text-base text-foreground flex-1">Mark as unsure?</span>
+        <button onClick={onConfirmUnsure} className="px-2.5 py-1 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors">Yes</button>
+        <button onClick={onCancelUnsure} className="px-2.5 py-1 rounded-md border border-border hover:bg-secondary text-sm font-medium transition-colors">No</button>
       </div>
     );
   }
@@ -2502,7 +2529,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
           <form onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) onSubmit(); }} className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <input ref={inputRef} type="text" value={nameInput} onChange={(e) => onNameChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } }}
-              placeholder="Type a name..." className="flex-1 text-sm bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0" autoFocus />
+              placeholder="Type a name..." className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0" autoFocus />
             <Tooltip><TooltipTrigger asChild>
               <button type="submit" className="p-1 rounded hover:bg-purple-200/50 dark:hover:bg-purple-800/30"><Check className="w-3.5 h-3.5 text-purple-500" /></button>
             </TooltipTrigger><TooltipContent>Save</TooltipContent></Tooltip>
@@ -2511,7 +2538,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
             </TooltipTrigger><TooltipContent>Cancel</TooltipContent></Tooltip>
           </form>
         ) : (
-          <p className={`text-sm truncate ${cluster.person_name ? 'font-medium text-foreground' : 'text-muted-foreground italic'}`}>
+          <p className={`text-base truncate ${cluster.person_name ? 'font-medium text-foreground' : 'text-muted-foreground italic'}`}>
             {cluster.person_name || 'Unknown person'}
           </p>
         )}
@@ -2528,7 +2555,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
       )}
 
       {!isEditing && (
-        <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 w-[80px] text-right">
+        <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0 w-[80px] text-right">
           {cluster.face_count} in {cluster.photo_count} {cluster.photo_count === 1 ? 'photo' : 'photos'}
         </span>
       )}

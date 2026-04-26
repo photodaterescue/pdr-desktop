@@ -118,7 +118,8 @@
       "PowerShell(cmd /c \"npx electron .tmp-inspect-face.cjs\")",
       "PowerShell(cmd /c \"npx electron .tmp-human-direct.cjs\")",
       "PowerShell(cmd /c \"npx electron .tmp-shrink-boxes.cjs\")",
-      "PowerShell(cmd /c \"npx electron .tmp-redetect.cjs\")"
+      "PowerShell(cmd /c \"npx electron .tmp-redetect.cjs\")",
+      "PowerShell(cmd /c \"npx electron .tmp-redetect2.cjs\")"
     ]
   }
 }
