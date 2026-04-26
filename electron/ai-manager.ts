@@ -311,7 +311,7 @@ export async function startAiProcessing(opts?: { tagsOnly?: boolean }): Promise<
         facesFound: totalFacesFound,
         tagsApplied: totalTagsApplied,
       });
-      runFaceClustering();
+      await runFaceClustering();
     }
 
     sendProgress({
@@ -475,12 +475,24 @@ function processFileInWorker(fileId: number, filePath: string): Promise<WorkerMe
 
 // ─── Face clustering (DBSCAN-like) ─────────────────────────────────────────
 
-export function runFaceClustering(customThreshold?: number): void {
+/**
+ * Cluster all face embeddings into person groups. The algorithm is
+ * O(N²) cosine similarity (every face compared to every cluster
+ * centroid + seed), so on 1000+ faces it ran for several seconds
+ * synchronously — long enough to block the main process and trigger
+ * Windows' "Not Responding" banner on every open BrowserWindow,
+ * because input events queue up while main is busy.
+ *
+ * The fix: yield to the event loop after every CHUNK_SIZE outer-loop
+ * iterations using a setImmediate. The total wall time is roughly
+ * the same, but main stays responsive to IPC pings and input events
+ * between chunks. Now an async function so callers can await it.
+ */
+export async function runFaceClustering(customThreshold?: number): Promise<void> {
   console.log('[AI] Running face clustering...');
   const faces = getAllFaceEmbeddings();
   if (faces.length === 0) return;
 
-  // Convert BLOB embeddings to float32 arrays
   const embeddings: { id: number; vec: Float32Array }[] = faces
     .filter(f => f.embedding && f.embedding.length > 0)
     .map(f => ({
@@ -490,25 +502,27 @@ export function runFaceClustering(customThreshold?: number): void {
 
   if (embeddings.length === 0) return;
 
-  // Centroid-linkage clustering with seed anchor: each new face must be similar
-  // to both the cluster centroid AND the seed face. This prevents centroid drift
-  // from gradually pulling in unrelated people.
   const SIMILARITY_THRESHOLD = customThreshold ?? 0.72;
-  const SEED_THRESHOLD = Math.max(0.55, SIMILARITY_THRESHOLD - 0.07); // slightly below centroid threshold
+  const SEED_THRESHOLD = Math.max(0.55, SIMILARITY_THRESHOLD - 0.07);
   const visited = new Set<number>();
   let nextClusterId = 1;
 
+  // Yield about every 25 seed iterations so a 1000-face library still
+  // pumps event-loop turns ~40 times during the run.
+  const CHUNK_SIZE = 25;
+  const yieldNow = () => new Promise<void>((r) => setImmediate(r));
+
   for (let i = 0; i < embeddings.length; i++) {
+    if (i > 0 && i % CHUNK_SIZE === 0) await yieldNow();
     if (visited.has(i)) continue;
     visited.add(i);
 
     const cluster = [i];
-    const seed = embeddings[i].vec; // anchor — never changes
+    const seed = embeddings[i].vec;
     const dim = seed.length;
     const centroid = new Float32Array(dim);
     for (let d = 0; d < dim; d++) centroid[d] = seed[d];
 
-    // Iteratively add faces that match both centroid and seed
     let changed = true;
     while (changed) {
       changed = false;
@@ -519,7 +533,6 @@ export function runFaceClustering(customThreshold?: number): void {
         if (simCentroid >= SIMILARITY_THRESHOLD && simSeed >= SEED_THRESHOLD) {
           visited.add(j);
           cluster.push(j);
-          // Update centroid incrementally
           const n = cluster.length;
           for (let d = 0; d < dim; d++) {
             centroid[d] = centroid[d] * ((n - 1) / n) + embeddings[j].vec[d] / n;
@@ -529,7 +542,6 @@ export function runFaceClustering(customThreshold?: number): void {
       }
     }
 
-    // Assign cluster ID to all faces in this cluster
     const clusterId = nextClusterId++;
     for (const idx of cluster) {
       updateFaceCluster(embeddings[idx].id, clusterId);

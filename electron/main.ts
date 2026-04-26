@@ -3641,7 +3641,7 @@ ipcMain.handle('ai:clusterFaces', async (_event, clusterId: number, page: number
 
 ipcMain.handle('ai:recluster', async (_event, threshold: number) => {
   try {
-    runFaceClustering(threshold);
+    await runFaceClustering(threshold);
     const { getDb } = await import('./search-database.js');
     const database = getDb();
 

@@ -1035,6 +1035,8 @@ export default function PeopleManager() {
                       <div className="space-y-2">
                         {unnamedClusters.map((cluster, idx) => {
                           const ck = clusterKey(cluster);
+                          const isBeingDragged = draggedClusterKey === ck;
+                          const isDropTarget = dragOverClusterKey === ck && draggedClusterKey !== null && draggedClusterKey !== ck;
                           return (
                           <div
                             key={ck}
@@ -1042,24 +1044,35 @@ export default function PeopleManager() {
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
                             onDragLeave={() => handleClusterDragLeave(ck)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
-                            className={`relative transition-opacity ${draggedClusterKey === ck ? 'opacity-40' : ''} ${dragOverClusterKey === ck ? 'ring-2 ring-purple-400/60 rounded-lg' : ''}`}
+                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-40 scale-[0.98] shadow-lg ring-1 ring-purple-500/50 rounded-xl' : ''}`}
                           >
-                            {/* Drag handle — small grip icon on the left edge.
-                                Only the handle is draggable, so clicking on
-                                thumbnails / name fields elsewhere works as
-                                normal. The drag preview is set to the parent
-                                row in handleClusterDragStart. */}
+                            {/* Insertion-line drop indicator — appears above
+                                the row that's currently being hovered, like
+                                a file-explorer drag. Clearer than a ring
+                                because it shows exactly where the dragged
+                                row will land. */}
+                            {isDropTarget && (
+                              <div className="absolute left-0 right-0 -top-1 h-1 bg-purple-500 rounded-full shadow-[0_0_6px_rgba(168,85,247,0.6)] z-20 pointer-events-none" />
+                            )}
+                            {/* Drag handle — visible-by-default vertical
+                                grip strip on the left edge. Big enough to
+                                grab without aiming, purple-tinted on hover
+                                so the affordance reads clearly. Only the
+                                handle is draggable so clicks on thumbnails
+                                / name fields keep working. The drag
+                                preview is set to the parent row in
+                                handleClusterDragStart. */}
                             <div
                               draggable
                               onDragStart={(e) => handleClusterDragStart(e, ck)}
                               onDragEnd={handleClusterDragEnd}
-                              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-4 h-10 flex items-center justify-center opacity-30 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
+                              className="absolute left-0 top-0 bottom-0 -translate-x-2 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l-md z-10"
                               title="Drag to reorder"
                             >
-                              <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className="text-muted-foreground">
-                                <circle cx="2.5" cy="3" r="1.2" /><circle cx="7.5" cy="3" r="1.2" />
-                                <circle cx="2.5" cy="8" r="1.2" /><circle cx="7.5" cy="8" r="1.2" />
-                                <circle cx="2.5" cy="13" r="1.2" /><circle cx="7.5" cy="13" r="1.2" />
+                              <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
+                                <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
+                                <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
+                                <circle cx="3.5" cy="16" r="1.4" /><circle cx="8.5" cy="16" r="1.4" />
                               </svg>
                             </div>
                           <PersonCardRow
@@ -1102,6 +1115,8 @@ export default function PeopleManager() {
                       <div className="space-y-0.5">
                         {unnamedClusters.map((cluster) => {
                           const ck = clusterKey(cluster);
+                          const isBeingDragged = draggedClusterKey === ck;
+                          const isDropTarget = dragOverClusterKey === ck && draggedClusterKey !== null && draggedClusterKey !== ck;
                           return (
                           <div
                             key={ck}
@@ -1109,19 +1124,22 @@ export default function PeopleManager() {
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
                             onDragLeave={() => handleClusterDragLeave(ck)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
-                            className={`relative transition-opacity ${draggedClusterKey === ck ? 'opacity-40' : ''} ${dragOverClusterKey === ck ? 'ring-2 ring-purple-400/60 rounded' : ''}`}
+                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-40 scale-[0.98] shadow-lg ring-1 ring-purple-500/50 rounded' : ''}`}
                           >
+                            {isDropTarget && (
+                              <div className="absolute left-0 right-0 -top-0.5 h-1 bg-purple-500 rounded-full shadow-[0_0_6px_rgba(168,85,247,0.6)] z-20 pointer-events-none" />
+                            )}
                             <div
                               draggable
                               onDragStart={(e) => handleClusterDragStart(e, ck)}
                               onDragEnd={handleClusterDragEnd}
-                              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-4 h-7 flex items-center justify-center opacity-30 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
+                              className="absolute left-0 top-0 bottom-0 -translate-x-2 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l z-10"
                               title="Drag to reorder"
                             >
-                              <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className="text-muted-foreground">
-                                <circle cx="2.5" cy="3" r="1.2" /><circle cx="7.5" cy="3" r="1.2" />
-                                <circle cx="2.5" cy="8" r="1.2" /><circle cx="7.5" cy="8" r="1.2" />
-                                <circle cx="2.5" cy="13" r="1.2" /><circle cx="7.5" cy="13" r="1.2" />
+                              <svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor">
+                                <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
+                                <circle cx="3.5" cy="9" r="1.4" /><circle cx="8.5" cy="9" r="1.4" />
+                                <circle cx="3.5" cy="14" r="1.4" /><circle cx="8.5" cy="14" r="1.4" />
                               </svg>
                             </div>
                           <PersonListRow

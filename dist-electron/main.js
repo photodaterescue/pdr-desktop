@@ -3343,7 +3343,7 @@ ipcMain.handle('ai:clusterFaces', async (_event, clusterId, page = 0, perPage = 
 });
 ipcMain.handle('ai:recluster', async (_event, threshold) => {
     try {
-        runFaceClustering(threshold);
+        await runFaceClustering(threshold);
         const { getDb } = await import('./search-database.js');
         const database = getDb();
         // ── STEP 1: Find core cluster for each named person ──
