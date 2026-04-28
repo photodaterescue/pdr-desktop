@@ -2233,8 +2233,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               side="top"
             >
               <Button
+                variant="primary"
                 size="sm"
-                className="flex-1 justify-center gap-2 shadow-md shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 justify-center gap-2 shadow-md shadow-primary/20"
                 onClick={onAddSource}
                 disabled={fixActive}
                 data-tour="add-source"
@@ -2249,9 +2250,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               side="top"
             >
               <Button
-                variant="outline"
+                variant="destructive"
                 size="sm"
-                className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/50 hover:border-primary/70 hover:bg-primary/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 justify-center gap-2"
                 disabled={!hasSelectedSources || fixActive}
                 onClick={onRemoveSource}
               >
@@ -2912,10 +2913,11 @@ function DashboardPanel({
                     side="top"
                   >
                     <Button
+                      variant="primary"
                       size="sm"
                       onClick={onAddFolder}
                       disabled={fixActive}
-                      className="gap-2 shadow-md shadow-primary/20 ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="gap-2 shadow-md shadow-primary/20 ml-auto"
                     >
                       <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
                     </Button>
@@ -2997,10 +2999,11 @@ function DashboardPanel({
                     side="top"
                   >
                     <Button
+                      variant="primary"
                       size="sm"
                       onClick={handleChangeDestination}
                       disabled={fixActive}
-                      className="justify-center gap-2 shadow-md shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="justify-center gap-2 shadow-md shadow-primary/20"
                       data-testid="button-change-destination"
                       style={!destinationPath && !fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
                     >
@@ -3010,10 +3013,10 @@ function DashboardPanel({
                   </IconTooltip>
                   {destinationPath && (
                     <Button
-                      variant="outline"
+                      variant="information"
                       size="sm"
                       onClick={handleOpenDestination}
-                      className="gap-1.5 border-emerald-400/60 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-500 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:border-emerald-600/40 shrink-0"
+                      className="gap-1.5 shrink-0"
                       data-testid="button-open-destination-card"
                     >
                       <FolderOpen className="w-3.5 h-3.5" /> Open
@@ -3021,10 +3024,10 @@ function DashboardPanel({
                   )}
                   <IconTooltip label="Destination Advisor — recommendations and guidance" side="top">
                     <Button
-                      variant="outline"
+                      variant="information"
                       size="sm"
                       onClick={() => setShowDestAdvisor(true)}
-                      className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5 shrink-0"
+                      className="gap-1.5 shrink-0"
                     >
                       <Info className="w-3.5 h-3.5" /> {destinationPath ? 'DA' : 'Drive Advisor'}
                     </Button>
@@ -3038,7 +3041,7 @@ function DashboardPanel({
                         <IconTooltip label="Clear destination" side="top">
                           <button
                             onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
-                            className="p-1 text-muted-foreground/50 hover:text-rose-500 transition-colors shrink-0"
+                            className="p-1 text-muted-foreground hover:text-rose-500 transition-colors shrink-0"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -3115,6 +3118,7 @@ function DashboardPanel({
                   <div className="flex-1">
                     <Button
                       ref={photoFormatBtnRef}
+                      variant="primary"
                       size="sm"
                       onClick={() => setPhotoFormatOpen(!photoFormatOpen)}
                       className="w-full justify-center gap-2 shadow-md shadow-primary/20"
@@ -3226,8 +3230,7 @@ function DashboardPanel({
              <div className="flex items-center gap-4">
                <Button
                  onClick={() => window.dispatchEvent(new CustomEvent('open-reports-history'))}
-                 variant="outline"
-                 className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                 variant="information"
                  data-testid="button-view-reports"
                  data-tour="reports-history"
                >
@@ -3256,9 +3259,9 @@ function DashboardPanel({
                        setShowSDPrompt(true);
                      }
                    }}
-                   variant="outline"
+                   variant="primary"
                    disabled={!destinationPath || destinationFreeGB < stats.sizeGB || fixActive}
-                   className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold font-heading h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                   className="px-8 font-bold font-heading h-11 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-shadow duration-300 disabled:shadow-none"
                    data-testid="button-run-fix"
                    data-tour="apply-fixes"
                  >
@@ -5442,28 +5445,27 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             <div className="space-y-3">
               <Button
                 onClick={onViewReport}
-                className="w-full bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
+                variant="success"
+                className="w-full"
                 size="lg"
                 data-testid="button-view-report"
               >
                 <FileText className="w-4 h-4 mr-2" /> View Report
               </Button>
               <div className="grid grid-cols-2 gap-3">
-                <Button 
-                  variant="outline" 
-                  onClick={onClose} 
-                  size="lg" 
-                  className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
+                <Button
+                  variant="secondary"
+                  onClick={onClose}
+                  size="lg"
                   data-testid="button-close-fix"
                 >
                   Close
                 </Button>
-                <Button 
-                  variant="outline"
-                  onClick={handleOpenDestination} 
+                <Button
+                  variant="information"
+                  onClick={handleOpenDestination}
                   size="lg"
                   disabled={!destinationPath}
-                  className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/30 dark:hover:border-emerald-400 transition-all duration-300 ease-linear"
                   data-testid="button-open-destination"
                 >
                   <FolderOpen className="w-4 h-4 mr-2" /> Open Destination
