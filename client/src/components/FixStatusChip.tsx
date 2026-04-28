@@ -74,7 +74,7 @@ export function FixStatusChip() {
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-3 py-1.5 rounded-full bg-primary text-primary-foreground shadow-lg ring-2 ring-primary/40 select-none animate-pulse-cta pointer-events-none"
+        className="fixed top-12 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-3 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta pointer-events-none"
         data-testid="fix-progress-chip-passive"
         title="A Fix is in progress in the main PDR window"
       >

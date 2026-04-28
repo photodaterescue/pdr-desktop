@@ -1737,6 +1737,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
 
+  // Gate Add Source / Remove during a Fix — adding sources mid-fix
+  // would kick off a fresh analysis IPC that competes with the fix
+  // engine for CPU + the same analysis worker, and removing sources
+  // could change what's queued in flight. Sourced from the
+  // cross-window broadcast so any window's fix flips the gate.
+  const fixActive = useFixInProgress();
+
   // Default sidebar width bumped +10% (280 → 308) so Add Source /
   // Remove don't look squashed out of the gate. User can still drag
   // the resize handle to whatever they prefer — this only sets the
@@ -2136,25 +2143,36 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             ))}
           </div>
           <div className="flex gap-2 mt-2 px-2">
-            <Button
-              size="sm"
-              className="flex-1 justify-center gap-2 shadow-md shadow-primary/20"
-              onClick={onAddSource}
-              data-tour="add-source"
-              style={isLicensed && sources.length === 0 ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+            <IconTooltip
+              label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — analysing a new source mid-fix would compete with the engine.' : 'Add a folder, drive or zip as a source for PDR'}
+              side="top"
             >
-              <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
-            </Button>
+              <Button
+                size="sm"
+                className="flex-1 justify-center gap-2 shadow-md shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={onAddSource}
+                disabled={fixActive}
+                data-tour="add-source"
+                style={isLicensed && sources.length === 0 && !fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+              >
+                <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
+              </Button>
+            </IconTooltip>
             <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/50 hover:border-primary/70 hover:bg-primary/5"
-              disabled={!hasSelectedSources}
-              onClick={onRemoveSource}
+            <IconTooltip
+              label={fixActive ? FIX_BLOCKED_TOOLTIP : 'Remove the selected source(s) from your library'}
+              side="top"
             >
-              <img src="./assets//pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 justify-center gap-2 text-muted-foreground hover:text-foreground border-primary/50 hover:border-primary/70 hover:bg-primary/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!hasSelectedSources || fixActive}
+                onClick={onRemoveSource}
+              >
+                <img src="./assets//pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
+              </Button>
+            </IconTooltip>
           </div>
         </div>
       </div>
@@ -4761,13 +4779,18 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     return () => clearInterval(timer);
   }, [isComplete]);
 
-  // Broadcast progress cross-window on every state change so PM
-  // (separate window) can render a real chip. Fires whenever any
-  // of the progress-relevant state changes; cheap (one IPC call
-  // per render). Skipped on completion — useFixInProgress flips to
-  // false and any open chip dismisses itself.
+  // Broadcast progress cross-window so PM (separate window) renders
+  // a real chip. THROTTLED to once per ~250ms — without throttling,
+  // a 391-file fix kicks off ~500+ IPC round-trips for progress
+  // updates alone, which we measured adding ~30-60s to total run
+  // time on slow links. 250ms is fine for a chip — the human eye
+  // doesn't perceive sub-quarter-second updates anyway.
+  const lastBroadcastRef = useRef(0);
   useEffect(() => {
     if (isComplete) return;
+    const now = Date.now();
+    // Always allow phase transitions through — they're rare and
+    // important to show immediately.
     const phase: 'prescan' | 'staging' | 'mirror' | 'applying' | null = isPrescanning
       ? 'prescan'
       : copyPhase === 'mirror'
@@ -4775,6 +4798,8 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
         : copyPhase === 'staging'
           ? 'staging'
           : 'applying';
+    if (now - lastBroadcastRef.current < 250) return;
+    lastBroadcastRef.current = now;
     import('@/lib/electron-bridge').then(({ broadcastFixProgress }) => {
       void broadcastFixProgress({
         phase,
@@ -5125,23 +5150,24 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-primary text-primary-foreground shadow-lg ring-2 ring-primary/40 cursor-pointer select-none animate-pulse-cta"
+        className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 cursor-pointer select-none animate-pulse-cta"
         onClick={() => setFixMinimized(false)}
         title="Click to view full progress"
         data-testid="fix-progress-chip"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
         <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
         <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
           Fix · {chipLabel} · {chipDetail}
           {!isPrescanning && progress > 0 && copyPhase !== 'mirror' && (
-            <span className="opacity-80"> · {Math.round(progress)}%</span>
+            <span className="opacity-90"> · {Math.round(progress)}%</span>
           )}
-          {elapsed > 0 && <span className="opacity-80"> · {formatTime(elapsed)}</span>}
+          {elapsed > 0 && <span className="opacity-90"> · {formatTime(elapsed)}</span>}
         </span>
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setFixMinimized(false); }}
-          className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 hover:bg-white/30 transition-colors"
+          className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/25 hover:bg-white/40 transition-colors"
           aria-label="Restore full progress view"
         >
           Open
@@ -5151,7 +5177,14 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     return portalTarget ? ReactDOM.createPortal(chipNode, portalTarget) : chipNode;
   }
 
-  return (
+  // Full modal — also portalled so the completion screen pops up
+  // even when the user is on Memories / Trees / S&D / Edit Dates
+  // (where the modal's natural parent is display:none-hidden).
+  // Without this, isComplete=true would re-render the modal but
+  // the user would never see it until they navigated back to
+  // Dashboard manually. Same anchor as the chip.
+  const fullModalPortalTarget = typeof document !== 'undefined' ? document.getElementById('pdr-fix-chip-portal') : null;
+  const fullModalNode = (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -5174,7 +5207,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
           <button
             type="button"
             onClick={() => setFixMinimized(true)}
-            className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-[12px] font-semibold text-primary-foreground bg-primary shadow-lg ring-2 ring-primary/40 hover:bg-primary/90 transition-colors flex items-center gap-1.5 animate-pulse-cta whitespace-nowrap"
+            className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-[12px] font-semibold text-white bg-amber-500 shadow-lg ring-2 ring-amber-300/60 hover:bg-amber-600 transition-colors flex items-center gap-1.5 animate-pulse-cta whitespace-nowrap"
             data-testid="button-minimize-fix"
             title="Hide this view and keep working in PDR while the fix runs"
           >
@@ -5441,9 +5474,10 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       </motion.div>
     </motion.div>
   );
+  return fullModalPortalTarget ? ReactDOM.createPortal(fullModalNode, fullModalPortalTarget) : fullModalNode;
 }
 
-function ReportsListModal({ onClose, onViewReport }: { 
+function ReportsListModal({ onClose, onViewReport }: {
   onClose: () => void,
   onViewReport: (reportId: string) => void 
 }) {
