@@ -2907,9 +2907,19 @@ function DashboardPanel({
                       <span className="text-xs font-medium">Analysis complete</span>
                     </div>
                   )}
-                  <Button size="sm" onClick={onAddFolder} className="gap-2 shadow-md shadow-primary/20 ml-auto">
-                    <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
-                  </Button>
+                  <IconTooltip
+                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — analysing a new source mid-fix would compete with the engine.' : 'Add a folder, drive or zip as a source for PDR'}
+                    side="top"
+                  >
+                    <Button
+                      size="sm"
+                      onClick={onAddFolder}
+                      disabled={fixActive}
+                      className="gap-2 shadow-md shadow-primary/20 ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
+                    </Button>
+                  </IconTooltip>
                 </div>
                 <div className="flex items-center gap-1">
                   <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded inline-block">
@@ -2982,16 +2992,22 @@ function DashboardPanel({
               {/* Left: Destination Drive */}
               <Card className="flex flex-col p-5">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    onClick={handleChangeDestination}
-                    className="justify-center gap-2 shadow-md shadow-primary/20"
-                    data-testid="button-change-destination"
-                    style={!destinationPath ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                  <IconTooltip
+                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — changing destination mid-fix splits your output between two drives.' : (destinationPath ? 'Choose a different destination drive or folder' : 'Pick where your organised library will live')}
+                    side="top"
                   >
-                    <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain brightness-200" alt="Destination" />
-                    {destinationPath ? 'Change Destination' : 'Select Destination'}
-                  </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleChangeDestination}
+                      disabled={fixActive}
+                      className="justify-center gap-2 shadow-md shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                      data-testid="button-change-destination"
+                      style={!destinationPath && !fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                    >
+                      <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain brightness-200" alt="Destination" />
+                      {destinationPath ? 'Change Destination' : 'Select Destination'}
+                    </Button>
+                  </IconTooltip>
                   {destinationPath && (
                     <Button
                       variant="outline"
@@ -5505,22 +5521,30 @@ function ReportsListModal({ onClose, onViewReport }: {
       const { listReports, isElectron, getSettings, regenerateCatalogue } = await import('@/lib/electron-bridge');
 
       if (isElectron()) {
-        const result = await listReports();
+        // Fetch the report list and settings in parallel — settings was
+        // previously requested twice (once for autoSaveCatalogue, again
+        // for showManualReportExports), each over IPC, which added
+        // noticeable lag right after a Fix completes when the renderer
+        // is also handling broadcast events.
+        const [result, settings] = await Promise.all([listReports(), getSettings()]);
         if (result.success && result.data) {
           setReports(result.data);
-          // Silently regenerate catalogues for all unique destinations
-          const settings = await getSettings();
           if (settings.autoSaveCatalogue) {
+            // Defer catalogue regeneration to the next tick so the
+            // modal paints first — the regen IPC calls can be slow on
+            // network destinations and there's no reason to make the
+            // user wait on them before seeing the report list.
             const destinations = new Set(result.data.map(r => r.destinationPath));
-            for (const dest of Array.from(destinations)) {
-              regenerateCatalogue(dest).then(res => {
-                  if (!res.success) console.warn('[Catalogue] Regen failed for', dest, res.error);
-                  else console.log('[Catalogue] Regenerated for', dest);
-                }).catch(err => console.warn('[Catalogue] Regen error for', dest, err));
-            }
+            setTimeout(() => {
+              for (const dest of Array.from(destinations)) {
+                regenerateCatalogue(dest).then(res => {
+                    if (!res.success) console.warn('[Catalogue] Regen failed for', dest, res.error);
+                    else console.log('[Catalogue] Regenerated for', dest);
+                  }).catch(err => console.warn('[Catalogue] Regen error for', dest, err));
+              }
+            }, 0);
           }
         }
-        const settings = await getSettings();
         setShowManualExports(settings.showManualReportExports);
       } else {
         setReports([

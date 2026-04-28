@@ -52,45 +52,74 @@ export async function listReports() {
     const files = fs.readdirSync(reportsDir)
         .filter(f => f.endsWith('.json'))
         .map(f => path.join(reportsDir, f));
-    const summaries = [];
+    const raw = [];
     for (const filePath of files) {
         try {
             const content = fs.readFileSync(filePath, 'utf-8');
-            const report = JSON.parse(content);
-            const totalScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
-            summaries.push({
-                id: report.id,
-                timestamp: report.timestamp,
-                destinationPath: report.destinationPath,
-                totalFiles: report.counts.total,
-                sourceCount: report.sources.length,
-                counts: {
-                    confirmed: report.counts.confirmed,
-                    recovered: report.counts.recovered,
-                    marked: report.counts.marked
-                },
-                duplicatesRemoved: report.duplicatesRemoved || 0,
-                totalScanned: totalScanned,
-                destinationExists: fs.existsSync(report.destinationPath),
-                destinationStatus: fs.existsSync(report.destinationPath)
-                    ? 'found'
-                    : (() => {
-                        // Check if it's the drive that's missing vs just the folder
-                        const driveMatch = report.destinationPath.match(/^([A-Za-z]:\\)/);
-                        if (driveMatch && !fs.existsSync(driveMatch[1]))
-                            return 'drive-missing';
-                        // Also handle UNC paths (\\server\share)
-                        const uncMatch = report.destinationPath.match(/^(\\\\[^\\]+\\[^\\]+)/);
-                        if (uncMatch && !fs.existsSync(uncMatch[1]))
-                            return 'drive-missing';
-                        return 'folder-missing';
-                    })()
-            });
+            raw.push({ filePath, report: JSON.parse(content) });
         }
         catch (e) {
             console.error(`Error reading report ${filePath}:`, e);
         }
     }
+    // Existence checks are the slow part — destinationPath may live on a
+    // network share that's currently asleep / unresponsive, and an
+    // existsSync stat over SMB can block for several seconds. Run them
+    // all in parallel and timebox each one so a single sleepy NAS can't
+    // hold up the whole Reports list.
+    const checkExists = (p) => {
+        if (!p)
+            return Promise.resolve(false);
+        return Promise.race([
+            fs.promises.access(p).then(() => true).catch(() => false),
+            new Promise((resolve) => setTimeout(() => resolve(false), 1500)),
+        ]);
+    };
+    // Collect every unique path we need to test (destination + drive +
+    // UNC root) so duplicates are only stat'd once.
+    const pathsToCheck = new Set();
+    for (const { report } of raw) {
+        if (!report.destinationPath)
+            continue;
+        pathsToCheck.add(report.destinationPath);
+        const driveMatch = report.destinationPath.match(/^([A-Za-z]:\\)/);
+        if (driveMatch)
+            pathsToCheck.add(driveMatch[1]);
+        const uncMatch = report.destinationPath.match(/^(\\\\[^\\]+\\[^\\]+)/);
+        if (uncMatch)
+            pathsToCheck.add(uncMatch[1]);
+    }
+    const existsEntries = await Promise.all(Array.from(pathsToCheck).map(async (p) => [p, await checkExists(p)]));
+    const exists = new Map(existsEntries);
+    const summaries = raw.map(({ report }) => {
+        const totalScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
+        const destOK = exists.get(report.destinationPath) ?? false;
+        let destinationStatus = destOK ? 'found' : 'folder-missing';
+        if (!destOK) {
+            const driveMatch = report.destinationPath.match(/^([A-Za-z]:\\)/);
+            if (driveMatch && !(exists.get(driveMatch[1]) ?? false))
+                destinationStatus = 'drive-missing';
+            const uncMatch = report.destinationPath.match(/^(\\\\[^\\]+\\[^\\]+)/);
+            if (uncMatch && !(exists.get(uncMatch[1]) ?? false))
+                destinationStatus = 'drive-missing';
+        }
+        return {
+            id: report.id,
+            timestamp: report.timestamp,
+            destinationPath: report.destinationPath,
+            totalFiles: report.counts.total,
+            sourceCount: report.sources.length,
+            counts: {
+                confirmed: report.counts.confirmed,
+                recovered: report.counts.recovered,
+                marked: report.counts.marked
+            },
+            duplicatesRemoved: report.duplicatesRemoved || 0,
+            totalScanned: totalScanned,
+            destinationExists: destOK,
+            destinationStatus,
+        };
+    });
     summaries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return summaries;
 }

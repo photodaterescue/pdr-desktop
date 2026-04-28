@@ -23,10 +23,18 @@ interface IconTooltipProps {
  */
 export function IconTooltip({ label, side = 'top', delayMs = 120, children, disabled }: IconTooltipProps) {
   if (disabled || label == null || label === '') return children;
+  // Wrap the trigger in an inline-flex span so the tooltip still fires
+  // when the inner element is a disabled button. Disabled HTML buttons
+  // get `pointer-events: none` (set by the Button variant), which would
+  // otherwise eat the mouseenter/leave that Radix needs to open the
+  // tooltip — the very situation where the user most needs the
+  // explanation (e.g. "Available when the current Fix completes").
   return (
     <TooltipProvider delayDuration={delayMs} skipDelayDuration={0}>
       <Tooltip>
-        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">{children}</span>
+        </TooltipTrigger>
         <TooltipContent side={side}>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>

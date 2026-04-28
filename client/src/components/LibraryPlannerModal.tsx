@@ -404,33 +404,62 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                       <div className="flex items-start gap-2.5 text-xs text-foreground/70">
                         <span className="text-primary font-bold mt-px shrink-0">1.</span>
                         <span>
-                          <strong className="text-foreground">Free up space</strong> on an existing drive by moving files
-                          you don't need immediate access to (old backups, downloads, etc.) to your network storage or cloud.
+                          <strong className="text-foreground">Add an internal SSD</strong> — best long-term option. An NVMe M.2 SSD
+                          is fastest (1,000–5,000 MB/s); a SATA SSD is excellent too (400–550 MB/s). Many desktops and some laptops
+                          have a spare M.2 slot or drive bay.
                         </span>
                       </div>
                       <div className="flex items-start gap-2.5 text-xs text-foreground/70">
                         <span className="text-primary font-bold mt-px shrink-0">2.</span>
                         <span>
-                          <strong className="text-foreground">Add a USB external drive</strong> — a USB 3.0 external HDD
-                          ({fmtGB(analysis.needed >= 2000 ? 4096 : analysis.needed >= 500 ? 2048 : 1024)} or larger) is affordable
-                          and works with any computer. This is the easiest option.
+                          <strong className="text-foreground">Add an external SSD with a fast connection</strong> — a Thunderbolt
+                          or USB 3.1/3.2 external SSD gives near-internal speeds (300–2,800 MB/s) without opening your PC.
+                          Quieter and more durable than a spinning drive.
                         </span>
                       </div>
                       <div className="flex items-start gap-2.5 text-xs text-foreground/70">
                         <span className="text-primary font-bold mt-px shrink-0">3.</span>
                         <span>
-                          <strong className="text-foreground">Add a second internal drive</strong> — if your PC has a spare
-                          drive bay or M.2 slot, an internal SSD gives the best speed. Many desktops and some laptops support this.
+                          <strong className="text-foreground">Free up space</strong> on an existing drive by moving files
+                          you don't need immediate access to (old backups, downloads) to your network storage or cloud.
                         </span>
                       </div>
                       <div className="flex items-start gap-2.5 text-xs text-foreground/70">
                         <span className="text-primary font-bold mt-px shrink-0">4.</span>
                         <span>
-                          <strong className="text-foreground">Process in batches</strong> — if you'd rather not buy a new drive
-                          right now, you can split your collection into smaller batches and process them to different destinations.
-                          This works, but you lose the benefit of a single, unified library.
+                          <strong className="text-foreground">External HDD ({fmtGB(analysis.needed >= 2000 ? 4096 : analysis.needed >= 500 ? 2048 : 1024)} or larger)</strong>
+                          {' '}— a USB 3.0 external HDD is the most affordable option and works with any computer, but it's
+                          noticeably slower (50–120 MB/s). Fine for archive, less ideal for an active library.
                         </span>
                       </div>
+                      <div className="flex items-start gap-2.5 text-xs text-foreground/70">
+                        <span className="text-primary font-bold mt-px shrink-0">5.</span>
+                        <span>
+                          <strong className="text-foreground">Process in batches</strong> — split your collection and process
+                          to different destinations. Works, but you lose the benefit of a single unified library.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Drive types ranked by speed — same reference table the
+                    Destination Advisor shows. Visible whenever space is
+                    short so the user can see the trade-offs at a glance. */}
+                {!analysis.hasGoodOption && (
+                  <div className="p-3 rounded-xl bg-secondary/30 border border-border">
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Drive types ranked by speed</h4>
+                    <div className="space-y-0.5 text-xs">
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />NVMe M.2 SSD (internal)</span><span className="text-emerald-700 dark:text-emerald-300 font-medium">1,000–5,000 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />Thunderbolt external SSD</span><span className="text-emerald-700 dark:text-emerald-300 font-medium">700–2,800 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />SATA SSD (internal)</span><span className="text-emerald-700 dark:text-emerald-300 font-medium">400–550 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />USB 3.1/3.2 external SSD</span><span className="text-emerald-700 dark:text-emerald-300 font-medium">300–1,000 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />Internal HDD (SATA)</span><span className="text-foreground font-medium">80–160 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />USB 3.0 external HDD</span><span className="text-amber-600 dark:text-amber-400 font-medium">50–120 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />USB 2.0 (any drive)</span><span className="text-red-600 dark:text-red-400 font-medium">20–35 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />USB flash / memory stick</span><span className="text-red-600 dark:text-red-400 font-medium">5–30 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />Network / NAS (Wi-Fi)</span><span className="text-red-600 dark:text-red-400 font-medium">10–100 MB/s</span></div>
+                      <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />Cloud sync</span><span className="text-red-600 dark:text-red-400 font-medium">1–20 MB/s</span></div>
                     </div>
                   </div>
                 )}
