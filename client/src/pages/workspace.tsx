@@ -425,6 +425,21 @@ const handleActivateLicense = () => {
   const [showLicenseModal, setShowLicenseModal] = useState(false);
   const [showReportsList, setShowReportsList] = useState(false);
   const [showPostFixReport, setShowPostFixReport] = useState(false);
+  // Post-fix flow lives at workspace level (not DashboardPanel) so the
+  // Reports / PostFixReport / Clear-Sources modals can render over any
+  // active view (S&D, Memories, Trees), not just Dashboard.
+  const [postFixFlowActive, setPostFixFlowActive] = useState(false);
+  const [showClearSourcesPrompt, setShowClearSourcesPrompt] = useState(false);
+
+  // After a Fix completes, once the user has dismissed all post-fix
+  // modals (Reports list + individual Report view), surface the
+  // "Clear Sources?" prompt so they can decide whether to start fresh.
+  useEffect(() => {
+    if (postFixFlowActive && !showReportsList && !showPostFixReport) {
+      setShowClearSourcesPrompt(true);
+      setPostFixFlowActive(false);
+    }
+  }, [postFixFlowActive, showReportsList, showPostFixReport]);
   const [showSlowStorageWarning, setShowSlowStorageWarning] = useState(false);
   const [pendingSlowStoragePath, setPendingSlowStoragePath] = useState<{ path: string; type: 'folder' | 'zip' | 'drive'; storageInfo: { label: string; description: string } } | null>(null);
   const [showNetworkScanModal, setShowNetworkScanModal] = useState(false);
@@ -1411,7 +1426,22 @@ return (
 			});
 		  }}
 		  activePanel={activePanel}
-		  onPanelChange={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | null)}
+		  onPanelChange={(panel) => {
+			// Info panels (Getting Started, Best Practices, About PDR,
+			// Help & Support, What Happens Next) live inside the
+			// Dashboard zoomable area. Clicking from Memories / Trees /
+			// S&D-with-results would otherwise set activePanel but the
+			// panel JSX would be hidden by its parent. Switch the view
+			// back to Dashboard so the requested panel actually renders.
+			setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | null);
+			if (panel) {
+			  setActiveView('dashboard');
+			  if (searchResultsActive) {
+				setRequestSearchClose(true);
+				setTimeout(() => setRequestSearchClose(false), 100);
+			  }
+			}
+		  }}
 		  onDashboardClick={() => {
 			setActivePanel(null);
 			setActiveView('dashboard');
@@ -1535,6 +1565,7 @@ return (
             isLicensed={isLicensed}
             onActivateLicense={handleActivateLicense}
             zoomLevel={zoomLevel}
+            setPostFixFlowActive={setPostFixFlowActive}
           />
         </div>
         {activePanel && (
@@ -1640,7 +1671,7 @@ return (
 		)}
 
 		{showPostFixReport && (
-		  <PostFixReportModal 
+		  <PostFixReportModal
 			onClose={() => {
 			  setShowPostFixReport(false);
 			  setSelectedReportId(null);
@@ -1657,7 +1688,53 @@ return (
 			onNavigateToBestPractices={() => setActivePanel('best-practices')}
 		  />
 		)}
-      
+
+		{/* Post-fix "Clear sources?" prompt — overlays any active view */}
+		{showClearSourcesPrompt && (
+		  <motion.div
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			exit={{ opacity: 0 }}
+			className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+			onClick={() => { setShowClearSourcesPrompt(false); }}
+		  >
+			<motion.div
+			  initial={{ scale: 0.95, opacity: 0 }}
+			  animate={{ scale: 1, opacity: 1 }}
+			  exit={{ scale: 0.95, opacity: 0 }}
+			  onClick={(e) => e.stopPropagation()}
+			  className="bg-background rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border border-border"
+			>
+			  <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200 dark:border-emerald-700">
+				<CheckCircle2 className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
+			  </div>
+			  <h3 className="text-lg font-semibold text-foreground mb-2">Your fix is complete</h3>
+			  <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+				Would you like to clear your sources and start fresh?
+			  </p>
+			  <div className="flex gap-3">
+				<Button
+				  variant="outline"
+				  className="flex-1 border-border hover:bg-secondary"
+				  onClick={() => { setShowClearSourcesPrompt(false); }}
+				>
+				  Keep Sources
+				</Button>
+				<Button
+				  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+				  onClick={() => {
+					setShowClearSourcesPrompt(false);
+					setHasCompletedFix(false);
+					window.dispatchEvent(new CustomEvent('pdr-clear-sources'));
+				  }}
+				>
+				  Clear Sources
+				</Button>
+			  </div>
+			</motion.div>
+		  </motion.div>
+		)}
+
       {/* Theme toggle and license badge are now in the ribbon tab bar */}
       
       {showPreScanConfirm && pendingSource && preScanStats && (
@@ -2409,7 +2486,8 @@ function MainContent({
   addToSDRef,
   isLicensed,
   onActivateLicense,
-  zoomLevel = 100
+  zoomLevel = 100,
+  setPostFixFlowActive
 }: {
   sources: Source[],
   activeSource: Source | null,
@@ -2439,7 +2517,8 @@ function MainContent({
   addToSDRef: React.MutableRefObject<boolean>,
   isLicensed: boolean,
   onActivateLicense: () => void,
-  zoomLevel?: number
+  zoomLevel?: number,
+  setPostFixFlowActive: (value: boolean) => void
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
@@ -2500,6 +2579,7 @@ function MainContent({
       setSavedReportId={setSavedReportId}
       addToSDRef={addToSDRef}
       zoomLevel={zoomLevel}
+      setPostFixFlowActive={setPostFixFlowActive}
     />
   );
 }
@@ -2507,7 +2587,8 @@ function MainContent({
 function DashboardPanel({
   sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults, onNavigateToBestPractices,
   destinationPath, setDestinationPath, destinationFreeGB, setDestinationFreeGB, destinationTotalGB, setDestinationTotalGB,
-  hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId, addToSDRef, zoomLevel = 100
+  hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId, addToSDRef, zoomLevel = 100,
+  setPostFixFlowActive
 }: {
   sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void,
   isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult>, onNavigateToBestPractices?: () => void,
@@ -2517,7 +2598,8 @@ function DashboardPanel({
   hasCompletedFix: boolean, setHasCompletedFix: (value: boolean) => void,
   savedReportId: string | null, setSavedReportId: (id: string | null) => void,
   addToSDRef: React.MutableRefObject<boolean>,
-  zoomLevel?: number
+  zoomLevel?: number,
+  setPostFixFlowActive: (value: boolean) => void
 }) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected);
@@ -2532,9 +2614,10 @@ function DashboardPanel({
   const [showFixModal, setShowFixModal] = useState(false);
   const [showSDPrompt, setShowSDPrompt] = useState(false);
   const [addToSDThisRun, setAddToSDThisRun] = useState(false);
-  const [showPostFixReport, setShowPostFixReport] = useState(false);
-  const [showReportsList, setShowReportsList] = useState(false);
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  // Reports / PostFixReport / Clear-Sources state lives at workspace
+  // top-level so the modals overlay any active view (S&D, Memories,
+  // Trees) — not just Dashboard. Open via 'open-reports-history' event
+  // and let the workspace top-level state drive rendering.
   const [includePhotos, setIncludePhotos] = useState(true);
   const [includeVideos, setIncludeVideos] = useState(true);
   const [reportSavedMessage, setReportSavedMessage] = useState(false);
@@ -2557,9 +2640,8 @@ function DashboardPanel({
   const [photoFormatOpen, setPhotoFormatOpen] = useState(false);
   const photoFormatBtnRef = React.useRef<HTMLButtonElement>(null);
 
-  // Post-fix flow tracking: true from when fix completes until the clear prompt is answered
-  const [postFixFlowActive, setPostFixFlowActive] = useState(false);
-  const [showClearSourcesPrompt, setShowClearSourcesPrompt] = useState(false);
+  // Post-fix flow lives at workspace top-level — DashboardPanel only
+  // signals the start of the flow via the setPostFixFlowActive prop.
 
   const handleChangeDestination = () => {
     if (isElectron()) {
@@ -2592,14 +2674,6 @@ function DashboardPanel({
     setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
     setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
   };
-
-  // When all post-fix modals close and we're in the post-fix flow, show the clear prompt
-  useEffect(() => {
-    if (postFixFlowActive && !showFixModal && !showReportsList && !showPostFixReport) {
-      setShowClearSourcesPrompt(true);
-      setPostFixFlowActive(false);
-    }
-  }, [postFixFlowActive, showFixModal, showReportsList, showPostFixReport]);
 
   const handleOpenDestination = async () => {
     if (destinationPath) {
@@ -2978,28 +3052,38 @@ function DashboardPanel({
                           </div>
                         </div>
                       )}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${destinationFreeGB >= stats.sizeGB ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30' : 'text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/30'}`}>
-                          Required: {stats.sizeGB.toFixed(1)} GB
-                        </span>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        {destinationFreeGB >= stats.sizeGB ? (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-100/50 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200/50 dark:border-rose-700/50">
+                            <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
+                          </div>
+                        )}
+                        {destinationFreeGB >= stats.sizeGB && stats.sizeGB > 0 && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">
+                              {(destinationFreeGB - stats.sizeGB) >= 1000
+                                ? `${((destinationFreeGB - stats.sizeGB) / 1000).toFixed(1)} TB`
+                                : `${(destinationFreeGB - stats.sizeGB).toFixed(1)} GB`
+                              } free after this fix
+                            </span>
+                          </div>
+                        )}
                         {destinationFreeGB < stats.sizeGB && (
                           <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
                         )}
                       </div>
-                      {destinationFreeGB >= stats.sizeGB && stats.sizeGB > 0 && (
-                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1.5">
-                          {(destinationFreeGB - stats.sizeGB) >= 1000
-                            ? `${((destinationFreeGB - stats.sizeGB) / 1000).toFixed(1)} TB`
-                            : `${(destinationFreeGB - stats.sizeGB).toFixed(1)} GB`
-                          } free after this fix
-                        </p>
-                      )}
                       {/* Review library plan link */}
                       <button
                         onClick={() => setShowLibraryPlanner(true)}
-                        className="text-[10px] text-primary/60 hover:text-primary transition-colors mt-1.5 flex items-center gap-1"
+                        className="text-xs text-foreground/80 hover:text-primary transition-colors mt-2 flex items-center gap-1.5 font-medium"
                       >
-                        <Settings className="w-2.5 h-2.5" />
+                        <Settings className="w-3 h-3" />
                         {libraryPlannerAnswers ? 'Review library plan' : 'Plan your library'}
                       </button>
                     </>
@@ -3124,8 +3208,8 @@ function DashboardPanel({
                 {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
              <div className="flex items-center gap-4">
-               <Button 
-                 onClick={() => setShowReportsList(true)} 
+               <Button
+                 onClick={() => window.dispatchEvent(new CustomEvent('open-reports-history'))}
                  variant="outline"
                  className="border-muted-foreground/30 hover:bg-secondary hover:border-muted-foreground/50"
                  data-testid="button-view-reports"
@@ -3298,9 +3382,12 @@ function DashboardPanel({
         fileResults={fileResults}
         onViewReport={() => {
           setShowFixModal(false);
-          setShowReportsList(true);
           setHasCompletedFix(true);
           setPostFixFlowActive(true);
+          // Open the Reports list at workspace top-level so it overlays
+          // whichever view the user is on (S&D, Memories, Trees) — not
+          // trapped inside the Dashboard subtree.
+          window.dispatchEvent(new CustomEvent('open-reports-history'));
         }}
         onReportSaved={(reportId) => {
           console.log('[PDR] Report saved, ID:', reportId, '— starting auto-index...');
@@ -3312,29 +3399,7 @@ function DashboardPanel({
         includeVideos={includeVideos}
         photoFormat={photoFormat}
       />}
-      {showPostFixReport && <PostFixReportModal 
-        onClose={() => setShowPostFixReport(false)} 
-        results={results}
-        destinationPath={destinationPath}
-        fileResults={fileResults}
-        savedReportId={selectedReportId || savedReportId}
-        onBackToReports={() => {
-          setShowPostFixReport(false);
-          setSelectedReportId(null);
-          setShowReportsList(true);
-        }}
-        onNavigateToBestPractices={onNavigateToBestPractices}
-      />}
-      
-      {showReportsList && <ReportsListModal 
-        onClose={() => setShowReportsList(false)}
-        onViewReport={(reportId) => {
-          setSelectedReportId(reportId);
-          setShowReportsList(false);
-          setShowPostFixReport(true);
-        }}
-      />}
-      
+
       <AnimatePresence>
         {reportSavedMessage && (
           <motion.div
@@ -3348,56 +3413,6 @@ function DashboardPanel({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Post-fix "Clear sources?" prompt */}
-      {showClearSourcesPrompt && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
-          onClick={() => { setShowClearSourcesPrompt(false); }}
-        >
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            onClick={(e) => e.stopPropagation()}
-            className="bg-background rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border border-border"
-          >
-            <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200 dark:border-emerald-700">
-              <CheckCircle2 className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Your fix is complete</h3>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-              Would you like to clear your sources and start fresh?
-            </p>
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1 border-border hover:bg-secondary"
-                onClick={() => {
-                  setShowClearSourcesPrompt(false);
-                }}
-              >
-                Keep Sources
-              </Button>
-              <Button
-                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
-                onClick={() => {
-                  setShowClearSourcesPrompt(false);
-                  setHasCompletedFix(false);
-                  // Clear sources — use the parent's pending clear mechanism
-                  // by dispatching a custom event the parent listens for
-                  window.dispatchEvent(new CustomEvent('pdr-clear-sources'));
-                }}
-              >
-                Clear Sources
-              </Button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
 
       </div>{/* close counter-zoom wrapper */}
     </div>
