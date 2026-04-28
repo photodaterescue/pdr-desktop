@@ -1603,8 +1603,15 @@ return (
             and is unaffected by the workspace zoom. Only the area
             between the title bar and this bar (excluding the side
             menu) zooms. DashboardPanel renders the bar via
-            createPortal into this target when isComplete=true. */}
-        <div id="pdr-bottom-ribbon-portal" className="shrink-0" />
+            createPortal into this target when isComplete=true.
+            Hidden on Memories / Trees / S&D — the Run Fix action
+            and "files ready to process" counter belong to the
+            Dashboard surface; on other views they're noise. */}
+        <div
+          id="pdr-bottom-ribbon-portal"
+          className="shrink-0"
+          style={activeView === 'dashboard' ? undefined : { display: 'none' }}
+        />
 
       </div>
       </div>{/* close inner flex row */}
@@ -2250,7 +2257,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               side="top"
             >
               <Button
-                variant="destructive"
+                variant="information"
                 size="sm"
                 className="flex-1 justify-center gap-2"
                 disabled={!hasSelectedSources || fixActive}

@@ -13,10 +13,10 @@ add `border-…/30`, `text-…/60`, or other faint-colour className overrides.
 | --- | --- | --- |
 | `primary` | The main action on a screen | Run Fix · Continue · Save · Choose Destination |
 | `secondary` | Alternative or cancel that's still important | Cancel · Back · Skip · Keep Sources |
-| `information` | Opens an informational view, doesn't mutate | Drive Advisor · Reports History · Open Destination · DA · Help & Support |
+| `information` | Opens an informational view OR a low-stakes list mutation that doesn't touch real data | Drive Advisor · Reports History · Open Destination · DA · Help & Support · **Remove** (sidebar — just unlists a source, doesn't touch files) |
 | `success` | Affirmative completion or status confirmed | View Report (Fix Complete) · "Yes, save" confirm |
-| `caution` | Action with consequences, but not destructive | Cancel Fix mid-run · Re-cluster · Improve Recognition · Reset settings |
-| `destructive` | Irreversible | Remove · Delete · Clear Sources · Permanently remove |
+| `caution` | Action with consequences, but recoverable | Cancel Fix mid-run · Improve Recognition · Reset settings · Clear Sources (post-fix prompt) |
+| `destructive` | **Actually destroys work or files** — irreversible loss of the user's prior effort | Re-cluster (discards existing cluster assignments) · Delete report · "Yes, permanently remove" (StaleRunsModal) · Drop database |
 | `icon` | Square icon-only control | X close · ⓘ info · ⋯ menu · pin |
 | `link` | Inline text link inside copy | "Review library plan" · "Don't show this again" |
 
@@ -24,10 +24,15 @@ add `border-…/30`, `text-…/60`, or other faint-colour className overrides.
 
 Ask: **what is this button doing?**
 
-- Mutating data, irreversible → `destructive`.
-- Mutating data, has consequences but reversible → `caution`.
+- Destroys actual user work or files (cluster assignments, reports,
+  database snapshots, real data on disk) → `destructive`. Nothing else
+  goes here. Removing an item from a list / unlisting / deselecting is
+  NOT destructive — it's `information`.
+- Mutating data, has consequences but recoverable (re-running a phase,
+  resetting a setting, cancelling a long task) → `caution`.
 - Mutating data, normal → `primary` (if it's THE action) or `secondary` (if it's an alternative).
-- Just opens or shows something → `information`.
+- Just opens, shows, or unlists something — no real data lost →
+  `information`.
 - Confirms completion / says "yes this is good" → `success`.
 - Just an icon → `icon`.
 - Looks like text inside a paragraph → `link`.
