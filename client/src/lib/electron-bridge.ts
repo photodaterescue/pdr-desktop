@@ -176,6 +176,24 @@ export function onCopyProgress(callback: (progress: { current: number; total: nu
   }
 }
 
+/** Phase notifications from the network-destination staging path.
+ *  'staging' = writing to local temp folder. 'mirror' = robocopy is
+ *  pushing the staged tree to the network destination. UI uses these
+ *  to swap the progress label so the bar doesn't appear frozen at
+ *  100% during the network push. No-op outside Electron. */
+export function onCopyPhase(callback: (phase: { phase: 'staging' | 'mirror'; message: string }) => void): void {
+  if (isElectron() && (window as any).pdr?.onCopyPhase) {
+    (window as any).pdr.onCopyPhase(callback);
+  }
+}
+
+/** Per-file ticks from robocopy during the mirror phase. */
+export function onCopyMirrorProgress(callback: (progress: { filesMirrored: number; totalToMirror: number }) => void): void {
+  if (isElectron() && (window as any).pdr?.onCopyMirrorProgress) {
+    (window as any).pdr.onCopyMirrorProgress(callback);
+  }
+}
+
 export async function cancelCopyFiles(): Promise<{ success: boolean }> {
   if (isElectron() && (window as any).pdr?.cancelCopyFiles) {
     return (window as any).pdr.cancelCopyFiles();
@@ -614,6 +632,16 @@ export interface SearchQuery {
   // AI filters
   personId?: number[];
   personIdMode?: 'and' | 'or';
+  /** Tri-state filter for the AI ribbon's Matched / Verified / Both
+   *  toggle. 'matched' = only auto-matched faces (verified=0),
+   *  'verified' = only manually-confirmed (verified=1), 'both' =
+   *  either. Backend takes precedence over the legacy
+   *  personVerifiedOnly boolean when set. */
+  personMatchMode?: 'matched' | 'verified' | 'both';
+  /** Cosine similarity floor for auto-matched faces — drives the
+   *  S&D Match Sensitivity slider. 0.65–0.95 typical range. */
+  personMatchThreshold?: number;
+  personVerifiedOnly?: boolean;
   aiTag?: string[];
   aiTagMode?: 'and' | 'or';
   // Determines whether personId + aiTag conditions AND together (default,
@@ -1013,7 +1041,10 @@ export async function getMemoriesOnThisDay(args: { month: number; day: number; r
   return { success: false, error: 'Not running in Electron' };
 }
 
-export async function getMemoriesDayFiles(args: { year: number; month: number; day: number; runIds?: number[] }): Promise<{ success: boolean; data?: IndexedFile[]; error?: string }> {
+// `month` and `day` are optional — omit either to widen the drill-down.
+// e.g. { year: 2005 } returns the whole year; { year, month } returns
+// the whole month; { year, month, day } the original single-day query.
+export async function getMemoriesDayFiles(args: { year: number; month?: number | null; day?: number | null; runIds?: number[] }): Promise<{ success: boolean; data?: IndexedFile[]; error?: string }> {
   if (isElectron() && (window as any).pdr?.memories) {
     return (window as any).pdr.memories.dayFiles(args);
   }
@@ -1388,12 +1419,21 @@ export function onDateEditorDataChanged(callback: () => void): () => void {
   return () => {};
 }
 
-export async function openSearchViewer(filePath: string | string[], filename: string | string[]): Promise<{ success: boolean; error?: string }> {
+/**
+ * Open the PDR Viewer.
+ *
+ * - Single file: pass `filePath` as a string. Arrows are hidden.
+ * - Multiple siblings: pass arrays. The viewer's left/right arrows
+ *   navigate between them, and the optional `startIndex` controls
+ *   which one opens first (e.g. user clicked photo #14 of 175 in a
+ *   grid — pass index 13 so they land on the right one with the rest
+ *   reachable from arrows).
+ */
+export async function openSearchViewer(filePath: string | string[], filename: string | string[], startIndex?: number): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.search) {
-    // Normalise to arrays for the IPC call
     const paths = Array.isArray(filePath) ? filePath : [filePath];
     const names = Array.isArray(filename) ? filename : [filename];
-    return (window as any).pdr.search.openViewer(paths, names);
+    return (window as any).pdr.search.openViewer(paths, names, startIndex);
   }
   return { success: false, error: 'Not running in Electron' };
 }
@@ -1540,7 +1580,7 @@ export async function unnameFace(faceId: number): Promise<{ success: boolean }> 
   return { success: false };
 }
 
-export async function refineFromVerified(similarityThreshold?: number): Promise<{
+export async function refineFromVerified(similarityThreshold?: number, personFilter?: number): Promise<{
   success: boolean;
   data?: {
     personsProcessed: number;
@@ -1550,7 +1590,7 @@ export async function refineFromVerified(similarityThreshold?: number): Promise<
   error?: string;
 }> {
   if (isElectron() && (window as any).pdr?.ai) {
-    return (window as any).pdr.ai.refineFromVerified(similarityThreshold);
+    return (window as any).pdr.ai.refineFromVerified(similarityThreshold, personFilter);
   }
   return { success: false };
 }
@@ -1643,6 +1683,37 @@ export async function permanentlyDeletePerson(personId: number): Promise<{ succe
   return { success: false };
 }
 
+/**
+ * "Send back to Unnamed" — unlinks every face from the person, drops
+ * the person record entirely. Faces become Unnamed clusters with
+ * verified=0. Used by PM's row-trash flow. Distinct from
+ * `deletePersonRecord` which soft-deletes (sets discarded_at, faces
+ * stay attached + verified) — that path is still used by the Trees
+ * Recycle Bin.
+ *
+ * Returns an `undoToken` capturing the prior state. Pass it to
+ * `restoreUnnamedPerson` to undo the action exactly — recreates
+ * the person record, re-links faces with their prior verified
+ * flags. Drives the Undo button on the post-action toast.
+ */
+export interface UnnameUndoToken {
+  person: { name: string; full_name: string | null; avatar_data: string | null; representative_face_id: number | null };
+  faces: Array<{ faceId: number; wasVerified: number }>;
+  treeFocusIds: number[];
+}
+export async function unnamePersonAndDelete(personId: number): Promise<{ success: boolean; data?: { facesUnnamed: number; photosAffected: number; personName: string; undoToken: UnnameUndoToken | null }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.unnamePersonAndDelete(personId);
+  }
+  return { success: false };
+}
+export async function restoreUnnamedPerson(token: UnnameUndoToken): Promise<{ success: boolean; data?: { personId: number; facesRestored: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.restoreUnnamedPerson(token);
+  }
+  return { success: false };
+}
+
 export async function restorePerson(personId: number): Promise<{ success: boolean }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.restorePerson(personId);
@@ -1705,11 +1776,13 @@ export interface DbBackup {
   filename: string;
   sizeBytes: number;
   mtime: string;
-  kind: 'rolling' | 'pre-reanalyze';
+  kind: 'rolling' | 'pre-reanalyze' | 'manual' | 'auto-event';
+  label: string | null;
 }
 
-/** List every restorable DB snapshot — both rolling startup backups
- *  and any explicit pre-reanalyze snapshots. Newest first. */
+/** List every restorable snapshot. Newest first. Returns auto-launch
+ *  ('rolling'), auto-event (taken before risky ops), and manual
+ *  snapshots. Pre-reanalyze legacy is auto-cleaned on first call. */
 export async function listBackups(): Promise<{ success: boolean; data?: DbBackup[]; error?: string }> {
   if (isElectron() && (window as any).pdr?.ai?.listBackups) {
     return (window as any).pdr.ai.listBackups();
@@ -1723,6 +1796,36 @@ export async function listBackups(): Promise<{ success: boolean; data?: DbBackup
 export async function restoreFromBackup(snapshotPath: string): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.ai?.restoreFromBackup) {
     return (window as any).pdr.ai.restoreFromBackup(snapshotPath);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+/** Take a snapshot of the live DB right now. `kind: 'manual'` for
+ *  user-initiated, `'auto-event'` for code paths that fire one
+ *  before a risky op (Improve Recognition, row removal, etc).
+ *  Optional label is shown in Settings → Backup so the user knows
+ *  what each one was for. Best-effort: failures are non-fatal. */
+export async function takeSnapshot(kind: 'manual' | 'auto-event', label?: string): Promise<{ success: boolean; path?: string; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.takeSnapshot) {
+    return (window as any).pdr.ai.takeSnapshot(kind, label);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+/** Delete a single snapshot file. Used by the Settings → Backup
+ *  housekeeping button on manual snapshots. */
+export async function deleteSnapshot(snapshotPath: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.deleteSnapshot) {
+    return (window as any).pdr.ai.deleteSnapshot(snapshotPath);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+/** Save a snapshot file at a user-chosen location (USB drive,
+ *  Dropbox folder, etc). Opens a native save dialog. */
+export async function exportSnapshotZip(snapshotPath: string): Promise<{ success: boolean; path?: string; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.exportSnapshotZip) {
+    return (window as any).pdr.ai.exportSnapshotZip(snapshotPath);
   }
   return { success: false, error: 'Not running in Electron' };
 }
@@ -1749,12 +1852,20 @@ export interface PersonCluster {
     face_id: number;
     file_id: number;
     file_path: string;
+    /** Photo derived_date — used to sort the strip chronologically.
+     *  NULL when the photo had no extractable date. */
+    derived_date: string | null;
     box_x: number;
     box_y: number;
     box_w: number;
     box_h: number;
     confidence: number;
     verified: number;
+    /** Cosine similarity score from the auto-match (set by
+     *  refineFromVerifiedFaces or backfilled on schema migration).
+     *  NULL for verified faces and pre-backfill legacy data. Used
+     *  by PM's match-strictness filter. */
+    match_similarity: number | null;
   }[];
 }
 

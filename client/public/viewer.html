@@ -131,22 +131,26 @@
       top: 50%;
       transform: translateY(-50%);
       z-index: 10;
-      width: 44px;
-      height: 44px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
-      background: rgba(0, 0, 0, 0.5);
-      border: 1px solid rgba(169, 156, 255, 0.3);
-      color: #ddd;
-      font-size: 20px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(169, 156, 255, 0.35);
+      color: #eee;
+      font-size: 22px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.15s;
-      opacity: 0;
+      transition: opacity 0.15s, background 0.15s, color 0.15s, transform 0.15s;
+      /* Persistently visible (60%) when shown — was opacity:0 + hover-only,
+         which left users unsure the arrows existed. Hovering the arrow
+         itself bumps it to 100%. Hidden entirely via display:none in JS
+         when there's only a single file (nothing to navigate to). */
+      opacity: 0.6;
     }
-    .viewer-container:hover .nav-arrow { opacity: 1; }
-    .nav-arrow:hover { background: rgba(169, 156, 255, 0.3); color: #fff; }
+    .viewer-container:hover .nav-arrow { opacity: 0.9; }
+    .nav-arrow:hover { background: rgba(169, 156, 255, 0.35); color: #fff; opacity: 1; transform: translateY(-50%) scale(1.06); }
     .nav-arrow.left { left: 16px; }
     .nav-arrow.right { right: 16px; }
     .nav-arrow:disabled { opacity: 0.2 !important; cursor: default; }
@@ -347,11 +351,23 @@
     const params = new URLSearchParams(window.location.search);
     const filesParam = params.get('files');
     const legacyFile = params.get('file'); // backwards compat
+    // Optional start index — when set, opens the viewer with the
+    // clicked thumbnail (not the first sibling). Lets a Memories
+    // grid click on photo #14 of 175 land directly on #14 with the
+    // 173 others reachable via the arrow buttons.
+    const startParam = params.get('start');
 
     if (filesParam) {
       try { files = JSON.parse(filesParam); } catch { files = []; }
     } else if (legacyFile) {
       files = [legacyFile];
+    }
+    // Clamp the requested start to a valid index — defensively, since
+    // the URL param isn't trusted.
+    let startIndex = 0;
+    if (startParam != null) {
+      const parsed = parseInt(startParam, 10);
+      if (!isNaN(parsed) && parsed >= 0 && parsed < files.length) startIndex = parsed;
     }
 
     function getExt(filePath) {
@@ -608,7 +624,7 @@
     }
 
     if (files.length > 0) {
-      loadMedia(0);
+      loadMedia(startIndex);
     }
 
     // Diagnostic: confirm preload attached + prepare() available

@@ -124,7 +124,7 @@ import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexSta
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, } from './ai-manager.js';
-import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
+import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
 // Update checking
 ipcMain.handle('updates:check', async () => {
     return await checkForUpdates();
@@ -145,6 +145,72 @@ let mainWindow = null;
 // Yield to event loop to keep UI responsive
 function yieldToEventLoop() {
     return new Promise(resolve => setImmediate(resolve));
+}
+// Mirror a local staging folder onto a (typically network) destination
+// using Windows' native robocopy with /MT:16 multi-threading. We
+// stage every file locally during the per-file loop (fast disk I/O,
+// rename + EXIF write happen here) and then call this once at the
+// end to push the whole tree to the slow target. /MT:16 has been
+// measured at 5–10× faster than Node's single-stream pipe loop on
+// network destinations because it parallelises the per-file
+// network round-trips that sequential code can't overlap.
+//
+// /E    — copy subdirs including empty ones (recreates our subfolder layout)
+// /MT:16 — 16 multi-threaded copy workers
+// /R:2 /W:5 — retry twice with 5s wait (default is 1M retries × 30s
+//             which would deadlock on a transient SMB hiccup)
+// /NP /NDL /NJH /NJS — quieter output (no per-file %, no dir listing,
+//                      no header, no summary). We still parse the
+//                      filename lines that remain to push progress
+//                      events.
+//
+// Robocopy exit codes are bitmasks: 0–7 are success states (files
+// copied, extras detected, mismatches, etc.). 8+ indicates a real
+// failure. We treat 0–7 as success and surface 8+ verbatim.
+function runRobocopyMirror(stagingDir, realDest, onFileCopied, abortSignal) {
+    return new Promise((resolve) => {
+        const args = [stagingDir, realDest, '/E', '/MT:16', '/R:2', '/W:5', '/NP', '/NDL', '/NJH', '/NJS'];
+        const child = spawn('robocopy', args, { windowsHide: true });
+        let stderrBuf = '';
+        let leftover = '';
+        const checkAbort = setInterval(() => {
+            if (abortSignal.cancelled && !child.killed) {
+                try {
+                    child.kill();
+                }
+                catch { /* already dead */ }
+            }
+        }, 250);
+        child.stdout?.on('data', (chunk) => {
+            // Robocopy emits one line per file. Split on newlines and
+            // count non-empty entries that look like file paths.
+            const text = leftover + chunk.toString('utf8');
+            const lines = text.split(/\r?\n/);
+            leftover = lines.pop() ?? '';
+            for (const line of lines) {
+                const trimmed = line.trim();
+                // File rows usually have either a size or a "New File" marker.
+                // Heuristic: a line containing a backslash AND not starting with
+                // a stat-summary token is treated as a per-file event.
+                if (trimmed && /[\\/]/.test(trimmed) && !/^Total|^Bytes|^Speed|^Ended|^Started/i.test(trimmed)) {
+                    onFileCopied();
+                }
+            }
+        });
+        child.stderr?.on('data', (chunk) => {
+            stderrBuf += chunk.toString('utf8');
+        });
+        child.on('close', (code) => {
+            clearInterval(checkAbort);
+            const exitCode = code ?? -1;
+            const success = exitCode >= 0 && exitCode <= 7;
+            resolve({ success, exitCode, stderr: stderrBuf || undefined });
+        });
+        child.on('error', (err) => {
+            clearInterval(checkAbort);
+            resolve({ success: false, exitCode: -1, stderr: err.message });
+        });
+    });
 }
 // Streaming copy that optionally computes hash during copy (single read from disk)
 async function streamCopyFile(src, dest, computeHash = false) {
@@ -1383,6 +1449,53 @@ ipcMain.handle('files:copy', async (_event, data) => {
     const { files, destinationPath, zipPaths = {}, photoFormat = 'original' } = data;
     console.log(`[Fix] Starting copy: ${files.length} files to ${destinationPath}, format=${photoFormat}`);
     copyFilesCancelled = false;
+    // ── Network destination → stage-then-mirror via robocopy ──
+    // For network destinations (UNC paths and mapped network drives),
+    // every fs.createReadStream → fs.createWriteStream cycle pays one
+    // synchronous network round-trip per file. We side-step that by
+    // writing the per-file loop's output to a local staging folder
+    // (fast disk I/O, full rename + EXIF + dedupe logic unchanged) and
+    // then mirroring the whole staging tree to the real destination
+    // with a single robocopy /MT:16 invocation. Local destinations
+    // skip staging entirely — fs.copyFile is already syscall-fast on
+    // local drives and staging would just double the disk I/O. If
+    // staging mkdir fails for any reason we silently fall back to the
+    // current direct-copy path so the worst case is "no speedup, same
+    // behavior as today".
+    let useStaging = false;
+    let stagingPath = null;
+    let writeRoot = destinationPath;
+    // Hoisted out of the try block so the finally clause can read it
+    // — finally needs to know whether the mirror step asked to keep
+    // staging around for manual recovery.
+    let preserveStagingForRecovery = false;
+    if (process.platform === 'win32') {
+        try {
+            const destClass = classifySource(destinationPath);
+            if (destClass.type === 'network') {
+                const candidate = path.join(os.tmpdir(), `pdr-stage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+                try {
+                    fs.mkdirSync(candidate, { recursive: true });
+                    stagingPath = candidate;
+                    writeRoot = candidate;
+                    useStaging = true;
+                    console.log(`[Fix] Network destination detected (${destClass.label}). Staging via: ${candidate}`);
+                    if (mainWindow) {
+                        mainWindow.webContents.send('files:copy:phase', {
+                            phase: 'staging',
+                            message: 'Preparing files locally before network upload…',
+                        });
+                    }
+                }
+                catch (mkErr) {
+                    console.warn(`[Fix] Staging mkdir failed; falling back to direct copy:`, mkErr);
+                }
+            }
+        }
+        catch (clsErr) {
+            console.warn(`[Fix] classifySource failed for destination; assuming local:`, clsErr);
+        }
+    }
     const results = [];
     const zipCache = {};
     const usedFilenames = new Set();
@@ -1404,10 +1517,18 @@ ipcMain.handle('files:copy', async (_event, data) => {
     let duplicatesRemoved = 0;
     let skippedExisting = 0;
     try {
+        // mkdir BOTH the real destination (so robocopy has a parent
+        // when mirroring) AND, when staging, the writeRoot is already
+        // mkdir'd above. recursive:true is a no-op when the dir exists.
         if (!fs.existsSync(destinationPath)) {
             fs.mkdirSync(destinationPath, { recursive: true });
         }
-        // Snapshot pre-existing files at destination before this run writes anything
+        if (useStaging && writeRoot !== destinationPath && !fs.existsSync(writeRoot)) {
+            fs.mkdirSync(writeRoot, { recursive: true });
+        }
+        // Snapshot pre-existing files at the REAL destination (not the
+        // staging dir) so cross-run dedupe + collision resolution work
+        // correctly even when this run is staging.
         const preExistingFiles = new Set();
         const scanForExisting = async (dirPath, relativePath = '') => {
             try {
@@ -1425,6 +1546,17 @@ ipcMain.handle('files:copy', async (_event, data) => {
         };
         await scanForExisting(destinationPath);
         console.log(`[Fix] Destination scan complete: ${preExistingFiles.size} existing files found`);
+        // Helper: does a relative path collide with a file at the REAL
+        // destination? When staging, fs.existsSync would probe the empty
+        // staging tree (wrong answer); use the snapshot instead. When
+        // not staging, keep behavior identical to pre-staging code by
+        // hitting the live filesystem.
+        const realDestFileExists = (relPath) => {
+            if (useStaging) {
+                return preExistingFiles.has(relPath.toLowerCase());
+            }
+            return fs.existsSync(path.join(destinationPath, relPath));
+        };
         // Cache source classifications to avoid running 'net use' subprocess per file
         const sourceClassificationCache = new Map();
         const getSourceClassification = (sourcePath) => {
@@ -1607,8 +1739,13 @@ ipcMain.handle('files:copy', async (_event, data) => {
                     subfolderPath = path.join(year, month, day);
                 }
             }
-            const targetDir = subfolderPath ? path.join(destinationPath, subfolderPath) : destinationPath;
-            // Ensure target directory exists
+            // targetDir is where the per-file write actually lands. When
+            // staging this is staging/<subfolderPath>; otherwise it's the
+            // real destination/<subfolderPath>. Robocopy will recreate the
+            // same subfolder layout at the real destination at the end.
+            const targetDir = subfolderPath ? path.join(writeRoot, subfolderPath) : writeRoot;
+            // Ensure target directory exists (cheap mkdir on local staging
+            // disk when staging; same as before otherwise).
             await fs.promises.mkdir(targetDir, { recursive: true });
             // Cross-run duplicate: if exact target filename existed BEFORE this run, skip it
             if (skipDuplicates && preExistingFiles.has(path.join(subfolderPath, finalFilename).toLowerCase())) {
@@ -1636,9 +1773,9 @@ ipcMain.handle('files:copy', async (_event, data) => {
             const convertedExt = willConvert ? (photoFormat === 'jpg' ? '.jpg' : '.png') : null;
             let counter = 1;
             while (usedFilenames.has(path.join(subfolderPath, finalFilename).toLowerCase()) ||
-                fs.existsSync(path.join(targetDir, finalFilename)) ||
+                realDestFileExists(path.join(subfolderPath, finalFilename)) ||
                 (convertedExt && usedFilenames.has(path.join(subfolderPath, baseName + convertedExt).toLowerCase())) ||
-                (convertedExt && counter === 1 && fs.existsSync(path.join(targetDir, baseName + convertedExt)))) {
+                (convertedExt && counter === 1 && realDestFileExists(path.join(subfolderPath, baseName + convertedExt)))) {
                 finalFilename = `${baseName}_${String(counter).padStart(3, '0')}${ext}`;
                 counter++;
             }
@@ -1783,10 +1920,98 @@ ipcMain.handle('files:copy', async (_event, data) => {
         }
         // Flush any remaining queued conversions (EXIF is written inside flushConversions)
         await flushConversions();
+        // ── Mirror staging → real destination ──────────────────────────
+        // If we wrote to staging, push the whole tree to the real
+        // network destination now. Robocopy /MT:16 parallelises the
+        // network round-trips that the per-file loop intentionally
+        // avoided. After mirror succeeds, rewrite each result's destPath
+        // from staging → real destination so the renderer / database
+        // store the path the user actually sees on their drive.
+        //
+        // preserveStagingForRecovery (declared above the try) flips ON
+        // if the mirror step fails — the finally block reads it and
+        // skips cleanup so the user has a local copy to retry / rescue
+        // from. Otherwise staging is always cleaned up.
+        if (useStaging && stagingPath) {
+            // Skip mirror if user cancelled mid-staging — no point pushing
+            // a half-staged tree. Cleanup happens in finally.
+            if (copyFilesCancelled) {
+                console.log(`[Fix] User cancelled before mirror — skipping robocopy.`);
+            }
+            else {
+                if (mainWindow) {
+                    mainWindow.webContents.send('files:copy:phase', {
+                        phase: 'mirror',
+                        message: 'Uploading staged files to network destination via robocopy /MT:16…',
+                    });
+                }
+                const successCount = results.filter(r => r.success).length;
+                let mirroredCount = 0;
+                const mirrorAbort = { cancelled: false };
+                const cancelPoll = setInterval(() => {
+                    if (copyFilesCancelled)
+                        mirrorAbort.cancelled = true;
+                }, 250);
+                const mirrorResult = await runRobocopyMirror(stagingPath, destinationPath, () => {
+                    mirroredCount++;
+                    if (mainWindow) {
+                        mainWindow.webContents.send('files:copy:mirror-progress', {
+                            filesMirrored: mirroredCount,
+                            totalToMirror: successCount,
+                        });
+                    }
+                }, mirrorAbort);
+                clearInterval(cancelPoll);
+                if (!mirrorResult.success) {
+                    // Mirror failed. Flag staging for preservation so the
+                    // finally block doesn't wipe it, then surface the path
+                    // so the user can retry / rescue manually.
+                    preserveStagingForRecovery = true;
+                    console.error(`[Fix] Robocopy mirror failed (exit ${mirrorResult.exitCode}):`, mirrorResult.stderr);
+                    return {
+                        success: false,
+                        error: `Network upload failed (robocopy exit code ${mirrorResult.exitCode}). ${mirrorResult.stderr ? mirrorResult.stderr + '. ' : ''}Your files have been prepared locally at ${stagingPath} — you can retry the network step manually or copy from there. PDR has not modified anything at the destination.`,
+                        results,
+                        copied: 0,
+                        failed: results.length,
+                        duplicatesRemoved,
+                        duplicateFiles,
+                        skippedExisting,
+                    };
+                }
+                console.log(`[Fix] Robocopy mirror complete (exit ${mirrorResult.exitCode}, ${mirroredCount} files reported).`);
+                // Rewrite result destPaths from staging → real destination
+                // so downstream consumers (run records, renderer toasts,
+                // open-folder action) see the path the user actually has.
+                for (const r of results) {
+                    if (r.destPath && r.destPath.startsWith(stagingPath)) {
+                        r.destPath = path.join(destinationPath, path.relative(stagingPath, r.destPath));
+                    }
+                }
+            }
+        }
         return { success: true, results, copied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, duplicatesRemoved, duplicateFiles, skippedExisting };
     }
     catch (error) {
         return { success: false, error: error.message, results, duplicatesRemoved, duplicateFiles };
+    }
+    finally {
+        // Clean up staging dir on the way out — success, cancellation,
+        // or thrown error. Skipped only when the mirror step flipped
+        // preserveStagingForRecovery ON so the user can salvage the
+        // local copy after a failed network push. Wrapped in try/catch
+        // so a missing dir never masks the real return value.
+        if (useStaging && stagingPath && !preserveStagingForRecovery) {
+            try {
+                await fs.promises.rm(stagingPath, { recursive: true, force: true });
+            }
+            catch (cleanupErr) {
+                console.warn(`[Fix] Failed to clean up staging dir ${stagingPath}:`, cleanupErr);
+            }
+        }
+        else if (useStaging && stagingPath && preserveStagingForRecovery) {
+            console.log(`[Fix] Staging dir preserved for manual recovery: ${stagingPath}`);
+        }
     }
 });
 ipcMain.handle('play-completion-sound', async () => {
@@ -2341,9 +2566,13 @@ ipcMain.handle('memories:onThisDay', async (_event, args) => {
         return { success: false, error: err.message };
     }
 });
+// `month` and `day` are optional so the same channel powers all three
+// drill-down granularities (year / month / day). The renderer omits
+// the field entirely when widening the range — the backend treats
+// missing values as "no constraint at this level".
 ipcMain.handle('memories:dayFiles', async (_event, args) => {
     try {
-        return { success: true, data: getMemoriesDayFiles(args.year, args.month, args.day, args.runIds) };
+        return { success: true, data: getMemoriesDayFiles(args.year, args.month ?? null, args.day ?? null, args.runIds) };
     }
     catch (err) {
         return { success: false, error: err.message };
@@ -2652,19 +2881,22 @@ ipcMain.handle('search:checkPathsExist', async (_event, paths) => {
     return { success: true, data: result };
 });
 let viewerWindow = null;
-ipcMain.handle('search:openViewer', async (_event, filePaths, fileNames) => {
+ipcMain.handle('search:openViewer', async (_event, filePaths, fileNames, startIndex) => {
     try {
         // Support single or multiple files — pass as JSON-encoded array in query param
         const filesParam = JSON.stringify(filePaths);
+        // Clamp the start index defensively so a bad caller can't open
+        // the viewer at a non-existent slot.
+        const start = (typeof startIndex === 'number' && startIndex >= 0 && startIndex < filePaths.length) ? startIndex : 0;
         const title = filePaths.length === 1
             ? fileNames[0] + ' — PDR Viewer'
-            : `${filePaths.length} photos — PDR Viewer`;
+            : `${start + 1} of ${filePaths.length} — PDR Viewer`;
         // If viewer already open, reuse it
         if (viewerWindow && !viewerWindow.isDestroyed()) {
             const viewerHtml = app.isPackaged
                 ? path.join(process.resourcesPath, 'dist/public/viewer.html')
                 : path.join(__dirname, '../dist/public/viewer.html');
-            viewerWindow.loadFile(viewerHtml, { query: { files: filesParam } });
+            viewerWindow.loadFile(viewerHtml, { query: { files: filesParam, start: String(start) } });
             viewerWindow.setTitle(title);
             viewerWindow.focus();
             return { success: true };
@@ -2688,7 +2920,7 @@ ipcMain.handle('search:openViewer', async (_event, filePaths, fileNames) => {
         const viewerHtml = app.isPackaged
             ? path.join(process.resourcesPath, 'dist/public/viewer.html')
             : path.join(__dirname, '../dist/public/viewer.html');
-        viewerWindow.loadFile(viewerHtml, { query: { files: filesParam } });
+        viewerWindow.loadFile(viewerHtml, { query: { files: filesParam, start: String(start) } });
         // Log renderer console messages to the main process so we can diagnose
         // preload / prepare failures that wouldn't otherwise be visible.
         viewerWindow.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
@@ -2818,10 +3050,24 @@ ipcMain.handle('people:open', async () => {
         return { success: false, error: err.message };
     }
 });
-// People window notifies main window that data changed
+// Broadcast a "people data changed" tick to EVERY open renderer
+// window — main, People Manager, Date Editor, etc. Originally this
+// only targeted mainWindow because the trigger was always the PM
+// window telling main "I just renamed a person, re-query S&D". But
+// the reverse direction is now in play too: workspace.tsx fires
+// notifyChange after a re-cluster, and PM (a separate window) needs
+// to receive the same broadcast so it reloads its row counts. By
+// fanning out to every BrowserWindow we keep PM, SearchPanel, and
+// any future subscribers in sync regardless of who triggered the
+// change. isDestroyed() guards a torn-down window from throwing.
 ipcMain.handle('people:changed', async () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('people:dataChanged');
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed())
+            continue;
+        try {
+            win.webContents.send('people:dataChanged');
+        }
+        catch { /* non-fatal */ }
     }
     return { success: true };
 });
@@ -3030,14 +3276,16 @@ ipcMain.handle('ai:importXmpFaces', async () => {
         return { success: false, error: err.message };
     }
 });
-ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold) => {
+ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold, personFilter) => {
     try {
         const { refineFromVerifiedFaces, getDb } = await import('./search-database.js');
         // Caller may override (e.g. PM slider during a manual refine) but
         // when omitted we honour the user's S&D Match slider value so the
         // two surfaces stay in sync for the auto-refine path.
         const threshold = similarityThreshold ?? getSettings().aiSearchMatchThreshold ?? 0.72;
-        const result = refineFromVerifiedFaces(threshold);
+        // personFilter restricts refinement to a single named person — used
+        // by per-row "Improve" buttons and the post-verify chip prompt.
+        const result = refineFromVerifiedFaces(threshold, personFilter);
         // Rebuild FTS for all files whose faces were newly assigned
         const database = getDb();
         const personIds = result.perPerson.filter(p => p.matched > 0).map(p => p.personId);
@@ -3047,6 +3295,13 @@ ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold) => {
             for (const f of files)
                 rebuildAiFts(f.file_id);
         }
+        // Was missing — every other mutation IPC invalidates the cache.
+        // Without this, the Improve flow's loadClusters() comes back with
+        // stale data that excludes the just-matched faces, and the user
+        // has to hit Refresh manually before they see the new auto-
+        // matches under their named person. This is the cause of the
+        // "Owen + 5 only after refresh" report.
+        invalidatePersonClustersCache();
         return { success: true, data: result };
     }
     catch (err) {
@@ -3157,9 +3412,52 @@ ipcMain.handle('ai:permanentlyDeletePerson', async (_event, personId) => {
         return { success: false, error: err.message };
     }
 });
+ipcMain.handle('ai:unnamePersonAndDelete', async (_event, personId) => {
+    try {
+        const person = getPersonById(personId);
+        if (!person)
+            return { success: false, error: 'Person not found' };
+        const { getDb } = await import('./search-database.js');
+        const database = getDb();
+        // Capture affected file IDs BEFORE the unname so FTS can be
+        // rebuilt for them — once person_id flips to NULL the join is
+        // gone and we can't enumerate the affected photos any more.
+        const affectedFiles = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(personId);
+        const result = unnamePersonAndDelete(personId);
+        for (const f of affectedFiles)
+            rebuildAiFts(f.file_id);
+        invalidatePersonClustersCache();
+        return { success: true, data: { ...result, personName: person.name } };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('ai:restoreUnnamedPerson', async (_event, token) => {
+    try {
+        const result = restoreUnnamedPerson(token);
+        // Same FTS rebuild dance — every restored face needs its file's
+        // search index rebuilt so the name reappears in S&D results.
+        const { getDb } = await import('./search-database.js');
+        const database = getDb();
+        const fileIds = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id = ?`).all(result.personId);
+        for (const f of fileIds)
+            rebuildAiFts(f.file_id);
+        invalidatePersonClustersCache();
+        return { success: true, data: result };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 ipcMain.handle('ai:restorePerson', async (_event, personId) => {
     try {
         const success = restorePerson(personId);
+        // Was missing — every other mutation IPC invalidates the cache.
+        // Without this, the Undo toast's loadClusters() call hits a stale
+        // cached result that still excludes the restored person, and the
+        // user has to manually press Refresh to see the row come back.
+        invalidatePersonClustersCache();
         return { success };
     }
     catch (err) {
@@ -3257,6 +3555,50 @@ ipcMain.handle('db:restoreFromBackup', async (_event, snapshotPath) => {
         const r = restoreDbFromBackup(snapshotPath);
         invalidatePersonClustersCache();
         return r.restored ? { success: true } : { success: false, error: r.error };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('db:takeSnapshot', async (_event, kind, label) => {
+    try {
+        const { takeSnapshot } = await import('./search-database.js');
+        return takeSnapshot(kind, label);
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('db:deleteSnapshot', async (_event, snapshotPath) => {
+    try {
+        const { deleteSnapshot } = await import('./search-database.js');
+        return deleteSnapshot(snapshotPath);
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('db:exportSnapshotZip', async (_event, snapshotPath) => {
+    // Save a snapshot file as a portable .db copy at a user-chosen
+    // location (we don't actually zip a single file — adds ~zero space
+    // benefit for SQLite. Naming kept as "exportSnapshotZip" for the
+    // bridge stability; copies as .db).
+    try {
+        const fs = await import('node:fs');
+        const path = await import('node:path');
+        if (!fs.existsSync(snapshotPath))
+            return { success: false, error: 'Snapshot not found' };
+        const { dialog } = await import('electron');
+        const baseName = path.basename(snapshotPath);
+        const result = await dialog.showSaveDialog({
+            title: 'Export PDR snapshot',
+            defaultPath: baseName,
+            filters: [{ name: 'PDR snapshot', extensions: ['db'] }],
+        });
+        if (result.canceled || !result.filePath)
+            return { success: false, error: 'Cancelled' };
+        fs.copyFileSync(snapshotPath, result.filePath);
+        return { success: true, path: result.filePath };
     }
     catch (err) {
         return { success: false, error: err.message };
@@ -3406,6 +3748,19 @@ ipcMain.handle('ai:recluster', async (_event, threshold) => {
             for (const { id } of unnamedInCore) {
                 assignStmt.run(personId, id);
             }
+        }
+        // Recompute match_similarity for any auto-matched face that no
+        // longer has a stored score (re-cluster's re-merge step assigns
+        // person_id without setting match_similarity). Without this, the
+        // PM/S&D similarity sliders have nothing to filter on for newly-
+        // re-merged faces — they'd silently bypass the gate via the
+        // `match_similarity IS NULL` branch.
+        try {
+            const { backfillMatchSimilarity } = await import('./search-database.js');
+            backfillMatchSimilarity(database);
+        }
+        catch (bfErr) {
+            console.warn('[recluster] match_similarity refresh failed (non-fatal):', bfErr);
         }
         const faceFileIds = database.prepare('SELECT DISTINCT file_id FROM face_detections').all();
         for (const { file_id } of faceFileIds)

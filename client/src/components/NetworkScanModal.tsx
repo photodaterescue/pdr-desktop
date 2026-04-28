@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { AlertTriangle, Loader2, X, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { Progress } from '@/components/ui/progress';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { 
   runPreScan, 
   cancelPreScan, 
@@ -253,9 +254,11 @@ export function NetworkScanModal({
                   : (isKeepScanning ? 'Extended scan in progress...' : 'Scanning to estimate folder size...')}
               </p>
               {!showCancelConfirm && (
-                <p className="text-xs text-muted-foreground mt-2 truncate max-w-full" title={sourceName}>
-                  {sourceName}
-                </p>
+                <IconTooltip label={sourceName} side="top">
+                  <p className="text-xs text-muted-foreground mt-2 truncate max-w-full">
+                    {sourceName}
+                  </p>
+                </IconTooltip>
               )}
             </div>
 
@@ -407,9 +410,11 @@ export function NetworkScanModal({
               </div>
               <h2 className="text-xl font-semibold text-foreground mb-2">Pre-Scan Results</h2>
               <p className="text-xs text-muted-foreground">{storageLabel}</p>
-              <p className="text-xs text-muted-foreground mb-3 truncate max-w-full" title={sourceName}>
-                {sourceName}
-              </p>
+              <IconTooltip label={sourceName} side="top">
+                <p className="text-xs text-muted-foreground mb-3 truncate max-w-full">
+                  {sourceName}
+                </p>
+              </IconTooltip>
               <p className="text-sm font-medium text-foreground mb-1">
                 {finalResult.data.fileCount.toLocaleString()} files (~{formatBytes(finalResult.data.totalBytes)})
               </p>

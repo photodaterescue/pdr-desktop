@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarRange,
   ChevronLeft,
@@ -8,7 +8,9 @@ import {
   Image as ImageIcon,
   Layers,
   X,
+  Info,
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   getMemoriesYearMonthBuckets,
   getMemoriesOnThisDay,
@@ -26,6 +28,18 @@ import { IconTooltip } from '@/components/ui/icon-tooltip';
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// ── Tile-size + metadata config (drilldown only) ──────────────────────
+// Mirrors the S&D ribbon's Add Info dropdown so users get a familiar
+// surface for choosing what shows on each thumbnail. Values are
+// persisted in localStorage so they survive a session.
+type DrilldownMetaField = 'filename' | 'date';
+const DRILLDOWN_TILE_PX_MIN = 100;
+const DRILLDOWN_TILE_PX_MAX = 360;
+function drilldownSliderToPx(slider: number): number {
+  const clamped = Math.max(0, Math.min(100, slider));
+  return Math.round(DRILLDOWN_TILE_PX_MIN + (DRILLDOWN_TILE_PX_MAX - DRILLDOWN_TILE_PX_MIN) * (clamped / 100));
+}
 
 function formatHumanDate(iso: string | null): string {
   if (!iso) return '';
@@ -84,7 +98,12 @@ export default function MemoriesView() {
   const [onThisDay, setOnThisDay] = useState<MemoriesOnThisDayItem[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState<{ year: number; month: number; day: number } | null>(null);
+  // Drilldown selection. `month` and `day` are independently optional
+  // so a single state shape covers all three granularities:
+  //   { year }                → whole year (clicking the year heading)
+  //   { year, month }         → whole month (clicking a month tile)
+  //   { year, month, day }    → single day (reserved for future per-day drill-in)
+  const [selectedRange, setSelectedRange] = useState<{ year: number; month?: number; day?: number } | null>(null);
   // Gap density — some users prefer a dense wall of photos with no gaps,
   // others prefer breathing room. Persist across sessions for this surface.
   const [density, setDensity] = useState<Density>(() => {
@@ -176,9 +195,8 @@ export default function MemoriesView() {
   const totalPhotos = useMemo(() => buckets.reduce((s, b) => s + (b.photoCount || 0), 0), [buckets]);
   const totalVideos = useMemo(() => buckets.reduce((s, b) => s + (b.videoCount || 0), 0), [buckets]);
 
-  const openDay = (year: number, month: number, day: number) => {
-    setSelectedDay({ year, month, day });
-  };
+  const openMonth = (year: number, month: number) => setSelectedRange({ year, month });
+  const openYear = (year: number) => setSelectedRange({ year });
 
   // Year sidebar — quick scroll to a year.
   const jumpToYear = (year: number) => {
@@ -186,15 +204,15 @@ export default function MemoriesView() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  if (selectedDay) {
+  if (selectedRange) {
     return (
       <MemoriesDayDrilldown
-        year={selectedDay.year}
-        month={selectedDay.month}
-        day={selectedDay.day}
+        year={selectedRange.year}
+        month={selectedRange.month}
+        day={selectedRange.day}
         runIds={selectedRunIds}
         density={density}
-        onBack={() => setSelectedDay(null)}
+        onBack={() => setSelectedRange(null)}
       />
     );
   }
@@ -266,12 +284,14 @@ export default function MemoriesView() {
                   <span className="text-xs text-muted-foreground">· {onThisDay.length} {onThisDay.length === 1 ? 'photo' : 'photos'}</span>
                 </div>
                 <div className={`flex ${density === 'tight' ? 'gap-0' : 'gap-2.5'} overflow-x-auto pb-2`}>
-                  {onThisDay.map((item) => (
+                  {onThisDay.map((item, idx) => (
+                    <IconTooltip key={item.id} label={`${item.filename} · ${formatHumanDate(item.derived_date)}`} side="top">
                     <button
-                      key={item.id}
-                      onClick={() => openSearchViewer(item.file_path, item.filename)}
+                      // Pass the full strip + this item's index so the
+                      // viewer's left/right arrows browse the rest of
+                      // the "On this day in previous years" set.
+                      onClick={() => openSearchViewer(onThisDay.map(o => o.file_path), onThisDay.map(o => o.filename), idx)}
                       className={`group relative shrink-0 w-[140px] h-[140px] overflow-hidden bg-secondary/30 transition-all ${otdTileClass}`}
-                      title={`${item.filename} · ${formatHumanDate(item.derived_date)}`}
                     >
                       {thumbs[item.file_path] ? (
                         <img src={thumbs[item.file_path]} alt={item.filename} className="w-full h-full object-cover" />
@@ -290,6 +310,7 @@ export default function MemoriesView() {
                         </div>
                       )}
                     </button>
+                    </IconTooltip>
                   ))}
                 </div>
               </section>
@@ -303,7 +324,18 @@ export default function MemoriesView() {
                 return (
                   <div key={year} id={`memories-year-${year}`} className="scroll-mt-4">
                     <div className="flex items-baseline gap-3 mb-3 sticky top-0 bg-background/95 backdrop-blur py-2 z-10">
-                      <h2 className="text-lg font-semibold text-foreground">{year}</h2>
+                      {/* Year label is now clickable — opens a year-wide
+                          drilldown showing every file in that year.
+                          Hover ring + cursor signal "this is a button". */}
+                      <IconTooltip label={`Open all of ${year}`} side="bottom">
+                        <button
+                          type="button"
+                          onClick={() => openYear(year)}
+                          className="text-lg font-semibold text-foreground hover:text-primary transition-colors cursor-pointer"
+                        >
+                          {year}
+                        </button>
+                      </IconTooltip>
                       <span className="text-xs text-muted-foreground">
                         {yearPhotos.toLocaleString()} {yearPhotos === 1 ? 'photo' : 'photos'}
                         {yearVideos > 0 && ` · ${yearVideos.toLocaleString()} ${yearVideos === 1 ? 'video' : 'videos'}`}
@@ -315,7 +347,7 @@ export default function MemoriesView() {
                           key={`${b.year}-${b.month}`}
                           bucket={b}
                           thumb={b.sampleFilePath ? thumbs[b.sampleFilePath] : undefined}
-                          onOpen={(day) => openDay(b.year, b.month, day)}
+                          onOpen={() => openMonth(b.year, b.month)}
                           density={density}
                         />
                       ))}
@@ -386,13 +418,13 @@ function LibrarySelector({ libraries, value, onChange }: { libraries: Library[];
 
 // ─── Month tile ────────────────────────────────────────────────────────────
 
-function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBucket; thumb?: string; onOpen: (day: number) => void; density: Density }) {
+function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBucket; thumb?: string; onOpen: () => void; density: Density }) {
   const total = (bucket.photoCount || 0) + (bucket.videoCount || 0);
   const tight = density === 'tight';
   return (
     <IconTooltip label={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year} · ${total.toLocaleString()} files`} side="top">
     <button
-      onClick={() => onOpen(1)}
+      onClick={() => onOpen()}
       className={`group relative aspect-[4/3] overflow-hidden bg-secondary/30 transition-all text-left ${tight ? '' : 'rounded-xl ring-1 ring-border hover:ring-primary/50'}`}
     >
       {thumb ? (
@@ -418,9 +450,68 @@ function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBuc
 
 // ─── Day drill-down ────────────────────────────────────────────────────────
 
-function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { year: number; month: number; day: number; runIds: number[] | undefined; density: Density; onBack: () => void }) {
+function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { year: number; month?: number; day?: number; runIds: number[] | undefined; density: Density; onBack: () => void }) {
   const [files, setFiles] = useState<IndexedFile[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+
+  // Tile size — Ctrl+scroll to zoom, persisted across sessions.
+  const [tileSizeSlider, setTileSizeSlider] = useState<number>(() => {
+    if (typeof localStorage === 'undefined') return 35;
+    const saved = parseInt(localStorage.getItem('pdr-memories-tile-size') || '', 10);
+    return isFinite(saved) ? Math.max(0, Math.min(100, saved)) : 35;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-memories-tile-size', String(tileSizeSlider)); } catch {}
+  }, [tileSizeSlider]);
+
+  // Which fields show in each tile's footer overlay. Defaults to NONE
+  // — pure photos, no captions — since the user explicitly asked to
+  // be able to remove the filename. Persists across sessions.
+  const [metaFields, setMetaFields] = useState<DrilldownMetaField[]>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('pdr-memories-tile-meta') : null;
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-memories-tile-meta', JSON.stringify(metaFields)); } catch {}
+  }, [metaFields]);
+  const [showMetaDropdown, setShowMetaDropdown] = useState(false);
+  const showFilename = metaFields.includes('filename');
+  const showDate = metaFields.includes('date');
+
+  // Ctrl+scroll zoom on the grid container — same gesture Workspace
+  // and PM use, so the muscle memory transfers. The wheel listener
+  // attaches to the scroll area (not window) so vertical scrolling
+  // outside the grid keeps working normally. preventDefault on
+  // ctrl-wheel stops the OS from also zooming the whole window.
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = gridScrollRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      // CRITICAL: stop the event before it bubbles up to the
+      // window-level Ctrl+wheel listener in workspace.tsx, which
+      // zooms the WHOLE app UI (60–150%) and persists to
+      // pdr-zoom-level. Without this, every Memories tile-zoom
+      // gesture also pulled the welcome-screen zoom down — that's
+      // the "Welcome at 60%" bug. stopImmediatePropagation also
+      // blocks any other native wheel listeners on the same chain
+      // from running, which is what we want here.
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      setTileSizeSlider(prev => {
+        // Wheel up (deltaY < 0) = zoom in (bigger tiles). 5-step
+        // increments mirror PM's zoom feel.
+        const next = Math.max(0, Math.min(100, prev + (e.deltaY < 0 ? 5 : -5)));
+        return next;
+      });
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
 
   const runIdsKey = runIds ? runIds.join(',') : '';
 
@@ -428,7 +519,10 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
     let cancelled = false;
     setFiles(null);
     (async () => {
-      const r = await getMemoriesDayFiles({ year, month, day, runIds });
+      // Backend treats missing month/day as "no constraint at this
+      // level" — so omitting day → full month, omitting both → full
+      // year. Pass null explicitly so the IPC payload is normalised.
+      const r = await getMemoriesDayFiles({ year, month: month ?? null, day: day ?? null, runIds });
       if (cancelled) return;
       setFiles(r.success && r.data ? r.data : []);
     })();
@@ -459,7 +553,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
     return () => { cancelled = true; };
   }, [files]);
 
-  const title = `${MONTH_NAMES[month - 1]} ${day}, ${year}`;
+  // Title adapts to granularity: "2005" / "February 2005" / "February 1, 2005".
+  const title = month == null
+    ? `${year}`
+    : day == null
+      ? `${MONTH_NAMES[month - 1]} ${year}`
+      : `${MONTH_NAMES[month - 1]} ${day}, ${year}`;
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -476,6 +575,55 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
             {files.length.toLocaleString()} {files.length === 1 ? 'file' : 'files'}
           </span>
         )}
+        {/* Add Info — same checkbox dropdown style as S&D's tile
+            metadata picker, so muscle-memory transfers. Defaults to
+            NONE (clean photo wall) and lets the user opt into
+            filename / date as they prefer. */}
+        <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
+          <IconTooltip label="Choose which details show below each photo" side="bottom">
+            <PopoverTrigger asChild>
+              <button
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border transition-colors text-xs font-medium ${metaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span>Add Info{metaFields.length > 0 ? ` (${metaFields.length})` : ''}</span>
+              </button>
+            </PopoverTrigger>
+          </IconTooltip>
+          <PopoverContent className="w-56 p-2" align="start">
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-2 pt-1 pb-2">Show below each tile</p>
+            {([
+              { key: 'filename' as DrilldownMetaField, label: 'Filename' },
+              { key: 'date' as DrilldownMetaField, label: 'Date' },
+            ]).map(opt => {
+              const checked = metaFields.includes(opt.key);
+              return (
+                <label key={opt.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setMetaFields(prev => checked ? prev.filter(f => f !== opt.key) : [...prev, opt.key]);
+                    }}
+                    className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+                  />
+                  <span className="text-sm text-foreground flex-1">{opt.label}</span>
+                </label>
+              );
+            })}
+            {metaFields.length > 0 && (
+              <button
+                onClick={() => setMetaFields([])}
+                className="w-full mt-2 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-secondary text-muted-foreground transition-colors"
+              >
+                Clear all
+              </button>
+            )}
+            <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
+              Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll to zoom tile size.
+            </p>
+          </PopoverContent>
+        </Popover>
         {files != null && files.length > 1 && (
           <button
             onClick={() => openSearchViewer(files.map(f => f.file_path), files.map(f => f.filename))}
@@ -486,36 +634,50 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div ref={gridScrollRef} className="flex-1 overflow-y-auto p-6">
         {files == null ? (
           <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Loading…</div>
         ) : files.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No files on this day.</div>
+          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+            {month == null ? `No files for ${year}.` : day == null ? `No files for ${MONTH_NAMES[month - 1]} ${year}.` : 'No files on this day.'}
+          </div>
         ) : (
-          <div className={`grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] ${density === 'tight' ? 'gap-0' : 'gap-3'}`}>
-            {files.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => openSearchViewer(f.file_path, f.filename)}
-                className={`group relative aspect-square overflow-hidden bg-secondary/30 transition-all ${density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50'}`}
-                title={`${f.filename} · ${formatHumanDate(f.derived_date)}`}
-              >
-                {thumbs[f.file_path] ? (
-                  <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground/40">
-                    {f.file_type === 'video' ? <Film className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
-                  </div>
-                )}
-                {f.file_type === 'video' && (
-                  <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
-                    <Film className="w-2.5 h-2.5" /> Video
-                  </div>
-                )}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent px-2 pb-1.5 pt-6">
-                  <div className="text-[11px] text-white/90 truncate">{f.filename}</div>
-                </div>
-              </button>
+          <div
+            className={`grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
+            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${drilldownSliderToPx(tileSizeSlider)}px, 1fr))` }}
+          >
+            {files.map((f, idx) => (
+              <IconTooltip key={f.id} label={`${f.filename} · ${formatHumanDate(f.derived_date)}`} side="top">
+                <button
+                  // Pass every file in this drilldown + the clicked
+                  // index so the viewer's arrows browse the whole
+                  // year/month/day from where the user landed.
+                  onClick={() => openSearchViewer(files.map(x => x.file_path), files.map(x => x.filename), idx)}
+                  className={`group relative aspect-square overflow-hidden bg-secondary/30 transition-all ${density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50'}`}
+                >
+                  {thumbs[f.file_path] ? (
+                    <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/40">
+                      {f.file_type === 'video' ? <Film className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+                    </div>
+                  )}
+                  {f.file_type === 'video' && (
+                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
+                      <Film className="w-2.5 h-2.5" /> Video
+                    </div>
+                  )}
+                  {/* Footer strip — only rendered when at least one
+                      meta field is enabled, so the default view is a
+                      clean photo wall with zero overlay. */}
+                  {(showFilename || showDate) && (
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent px-2 pb-1.5 pt-6 space-y-0.5">
+                      {showFilename && <div className="text-[11px] text-white/90 truncate">{f.filename}</div>}
+                      {showDate && <div className="text-[10px] text-white/75 truncate">{formatHumanDate(f.derived_date)}</div>}
+                    </div>
+                  )}
+                </button>
+              </IconTooltip>
             ))}
           </div>
         )}

@@ -1126,47 +1126,49 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                   {hasImages && fileViewMode === 'grid' && (
                     <div className="flex flex-wrap gap-2.5 mt-1 px-1">
                       {sortedEntries.filter(e => e.isImage).map(entry => (
-                        <div
-                          key={entry.path}
-                          className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-secondary/30 transition-colors"
-                          style={{ width: `${thumbSize + 20}px` }}
-                          title={entry.name}
-                        >
+                        <IconTooltip key={entry.path} label={entry.name} side="top">
                           <div
-                            className="rounded-lg overflow-hidden bg-muted/50 border border-border/50 flex items-center justify-center"
-                            style={{ width: `${thumbSize}px`, height: `${thumbSize}px` }}
+                            className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-secondary/30 transition-colors"
+                            style={{ width: `${thumbSize + 20}px` }}
                           >
-                            {thumbnails[entry.path] ? (
-                              <img
-                                src={thumbnails[entry.path]}
-                                alt={entry.name}
-                                className="object-cover w-full h-full"
-                              />
-                            ) : (
-                              <Image className="w-6 h-6 text-muted-foreground/40" />
-                            )}
+                            <div
+                              className="rounded-lg overflow-hidden bg-muted/50 border border-border/50 flex items-center justify-center"
+                              style={{ width: `${thumbSize}px`, height: `${thumbSize}px` }}
+                            >
+                              {thumbnails[entry.path] ? (
+                                <img
+                                  src={thumbnails[entry.path]}
+                                  alt={entry.name}
+                                  className="object-cover w-full h-full"
+                                />
+                              ) : (
+                                <Image className="w-6 h-6 text-muted-foreground/40" />
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground truncate w-full text-center leading-tight">
+                              {entry.name}
+                            </span>
                           </div>
-                          <span className="text-xs text-muted-foreground truncate w-full text-center leading-tight">
-                            {entry.name}
-                          </span>
-                        </div>
+                        </IconTooltip>
                       ))}
                     </div>
                   )}
                   {hasImages && fileViewMode === 'list' && (
                     <div className="mt-1">
                       {sortedEntries.filter(e => e.isImage).map(entry => (
-                        <div key={entry.path} className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-secondary/30 transition-colors" title={entry.name}>
-                          <Image className="w-4 h-4 text-muted-foreground/50 shrink-0" />
-                          <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
-                          {entry.sizeBytes > 0 && (
-                            <span className="text-xs text-muted-foreground shrink-0">
-                              {entry.sizeBytes < 1024 * 1024
-                                ? `${(entry.sizeBytes / 1024).toFixed(0)} KB`
-                                : `${(entry.sizeBytes / (1024 * 1024)).toFixed(1)} MB`}
-                            </span>
-                          )}
-                        </div>
+                        <IconTooltip key={entry.path} label={entry.name} side="top">
+                          <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-secondary/30 transition-colors">
+                            <Image className="w-4 h-4 text-muted-foreground/50 shrink-0" />
+                            <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
+                            {entry.sizeBytes > 0 && (
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {entry.sizeBytes < 1024 * 1024
+                                  ? `${(entry.sizeBytes / 1024).toFixed(0)} KB`
+                                  : `${(entry.sizeBytes / (1024 * 1024)).toFixed(1)} MB`}
+                              </span>
+                            )}
+                          </div>
+                        </IconTooltip>
                       ))}
                     </div>
                   )}

@@ -109,8 +109,22 @@ export interface SearchQuery {
   /** When true, the person filter only matches photos where the user
    *  has explicitly confirmed the face (face_detections.verified = 1)
    *  — auto-matched faces from refineFromVerifiedFaces are excluded.
-   *  Mirrors the S&D AI ribbon's "AI / Verified" toggle. */
+   *  Legacy boolean kept for backwards-compat; new code should use
+   *  `personMatchMode` below which supports the 'matched' state too. */
   personVerifiedOnly?: boolean;
+  /** Tri-state filter for the S&D AI ribbon's Matched / Verified /
+   *  Both toggle:
+   *    - 'matched'   = only auto-matched faces (verified = 0)
+   *    - 'verified'  = only manually-confirmed (verified = 1)
+   *    - 'both'      = either (no filter)
+   *  When set, takes precedence over `personVerifiedOnly`. */
+  personMatchMode?: 'matched' | 'verified' | 'both';
+  /** Cosine similarity floor for AUTO-MATCHED faces (the score
+   *  refineFromVerifiedFaces stored when the face was matched).
+   *  Drives the S&D Match Sensitivity slider — moving the slider
+   *  filters auto-matches live without re-running refinement.
+   *  Verified faces (verified=1) are never gated by this. */
+  personMatchThreshold?: number;
   // Tag mode mirrors personIdMode: 'or' (default) = any tag; 'and' = every
   // tag must be present on the file.
   aiTagMode?: 'and' | 'or';
@@ -198,26 +212,26 @@ export function initDatabase(): { success: boolean; error?: string } {
 
     const dbPath = getDbPath();
 
-    // ─── Pre-open backup ────────────────────────────────────────
-    // Snapshot the live DB to a rolling backup before we open it.
-    // Keeps 5 rotating backups (backup-0 newest, backup-4 oldest) so
-    // if a bug destroys user data, we have a recent copy to restore
-    // from. Cheap: copy only happens once at startup, file-system
-    // level, no SQLite traffic.
+    // ─── Pre-open snapshot ─────────────────────────────────────
+    // Take an auto-launch snapshot before we open the live DB. We
+    // use the new typed naming scheme (snapshot-auto-launch-<ts>.db)
+    // and the granular-retention pruner runs first so older
+    // snapshots get demoted to daily/weekly buckets instead of
+    // dropping off a hard 5-launch cliff.
     try {
       if (fs.existsSync(dbPath)) {
         const backupDir = path.join(path.dirname(dbPath), 'backups');
         if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-        // Rotate: shift backup-3 → backup-4, ..., backup-0 → backup-1.
-        for (let i = 3; i >= 0; i--) {
-          const src = path.join(backupDir, `pdr-search.backup-${i}.db`);
-          const dst = path.join(backupDir, `pdr-search.backup-${i + 1}.db`);
-          if (fs.existsSync(src)) fs.copyFileSync(src, dst);
-        }
-        fs.copyFileSync(dbPath, path.join(backupDir, 'pdr-search.backup-0.db'));
+        // Promote / prune existing auto-launch snapshots into the
+        // 5-launch + 7-day + 4-week tiers.
+        try { pruneAutoSnapshots(); } catch {}
+        // Take the new launch snapshot.
+        const ts = new Date().toISOString().replace(/[:]/g, '-');
+        const dst = path.join(backupDir, `snapshot-auto-launch-${ts}.db`);
+        fs.copyFileSync(dbPath, dst);
       }
     } catch (backupErr) {
-      console.warn('[DB] Startup backup failed (non-fatal):', backupErr);
+      console.warn('[DB] Startup snapshot failed (non-fatal):', backupErr);
     }
 
     db = new Database(dbPath);
@@ -430,6 +444,16 @@ export function initDatabase(): { success: boolean; error?: string } {
     const faceColNames = new Set(faceCols.map(c => c.name));
     if (!faceColNames.has('verified')) {
       try { db.exec(`ALTER TABLE face_detections ADD COLUMN verified INTEGER NOT NULL DEFAULT 0`); } catch {}
+    }
+    // Store the cosine similarity score chosen by refineFromVerifiedFaces
+    // when auto-matching a face to a person. Lets the S&D Match
+    // slider filter results live at search time without re-running
+    // the (expensive) refinement. NULL = either pre-refinement
+    // legacy data or a manually-verified face (verified=1 is its
+    // own signal). Only auto-matched faces (verified=0 + person_id
+    // != NULL) carry a score.
+    if (!faceColNames.has('match_similarity')) {
+      try { db.exec(`ALTER TABLE face_detections ADD COLUMN match_similarity REAL`); } catch {}
     }
 
     // Trees v1 — relationship edges between persons.
@@ -722,11 +746,97 @@ export function initDatabase(): { success: boolean; error?: string } {
       console.error('[DB] Could not create unique index on indexed_files.file_path:', idxErr);
     }
 
+    // Backfill match_similarity for legacy auto-matched faces.
+    // Without this, the S&D Match Sensitivity slider has nothing
+    // to filter on for data that was matched before the column
+    // existed (NULL → treated as bypass-the-gate). One-shot fill
+    // on launch: cheap (<1s for typical libraries) and idempotent
+    // (skipped on subsequent launches because the rows now have
+    // scores). Works directly off existing person_id assignments
+    // without re-running the matching algorithm or destabilising
+    // the user's data.
+    try {
+      const legacyCount = (db.prepare(
+        `SELECT COUNT(*) as cnt FROM face_detections WHERE person_id IS NOT NULL AND verified = 0 AND match_similarity IS NULL AND embedding IS NOT NULL`,
+      ).get() as { cnt: number }).cnt;
+      if (legacyCount > 0) {
+        backfillMatchSimilarity(db);
+      }
+    } catch (backfillErr) {
+      console.warn('[DB] match_similarity backfill failed (non-fatal):', backfillErr);
+    }
+
     return { success: true };
   } catch (err) {
     console.error('Failed to initialise search database:', err);
     return { success: false, error: (err as Error).message };
   }
+}
+
+/**
+ * One-shot backfill of `match_similarity` for legacy auto-matched
+ * faces. For every (face, person) pair where the face is linked to
+ * a person but has no stored similarity (verified = 0, person_id
+ * NOT NULL, match_similarity IS NULL), compute the cosine similarity
+ * against the person's verified embeddings and store the max.
+ *
+ * Doesn't change person assignments — only fills in the score so
+ * the S&D Match Sensitivity slider has something to filter on.
+ *
+ * Runs once after the schema migration adds the column. Subsequent
+ * launches skip this entirely (the count check returns 0).
+ */
+export function backfillMatchSimilarity(database: Database.Database): void {
+  // Pre-compute, per person, the list of verified embeddings (vector
+  // + magnitude) so we don't reload the same data per face.
+  const personIds = (database.prepare(
+    `SELECT DISTINCT person_id FROM face_detections WHERE person_id IS NOT NULL AND verified = 0 AND match_similarity IS NULL AND embedding IS NOT NULL`,
+  ).all() as Array<{ person_id: number }>).map(r => r.person_id);
+  if (personIds.length === 0) return;
+
+  const updateStmt = database.prepare(`UPDATE face_detections SET match_similarity = ? WHERE id = ?`);
+  const verifiedStmt = database.prepare(`SELECT embedding FROM face_detections WHERE person_id = ? AND verified = 1 AND embedding IS NOT NULL`);
+  const unfilledStmt = database.prepare(`SELECT id, embedding FROM face_detections WHERE person_id = ? AND verified = 0 AND match_similarity IS NULL AND embedding IS NOT NULL`);
+
+  const tx = database.transaction(() => {
+    let totalFilled = 0;
+    for (const personId of personIds) {
+      const verifiedRows = verifiedStmt.all(personId) as Array<{ embedding: Buffer }>;
+      if (verifiedRows.length === 0) continue;
+      // Pre-compute normalised vectors + magnitudes once per person.
+      const firstVec = new Float32Array(verifiedRows[0].embedding.buffer, verifiedRows[0].embedding.byteOffset, verifiedRows[0].embedding.byteLength / 4);
+      const dim = firstVec.length;
+      const verifiedVecs: Float32Array[] = [];
+      const verifiedMags: number[] = [];
+      for (const vr of verifiedRows) {
+        const v = new Float32Array(vr.embedding.buffer, vr.embedding.byteOffset, vr.embedding.byteLength / 4);
+        let m = 0;
+        for (let i = 0; i < dim; i++) m += v[i] * v[i];
+        verifiedVecs.push(v);
+        verifiedMags.push(Math.sqrt(m));
+      }
+      const unfilled = unfilledStmt.all(personId) as Array<{ id: number; embedding: Buffer }>;
+      for (const row of unfilled) {
+        const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+        let magB = 0;
+        for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
+        const magBSqrt = Math.sqrt(magB);
+        let bestSim = 0;
+        for (let k = 0; k < verifiedVecs.length; k++) {
+          const va = verifiedVecs[k];
+          let dot = 0;
+          for (let i = 0; i < dim; i++) dot += va[i] * vec[i];
+          const denom = verifiedMags[k] * magBSqrt;
+          const sim = denom === 0 ? 0 : dot / denom;
+          if (sim > bestSim) bestSim = sim;
+        }
+        updateStmt.run(bestSim, row.id);
+        totalFilled++;
+      }
+    }
+    console.log(`[DB] Backfilled match_similarity for ${totalFilled} legacy auto-match${totalFilled === 1 ? '' : 'es'} across ${personIds.length} ${personIds.length === 1 ? 'person' : 'people'}`);
+  });
+  tx();
 }
 
 export function getDb(): Database.Database {
@@ -1267,18 +1377,35 @@ export function searchFiles(query: SearchQuery): SearchResult {
   const personFragment = (() => {
     if (!query.personId || query.personId.length === 0) return null;
     const ph = query.personId.map(() => '?').join(',');
-    // S&D AI/Verified toggle: when "Verified only" is on, gate every
-    // face match on verified=1 so auto-matches from refineFromVerified
-    // are excluded. Default ('AI matches') keeps the legacy behaviour.
-    const verifiedClause = query.personVerifiedOnly ? ' AND fd.verified = 1' : '';
+    // S&D AI ribbon Matched / Verified / Both toggle:
+    //   matched  → fd.verified = 0  (auto-only, never confirmed)
+    //   verified → fd.verified = 1  (manually-confirmed only)
+    //   both     → no clause        (everything attached to the person)
+    // Falls back to the legacy `personVerifiedOnly` boolean so old
+    // saved-favourite filters still work without migration.
+    const mode = query.personMatchMode
+      ?? (query.personVerifiedOnly ? 'verified' : 'both');
+    const verifiedClause =
+      mode === 'verified' ? ' AND fd.verified = 1'
+      : mode === 'matched' ? ' AND fd.verified = 0'
+      : '';
+    // Live similarity floor from the S&D Match Sensitivity slider.
+    // Only applies to auto-matched faces (verified=0); verified
+    // faces are user-confirmed truth and bypass the gate. NULL
+    // scores (legacy data from before the migration) are also
+    // bypassed so old auto-matches don't suddenly disappear.
+    const simThreshold = typeof query.personMatchThreshold === 'number' ? query.personMatchThreshold : null;
+    const similarityClause = simThreshold !== null && mode !== 'verified'
+      ? ` AND (fd.verified = 1 OR fd.match_similarity IS NULL OR fd.match_similarity >= ${Number(simThreshold)})`
+      : '';
     if (query.personIdMode === 'and' && query.personId.length > 1) {
       return {
-        sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph})${verifiedClause} GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`,
+        sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph})${verifiedClause}${similarityClause} GROUP BY fd.file_id HAVING COUNT(DISTINCT fd.person_id) = ?)`,
         params: [...query.personId, query.personId.length],
       };
     }
     return {
-      sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph})${verifiedClause})`,
+      sql: `f.id IN (SELECT fd.file_id FROM face_detections fd WHERE fd.person_id IN (${ph})${verifiedClause}${similarityClause})`,
       params: [...query.personId],
     };
   })();
@@ -2115,6 +2242,91 @@ export function permanentlyDeletePerson(personId: number): boolean {
 }
 
 /**
+ * "Send back to Unnamed" — the PM-side row removal action.
+ *
+ * Unlinks every face from the person (sets `person_id = NULL` and
+ * `verified = 0` so they appear as fresh Unnamed clusters), clears
+ * any saved-tree focus pointing at the person, then permanently
+ * deletes the person record (no soft-delete / Recycle Bin).
+ *
+ * Captures + returns an `undoToken` containing the full prior state
+ * (person record, face IDs, prior verified flags, prior tree focus
+ * references). Pass it back to `restoreUnnamedPerson` to undo the
+ * action exactly — re-creates the person, re-links all faces with
+ * their prior verified status, restores any tree focus references.
+ *
+ * Distinct from `discardPerson` which preserves face links + the
+ * `verified=1` flag and only sets `discarded_at`. That soft-delete
+ * model still drives the Trees Recycle Bin.
+ */
+export interface UnnameUndoToken {
+  person: { name: string; full_name: string | null; avatar_data: string | null; representative_face_id: number | null };
+  // Each face's prior link + verified flag, so undo can restore both.
+  faces: Array<{ faceId: number; wasVerified: number }>;
+  // Tree focus refs we cleared — restore them on undo.
+  treeFocusIds: number[];
+}
+
+export function unnamePersonAndDelete(personId: number): { facesUnnamed: number; photosAffected: number; undoToken: UnnameUndoToken | null } {
+  const database = getDb();
+  const personRow = database.prepare(`SELECT name, full_name, avatar_data, representative_face_id FROM persons WHERE id = ?`).get(personId) as { name: string; full_name: string | null; avatar_data: string | null; representative_face_id: number | null } | undefined;
+  if (!personRow) return { facesUnnamed: 0, photosAffected: 0, undoToken: null };
+  const photosAffected = (database.prepare(
+    `SELECT COUNT(DISTINCT file_id) as cnt FROM face_detections WHERE person_id = ?`
+  ).get(personId) as { cnt: number }).cnt;
+  // Capture state for undo BEFORE we mutate anything.
+  const facesBefore = database.prepare(`SELECT id as faceId, verified as wasVerified FROM face_detections WHERE person_id = ?`).all(personId) as Array<{ faceId: number; wasVerified: number }>;
+  const treesBefore = database.prepare(`SELECT id FROM saved_trees WHERE focus_person_id = ?`).all(personId) as Array<{ id: number }>;
+  const undoToken: UnnameUndoToken = {
+    person: personRow,
+    faces: facesBefore,
+    treeFocusIds: treesBefore.map(t => t.id),
+  };
+  let facesUnnamed = 0;
+  const tx = database.transaction(() => {
+    database.prepare(`UPDATE saved_trees SET focus_person_id = NULL WHERE focus_person_id = ?`).run(personId);
+    const r = database.prepare(`UPDATE face_detections SET person_id = NULL, verified = 0 WHERE person_id = ?`).run(personId);
+    facesUnnamed = r.changes;
+    database.prepare(`DELETE FROM persons WHERE id = ?`).run(personId);
+  });
+  tx();
+  return { facesUnnamed, photosAffected, undoToken };
+}
+
+/**
+ * Reverse a recent `unnamePersonAndDelete` using the token it
+ * returned. Recreates the person record, re-links every face with
+ * its prior verified flag, and restores any saved-tree focus
+ * references. Returns the new personId so callers can refresh UI
+ * state pointing at the resurrected person.
+ */
+export function restoreUnnamedPerson(token: UnnameUndoToken): { personId: number; facesRestored: number } {
+  const database = getDb();
+  let newPersonId = 0;
+  let facesRestored = 0;
+  const tx = database.transaction(() => {
+    const result = database.prepare(`INSERT INTO persons (name, full_name, avatar_data, representative_face_id) VALUES (?, ?, ?, ?)`).run(
+      token.person.name,
+      token.person.full_name,
+      token.person.avatar_data,
+      token.person.representative_face_id,
+    );
+    newPersonId = result.lastInsertRowid as number;
+    const updateFaceVerified = database.prepare(`UPDATE face_detections SET person_id = ?, verified = ? WHERE id = ?`);
+    for (const f of token.faces) {
+      updateFaceVerified.run(newPersonId, f.wasVerified, f.faceId);
+      facesRestored++;
+    }
+    if (token.treeFocusIds.length > 0) {
+      const updateTreeFocus = database.prepare(`UPDATE saved_trees SET focus_person_id = ? WHERE id = ?`);
+      for (const tid of token.treeFocusIds) updateTreeFocus.run(newPersonId, tid);
+    }
+  });
+  tx();
+  return { personId: newPersonId, facesRestored };
+}
+
+/**
  * Delete face detections for a specific person by their person_id.
  * Used for permanently removing ignored/unsure faces — deletes the actual face records
  * and the person record if no faces remain.
@@ -2189,24 +2401,38 @@ export function getAllFaceEmbeddings(): { id: number; file_id: number; embedding
  * Processes persons in descending order of verified face count (most populous first).
  * Returns stats about what was done.
  */
-export function refineFromVerifiedFaces(similarityThreshold: number = 0.72): {
+export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, personFilter?: number): {
   personsProcessed: number;
   newMatches: number;
   perPerson: { personId: number; personName: string; verifiedCount: number; matched: number }[];
 } {
   const database = getDb();
 
-  // Get all real named persons with their verified face counts, most populous first
-  const persons = database.prepare(`
-    SELECT p.id, p.name, COUNT(fd.id) as verified_count
-    FROM persons p
-    INNER JOIN face_detections fd ON fd.person_id = p.id AND fd.verified = 1 AND fd.embedding IS NOT NULL
-    WHERE p.discarded_at IS NULL
-      AND p.name NOT IN ('__ignored__', '__unsure__')
-    GROUP BY p.id
-    HAVING verified_count > 0
-    ORDER BY verified_count DESC
-  `).all() as { id: number; name: string; verified_count: number }[];
+  // Get all real named persons with their verified face counts, most populous first.
+  // When personFilter is provided, restrict to that single person — used by the
+  // per-row "Improve" button and the post-verify chip prompt so users can run
+  // refinement for just the person they were working on instead of all-at-once.
+  const persons = personFilter != null
+    ? database.prepare(`
+        SELECT p.id, p.name, COUNT(fd.id) as verified_count
+        FROM persons p
+        INNER JOIN face_detections fd ON fd.person_id = p.id AND fd.verified = 1 AND fd.embedding IS NOT NULL
+        WHERE p.discarded_at IS NULL
+          AND p.id = ?
+          AND p.name NOT IN ('__ignored__', '__unsure__')
+        GROUP BY p.id
+        HAVING verified_count > 0
+      `).all(personFilter) as { id: number; name: string; verified_count: number }[]
+    : database.prepare(`
+        SELECT p.id, p.name, COUNT(fd.id) as verified_count
+        FROM persons p
+        INNER JOIN face_detections fd ON fd.person_id = p.id AND fd.verified = 1 AND fd.embedding IS NOT NULL
+        WHERE p.discarded_at IS NULL
+          AND p.name NOT IN ('__ignored__', '__unsure__')
+        GROUP BY p.id
+        HAVING verified_count > 0
+        ORDER BY verified_count DESC
+      `).all() as { id: number; name: string; verified_count: number }[];
 
   const perPerson: { personId: number; personName: string; verifiedCount: number; matched: number }[] = [];
   let totalNewMatches = 0;
@@ -2223,15 +2449,27 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72): {
       continue;
     }
 
-    // Compute average embedding
+    // Max-similarity matching (was: average-of-embeddings).
+    // Reason for the change: averaging baby-Terry + adult-Terry into
+    // one vector lands in a no-man's-land that matches neither well.
+    // Instead we keep ALL verified vectors, score each unnamed face
+    // against EACH verified face, and match if ANY single verified
+    // face exceeds the threshold. This is age-spread-tolerant by
+    // design and also tends to be more accurate at any single age
+    // (averaging blurs information that the comparison needs).
     const firstVec = new Float32Array(verifiedRows[0].embedding.buffer, verifiedRows[0].embedding.byteOffset, verifiedRows[0].embedding.byteLength / 4);
     const dim = firstVec.length;
-    const avg = new Float32Array(dim);
+    // Pre-compute normalised vectors + magnitudes for each verified
+    // face so the per-unnamed-face inner loop is just a dot product.
+    const verifiedVecs: Float32Array[] = [];
+    const verifiedMags: number[] = [];
     for (const row of verifiedRows) {
-      const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
-      for (let i = 0; i < dim; i++) avg[i] += vec[i];
+      const v = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+      let m = 0;
+      for (let i = 0; i < dim; i++) m += v[i] * v[i];
+      verifiedVecs.push(v);
+      verifiedMags.push(Math.sqrt(m));
     }
-    for (let i = 0; i < dim; i++) avg[i] /= verifiedRows.length;
 
     // Get all unnamed faces (person_id IS NULL) with embeddings
     const unnamed = database.prepare(`
@@ -2240,21 +2478,33 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72): {
     `).all() as { id: number; embedding: Buffer }[];
 
     let matchedForThisPerson = 0;
-    const assignStmt = database.prepare(`UPDATE face_detections SET person_id = ? WHERE id = ?`);
-    const avgMag = Math.sqrt(avg.reduce((s, v) => s + v * v, 0));
+    // We now store the actual similarity score on the face row so
+    // the S&D Match slider can filter live at search time. That
+    // means we can't early-break the inner loop — we need the
+    // full max similarity across all verified faces (the early
+    // break was an optimisation that's now incompatible with
+    // accurate per-face scores). Cost is bounded — typically a
+    // few hundred dot products per unnamed face per named person.
+    const assignStmt = database.prepare(`UPDATE face_detections SET person_id = ?, match_similarity = ? WHERE id = ?`);
 
     for (const row of unnamed) {
       const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
-      // Cosine similarity
-      let dot = 0, magB = 0;
-      for (let i = 0; i < dim; i++) {
-        dot += avg[i] * vec[i];
-        magB += vec[i] * vec[i];
+      let magB = 0;
+      for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
+      const magBSqrt = Math.sqrt(magB);
+
+      // Max-similarity across every verified face for this person.
+      let bestSim = 0;
+      for (let k = 0; k < verifiedVecs.length; k++) {
+        const va = verifiedVecs[k];
+        let dot = 0;
+        for (let i = 0; i < dim; i++) dot += va[i] * vec[i];
+        const denom = verifiedMags[k] * magBSqrt;
+        const sim = denom === 0 ? 0 : dot / denom;
+        if (sim > bestSim) bestSim = sim;
       }
-      const mag = avgMag * Math.sqrt(magB);
-      const sim = mag === 0 ? 0 : dot / mag;
-      if (sim >= similarityThreshold) {
-        assignStmt.run(person.id, row.id);
+      if (bestSim >= similarityThreshold) {
+        assignStmt.run(person.id, bestSim, row.id);
         matchedForThisPerson++;
       }
     }
@@ -2282,7 +2532,7 @@ export function updateFaceCluster(faceId: number, clusterId: number): void {
 }
 
 /** Get all face clusters with representative face data for the People management view */
-export function getPersonClusters(): { cluster_id: number; person_id: number | null; person_name: string | null; person_full_name: string | null; face_count: number; photo_count: number; representative_face_id: number; representative_file_id: number; representative_file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; sample_faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[] }[] {
+export function getPersonClusters(): { cluster_id: number; person_id: number | null; person_name: string | null; person_full_name: string | null; face_count: number; photo_count: number; representative_face_id: number; representative_file_id: number; representative_file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; sample_faces: { face_id: number; file_id: number; file_path: string; derived_date: string | null; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[] }[] {
   const database = getDb();
 
   // Named clusters: group by person_id (so individually reassigned faces appear under their new person)
@@ -2348,6 +2598,11 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
   // plus one batch query for user-chosen representative overrides, and
   // resolve rep / samples in JS. That takes the N+1 pattern down to
   // a constant 5 queries regardless of cluster count.
+  // Also pulls derived_date so the per-cluster sample strip can be
+  // sorted chronologically (left = oldest, right = newest). PDR's
+  // identity is date-sorting, so the face strip should respect the
+  // same ordering — makes it intuitive to scan a person's life
+  // through time. Faces with NULL derived_date go to the end.
   const allClusterFaces = database.prepare(`
     SELECT
       fd.id as face_id,
@@ -2355,9 +2610,11 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       fd.cluster_id,
       fd.file_id,
       f.file_path,
+      f.derived_date,
       fd.box_x, fd.box_y, fd.box_w, fd.box_h,
       fd.confidence,
-      fd.verified
+      fd.verified,
+      fd.match_similarity
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
     LEFT JOIN persons p ON fd.person_id = p.id
@@ -2367,8 +2624,10 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
   `).all() as Array<{
     face_id: number; person_id: number | null; cluster_id: number;
     file_id: number; file_path: string;
+    derived_date: string | null;
     box_x: number; box_y: number; box_w: number; box_h: number;
     confidence: number; verified: number;
+    match_similarity: number | null;
   }>;
 
   // Index the faces three ways matching the three grouping schemes:
@@ -2427,10 +2686,35 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       }
     }
 
-    // Samples order matches the previous behaviour (confidence ASC).
-    // The DB fetch returned DESC, so reverse for consistency with
-    // existing consumers.
-    const samples = [...faces].reverse();
+    // Samples ordering depends on cluster type:
+    //   - Real Named persons → CHRONOLOGICAL (oldest left, newest
+    //     right) — these are verified, the user is reviewing a
+    //     life-history view, and PDR's identity is date-sorting.
+    //   - Unnamed / Unsure / Ignored → confidence ASC (lowest first)
+    //     — these are still being identified; the user is doing
+    //     visual-similarity review and uncertain matches should be
+    //     surfaced first. The clustering already groups by
+    //     similarity; within a cluster, "least confident first"
+    //     focuses the user's attention on the calls that need it.
+    //
+    // NULL-date faces in chronological mode go to the end so a
+    // missing-date face doesn't masquerade as the oldest. Ties on
+    // the same date fall back to confidence-ascending for deterministic
+    // tiebreaks.
+    const isRealNamed = isNamed && !isSpecial;
+    const samples = isRealNamed
+      ? [...faces].sort((a, b) => {
+          const aHas = !!a.derived_date;
+          const bHas = !!b.derived_date;
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          if (aHas && bHas) {
+            if (a.derived_date! < b.derived_date!) return -1;
+            if (a.derived_date! > b.derived_date!) return 1;
+          }
+          return a.confidence - b.confidence;
+        })
+      : [...faces].reverse(); // confidence ASC (DB returned DESC)
 
     return {
       cluster_id: c.cluster_id,
@@ -2542,46 +2826,250 @@ export function resetAllTagAnalysis(): { filesQueued: number } {
 }
 
 /**
- * Enumerate all DB backups available for restore — the rolling startup
- * snapshots (backup-0..4) and any leftover pre-reanalyze snapshots from
- * an earlier build. Returns newest first by mtime so the UI list reads
- * naturally.
+ * Snapshot system — three kinds, all stored in <userdata>/backups/ as
+ * raw .db copies:
  *
- * Pre-reanalyze snapshots are no longer created (the user-facing
- * Re-analyze faces action that triggered them was removed — see
- * memory/feedback_face_reanalyze_design.md). We still list any that
- * exist so users can restore from them, and we cap the count at 5:
- * if more than 5 exist, the oldest are deleted from disk to keep the
- * backups directory from drifting.
+ *   - 'auto-launch'   created on every PDR launch by initDatabase().
+ *                     Last 5 kept rotating (backup-0..4).
+ *   - 'auto-event'    created automatically before any risky operation
+ *                     (Improve Recognition, row removal, bulk verifies,
+ *                     Lightroom import when re-enabled). Last 10 kept.
+ *   - 'manual'        created when the user clicks "Take a snapshot now"
+ *                     in Settings → Backup. Optional name. Never
+ *                     auto-evicted — user manages these explicitly.
+ *
+ * Plus granular retention on auto-launch snapshots: in addition to the
+ * rolling 5, we keep ONE per day for 7 days and ONE per week for 4
+ * weeks. Total ~16 files in the worst case (~100 MB on disk for a
+ * library with thousands of tagged faces). The older snapshots are
+ * auto-promoted on each launch — see `pruneAutoSnapshots`.
+ *
+ * Filenames encode kind + ISO timestamp + optional label so the
+ * directory is self-describing if the user opens it manually.
  */
-export function listDbBackups(): Array<{ path: string; filename: string; sizeBytes: number; mtime: string; kind: 'rolling' | 'pre-reanalyze' }> {
+
+export type SnapshotKind = 'auto-launch' | 'auto-event' | 'manual';
+
+export interface Snapshot {
+  path: string;
+  filename: string;
+  sizeBytes: number;
+  mtime: string;
+  kind: SnapshotKind;
+  /** Human-readable label for tagged events ("Before Improve Recognition")
+   *  or user-supplied for manual snapshots ("Pre-holiday backup"). */
+  label: string | null;
+}
+
+const BACKUP_DIR_NAME = 'backups';
+function getBackupDir(): string {
   const dbPath = getDbPath();
-  const backupDir = path.join(path.dirname(dbPath), 'backups');
-  if (!fs.existsSync(backupDir)) return [];
-  const entries: Array<{ path: string; filename: string; sizeBytes: number; mtime: string; kind: 'rolling' | 'pre-reanalyze' }> = [];
-  for (const name of fs.readdirSync(backupDir)) {
+  const dir = path.join(path.dirname(dbPath), BACKUP_DIR_NAME);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Filename → kind + label parsing. New filenames look like:
+ *    snapshot-auto-launch-2026-04-27T12-00-00.000Z.db
+ *    snapshot-auto-event-2026-04-27T12-00-00.000Z__Before-Improve-Recognition.db
+ *    snapshot-manual-2026-04-27T12-00-00.000Z__Pre-holiday-backup.db
+ *  Legacy 'pdr-search.backup-{0..4}.db' files map to auto-launch (no label). */
+function parseSnapshotName(name: string): { kind: SnapshotKind; label: string | null } | null {
+  if (!name.endsWith('.db')) return null;
+  if (/^pdr-search\.backup-\d+\.db$/.test(name)) return { kind: 'auto-launch', label: null };
+  const m = /^snapshot-(auto-launch|auto-event|manual)-[^_]+(?:__(.+))?\.db$/.exec(name);
+  if (!m) return null;
+  const kind = m[1] as SnapshotKind;
+  const label = m[2] ? m[2].replace(/-/g, ' ') : null;
+  return { kind, label };
+}
+
+/** Generate a new snapshot filename. Slugifies label so it's safe on
+ *  every filesystem (Windows balks at colons + most Unix shells dislike
+ *  spaces). */
+function makeSnapshotFilename(kind: SnapshotKind, label?: string): string {
+  const ts = new Date().toISOString().replace(/[:]/g, '-');
+  const slug = label ? `__${label.trim().replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60)}` : '';
+  return `snapshot-${kind}-${ts}${slug}.db`;
+}
+
+/**
+ * Take a snapshot of the live DB right now. Used by tagged-event
+ * triggers (auto-event) and the manual "Take snapshot now" button.
+ * Cheap — just a file copy at the OS level, no SQLite traffic. Errors
+ * are non-fatal: if the copy fails (disk full, permission), we log
+ * and the calling action proceeds without a snapshot. The user is
+ * never blocked by backup machinery.
+ */
+export function takeSnapshot(kind: SnapshotKind, label?: string): { success: boolean; path?: string; error?: string } {
+  try {
+    const dbPath = getDbPath();
+    if (!fs.existsSync(dbPath)) return { success: false, error: 'Live DB not found' };
+    // Checkpoint so any uncommitted WAL frames land in the main DB
+    // file before we copy it (otherwise the snapshot can lag).
+    try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
+    const dir = getBackupDir();
+    const name = makeSnapshotFilename(kind, label);
+    const dst = path.join(dir, name);
+    fs.copyFileSync(dbPath, dst);
+    if (kind === 'auto-event') pruneAutoEvent();
+    return { success: true, path: dst };
+  } catch (err) {
+    console.warn('[snapshot] take failed:', err);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/** Keep the most recent 10 auto-event snapshots; delete older ones. */
+function pruneAutoEvent(): void {
+  const dir = getBackupDir();
+  const events: Array<{ path: string; mtime: number }> = [];
+  for (const name of fs.readdirSync(dir)) {
+    const parsed = parseSnapshotName(name);
+    if (parsed?.kind !== 'auto-event') continue;
+    try { events.push({ path: path.join(dir, name), mtime: fs.statSync(path.join(dir, name)).mtimeMs }); } catch {}
+  }
+  events.sort((a, b) => b.mtime - a.mtime);
+  for (const e of events.slice(10)) {
+    try { fs.unlinkSync(e.path); } catch {}
+  }
+}
+
+/**
+ * Granular retention promotion for auto-launch snapshots. Run on
+ * each PDR launch right after `initDatabase`'s rolling rotation
+ * happens, BEFORE the new launch snapshot is taken. Strategy:
+ *   - Last 5 launches: kept by initDatabase's existing rotation.
+ *   - Daily: keep ONE snapshot per calendar day, last 7 days.
+ *   - Weekly: keep ONE snapshot per ISO-week, last 4 weeks.
+ *
+ * We don't COPY anything here — we promote existing rolling snapshots
+ * by RENAMING them with a label so they survive the next rotation.
+ * Older snapshots that fall outside all three windows get deleted.
+ */
+export function pruneAutoSnapshots(): void {
+  const dir = getBackupDir();
+  const all: Array<{ path: string; filename: string; mtime: Date; parsed: ReturnType<typeof parseSnapshotName> }> = [];
+  for (const name of fs.readdirSync(dir)) {
+    const parsed = parseSnapshotName(name);
+    if (parsed?.kind !== 'auto-launch') continue;
+    try {
+      all.push({ path: path.join(dir, name), filename: name, mtime: fs.statSync(path.join(dir, name)).mtime, parsed });
+    } catch {}
+  }
+  all.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+  // Buckets: per-calendar-day (last 7) and per-ISO-week (last 4).
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const weekKey = (d: Date) => {
+    // ISO week-of-year: Monday-start. Good enough for retention buckets.
+    const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayNum = (tmp.getUTCDay() + 6) % 7;
+    tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3);
+    const week1 = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 4));
+    const w = 1 + Math.round(((tmp.getTime() - week1.getTime()) / 86_400_000 - 3 + ((week1.getUTCDay() + 6) % 7)) / 7);
+    return `${tmp.getUTCFullYear()}-W${w}`;
+  };
+
+  const now = new Date();
+  const daysAgo = (d: Date) => Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+
+  const keptDailyByDay = new Map<string, typeof all[number]>();
+  const keptWeeklyByWeek = new Map<string, typeof all[number]>();
+  const rollingFive = all.slice(0, 5); // keep first 5 newest as rolling
+
+  for (const entry of all) {
+    if (rollingFive.includes(entry)) continue;
+    const age = daysAgo(entry.mtime);
+    if (age <= 7) {
+      const k = dayKey(entry.mtime);
+      if (!keptDailyByDay.has(k)) keptDailyByDay.set(k, entry);
+    }
+    if (age <= 28) {
+      const k = weekKey(entry.mtime);
+      if (!keptWeeklyByWeek.has(k)) keptWeeklyByWeek.set(k, entry);
+    }
+  }
+
+  const keep = new Set<string>([
+    ...rollingFive.map(e => e.path),
+    ...Array.from(keptDailyByDay.values()).map(e => e.path),
+    ...Array.from(keptWeeklyByWeek.values()).map(e => e.path),
+  ]);
+
+  for (const entry of all) {
+    if (!keep.has(entry.path)) {
+      try { fs.unlinkSync(entry.path); } catch {}
+    }
+  }
+}
+
+/**
+ * Enumerate all snapshots available for restore. Returns newest first
+ * so the UI list reads naturally. The caller can group by `kind` or
+ * filter — we don't pre-segment here.
+ *
+ * Legacy `pdr-search.backup-{0..4}.db` files are surfaced as
+ * 'auto-launch' kind so users with old PDR data can still restore.
+ *
+ * Pre-reanalyze snapshots from an earlier PDR build (the user-facing
+ * Re-analyze action that triggered them was removed) are NOT
+ * surfaced — v2 has no users with these. Any legacy files with that
+ * naming pattern are deleted on first call so they don't drift.
+ */
+export function listSnapshots(): Snapshot[] {
+  const dir = getBackupDir();
+  if (!fs.existsSync(dir)) return [];
+  const entries: Snapshot[] = [];
+  for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith('.db')) continue;
-    const full = path.join(backupDir, name);
+    if (name.includes('pre-reanalyze')) {
+      // Legacy from an old PDR build — not relevant to v2 users.
+      try { fs.unlinkSync(path.join(dir, name)); } catch {}
+      continue;
+    }
+    const parsed = parseSnapshotName(name);
+    if (!parsed) continue;
+    const full = path.join(dir, name);
     let stat;
     try { stat = fs.statSync(full); } catch { continue; }
-    const kind: 'rolling' | 'pre-reanalyze' = name.includes('pre-reanalyze') ? 'pre-reanalyze' : 'rolling';
-    entries.push({ path: full, filename: name, sizeBytes: stat.size, mtime: stat.mtime.toISOString(), kind });
+    entries.push({
+      path: full,
+      filename: name,
+      sizeBytes: stat.size,
+      mtime: stat.mtime.toISOString(),
+      kind: parsed.kind,
+      label: parsed.label,
+    });
   }
   entries.sort((a, b) => b.mtime.localeCompare(a.mtime));
-
-  // Cap pre-reanalyze snapshots at 5 — if there are more, delete the
-  // oldest from disk and drop them from the returned list. Rolling
-  // backups are managed by initDatabase()'s own rotation so we leave
-  // them alone here.
-  const preReanalyze = entries.filter(e => e.kind === 'pre-reanalyze');
-  if (preReanalyze.length > 5) {
-    const evict = preReanalyze.slice(5); // oldest beyond the 5-cap
-    for (const e of evict) {
-      try { fs.unlinkSync(e.path); } catch { /* best-effort; leave on disk if removal fails */ }
-    }
-    return entries.filter(e => !evict.includes(e));
-  }
   return entries;
+}
+
+/** Backwards-compatible wrapper for callers that still want the old
+ *  shape. Just maps to the new typed list. New code should use
+ *  `listSnapshots()` directly. */
+export function listDbBackups(): Array<{ path: string; filename: string; sizeBytes: number; mtime: string; kind: 'rolling' | 'pre-reanalyze' | 'manual' | 'auto-event'; label: string | null }> {
+  return listSnapshots().map(s => ({
+    path: s.path,
+    filename: s.filename,
+    sizeBytes: s.sizeBytes,
+    mtime: s.mtime,
+    kind: s.kind === 'auto-launch' ? 'rolling' : s.kind,
+    label: s.label,
+  }));
+}
+
+/** Delete a single snapshot by path. Used by manual snapshot
+ *  housekeeping in Settings → Backup. */
+export function deleteSnapshot(snapshotPath: string): { success: boolean; error?: string } {
+  try {
+    if (!fs.existsSync(snapshotPath)) return { success: false, error: 'Snapshot file not found' };
+    fs.unlinkSync(snapshotPath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
 }
 
 /**
@@ -3077,13 +3565,31 @@ export function getMemoriesOnThisDay(month: number, day: number, runIds?: number
  * Fetch every file taken on a specific calendar date, optionally scoped to a
  * set of runs. Used for the day-drill-down grid.
  */
-export function getMemoriesDayFiles(year: number, month: number, day: number, runIds?: number[]): IndexedFile[] {
+/**
+ * Fetch indexed files inside a date range, drilled down by year, month
+ * and/or day. Each level is independently optional so the same function
+ * powers all three Memories drill-downs:
+ *
+ *   { year }                    → whole year
+ *   { year, month }             → whole month (e.g. "February 2005")
+ *   { year, month, day }        → single day (the original behaviour)
+ *
+ * Originally this function was day-only, which was why clicking a month
+ * tile in Memories was opening just the 1st of the month. Making month
+ * and day optional fixed that without needing a parallel code path.
+ */
+export function getMemoriesDayFiles(year: number, month?: number | null, day?: number | null, runIds?: number[]): IndexedFile[] {
   const database = getDb();
   const clause = runIdsClause(runIds);
-  const params: any[] = [year, month, day, ...clause.params];
+  const conditions: string[] = ['year = ?'];
+  const params: any[] = [year];
+  if (month != null) { conditions.push('month = ?'); params.push(month); }
+  if (day != null)   { conditions.push('day = ?');   params.push(day); }
+  const whereSql = conditions.join(' AND ') + (clause.sql ? ' ' + clause.sql : '');
+  params.push(...clause.params);
   return database.prepare(`
     SELECT * FROM indexed_files
-    WHERE year = ? AND month = ? AND day = ? ${clause.sql}
+    WHERE ${whereSql}
     ORDER BY derived_date ASC, id ASC
   `).all(...params) as IndexedFile[];
 }

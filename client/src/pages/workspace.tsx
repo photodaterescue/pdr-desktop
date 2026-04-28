@@ -57,6 +57,7 @@ import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import {
   Accordion,
   AccordionContent,
@@ -82,6 +83,10 @@ import {
   resetTagAnalysis,
   listBackups,
   restoreFromBackup,
+  takeSnapshot as takeSnapshotBridge,
+  reclusterFaces as reclusterFacesBridge,
+  deleteSnapshot as deleteSnapshotBridge,
+  exportSnapshotZip as exportSnapshotZipBridge,
   type DbBackup,
   prewarmPersonClusters
 } from "@/lib/electron-bridge";
@@ -2891,7 +2896,7 @@ function DashboardPanel({
                   {destinationPath ? (
                     <>
                       <div className="flex items-center gap-1 mb-1.5">
-                        <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded truncate max-w-full" title={destinationPath}>{destinationPath}</p>
+                        <IconTooltip label={destinationPath} side="top"><p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded truncate max-w-full">{destinationPath}</p></IconTooltip>
                         <IconTooltip label="Clear destination" side="top">
                           <button
                             onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
@@ -4212,16 +4217,19 @@ function PreviewModal({ onClose, results, fileResults }: {
                       className="grid grid-cols-[1fr,auto,1fr,auto] gap-4 p-3 text-sm hover:bg-secondary/20 transition-colors items-center"
                       data-testid={`row-file-${i}`}
                     >
-                      <div className="font-mono text-muted-foreground truncate text-xs" title={file.filename}>
-                        {file.filename}
-                      </div>
+                      <IconTooltip label={file.filename} side="top">
+                        <div className="font-mono text-muted-foreground truncate text-xs">
+                          {file.filename}
+                        </div>
+                      </IconTooltip>
                       <ArrowRight className={`w-4 h-4 flex-shrink-0 ${willRename ? 'text-emerald-500' : 'text-muted-foreground/30'}`} />
-                      <div 
-                        className={`font-mono truncate text-xs ${willRename ? getConfidenceColor(file.dateConfidence) + ' font-medium' : 'text-muted-foreground'}`}
-                        title={file.suggestedFilename || file.filename}
-                      >
-                        {file.suggestedFilename || file.filename}
-                      </div>
+                      <IconTooltip label={file.suggestedFilename || file.filename} side="top">
+                        <div
+                          className={`font-mono truncate text-xs ${willRename ? getConfidenceColor(file.dateConfidence) + ' font-medium' : 'text-muted-foreground'}`}
+                        >
+                          {file.suggestedFilename || file.filename}
+                        </div>
+                      </IconTooltip>
                       <div className="flex-shrink-0">
                         {getConfidenceBadge(file.dateConfidence)}
                       </div>
@@ -4652,6 +4660,13 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const [totalTime, setTotalTime] = useState(0);
   const [isPrescanning, setIsPrescanning] = useState(true);
   const [prescanCount, setPrescanCount] = useState(0);
+  // Network-destination staging phase. 'staging' = local writes,
+  // 'mirror' = robocopy /MT:16 pushing to the network share. Drives
+  // the status text so users understand why the % bar may briefly
+  // sit at 100% during the network upload.
+  const [copyPhase, setCopyPhase] = useState<'staging' | 'mirror' | null>(null);
+  const [mirrorFilesDone, setMirrorFilesDone] = useState(0);
+  const [mirrorFilesTotal, setMirrorFilesTotal] = useState(0);
   const startTimeRef = React.useRef(Date.now());
   const fixSnapshotRef = React.useRef<{
     // Display counts
@@ -4725,7 +4740,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     copyStartedRef.current = true;
 
     const copyFilesAsync = async () => {
-      const { copyFiles, onCopyProgress, isElectron, setFixInProgress } = await import('@/lib/electron-bridge');
+      const { copyFiles, onCopyProgress, onCopyPhase, onCopyMirrorProgress, isElectron, setFixInProgress } = await import('@/lib/electron-bridge');
 
       // Notify main process that a fix is in progress (protects against accidental close)
       await setFixInProgress(true);
@@ -4798,6 +4813,17 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       onCopyProgress((prog) => {
         setProcessed(prog.current);
         setProgress(Math.round((prog.current / prog.total) * 100));
+      });
+      // Phase + mirror-progress listeners — only fire when the
+      // backend chose the network-staging path. Outside Electron or
+      // for local destinations these are silent and copyPhase stays
+      // null (UI behaves exactly as before).
+      onCopyPhase((p) => {
+        setCopyPhase(p.phase);
+      });
+      onCopyMirrorProgress((p) => {
+        setMirrorFilesDone(p.filesMirrored);
+        setMirrorFilesTotal(p.totalToMirror);
       });
 
       // Fetch current settings
@@ -5014,20 +5040,32 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 relative">
                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
               </div>
-              <h2 className="text-2xl font-semibold text-foreground mb-2">{isPrescanning ? 'Preparing...' : 'Applying Fixes...'}</h2>
-              <p className="text-muted-foreground">{isPrescanning ? 'Scanning destination for existing files' : 'Copying, renaming and organizing your files'}</p>
+              <h2 className="text-2xl font-semibold text-foreground mb-2">
+                {isPrescanning ? 'Preparing...' : copyPhase === 'mirror' ? 'Uploading to network…' : 'Applying Fixes...'}
+              </h2>
+              <p className="text-muted-foreground">
+                {isPrescanning
+                  ? 'Scanning destination for existing files'
+                  : copyPhase === 'mirror'
+                    ? 'Pushing prepared files to your network drive via robocopy /MT:16'
+                    : copyPhase === 'staging'
+                      ? 'Preparing files locally before network upload'
+                      : 'Copying, renaming and organizing your files'}
+              </p>
             </div>
 
             <div className="space-y-2 mb-6">
               <div className="flex justify-between text-sm font-medium">
-                <span>Processing...</span>
+                <span>{copyPhase === 'mirror' ? 'Uploading…' : 'Processing...'}</span>
                 <span>{Math.round(progress)}%</span>
               </div>
               <Progress value={progress} className="h-2" />
               <p className="text-xs text-muted-foreground text-left pt-1">
                 {isPrescanning
                   ? `Scanning destination${prescanCount > 0 ? ` (${prescanCount.toLocaleString()} files checked)` : ''}...`
-                  : `${processed} of ${totalFiles} files processed`
+                  : copyPhase === 'mirror'
+                    ? `Network upload in progress${mirrorFilesTotal > 0 ? ` · ${mirrorFilesDone.toLocaleString()} of ${mirrorFilesTotal.toLocaleString()} files mirrored` : ''}…`
+                    : `${processed} of ${totalFiles} files processed`
                 }
               </p>
               <div className="flex justify-between text-xs text-muted-foreground pt-2">
@@ -5477,10 +5515,12 @@ function ReportsListModal({ onClose, onViewReport }: {
                         </span>
                       </div>
                       
-                      <div className="text-sm text-muted-foreground mb-2 truncate" title={report.destinationPath}>
-                        <FolderOpen className="w-3.5 h-3.5 inline mr-1.5 opacity-60" />
-                        {truncatePath(report.destinationPath)}
-                      </div>
+                      <IconTooltip label={report.destinationPath} side="top">
+                        <div className="text-sm text-muted-foreground mb-2 truncate">
+                          <FolderOpen className="w-3.5 h-3.5 inline mr-1.5 opacity-60" />
+                          {truncatePath(report.destinationPath)}
+                        </div>
+                      </IconTooltip>
                       
                       <div className="flex items-center gap-4 text-xs">
                         <span className="font-medium text-foreground">
@@ -7681,6 +7721,27 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   onPlaySoundChange: (value: boolean) => void
 }) {
   const [showWelcome, setShowWelcome] = useState(!getSkipWelcomeScreen());
+  // Appearance — mirrors TitleBar's dark/light toggle so users who
+  // miss the small moon/sun icon up top can find the toggle in
+  // Settings → General. Source of truth is the `dark` class on
+  // documentElement (synced via MutationObserver).
+  const [appearanceDark, setAppearanceDark] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return false;
+    return document.documentElement.classList.contains('dark');
+  });
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setAppearanceDark(document.documentElement.classList.contains('dark'));
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+  const setAppearance = (dark: boolean) => {
+    if (dark) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+    try { localStorage.setItem('pdr-dark-mode', dark ? 'true' : 'false'); } catch {}
+    (window as any).pdr?.setTitleBarColor?.(dark);
+  };
   const [allowReportRemoval, setAllowReportRemoval] = useState(
     localStorage.getItem('pdr-allow-report-removal') === 'true'
   );
@@ -7918,6 +7979,48 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [backupsExpanded, setBackupsExpanded] = useState(false);
   const [backups, setBackups] = useState<DbBackup[] | null>(null);
   const [backupsLoading, setBackupsLoading] = useState(false);
+  // Manual-snapshot label modal — replaces the broken window.prompt()
+  // that Electron's renderer blocks. Open: input visible. Save:
+  // calls takeSnapshotBridge('manual', label) then refreshes list.
+  const [manualSnapshotOpen, setManualSnapshotOpen] = useState(false);
+  const [manualSnapshotLabel, setManualSnapshotLabel] = useState('');
+  const [manualSnapshotSaving, setManualSnapshotSaving] = useState(false);
+  // Re-cluster modal — destructive operation, deliberately gated
+  // behind a confirmation with a snapshot-first toggle (default ON
+  // so a one-click rollback is always available if the recluster
+  // produces a worse grouping).
+  const [reclusterModalOpen, setReclusterModalOpen] = useState(false);
+  const [reclusterThreshold, setReclusterThreshold] = useState<number>(0.72);
+  const [reclusterSnapshotFirst, setReclusterSnapshotFirst] = useState(true);
+  const [reclusterRunning, setReclusterRunning] = useState(false);
+  // Live elapsed-seconds counter while the recluster job is in
+  // flight. Re-cluster takes ~30–60s on typical libraries with no
+  // backend progress events to plumb through, so we show an honest
+  // wall-clock instead of a fake percentage. Resets on each run.
+  const [reclusterElapsed, setReclusterElapsed] = useState(0);
+  // Holds the outcome of the most recent run so the modal can
+  // surface a green-check "Done — PM refreshed" panel that the user
+  // dismisses themselves. Previously the modal closed in finally{}
+  // the moment the IPC resolved, which left the user wondering
+  // whether anything had updated.
+  const [reclusterResult, setReclusterResult] = useState<{ success: boolean; error?: string; durationSec: number; snapshotTook?: boolean } | null>(null);
+  // Sync threshold from settings on modal open so the user sees the
+  // value PM was last using.
+  useEffect(() => {
+    if (!reclusterModalOpen) return;
+    getSettings().then((s) => {
+      const t = (s as any)?.matchThreshold;
+      if (typeof t === 'number') setReclusterThreshold(t);
+    }).catch(() => {});
+  }, [reclusterModalOpen]);
+  // Tick the elapsed counter every second while running.
+  useEffect(() => {
+    if (!reclusterRunning) return;
+    setReclusterElapsed(0);
+    const startedAt = Date.now();
+    const id = setInterval(() => setReclusterElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [reclusterRunning]);
   const refreshBackups = async () => {
     setBackupsLoading(true);
     try {
@@ -8016,8 +8119,45 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   structure, sources, fix-engine behaviour all moved
                   to the Workspace tab where they belong. */}
 
-              {/* Notifications */}
+              {/* Appearance — light/dark mode. Mirrors the small
+                  moon/sun icon in the TitleBar but in a place users
+                  routinely visit. Premium feel: segmented control
+                  with icons rather than a plain checkbox. */}
               <div>
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Appearance</span>
+                    <span className="text-xs text-muted-foreground">Light or dark interface — affects every PDR window.</span>
+                  </div>
+                  <div className="inline-flex items-center rounded-lg border border-border bg-secondary/30 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setAppearance(false)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                        !appearanceDark ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      aria-pressed={!appearanceDark}
+                    >
+                      <Sun className="w-3.5 h-3.5" />
+                      Light
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAppearance(true)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                        appearanceDark ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      aria-pressed={appearanceDark}
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      Dark
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notifications */}
+              <div className="pt-4 border-t border-border">
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">Play completion sound</span>
@@ -8429,17 +8569,47 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       data-testid="checkbox-ai-visual-suggestions"
                     />
                   </label>
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Improve facial recognition from verified faces</span>
-                      <span className="text-xs text-muted-foreground">Enables a button in the People window that uses your verified faces to refine matching. Only turn this on once you're sure the verified faces are correct.</span>
+                  {/* The "Improve facial recognition" toggle was here.
+                      Removed in the PM redesign — the button is now
+                      always live in PM (no Settings gate) and the
+                      tooltip "Only turn this on once you're sure the
+                      verified faces are correct" was actively wrong:
+                      auto-matched faces are excluded from training,
+                      and the algorithm only needs ≥1 verified face
+                      per named person. The aiRefineFromVerified
+                      setting still exists in the store for backwards
+                      compatibility but is never read. */}
+                </div>
+              </div>
+
+              {/* Advanced — re-cluster unnamed groups. This is the
+                  destructive operation that used to live behind PM's
+                  Refresh button. Moved here per Apple/Adobe convention:
+                  rare destructive admin operations don't sit one click
+                  away from the everyday workflow. PM's Refresh now
+                  just reloads (non-destructive); this is the explicit,
+                  deliberate path for re-tuning the unnamed-cluster
+                  topology. */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">Advanced</label>
+                <p className="text-xs text-muted-foreground mb-3">Power-user operations on the face-recognition pipeline.</p>
+                <div className="rounded-lg border border-amber-200 dark:border-amber-700/40 bg-amber-50/40 dark:bg-amber-950/15 p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-foreground mb-0.5">Re-cluster unnamed groups</div>
+                      <div className="text-xs text-muted-foreground leading-relaxed">
+                        Re-evaluates how unverified faces group together at your current Match strictness. Verified faces are untouched. Auto-matched faces may shift between groups — Improve Recognition can re-find any that get unlinked. Photos themselves are never affected. Most users never need this; it's here for when you've done a lot of naming and want PDR to redraw the unnamed-cluster boundaries.
+                      </div>
                     </div>
-                    <Checkbox
-                      checked={aiRefineFromVerified}
-                      onCheckedChange={(checked) => handleAiRefineFromVerifiedToggle(!!checked)}
-                      data-testid="checkbox-ai-refine-from-verified"
-                    />
-                  </label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-amber-300 text-amber-700 hover:bg-amber-100/60 dark:hover:bg-amber-950/30 shrink-0"
+                      onClick={() => setReclusterModalOpen(true)}
+                    >
+                      Re-cluster…
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -8584,7 +8754,56 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               ═══════════════════════════════════════════════════════════════ */}
           {settingsTab === 'backup' && (
             <>
-              <div>
+              <div className="space-y-4">
+                {/* Headline disclaimer — Apple/Adobe-style "what this
+                    is and what it isn't" up front. Bumped to the
+                    same visual weight as a primary callout (left
+                    border accent + larger headline + bigger icon)
+                    so the "this isn't a photo backup" point lands
+                    before users start clicking around. */}
+                <div className="rounded-lg border-l-4 border-l-blue-500 border border-blue-200 dark:border-blue-700/40 bg-blue-50/70 dark:bg-blue-950/25 p-4">
+                  <div className="flex items-start gap-3">
+                    <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                    <div className="text-sm leading-relaxed text-foreground space-y-2">
+                      <p className="font-semibold">
+                        This is a backup of PDR's database, not your photos.
+                      </p>
+                      <p className="text-foreground/85">
+                        Snapshots cover your verified people, named clusters, AI tags, family trees, and fix-run history.
+                      </p>
+                      <p className="text-muted-foreground">
+                        Your photo and video files always live on the drive (or library) you pointed PDR at — PDR never copies, moves, or deletes them. For the files themselves, use a Windows backup tool such as File History, OneDrive sync, an external drive, or a third-party tool like Backblaze.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Manual snapshot — premium "save now" button. The
+                    user can name it for memorable rollback later. */}
+                <div className="rounded-lg border border-border p-3 flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground mb-0.5">Take a snapshot now</div>
+                    <div className="text-xs text-muted-foreground leading-relaxed">
+                      Useful before a risky session (importing a big library, mass-renaming, etc.). Manual snapshots are kept until you delete them.
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-purple-300 text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/30 shrink-0"
+                    onClick={() => {
+                      // Open the inline label modal — Electron blocks
+                      // window.prompt() in the renderer (security model)
+                      // so we use a PDR-styled input modal instead.
+                      setManualSnapshotLabel('');
+                      setManualSnapshotOpen(true);
+                    }}
+                  >
+                    Save snapshot
+                  </Button>
+                </div>
+
+                {/* Restore from snapshot — main panel. */}
                 <div className="rounded-lg border border-border overflow-hidden">
                   <button
                     type="button"
@@ -8596,7 +8815,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     className="w-full flex items-center justify-between p-3 hover:bg-secondary/40 transition-colors"
                   >
                     <div className="flex flex-col items-start text-left pr-3 min-w-0">
-                      <span className="text-sm font-medium text-foreground">Restore from backup</span>
+                      <span className="text-sm font-medium text-foreground">Restore from snapshot</span>
                       <span className="text-xs text-muted-foreground text-left">Roll PDR back to an earlier saved copy of its database. Click to see the snapshots available.</span>
                     </div>
                     <span className="text-xs text-muted-foreground shrink-0">{backupsExpanded ? '▾' : '▸'}</span>
@@ -8608,59 +8827,109 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <div className="text-[11px] text-muted-foreground space-y-1 mb-2">
                         <p><strong className="text-foreground/80">What gets restored:</strong> the PDR database — your libraries, named people, AI tags, family trees, and fix-run history.</p>
                         <p><strong className="text-foreground/80">What's NOT touched:</strong> the actual photo files on your drives.</p>
-                        <p><strong className="text-foreground/80">Where these come from:</strong> PDR saves one snapshot every time you launch and keeps the most recent 5 (so the 6th launch overwrites the oldest).</p>
+                        <p><strong className="text-foreground/80">Snapshot kinds:</strong> automatic (taken on every launch — last 5 plus 7 daily plus 4 weekly), event (taken before risky operations like Improve Recognition or row removal — last 10), and manual (saved by you, kept until you delete them).</p>
                       </div>
                       {backupsLoading && <div className="text-xs text-muted-foreground italic">Loading…</div>}
                       {!backupsLoading && backups && backups.length === 0 && (
-                        <div className="text-xs text-muted-foreground italic">No backups found yet — they appear here automatically after the first app launch.</div>
+                        <div className="text-xs text-muted-foreground italic">No snapshots yet — they appear here automatically after the first app launch.</div>
                       )}
                       {!backupsLoading && backups && backups.map((b) => {
                         const ts = new Date(b.mtime);
                         const tsLabel = ts.toLocaleString();
                         const sizeMb = (b.sizeBytes / (1024 * 1024)).toFixed(1);
+                        const kindLabel =
+                          b.kind === 'manual' ? 'Manual snapshot'
+                          : b.kind === 'auto-event' ? 'Event snapshot'
+                          : 'Snapshot';
+                        const kindBadgeColor =
+                          b.kind === 'manual' ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300 ring-purple-500/30'
+                          : b.kind === 'auto-event' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-amber-500/30'
+                          : 'bg-slate-500/15 text-slate-700 dark:text-slate-300 ring-slate-500/30';
                         return (
                           <div key={b.path} className="flex items-center justify-between gap-3 p-2 rounded-md bg-secondary/30">
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-xs font-medium text-foreground truncate">
-                                {b.kind === 'pre-reanalyze' ? 'Pre-reanalyze snapshot' : `Rolling backup`}
-                                <span className="text-muted-foreground font-normal"> · {tsLabel} · {sizeMb} MB</span>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-semibold ring-1 ${kindBadgeColor}`}>{kindLabel}</span>
+                                {b.label && <span className="text-xs text-foreground truncate">{b.label}</span>}
+                              </div>
+                              <span className="text-[11px] text-muted-foreground truncate">
+                                {tsLabel} · {sizeMb} MB
                               </span>
-                              <span className="text-[10px] text-muted-foreground/70 truncate font-mono">{b.filename}</span>
                             </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30 shrink-0"
-                              onClick={async () => {
-                                const ok = await promptConfirm({
-                                  title: 'Restore this snapshot?',
-                                  message: `This replaces the entire live database with the contents of ${b.filename} (taken ${tsLabel}). Anything you've added or changed since then will be lost — face verifications, named people, AI tags, family tree edits, library changes, new fixed-run history. Original photo files on your drives are not affected. Please relaunch PDR after the restore so every window picks up the new state cleanly.`,
-                                  confirmLabel: 'Restore',
-                                  cancelLabel: 'Cancel',
-                                  danger: true,
-                                });
-                                if (!ok) return;
-                                const r = await restoreFromBackup(b.path);
-                                if (r.success) {
-                                  await promptConfirm({
-                                    title: 'Restored',
-                                    message: 'The database has been restored from the snapshot. Please relaunch PDR so every window picks up the new state cleanly.',
-                                    confirmLabel: 'OK',
-                                    hideCancel: true,
-                                  });
-                                } else {
-                                  await promptConfirm({
-                                    title: 'Restore failed',
-                                    message: r.error ?? 'Unknown error',
-                                    confirmLabel: 'OK',
-                                    hideCancel: true,
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <IconTooltip label="Save snapshot file to a folder of your choice" side="top">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-border text-foreground hover:bg-secondary hover:border-purple-300"
+                                  onClick={async () => {
+                                    const r = await exportSnapshotZipBridge(b.path);
+                                    if (r.success) toast.success('Snapshot exported');
+                                    else if (r.error !== 'Cancelled') toast.error('Export failed: ' + (r.error || 'unknown error'));
+                                  }}
+                                >
+                                  Export
+                                </Button>
+                              </IconTooltip>
+                              {b.kind === 'manual' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 hover:border-red-300"
+                                  onClick={async () => {
+                                    const ok = await promptConfirm({
+                                      title: 'Delete this snapshot?',
+                                      message: `Removes this manual snapshot from disk. Other snapshots are not affected. The actual photo files on your drives are never touched.`,
+                                      confirmLabel: 'Delete',
+                                      cancelLabel: 'Cancel',
+                                      danger: true,
+                                    });
+                                    if (!ok) return;
+                                    const r = await deleteSnapshotBridge(b.path);
+                                    if (r.success) {
+                                      await refreshBackups();
+                                      toast.success('Snapshot deleted');
+                                    } else toast.error('Delete failed: ' + (r.error || 'unknown error'));
+                                  }}
+                                >
+                                  Delete
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                onClick={async () => {
+                                  const ok = await promptConfirm({
+                                    title: 'Restore this snapshot?',
+                                    message: `This replaces the entire live database with the contents of ${b.filename} (taken ${tsLabel}). Anything you've added or changed since then will be lost — face verifications, named people, AI tags, family tree edits, library changes, new fixed-run history. Original photo files on your drives are not affected. Please relaunch PDR after the restore so every window picks up the new state cleanly.`,
+                                    confirmLabel: 'Restore',
+                                    cancelLabel: 'Cancel',
                                     danger: true,
                                   });
-                                }
-                              }}
-                            >
-                              Restore
-                            </Button>
+                                  if (!ok) return;
+                                  const r = await restoreFromBackup(b.path);
+                                  if (r.success) {
+                                    await promptConfirm({
+                                      title: 'Restored',
+                                      message: 'The database has been restored from the snapshot. Please relaunch PDR so every window picks up the new state cleanly.',
+                                      confirmLabel: 'OK',
+                                      hideCancel: true,
+                                    });
+                                  } else {
+                                    await promptConfirm({
+                                      title: 'Restore failed',
+                                      message: r.error ?? 'Unknown error',
+                                      confirmLabel: 'OK',
+                                      hideCancel: true,
+                                      danger: true,
+                                    });
+                                  }
+                                }}
+                              >
+                                Restore
+                              </Button>
+                            </div>
                           </div>
                         );
                       })}
@@ -8668,7 +8937,284 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   )}
                 </div>
               </div>
+
+              {/* Manual snapshot label modal — replaces window.prompt
+                  (Electron's renderer blocks it). PDR-styled,
+                  dismissable, supports Enter to save / Escape to
+                  cancel. The label is purely cosmetic — the snapshot
+                  always saves regardless of whether the user types
+                  one. */}
+              {manualSnapshotOpen && (
+                <div
+                  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+                  onMouseDown={(e) => { if (e.target === e.currentTarget) setManualSnapshotOpen(false); }}
+                >
+                  <div className="w-[440px] max-w-[90vw] rounded-xl bg-background border border-border shadow-2xl flex flex-col overflow-hidden">
+                    <div className="px-5 pt-5 pb-3">
+                      <h3 className="text-base font-semibold text-foreground mb-1">Save snapshot</h3>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Give this snapshot a name so you can recognise it later (optional). Examples: <em className="text-foreground/80">Before Lightroom import</em>, <em className="text-foreground/80">Pre-holiday backup</em>.
+                      </p>
+                    </div>
+                    <div className="px-5 pb-3">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={manualSnapshotLabel}
+                        onChange={(e) => setManualSnapshotLabel(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Escape') { setManualSnapshotOpen(false); }
+                          if (e.key === 'Enter' && !manualSnapshotSaving) {
+                            setManualSnapshotSaving(true);
+                            const r = await takeSnapshotBridge('manual', manualSnapshotLabel.trim() || undefined);
+                            setManualSnapshotSaving(false);
+                            setManualSnapshotOpen(false);
+                            if (r.success) { await refreshBackups(); toast.success('Snapshot saved'); }
+                            else toast.error('Snapshot failed: ' + (r.error || 'unknown error'));
+                          }
+                        }}
+                        spellCheck={false}
+                        autoCorrect="off"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                        placeholder="Optional name…"
+                        maxLength={60}
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-2 px-5 py-3 bg-muted/30 border-t border-border">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setManualSnapshotOpen(false)}
+                        disabled={manualSnapshotSaving}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="bg-purple-500 hover:bg-purple-600 text-white"
+                        disabled={manualSnapshotSaving}
+                        onClick={async () => {
+                          setManualSnapshotSaving(true);
+                          const r = await takeSnapshotBridge('manual', manualSnapshotLabel.trim() || undefined);
+                          setManualSnapshotSaving(false);
+                          setManualSnapshotOpen(false);
+                          if (r.success) { await refreshBackups(); toast.success('Snapshot saved'); }
+                          else toast.error('Snapshot failed: ' + (r.error || 'unknown error'));
+                        }}
+                      >
+                        {manualSnapshotSaving ? 'Saving…' : 'Save snapshot'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
+          )}
+
+          {/* Re-cluster confirmation modal — destructive operation
+              gated behind explicit confirmation. Default snapshot-
+              first ON so a one-click rollback is always available
+              via Settings → Backup if the new clustering is worse. */}
+          {reclusterModalOpen && (
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+              onMouseDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                // Block backdrop dismissal while running so the user
+                // can't accidentally lose sight of the in-flight job.
+                if (reclusterRunning) return;
+                setReclusterModalOpen(false);
+                setReclusterResult(null);
+              }}
+            >
+              <div className="w-[480px] max-w-[90vw] rounded-xl bg-background border border-border shadow-2xl flex flex-col overflow-hidden">
+                {/* Header swaps based on phase: confirm → working → done. */}
+                <div className="flex items-start gap-3 px-5 pt-5 pb-3">
+                  {reclusterResult?.success ? (
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    </div>
+                  ) : reclusterResult && !reclusterResult.success ? (
+                    <div className="w-8 h-8 rounded-full bg-rose-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-500" />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    </div>
+                  )}
+                  <h3 className="text-base font-semibold text-foreground leading-snug">
+                    {reclusterResult?.success ? 'Re-cluster complete' : reclusterResult ? 'Re-cluster failed' : 'Re-cluster unnamed groups?'}
+                  </h3>
+                </div>
+
+                {/* IDLE: explanation + slider + snapshot toggle. */}
+                {!reclusterRunning && !reclusterResult && (
+                  <>
+                    <div className="px-5 pb-3 text-sm text-muted-foreground leading-relaxed space-y-2.5">
+                      <p>
+                        PDR will re-evaluate how unverified faces group together at the chosen Match strictness. <strong className="text-foreground">Verified faces are never affected.</strong> Auto-matched faces may shift between groups or unlink — Improve Recognition can re-find any that get unlinked. The actual photo files on your drives are never touched.
+                      </p>
+                      <p className="text-xs text-muted-foreground/85">
+                        Most users never need to do this. PM's slider already auto-runs Improve on release, which handles the typical "find more matches" need without re-clustering.
+                      </p>
+                    </div>
+                    <div className="px-5 pb-3 space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground/85 block">Match strictness for the re-cluster</label>
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">Loose</span>
+                        <input
+                          type="range"
+                          min="0.65"
+                          max="0.95"
+                          step="0.01"
+                          value={reclusterThreshold}
+                          onChange={(e) => setReclusterThreshold(parseFloat(e.target.value))}
+                          className="flex-1 h-1 accent-purple-500 cursor-pointer"
+                        />
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">Strict</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/85 text-center leading-tight">
+                        Loose makes larger groups. Strict makes tighter, more conservative groups.
+                      </p>
+                    </div>
+                    <div className="px-5 pb-3">
+                      <label className="flex items-center gap-2.5 p-2.5 rounded-lg border border-border hover:bg-secondary/30 cursor-pointer">
+                        <Checkbox
+                          checked={reclusterSnapshotFirst}
+                          onCheckedChange={(checked) => setReclusterSnapshotFirst(!!checked)}
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm text-foreground">Take a snapshot first</div>
+                          <div className="text-[11px] text-muted-foreground">One-click rollback via Settings → Backup if the new clustering is worse than the current one.</div>
+                        </div>
+                      </label>
+                    </div>
+                  </>
+                )}
+
+                {/* RUNNING: indeterminate stripe + elapsed timer. Modal
+                    stays open through the whole job so the user
+                    always sees that we're still working. */}
+                {reclusterRunning && (
+                  <div className="px-5 pb-4 pt-1 space-y-3">
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Re-evaluating how unverified faces group together. Please don't close PDR while this is running. <strong className="text-foreground">Verified faces remain safe.</strong>
+                    </p>
+                    <div className="h-1.5 rounded-full bg-amber-100 dark:bg-amber-950/40 overflow-hidden relative">
+                      <div className="absolute inset-y-0 w-1/3 bg-amber-500/80 rounded-full animate-recluster-stripe" />
+                    </div>
+                    <div className="flex items-center justify-between text-[12px] text-muted-foreground tabular-nums">
+                      <span>Working…</span>
+                      <span className="font-medium text-foreground">{Math.floor(reclusterElapsed / 60)}:{String(reclusterElapsed % 60).padStart(2, '0')} elapsed</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/85 leading-tight">
+                      Typically 30–90 seconds depending on library size. People Manager will refresh automatically when finished.
+                    </p>
+                  </div>
+                )}
+
+                {/* DONE: success or failure summary + dismiss. */}
+                {!reclusterRunning && reclusterResult && (
+                  <div className="px-5 pb-4 pt-1 space-y-2">
+                    {reclusterResult.success ? (
+                      <>
+                        <p className="text-sm text-foreground leading-relaxed">
+                          Unverified faces have been re-evaluated at the chosen strictness.
+                        </p>
+                        <ul className="text-[12px] text-muted-foreground space-y-1 pl-1">
+                          <li>· People Manager refreshed automatically</li>
+                          {reclusterResult.snapshotTook && <li>· Snapshot saved — restore via <span className="text-foreground">Settings → Backup</span> if needed</li>}
+                          <li>· Took {Math.floor(reclusterResult.durationSec / 60)}:{String(reclusterResult.durationSec % 60).padStart(2, '0')}</li>
+                        </ul>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-foreground leading-relaxed">
+                          The re-cluster job didn't finish. Nothing in your library has been changed beyond the snapshot (if you took one).
+                        </p>
+                        <p className="text-[12px] text-rose-600 dark:text-rose-400 break-words">
+                          {reclusterResult.error || 'Unknown error'}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Footer button row — adapts to phase. */}
+                <div className="flex items-center justify-end gap-2 px-5 py-3 bg-muted/30 border-t border-border">
+                  {!reclusterRunning && !reclusterResult && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => { setReclusterModalOpen(false); setReclusterResult(null); }}>Cancel</Button>
+                      <Button
+                        size="sm"
+                        className="bg-amber-500 hover:bg-amber-600 text-white"
+                        onClick={async () => {
+                          setReclusterRunning(true);
+                          setReclusterResult(null);
+                          const t0 = Date.now();
+                          let snapshotTook = false;
+                          let r: { success: boolean; error?: string } = { success: false };
+                          try {
+                            if (reclusterSnapshotFirst) {
+                              try {
+                                const snapRes = await takeSnapshotBridge('auto-event', `Before re-cluster · ${Math.round(((reclusterThreshold - 0.65) / 0.30) * 100)}%`);
+                                if (snapRes?.success) snapshotTook = true;
+                              } catch { /* snapshot is opportunistic — keep going */ }
+                            }
+                            r = await reclusterFacesBridge(reclusterThreshold);
+                          } catch (e) {
+                            r = { success: false, error: (e as Error)?.message || 'Unexpected error' };
+                          }
+                          const durationSec = Math.max(1, Math.floor((Date.now() - t0) / 1000));
+                          if (r.success) {
+                            toast.success(`Re-cluster complete · ${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')}`);
+                          } else {
+                            toast.error('Re-cluster failed: ' + (r.error || 'unknown error'));
+                          }
+                          // Flip to the Done panel immediately so the
+                          // user sees the outcome the moment the IPC
+                          // resolves — no extra wait staring at a
+                          // spinner.
+                          setReclusterResult({ success: !!r.success, error: r.error, durationSec, snapshotTook });
+                          setReclusterRunning(false);
+                          // THEN, with the Done panel already on
+                          // screen, defer the PM reload by 5 seconds.
+                          // This gives the database engine plus any
+                          // tail-end FTS rebuild work room to settle
+                          // before PM re-queries — the user reported
+                          // earlier reloads landing too early and
+                          // missing the new row counts. Single fire,
+                          // no double-tap, no immediate refresh.
+                          if (r.success) {
+                            setTimeout(() => {
+                              try { (window as any)?.pdr?.people?.notifyChange?.(); } catch { /* non-fatal */ }
+                            }, 5000);
+                          }
+                        }}
+                      >
+                        Re-cluster
+                      </Button>
+                    </>
+                  )}
+                  {reclusterRunning && (
+                    <Button size="sm" disabled className="bg-amber-500 text-white opacity-90 cursor-not-allowed">
+                      Re-clustering… {Math.floor(reclusterElapsed / 60)}:{String(reclusterElapsed % 60).padStart(2, '0')}
+                    </Button>
+                  )}
+                  {!reclusterRunning && reclusterResult && (
+                    <Button
+                      size="sm"
+                      className={reclusterResult.success ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : ''}
+                      variant={reclusterResult.success ? 'default' : 'outline'}
+                      onClick={() => { setReclusterModalOpen(false); setReclusterResult(null); }}
+                    >
+                      Done
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

@@ -35,6 +35,7 @@ import { DateQuickEditor } from './DateQuickEditor';
 import { NameQuickEditor } from './NameQuickEditor';
 import { promptConfirm } from './promptConfirm';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
 
 interface PersonSummary {
   id: number;
@@ -1154,6 +1155,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 Change focus
               </button>
             </IconTooltip>
+            {/* Snapshot status — same shared component as PM and S&D
+                so the safety net is visible everywhere users make
+                data decisions. Tree edits can be just as expensive
+                as PM edits — this is the right home for the badge
+                in this view. */}
+            <SnapshotStatusBadge className="" />
             {pinnedPeople.size > 0 && (
               <IconTooltip label={`${pinnedPeople.size} person${pinnedPeople.size === 1 ? ' is' : 's are'} pinned beyond your current Depth. Click to reset and re-hide them.`} side="bottom">
                 <button

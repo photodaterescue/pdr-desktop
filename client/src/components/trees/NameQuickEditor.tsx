@@ -86,6 +86,9 @@ export function NameQuickEditor({
           onKeyDown={e => { if (e.key === 'Enter') save(); }}
           placeholder="Terry"
           className="px-2 py-1 rounded border border-border bg-background text-sm"
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="words"
         />
         <span className="text-[10px] text-muted-foreground/70">Used in People Manager and Search & Discovery.</span>
       </div>
@@ -99,6 +102,9 @@ export function NameQuickEditor({
           onKeyDown={e => { if (e.key === 'Enter') save(); }}
           placeholder="Terry John Filmer Clapson"
           className="px-2 py-1 rounded border border-border bg-background text-sm"
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="words"
         />
         <span className="text-[10px] text-muted-foreground/70">Shown on this Tree card. Leave blank to fall back to the short name.</span>
       </div>

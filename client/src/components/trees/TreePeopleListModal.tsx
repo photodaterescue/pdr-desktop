@@ -7,6 +7,7 @@ import { promptConfirm } from './promptConfirm';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { useDraggableModal } from './useDraggableModal';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface PersonSummary {
   id: number;
@@ -579,23 +580,27 @@ function SortHeader({
   const active = idx !== -1;
   const dir = active ? stack[idx].direction : null;
   return (
-    <button
-      onClick={(e) => onClick(column, e.shiftKey)}
-      className={`flex items-center gap-1 ${alignClass} ${active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-      title={active
+    <IconTooltip
+      label={active
         ? `Sort level ${idx + 1} · ${dir}. Click to flip direction or drop to primary. Shift-click to cycle shift-level.`
         : 'Click to sort. Shift-click to add as secondary sort.'}
+      side="top"
     >
-      <span className="truncate">{label}</span>
-      {active && (
-        <span className="inline-flex items-center">
-          {dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-          {stack.length > 1 && (
-            <span className="text-[8px] ml-0.5 font-bold">{idx + 1}</span>
-          )}
-        </span>
-      )}
-    </button>
+      <button
+        onClick={(e) => onClick(column, e.shiftKey)}
+        className={`flex items-center gap-1 ${alignClass} ${active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+      >
+        <span className="truncate">{label}</span>
+        {active && (
+          <span className="inline-flex items-center">
+            {dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+            {stack.length > 1 && (
+              <span className="text-[8px] ml-0.5 font-bold">{idx + 1}</span>
+            )}
+          </span>
+        )}
+      </button>
+    </IconTooltip>
   );
 }
 

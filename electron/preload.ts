@@ -22,6 +22,18 @@ copyFiles: (data: { files: Array<{ sourcePath: string; newFilename: string; sour
 onCopyProgress: (callback: (progress: { current: number; total: number }) => void) => {
   ipcRenderer.on('files:copy:progress', (_event: any, progress: any) => callback(progress));
 },
+// Phase events from the network-staging path: 'staging' fires when
+// PDR detects a network destination and starts writing locally; 'mirror'
+// fires when robocopy starts pushing the local staging tree to the
+// network. Lets the renderer swap the progress label so the user
+// understands why the bar may sit at 100% briefly while the
+// network upload finishes.
+onCopyPhase: (callback: (phase: { phase: 'staging' | 'mirror'; message: string }) => void) => {
+  ipcRenderer.on('files:copy:phase', (_event: any, p: any) => callback(p));
+},
+onCopyMirrorProgress: (callback: (progress: { filesMirrored: number; totalToMirror: number }) => void) => {
+  ipcRenderer.on('files:copy:mirror-progress', (_event: any, p: any) => callback(p));
+},
 cancelCopyFiles: () => ipcRenderer.invoke('files:copy:cancel'),
 setFixInProgress: (inProgress: boolean) => ipcRenderer.invoke('fix:setInProgress', inProgress),
 
@@ -130,7 +142,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   memories: {
     yearMonthBuckets: (runIds?: number[]) => ipcRenderer.invoke('memories:yearMonthBuckets', runIds),
     onThisDay: (args: { month: number; day: number; runIds?: number[]; limit?: number }) => ipcRenderer.invoke('memories:onThisDay', args),
-    dayFiles: (args: { year: number; month: number; day: number; runIds?: number[] }) => ipcRenderer.invoke('memories:dayFiles', args),
+    dayFiles: (args: { year: number; month?: number | null; day?: number | null; runIds?: number[] }) => ipcRenderer.invoke('memories:dayFiles', args),
   },
 
   trees: {
@@ -204,7 +216,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       delete: (id: number) => ipcRenderer.invoke('search:favourites:delete', id),
       rename: (id: number, name: string) => ipcRenderer.invoke('search:favourites:rename', id, name),
     },
-    openViewer: (filePaths: string[], fileNames: string[]) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames),
+    openViewer: (filePaths: string[], fileNames: string[], startIndex?: number) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames, startIndex),
     checkPathsExist: (paths: string[]) => ipcRenderer.invoke('search:checkPathsExist', paths),
   },
 
@@ -220,13 +232,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     assignFace: (faceId: number, personId: number, verified?: boolean) => ipcRenderer.invoke('ai:assignFace', faceId, personId, verified ?? false),
     batchVerify: (personIds: number[]) => ipcRenderer.invoke('ai:batchVerify', personIds),
     unnameFace: (faceId: number) => ipcRenderer.invoke('ai:unnameFace', faceId),
-    refineFromVerified: (similarityThreshold?: number) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold),
+    refineFromVerified: (similarityThreshold?: number, personFilter?: number) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold, personFilter),
     importXmpFaces: () => ipcRenderer.invoke('ai:importXmpFaces'),
     renamePerson: (personId: number, newName: string, newFullName?: string | null) => ipcRenderer.invoke('ai:renamePerson', personId, newName, newFullName),
     setRepresentativeFace: (personId: number, faceId: number) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
     mergePersons: (targetPersonId: number, sourcePersonId: number) => ipcRenderer.invoke('ai:mergePersons', targetPersonId, sourcePersonId),
     deletePerson: (personId: number) => ipcRenderer.invoke('ai:deletePerson', personId),
     permanentlyDeletePerson: (personId: number) => ipcRenderer.invoke('ai:permanentlyDeletePerson', personId),
+    unnamePersonAndDelete: (personId: number) => ipcRenderer.invoke('ai:unnamePersonAndDelete', personId),
+    restoreUnnamedPerson: (token: any) => ipcRenderer.invoke('ai:restoreUnnamedPerson', token),
     restorePerson: (personId: number) => ipcRenderer.invoke('ai:restorePerson', personId),
     listDiscardedPersons: () => ipcRenderer.invoke('ai:listDiscardedPersons'),
     getPersonInfo: (personId: number) => ipcRenderer.invoke('ai:getPersonInfo', personId),
@@ -239,6 +253,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     resetTagAnalysis: () => ipcRenderer.invoke('ai:resetTagAnalysis'),
     listBackups: () => ipcRenderer.invoke('db:listBackups'),
     restoreFromBackup: (snapshotPath: string) => ipcRenderer.invoke('db:restoreFromBackup', snapshotPath),
+    takeSnapshot: (kind: 'manual' | 'auto-event', label?: string) => ipcRenderer.invoke('db:takeSnapshot', kind, label),
+    deleteSnapshot: (snapshotPath: string) => ipcRenderer.invoke('db:deleteSnapshot', snapshotPath),
+    exportSnapshotZip: (snapshotPath: string) => ipcRenderer.invoke('db:exportSnapshotZip', snapshotPath),
     personClusters: () => ipcRenderer.invoke('ai:personClusters'),
     prewarmPersonClusters: () => ipcRenderer.invoke('ai:prewarmPersonClusters'),
     recordPmOpen: () => ipcRenderer.invoke('pm:recordOpen'),

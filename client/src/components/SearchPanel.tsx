@@ -71,6 +71,7 @@ import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import ParallelStructureModal from '@/components/ParallelStructureModal';
 import StaleRunsModal from '@/components/StaleRunsModal';
+import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
 import {
   initSearchDatabase,
   searchFiles,
@@ -144,6 +145,7 @@ import {
   type AiProgress,
   type AiStats,
   type AiTagRecord,
+  refineFromVerified,
   type FaceRecord,
   type PersonRecord,
   type PersonCluster,
@@ -435,12 +437,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // the S&D-side refine threshold (so "Improve Facial Recognition"
   // honours it) and the toggle gates person filtering on verified=1
   // when set to 'verified'. Loaded once on mount; persisted on change.
-  const [aiSearchMatchMode, setAiSearchMatchMode] = useState<'ai' | 'verified'>('ai');
+  // Tri-state filter — 'matched' = AI auto-matches only (unverified),
+  // 'verified' = manually-confirmed only, 'both' = either. The UI
+  // label "AI" maps to 'matched' (per Terry's terminology — "AI
+  // suggested" is the unconfirmed case). Default 'both' so users
+  // see all of a person's photos out of the box.
+  const [aiSearchMatchMode, setAiSearchMatchMode] = useState<'matched' | 'verified' | 'both'>('both');
   const [aiSearchMatchThreshold, setAiSearchMatchThreshold] = useState<number>(0.72);
   useEffect(() => {
     getSettings().then((s) => {
       const mode = (s as any)?.aiSearchMatchMode;
-      if (mode === 'ai' || mode === 'verified') setAiSearchMatchMode(mode);
+      // Migration: legacy 'ai' value → 'both' (its actual meaning was
+      // "any AI link" = matched + verified). New users get 'both'
+      // by default. 'matched' (auto-only) is the new third state.
+      if (mode === 'ai') setAiSearchMatchMode('both');
+      else if (mode === 'matched' || mode === 'verified' || mode === 'both') setAiSearchMatchMode(mode);
       const t = (s as any)?.aiSearchMatchThreshold;
       if (typeof t === 'number' && t >= 0.65 && t <= 0.95) setAiSearchMatchThreshold(t);
     });
@@ -461,14 +472,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         offset: 0,
         personId: selectedPersonIds,
         personIdMode: multiModeActive ? 'and' : 'or',
-        personVerifiedOnly: aiSearchMatchMode === 'verified',
+        personMatchMode: aiSearchMatchMode,
+        personMatchThreshold: aiSearchMatchThreshold,
       } as any);
       if (!cancelled && result.success && result.data) {
         setPeoplePreviewCount(result.data.total);
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedPersonIds, multiModeActive, aiSearchMatchMode]);
+  }, [selectedPersonIds, multiModeActive, aiSearchMatchMode, aiSearchMatchThreshold]);
 
   const [peopleFilterSearch, setPeopleFilterSearch] = useState('');
   const [peopleList, setPeopleList] = useState<PersonRecord[]>([]);
@@ -815,13 +827,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     // When the parse fails: strip a bare trailing operator (",", "+", "&",
     // "and") so mid-typing doesn't wipe out the in-progress search.
     const fallbackText = searchText.replace(/\s*(?:\+|&|,|\band)\s*$/i, '').trim();
+    // Single-name resolution: if the search text exactly matches one
+    // person's name (case-insensitive, no operators), treat it as a
+    // person filter rather than free text. This lets the AI Match
+    // Sensitivity slider actually filter results — without this, a
+    // single-name search ran via FTS which has no similarity score.
+    const singleNamePerson = !opParsed && fallbackText
+      ? peopleList.find(p => p.name.toLowerCase() === fallbackText.toLowerCase() && !p.name.startsWith('__'))
+      : undefined;
     return ({
     text: opParsed
       ? (unmatchedFromOps.length > 0 ? unmatchedFromOps.join(' ') : undefined)
-      : (fallbackText || undefined),
-    personId: opParsed ? peopleFromOps : undefined,
-    personIdMode: opParsed ? opParsed.mode : undefined,
-    personVerifiedOnly: aiSearchMatchMode === 'verified' ? true : undefined,
+      : (singleNamePerson ? undefined : (fallbackText || undefined)),
+    personId: opParsed
+      ? peopleFromOps
+      : (singleNamePerson ? [singleNamePerson.id] : undefined),
+    personIdMode: opParsed ? opParsed.mode : (singleNamePerson ? 'or' : undefined),
+    personMatchMode: aiSearchMatchMode,
+    personMatchThreshold: aiSearchMatchThreshold,
     aiTagMode: opParsed && tagsFromOps.length > 1 ? opParsed.mode : undefined,
     // When both people AND tags came from a single OR-mode query, tell the
     // backend to OR the two conditions together ("Mel, beach" = Mel OR
@@ -852,27 +875,80 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
     } as SearchQuery);
-  }, [searchText, parseSearchOperators, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
+  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
 
-  const executeSearch = useCallback(async (customQuery?: SearchQuery) => {
-    setIsLoading(true);
+  const executeSearch = useCallback(async (customQuery?: SearchQuery, opts?: { silent?: boolean }) => {
+    // `silent` keeps the existing results visible during the fetch
+    // instead of flashing the loading spinner. Used for background
+    // refreshes triggered by people:dataChanged so the screen
+    // doesn't flicker when PM finishes a recluster.
+    if (!opts?.silent) setIsLoading(true);
     const q = customQuery || buildQuery();
     setQuery(q);
     const res = await searchFiles(q);
-    if (res.success && res.data) { setResults(res.data); setSelectedFile(null); loadThumbnailsBatch(res.data.files); }
-    setIsLoading(false);
+    if (res.success && res.data) { setResults(res.data); if (!opts?.silent) setSelectedFile(null); loadThumbnailsBatch(res.data.files); }
+    if (!opts?.silent) setIsLoading(false);
     setSearchActive(true);
   }, [buildQuery]);
+
+  // Slider release on the AI Match Sensitivity — auto-runs Improve
+  // Recognition silently at the new threshold so the slider just
+  // works end-to-end. Improve is non-destructive (only adds new
+  // unnamed→person matches, never unlinks). Combined with the live
+  // filter via personMatchThreshold in buildQuery, sliding Strict
+  // hides low-similarity matches; sliding Loose reveals new ones.
+  // Debounced so a single drag doesn't fire multiple Improve runs.
+  const sdSliderImproveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSDSliderRelease = async () => {
+    if (sdSliderImproveTimerRef.current) clearTimeout(sdSliderImproveTimerRef.current);
+    sdSliderImproveTimerRef.current = setTimeout(async () => {
+      try {
+        await refineFromVerified(aiSearchMatchThreshold);
+        // Refresh AI data + re-run the current search silently so
+        // newly-matched faces appear in the grid without the user
+        // having to do anything else.
+        await loadAiData();
+        if (searchActive) executeSearchRef.current(undefined, { silent: true });
+      } catch {
+        /* silent — non-fatal */
+      }
+    }, 200);
+  };
+
+  // Always-current ref to executeSearch so external-event listeners
+  // (people:dataChanged, dateEditor:dataChanged) can call the LATEST
+  // version instead of a stale closure captured when the listener
+  // was first registered. Without this, after the user typed
+  // "Merci" then "Mel", the listener would still call an old
+  // executeSearch whose buildQuery had "Merci" baked in — so a PM
+  // recluster would return Merci's photos even though the user is
+  // now searching for Mel.
+  const executeSearchRef = useRef(executeSearch);
+  useEffect(() => { executeSearchRef.current = executeSearch; }, [executeSearch]);
 
   // Prevent infinite loop between ribbon ↔ filter sync
   const syncDirectionRef = useRef<'none' | 'textToFilter' | 'filterToText'>('none');
 
-  // Sync ribbon search text → People filter selection
+  // Sync ribbon search text → People filter selection.
+  //
+  // Previously this ONLY ran when the text was a 2+ person operator
+  // query ("Terry + Merci"). For everything else (single name like
+  // "Merci", free text, empty) it left `selectedPersonIds` alone.
+  // That caused a real bug: after typing "Terry + Merci" then
+  // changing to just "Merci", `selectedPersonIds` stayed
+  // [terry, merci] from the previous query. Then when PM finished
+  // a recluster, it fired notifyChange → S&D reloaded peopleList
+  // → the filter→text sync at the next effect saw 2+ stale ids
+  // and rewrote the search box back to "Terry + Merci".
+  //
+  // The fix is to keep selectedPersonIds COHERENT with the visible
+  // text at all times — clear it when the text isn't a pure
+  // people-operator query.
   useEffect(() => {
     if (syncDirectionRef.current === 'filterToText') return;
     const parsed = parsePeopleOperators(searchText);
+    syncDirectionRef.current = 'textToFilter';
     if (parsed) {
-      syncDirectionRef.current = 'textToFilter';
       setSelectedPersonIds(parsed.personIds);
       setMultiModeActive(parsed.mode === 'and');
       if (parsed.personIds.length > 0) {
@@ -880,8 +956,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           if (r.success && r.data) setTogetherCounts(r.data);
         });
       }
-      setTimeout(() => { syncDirectionRef.current = 'none'; }, 0);
+    } else if (selectedPersonIds.length > 0) {
+      // Text isn't a 2+ people query but the filter still has
+      // stale selections — clear them so the back-sync can't
+      // restore them on an unrelated re-render (PM recluster,
+      // peopleList refresh, etc).
+      setSelectedPersonIds([]);
+      setMultiModeActive(false);
+      setTogetherCounts([]);
     }
+    setTimeout(() => { syncDirectionRef.current = 'none'; }, 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchText, parsePeopleOperators]);
 
   // Sync People filter selection → ribbon search text
@@ -913,10 +998,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setIsLoading(false);
   };
 
-  // Wrapper for opening viewer — checks drive availability first
-  const safeOpenViewer = async (filePath: string | string[], filename: string | string[]) => {
+  // Wrapper for opening viewer — checks drive availability first.
+  // startIndex is forwarded so a click on result #14 of 175 lands on
+  // the right photo with the rest reachable via viewer arrows.
+  const safeOpenViewer = async (filePath: string | string[], filename: string | string[], startIndex?: number) => {
     const paths = Array.isArray(filePath) ? filePath : [filePath];
-    // Check if any file's destination is unavailable
     for (const [destPath, available] of Object.entries(destinationAvailability)) {
       if (!available && paths.some(p => p.startsWith(destPath))) {
         setUnavailableFileMessage(
@@ -925,7 +1011,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         return;
       }
     }
-    await openSearchViewer(filePath, filename);
+    await openSearchViewer(filePath, filename, startIndex);
   };
 
   // Debounced text search. Mirrors the filter-change effect below so
@@ -974,23 +1060,54 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     }
   }, [selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir, showAllOverride]);
 
-  // People window data-changed listener — refresh AI data when people window modifies clusters
+  // People window data-changed listener — refresh AI data + re-run
+  // the current search when PM modifies clusters. Calls
+  // executeSearchRef.current so it always uses the LATEST search
+  // closure (with the current searchText / filters), not whatever
+  // was captured when the listener registered. The search re-run
+  // is `silent: true` so we don't flash the loading spinner on top
+  // of already-rendered results — that flash is what produced the
+  // "screen flickers when PM recluster finishes" complaint.
   useEffect(() => {
     const unsubscribe = onPeopleDataChanged(async () => {
       await loadAiData();
-      if (searchActive) executeSearch();
+      if (searchActive) executeSearchRef.current(undefined, { silent: true });
     });
     return unsubscribe;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchActive]);
 
-  // Date Editor data-changed listener — refresh the grid after corrections land.
+  // Re-search when the AI match mode or sensitivity slider changes.
+  // The slider only affects person-id queries, so guard runs the
+  // re-search only when the search has any person involvement —
+  // either via the filter (selectedPersonIds) or via a person name
+  // typed into the search bar (which buildQuery resolves to
+  // personId at search time). Debounced 250ms so dragging doesn't
+  // fire one query per tick. Silent so the result grid updates
+  // without a loading flash.
+  useEffect(() => {
+    if (!searchActive) return;
+    const hasPersonInQuery = selectedPersonIds.length > 0
+      || /\b[a-z]/i.test(searchText.trim()); // any text might resolve to a person
+    if (!hasPersonInQuery) return;
+    const t = setTimeout(() => {
+      executeSearchRef.current(undefined, { silent: true });
+    }, 250);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiSearchMatchMode, aiSearchMatchThreshold]);
+
+  // Date Editor data-changed listener — refresh the grid after
+  // corrections land. Same ref-based latest-closure pattern as the
+  // people listener so we don't run a stale search.
   useEffect(() => {
     const unsubscribe = onDateEditorDataChanged(async () => {
       await loadFilterOptions();
       await loadStats();
-      if (searchActive) executeSearch();
+      if (searchActive) executeSearchRef.current(undefined, { silent: true });
     });
     return unsubscribe;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchActive]);
 
   const loadThumbnailsBatch = async (files: IndexedFile[]) => {
@@ -1142,6 +1259,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 </div>
               )
             )}
+            {/* Snapshot status — same shared component used in PM
+                and Trees so backup freshness is visible everywhere
+                the user makes data decisions. dark-toolbar variant
+                matches S&D's purple ribbon visual language. */}
+            <SnapshotStatusBadge variant="dark-toolbar" className="" size="sm" />
             <IconTooltip label="Customise favourite filters" side="bottom">
               <button onClick={() => setShowCustomise(true)} className="p-1 rounded hover:bg-white/20 text-white/70 hover:text-white transition-colors">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -1894,15 +2016,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <div className="flex items-center gap-1 flex-1 py-1.5">
                         {/* ── Analyzed stat dropdown ── */}
                         <Popover open={showAnalyzedDropdown} onOpenChange={setShowAnalyzedDropdown}>
-                          <PopoverTrigger asChild>
-                            <button
-                              className="flex flex-col items-center px-2 py-0.5 rounded-md hover:bg-secondary/50 transition-colors cursor-pointer"
-                              title="Filter by analysis status"
-                            >
-                              <span className="text-sm font-semibold text-foreground">{aiStats.totalProcessed}</span>
-                              <span className="text-[9px] text-muted-foreground uppercase">Analyzed</span>
-                            </button>
-                          </PopoverTrigger>
+                          <IconTooltip label="Filter by analysis status" side="bottom">
+                            <PopoverTrigger asChild>
+                              <button
+                                className="flex flex-col items-center px-2 py-0.5 rounded-md hover:bg-secondary/50 transition-colors cursor-pointer"
+                              >
+                                <span className="text-sm font-semibold text-foreground">{aiStats.totalProcessed}</span>
+                                <span className="text-[9px] text-muted-foreground uppercase">Analyzed</span>
+                              </button>
+                            </PopoverTrigger>
+                          </IconTooltip>
                           <PopoverContent side="bottom" align="start" className="w-52 p-1" onOpenAutoFocus={(e) => e.preventDefault()}>
                             {[
                               { label: 'All analyzed', desc: `${aiStats.totalProcessed} photos`, filter: { aiProcessed: 'all' as const } },
@@ -1932,16 +2055,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           setShowFacesDropdown(open);
                           if (open) { setPeopleFilterSearch(''); setTogetherCounts([]); setFaceCountExpanded(false); }
                         }}>
-                          <PopoverTrigger asChild>
-                            <button
-                              data-tour="sd-people-filter"
-                              className={`flex flex-col items-center px-2 py-0.5 rounded-md hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors cursor-pointer ${selectedPersonIds.length > 0 ? 'ring-2 ring-purple-400/50 bg-purple-50/50 dark:bg-purple-900/20' : ''}`}
-                              title="Filter by people & faces"
-                            >
-                              <span className="text-sm font-semibold text-purple-500">{aiStats.totalPersons || aiStats.totalFaces}</span>
-                              <span className="text-[9px] text-muted-foreground uppercase">People</span>
-                            </button>
-                          </PopoverTrigger>
+                          <IconTooltip label="Filter by people & faces" side="bottom">
+                            <PopoverTrigger asChild>
+                              <button
+                                data-tour="sd-people-filter"
+                                className={`flex flex-col items-center px-2 py-0.5 rounded-md hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors cursor-pointer ${selectedPersonIds.length > 0 ? 'ring-2 ring-purple-400/50 bg-purple-50/50 dark:bg-purple-900/20' : ''}`}
+                              >
+                                <span className="text-sm font-semibold text-purple-500">{aiStats.totalPersons || aiStats.totalFaces}</span>
+                                <span className="text-[9px] text-muted-foreground uppercase">People</span>
+                              </button>
+                            </PopoverTrigger>
+                          </IconTooltip>
                           <PopoverContent side="bottom" align="start" className="w-72 p-0" onOpenAutoFocus={(e) => e.preventDefault()}>
                             {/* People checkboxes with dynamic co-occurrence counts */}
                             {aiStats.totalPersons > 0 && peopleList.length > 0 && (
@@ -2109,7 +2233,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     onClick={() => {
                                       if (selectedPersonIds.length > 0) {
                                         clearFilters();
-                                        executeSearch({ sortBy, sortDir, limit: 60, offset: 0, personId: selectedPersonIds, personIdMode: multiModeActive ? 'and' : 'or', personVerifiedOnly: aiSearchMatchMode === 'verified' } as SearchQuery);
+                                        executeSearch({ sortBy, sortDir, limit: 60, offset: 0, personId: selectedPersonIds, personIdMode: multiModeActive ? 'and' : 'or', personMatchMode: aiSearchMatchMode as any } as SearchQuery);
                                       } else {
                                         clearFilters();
                                         executeSearch({ sortBy, sortDir, limit: 60, offset: 0, hasNamedPeople: true } as SearchQuery);
@@ -2177,15 +2301,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           setShowTagsDropdown(open);
                           if (open) setTagsFilterSearch('');
                         }}>
-                          <PopoverTrigger asChild>
-                            <button
-                              className={`flex flex-col items-center px-2 py-0.5 rounded-md hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors cursor-pointer ${selectedTagFilters.length > 0 ? 'ring-2 ring-purple-400/50 bg-purple-50/50 dark:bg-purple-900/20' : ''}`}
-                              title="Filter by AI tags"
-                            >
-                              <span className="text-sm font-semibold text-purple-500">{aiStats.totalTags}</span>
-                              <span className="text-[9px] text-muted-foreground uppercase">Tags</span>
-                            </button>
-                          </PopoverTrigger>
+                          <IconTooltip label="Filter by AI tags" side="bottom">
+                            <PopoverTrigger asChild>
+                              <button
+                                className={`flex flex-col items-center px-2 py-0.5 rounded-md hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors cursor-pointer ${selectedTagFilters.length > 0 ? 'ring-2 ring-purple-400/50 bg-purple-50/50 dark:bg-purple-900/20' : ''}`}
+                              >
+                                <span className="text-sm font-semibold text-purple-500">{aiStats.totalTags}</span>
+                                <span className="text-[9px] text-muted-foreground uppercase">Tags</span>
+                              </button>
+                            </PopoverTrigger>
+                          </IconTooltip>
                           <PopoverContent side="bottom" align="start" className="w-72 p-0" onOpenAutoFocus={(e) => e.preventDefault()}>
                             <div className="p-2 border-b border-border">
                               <div className="relative">
@@ -2340,26 +2465,30 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     </RibbonGroup>
 
                     {/* S&D Match — independent of PM clustering threshold.
-                        Toggle decides whether person filters require an
-                        explicit verification (verified=1) or accept any AI
-                        link. Slider drives the score cutoff used by
-                        refineFromVerifiedFaces so the user can tighten or
-                        loosen auto-matching from this surface. */}
+                        Tri-state toggle picks WHICH person-linked
+                        faces count as a match: only auto-matched
+                        (AI), only manually-confirmed (Verified), or
+                        either (Both). Slider drives the score cutoff
+                        used by refineFromVerifiedFaces so the user
+                        can tighten or loosen auto-matching from this
+                        surface. Slider styling matches PM's slider
+                        (font sizes, Loose/Strict labels) — see PM
+                        for the canonical visual language. */}
                     <RibbonSeparator />
                     <RibbonGroup label="Match">
-                      <div className="flex items-center gap-2 flex-1 py-1.5">
-                        {/* AI / Verified segmented toggle */}
+                      <div className="flex items-center gap-3 flex-1 py-1.5">
+                        {/* Tri-state segmented toggle: AI / Verified / Both. */}
                         <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
-                          <IconTooltip label="Include any face the AI has linked to the selected person — verified plus auto-matched" side="bottom">
+                          <IconTooltip label="Only auto-matched faces — photos the AI linked to this person but you haven't yet confirmed" side="bottom">
                             <button
                               onClick={() => {
-                                setAiSearchMatchMode('ai');
-                                setSetting('aiSearchMatchMode' as any, 'ai');
+                                setAiSearchMatchMode('matched');
+                                setSetting('aiSearchMatchMode' as any, 'matched');
                               }}
-                              className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${aiSearchMatchMode === 'ai' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                              className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${aiSearchMatchMode === 'matched' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                             >AI</button>
                           </IconTooltip>
-                          <IconTooltip label="Only photos where the user explicitly confirmed the face — auto-matches excluded" side="bottom">
+                          <IconTooltip label="Only manually-confirmed faces — auto-matches excluded" side="bottom">
                             <button
                               onClick={() => {
                                 setAiSearchMatchMode('verified');
@@ -2368,26 +2497,54 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide border-l border-border transition-colors ${aiSearchMatchMode === 'verified' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
                             >Verified</button>
                           </IconTooltip>
+                          <IconTooltip label="Every face linked to this person — verified + auto-matched" side="bottom">
+                            <button
+                              onClick={() => {
+                                setAiSearchMatchMode('both');
+                                setSetting('aiSearchMatchMode' as any, 'both');
+                              }}
+                              className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide border-l border-border transition-colors ${aiSearchMatchMode === 'both' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
+                            >Both</button>
+                          </IconTooltip>
                         </div>
-                        {/* Match Sensitivity slider — separate value from PM */}
-                        <div className="flex flex-col items-center gap-0.5 min-w-[110px]">
-                          <div className="flex items-center gap-1 w-full">
-                            <span className="text-[9px] text-muted-foreground">Loose</span>
-                            <input
-                              type="range"
-                              min="0.65"
-                              max="0.95"
-                              step="0.01"
-                              value={aiSearchMatchThreshold}
-                              onChange={(e) => setAiSearchMatchThreshold(parseFloat(e.target.value))}
-                              onMouseUp={() => setSetting('aiSearchMatchThreshold' as any, aiSearchMatchThreshold)}
-                              onTouchEnd={() => setSetting('aiSearchMatchThreshold' as any, aiSearchMatchThreshold)}
-                              className="flex-1 h-1 accent-purple-500 cursor-pointer"
-                              title={`Match Sensitivity: ${Math.round(((aiSearchMatchThreshold - 0.65) / 0.30) * 100)}% — drives Improve Facial Recognition cutoff`}
-                            />
-                            <span className="text-[9px] text-muted-foreground">Strict</span>
+                        {/* Match Sensitivity slider — structurally
+                            identical to PM's slider (same Loose /
+                            Strict labels at 11px, same quarterly
+                            tick-marks at 25/50/75%, same helper
+                            text below). Values are independent of
+                            PM's clusterThreshold — they measure
+                            different operations. */}
+                        <div className="flex flex-col items-center flex-1 max-w-[260px]">
+                          <div className="flex items-center gap-2 w-full">
+                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">Loose</span>
+                            <div className="relative flex-1">
+                              <input
+                                type="range"
+                                min="0.65"
+                                max="0.95"
+                                step="0.01"
+                                value={aiSearchMatchThreshold}
+                                onChange={(e) => setAiSearchMatchThreshold(parseFloat(e.target.value))}
+                                onMouseUp={() => { setSetting('aiSearchMatchThreshold' as any, aiSearchMatchThreshold); void handleSDSliderRelease(); }}
+                                onTouchEnd={() => { setSetting('aiSearchMatchThreshold' as any, aiSearchMatchThreshold); void handleSDSliderRelease(); }}
+                                className="w-full h-1 accent-purple-500 cursor-pointer relative z-10"
+                              />
+                              {/* Quarterly tick marks at 25 / 50 / 75% — same
+                                  visual cue PM uses to anchor the slider's
+                                  midpoints without a numeric scale. */}
+                              <div className="absolute top-1/2 left-0 right-0 flex justify-between px-[2px] pointer-events-none" style={{ transform: 'translateY(-50%)' }}>
+                                <div className="w-px h-2 bg-transparent" />
+                                <div className="w-px h-2.5 bg-muted-foreground/25" />
+                                <div className="w-px h-2.5 bg-muted-foreground/25" />
+                                <div className="w-px h-2.5 bg-muted-foreground/25" />
+                                <div className="w-px h-2 bg-transparent" />
+                              </div>
+                            </div>
+                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">Strict</span>
                           </div>
-                          <span className="text-[9px] text-muted-foreground/70">{Math.round(((aiSearchMatchThreshold - 0.65) / 0.30) * 100)}%</span>
+                          <p className="text-[10px] text-muted-foreground/85 mt-1 text-center leading-tight">
+                            Loose includes more auto-matches in your search. Strict only counts the most-similar matches.
+                          </p>
                         </div>
                       </div>
                     </RibbonGroup>
@@ -2959,7 +3116,6 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         value={tileSizeSlider}
                         onChange={(e) => setTileSizeSlider(parseInt(e.target.value, 10))}
                         className="w-full h-1 accent-purple-500 cursor-pointer relative z-10"
-                        title={`Tile size: ${tileSizeSlider}%`}
                       />
                       {/* Tick marks at 25%, 50%, 75% */}
                       <div className="absolute top-1/2 left-0 right-0 flex justify-between px-[2px] pointer-events-none" style={{ transform: 'translateY(-50%)' }}>
@@ -2992,15 +3148,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {/* Metadata display dropdown — customise what info appears below each tile */}
               {viewMode === 'grid' && (
                 <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
-                  <PopoverTrigger asChild>
-                    <button
-                      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
-                      title="Choose which details show below each photo"
-                    >
-                      <Info className="w-3.5 h-3.5" />
-                      <span>Add Info{tileMetaFields.length > 0 ? ` (${tileMetaFields.length})` : ''}</span>
-                    </button>
-                  </PopoverTrigger>
+                  <IconTooltip label="Choose which details show below each photo" side="bottom">
+                    <PopoverTrigger asChild>
+                      <button
+                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
+                      >
+                        <Info className="w-3.5 h-3.5" />
+                        <span>Add Info{tileMetaFields.length > 0 ? ` (${tileMetaFields.length})` : ''}</span>
+                      </button>
+                    </PopoverTrigger>
+                  </IconTooltip>
                   <PopoverContent className="w-56 p-2" align="end">
                     <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-2 pt-1 pb-2">Show below each tile</p>
                     {([
@@ -3151,7 +3308,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               lastClickedIndexRef.current = idx;
                             }
                           }}
-                          onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(file.file_path, file.filename) : undefined} />
+                          onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(results.files.map(x => x.file_path), results.files.map(x => x.filename), idx) : undefined} />
                       ))}
                     </div>
                   )}
@@ -3159,11 +3316,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   {/* ── List View ── */}
                   {viewMode === 'list' && (
                     <div className="space-y-0.5">
-                      {results.files.map(file => {
+                      {results.files.map((file, idx) => {
                         return (
                           <div key={file.id} data-file-id={file.id}
                             onClick={() => setSelectedFile(file)}
-                            onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(file.file_path, file.filename) : undefined}
+                            onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(results.files.map(x => x.file_path), results.files.map(x => x.filename), idx) : undefined}
                             className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${selectedFile?.id === file.id ? 'bg-primary/10 border border-primary/30' : 'hover:bg-secondary/50'}`}>
                             <div className="w-10 h-10 rounded-lg bg-secondary/40 overflow-hidden shrink-0 flex items-center justify-center">
                               {thumbnails[file.file_path]
@@ -3194,12 +3351,12 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           </tr>
                         </thead>
                         <tbody>
-                          {results.files.map(file => {
+                          {results.files.map((file, idx) => {
                             const confidenceColor = file.confidence === 'confirmed' ? 'text-green-600' : file.confidence === 'corrected' ? 'text-primary' : file.confidence === 'recovered' ? 'text-amber-600' : 'text-red-500';
                             return (
                               <tr key={file.id} data-file-id={file.id}
                                 onClick={() => setSelectedFile(file)}
-                                onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(file.file_path, file.filename) : undefined}
+                                onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(results.files.map(x => x.file_path), results.files.map(x => x.filename), idx) : undefined}
                                 className={`cursor-pointer transition-colors border-b border-border/50 ${selectedFile?.id === file.id ? 'bg-primary/10' : 'hover:bg-secondary/30'}`}>
                                 <td className="py-1.5 px-2">
                                   <div className="w-6 h-6 rounded bg-secondary/40 overflow-hidden flex items-center justify-center">
@@ -3540,7 +3697,7 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
       </div>
       {hasAnyMeta && (
         <div className="p-2 space-y-0.5">
-          {fields.includes('filename') && <p className="text-xs font-medium text-foreground truncate" title={file.filename}>{file.filename}</p>}
+          {fields.includes('filename') && <IconTooltip label={file.filename} side="top"><p className="text-xs font-medium text-foreground truncate">{file.filename}</p></IconTooltip>}
           {fields.includes('date') && <p className="text-[10px] text-muted-foreground truncate">{file.derived_date ? formatDate(file.derived_date) : 'No date'}</p>}
           {fields.includes('size') && file.size_bytes > 0 && <p className="text-[10px] text-muted-foreground truncate">{formatBytes(file.size_bytes)}</p>}
           {fields.includes('camera') && file.camera_model && <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1"><Camera className="w-2.5 h-2.5 shrink-0" /> {file.camera_model}</p>}
@@ -3949,7 +4106,8 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
               <span className="flex items-center gap-1.5">
                 <Users className="w-4 h-4" /> People ({fileFaces.length})
               </span>
-              <label className="flex items-center gap-2 cursor-pointer normal-case" title={showFaceOverlays ? 'Hide face boxes on photo' : 'Show face boxes on photo'}>
+              <IconTooltip label={showFaceOverlays ? 'Hide face boxes on photo' : 'Show face boxes on photo'} side="left">
+              <label className="flex items-center gap-2 cursor-pointer normal-case">
                 <span className="text-sm text-muted-foreground">Boxes</span>
                 <button
                   type="button"
@@ -3967,6 +4125,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                   />
                 </button>
               </label>
+              </IconTooltip>
             </div>
             <div className="px-2 py-1.5 space-y-1">
               {fileFaces.map((face) => (
@@ -4602,7 +4761,7 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
                   <div className="space-y-2">{runs.map(run => (
                     <div key={run.id} className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-secondary/10">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate" title={run.destination_path.replace(/\\\\/g, '\\')}>{run.destination_path.replace(/\\\\/g, '\\')}</p>
+                        <IconTooltip label={run.destination_path.replace(/\\\\/g, '\\')} side="top"><p className="text-sm font-medium text-foreground truncate">{run.destination_path.replace(/\\\\/g, '\\')}</p></IconTooltip>
                         <p className="text-xs text-muted-foreground">{run.file_count.toLocaleString()} files · {new Date(run.indexed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}{run.source_labels ? ` · ${run.source_labels}` : ''}</p>
                       </div>
                       {allowIndexRemoval && <IconTooltip label="Remove from library" side="left"><button onClick={() => handleRemoveRun(run.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /></button></IconTooltip>}
@@ -4669,7 +4828,7 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
                           className="w-3.5 h-3.5 rounded border-border text-primary accent-primary cursor-pointer shrink-0"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-foreground truncate" title={report.destinationPath}>{report.destinationPath}</p>
+                          <IconTooltip label={report.destinationPath} side="top"><p className="text-sm text-foreground truncate">{report.destinationPath}</p></IconTooltip>
                           <p className="text-xs text-muted-foreground">
                             {report.totalFiles.toLocaleString()} files · {new Date(report.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </p>
@@ -4704,7 +4863,7 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
                   {missingReports.map(report => (
                     <div key={report.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-amber-50/30 dark:bg-amber-900/10">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-muted-foreground truncate" title={report.destinationPath}>{report.destinationPath}</p>
+                        <IconTooltip label={report.destinationPath} side="top"><p className="text-sm text-muted-foreground truncate">{report.destinationPath}</p></IconTooltip>
                         <p className="text-xs text-muted-foreground">
                           {report.totalFiles.toLocaleString()} files · {new Date(report.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                           {report.destinationStatus === 'drive-missing' && <span className="ml-1.5 text-amber-600 dark:text-amber-400 font-medium">· Drive not connected</span>}
@@ -5016,7 +5175,6 @@ function PeopleManagerModal({ onClose, onRefresh }: { onClose: () => void; onRef
                 onMouseUp={() => handleRecluster(clusterThreshold)}
                 onTouchEnd={() => handleRecluster(clusterThreshold)}
                 className="w-full h-1 accent-purple-500 cursor-pointer"
-                title={`Match Sensitivity: ${Math.round((1 - clusterThreshold) * 100)}%`}
                 disabled={isReclustering}
               />
               <span className="text-[10px] text-muted-foreground whitespace-nowrap">Strict</span>

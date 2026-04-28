@@ -119,7 +119,29 @@
       "PowerShell(cmd /c \"npx electron .tmp-human-direct.cjs\")",
       "PowerShell(cmd /c \"npx electron .tmp-shrink-boxes.cjs\")",
       "PowerShell(cmd /c \"npx electron .tmp-redetect.cjs\")",
-      "PowerShell(cmd /c \"npx electron .tmp-redetect2.cjs\")"
+      "PowerShell(cmd /c \"npx electron .tmp-redetect2.cjs\")",
+      "Bash(grep -v -E 'console\\\\.|prompt:|prompt-|//.*alert|//.*confirm|/\\\\*.*alert|/\\\\*.*confirm|^\\\\s*\\\\*|isAlert|aiPrompt')",
+      "Bash(grep -n \"^  Info,\\\\|^  Info$\\\\| Info[,}]\" C:/Users/Terry/pdr-desktop/client/src/pages/workspace.tsx)",
+      "Bash(cmd /c \"npm run build\")",
+      "PowerShell(\"stopped\")",
+      "Bash(awk 'NR>=10615 && NR<=10640' \"C:/Users/Terry/.claude/projects/C--Users-Terry-pdr-desktop/a263b415-61db-48fb-8876-5993bdeaf1a0.jsonl\")",
+      "Bash(grep -oE 'robocopy[^\"]{0,500}|Robocopy[^\"]{0,500}')",
+      "Bash(awk 'NR>=10960 && NR<=11005' \"C:/Users/Terry/.claude/projects/C--Users-Terry-pdr-desktop/a263b415-61db-48fb-8876-5993bdeaf1a0.jsonl\")",
+      "Bash(grep -oE '\\\\\\\\[[a-z-]+\\\\\\\\.ts:[0-9-]+\\\\\\\\]|robocopy[^\\\\\\\\\\\\\\\\]{0,300}')",
+      "Bash(grep -oE '\\\\\\\\[[a-zA-Z\\\\\\\\/-]+\\\\\\\\.ts:[0-9-]+\\\\\\\\]')",
+      "Bash(awk 'NR==10621 || NR==10622 || NR==10627 || NR==10634' \"C:/Users/Terry/.claude/projects/C--Users-Terry-pdr-desktop/a263b415-61db-48fb-8876-5993bdeaf1a0.jsonl\")",
+      "Bash(grep -oE '\\\\\\\\[[a-zA-Z\\\\\\\\.\\\\\\\\-]+\\\\\\\\.ts:[0-9-]+\\\\\\\\]|line [0-9]+|lines [0-9-]+|copyFile|copy-engine|fix-engine|analysis-engine\\\\\\\\.ts')",
+      "Bash(awk 'NR==10621 || NR==10622' \"C:/Users/Terry/.claude/projects/C--Users-Terry-pdr-desktop/a263b415-61db-48fb-8876-5993bdeaf1a0.jsonl\")",
+      "Bash(grep -oE 'analysis-engine\\\\\\\\.ts[^\"]{0,150}')",
+      "Bash(awk 'NR>=14275 && NR<=14295' \"C:/Users/Terry/.claude/projects/C--Users-Terry-pdr-desktop/a263b415-61db-48fb-8876-5993bdeaf1a0.jsonl\")",
+      "Bash(grep -oE 'robocopy[^\"]{0,400}|Robocopy[^\"]{0,400}|network[^\"]{0,200}')",
+      "Bash(awk 'NR>=11120 && NR<=11135' \"C:/Users/Terry/.claude/projects/C--Users-Terry-pdr-desktop/a263b415-61db-48fb-8876-5993bdeaf1a0.jsonl\")",
+      "Bash(grep -oE 'B[\\\\\\\\\\)\\\\\\\\.][^\"]{0,500}|robocopy[^\"]{0,400}')",
+      "Bash(awk 'NR>=11000 && NR<=11135' \"C:/Users/Terry/.claude/projects/C--Users-Terry-pdr-desktop/a263b415-61db-48fb-8876-5993bdeaf1a0.jsonl\")",
+      "Bash(grep -oE 'option B[^\"]{0,400}|Option B[^\"]{0,400}|destination[^\"]{0,200}')",
+      "Bash(awk 'NR>=1640 && NR<=2160' \"C:/Users/Terry/pdr-desktop/electron/main.ts\")",
+      "Bash(awk 'NR>=2160 && NR<=2300' \"C:/Users/Terry/pdr-desktop/electron/main.ts\")",
+      "Bash(git check-ignore *)"
     ]
   }
 }

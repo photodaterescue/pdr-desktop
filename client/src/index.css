@@ -184,6 +184,33 @@
   50% { box-shadow: 0 0 0 5px rgba(169, 156, 255, 0.35); }
 }
 
+/* ── PM verify panel + Verify button pulse ──────────────────────────────
+   Fires when ≥1 face is selected for assignment. Draws the eye to the
+   right-side action panel (which is otherwise easy to overlook on a
+   wide screen) and to the primary Verify CTA inside it. Subtle on
+   purpose — the user is in the middle of a flow, not being warned. */
+@keyframes pm-pulse-soft {
+  0%, 100% { box-shadow: inset 4px 0 0 0 rgba(168, 85, 247, 0.18); }
+  50%      { box-shadow: inset 6px 0 0 0 rgba(168, 85, 247, 0.45); }
+}
+@keyframes pm-pulse-cta {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.55); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 6px rgba(168, 85, 247, 0); transform: scale(1.025); }
+}
+.animate-pulse-soft { animation: pm-pulse-soft 1.8s ease-in-out infinite; }
+.animate-pulse-cta  { animation: pm-pulse-cta  1.5s ease-in-out infinite; }
+
+/* Indeterminate stripe used by the Re-cluster modal while the job is
+   in flight. Slides a 1/3-width amber pill across an amber-100 track
+   so the user always has a visible "still working" cue — no backend
+   progress events to plumb through, so the bar is honest about not
+   knowing the percent complete. */
+@keyframes recluster-stripe {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.animate-recluster-stripe { animation: recluster-stripe 1.4s ease-in-out infinite; }
+
 /* ── Window resize corner hints ─────────────────────────────────────────
    PDR runs as a custom-frame Electron window (titleBarStyle: 'hidden'),
    so Windows' native resize grips live in a very thin 4-6px strip at the

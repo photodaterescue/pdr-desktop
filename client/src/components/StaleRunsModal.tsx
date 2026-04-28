@@ -7,6 +7,7 @@ import {
   Info, ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { FolderBrowserModal } from './FolderBrowserModal';
 import {
   relocateSearchRun,
@@ -171,9 +172,11 @@ export default function StaleRunsModal({ isOpen, onClose, staleRuns, onResolved 
                   >
                     {/* Path info */}
                     <div className="mb-2">
-                      <p className="text-sm font-medium text-foreground truncate" title={run.destination_path}>
-                        {run.destination_path}
-                      </p>
+                      <IconTooltip label={run.destination_path} side="top">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {run.destination_path}
+                        </p>
+                      </IconTooltip>
                       <p className="text-xs text-muted-foreground">
                         {run.file_count} files · {run.source_labels || 'Unknown source'} · Indexed {new Date(run.indexed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </p>

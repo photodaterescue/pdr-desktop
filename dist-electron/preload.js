@@ -16,6 +16,18 @@ contextBridge.exposeInMainWorld('pdr', {
     onCopyProgress: (callback) => {
         ipcRenderer.on('files:copy:progress', (_event, progress) => callback(progress));
     },
+    // Phase events from the network-staging path: 'staging' fires when
+    // PDR detects a network destination and starts writing locally; 'mirror'
+    // fires when robocopy starts pushing the local staging tree to the
+    // network. Lets the renderer swap the progress label so the user
+    // understands why the bar may sit at 100% briefly while the
+    // network upload finishes.
+    onCopyPhase: (callback) => {
+        ipcRenderer.on('files:copy:phase', (_event, p) => callback(p));
+    },
+    onCopyMirrorProgress: (callback) => {
+        ipcRenderer.on('files:copy:mirror-progress', (_event, p) => callback(p));
+    },
     cancelCopyFiles: () => ipcRenderer.invoke('files:copy:cancel'),
     setFixInProgress: (inProgress) => ipcRenderer.invoke('fix:setInProgress', inProgress),
     saveReport: (reportData) => ipcRenderer.invoke('report:save', reportData),
@@ -151,7 +163,7 @@ contextBridge.exposeInMainWorld('pdr', {
             delete: (id) => ipcRenderer.invoke('search:favourites:delete', id),
             rename: (id, name) => ipcRenderer.invoke('search:favourites:rename', id, name),
         },
-        openViewer: (filePaths, fileNames) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames),
+        openViewer: (filePaths, fileNames, startIndex) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames, startIndex),
         checkPathsExist: (paths) => ipcRenderer.invoke('search:checkPathsExist', paths),
     },
     ai: {
@@ -166,13 +178,15 @@ contextBridge.exposeInMainWorld('pdr', {
         assignFace: (faceId, personId, verified) => ipcRenderer.invoke('ai:assignFace', faceId, personId, verified ?? false),
         batchVerify: (personIds) => ipcRenderer.invoke('ai:batchVerify', personIds),
         unnameFace: (faceId) => ipcRenderer.invoke('ai:unnameFace', faceId),
-        refineFromVerified: (similarityThreshold) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold),
+        refineFromVerified: (similarityThreshold, personFilter) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold, personFilter),
         importXmpFaces: () => ipcRenderer.invoke('ai:importXmpFaces'),
         renamePerson: (personId, newName, newFullName) => ipcRenderer.invoke('ai:renamePerson', personId, newName, newFullName),
         setRepresentativeFace: (personId, faceId) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
         mergePersons: (targetPersonId, sourcePersonId) => ipcRenderer.invoke('ai:mergePersons', targetPersonId, sourcePersonId),
         deletePerson: (personId) => ipcRenderer.invoke('ai:deletePerson', personId),
         permanentlyDeletePerson: (personId) => ipcRenderer.invoke('ai:permanentlyDeletePerson', personId),
+        unnamePersonAndDelete: (personId) => ipcRenderer.invoke('ai:unnamePersonAndDelete', personId),
+        restoreUnnamedPerson: (token) => ipcRenderer.invoke('ai:restoreUnnamedPerson', token),
         restorePerson: (personId) => ipcRenderer.invoke('ai:restorePerson', personId),
         listDiscardedPersons: () => ipcRenderer.invoke('ai:listDiscardedPersons'),
         getPersonInfo: (personId) => ipcRenderer.invoke('ai:getPersonInfo', personId),
@@ -185,6 +199,9 @@ contextBridge.exposeInMainWorld('pdr', {
         resetTagAnalysis: () => ipcRenderer.invoke('ai:resetTagAnalysis'),
         listBackups: () => ipcRenderer.invoke('db:listBackups'),
         restoreFromBackup: (snapshotPath) => ipcRenderer.invoke('db:restoreFromBackup', snapshotPath),
+        takeSnapshot: (kind, label) => ipcRenderer.invoke('db:takeSnapshot', kind, label),
+        deleteSnapshot: (snapshotPath) => ipcRenderer.invoke('db:deleteSnapshot', snapshotPath),
+        exportSnapshotZip: (snapshotPath) => ipcRenderer.invoke('db:exportSnapshotZip', snapshotPath),
         personClusters: () => ipcRenderer.invoke('ai:personClusters'),
         prewarmPersonClusters: () => ipcRenderer.invoke('ai:prewarmPersonClusters'),
         recordPmOpen: () => ipcRenderer.invoke('pm:recordOpen'),
