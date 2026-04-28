@@ -465,6 +465,22 @@ function createWindow() {
   // change event. Returns the live flag.
   ipcMain.handle('fix:getInProgress', () => fixInProgress);
 
+  // Cross-window progress broadcast. The window running the Fix
+  // (main) calls 'fix:broadcastProgress' on every state change;
+  // we cache the latest payload + fan it out to every BrowserWindow
+  // so PM (separate window) can render its own chip with real
+  // numbers instead of just a boolean. lastFixProgress survives
+  // until the next broadcast or until inProgress flips false.
+  let lastFixProgress: any = null;
+  ipcMain.handle('fix:broadcastProgress', (_event, payload: any) => {
+    lastFixProgress = payload;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try { win.webContents.send('fix:progressBroadcast', payload); } catch { /* non-fatal */ }
+    }
+  });
+  ipcMain.handle('fix:getProgress', () => lastFixProgress);
+
   mainWindow.on('close', (e) => {
     if (fixInProgress && mainWindow) {
       e.preventDefault();

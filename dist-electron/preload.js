@@ -43,6 +43,17 @@ contextBridge.exposeInMainWorld('pdr', {
         ipcRenderer.on('fix:stateChanged', handler);
         return () => ipcRenderer.removeListener('fix:stateChanged', handler);
     },
+    // Cross-window progress broadcast. Lets PM (separate window)
+    // render a real chip with phase/processed/total instead of just
+    // "Fix in progress". Sent by whichever window owns the active
+    // fix (currently always the main window).
+    broadcastFixProgress: (payload) => ipcRenderer.invoke('fix:broadcastProgress', payload),
+    getFixProgress: () => ipcRenderer.invoke('fix:getProgress'),
+    onFixProgress: (callback) => {
+        const handler = (_event, payload) => callback(payload);
+        ipcRenderer.on('fix:progressBroadcast', handler);
+        return () => ipcRenderer.removeListener('fix:progressBroadcast', handler);
+    },
     saveReport: (reportData) => ipcRenderer.invoke('report:save', reportData),
     loadReport: (reportId) => ipcRenderer.invoke('report:load', reportId),
     loadLatestReport: () => ipcRenderer.invoke('report:loadLatest'),

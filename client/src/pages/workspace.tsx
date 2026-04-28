@@ -1294,6 +1294,14 @@ const tourPlaceholderAnalysisResults: Record<string, SourceAnalysisResult> = {
 
 return (
   <>
+    {/* Portal anchor for the Fix-in-progress chip. Lives at the very
+        top of the workspace render tree, OUTSIDE the zoomable
+        wrapper that gets display:none-hidden when the user is on
+        Memories / Trees. The FixProgressModal uses createPortal to
+        mount its compact chip here, so the chip stays visible no
+        matter which view is active. */}
+    <div id="pdr-fix-chip-portal" />
+
     {/* Zoom controls — vertical pill at bottom-right. Only affects the
         Dashboard / Workspace zoomable content (via CSS `zoom` on that
         container). S&D has its own independent tile-size zoom. Hidden
@@ -1489,16 +1497,14 @@ return (
           className={`flex-1 overflow-auto relative ${(activeView === 'search' && searchResultsActive) || activeView === 'memories' || activeView === 'familytree' ? 'hidden' : ''}`}
           style={{ zoom: zoomLevel / 100 }}
         >
-        {/* Panel content */}
-        {activePanel ? (
-          <PanelPlaceholder
-            panelType={activePanel}
-            onBackToWorkspace={() => setActivePanel(null)}
-            onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
-            onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
-            onReportProblem={() => setShowReportProblem(true)}
-          />
-        ) : (
+        {/* MainContent is now ALWAYS mounted (just visually hidden
+            when an info panel takes over) so any in-flight Fix
+            keeps its state — the FixProgressModal and its IPC
+            callbacks live inside DashboardPanel, and unmounting
+            mid-fix would break the progress tracking + lose the
+            completion screen. The PanelPlaceholder simply overlays
+            on top when activePanel is set. */}
+        <div style={{ display: activePanel ? 'none' : undefined }}>
           <MainContent
             sources={isTourPreview ? [tourPlaceholderSource] : sources}
             activeSource={activeSource}
@@ -1529,6 +1535,15 @@ return (
             isLicensed={isLicensed}
             onActivateLicense={handleActivateLicense}
             zoomLevel={zoomLevel}
+          />
+        </div>
+        {activePanel && (
+          <PanelPlaceholder
+            panelType={activePanel}
+            onBackToWorkspace={() => setActivePanel(null)}
+            onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
+            onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
+            onReportProblem={() => setShowReportProblem(true)}
           />
         )}
         </div>{/* close zoomable content wrapper */}
@@ -4746,6 +4761,35 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     return () => clearInterval(timer);
   }, [isComplete]);
 
+  // Broadcast progress cross-window on every state change so PM
+  // (separate window) can render a real chip. Fires whenever any
+  // of the progress-relevant state changes; cheap (one IPC call
+  // per render). Skipped on completion — useFixInProgress flips to
+  // false and any open chip dismisses itself.
+  useEffect(() => {
+    if (isComplete) return;
+    const phase: 'prescan' | 'staging' | 'mirror' | 'applying' | null = isPrescanning
+      ? 'prescan'
+      : copyPhase === 'mirror'
+        ? 'mirror'
+        : copyPhase === 'staging'
+          ? 'staging'
+          : 'applying';
+    import('@/lib/electron-bridge').then(({ broadcastFixProgress }) => {
+      void broadcastFixProgress({
+        phase,
+        processed,
+        total: totalFiles,
+        progressPct: Math.round(progress),
+        mirrorDone: mirrorFilesDone,
+        mirrorTotal: mirrorFilesTotal,
+        prescanCount,
+        elapsed,
+        isPrescanning,
+      });
+    }).catch(() => { /* non-fatal */ });
+  }, [isComplete, isPrescanning, copyPhase, processed, totalFiles, progress, mirrorFilesDone, mirrorFilesTotal, prescanCount, elapsed]);
+
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -5052,10 +5096,16 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const markedCount = fixSnapshotRef.current?.marked ?? 0;
   
   // Compact chip render — shown only while the fix is in flight
-  // AND the user has minimised. Pinned top-right at high z-index so
-  // it floats above whatever surface they navigate to. Click to
-  // restore the full modal. Cancel option still reachable inside
-  // the chip to avoid a "stuck unable to cancel" state.
+  // AND the user has minimised. Portalled into a fixed anchor at
+  // the workspace root so it stays visible across panel switches
+  // (Memories, Trees, S&D, Edit Dates, etc.) where the parent
+  // container would otherwise be display:none-hidden.
+  //
+  // Position: TOP-CENTER of the title bar — leaves the right side
+  // alone for the OS window controls (minimize/maximize/close on
+  // Windows, traffic lights on macOS) which the chip was clashing
+  // with at top-right. Pulses softly to draw attention without
+  // being annoying.
   if (!isComplete && fixMinimized) {
     const chipLabel = isPrescanning
       ? 'Preparing'
@@ -5069,18 +5119,19 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       : copyPhase === 'mirror' && mirrorFilesTotal > 0
         ? `${mirrorFilesDone.toLocaleString()}/${mirrorFilesTotal.toLocaleString()}`
         : `${processed.toLocaleString()}/${totalFiles.toLocaleString()}`;
-    return (
+    const portalTarget = typeof document !== 'undefined' ? document.getElementById('pdr-fix-chip-portal') : null;
+    const chipNode = (
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        className="fixed top-3 right-4 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-primary/95 text-primary-foreground shadow-lg border border-primary/40 cursor-pointer select-none animate-pulse-soft"
+        className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-primary text-primary-foreground shadow-lg ring-2 ring-primary/40 cursor-pointer select-none animate-pulse-cta"
         onClick={() => setFixMinimized(false)}
         title="Click to view full progress"
         data-testid="fix-progress-chip"
       >
         <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-        <span className="text-xs font-medium tabular-nums whitespace-nowrap">
+        <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
           Fix · {chipLabel} · {chipDetail}
           {!isPrescanning && progress > 0 && copyPhase !== 'mirror' && (
             <span className="opacity-80"> · {Math.round(progress)}%</span>
@@ -5090,13 +5141,14 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setFixMinimized(false); }}
-          className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/15 hover:bg-white/25 transition-colors"
+          className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 hover:bg-white/30 transition-colors"
           aria-label="Restore full progress view"
         >
           Open
         </button>
       </motion.div>
     );
+    return portalTarget ? ReactDOM.createPortal(chipNode, portalTarget) : chipNode;
   }
 
   return (
@@ -5111,17 +5163,20 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
         animate={{ scale: 1, opacity: 1 }}
         className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-border relative"
       >
-        {/* Minimise button — top-right corner of the modal. Hidden on
+        {/* "Work in background" — pulsing primary-tinted pill at the
+            top of the modal so users discover the escape hatch
+            instead of staring at a frozen progress bar. Hidden on
             the completion screen because the user explicitly needs
             to acknowledge that with View Report / Close / Open
-            Destination. */}
+            Destination. animate-pulse-cta is the same attention-
+            grabbing pulse used on PM's Verify CTA. */}
         {!isComplete && (
           <button
             type="button"
             onClick={() => setFixMinimized(true)}
-            className="absolute top-3 right-3 px-2.5 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5"
+            className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-[12px] font-semibold text-primary-foreground bg-primary shadow-lg ring-2 ring-primary/40 hover:bg-primary/90 transition-colors flex items-center gap-1.5 animate-pulse-cta whitespace-nowrap"
             data-testid="button-minimize-fix"
-            title="Hide this view and let me work on other things while the fix runs"
+            title="Hide this view and keep working in PDR while the fix runs"
           >
             <ChevronDown className="w-3.5 h-3.5" />
             Work in background

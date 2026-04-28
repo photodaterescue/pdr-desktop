@@ -49,6 +49,17 @@ onFixStateChanged: (callback: (state: { inProgress: boolean }) => void) => {
   ipcRenderer.on('fix:stateChanged', handler);
   return () => ipcRenderer.removeListener('fix:stateChanged', handler);
 },
+// Cross-window progress broadcast. Lets PM (separate window)
+// render a real chip with phase/processed/total instead of just
+// "Fix in progress". Sent by whichever window owns the active
+// fix (currently always the main window).
+broadcastFixProgress: (payload: any) => ipcRenderer.invoke('fix:broadcastProgress', payload),
+getFixProgress: () => ipcRenderer.invoke('fix:getProgress'),
+onFixProgress: (callback: (payload: any) => void) => {
+  const handler = (_event: any, payload: any) => callback(payload);
+  ipcRenderer.on('fix:progressBroadcast', handler);
+  return () => ipcRenderer.removeListener('fix:progressBroadcast', handler);
+},
 
   saveReport: (reportData: any) =>
     ipcRenderer.invoke('report:save', reportData),

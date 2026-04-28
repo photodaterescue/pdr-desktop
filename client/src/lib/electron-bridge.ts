@@ -228,6 +228,41 @@ export function onFixStateChanged(callback: (state: { inProgress: boolean }) => 
   return () => {};
 }
 
+/** Fix progress payload broadcast cross-window so PM (separate
+ *  window) can render a real chip with numbers instead of just a
+ *  boolean. */
+export interface FixProgressPayload {
+  phase: 'prescan' | 'staging' | 'mirror' | 'applying' | null;
+  processed: number;
+  total: number;
+  progressPct: number;
+  mirrorDone: number;
+  mirrorTotal: number;
+  prescanCount: number;
+  elapsed: number;
+  isPrescanning: boolean;
+}
+
+export async function broadcastFixProgress(payload: FixProgressPayload): Promise<void> {
+  if (isElectron() && (window as any).pdr?.broadcastFixProgress) {
+    try { await (window as any).pdr.broadcastFixProgress(payload); } catch { /* non-fatal */ }
+  }
+}
+
+export async function getFixProgress(): Promise<FixProgressPayload | null> {
+  if (isElectron() && (window as any).pdr?.getFixProgress) {
+    try { return (await (window as any).pdr.getFixProgress()) ?? null; } catch { return null; }
+  }
+  return null;
+}
+
+export function onFixProgress(callback: (payload: FixProgressPayload) => void): () => void {
+  if (isElectron() && (window as any).pdr?.onFixProgress) {
+    return (window as any).pdr.onFixProgress(callback);
+  }
+  return () => {};
+}
+
 export async function playCompletionSound(): Promise<void> {
   if (isElectron() && (window as any).pdr?.playCompletionSound) {
     try {

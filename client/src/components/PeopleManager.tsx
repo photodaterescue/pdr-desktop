@@ -73,6 +73,7 @@ import {
   type AiProgress,
 } from '@/lib/electron-bridge';
 import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
+import { FixStatusChip } from './FixStatusChip';
 
 // ─── Notify main window that data changed ─────────────────────────────────
 function notifyChange() {
@@ -1086,6 +1087,12 @@ export default function PeopleManager() {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       <MainAliveBanner />
+
+      {/* Cross-window Fix status chip — appears top-center while a
+          Fix is running in the main window, so the user knows mutating
+          actions in PM are gated for a reason. Passive (no Open
+          button) because PM can't restore the main window's modal. */}
+      <FixStatusChip />
 
       {/* Header — below the title bar */}
       <div className="flex items-center justify-between px-6 pt-4 pb-3">
