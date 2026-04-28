@@ -33,19 +33,21 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground border border-primary-border shadow-sm",
         secondary:
           "bg-background border border-primary/70 text-primary hover:bg-primary/5 dark:border-primary/60 dark:hover:bg-primary/10",
-        // Chip-style tints. Saturation bumped (bg-100, border-400) over
-        // the originally-spec'd /50+/300 because on the light lavender
-        // background the paler shades read as "white card with no
-        // border" — invisibly bleached. /100 + /400 reads as a clearly
-        // coloured chip without becoming a CTA.
+        // Chip-style tints. Pushed to bg-200 + border-500 because the
+        // earlier bg-100 + border-400 spec resolved (in oklch) to ~93%
+        // lightness with only ~3% chroma — a hint of colour that
+        // disappears on the light lavender background. bg-200 sits
+        // around 88% lightness with ~12% chroma, so the chip actually
+        // reads as blue/green/amber/red instead of a white card.
+        // Borders are bumped to /500 so the edge is visible too.
         information:
-          "bg-blue-100 border border-blue-400 text-blue-800 hover:bg-blue-200 hover:border-blue-500 dark:bg-blue-900/40 dark:border-blue-600 dark:text-blue-200 dark:hover:bg-blue-900/60",
+          "bg-blue-200 border border-blue-500 text-blue-800 hover:bg-blue-300 hover:border-blue-600 dark:bg-blue-900/50 dark:border-blue-500 dark:text-blue-200 dark:hover:bg-blue-900/70",
         success:
-          "bg-emerald-100 border border-emerald-400 text-emerald-800 hover:bg-emerald-200 hover:border-emerald-500 dark:bg-emerald-900/40 dark:border-emerald-600 dark:text-emerald-200 dark:hover:bg-emerald-900/60",
+          "bg-emerald-200 border border-emerald-500 text-emerald-800 hover:bg-emerald-300 hover:border-emerald-600 dark:bg-emerald-900/50 dark:border-emerald-500 dark:text-emerald-200 dark:hover:bg-emerald-900/70",
         caution:
-          "bg-amber-100 border border-amber-400 text-amber-800 hover:bg-amber-200 hover:border-amber-500 dark:bg-amber-900/40 dark:border-amber-600 dark:text-amber-200 dark:hover:bg-amber-900/60",
+          "bg-amber-200 border border-amber-500 text-amber-800 hover:bg-amber-300 hover:border-amber-600 dark:bg-amber-900/50 dark:border-amber-500 dark:text-amber-200 dark:hover:bg-amber-900/70",
         destructive:
-          "bg-red-100 border border-red-400 text-red-800 hover:bg-red-200 hover:border-red-500 dark:bg-red-900/40 dark:border-red-600 dark:text-red-200 dark:hover:bg-red-900/60",
+          "bg-red-200 border border-red-500 text-red-800 hover:bg-red-300 hover:border-red-600 dark:bg-red-900/50 dark:border-red-500 dark:text-red-200 dark:hover:bg-red-900/70",
         icon:
           "h-9 w-9 p-0 text-foreground hover:bg-secondary",
         link:
