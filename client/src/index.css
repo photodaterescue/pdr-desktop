@@ -179,6 +179,47 @@
   }
 }
 
+/* ─── Typography tier system ──────────────────────────────────────────
+   Lock the size + weight + colour for every text role in one place,
+   so we stop sprinkling text-[10px] text-primary/60 everywhere. Same
+   reasoning as the button taxonomy in button.tsx: one visual treatment
+   per tier, no per-call opacity hacks.
+
+   See STYLE_GUIDE.md at the repo root for the intent → tier mapping.
+   ──────────────────────────────────────────────────────────────────── */
+@layer components {
+  .text-display {
+    @apply text-2xl md:text-3xl font-semibold text-foreground;
+    font-family: var(--font-heading);
+  }
+  .text-h1 {
+    @apply text-lg font-semibold text-foreground;
+    font-family: var(--font-heading);
+  }
+  .text-h2 {
+    @apply text-base font-semibold text-foreground;
+    font-family: var(--font-heading);
+  }
+  .text-body {
+    @apply text-sm font-normal text-foreground;
+  }
+  /* Secondary descriptions / helper text. NOT an opacity hack — a
+     real defined tier with a colour ratio that stays readable on the
+     light lavender background and the dark theme alike. */
+  .text-body-muted {
+    @apply text-sm font-normal text-foreground/75 dark:text-foreground/70;
+  }
+  .text-label {
+    @apply text-xs font-medium text-foreground;
+  }
+  .text-caption {
+    @apply text-xs font-normal text-foreground/65 dark:text-foreground/60;
+  }
+  .text-mono {
+    @apply text-xs font-normal font-mono text-foreground;
+  }
+}
+
 @keyframes outline-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(169, 156, 255, 0.5); }
   50% { box-shadow: 0 0 0 5px rgba(169, 156, 255, 0.35); }
