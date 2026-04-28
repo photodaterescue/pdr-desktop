@@ -7778,6 +7778,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [autoSaveCatalogue, setAutoSaveCatalogue] = useState(true);
   const [showManualReportExports, setShowManualReportExports] = useState(false);
   const [openPeopleOnStartup, setOpenPeopleOnStartup] = useState(false);
+  // Network upload mode: 'fast' = robocopy /MT:16 staging, 'direct'
+  // = legacy fs.createReadStream loop. A/B baseline + kill switch.
+  const [networkUploadMode, setNetworkUploadMode] = useState<'fast' | 'direct'>('fast');
 
   // Load settings on mount
   useEffect(() => {
@@ -7800,8 +7803,14 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setAutoSaveCatalogue(settings.autoSaveCatalogue);
       setShowManualReportExports(settings.showManualReportExports);
       setOpenPeopleOnStartup((settings as any).openPeopleOnStartup ?? false);
+      setNetworkUploadMode(((settings as any).networkUploadMode as 'fast' | 'direct') ?? 'fast');
     });
   }, []);
+
+  const handleNetworkUploadModeChange = (mode: 'fast' | 'direct') => {
+    setNetworkUploadMode(mode);
+    setSetting('networkUploadMode' as any, mode);
+  };
 
   const handleSkipDuplicatesToggle = (checked: boolean) => {
     setSkipDuplicates(checked);
@@ -8267,6 +8276,60 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       onCheckedChange={(checked) => handleClearSourcesAfterFixToggle(!!checked)}
                       data-testid="checkbox-clear-sources-after-fix"
                     />
+                  </label>
+                </div>
+              </div>
+
+              {/* Network upload mode — A/B baseline + kill switch.
+                  Only matters for network destinations; local copies
+                  always use the direct path. */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">Network upload mode</label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  How PDR copies files to a network destination (UNC paths or mapped network drives). Local destinations always use Direct.
+                </p>
+                <div className="space-y-2">
+                  <label
+                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                      networkUploadMode === 'fast' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                    }`}
+                    data-testid="option-network-upload-fast"
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="networkUploadMode"
+                        value="fast"
+                        checked={networkUploadMode === 'fast'}
+                        onChange={() => handleNetworkUploadModeChange('fast')}
+                        className="w-4 h-4 text-primary focus:ring-primary"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">Fast <span className="text-xs font-normal text-muted-foreground">(recommended)</span></span>
+                        <span className="text-xs text-muted-foreground">Stages files locally, then mirrors to the network with robocopy /MT:16. Typically 5–10× faster on SMB shares.</span>
+                      </div>
+                    </div>
+                  </label>
+                  <label
+                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                      networkUploadMode === 'direct' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                    }`}
+                    data-testid="option-network-upload-direct"
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="networkUploadMode"
+                        value="direct"
+                        checked={networkUploadMode === 'direct'}
+                        onChange={() => handleNetworkUploadModeChange('direct')}
+                        className="w-4 h-4 text-primary focus:ring-primary"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">Direct <span className="text-xs font-normal text-muted-foreground">(legacy)</span></span>
+                        <span className="text-xs text-muted-foreground">Per-file streaming copy — slower, but byte-for-byte identical to PDR's pre-Robocopy behaviour. Use for baseline tests or as a kill switch if Fast misbehaves on your NAS.</span>
+                      </div>
+                    </div>
                   </label>
                 </div>
               </div>

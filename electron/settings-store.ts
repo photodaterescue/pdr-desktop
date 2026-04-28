@@ -64,6 +64,18 @@ export interface PDRSettings {
    *  enables the setting from the banner or explicitly dismisses it. */
   pmStartupPromptDismissed: boolean;
 
+  /** Network-destination upload mode.
+   *    'fast'   — stage to local temp, mirror to network with
+   *               robocopy /MT:16 (5–10× faster on SMB shares).
+   *    'direct' — legacy per-file fs.createReadStream loop. Slower
+   *               but byte-for-byte identical to pre-Robocopy code.
+   *               Kill switch if a NAS / SMB version doesn't get
+   *               along with multi-threaded copies.
+   *  Local destinations ignore this setting — they always use the
+   *  direct path because fs.copyFile on a local disk is already
+   *  syscall-fast and staging would just double the I/O. */
+  networkUploadMode: 'fast' | 'direct';
+
   // User-curated scanner overrides. Each entry defines a per-camera
   // decision that trumps the automatic rule — key is the EXIF Make/Model
   // pair, value is whether that combination should be treated as a scanner
@@ -111,6 +123,7 @@ export const optimisedDefaults: PDRSettings = {
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
+  networkUploadMode: 'fast',
 };
 
 const store = new Store<PDRSettings>({
@@ -146,6 +159,7 @@ export function getSettings(): PDRSettings {
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
+    networkUploadMode: store.get('networkUploadMode', optimisedDefaults.networkUploadMode),
   };
 }
 

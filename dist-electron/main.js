@@ -1469,7 +1469,20 @@ ipcMain.handle('files:copy', async (_event, data) => {
     // — finally needs to know whether the mirror step asked to keep
     // staging around for manual recovery.
     let preserveStagingForRecovery = false;
-    if (process.platform === 'win32') {
+    // Honour the user's network-upload-mode setting. 'direct' is the
+    // legacy kill switch — even on network destinations, force the
+    // old per-file fs.createReadStream loop. Used as the A/B baseline
+    // and as a rescue option for SMB versions that fight robocopy.
+    const networkUploadMode = (() => {
+        try {
+            return getSettings().networkUploadMode || 'fast';
+        }
+        catch {
+            return 'fast';
+        }
+    })();
+    console.log(`[Fix] Network upload mode: ${networkUploadMode === 'fast' ? 'FAST (robocopy /MT:16 staging)' : 'DIRECT (legacy fs.createReadStream loop)'}`);
+    if (process.platform === 'win32' && networkUploadMode === 'fast') {
         try {
             const destClass = classifySource(destinationPath);
             if (destClass.type === 'network') {

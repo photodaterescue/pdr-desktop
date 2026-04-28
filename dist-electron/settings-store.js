@@ -29,6 +29,7 @@ export const optimisedDefaults = {
     pmOpenDays: [],
     pmStartupPromptDismissed: false,
     scannerOverrides: [],
+    networkUploadMode: 'fast',
 };
 const store = new Store({
     name: 'pdr-settings',
@@ -62,6 +63,7 @@ export function getSettings() {
         pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
         pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
         scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
+        networkUploadMode: store.get('networkUploadMode', optimisedDefaults.networkUploadMode),
     };
 }
 // ─── Scanner override helpers ────────────────────────────────────────────────
