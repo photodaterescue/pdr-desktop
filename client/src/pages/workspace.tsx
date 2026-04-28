@@ -3093,13 +3093,19 @@ function DashboardPanel({
       </motion.div>
       </div>
 
-      {/* Sticky Bottom Action Bar for Complete State */}
+      {/* Bottom Action Bar for Complete State.
+          Was previously `absolute bottom-0` + counter-zoom, which
+          left a large empty gap between content and the bar at any
+          zoom level below 100% (the bar stuck to viewport-bottom of
+          the zoomable wrapper while content above scaled smaller).
+          Now in normal document flow so it sits directly below the
+          Output section and scales with the workspace zoom — same
+          behaviour the rest of the dashboard content gets. */}
       {isComplete && (
-        <motion.div 
-          initial={{ y: 100 }}
-          animate={{ y: 0 }}
-          className="absolute bottom-0 left-0 right-0 bg-background border-t border-border p-4 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)] z-20"
-          style={{ zoom: 100 / zoomLevel }}
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="mt-4 bg-background border-t border-border p-4 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)]"
         >
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
