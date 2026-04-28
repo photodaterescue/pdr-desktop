@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   HardDrive, Camera, Smartphone, Cloud, Monitor,
@@ -40,6 +40,16 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [finalSizeGB, setFinalSizeGB] = useState(0);
 
+  // True when the modal was opened via the "Review library plan" link
+  // (the user already has saved answers). Drives both the dismiss-button
+  // styling and what onSkip means semantically.
+  const isReview = !!previousAnswers;
+
+  // Track where a pointer interaction started so a click-and-drag that
+  // releases on the backdrop doesn't dismiss the modal — see
+  // feedback_modal_backdrop_close.
+  const downOnBackdrop = useRef(false);
+
   // Load drives when modal opens — pre-populate with previous answers if reviewing
   useEffect(() => {
     if (!isOpen) return;
@@ -58,7 +68,25 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
     setStep(1);
   }, [isOpen]);
 
+  // Esc to dismiss — same semantics as the Skip/Close button
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (!isReview) localStorage.setItem('pdr-library-planner-complete', 'true');
+        onSkip();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, isReview, onSkip]);
+
   if (!isOpen) return null;
+
+  const handleDismiss = () => {
+    if (!isReview) localStorage.setItem('pdr-library-planner-complete', 'true');
+    onSkip();
+  };
 
   // Compute the estimated collection size with modest headroom
   const computeFinalSize = () => {
@@ -134,6 +162,13 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
+        onClick={(e) => {
+          if (downOnBackdrop.current && e.target === e.currentTarget) {
+            handleDismiss();
+          }
+          downOnBackdrop.current = false;
+        }}
       >
         <motion.div
           className="bg-background rounded-2xl shadow-2xl border border-border w-[520px] max-h-[85vh] overflow-hidden flex flex-col"
@@ -318,12 +353,15 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                       <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                       <div>
                         <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-1">
-                          None of your local drives have enough space
+                          Your network drive is the only one with the space
                         </p>
                         <p className="text-xs text-foreground/60 leading-relaxed mb-2">
-                          Your network drive{analysis.networkWithSpace.length > 1 ? 's have' : ` (${analysis.networkWithSpace[0]?.letter}) has`} the
-                          space, but network drives are too slow and unreliable for processing — large jobs can take hours
-                          and risk failure from connection drops, sleep mode, or power loss.
+                          Network drive{analysis.networkWithSpace.length > 1 ? 's' : ` ${analysis.networkWithSpace[0]?.letter}`} has
+                          room for your library, and PDR's Fast (Robocopy) network mode is roughly 3.5× quicker
+                          than the legacy method in our testing — so saving over the network is a reasonable
+                          option. They're still a little more sensitive to connection drops, sleep, or power
+                          cuts during very long jobs, so a local drive is the most resilient choice if you have
+                          the space.
                         </p>
                         {analysis.bestLocal && (
                           <p className="text-xs text-foreground/60 leading-relaxed mb-2">
@@ -409,30 +447,31 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 border-t border-border flex items-center justify-between">
-            <div>
-              {step === 2 && (
+          <div className="px-6 py-4 border-t border-border flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {step > 1 && (
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => setStep((step - 1) as 1 | 2)}
                   className="text-xs text-foreground/50 hover:text-foreground transition-colors"
                 >
                   ← Back
                 </button>
               )}
-              {step === 3 && (
-                <button
-                  onClick={() => setStep(2)}
-                  className="text-xs text-foreground/50 hover:text-foreground transition-colors"
+              {/* Dismiss control — present on every step so the user is
+                  never trapped in the flow. Outlined "Close" button when
+                  reviewing an existing plan; faint "Skip for now" link
+                  on the first-time setup. */}
+              {isReview ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDismiss}
                 >
-                  ← Back
-                </button>
-              )}
-              {step === 1 && (
+                  Close
+                </Button>
+              ) : (
                 <button
-                  onClick={() => {
-                    localStorage.setItem('pdr-library-planner-complete', 'true');
-                    onSkip();
-                  }}
+                  onClick={handleDismiss}
                   className="text-xs text-foreground/50 hover:text-foreground transition-colors"
                 >
                   Skip for now
