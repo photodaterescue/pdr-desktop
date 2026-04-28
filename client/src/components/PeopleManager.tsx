@@ -1086,12 +1086,23 @@ export default function PeopleManager() {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
+      {/* Custom-frame spacer — matches the 32px lavender title bar
+          that Electron paints over the top of the content via
+          titleBarOverlay. Marked WebkitAppRegion:'drag' so users
+          can drag the window from the bar (consistent with main
+          PDR). The OS-rendered window controls live at the right
+          edge of this region; their hit area is automatically
+          excluded from drag by Electron. */}
+      <div
+        className="shrink-0 bg-primary"
+        style={{ height: 32, WebkitAppRegion: 'drag' } as React.CSSProperties}
+      />
       <MainAliveBanner />
 
-      {/* Cross-window Fix status chip — appears top-center while a
-          Fix is running in the main window, so the user knows mutating
-          actions in PM are gated for a reason. Passive (no Open
-          button) because PM can't restore the main window's modal. */}
+      {/* Cross-window Fix status chip — passive (no Open button)
+          because PM can't restore the main window's modal. Lives
+          inside the title bar (top-1.5) for consistency with the
+          main PDR window. */}
       <FixStatusChip />
 
       {/* Header — below the title bar */}

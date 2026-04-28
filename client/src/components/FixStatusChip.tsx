@@ -6,20 +6,24 @@ import { getFixProgress, onFixProgress, type FixProgressPayload } from '@/lib/el
 
 /**
  * FixStatusChip — small pulsing pill shown when a Fix is running
- * in any window. Subscribes to the cross-window
- * 'fix:progressBroadcast' channel so non-main windows (People
- * Manager, Date Editor) see real numbers instead of just "Fix in
- * progress".
+ * in ANY window. Single source of truth for the chip across all
+ * surfaces — Home, Source Selection, Workspace, People Manager,
+ * Date Editor, Viewer. Subscribes to the cross-window
+ * 'fix:progressBroadcast' channel so every window sees real
+ * numbers instead of just "Fix in progress".
  *
- * The main window has its own chip rendered from inside the
- * FixProgressModal — that one carries an Open button to restore
- * the full modal. This component is the *passive* version for
- * windows that can't restore the modal because they don't own
- * the fix state. Click brings the main window to focus so the
- * user can interact with it there.
+ * Two flavours:
+ *   • Passive (default) — pointer-events:none, just a visual cue.
+ *     Used in PM / Date Editor / Viewer where we can't restore
+ *     the modal directly (it lives in the main window).
+ *   • Interactive — pass `interactive={true}`. Renders an "Open"
+ *     button that fires a window-level CustomEvent
+ *     'pdr:fix:restore'. The FixProgressModal listens for this
+ *     event and un-minimises itself. Used in the main window so
+ *     the chip is the user's restore handle.
  *
- * Position: top-center under the title bar. Same place the main
- * window's chip lives, so muscle memory transfers.
+ * Position: top-center under the title bar. Same place across all
+ * windows so muscle memory transfers.
  */
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -30,7 +34,7 @@ function formatTime(seconds: number): string {
   return `${s}s`;
 }
 
-export function FixStatusChip() {
+export function FixStatusChip({ interactive = false }: { interactive?: boolean } = {}) {
   const inProgress = useFixInProgress();
   const [progress, setProgress] = useState<FixProgressPayload | null>(null);
 
@@ -68,27 +72,46 @@ export function FixStatusChip() {
         : `${progress.processed.toLocaleString()}/${progress.total.toLocaleString()}`
     : '';
 
+  const handleOpenClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Tell the main-window FixProgressModal to un-minimise. Listen-
+    // ed for in workspace.tsx's FixProgressModal useEffect.
+    try { window.dispatchEvent(new CustomEvent('pdr:fix:restore')); } catch { /* non-fatal */ }
+  };
+
   return (
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        className="fixed top-12 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-3 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta pointer-events-none"
-        data-testid="fix-progress-chip-passive"
-        title="A Fix is in progress in the main PDR window"
+        className={`fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta ${interactive ? 'cursor-pointer' : 'pointer-events-none'}`}
+        data-testid={interactive ? 'fix-progress-chip' : 'fix-progress-chip-passive'}
+        title={interactive ? 'Click to view full progress' : 'A Fix is in progress in the main PDR window'}
+        onClick={interactive ? handleOpenClick : undefined}
+        style={interactive ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) : undefined}
       >
         <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
         <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
           Fix · {label}
           {detail && ` · ${detail}`}
           {progress && phase !== 'prescan' && phase !== 'mirror' && progress.progressPct > 0 && (
-            <span className="opacity-80"> · {progress.progressPct}%</span>
+            <span className="opacity-90"> · {progress.progressPct}%</span>
           )}
           {progress && progress.elapsed > 0 && (
-            <span className="opacity-80"> · {formatTime(progress.elapsed)}</span>
+            <span className="opacity-90"> · {formatTime(progress.elapsed)}</span>
           )}
         </span>
+        {interactive && (
+          <button
+            type="button"
+            onClick={handleOpenClick}
+            className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/25 hover:bg-white/40 transition-colors"
+            aria-label="Restore full progress view"
+          >
+            Open
+          </button>
+        )}
       </motion.div>
     </AnimatePresence>
   );

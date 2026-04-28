@@ -28,6 +28,7 @@ import {
   type DateSuggestion,
 } from '../lib/electron-bridge';
 import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
+import { FixStatusChip } from './FixStatusChip';
 import { MainAliveBanner } from './MainAliveBanner';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 
@@ -288,7 +289,18 @@ export default function DateEditor() {
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
+      {/* Custom-frame spacer — 32px lavender title bar matching the
+          main PDR window. Drag region for window movement; OS-
+          rendered controls live at top-right via titleBarOverlay. */}
+      <div
+        className="shrink-0 bg-primary"
+        style={{ height: 32, WebkitAppRegion: 'drag' } as React.CSSProperties}
+      />
       <MainAliveBanner />
+      {/* Cross-window Fix status chip — passive (no Open button)
+          because Date Editor can't restore the main window's modal.
+          Lives inside the title bar (top-1.5) for consistency. */}
+      <FixStatusChip />
       {/* ─── Header ─────────────────────────────────────────────────────── */}
       <header className="shrink-0 px-4 py-3 border-b border-border flex items-center gap-3">
         <Calendar className="w-5 h-5 text-primary" />

@@ -4779,6 +4779,15 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     return () => clearInterval(timer);
   }, [isComplete]);
 
+  // Listen for the App-level FixStatusChip's "Open" click — the
+  // chip dispatches a 'pdr:fix:restore' window event, we flip
+  // fixMinimized back to false so the full modal reappears.
+  useEffect(() => {
+    const handler = () => setFixMinimized(false);
+    window.addEventListener('pdr:fix:restore', handler);
+    return () => window.removeEventListener('pdr:fix:restore', handler);
+  }, []);
+
   // Broadcast progress cross-window so PM (separate window) renders
   // a real chip. THROTTLED to once per ~250ms — without throttling,
   // a 391-file fix kicks off ~500+ IPC round-trips for progress
@@ -5120,61 +5129,14 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const recoveredCount = fixSnapshotRef.current?.recovered ?? 0;
   const markedCount = fixSnapshotRef.current?.marked ?? 0;
   
-  // Compact chip render — shown only while the fix is in flight
-  // AND the user has minimised. Portalled into a fixed anchor at
-  // the workspace root so it stays visible across panel switches
-  // (Memories, Trees, S&D, Edit Dates, etc.) where the parent
-  // container would otherwise be display:none-hidden.
-  //
-  // Position: TOP-CENTER of the title bar — leaves the right side
-  // alone for the OS window controls (minimize/maximize/close on
-  // Windows, traffic lights on macOS) which the chip was clashing
-  // with at top-right. Pulses softly to draw attention without
-  // being annoying.
+  // When minimised, render NOTHING from this component — the
+  // App-level FixStatusChip is the single source of truth for
+  // the chip across every PDR surface (Home, Source Selection,
+  // Workspace, PM, Date Editor, Viewer). Clicking that chip's
+  // "Open" button dispatches a 'pdr:fix:restore' window event
+  // which we listen for below to flip back to the full modal.
   if (!isComplete && fixMinimized) {
-    const chipLabel = isPrescanning
-      ? 'Preparing'
-      : copyPhase === 'mirror'
-        ? 'Uploading'
-        : copyPhase === 'staging'
-          ? 'Staging'
-          : 'Applying';
-    const chipDetail = isPrescanning
-      ? `${prescanCount.toLocaleString()} checked`
-      : copyPhase === 'mirror' && mirrorFilesTotal > 0
-        ? `${mirrorFilesDone.toLocaleString()}/${mirrorFilesTotal.toLocaleString()}`
-        : `${processed.toLocaleString()}/${totalFiles.toLocaleString()}`;
-    const portalTarget = typeof document !== 'undefined' ? document.getElementById('pdr-fix-chip-portal') : null;
-    const chipNode = (
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 cursor-pointer select-none animate-pulse-cta"
-        onClick={() => setFixMinimized(false)}
-        title="Click to view full progress"
-        data-testid="fix-progress-chip"
-        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-      >
-        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-        <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
-          Fix · {chipLabel} · {chipDetail}
-          {!isPrescanning && progress > 0 && copyPhase !== 'mirror' && (
-            <span className="opacity-90"> · {Math.round(progress)}%</span>
-          )}
-          {elapsed > 0 && <span className="opacity-90"> · {formatTime(elapsed)}</span>}
-        </span>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); setFixMinimized(false); }}
-          className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/25 hover:bg-white/40 transition-colors"
-          aria-label="Restore full progress view"
-        >
-          Open
-        </button>
-      </motion.div>
-    );
-    return portalTarget ? ReactDOM.createPortal(chipNode, portalTarget) : chipNode;
+    return null;
   }
 
   // Full modal — also portalled so the completion screen pops up

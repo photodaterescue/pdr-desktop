@@ -6,6 +6,7 @@ import { LicenseProvider } from "@/contexts/LicenseContext";
 import { ToastListener } from "@/components/ToastListener";
 import { UpdateNotification } from "@/components/UpdateNotification";
 import { TitleBar } from "@/components/TitleBar";
+import { FixStatusChip } from "@/components/FixStatusChip";
 
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
@@ -20,6 +21,12 @@ function AppRouter() {
       <div className="flex flex-col h-screen overflow-hidden">
         {/* Custom title bar — always visible on all views */}
         <TitleBar />
+        {/* Cross-window Fix-in-progress chip — single source of
+            truth for the chip across every route in the main
+            window (Home, Source Selection, Workspace). Interactive
+            variant: clicking the Open button dispatches a window
+            event that un-minimises the FixProgressModal. */}
+        <FixStatusChip interactive />
         {/* Page content fills remaining space */}
         <div className="flex-1 overflow-hidden">
           <Routes>

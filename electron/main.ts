@@ -253,6 +253,46 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
 }
 
+/**
+ * Hard-disable browser-style navigation on every PDR BrowserWindow.
+ *
+ * PDR is a desktop app — Alt+Left, Alt+Right and the side mouse
+ * buttons should never navigate anywhere. They're a relic of
+ * Electron's webview heritage. Without this hardening:
+ *   • Alt+Left / Alt+Right → BrowserWindow history navigation
+ *   • Mouse side button (back) → 'browser-backward' app command
+ *   • Mouse side button (forward) → 'browser-forward' app command
+ * In real-world testing, an accidental side-mouse-button click
+ * during a Fix navigated PDR away from the in-progress modal,
+ * which is unacceptable. This helper closes every avenue:
+ *   1. before-input-event preventDefault on Alt+Arrow keys
+ *   2. app-command preventDefault on browser-backward/forward
+ *   3. will-navigate preventDefault to block any navigation attempt
+ *   4. clearHistory() after load so there's nothing to navigate to
+ *      even if a gesture slips through.
+ *
+ * Apply to every BrowserWindow PDR creates — main, People Manager,
+ * Date Editor, Viewer.
+ */
+function hardenWindowAgainstNavigation(win: BrowserWindow): void {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.alt && (input.key === 'ArrowLeft' || input.key === 'ArrowRight')) {
+      event.preventDefault();
+    }
+  });
+  win.on('app-command', (event, command) => {
+    if (command === 'browser-backward' || command === 'browser-forward') {
+      event.preventDefault();
+    }
+  });
+  win.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+  win.webContents.on('did-finish-load', () => {
+    try { win.webContents.clearHistory(); } catch { /* ignore */ }
+  });
+}
+
 // Mirror a local staging folder onto a (typically network) destination
 // using Windows' native robocopy with /MT:16 multi-threading. We
 // stage every file locally during the per-file loop (fast disk I/O,
@@ -369,6 +409,7 @@ function createWindow() {
       zoomFactor: 1.0,
     },
   });
+  hardenWindowAgainstNavigation(mainWindow);
 
 	mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
 
@@ -3238,6 +3279,7 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
         preload: path.join(__dirname, 'preload.js'),
       },
     });
+    hardenWindowAgainstNavigation(viewerWindow);
 
     const viewerHtml = app.isPackaged
       ? path.join(process.resourcesPath, 'dist/public/viewer.html')
@@ -3304,6 +3346,19 @@ function createPeopleWindow(opts: { show: boolean }): BrowserWindow {
     paintWhenInitiallyHidden: true,
     backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
     title: 'People Manager — Photo Date Rescue',
+    // Custom-frame title bar to match the main PDR window. Lets the
+    // Fix-status chip sit IN the title bar (consistent with the main
+    // window) rather than below it. titleBarOverlay gives us native
+    // OS window controls (min / max / close) at the top-right with
+    // PDR's lavender theming, so we don't have to reinvent them.
+    titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
+    ...(process.platform === 'win32' ? {
+      titleBarOverlay: {
+        color: '#a99cff',
+        symbolColor: '#ffffff',
+        height: 32,
+      },
+    } : {}),
     // Independent top-level window. We deliberately do NOT set
     // `skipTaskbar: true` on Windows: that flag also excludes the window
     // from Alt-Tab and makes minimised windows impossible to restore (no
@@ -3323,6 +3378,7 @@ function createPeopleWindow(opts: { show: boolean }): BrowserWindow {
       zoomFactor: 1.0,
     },
   });
+  hardenWindowAgainstNavigation(win);
 
   const peoplePage = path.join(__dirname, '../dist/public/people.html');
   // Best-effort dark-mode query — for the warm path we won't have the
@@ -3447,6 +3503,18 @@ ipcMain.handle('dateEditor:open', async (_event, seedQuery?: any) => {
       title: 'Date Editor — Photo Date Rescue',
       // See peopleWindow above: independent top-level window, no skipTaskbar
       // so Alt-Tab works and the user can restore a minimised window.
+      // Custom-frame title bar matches the main PDR window so the
+      // Fix-status chip can sit IN the title bar consistently across
+      // every PDR window. titleBarOverlay renders the native OS
+      // window controls in PDR's lavender theme.
+      titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
+      ...(process.platform === 'win32' ? {
+        titleBarOverlay: {
+          color: '#a99cff',
+          symbolColor: '#ffffff',
+          height: 32,
+        },
+      } : {}),
       roundedCorners: true,
       thickFrame: true,
       icon: app.isPackaged
@@ -3459,6 +3527,7 @@ ipcMain.handle('dateEditor:open', async (_event, seedQuery?: any) => {
         zoomFactor: 1.0,
       },
     });
+    hardenWindowAgainstNavigation(dateEditorWindow);
 
     const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
     dateEditorWindow.loadFile(dateEditorPage, {

@@ -154,6 +154,49 @@
     .nav-arrow.left { left: 16px; }
     .nav-arrow.right { right: 16px; }
     .nav-arrow:disabled { opacity: 0.2 !important; cursor: default; }
+    /* Cross-window Fix-in-progress chip — same amber pill PDR shows
+       on every other window so users always know a Fix is running.
+       Pinned top-center, pulses to draw attention. pointer-events:
+       none so clicks pass through (this window can't interact with
+       the fix). */
+    .fix-chip {
+      position: fixed;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: #f59e0b;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      box-shadow: 0 0 0 2px rgba(252, 211, 77, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+      user-select: none;
+      animation: fix-chip-pulse 1.5s ease-in-out infinite;
+      white-space: nowrap;
+    }
+    .fix-chip.visible { display: inline-flex; }
+    .fix-chip .spinner {
+      width: 12px; height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: fix-chip-spin 0.9s linear infinite;
+    }
+    @keyframes fix-chip-pulse {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(252, 211, 77, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35); transform: translateX(-50%) scale(1); }
+      50% { box-shadow: 0 0 0 6px rgba(252, 211, 77, 0), 0 4px 14px rgba(0, 0, 0, 0.35); transform: translateX(-50%) scale(1.025); }
+    }
+    @keyframes fix-chip-spin {
+      to { transform: rotate(360deg); }
+    }
     .info-bar {
       display: flex;
       align-items: center;
@@ -245,6 +288,13 @@
   </style>
 </head>
 <body>
+  <!-- Cross-window Fix-in-progress chip — populated by JS at the
+       bottom of this file via window.pdr.onFixProgress /
+       onFixStateChanged. Same amber pill the rest of PDR shows. -->
+  <div class="fix-chip" id="fix-chip" title="A Fix is in progress in PDR">
+    <span class="spinner"></span>
+    <span id="fix-chip-text">Fix · Working</span>
+  </div>
   <div class="toolbar">
     <span class="toolbar-title" id="filename">PDR Viewer</span>
     <div class="toolbar-actions">
@@ -802,6 +852,65 @@ function zoomTo(newZoom, centreX, centreY) {
       else if (e.key === 'ArrowRight' && !isVideo) loadMedia(currentIndex + 1);
       else if (e.key === 'Escape') window.close();
     });
+
+    // ── Cross-window Fix progress chip ─────────────────────────────
+    // Same amber pill PDR shows on every other window. Subscribes to
+    // the main process broadcast so users viewing a photo while a
+    // Fix runs see the same status. Vanilla JS because this file
+    // isn't React.
+    (function () {
+      const chipEl = document.getElementById('fix-chip');
+      const textEl = document.getElementById('fix-chip-text');
+      if (!chipEl || !textEl) return;
+      function fmtTime(s) {
+        if (!s || s < 0) return '';
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        if (h > 0) return h + 'h ' + m + 'm ' + sec + 's';
+        if (m > 0) return m + 'm ' + sec + 's';
+        return sec + 's';
+      }
+      function render(active, progress) {
+        if (!active) { chipEl.classList.remove('visible'); return; }
+        const phase = progress && progress.phase;
+        const label = phase === 'prescan' ? 'Preparing'
+          : phase === 'mirror' ? 'Uploading'
+          : phase === 'staging' ? 'Staging'
+          : phase === 'applying' ? 'Applying'
+          : 'Working';
+        let detail = '';
+        if (progress) {
+          if (phase === 'prescan') detail = (progress.prescanCount || 0).toLocaleString() + ' checked';
+          else if (phase === 'mirror' && progress.mirrorTotal > 0) detail = progress.mirrorDone.toLocaleString() + '/' + progress.mirrorTotal.toLocaleString();
+          else if (progress.total > 0) detail = progress.processed.toLocaleString() + '/' + progress.total.toLocaleString();
+        }
+        const parts = ['Fix', label];
+        if (detail) parts.push(detail);
+        if (progress && phase !== 'prescan' && phase !== 'mirror' && progress.progressPct > 0) parts.push(progress.progressPct + '%');
+        if (progress && progress.elapsed > 0) parts.push(fmtTime(progress.elapsed));
+        textEl.textContent = parts.join(' · ');
+        chipEl.classList.add('visible');
+      }
+      let active = false;
+      let lastProgress = null;
+      // Cold-start: pull current state.
+      try {
+        if (window.pdr && window.pdr.getFixInProgress) {
+          window.pdr.getFixInProgress().then(function (v) { active = !!v; render(active, lastProgress); }).catch(function () {});
+        }
+        if (window.pdr && window.pdr.getFixProgress) {
+          window.pdr.getFixProgress().then(function (p) { lastProgress = p || null; render(active, lastProgress); }).catch(function () {});
+        }
+        // Live updates.
+        if (window.pdr && window.pdr.onFixStateChanged) {
+          window.pdr.onFixStateChanged(function (state) { active = !!(state && state.inProgress); render(active, lastProgress); });
+        }
+        if (window.pdr && window.pdr.onFixProgress) {
+          window.pdr.onFixProgress(function (p) { lastProgress = p || null; render(active, lastProgress); });
+        }
+      } catch (e) { console.warn('[viewer] fix-chip wiring failed:', e); }
+    })();
   </script>
 </body>
 </html>
