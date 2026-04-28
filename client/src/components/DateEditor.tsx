@@ -27,6 +27,7 @@ import {
   type IndexedFile,
   type DateSuggestion,
 } from '../lib/electron-bridge';
+import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
 import { MainAliveBanner } from './MainAliveBanner';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 
@@ -115,6 +116,11 @@ function readSeedQuery(): any | null {
 }
 
 export default function DateEditor() {
+  // True whenever any window has a Fix in flight — gate Apply so a
+  // date correction can't compete with the Fix's writes to
+  // indexed_files. The state propagates here via the same IPC
+  // broadcast PM/SearchPanel/etc. consume.
+  const fixActive = useFixInProgress();
   // Seed query from the main window — captured once on mount. If absent
   // (Tour / stand-alone open) we fall back to the Marked-only default.
   const seedQuery = useMemo(readSeedQuery, []);
@@ -486,14 +492,19 @@ export default function DateEditor() {
                   <span>Also write EXIF tags (DateTimeOriginal, CreateDate, ModifyDate)</span>
                 </label>
 
-                <button
-                  onClick={applyNow}
-                  disabled={applying || !editorDate}
-                  className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-semibold shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-all"
+                <IconTooltip
+                  label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Edit Dates writes to the same index the Fix is updating.' : ''}
+                  side="top"
                 >
-                  <Save className="w-4 h-4" />
-                  {applying ? 'Applying…' : 'Apply & next'}
-                </button>
+                  <button
+                    onClick={applyNow}
+                    disabled={applying || !editorDate || fixActive}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-semibold shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    <Save className="w-4 h-4" />
+                    {applying ? 'Applying…' : fixActive ? 'Fix in progress…' : 'Apply & next'}
+                  </button>
+                </IconTooltip>
 
                 {status && (
                   <div className={`mt-3 text-[11px] px-2 py-1.5 rounded flex items-start gap-1.5 ${

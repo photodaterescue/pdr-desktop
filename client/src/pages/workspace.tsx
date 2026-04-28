@@ -90,6 +90,7 @@ import {
   type DbBackup,
   prewarmPersonClusters
 } from "@/lib/electron-bridge";
+import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from "@/lib/fix-state";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
@@ -2480,6 +2481,12 @@ function DashboardPanel({
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected);
   const hasSelection = selectedSources.length > 0;
+  // True whenever any window has a Fix in flight — used to gate the
+  // Run Fix button so a second concurrent fix can't be kicked off.
+  // useFixInProgress reads via IPC + subscribes to broadcasts, so
+  // this stays accurate even if the original Fix was started from
+  // a different window or session.
+  const fixActive = useFixInProgress();
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
   const [showSDPrompt, setShowSDPrompt] = useState(false);
@@ -3077,26 +3084,39 @@ function DashboardPanel({
                >
                  <FileText className="w-4 h-4 mr-2" /> Reports History
                </Button>
-               <Button
-                 onClick={() => {
-                   const pref = localStorage.getItem('pdr-auto-add-to-sd') || 'ask';
-                   if (pref === 'always') {
-                     setAddToSDThisRun(true);
-                     addToSDRef.current = true;
-                     setShowFixModal(true);
-                   } else {
-                     // 'ask' — show the pre-fix S&D prompt
-                     setShowSDPrompt(true);
-                   }
-                 }}
-                 variant="outline"
-                 disabled={!destinationPath || destinationFreeGB < stats.sizeGB}
-                 className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold font-heading h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-                 data-testid="button-run-fix"
-                 data-tour="apply-fixes"
+               <IconTooltip
+                 label={fixActive ? 'One Fix at a time — wait for the current run to finish before starting another' : 'Apply all pending fixes to your library'}
+                 side="top"
                >
-                 <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" /> Run Fix
-               </Button>
+                 <Button
+                   onClick={() => {
+                     // Hard-block a second concurrent Fix. The chip
+                     // is visible top-right while one is running so
+                     // the user always knows.
+                     if (fixActive) {
+                       toast.error('One Fix at a time. Wait for the current run to finish.');
+                       return;
+                     }
+                     const pref = localStorage.getItem('pdr-auto-add-to-sd') || 'ask';
+                     if (pref === 'always') {
+                       setAddToSDThisRun(true);
+                       addToSDRef.current = true;
+                       setShowFixModal(true);
+                     } else {
+                       // 'ask' — show the pre-fix S&D prompt
+                       setShowSDPrompt(true);
+                     }
+                   }}
+                   variant="outline"
+                   disabled={!destinationPath || destinationFreeGB < stats.sizeGB || fixActive}
+                   className="border-2 border-secondary-foreground bg-secondary/5 hover:bg-secondary/20 text-secondary-foreground px-8 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-all duration-300 font-bold font-heading h-11 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                   data-testid="button-run-fix"
+                   data-tour="apply-fixes"
+                 >
+                   <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" />
+                   {fixActive ? 'Fix in progress…' : 'Run Fix'}
+                 </Button>
+               </IconTooltip>
              </div>
           </div>
         </motion.div>
@@ -4667,6 +4687,15 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const [copyPhase, setCopyPhase] = useState<'staging' | 'mirror' | null>(null);
   const [mirrorFilesDone, setMirrorFilesDone] = useState(0);
   const [mirrorFilesTotal, setMirrorFilesTotal] = useState(0);
+  // When true, the full-screen takeover collapses to a compact chip
+  // pinned top-right so the user can navigate to PM / Trees / S&D /
+  // Memories / Edit Dates while the fix continues running. The
+  // component stays mounted either way — the IPC callbacks keep
+  // firing, state keeps updating, the chip just shows a condensed
+  // view. Click the chip to restore the full modal. Auto-resets
+  // when the fix completes (so the completion screen can't be
+  // missed).
+  const [fixMinimized, setFixMinimized] = useState(false);
   const startTimeRef = React.useRef(Date.now());
   const fixSnapshotRef = React.useRef<{
     // Display counts
@@ -5022,18 +5051,82 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const recoveredCount = fixSnapshotRef.current?.recovered ?? 0;
   const markedCount = fixSnapshotRef.current?.marked ?? 0;
   
+  // Compact chip render — shown only while the fix is in flight
+  // AND the user has minimised. Pinned top-right at high z-index so
+  // it floats above whatever surface they navigate to. Click to
+  // restore the full modal. Cancel option still reachable inside
+  // the chip to avoid a "stuck unable to cancel" state.
+  if (!isComplete && fixMinimized) {
+    const chipLabel = isPrescanning
+      ? 'Preparing'
+      : copyPhase === 'mirror'
+        ? 'Uploading'
+        : copyPhase === 'staging'
+          ? 'Staging'
+          : 'Applying';
+    const chipDetail = isPrescanning
+      ? `${prescanCount.toLocaleString()} checked`
+      : copyPhase === 'mirror' && mirrorFilesTotal > 0
+        ? `${mirrorFilesDone.toLocaleString()}/${mirrorFilesTotal.toLocaleString()}`
+        : `${processed.toLocaleString()}/${totalFiles.toLocaleString()}`;
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        className="fixed top-3 right-4 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-primary/95 text-primary-foreground shadow-lg border border-primary/40 cursor-pointer select-none animate-pulse-soft"
+        onClick={() => setFixMinimized(false)}
+        title="Click to view full progress"
+        data-testid="fix-progress-chip"
+      >
+        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+        <span className="text-xs font-medium tabular-nums whitespace-nowrap">
+          Fix · {chipLabel} · {chipDetail}
+          {!isPrescanning && progress > 0 && copyPhase !== 'mirror' && (
+            <span className="opacity-80"> · {Math.round(progress)}%</span>
+          )}
+          {elapsed > 0 && <span className="opacity-80"> · {formatTime(elapsed)}</span>}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setFixMinimized(false); }}
+          className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/15 hover:bg-white/25 transition-colors"
+          aria-label="Restore full progress view"
+        >
+          Open
+        </button>
+      </motion.div>
+    );
+  }
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
     >
-      <motion.div 
+      <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-border"
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-border relative"
       >
+        {/* Minimise button — top-right corner of the modal. Hidden on
+            the completion screen because the user explicitly needs
+            to acknowledge that with View Report / Close / Open
+            Destination. */}
+        {!isComplete && (
+          <button
+            type="button"
+            onClick={() => setFixMinimized(true)}
+            className="absolute top-3 right-3 px-2.5 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5"
+            data-testid="button-minimize-fix"
+            title="Hide this view and let me work on other things while the fix runs"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+            Work in background
+          </button>
+        )}
         {!isComplete ? (
           <>
             <div className="mb-8">
@@ -7720,6 +7813,10 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   playSound: boolean,
   onPlaySoundChange: (value: boolean) => void
 }) {
+  // Gate destructive engine operations (Re-cluster) when a Fix is
+  // running anywhere — same broadcast-driven flag the rest of PDR
+  // uses to keep mutations off the AI engine while it's busy.
+  const fixActive = useFixInProgress();
   const [showWelcome, setShowWelcome] = useState(!getSkipWelcomeScreen());
   // Appearance — mirrors TitleBar's dark/light toggle so users who
   // miss the small moon/sun icon up top can find the toggle in
@@ -8664,14 +8761,20 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         Re-evaluates how unverified faces group together at your current Match strictness. Verified faces are untouched. Auto-matched faces may shift between groups — Improve Recognition can re-find any that get unlinked. Photos themselves are never affected. Most users never need this; it's here for when you've done a lot of naming and want PDR to redraw the unnamed-cluster boundaries.
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-amber-300 text-amber-700 hover:bg-amber-100/60 dark:hover:bg-amber-950/30 shrink-0"
-                      onClick={() => setReclusterModalOpen(true)}
+                    <IconTooltip
+                      label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — re-clustering competes with the Fix for CPU and face data.' : 'Re-cluster unnamed groups at your current Match strictness'}
+                      side="top"
                     >
-                      Re-cluster…
-                    </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-amber-300 text-amber-700 hover:bg-amber-100/60 dark:hover:bg-amber-950/30 shrink-0 disabled:opacity-50"
+                        onClick={() => setReclusterModalOpen(true)}
+                        disabled={fixActive}
+                      >
+                        Re-cluster…
+                      </Button>
+                    </IconTooltip>
                   </div>
                 </div>
               </div>

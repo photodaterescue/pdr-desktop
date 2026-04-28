@@ -72,6 +72,7 @@ import {
   onPeopleDataChanged,
   type AiProgress,
 } from '@/lib/electron-bridge';
+import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
 
 // ─── Notify main window that data changed ─────────────────────────────────
 function notifyChange() {
@@ -82,6 +83,13 @@ function notifyChange() {
 
 // ─── Main People Manager (standalone page, not modal) ─────────────────────
 export default function PeopleManager() {
+  // True whenever ANY window has a Fix in flight. Drives the
+  // disabled state on AI-engine-heavy actions (Recluster, Improve
+  // Recognition, XMP import) so they can't compete with the Fix
+  // for CPU + face_detections writes. Cross-window via the main
+  // process broadcast, so PM reflects fix state even when the Fix
+  // was kicked off from the main window.
+  const fixActive = useFixInProgress();
   // Persisted tab + view-mode selections — reopening PM drops the
   // user back on whatever tab/view they were using last, rather than
   // always starting on Named / Card. Zero cost beyond the initial
@@ -1133,6 +1141,7 @@ export default function PeopleManager() {
               <TooltipTrigger asChild>
                 <button
                   onClick={async () => {
+                    if (fixActive) return;
                     setIsRefining(true);
                     // Pre-event snapshot — global Improve runs across
                     // every named person; rollback insurance for the
@@ -1155,8 +1164,8 @@ export default function PeopleManager() {
                       setIsRefining(false);
                     }
                   }}
-                  disabled={isRefining}
-                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isRefining ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+                  disabled={isRefining || fixActive}
+                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isRefining || fixActive ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   {isRefining ? (
                     <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Improving...</>
@@ -1166,7 +1175,9 @@ export default function PeopleManager() {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[320px]">
-                Uses your verified faces (1+ per named person) to auto-assign matching unnamed faces. Re-run any time you verify more — auto-matches are excluded from training so they can't poison results.
+                {fixActive
+                  ? FIX_BLOCKED_TOOLTIP + ' — this competes with the Fix for CPU and face data writes.'
+                  : 'Uses your verified faces (1+ per named person) to auto-assign matching unnamed faces. Re-run any time you verify more — auto-matches are excluded from training so they can\'t poison results.'}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

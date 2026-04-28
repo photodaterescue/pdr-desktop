@@ -449,7 +449,21 @@ function createWindow() {
 
   ipcMain.handle('fix:setInProgress', (_event, inProgress: boolean) => {
     fixInProgress = inProgress;
+    // Broadcast to every renderer window — main, PM, Date Editor —
+    // so any surface can disable its mutating actions while a fix
+    // is in flight without each window having to track state
+    // independently. Listeners subscribe via the 'fix:stateChanged'
+    // channel exposed in preload.
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try { win.webContents.send('fix:stateChanged', { inProgress }); } catch { /* non-fatal */ }
+    }
   });
+
+  // Cold-start query — when a window opens (e.g. PM mid-fix) it
+  // can pull the current state instead of waiting for the next
+  // change event. Returns the live flag.
+  ipcMain.handle('fix:getInProgress', () => fixInProgress);
 
   mainWindow.on('close', (e) => {
     if (fixInProgress && mainWindow) {

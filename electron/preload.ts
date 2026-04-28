@@ -36,6 +36,19 @@ onCopyMirrorProgress: (callback: (progress: { filesMirrored: number; totalToMirr
 },
 cancelCopyFiles: () => ipcRenderer.invoke('files:copy:cancel'),
 setFixInProgress: (inProgress: boolean) => ipcRenderer.invoke('fix:setInProgress', inProgress),
+// Cold-start query for windows that open mid-fix (e.g. PM
+// launched while a fix is running) — lets them gate their
+// mutating actions immediately rather than waiting for the
+// next state-change broadcast.
+getFixInProgress: () => ipcRenderer.invoke('fix:getInProgress'),
+// Cross-window subscription to fix-state changes. Fires from
+// the main process whenever setFixInProgress is called by any
+// window. Returns an unsubscribe fn.
+onFixStateChanged: (callback: (state: { inProgress: boolean }) => void) => {
+  const handler = (_event: any, state: any) => callback(state);
+  ipcRenderer.on('fix:stateChanged', handler);
+  return () => ipcRenderer.removeListener('fix:stateChanged', handler);
+},
 
   saveReport: (reportData: any) =>
     ipcRenderer.invoke('report:save', reportData),

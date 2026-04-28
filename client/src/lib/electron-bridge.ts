@@ -207,6 +207,27 @@ export async function setFixInProgress(inProgress: boolean): Promise<void> {
   }
 }
 
+/** Pull the current fix-in-progress flag from the main process.
+ *  Used by windows that open mid-fix (e.g. PM launched while a fix
+ *  is running) to gate mutating actions on first render rather
+ *  than waiting for the next state-change broadcast. */
+export async function getFixInProgress(): Promise<boolean> {
+  if (isElectron() && (window as any).pdr?.getFixInProgress) {
+    try { return !!(await (window as any).pdr.getFixInProgress()); } catch { return false; }
+  }
+  return false;
+}
+
+/** Subscribe to cross-window fix-state changes. Main process
+ *  broadcasts whenever any window calls setFixInProgress. Returns
+ *  an unsubscribe fn (no-op outside Electron). */
+export function onFixStateChanged(callback: (state: { inProgress: boolean }) => void): () => void {
+  if (isElectron() && (window as any).pdr?.onFixStateChanged) {
+    return (window as any).pdr.onFixStateChanged(callback);
+  }
+  return () => {};
+}
+
 export async function playCompletionSound(): Promise<void> {
   if (isElectron() && (window as any).pdr?.playCompletionSound) {
     try {

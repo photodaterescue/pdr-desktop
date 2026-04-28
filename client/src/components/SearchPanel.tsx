@@ -152,6 +152,7 @@ import {
   type DiscardedPerson,
   type ClusterFacesResult,
 } from '@/lib/electron-bridge';
+import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -402,6 +403,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [selectedFile, setSelectedFile] = useState<IndexedFile | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<number>>(new Set());
   const [showStructureModal, setShowStructureModal] = useState(false);
+  // True whenever any window has a Fix in flight. Parallel Structures
+  // shares the copy engine + writes to indexed_files, so concurrent
+  // runs would deadlock + corrupt run records. Gate accordingly.
+  const fixActive = useFixInProgress();
   const [staleRuns, setStaleRuns] = useState<any[]>([]);
   const [showStaleRunsModal, setShowStaleRunsModal] = useState(false);
   const lastClickedIndexRef = useRef<number | null>(null);
@@ -3075,13 +3080,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <Eye className="w-3 h-3" />
                     Open {results.files.filter(f => selectedFiles.has(f.id) && (f.file_type === 'photo' || f.file_type === 'video')).length} in Viewer
                   </button>
-                  <button
-                    onClick={() => setShowStructureModal(true)}
-                    className="text-xs font-medium text-white bg-purple-500 hover:bg-purple-600 px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
+                  <IconTooltip
+                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Structures uses the same copy engine as the Fix.' : 'Mirror the selected files into a parallel folder structure'}
+                    side="top"
                   >
-                    <Copy className="w-3 h-3" />
-                    Create Parallel Structure
-                  </button>
+                    <button
+                      onClick={() => {
+                        if (fixActive) return;
+                        setShowStructureModal(true);
+                      }}
+                      disabled={fixActive}
+                      className="text-xs font-medium text-white bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
+                    >
+                      <Copy className="w-3 h-3" />
+                      Create Parallel Structure
+                    </button>
+                  </IconTooltip>
                   <button
                     onClick={() => setSelectedFiles(new Set())}
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
