@@ -87,13 +87,30 @@ export interface ButtonProps
   asChild?: boolean
 }
 
+// Inline-style fallback for the four chip variants. This belt-and-braces
+// approach guarantees the colour shows regardless of:
+//   • twMerge stripping arbitrary-value classes it doesn't recognise,
+//   • a higher-specificity rule somewhere in the cascade overriding the
+//     `.bg-\[\#dbeafe\]` Tailwind utility,
+//   • a parent element's CSS variable interfering.
+// If the Tailwind classes ARE applying, this is a no-op (the inline
+// styles match what the classes would set anyway).
+const variantInlineStyle: Record<string, React.CSSProperties | undefined> = {
+  information: { backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' },
+  success:     { backgroundColor: '#d1fae5', borderColor: '#10b981', color: '#064e3b', borderWidth: '1px', borderStyle: 'solid' },
+  caution:     { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' },
+  destructive: { backgroundColor: '#fecaca', borderColor: '#ef4444', color: '#7f1d1d', borderWidth: '1px', borderStyle: 'solid' },
+};
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, style, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
+    const fallbackStyle = variant ? variantInlineStyle[variant] : undefined;
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        style={fallbackStyle ? { ...fallbackStyle, ...style } : style}
         {...props}
       />
     )
