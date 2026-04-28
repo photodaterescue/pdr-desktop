@@ -33,14 +33,19 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground border border-primary-border shadow-sm",
         secondary:
           "bg-background border border-primary/70 text-primary hover:bg-primary/5 dark:border-primary/60 dark:hover:bg-primary/10",
+        // Chip-style tints. Saturation bumped (bg-100, border-400) over
+        // the originally-spec'd /50+/300 because on the light lavender
+        // background the paler shades read as "white card with no
+        // border" — invisibly bleached. /100 + /400 reads as a clearly
+        // coloured chip without becoming a CTA.
         information:
-          "bg-blue-50 border border-blue-300 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:border-blue-700/50 dark:text-blue-300 dark:hover:bg-blue-900/50",
+          "bg-blue-100 border border-blue-400 text-blue-800 hover:bg-blue-200 hover:border-blue-500 dark:bg-blue-900/40 dark:border-blue-600 dark:text-blue-200 dark:hover:bg-blue-900/60",
         success:
-          "bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:border-emerald-700/50 dark:text-emerald-300 dark:hover:bg-emerald-900/50",
+          "bg-emerald-100 border border-emerald-400 text-emerald-800 hover:bg-emerald-200 hover:border-emerald-500 dark:bg-emerald-900/40 dark:border-emerald-600 dark:text-emerald-200 dark:hover:bg-emerald-900/60",
         caution:
-          "bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:border-amber-700/50 dark:text-amber-300 dark:hover:bg-amber-900/50",
+          "bg-amber-100 border border-amber-400 text-amber-800 hover:bg-amber-200 hover:border-amber-500 dark:bg-amber-900/40 dark:border-amber-600 dark:text-amber-200 dark:hover:bg-amber-900/60",
         destructive:
-          "bg-red-50 border border-red-300 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:border-red-700/50 dark:text-red-300 dark:hover:bg-red-900/50",
+          "bg-red-100 border border-red-400 text-red-800 hover:bg-red-200 hover:border-red-500 dark:bg-red-900/40 dark:border-red-600 dark:text-red-200 dark:hover:bg-red-900/60",
         icon:
           "h-9 w-9 p-0 text-foreground hover:bg-secondary",
         link:

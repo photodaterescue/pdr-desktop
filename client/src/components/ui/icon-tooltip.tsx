@@ -23,17 +23,23 @@ interface IconTooltipProps {
  */
 export function IconTooltip({ label, side = 'top', delayMs = 120, children, disabled }: IconTooltipProps) {
   if (disabled || label == null || label === '') return children;
-  // Wrap the trigger in an inline-flex span so the tooltip still fires
-  // when the inner element is a disabled button. Disabled HTML buttons
-  // get `pointer-events: none` (set by the Button variant), which would
-  // otherwise eat the mouseenter/leave that Radix needs to open the
-  // tooltip — the very situation where the user most needs the
-  // explanation (e.g. "Available when the current Fix completes").
+
+  // ONLY wrap in a span when the child is a disabled HTML button —
+  // those have pointer-events: none (set by the Button variant), which
+  // eats the mouseenter/leave that Radix needs. Wrapping unconditionally
+  // (which we tried first) injects an extra layout box for every
+  // tooltip-wrapped element, which broke grid/aspect-ratio layouts —
+  // most visibly the Memories MonthTile grid where each tile collapsed
+  // to zero height because the span between the grid and the button
+  // didn't carry the `aspect-[4/3]` constraint upward.
+  const child = React.Children.only(children) as React.ReactElement<{ disabled?: boolean }>;
+  const isDisabledChild = child?.props?.disabled === true;
+
   return (
     <TooltipProvider delayDuration={delayMs} skipDelayDuration={0}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex">{children}</span>
+          {isDisabledChild ? <span className="inline-flex">{children}</span> : children}
         </TooltipTrigger>
         <TooltipContent side={side}>{label}</TooltipContent>
       </Tooltip>

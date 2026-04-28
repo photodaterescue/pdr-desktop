@@ -1427,20 +1427,15 @@ return (
 		  }}
 		  activePanel={activePanel}
 		  onPanelChange={(panel) => {
-			// Info panels (Getting Started, Best Practices, About PDR,
-			// Help & Support, What Happens Next) live inside the
-			// Dashboard zoomable area. Clicking from Memories / Trees /
-			// S&D-with-results would otherwise set activePanel but the
-			// panel JSX would be hidden by its parent. Switch the view
-			// back to Dashboard so the requested panel actually renders.
+			// Just toggle activePanel — the PanelPlaceholder renders
+			// as a top-level overlay (see further down) so it shows
+			// over whatever view is active. Don't force activeView to
+			// 'dashboard' — that auto-expanded the sidebar when the
+			// user was on a full-canvas view (Memories / Trees / S&D),
+			// which was disorienting. The sidebar's collapse rule
+			// follows activeView, so leaving it alone preserves the
+			// user's spatial context.
 			setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | null);
-			if (panel) {
-			  setActiveView('dashboard');
-			  if (searchResultsActive) {
-				setRequestSearchClose(true);
-				setTimeout(() => setRequestSearchClose(false), 100);
-			  }
-			}
 		  }}
 		  onDashboardClick={() => {
 			setActivePanel(null);
@@ -1474,7 +1469,7 @@ return (
 		  onOpenPeople={handleOpenPeople}
 		/>
       {/* Right-side content area: ribbon + panels */}
-      <div className="flex-1 flex flex-col h-full min-w-0">
+      <div className="flex-1 flex flex-col h-full min-w-0 relative">
         {/* Search Ribbon — only visible inside the S&D view. Kept mounted
             (display: none when hidden) so filter state is preserved between
             view switches. Loses pin/colour state otherwise would be lost if
@@ -1534,7 +1529,7 @@ return (
             mid-fix would break the progress tracking + lose the
             completion screen. The PanelPlaceholder simply overlays
             on top when activePanel is set. */}
-        <div style={{ display: activePanel ? 'none' : undefined }}>
+        <div>
           <MainContent
             sources={isTourPreview ? [tourPlaceholderSource] : sources}
             activeSource={activeSource}
@@ -1568,15 +1563,6 @@ return (
             setPostFixFlowActive={setPostFixFlowActive}
           />
         </div>
-        {activePanel && (
-          <PanelPlaceholder
-            panelType={activePanel}
-            onBackToWorkspace={() => setActivePanel(null)}
-            onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
-            onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
-            onReportProblem={() => setShowReportProblem(true)}
-          />
-        )}
         </div>{/* close zoomable content wrapper */}
 
         {/* Memories view */}
@@ -1596,6 +1582,25 @@ return (
               setActiveView('search');
             }}
           />
+        )}
+
+        {/* Info-panel overlay — Getting Started / Best Practices /
+            What Happens Next / About PDR / Help & Support. Sits on top
+            of whatever view is active so the user can flip into a
+            guidance page from S&D, Memories, Trees or Dashboard
+            without changing their underlying view (and so their
+            sidebar collapse state isn't disturbed). z-20 lets it sit
+            above the search ribbon and other in-flow content. */}
+        {activePanel && (
+          <div className="absolute inset-0 z-20 bg-background overflow-auto">
+            <PanelPlaceholder
+              panelType={activePanel}
+              onBackToWorkspace={() => setActivePanel(null)}
+              onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
+              onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
+              onReportProblem={() => setShowReportProblem(true)}
+            />
+          </div>
         )}
 
         {/* Bottom action bar portal target — sibling of the zoom
