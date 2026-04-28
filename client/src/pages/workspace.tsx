@@ -8306,7 +8306,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       />
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-foreground">Fast <span className="text-xs font-normal text-muted-foreground">(recommended)</span></span>
-                        <span className="text-xs text-muted-foreground">Stages files locally, then mirrors to the network with robocopy /MT:16. Typically 5–10× faster on SMB shares.</span>
+                        <span className="text-xs text-muted-foreground">Stages files locally, then mirrors to the network with robocopy /MT:16. Typically 3–5× faster on SMB shares (measured on a WD MyCloud over Wi-Fi; wired connections can land higher).</span>
                       </div>
                     </div>
                   </label>
@@ -8326,8 +8326,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         className="w-4 h-4 text-primary focus:ring-primary"
                       />
                       <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">Direct <span className="text-xs font-normal text-muted-foreground">(legacy)</span></span>
-                        <span className="text-xs text-muted-foreground">Per-file streaming copy — slower, but byte-for-byte identical to PDR's pre-Robocopy behaviour. Use for baseline tests or as a kill switch if Fast misbehaves on your NAS.</span>
+                        <span className="text-sm font-medium text-foreground">Legacy</span>
+                        <span className="text-xs text-muted-foreground">Per-file streaming copy — the way PDR worked before Fast shipped. Slower, but byte-for-byte identical to the pre-Robocopy code path. Keep as a kill switch if Fast misbehaves on your NAS.</span>
                       </div>
                     </div>
                   </label>

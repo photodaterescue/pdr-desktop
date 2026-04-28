@@ -1699,7 +1699,7 @@ ipcMain.handle('files:copy', async (_event, data: {
   const networkUploadMode = (() => {
     try { return getSettings().networkUploadMode || 'fast'; } catch { return 'fast'; }
   })();
-  console.log(`[Fix] Network upload mode: ${networkUploadMode === 'fast' ? 'FAST (robocopy /MT:16 staging)' : 'DIRECT (legacy fs.createReadStream loop)'}`);
+  console.log(`[Fix] Network upload mode: ${networkUploadMode === 'fast' ? 'FAST (robocopy /MT:16 staging)' : 'LEGACY (fs.createReadStream per-file loop)'}`);
   if (process.platform === 'win32' && networkUploadMode === 'fast') {
     try {
       const destClass = classifySource(destinationPath);

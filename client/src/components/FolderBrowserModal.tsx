@@ -501,7 +501,13 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
     const newPath = currentPath.replace(/[\\/]+$/, '') + '\\' + name;
     const result = await createDirectory(newPath);
     if (result.success) {
-      navigateTo(newPath);
+      // Re-read the CURRENT directory rather than navigating INTO
+      // the new folder. The previous behaviour landed the user in
+      // an empty subfolder with no visual confirmation that the
+      // create succeeded — looked broken. Now the new folder
+      // appears as an entry in the current listing, the user can
+      // see it landed, and they pick it (or another) themselves.
+      navigateTo(currentPath, false);
     } else {
       setError(result.error || 'Failed to create folder');
     }
@@ -511,6 +517,57 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
     if (e.key === 'Enter') submitNewFolder();
     else if (e.key === 'Escape') setIsCreatingFolder(false);
   }, [submitNewFolder]);
+
+  // Re-read the current directory whenever PDR regains focus or
+  // the modal becomes visible — catches folders the user created
+  // (or deleted) in File Explorer while the modal was open. Without
+  // this, external changes are invisible until the user manually
+  // navigates away and back. mode='source' modals shouldn't refresh
+  // mid-listing because they may already have selected files; we
+  // only refresh when the user is purely picking a destination
+  // (no selectedFile yet).
+  useEffect(() => {
+    if (!isOpen) return;
+    const refresh = () => {
+      if (!currentPath || isCreatingFolder || selectedFile) return;
+      // Quietly re-read current dir; addToHistory=false so this
+      // doesn't pollute the back/forward stack.
+      navigateTo(currentPath, false);
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    // navigateTo intentionally omitted — re-creating the listener
+    // every navigation would thrash the focus subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, currentPath, isCreatingFolder, selectedFile]);
+
+  // Right-click context menu on the main panel — opens a small
+  // floating menu with a "New folder" entry. Matches the muscle
+  // memory from File Explorer where right-click on empty space is
+  // the natural way to create a folder. Position is the click
+  // coordinates in viewport space.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const dismiss = () => setContextMenu(null);
+    window.addEventListener('click', dismiss);
+    window.addEventListener('keydown', dismiss);
+    return () => {
+      window.removeEventListener('click', dismiss);
+      window.removeEventListener('keydown', dismiss);
+    };
+  }, [contextMenu]);
+  const handleMainPanelContextMenu = useCallback((e: React.MouseEvent) => {
+    if (isArchiveMode) return;
+    if (!currentPath) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, [isArchiveMode, currentPath]);
 
   // Resize handling
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
@@ -803,7 +860,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
             </div>
 
             {/* Main content area */}
-            <div ref={mainPanelRef} className="flex-1 overflow-y-auto bg-background">
+            <div ref={mainPanelRef} className="flex-1 overflow-y-auto bg-background" onContextMenu={handleMainPanelContextMenu}>
               {loading ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
                   <Loader2 className="w-7 h-7 animate-spin text-primary" />
@@ -1265,6 +1322,33 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
               }}
             />
           </IconTooltip>
+
+          {/* Right-click context menu — File Explorer-style "New
+              folder" entry. Floating, dismissed on any click or
+              key. Positioned at the click coords. */}
+          {contextMenu && (
+            <div
+              className="fixed z-[200] min-w-[180px] rounded-lg border border-border bg-popover shadow-lg py-1 text-sm"
+              style={{ top: contextMenu.y, left: contextMenu.x }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => { setContextMenu(null); startCreatingFolder(); }}
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-secondary text-foreground"
+              >
+                <FolderPlus className="w-4 h-4 text-muted-foreground" />
+                <span>New folder</span>
+              </button>
+              <button
+                onClick={() => { setContextMenu(null); if (currentPath) navigateTo(currentPath, false); }}
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-secondary text-foreground"
+              >
+                <ChevronRight className="w-4 h-4 text-muted-foreground rotate-90" />
+                <span>Refresh</span>
+              </button>
+            </div>
+          )}
 
           {/* Drive suitability warning overlay */}
           <AnimatePresence>
