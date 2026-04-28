@@ -1567,6 +1567,14 @@ return (
           />
         )}
 
+        {/* Bottom action bar portal target — sibling of the zoom
+            wrapper, so the bar sits BELOW the zoomable content area
+            and is unaffected by the workspace zoom. Only the area
+            between the title bar and this bar (excluding the side
+            menu) zooms. DashboardPanel renders the bar via
+            createPortal into this target when isComplete=true. */}
+        <div id="pdr-bottom-ribbon-portal" className="shrink-0" />
+
       </div>
       </div>{/* close inner flex row */}
 	  {isScanning && <ScanningOverlay message={scanProgress.message} percent={scanProgress.percent} onCancel={handleCancelAnalysis} showCancelConfirm={showCancelConfirm} onConfirmCancel={handleConfirmCancelAnalysis} onDismissCancel={handleDismissCancelConfirm} />}
@@ -3093,13 +3101,21 @@ function DashboardPanel({
       </motion.div>
       </div>
 
-      {/* Sticky Bottom Action Bar for Complete State */}
-      {isComplete && (
+      {/* Bottom Action Bar — portalled into #pdr-bottom-ribbon-portal
+          which lives OUTSIDE the zoomable wrapper (sibling, after the
+          zoom wrapper in the right-side flex column). That way the
+          bar keeps its native pixel height regardless of workspace
+          zoom, and only the content above it scales. The user's
+          requirement: "ribbon stays at this height whether it's
+          zoomed in or out". Last child of the column → naturally
+          pinned to the bottom by flex layout, no absolute hack. */}
+      {isComplete && (() => {
+        const ribbonTarget = typeof document !== 'undefined' ? document.getElementById('pdr-bottom-ribbon-portal') : null;
+        const ribbonNode = (
         <motion.div
           initial={{ y: 100 }}
           animate={{ y: 0 }}
-          className="absolute bottom-0 left-0 right-0 bg-background border-t border-border p-4 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)] z-20"
-          style={{ zoom: 100 / zoomLevel }}
+          className="bg-background border-t border-border p-4 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)]"
         >
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
@@ -3153,7 +3169,9 @@ function DashboardPanel({
              </div>
           </div>
         </motion.div>
-      )}
+        );
+        return ribbonTarget ? ReactDOM.createPortal(ribbonNode, ribbonTarget) : ribbonNode;
+      })()}
 
       {/* Counter-zoom wrapper: these modals use fixed positioning but are inside the
           zoomable content div, so CSS zoom from the parent distorts their size.
