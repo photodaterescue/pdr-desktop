@@ -1070,11 +1070,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               <IconTooltip label="Show extra details inside each card (dates, etc.)" side="bottom">
                 <button
                   onClick={() => setAddInfoOpen(v => !v)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-                    showDates
-                      ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20'
-                      : 'bg-background border-border text-foreground hover:bg-accent'
-                  }`}
+                  data-pdr-variant={showDates ? 'information' : undefined}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors"
+                  style={showDates
+                    ? { backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }
+                    : undefined
+                  }
                   aria-expanded={addInfoOpen}
                 >
                   <Info className="w-4 h-4" />
@@ -1131,7 +1132,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             <IconTooltip label="Rename, switch between, create, export, or remove saved trees" side="bottom">
               <button
                 onClick={() => setManageTreesOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+                data-pdr-variant="information"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
               >
                 <FolderOpen className="w-4 h-4" />
                 Manage Trees
@@ -1140,7 +1143,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             <IconTooltip label="List everyone on this tree, see photo counts, and delete mistakes" side="bottom">
               <button
                 onClick={() => setTreePeopleOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+                data-pdr-variant="information"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
               >
                 <Users className="w-4 h-4" />
                 People
@@ -1149,7 +1154,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             <IconTooltip label="Change the focus person" side="bottom">
               <button
                 onClick={() => setFocusPickerOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+                data-pdr-variant="information"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
               >
                 <Users className="w-4 h-4" />
                 Change focus
@@ -1165,7 +1172,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               <IconTooltip label={`${pinnedPeople.size} person${pinnedPeople.size === 1 ? ' is' : 's are'} pinned beyond your current Depth. Click to reset and re-hide them.`} side="bottom">
                 <button
                   onClick={() => setPinnedPeople(new Map())}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
+                  data-pdr-variant="caution"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                  style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
                 >
                   <Pin className="w-3 h-3" />
                   {pinnedPeople.size} pinned
