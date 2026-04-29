@@ -115,6 +115,9 @@ export default function Home() {
           <p className="text-[1.05rem] text-muted-foreground max-w-2xl mx-auto font-light">
             A safe, calm place to restore and organise your photo memories.
           </p>
+          <p className="text-[0.9rem] text-muted-foreground/70 max-w-2xl mx-auto font-light mt-1.5">
+            Runs entirely on your own machine — no cloud, no upload, no account.
+          </p>
         </motion.div>
 
         <motion.div variants={item} className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full mb-8">
@@ -128,10 +131,10 @@ export default function Home() {
           />
 
           {/* Primary Main Card */}
-          <PrimaryCard 
+          <PrimaryCard
             icon={<Search className="w-10 h-10 text-white" />}
             title="Find Your Photos & Videos"
-            description="Add folders, ZIP archives, or drives to get started."
+            description="Add folders, drives, ZIP / RAR archives, or Google Takeout / Apple Photos exports to get started."
             onClick={handleStart}
           />
 
