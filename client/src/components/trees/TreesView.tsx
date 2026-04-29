@@ -1714,113 +1714,105 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
 }
 
 /** Dropdown for ancestor / descendant generation depth.
- *  Replaces the +/− NumberStepper because (a) +/− was too small to
- *  hit comfortably and (b) the underlying max=5 cap was wrong:
- *  some users (royal family projects, deep historical research)
- *  legitimately want more. Shows 0–5 inline; "Custom number…"
- *  opens a modal that accepts any non-negative integer. */
+ *  Inline popover (no modal jump):
+ *    • 0–10 as a button grid for quick picks (also the reset path —
+ *      whatever your current value, click 5 and you're at 5)
+ *    • Direct numeric input for any value (no spinner arrows —
+ *      type-only, Enter to apply)
+ *    • "+ Add 10 more" quick increment for deep trees
+ *  The earlier modal-based design hid these behind a "Custom…" click
+ *  and the modal's spinner arrows were tiny — Terry rightly called
+ *  it out. This version puts every option in one always-visible
+ *  pane. */
 function GenerationDropdown({ label, value, onChange }: {
   label: 'L' | 'H';
   value: number;
   onChange: (n: number) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [customOpen, setCustomOpen] = useState(false);
-  const [customDraft, setCustomDraft] = useState('');
+  const [draft, setDraft] = useState('');
 
-  const openCustom = () => {
-    setOpen(false);
-    setCustomDraft(String(value));
-    setCustomOpen(true);
+  // Reset draft to current value whenever the popover opens, so the
+  // input field reflects what the user is starting from.
+  useEffect(() => { if (open) setDraft(String(value)); }, [open, value]);
+
+  const applyDraft = () => {
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n) && n >= 0) {
+      onChange(n);
+      setOpen(false);
+    }
   };
 
   return (
-    <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
-            aria-label={`${label === 'L' ? 'Lower (descendants)' : 'Higher (ancestors)'} generations: ${value}`}
-          >
-            <span className="text-[10px] font-semibold text-muted-foreground tracking-wide">{label}</span>
-            <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
-            <ChevronDown className="w-3 h-3 text-muted-foreground" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-32 p-1" align="start">
-          {[0, 1, 2, 3, 4, 5].map(n => (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
+          aria-label={`${label === 'L' ? 'Lower (descendants)' : 'Higher (ancestors)'} generations: ${value}`}
+        >
+          <span className="text-[10px] font-semibold text-muted-foreground tracking-wide">{label}</span>
+          <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
+          <ChevronDown className="w-3 h-3 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="start">
+        <p className="text-[10px] font-semibold text-muted-foreground tracking-wide mb-1.5 uppercase">
+          {label === 'L' ? 'Descendants' : 'Ancestors'}
+        </p>
+        {/* 0-10 grid — clicking any of these SETS the value directly,
+            so it doubles as the "reduce" path (currently at 200?
+            click 5 to drop straight back to 5). */}
+        <div className="grid grid-cols-6 gap-1 mb-2">
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
             <button
               key={n}
               onClick={() => { onChange(n); setOpen(false); }}
-              className={`w-full text-left px-2 py-1 rounded text-sm hover:bg-accent ${value === n ? 'bg-primary/10 text-primary font-medium' : ''}`}
+              className={`px-2 py-1.5 rounded text-sm font-mono tabular-nums hover:bg-accent transition-colors ${
+                value === n ? 'bg-primary/10 text-primary font-semibold' : ''
+              }`}
             >
               {n}
             </button>
           ))}
-          <div className="border-t border-border my-1" />
-          {value > 5 && (
-            <div className="px-2 py-1 text-xs text-primary font-medium bg-primary/5 rounded">
-              Current: {value}
-            </div>
-          )}
-          <button
-            onClick={openCustom}
-            className="w-full text-left px-2 py-1 rounded text-sm text-primary hover:bg-accent"
-          >
-            Custom number…
-          </button>
-        </PopoverContent>
-      </Popover>
-
-      {customOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
-          onClick={(e) => { if (e.target === e.currentTarget) setCustomOpen(false); }}
-        >
-          <div className="bg-background rounded-2xl shadow-2xl border border-border w-[360px] p-5">
-            <h3 className="text-base font-semibold text-foreground mb-1">
-              {label === 'L' ? 'Descendants' : 'Ancestors'} — custom depth
-            </h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Enter how many generations {label === 'L' ? 'below' : 'above'} the focus person to show.
-            </p>
+        </div>
+        {/* Type any number — no spinner arrows (type=text + numeric
+            inputMode), Enter applies. */}
+        <div className="border-t border-border pt-2">
+          <label className="block text-[11px] text-muted-foreground mb-1">Or type any number:</label>
+          <div className="flex gap-1.5">
             <input
-              type="number"
-              min={0}
-              value={customDraft}
-              onChange={e => setCustomDraft(e.target.value)}
-              autoFocus
-              className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={draft}
+              onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const n = parseInt(customDraft, 10);
-                  if (Number.isFinite(n) && n >= 0) { onChange(n); setCustomOpen(false); }
-                } else if (e.key === 'Escape') {
-                  setCustomOpen(false);
-                }
+                if (e.key === 'Enter') applyDraft();
+                else if (e.key === 'Escape') setOpen(false);
               }}
+              className="flex-1 px-2 py-1.5 rounded-md border border-border bg-background text-sm font-mono"
             />
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={() => setCustomOpen(false)}
-                className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const n = parseInt(customDraft, 10);
-                  if (Number.isFinite(n) && n >= 0) { onChange(n); setCustomOpen(false); }
-                }}
-                className="px-3 py-1.5 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Apply
-              </button>
-            </div>
+            <button
+              onClick={applyDraft}
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Set
+            </button>
           </div>
         </div>
-      )}
-    </>
+        {/* +10 quick action — useful when the user is at e.g. 30
+            and wants 40 without typing. */}
+        <div className="border-t border-border mt-2 pt-2">
+          <button
+            onClick={() => { onChange(value + 10); setOpen(false); }}
+            className="w-full px-2 py-1.5 rounded text-xs font-medium text-primary hover:bg-accent transition-colors text-left"
+          >
+            + Add 10 more (currently {value})
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
