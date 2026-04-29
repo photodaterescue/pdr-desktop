@@ -184,7 +184,7 @@ export default function Home() {
               description="See the people from your photos in family-tree form — a face for every name."
             />
             <ShowcaseCard
-              accent="coral"
+              accent="pink"
               icon={<Users className="w-5 h-5" />}
               title="People"
               description="Verify the AI's facial recognition with granular precision — never worry about a misidentified face."
@@ -285,13 +285,16 @@ function SecondaryCard({ icon, title, description, onClick }: { icon: React.Reac
 // Values picked from Tailwind v3 defaults (see
 // feedback_tailwind_v4_pale_palette: v4's oklch tokens read too pale
 // on the light background, so we use explicit hex throughout).
-type AppAccent = 'lavender' | 'blue' | 'amber' | 'emerald' | 'coral';
+type AppAccent = 'lavender' | 'blue' | 'amber' | 'emerald' | 'pink';
 const APP_ACCENT: Record<AppAccent, { iconBg: string; iconFg: string; topBar: string; hoverBorder: string }> = {
   lavender: { iconBg: '#ede9fe', iconFg: '#6d28d9', topBar: '#a99cff', hoverBorder: '#8b5cf6' },
   blue:     { iconBg: '#dbeafe', iconFg: '#1e40af', topBar: '#3b82f6', hoverBorder: '#2563eb' },
   amber:    { iconBg: '#fde68a', iconFg: '#78350f', topBar: '#f59e0b', hoverBorder: '#d97706' },
   emerald:  { iconBg: '#d1fae5', iconFg: '#065f46', topBar: '#10b981', hoverBorder: '#059669' },
-  coral:    { iconBg: '#ffe4e6', iconFg: '#9f1239', topBar: '#f43f5e', hoverBorder: '#e11d48' },
+  // Pink, not rose — rose-500 (#f43f5e) was reading red on the bright
+  // top bar. Swapped to Tailwind v3 pink-500 (#ec4899) so it's
+  // unambiguously pink.
+  pink:     { iconBg: '#fce7f3', iconFg: '#831843', topBar: '#ec4899', hoverBorder: '#db2777' },
 };
 
 function ShowcaseCard({ accent, icon, title, description }: { accent: AppAccent; icon: React.ReactNode, title: string, description: string }) {

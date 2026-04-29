@@ -2351,7 +2351,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <SidebarItem
                 icon={<Users className="w-4 h-4 opacity-70" />}
                 label="People Manager"
-                accent="coral"
+                accent="pink"
                 onClick={() => {
                   if (!isLicensed) { onFeatureLocked('people-manager'); return; }
                   onOpenPeople();
@@ -2433,7 +2433,7 @@ const SIDEBAR_ACCENT: Record<string, string> = {
   blue: '#3b82f6',
   amber: '#f59e0b',
   emerald: '#10b981',
-  coral: '#f43f5e',
+  pink: '#ec4899',
 };
 
 function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false, locked = false, accent }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean, locked?: boolean, accent?: keyof typeof SIDEBAR_ACCENT }) {
