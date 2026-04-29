@@ -376,11 +376,11 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
             <div className="px-6 py-4 border-t border-border flex justify-end gap-2">
               {phase === 'configure' && (
                 <>
-                  <Button variant="outline" onClick={onClose}>Cancel</Button>
+                  <Button variant="secondary" onClick={onClose}>Cancel</Button>
                   <Button
+                    variant={mode === 'move' ? 'caution' : 'primary'}
                     onClick={handleStart}
                     disabled={!destination || files.length === 0 || (diskSpace !== null && totalSize > diskSpace.free)}
-                    className={mode === 'move' ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}
                   >
                     {mode === 'move' ? (
                       <><ArrowRightLeft className="w-4 h-4 mr-1.5" /> Start Move</>
@@ -392,10 +392,10 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
               )}
               {phase === 'complete' && (
                 <>
-                  <Button variant="outline" onClick={handleOpenDestination}>
+                  <Button variant="information" onClick={handleOpenDestination}>
                     <ExternalLink className="w-4 h-4 mr-1.5" /> Open Destination
                   </Button>
-                  <Button onClick={onClose}>Done</Button>
+                  <Button variant="primary" onClick={onClose}>Done</Button>
                 </>
               )}
             </div>

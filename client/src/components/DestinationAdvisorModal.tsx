@@ -725,8 +725,8 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
               <span className="text-xs text-muted-foreground">Don't show automatically</span>
             </label>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={onClose}>Cancel</Button>
-              <Button onClick={onContinue}>
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+              <Button variant="primary" onClick={onContinue}>
                 <ChevronRight className="w-4 h-4 mr-1" /> Choose Destination
               </Button>
             </div>

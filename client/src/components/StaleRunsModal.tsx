@@ -288,14 +288,14 @@ export default function StaleRunsModal({ isOpen, onClose, staleRuns, onResolved 
             <div className="px-6 py-4 border-t border-border">
               {allResolved ? (
                 <div className="flex justify-end">
-                  <Button onClick={handleDone}>Done</Button>
+                  <Button variant="primary" onClick={handleDone}>Done</Button>
                 </div>
               ) : (
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] text-muted-foreground/70 max-w-[280px] leading-relaxed">
                     Dismissing? You'll be prompted again next time. Reconnect the drive or fix the path first.
                   </p>
-                  <Button variant="outline" onClick={handleDone}>Dismiss for now</Button>
+                  <Button variant="secondary" onClick={handleDone}>Dismiss for now</Button>
                 </div>
               )}
             </div>

@@ -492,7 +492,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                   on the first-time setup. */}
               {isReview ? (
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={handleDismiss}
                 >
@@ -501,13 +501,14 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
               ) : (
                 <button
                   onClick={handleDismiss}
-                  className="text-xs text-foreground/50 hover:text-foreground transition-colors"
+                  className="text-xs text-foreground/70 hover:text-foreground transition-colors font-medium"
                 >
                   Skip for now
                 </button>
               )}
             </div>
             <Button
+              variant="primary"
               onClick={handleContinue}
               disabled={(step === 1 && selectedSize === null) || (step === 2 && multipleSources === null)}
             >
