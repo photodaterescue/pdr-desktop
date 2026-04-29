@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, FolderOpen, Copy, ArrowRightLeft, CheckCircle2, AlertTriangle,
-  Loader2, HardDrive, ExternalLink,
+  Loader2, HardDrive, ExternalLink, Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FolderBrowserModal } from './FolderBrowserModal';
+import DestinationAdvisorModal from './DestinationAdvisorModal';
 import {
   copyToStructure,
   cancelStructureCopy,
@@ -15,6 +16,32 @@ import {
   type StructureProgress,
   type StructureCopyResult,
 } from '@/lib/electron-bridge';
+
+/** Find the longest path prefix shared by every file in `files`.
+ *  Used to surface "your photos currently live in: X" in the
+ *  Parallel Structure picker so the user knows what they're
+ *  mirroring FROM and can choose to keep the new structure on
+ *  the same drive or move to a different one. */
+function commonPathPrefix(files: { file_path: string }[]): string {
+  if (files.length === 0) return '';
+  if (files.length === 1) {
+    const p = files[0].file_path;
+    const lastSep = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+    return lastSep > 0 ? p.slice(0, lastSep) : '';
+  }
+  const split = (s: string) => s.split(/[\\/]/);
+  const parts = files.map(f => split(f.file_path));
+  const min = Math.min(...parts.map(p => p.length));
+  const common: string[] = [];
+  for (let i = 0; i < min; i++) {
+    const seg = parts[0][i];
+    if (parts.every(p => p[i] === seg)) common.push(seg);
+    else break;
+  }
+  // Drop the last segment if it's empty (trailing separator) and
+  // never include the file's own name.
+  return common.join('\\').replace(/\\$/, '');
+}
 
 interface ParallelStructureModalProps {
   isOpen: boolean;
@@ -32,6 +59,7 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
   const [folderStructure, setFolderStructure] = useState<'year' | 'year-month' | 'year-month-day'>('year-month-day');
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [showDriveAdvisor, setShowDriveAdvisor] = useState(false);
 
   // Disk space
   const [diskSpace, setDiskSpace] = useState<{ free: number; total: number } | null>(null);
@@ -44,7 +72,17 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
 
   // Calculate totals
   const totalSize = files.reduce((sum, f) => sum + (f.size_bytes || 0), 0);
+  const totalSizeGB = totalSize / (1024 * 1024 * 1024);
   const undatedCount = files.filter(f => !f.derived_date).length;
+
+  // Source library path — what the user is mirroring FROM. Shown
+  // as context above the destination picker so the "same drive vs
+  // different drive" decision is informed: most users want the
+  // parallel structure on the same drive as the original library
+  // for speed, but should know the option exists to use a different
+  // drive (e.g. a memory stick, external HDD, etc).
+  const sourceLibraryPath = useMemo(() => commonPathPrefix(files), [files]);
+  const sourceDriveLetter = sourceLibraryPath.match(/^([A-Za-z]:)/)?.[1];
 
   // Load folder structure preference from localStorage
   useEffect(() => {
@@ -177,16 +215,40 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
               {/* ── CONFIGURE PHASE ── */}
               {phase === 'configure' && (
                 <div className="space-y-5">
+                  {/* Source library context — tells the user what
+                      they're mirroring FROM so the same-drive vs
+                      different-drive choice is informed. */}
+                  {sourceLibraryPath && (
+                    <div className="p-3 rounded-xl bg-secondary/30 border border-border">
+                      <div className="flex items-start gap-2.5">
+                        <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Your photos currently live in</p>
+                          <p className="text-xs text-foreground font-mono truncate" title={sourceLibraryPath}>{sourceLibraryPath}</p>
+                          {sourceDriveLetter && (
+                            <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+                              Most users keep the parallel structure on the same drive ({sourceDriveLetter}) for speed — but you can pick any drive (memory stick, external HDD, NAS). Use the Drive Advisor to see which drives can fit this batch.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Destination picker */}
                   <div>
                     <label className="text-sm font-medium text-foreground mb-1.5 block">Destination</label>
-                    <div className="flex gap-2">
-                      <div className="flex-1 px-3 py-2 rounded-lg border border-border bg-secondary/30 text-sm text-foreground truncate min-h-[38px] flex items-center">
+                    <div className="flex gap-2 flex-wrap">
+                      <div className="flex-1 px-3 py-2 rounded-lg border border-border bg-secondary/30 text-sm text-foreground truncate min-h-[38px] flex items-center min-w-0">
                         {destination || <span className="text-muted-foreground">Choose a folder...</span>}
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => setShowBrowser(true)} className="shrink-0">
+                      <Button variant="primary" size="sm" onClick={() => setShowBrowser(true)} className="shrink-0">
                         <FolderOpen className="w-4 h-4 mr-1.5" />
                         Browse
+                      </Button>
+                      <Button variant="information" size="sm" onClick={() => setShowDriveAdvisor(true)} className="shrink-0">
+                        <Info className="w-4 h-4 mr-1.5" />
+                        Drive Advisor
                       </Button>
                     </div>
                     {diskSpace && (
@@ -410,6 +472,16 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
         onSelect={(folderPath) => { setDestination(folderPath); setShowBrowser(false); }}
         title="Select Destination for New Structure"
         mode="folder"
+        plannedCollectionSizeGB={totalSizeGB}
+        showDriveRatings
+        onOpenDriveAdvisor={() => { setShowBrowser(false); setShowDriveAdvisor(true); }}
+      />
+      <DestinationAdvisorModal
+        isOpen={showDriveAdvisor}
+        onClose={() => setShowDriveAdvisor(false)}
+        onContinue={() => { setShowDriveAdvisor(false); setShowBrowser(true); }}
+        currentSourceSizeGB={totalSizeGB}
+        plannedCollectionSizeGB={totalSizeGB}
       />
     </>
   );
