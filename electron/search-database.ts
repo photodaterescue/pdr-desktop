@@ -680,6 +680,16 @@ export function initDatabase(): { success: boolean; error?: string } {
     db.exec(`DELETE FROM ai_processing_status WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
     db.exec(`DELETE FROM face_detections WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
     db.exec(`DELETE FROM ai_tags WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
+    // Clean up "Set as main photo" overrides whose underlying face row
+    // was just deleted above (or by any past re-detection run that
+    // happened before this safeguard existed). Catches the historic
+    // breakage Terry hit where his chosen main photo silently changed.
+    db.exec(`
+      UPDATE persons
+      SET representative_face_id = NULL
+      WHERE representative_face_id IS NOT NULL
+        AND representative_face_id NOT IN (SELECT id FROM face_detections)
+    `);
 
     // FTS5 integrity check — contentless virtual tables can drift out of
     // sync with their source tables if rows are deleted directly. If the
@@ -1733,6 +1743,10 @@ export function markAiProcessed(fileId: number, task: 'faces' | 'tags', modelVer
 export function clearUnverifiedFacesForFile(fileId: number): number {
   const database = getDb();
   const result = database.prepare(`DELETE FROM face_detections WHERE file_id = ? AND verified = 0`).run(fileId);
+  // If any of the rows we just dropped was a person's chosen main
+  // photo, the override is now a dangling pointer — clear it so the
+  // renderer doesn't silently fall back to a different photo.
+  if (result.changes > 0) clearOrphanedRepresentativeFaces();
   return result.changes;
 }
 
@@ -1760,6 +1774,9 @@ export function deduplicateFaceDetections(): number {
   `).run();
   if (result.changes > 0) {
     console.warn(`[DB] Removed ${result.changes} duplicate face_detection row(s)`);
+    // A dedup pass can drop a row that was somebody's chosen main
+    // photo. Clear any override that no longer points at a real face.
+    clearOrphanedRepresentativeFaces();
   }
   return result.changes;
 }
@@ -2047,6 +2064,32 @@ export function assignPersonToFace(faceId: number, personId: number, verified: b
 export function setPersonRepresentativeFace(personId: number, faceId: number): void {
   const database = getDb();
   database.prepare(`UPDATE persons SET representative_face_id = ? WHERE id = ?`).run(faceId, personId);
+}
+
+/**
+ * Clear `persons.representative_face_id` on any person whose chosen
+ * face row has been physically deleted (re-detection rebuilt the
+ * face_detections table, dedup removed a duplicate, or the source file
+ * was unindexed). Without this, the renderer silently falls back to
+ * the highest-confidence face — which is exactly what the user thought
+ * they had OVERRIDDEN by clicking "Set as main photo".
+ *
+ * Deliberately ignores the case where the face row still exists but
+ * has been reassigned to a different person — that's the user's own
+ * action (reassign-out / unlink) and the fallback is the right
+ * behaviour there.
+ *
+ * Returns the number of stale overrides cleared.
+ */
+export function clearOrphanedRepresentativeFaces(): number {
+  const database = getDb();
+  const result = database.prepare(`
+    UPDATE persons
+    SET representative_face_id = NULL
+    WHERE representative_face_id IS NOT NULL
+      AND representative_face_id NOT IN (SELECT id FROM face_detections)
+  `).run();
+  return result.changes;
 }
 
 export function verifyFace(faceId: number): void {
