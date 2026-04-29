@@ -310,7 +310,9 @@ export default function DateEditor() {
           <IconTooltip label="Undo the most recent correction (Ctrl+Z)" side="bottom">
             <button
               onClick={handleUndo}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              data-pdr-variant="caution"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+              style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
             >
               <Undo2 className="w-3.5 h-3.5" />Undo last
             </button>
