@@ -6854,7 +6854,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 <Accordion type="multiple" className="space-y-3">
                   
                   {/* Detailed Source Selection */}
-                  <AccordionItem value="source-selection" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
+                  <AccordionItem value="source-selection" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Detailed Source Selection
                     </AccordionTrigger>
@@ -6924,7 +6924,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   </AccordionItem>
 
                   {/* Common Source Mistakes */}
-                  <AccordionItem value="source-mistakes" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
+                  <AccordionItem value="source-mistakes" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Common Source Mistakes
                     </AccordionTrigger>
@@ -6952,7 +6952,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   </AccordionItem>
 
                   {/* Reports */}
-                  <AccordionItem value="reports" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
+                  <AccordionItem value="reports" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Reports: Your Audit Trail
                     </AccordionTrigger>
@@ -7030,7 +7030,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   </AccordionItem>
 
                   {/* Duplicate Handling */}
-                  <AccordionItem value="duplicates" className="border border-primary/20 dark:border-primary/30 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/40 transition-all duration-200">
+                  <AccordionItem value="duplicates" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       Duplicate Handling
                     </AccordionTrigger>
@@ -7270,9 +7270,9 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 <div className="mb-4">
                   {updateStatus === 'idle' && (
                     <Button 
-                      variant="outline"
+                      variant="information"
                       onClick={checkForUpdates}
-                      className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                      className="gap-2"
                       data-testid="button-check-updates"
                     >
                       <RefreshCw className="w-4 h-4" /> Check for Updates
@@ -7291,10 +7291,10 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   {updateStatus === 'error' && (
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground">Couldn't check for updates. Please try again later or visit the website.</p>
-                      <Button 
-                        variant="outline"
+                      <Button
+                        variant="information"
                         onClick={checkForUpdates}
-                        className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                        className="gap-2"
                       >
                         <RefreshCw className="w-4 h-4" /> Try Again
                       </Button>
@@ -7319,13 +7319,13 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                             <p className="text-sm text-muted-foreground">{releaseNotes}</p>
                           )}
                           {downloadUrl && (
-                            <Button 
-                              variant="outline"
+                            <Button
+                              variant="information"
                               onClick={async () => {
                                 const { openExternalUrl } = await import('@/lib/electron-bridge');
                                 await openExternalUrl(downloadUrl);
                               }}
-                              className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                              className="gap-2"
                               data-testid="button-download-update"
                             >
                               <Download className="w-4 h-4" /> Download Update
@@ -7453,10 +7453,10 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                     <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
                       <p>Need a refresher? Walk through the key areas of Photo Date Rescue with a guided tour. It takes less than a minute.</p>
                       
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="information"
                         onClick={onStartTour}
-                        className="gap-2 border-primary/30 hover:border-primary/50 hover:bg-primary/5"
+                        className="gap-2"
                         data-testid="button-replay-tour"
                       >
                         <PlayCircle className="w-4 h-4" /> Start Tour
