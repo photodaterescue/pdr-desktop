@@ -1964,7 +1964,7 @@ export default function PeopleManager() {
           left border so the eye is drawn to the right-hand CTA. The
           panel is otherwise easy to overlook on a wide screen. */}
       {globalReassignFaceId !== null && (
-        <div className={`w-[280px] shrink-0 border-l bg-background p-4 overflow-y-auto transition-colors ${
+        <div className={`w-[320px] shrink-0 border-l bg-background p-4 overflow-y-auto transition-colors ${
           globalSelectedFaces.size > 0
             ? 'border-l-2 border-purple-400/70 shadow-[inset_4px_0_0_0_rgba(168,85,247,0.25)] animate-pulse-soft'
             : 'border-border'
@@ -2260,6 +2260,12 @@ export default function PeopleManager() {
               );
             })()}
             <div className="flex gap-1.5 pt-1 border-t border-border">
+              {/* Bucket-reassignment actions match the tab-count pill
+                  semantics (Unsure=blue, Unnamed=amber, Ignore=slate)
+                  rather than full chip variants. These are routine
+                  re-bucketings — making them chip-loud put them on the
+                  same visual level as Improve Facial Recognition,
+                  which actually mutates clustering globally. */}
               {activeTab !== 'unsure' && (
                 <button onClick={() => {
                   const targets = Array.from(globalSelectedFaces);
@@ -2267,9 +2273,7 @@ export default function PeopleManager() {
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalReassignFullName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unsure__', false, i < targets.length - 1); })();
                 }}
-                data-pdr-variant="information"
-                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
-                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-blue-500/15 ring-1 ring-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-500/25 text-sm font-medium transition-colors">
                   <HelpCircle className="w-3 h-3" /> Unsure
                 </button>
               )}
@@ -2280,9 +2284,7 @@ export default function PeopleManager() {
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalReassignFullName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unnamed__', false, i < targets.length - 1); })();
                 }}
-                data-pdr-variant="caution"
-                style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
-                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-amber-500/15 ring-1 ring-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 text-sm font-medium transition-colors">
                   <Users className="w-3 h-3" /> Unnamed
                 </button>
               )}
@@ -2292,7 +2294,7 @@ export default function PeopleManager() {
                   if (targets.length === 0) return;
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalReassignFullName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__ignored__', false, i < targets.length - 1); })();
-                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-foreground text-sm font-medium transition-colors">
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-500/15 ring-1 ring-slate-500/30 text-slate-700 dark:text-slate-300 hover:bg-slate-500/25 text-sm font-medium transition-colors">
                   <UserX className="w-3 h-3" /> Ignore
                 </button>
               )}
@@ -2951,23 +2953,19 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                   <div className="flex gap-1.5 pt-1 border-t border-border">
                     <button
                       onClick={() => handleBatchAction('__unsure__', false)}
-                      data-pdr-variant="information"
-                      style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-blue-500/15 ring-1 ring-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-500/25 text-sm font-medium transition-colors"
                     >
                       <HelpCircle className="w-3 h-3" /> Unsure
                     </button>
                     <button
                       onClick={() => handleBatchAction('__unnamed__', false)}
-                      data-pdr-variant="caution"
-                      style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-amber-500/15 ring-1 ring-amber-500/30 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 text-sm font-medium transition-colors"
                     >
                       <Users className="w-3 h-3" /> Unnamed
                     </button>
                     <button
                       onClick={() => handleBatchAction('__ignored__', false)}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-foreground text-sm font-medium transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-500/15 ring-1 ring-slate-500/30 text-slate-700 dark:text-slate-300 hover:bg-slate-500/25 text-sm font-medium transition-colors"
                     >
                       <UserX className="w-3 h-3" /> Ignore
                     </button>
