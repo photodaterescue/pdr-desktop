@@ -326,29 +326,23 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
-            {/* Key message — best practice, universal */}
+            {/* Key message — best practice + why-it-matters merged.
+                Was previously two stacked panels (the second labelled
+                "PDR Pro"); now folded into one since PDR doesn't have
+                a Pro tier — there's just one PDR. */}
             <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
               <div className="flex items-start gap-3">
                 <Shield className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-semibold text-foreground mb-1">Best practice: choose one destination for your library</p>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">
+                  <p className="text-[13px] text-muted-foreground leading-relaxed mb-2">
                     You can change your destination each time you run a fix, but for the best experience
                     we recommend keeping all your fixes in one location.
                   </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Pro features callout */}
-            <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/20">
-              <div className="flex items-start gap-3">
-                <Crown className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 mb-0.5">PDR Pro</p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Your search index, AI analysis, and reports are all tied to the destination.
-                    Moving or renaming it means rebuilding that data. Keeping one permanent location protects your investment.
+                  <p className="text-[13px] text-muted-foreground leading-relaxed">
+                    Your search index, AI analysis, and reports are all tied to the destination — moving or
+                    renaming it means rebuilding that data. Keeping one permanent location protects the work
+                    you put in.
                   </p>
                 </div>
               </div>

@@ -1877,6 +1877,19 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // expansion doesn't bleed into views that auto-collapse.
   const [tempExpanded, setTempExpanded] = useState(false);
   useEffect(() => { setTempExpanded(false); }, [activeView, searchResultsActive]);
+
+  // Dashboard / Workspace doubles as the Source Menu — the sidebar
+  // is critical there, NOT a content-area distraction like it is on
+  // Memories / Trees / S&D-with-results. Whenever the user switches
+  // back to Dashboard, force the sidebar open: clear any prior
+  // 'closed' pin AND set tempExpanded so the auto-collapse rule
+  // can't fight us.
+  useEffect(() => {
+    if (activeView === 'dashboard') {
+      if (pinState === 'closed') setPinState('auto');
+      setTempExpanded(true);
+    }
+  }, [activeView]);
   // Clean up any stale persisted key from previous versions
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.removeItem('pdr-sidebar-pin');
@@ -2962,6 +2975,7 @@ function DashboardPanel({
                       onClick={onAddFolder}
                       disabled={fixActive}
                       className="gap-2 shadow-md shadow-primary/20 ml-auto"
+                      style={sources.length === 0 && !fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
                     >
                       <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
                     </Button>
@@ -3157,7 +3171,22 @@ function DashboardPanel({
                       </button>
                     </>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Choose the location where your new library structure will go.</p>
+                    <>
+                      <p className="text-sm text-muted-foreground">Choose the location where your new library structure will go.</p>
+                      {/* Library Planner link — shown even when no
+                          destination has been selected yet, so users
+                          can still take the size-planning wizard
+                          before they pick a drive. Without this the
+                          planner is unreachable except via the
+                          first-ever Select Destination flow. */}
+                      <button
+                        onClick={() => setShowLibraryPlanner(true)}
+                        className="text-xs text-foreground/80 hover:text-primary transition-colors mt-3 flex items-center gap-1.5 font-medium"
+                      >
+                        <Settings className="w-3 h-3" />
+                        {libraryPlannerAnswers ? 'Review library plan' : 'Plan your library'}
+                      </button>
+                    </>
                   )}
                 </div>
               </Card>
