@@ -1617,19 +1617,24 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
 function FilterPill({ label, active, onToggle, children }: {
   label: string; active: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
+  // Both states use lavender chrome — active = full chip, inactive
+  // = same chip with reduced fill but the same border family. Keeps
+  // Steps and Generations visually paired in the toolbar regardless
+  // of which is currently toggled, so the user reads "two related
+  // filters, one on, one off" rather than "two unrelated controls."
   return (
     <div
       className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border transition-colors ${
         active
-          ? 'bg-primary/10 border-primary/30'
-          : 'bg-background border-border'
+          ? 'bg-primary/10 border-primary/40'
+          : 'bg-primary/5 border-primary/30'
       }`}
     >
       <button
         onClick={onToggle}
         aria-pressed={active}
         className={`px-2 py-0.5 rounded text-sm font-medium transition-colors ${
-          active ? 'text-primary' : 'text-muted-foreground hover:bg-accent'
+          active ? 'text-primary' : 'text-primary/70 hover:bg-accent'
         }`}
       >
         {label}
@@ -1657,14 +1662,14 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
   const inc = () => !disabled && onChange(Math.min(max, value + 1));
   if (layout === 'stacked') {
     return (
-      <div className={`inline-flex items-center gap-1 text-xs ${disabled ? 'opacity-40' : ''}`}>
+      <div className={`inline-flex items-center gap-1 text-xs ${disabled ? 'opacity-70' : ''}`}>
         <span className="w-4 text-center font-mono tabular-nums leading-none">{value}</span>
         <div className="flex flex-col">
           <button
             type="button"
             onClick={inc}
             disabled={disabled || value >= max}
-            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70 leading-none text-[10px]"
+            className="w-4 h-3.5 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70 leading-none text-xs font-bold"
             aria-label="Increase"
           >
             +
@@ -1673,7 +1678,7 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
             type="button"
             onClick={dec}
             disabled={disabled || value <= min}
-            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70 leading-none text-[10px]"
+            className="w-4 h-3.5 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70 leading-none text-xs font-bold"
             aria-label="Decrease"
           >
             −
@@ -1683,7 +1688,7 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
     );
   }
   return (
-    <div className={`inline-flex items-center text-xs ${disabled ? 'opacity-40' : ''}`}>
+    <div className={`inline-flex items-center text-xs ${disabled ? 'opacity-70' : ''}`}>
       <button
         type="button"
         onClick={dec}
