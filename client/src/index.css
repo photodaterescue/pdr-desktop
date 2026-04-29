@@ -225,6 +225,77 @@
   50% { box-shadow: 0 0 0 5px rgba(169, 156, 255, 0.35); }
 }
 
+/* ─── Chip-tier colour fallback ────────────────────────────────────────
+   Last-resort attribute-selector rules with !important so the chip
+   tints land regardless of Tailwind class processing, twMerge, parent
+   cascade, or whatever was preventing both the variant classes AND the
+   merged inline style from reaching the DOM in production builds. The
+   `data-pdr-variant` attribute is set by the Button component on every
+   render. These rules are intentionally simple and rely only on the
+   default (light) theme; dark-mode rules follow.
+   ──────────────────────────────────────────────────────────────────── */
+[data-pdr-variant="information"] {
+  background-color: #dbeafe !important;
+  border: 1px solid #3b82f6 !important;
+  color: #1e3a8a !important;
+}
+[data-pdr-variant="information"]:hover:not(:disabled) {
+  background-color: #bfdbfe !important;
+  border-color: #1d4ed8 !important;
+}
+[data-pdr-variant="success"] {
+  background-color: #d1fae5 !important;
+  border: 1px solid #10b981 !important;
+  color: #064e3b !important;
+}
+[data-pdr-variant="success"]:hover:not(:disabled) {
+  background-color: #a7f3d0 !important;
+  border-color: #059669 !important;
+}
+[data-pdr-variant="caution"] {
+  background-color: #fde68a !important;
+  border: 1px solid #f59e0b !important;
+  color: #78350f !important;
+}
+[data-pdr-variant="caution"]:hover:not(:disabled) {
+  background-color: #fcd34d !important;
+  border-color: #d97706 !important;
+}
+[data-pdr-variant="destructive"] {
+  background-color: #fecaca !important;
+  border: 1px solid #ef4444 !important;
+  color: #7f1d1d !important;
+}
+[data-pdr-variant="destructive"]:hover:not(:disabled) {
+  background-color: #fca5a5 !important;
+  border-color: #dc2626 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  /* In dark mode the dark backgrounds are dark enough that our v4 tokens
+     read fine — keep the same rgb-style hex but with darker variants. */
+  .dark [data-pdr-variant="information"] {
+    background-color: rgba(30, 58, 138, 0.4) !important;
+    border-color: #3b82f6 !important;
+    color: #bfdbfe !important;
+  }
+  .dark [data-pdr-variant="success"] {
+    background-color: rgba(6, 78, 59, 0.4) !important;
+    border-color: #10b981 !important;
+    color: #a7f3d0 !important;
+  }
+  .dark [data-pdr-variant="caution"] {
+    background-color: rgba(120, 53, 15, 0.4) !important;
+    border-color: #f59e0b !important;
+    color: #fde68a !important;
+  }
+  .dark [data-pdr-variant="destructive"] {
+    background-color: rgba(127, 29, 29, 0.4) !important;
+    border-color: #ef4444 !important;
+    color: #fecaca !important;
+  }
+}
+
 /* ── PM verify panel + Verify button pulse ──────────────────────────────
    Fires when ≥1 face is selected for assignment. Draws the eye to the
    right-side action panel (which is otherwise easy to overlook on a

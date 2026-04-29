@@ -17,54 +17,33 @@ import { cn } from "@/lib/utils"
  *   destructive   — irreversible
  *   icon          — square icon-only control
  *   link          — inline text link inside copy
- *
- * Legacy variants (default, outline, ghost) are kept for backwards
- * compat during the migration sweep, and are deprecated. New code
- * must pick from the eight tiers above.
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0" +
-" hover-elevate active-elevate-2",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        // ─── New 8-tier system (use these going forward) ──────────────
         primary:
           "bg-primary text-primary-foreground border border-primary-border shadow-sm",
         secondary:
           "bg-background border border-primary/70 text-primary hover:bg-primary/5 dark:border-primary/60 dark:hover:bg-primary/10",
-        // Chip-style tints. Tailwind v4 redesigned its default colour
-        // palette to oklch with much lower chroma than v3's RGB
-        // equivalents — `bg-blue-200` in v4 is ~88% L / ~6% C
-        // (effectively white-with-a-rumour-of-blue) where in v3 it
-        // was #bfdbfe, clearly tinted. PDR's near-white dashboard
-        // background means the v4 tokens read as "white card with no
-        // border" no matter how high we push the scale. Bypass the
-        // theme tokens entirely with explicit hex arbitrary values
-        // (Tailwind v3 defaults) so the visual result is predictable.
-        // Verified visible: see commit message + the diagnostic
-        // pink-button confirmation that the pipeline works correctly.
-        information:
-          "bg-[#dbeafe] border border-[#3b82f6] text-[#1e3a8a] hover:bg-[#bfdbfe] hover:border-[#1d4ed8] dark:bg-blue-900/50 dark:border-blue-500 dark:text-blue-200 dark:hover:bg-blue-900/70",
-        success:
-          "bg-[#d1fae5] border border-[#10b981] text-[#064e3b] hover:bg-[#a7f3d0] hover:border-[#059669] dark:bg-emerald-900/50 dark:border-emerald-500 dark:text-emerald-200 dark:hover:bg-emerald-900/70",
-        caution:
-          "bg-[#fde68a] border border-[#f59e0b] text-[#78350f] hover:bg-[#fcd34d] hover:border-[#d97706] dark:bg-amber-900/50 dark:border-amber-500 dark:text-amber-200 dark:hover:bg-amber-900/70",
-        destructive:
-          "bg-[#fecaca] border border-[#ef4444] text-[#7f1d1d] hover:bg-[#fca5a5] hover:border-[#dc2626] dark:bg-red-900/50 dark:border-red-500 dark:text-red-200 dark:hover:bg-red-900/70",
+        // information / success / caution / destructive are handled by
+        // the chip-variant fast path below — these strings are kept so
+        // VariantProps<typeof buttonVariants> still includes them and
+        // TS infers the right union.
+        information: "",
+        success: "",
+        caution: "",
+        destructive: "",
         icon:
           "h-9 w-9 p-0 text-foreground hover:bg-secondary",
         link:
           "text-primary underline-offset-4 hover:underline",
-
-        // ─── Legacy variants (deprecated, kept until sweep migrates) ──
-        // @deprecated use `primary`
+        // ─── Legacy variants (deprecated) ───
         default:
           "bg-primary text-primary-foreground border border-primary-border",
-        // @deprecated use `secondary` / `information` / `success` / `caution`
         outline:
           " border [border-color:var(--button-outline)] shadow-xs active:shadow-none ",
-        // @deprecated use `secondary` (low-emphasis) or `icon`
         ghost: "border border-transparent",
       },
       size: {
@@ -87,31 +66,67 @@ export interface ButtonProps
   asChild?: boolean
 }
 
-// Inline-style fallback for the four chip variants. This belt-and-braces
-// approach guarantees the colour shows regardless of:
-//   • twMerge stripping arbitrary-value classes it doesn't recognise,
-//   • a higher-specificity rule somewhere in the cascade overriding the
-//     `.bg-\[\#dbeafe\]` Tailwind utility,
-//   • a parent element's CSS variable interfering.
-// If the Tailwind classes ARE applying, this is a no-op (the inline
-// styles match what the classes would set anyway).
-const variantInlineStyle: Record<string, React.CSSProperties | undefined> = {
+// Chip-variant fast path. Applied via inline style (highest CSS
+// specificity) AND via the data-pdr-variant attribute (matched by the
+// !important rule in index.css) so the colour lands regardless of any
+// other rule in the cascade. Both are needed because we found in
+// production that going through cva → cn → twMerge silently dropped
+// the background colour for these variants — the diagnostic test that
+// proved this is documented in feedback_tailwind_v4_pale_palette.md.
+const CHIP_VARIANTS = ['information', 'success', 'caution', 'destructive'] as const;
+type ChipVariant = typeof CHIP_VARIANTS[number];
+const isChipVariant = (v: unknown): v is ChipVariant =>
+  typeof v === 'string' && (CHIP_VARIANTS as readonly string[]).includes(v);
+
+const chipInlineStyle: Record<ChipVariant, React.CSSProperties> = {
   information: { backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' },
   success:     { backgroundColor: '#d1fae5', borderColor: '#10b981', color: '#064e3b', borderWidth: '1px', borderStyle: 'solid' },
   caution:     { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' },
   destructive: { backgroundColor: '#fecaca', borderColor: '#ef4444', color: '#7f1d1d', borderWidth: '1px', borderStyle: 'solid' },
 };
 
+// Static class string for chip variants — the layout/typography parts
+// of the button look. We build this manually instead of going through
+// cva+cn because that pipeline was producing buttons with no chip
+// colour despite the bundle clearly including the right classes and
+// inline styles. Keeping this hand-rolled is uglier but reliable.
+const CHIP_BASE_CLASS =
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 cursor-pointer';
+const CHIP_SIZE_CLASS: Record<NonNullable<ButtonProps['size']>, string> = {
+  default: 'min-h-9 px-4 py-2',
+  sm: 'min-h-8 rounded-md px-3 text-xs',
+  lg: 'min-h-10 rounded-md px-8',
+  icon: 'h-9 w-9',
+};
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, style, ...props }, ref) => {
+    // Chip-variant fast path: emit a plain HTML button with inline
+    // style + data attribute. Bypasses cva/cn/twMerge entirely.
+    if (!asChild && isChipVariant(variant)) {
+      const sizeClass = CHIP_SIZE_CLASS[size ?? 'default'];
+      const inlineStyle: React.CSSProperties = {
+        ...chipInlineStyle[variant],
+        ...style,
+      };
+      return (
+        <button
+          ref={ref}
+          {...props}
+          className={[CHIP_BASE_CLASS, sizeClass, className].filter(Boolean).join(' ')}
+          data-pdr-variant={variant}
+          style={inlineStyle}
+        />
+      );
+    }
+    // Non-chip variants keep the original cva path.
     const Comp = asChild ? Slot : "button"
-    const fallbackStyle = variant ? variantInlineStyle[variant] : undefined;
     return (
       <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
-        style={fallbackStyle ? { ...fallbackStyle, ...style } : style}
         {...props}
+        className={cn(buttonVariants({ variant, size, className }))}
+        style={style}
       />
     )
   }
