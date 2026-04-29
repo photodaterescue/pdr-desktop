@@ -229,7 +229,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                         className={`flex items-center gap-3 p-3.5 rounded-xl border-2 text-left transition-all ${
                           isSelected
                             ? 'border-primary bg-primary/5 shadow-sm'
-                            : 'border-border hover:border-primary/30 hover:bg-secondary/30'
+                            : 'border-border hover:border-primary/60 hover:bg-primary/5'
                         }`}
                       >
                         <Icon className={`w-5 h-5 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
@@ -285,7 +285,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                         className={`w-full flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all ${
                           isSelected
                             ? 'border-primary bg-primary/5 shadow-sm'
-                            : 'border-border hover:border-primary/30 hover:bg-secondary/30'
+                            : 'border-border hover:border-primary/60 hover:bg-primary/5'
                         }`}
                       >
                         <div className={`mt-0.5 w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
@@ -323,7 +323,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
 
                 {/* Good scenario — local drives with enough space */}
                 {analysis.hasGoodOption && (
-                  <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                  <div className="p-4 rounded-xl bg-emerald-500/15 ring-1 ring-emerald-500/30">
                     <div className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
                       <div>

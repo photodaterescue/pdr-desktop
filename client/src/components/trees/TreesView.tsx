@@ -75,6 +75,47 @@ export interface TreesViewProps {
   onRequestCardBackgroundPick?: (args: { treeId: number; treeName: string; personId: number; personName: string }) => void;
 }
 
+/** Compute the generation offset for a single target person from the
+ *  graph, mirroring the BFS used inside the main generationOffsets
+ *  useMemo. Used by finaliseQuickAdd to detect Generations-overage
+ *  on a freshly added person before the visual layout has had a
+ *  chance to recompute. Returns null if the person is unreachable. */
+function computeGenerationOffset(
+  graph: { nodes: { personId: number }[]; edges: { aId: number; bId: number; type: string; derived?: boolean }[] },
+  focusPersonId: number,
+  targetPersonId: number,
+): number | null {
+  if (focusPersonId === targetPersonId) return 0;
+  const out = new Map<number, number>();
+  out.set(focusPersonId, 0);
+  const queue: number[] = [focusPersonId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    const curGen = out.get(cur)!;
+    for (const e of graph.edges) {
+      if (e.derived) continue;
+      let neighbour: number | null = null;
+      let shift = 0;
+      if (e.type === 'parent_of') {
+        if (e.aId === cur) { neighbour = e.bId; shift = -1; }
+        else if (e.bId === cur) { neighbour = e.aId; shift = +1; }
+      } else if (e.type === 'sibling_of' || e.type === 'spouse_of') {
+        if (e.aId === cur) neighbour = e.bId;
+        else if (e.bId === cur) neighbour = e.aId;
+      }
+      if (neighbour == null) continue;
+      const newGen = curGen + shift;
+      const existing = out.get(neighbour);
+      if (existing == null || Math.abs(newGen) < Math.abs(existing)) {
+        out.set(neighbour, newGen);
+        queue.push(neighbour);
+      }
+    }
+  }
+  const result = out.get(targetPersonId);
+  return result == null ? null : result;
+}
+
 export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgroundPick }: TreesViewProps = {}) {
   const [focusPersonId, setFocusPersonId] = useState<number | null>(null);
   // The picker opens only if we can't auto-pick a sensible focus.
@@ -105,6 +146,24 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [generationsEnabled, setGenerationsEnabled] = useState(true);
   const [ancestorsDepth, setAncestorsDepth] = useState(2);
   const [descendantsDepth, setDescendantsDepth] = useState(2);
+  // Brief visual pulse on the Steps / Generations pills when a newly
+  // added person sits beyond the active filter limits. The new person
+  // is auto-pinned so they stay visible, but the pulse signals to the
+  // user that their filter would otherwise hide future siblings of
+  // this addition — a hint to bump the filter if they want to see
+  // them naturally instead of via the pin.
+  const [pulseSteps, setPulseSteps] = useState(false);
+  const [pulseGenerations, setPulseGenerations] = useState(false);
+  useEffect(() => {
+    if (!pulseSteps) return;
+    const t = setTimeout(() => setPulseSteps(false), 3500);
+    return () => clearTimeout(t);
+  }, [pulseSteps]);
+  useEffect(() => {
+    if (!pulseGenerations) return;
+    const t = setTimeout(() => setPulseGenerations(false), 3500);
+    return () => clearTimeout(t);
+  }, [pulseGenerations]);
   const [allPersons, setAllPersons] = useState<PersonSummary[]>([]);
   const [relationshipEditorFor, setRelationshipEditorFor] = useState<number | null>(null);
   /** Optional preselection for SetRelationshipModal's "other person" —
@@ -924,6 +983,47 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     setQuickAdd(null);
     if (kind === 'parent') {
       await addRelationship({ personAId: otherPersonId, personBId: fromPersonId, type: 'parent_of' });
+      // Marriage prompt — if fromPersonId now has TWO parents and they
+      // aren't already linked by a spouse_of edge, ask the user
+      // whether the parents were married. Without this, future
+      // additions of a sibling via just one of the parents look like
+      // a HALF-sibling because the second parent isn't recognised as
+      // a co-parent. Saying yes here pre-records the spouse_of edge
+      // so subsequent co-parent prompts work and full siblings stay
+      // full siblings. Asks per-pair only — silent when there are
+      // already 2+ parents recorded.
+      const allRels = await listRelationshipsForPerson(fromPersonId);
+      if (allRels.success && allRels.data) {
+        const parentEdges = allRels.data.filter(r => r.type === 'parent_of' && r.person_b_id === fromPersonId);
+        const otherParentIds = parentEdges.map(r => r.person_a_id).filter(id => id !== otherPersonId);
+        // Only prompt if the new addition makes the second parent
+        // (i.e. exactly one other parent already on file) — adding a
+        // 3rd, 4th, etc. parent is a less common case where auto-
+        // marrying would cause more confusion than it solves.
+        if (otherParentIds.length === 1) {
+          const existingParentId = otherParentIds[0];
+          const alreadySpouses = allRels.data.some(r =>
+            r.type === 'spouse_of' && (
+              (r.person_a_id === otherPersonId && r.person_b_id === existingParentId) ||
+              (r.person_a_id === existingParentId && r.person_b_id === otherPersonId)
+            ),
+          );
+          if (!alreadySpouses) {
+            const childName = allPersons.find(p => p.id === fromPersonId)?.name?.trim() || 'this person';
+            const newParentName = otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name?.trim() || 'this parent';
+            const existingParentName = allPersons.find(p => p.id === existingParentId)?.name?.trim() || "the other parent";
+            const yes = await promptConfirm({
+              title: `Are ${newParentName} and ${existingParentName} married?`,
+              message: `Recording them as married means future siblings of ${childName} who share both parents will register as full siblings. Choose No if they're not (or never were) married — they'll still both be ${childName}'s parents either way.`,
+              confirmLabel: 'Yes, mark as married',
+              cancelLabel: 'No, just both parents',
+            });
+            if (yes) {
+              await addRelationship({ personAId: otherPersonId, personBId: existingParentId, type: 'spouse_of' });
+            }
+          }
+        }
+      }
     } else if (kind === 'child') {
       await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'parent_of' });
       // Co-parent prompt — for every CURRENT (non-ended) spouse of the
@@ -989,6 +1089,17 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 next.set(otherPersonId, found.hopsFromFocus);
                 return next;
               });
+              setPulseSteps(true);
+            }
+            // Generations overage check: re-derive the new person's
+            // generation offset from the same BFS the renderer uses,
+            // then compare against the active ancestors/descendants
+            // caps. Triggers a brief pulse on the Generations pill so
+            // the user sees their filter would have hidden this add
+            // (the pin keeps them visible regardless).
+            const newGen = computeGenerationOffset(res.data, focusPersonId, otherPersonId);
+            if (newGen != null && (newGen > ancestorsDepth || newGen < -descendantsDepth)) {
+              setPulseGenerations(true);
             }
             return;
           }
@@ -998,7 +1109,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       // Couldn't find them within 10 hops — unusual; just refresh at default.
       refetchGraph(focusPersonId, fetchDepth);
     }
-  }, [quickAdd, graph, focusPersonId, expandedHops, fetchDepth, refetchGraph]);
+  }, [quickAdd, graph, focusPersonId, expandedHops, ancestorsDepth, descendantsDepth, fetchDepth, refetchGraph]);
 
   const handleRemovePerson = useCallback(async (personId: number) => {
     // Remove every edge touching this person in the current graph.
@@ -1209,7 +1320,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             {/* Steps filter — toggle + +/- stepper. Styled as a clear
                 CTA pill: solid primary background when active, subtle
                 outline when off. */}
-            <FilterPill label="Steps">
+            <FilterPill label="Steps" pulse={pulseSteps}>
               <NumberStepper
                 value={expandedHops}
                 onChange={setExpandedHops}
@@ -1217,7 +1328,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 max={6}
               />
             </FilterPill>
-            <FilterPill label="Generations">
+            <FilterPill label="Generations" pulse={pulseGenerations}>
               {/* D (descendants) on left, A (ancestors) on right —
                   matches Terry's spatial intuition (younger below,
                   older above). Each is a dropdown of 0–10 with
@@ -1626,8 +1737,13 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
  *  off state looks muted but still clearly clickable. Matches the
  *  'Change focus' button's look so the three header controls read as a
  *  consistent row of actions, not a mix of labels and inputs. */
-function FilterPill({ label, children }: {
+function FilterPill({ label, children, pulse }: {
   label: string; children: React.ReactNode;
+  /** When true, the pill briefly animates to draw attention to a
+   *  filter overage (e.g. user added a relative beyond the current
+   *  Steps or Generations cap — the pill nudges them to consider
+   *  bumping it). */
+  pulse?: boolean;
 }) {
   // The label is now a non-interactive caption — only the +/−
   // steppers inside are buttons. Previously the label itself was a
@@ -1638,7 +1754,7 @@ function FilterPill({ label, children }: {
   // chrome is fixed; "off" is just a value (Steps=0 or
   // Generations 0/0 = "no constraint" via the filter logic above).
   return (
-    <div className="inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border bg-primary/10 border-primary/40">
+    <div className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border bg-primary/10 border-primary/40 transition-shadow ${pulse ? 'animate-pulse-cta ring-2 ring-primary/40 ring-offset-1 ring-offset-background' : ''}`}>
       <span className="px-2 py-0.5 text-sm font-medium text-primary select-none">{label}</span>
       {children}
     </div>

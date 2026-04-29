@@ -1746,7 +1746,7 @@ return (
 			  onClick={(e) => e.stopPropagation()}
 			  className="bg-background rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border border-border"
 			>
-			  <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200 dark:border-emerald-700">
+			  <div className="w-14 h-14 bg-emerald-500/15 ring-1 ring-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-4">
 				<CheckCircle2 className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
 			  </div>
 			  <h3 className="text-lg font-semibold text-foreground mb-2">Your fix is complete</h3>
@@ -1755,14 +1755,15 @@ return (
 			  </p>
 			  <div className="flex gap-3">
 				<Button
-				  variant="outline"
-				  className="flex-1 border-border hover:bg-secondary"
+				  variant="secondary"
+				  className="flex-1"
 				  onClick={() => { setShowClearSourcesPrompt(false); }}
 				>
 				  Keep Sources
 				</Button>
 				<Button
-				  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+				  variant="caution"
+				  className="flex-1"
 				  onClick={() => {
 					setShowClearSourcesPrompt(false);
 					setHasCompletedFix(false);
@@ -1821,7 +1822,7 @@ return (
               </button>
             </div>
             <Button
-              variant="ghost"
+              variant="secondary"
               className="w-full mt-4"
               onClick={() => setShowSourceTypeSelector(false)}
             >
@@ -3155,12 +3156,12 @@ function DashboardPanel({
                       )}
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         {destinationFreeGB >= stats.sizeGB ? (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-700 dark:text-emerald-300">
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-100/50 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200/50 dark:border-rose-700/50">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 ring-1 ring-rose-500/30 text-rose-700 dark:text-rose-300">
                             <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
                           </div>
                         )}

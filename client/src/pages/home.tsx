@@ -207,7 +207,7 @@ export default function Home() {
 		<motion.div variants={item} className="mb-4 -mt-2">
 		  <button
 			onClick={() => navigate("/workspace")}
-			className="text-muted-foreground/80 hover:text-primary text-sm font-medium flex items-center transition-colors group"
+			className="text-muted-foreground hover:text-primary text-sm font-medium flex items-center transition-colors group"
 		  >
 			Go to Workspace
 		  </button>

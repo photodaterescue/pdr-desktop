@@ -152,30 +152,40 @@ export default function MemoriesView() {
     return () => { cancelled = true; };
   }, [selectedRunIdsKey]);
 
-  // Batch-load sample thumbnails for each year/month card + on-this-day items.
+  // Load sample thumbnails for each year/month card + on-this-day items.
+  // Uses a sliding-window pool (12 concurrent requests) and writes
+  // each thumbnail to state as soon as it returns, so the grid fills
+  // progressively instead of waiting for whole batches. The previous
+  // version processed in waves of 8 with an inter-batch await — if
+  // one item in a wave was slow (large RAW, network drive, sharp/
+  // ffmpeg busy from PM's face-crop work) every other item in the
+  // same wave waited too. On a cold first-Memories-after-PM session
+  // that produced the ~30 seconds of placeholder tiles Terry hit.
   useEffect(() => {
     let cancelled = false;
     const paths = new Set<string>();
     for (const b of buckets) if (b.sampleFilePath) paths.add(b.sampleFilePath);
     for (const o of onThisDay) paths.add(o.file_path);
     const toLoad = Array.from(paths).filter((p) => !thumbs[p]);
-    (async () => {
-      for (let i = 0; i < toLoad.length; i += 8) {
-        if (cancelled) return;
-        const batch = toLoad.slice(i, i + 8);
-        const results = await Promise.allSettled(
-          batch.map(async (p) => ({ p, r: await getThumbnail(p, 160) }))
-        );
-        if (cancelled) return;
-        const add: Record<string, string> = {};
-        for (const r of results) {
-          if (r.status === 'fulfilled' && r.value.r.success && r.value.r.dataUrl) {
-            add[r.value.p] = r.value.r.dataUrl;
+    if (toLoad.length === 0) return;
+    const CONCURRENCY = 12;
+    let cursor = 0;
+    const worker = async () => {
+      while (!cancelled && cursor < toLoad.length) {
+        const i = cursor++;
+        const p = toLoad[i];
+        try {
+          const r = await getThumbnail(p, 160);
+          if (cancelled) return;
+          if (r.success && r.dataUrl) {
+            setThumbs((prev) => prev[p] ? prev : { ...prev, [p]: r.dataUrl });
           }
-        }
-        if (Object.keys(add).length > 0) setThumbs((prev) => ({ ...prev, ...add }));
+        } catch { /* per-thumb failure is non-fatal */ }
       }
-    })();
+    };
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
+    void Promise.allSettled(workers);
     return () => { cancelled = true; };
   }, [buckets, onThisDay]);
 
@@ -529,27 +539,32 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
     return () => { cancelled = true; };
   }, [year, month, day, runIdsKey]);
 
+  // Per-day grid thumbnail load — same sliding-window pool pattern
+  // as the year/month overview. See the comment on that effect for
+  // the why.
   useEffect(() => {
     if (!files) return;
     let cancelled = false;
-    (async () => {
-      const missing = files.filter((f) => !thumbs[f.file_path]);
-      for (let i = 0; i < missing.length; i += 8) {
-        if (cancelled) return;
-        const batch = missing.slice(i, i + 8);
-        const results = await Promise.allSettled(
-          batch.map(async (f) => ({ p: f.file_path, r: await getThumbnail(f.file_path, 220) }))
-        );
-        if (cancelled) return;
-        const add: Record<string, string> = {};
-        for (const r of results) {
-          if (r.status === 'fulfilled' && r.value.r.success && r.value.r.dataUrl) {
-            add[r.value.p] = r.value.r.dataUrl;
+    const missing = files.filter((f) => !thumbs[f.file_path]);
+    if (missing.length === 0) return;
+    const CONCURRENCY = 12;
+    let cursor = 0;
+    const worker = async () => {
+      while (!cancelled && cursor < missing.length) {
+        const i = cursor++;
+        const f = missing[i];
+        try {
+          const r = await getThumbnail(f.file_path, 220);
+          if (cancelled) return;
+          if (r.success && r.dataUrl) {
+            setThumbs((prev) => prev[f.file_path] ? prev : { ...prev, [f.file_path]: r.dataUrl });
           }
-        }
-        if (Object.keys(add).length > 0) setThumbs((p) => ({ ...p, ...add }));
+        } catch { /* non-fatal */ }
       }
-    })();
+    };
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
+    void Promise.allSettled(workers);
     return () => { cancelled = true; };
   }, [files]);
 

@@ -441,19 +441,29 @@ function orderParentGeneration(
     return xs.reduce((a, b) => a + b, 0) / xs.length;
   };
 
-  // Sort groups left-to-right by pull x; within a group, keep adjacent.
+  // Sort groups left-to-right by pull x; within a group, sort members
+  // by person_id ASC so the first-created partner sits on the LEFT.
+  // Without this within-group sort the iteration order depended on
+  // graph.nodes order which depended on SQL's unspecified row order
+  // — the symptom was a partner you added first appearing on the
+  // right after a refresh because the SQL row order changed. With
+  // the ASC sort, "I added Derek first then Sylvia" reliably lays
+  // them out as [Derek, Sylvia].
   const sortedGroupIds = Array.from(groups.values()).sort((a, b) => pullX(a) - pullX(b));
   const result: FamilyGraphNode[] = [];
   const seen = new Set<number>();
   for (const groupParentIds of sortedGroupIds) {
-    for (const pid of groupParentIds) {
+    const inGroupOrder = [...groupParentIds].sort((a, b) => a - b);
+    for (const pid of inGroupOrder) {
       if (seen.has(pid) || !byId.has(pid)) continue;
       seen.add(pid);
       result.push(byId.get(pid)!);
     }
   }
-  // Any parents with no children in the placed set trail at the end.
-  for (const n of genNodes) if (!seen.has(n.personId)) result.push(n);
+  // Any parents with no children in the placed set trail at the end —
+  // sorted the same way for stability across refreshes.
+  const trailing = genNodes.filter(n => !seen.has(n.personId)).sort((a, b) => a.personId - b.personId);
+  for (const n of trailing) result.push(n);
   return result;
 }
 
@@ -476,7 +486,16 @@ function orderChildGeneration(
     if (parentXs.length === 0) return 0;
     return parentXs.reduce((a, b) => a + b, 0) / parentXs.length;
   };
-  return [...genNodes].sort((a, b) => pullX(a.personId) - pullX(b.personId));
+  // Tiebreaker: when two children have the same parent midpoint
+  // (siblings sharing both parents), fall back to person_id ASC so
+  // "first-created sits left" — matching the same rule used in
+  // orderParentGeneration. Otherwise SQL row order leaks into the
+  // layout and siblings can swap places between refreshes.
+  return [...genNodes].sort((a, b) => {
+    const dx = pullX(a.personId) - pullX(b.personId);
+    if (dx !== 0) return dx;
+    return a.personId - b.personId;
+  });
 }
 
 /**

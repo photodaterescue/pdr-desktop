@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
 import { FolderPlus, ArrowRight, Info } from "lucide-react";
 import { Card } from "@/components/ui/custom-card";
+import { Button } from "@/components/ui/custom-button";
 import { openZipDialog, isElectron } from "@/lib/electron-bridge";
 import { useLicense } from "@/contexts/LicenseContext";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
@@ -146,12 +147,13 @@ export default function SourceSelection() {
         </motion.div>
 
         <motion.div variants={item} className="mt-10">
-          <button
+          <Button
+            variant="secondary"
+            size="lg"
             onClick={() => setLocation('/workspace')}
-            className="px-8 py-2.5 rounded-lg border border-border bg-background/50 hover:bg-secondary/30 text-foreground font-medium text-sm transition-all duration-300 hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 focus:ring-offset-background"
           >
             Go to Workspace
-          </button>
+          </Button>
         </motion.div>
       </motion.div>
 

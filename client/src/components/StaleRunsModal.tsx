@@ -187,18 +187,18 @@ export default function StaleRunsModal({ isOpen, onClose, staleRuns, onResolved 
                       <div className="flex items-center gap-2 mt-3">
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="information"
                           onClick={() => setBrowsingRunId(run.id)}
-                          className="flex-1 text-xs border-primary/30 text-primary hover:bg-primary/5"
+                          className="flex-1 text-xs"
                         >
                           <FolderSearch className="w-3.5 h-3.5 mr-1.5" />
                           Relocate — browse to new location
                         </Button>
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="destructive"
                           onClick={() => setConfirmingRemoveId(run.id)}
-                          className="text-xs border-red-500/30 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          className="text-xs"
                         >
                           <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                           Remove

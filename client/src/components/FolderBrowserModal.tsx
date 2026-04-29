@@ -45,10 +45,15 @@ function rateDrive(drive: DriveInfo, requiredGB?: number | null): { rating: Driv
   return { rating: 'good', badge: null, isSystemDrive };
 }
 
+// Drive-rating chrome maps to the success / caution / destructive
+// chip palette so the rows feel consistent with status pills used
+// elsewhere (Required-X-GB pill, etc.). bg-color/15 + ring-color/30
+// matches the existing soft-pill convention used for tab counts in
+// PM and the Required-X-GB pill in the destination card.
 const ratingStyles = {
-  good: 'border-emerald-400/50 hover:border-emerald-500/70 bg-emerald-50/30 dark:bg-emerald-900/10',
-  warning: 'border-amber-400/50 hover:border-amber-500/70 bg-amber-50/30 dark:bg-amber-900/10',
-  poor: 'border-red-300/50 hover:border-red-400/70 bg-red-50/30 dark:bg-red-900/10',
+  good: 'border-transparent ring-1 ring-emerald-500/30 hover:ring-emerald-500/60 bg-emerald-500/10',
+  warning: 'border-transparent ring-1 ring-amber-500/30 hover:ring-amber-500/60 bg-amber-500/10',
+  poor: 'border-transparent ring-1 ring-rose-500/30 hover:ring-rose-500/60 bg-rose-500/10',
 };
 const ratingDotStyles = {
   good: 'bg-emerald-500',
@@ -892,7 +897,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                           return (
                             <div
                               key={dest}
-                              className="flex items-center gap-3 p-3 rounded-xl bg-card border border-primary/60 hover:border-primary hover:bg-primary/10 transition-all group cursor-pointer"
+                              className="flex items-center gap-3 p-3 rounded-xl bg-card border border-primary hover:bg-primary/10 transition-all group cursor-pointer"
                               onClick={() => {
                                 setSelectedPath(dest);
                                 navigateTo(dest);
@@ -954,10 +959,10 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                               {drive.label} ({drive.letter})
                             </span>
                             {driveRating?.badge && (
-                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
-                                driveRating.rating === 'good' ? 'text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/40' :
-                                driveRating.rating === 'warning' ? 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/40' :
-                                'text-red-500 bg-red-100 dark:text-red-400 dark:bg-red-900/40'
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ring-1 ${
+                                driveRating.rating === 'good' ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 ring-emerald-500/30' :
+                                driveRating.rating === 'warning' ? 'text-amber-700 dark:text-amber-300 bg-amber-500/15 ring-amber-500/30' :
+                                'text-rose-700 dark:text-rose-300 bg-rose-500/15 ring-rose-500/30'
                               }`}>
                                 {driveRating.badge}
                               </span>
