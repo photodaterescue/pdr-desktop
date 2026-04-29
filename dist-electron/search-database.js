@@ -1813,11 +1813,14 @@ export function getClusterFaces(clusterId, page = 0, perPage = 40, personId, sor
     const orderClause = sortMode === 'chronological'
         ? `ORDER BY (f.derived_date IS NULL) ASC, f.derived_date ASC, fd.confidence ASC`
         : `ORDER BY fd.confidence ASC`;
-    // If personId is provided, query by person (handles reassigned faces correctly)
+    // match_similarity distinguishes manually-verified faces (NULL,
+    // verified=1) from auto-matched faces (set, verified=0). The UI
+    // uses it to draw a different ring colour for each — so users can
+    // tell at a glance which faces still need review.
     if (personId) {
         const total = database.prepare(`SELECT COUNT(*) as cnt FROM face_detections WHERE person_id = ?`).get(personId).cnt;
         const faces = database.prepare(`
-      SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
+      SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified, fd.match_similarity
       FROM face_detections fd
       INNER JOIN indexed_files f ON fd.file_id = f.id
       WHERE fd.person_id = ?
@@ -1829,7 +1832,7 @@ export function getClusterFaces(clusterId, page = 0, perPage = 40, personId, sor
     // For unnamed clusters: only show faces with no person_id
     const total = database.prepare(`SELECT COUNT(*) as cnt FROM face_detections WHERE cluster_id = ? AND person_id IS NULL`).get(clusterId).cnt;
     const faces = database.prepare(`
-    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified
+    SELECT fd.id as face_id, fd.file_id, f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h, fd.confidence, fd.verified, fd.match_similarity
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
     WHERE fd.cluster_id = ? AND fd.person_id IS NULL

@@ -1683,7 +1683,7 @@ export async function batchVerifyPersons(personIds: number[]): Promise<{ success
 }
 
 export interface ClusterFacesResult {
-  faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[];
+  faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number; match_similarity: number | null }[];
   total: number;
   page: number;
   perPage: number;

@@ -2631,13 +2631,22 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
   // reference here, which threw ReferenceError at runtime ("blank
   // screen on View all photos") because `verifiedBorder` only exists
   // in PersonCardRow's closure. Mirroring it locally fixes the crash.
+  // Bumped to border-[3px] (one notch up from the original border-2)
+  // because the thinner ring got lost in the visual noise of a 7-col
+  // grid of crops. Border colour is purple/amber/blue/slate per the
+  // cluster type so verified status at a glance stays consistent
+  // with the row.
   const verifiedBorder = (() => {
-    if (!cluster.person_name) return 'border-2 border-amber-400/70'; // Unnamed
-    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400/70';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-[#76899F]/70';
+    if (!cluster.person_name) return 'border-[3px] border-amber-400/80'; // Unnamed
+    if (cluster.person_name === '__unsure__') return 'border-[3px] border-blue-400/80';
+    if (cluster.person_name === '__ignored__') return 'border-[3px] border-[#76899F]/80';
     if (cluster.person_name.startsWith('__')) return '';
-    return 'border-2 border-purple-400/70'; // Named (real name)
+    return 'border-[3px] border-purple-400/80'; // Named (real name)
   })();
+  // Auto-matched (matched but not yet verified): grey ring at the
+  // same thickness so users can see which faces still need review
+  // without clicking each one.
+  const matchedBorder = 'border-[3px] border-slate-400/60';
 
   // Match the row's order: real Named persons get chronological
   // (oldest first), pseudo-persons (__unsure__/__ignored__) and
@@ -2771,8 +2780,16 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                 </p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors shrink-0">
-              <X className="w-5 h-5" />
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            >
+              {/* pointer-events-none so the X glyph's empty centre
+                  doesn't swallow the click and leave a "void patch"
+                  where the close button feels broken. The whole
+                  padded button area becomes the click target. */}
+              <X className="w-5 h-5 pointer-events-none" />
             </button>
           </div>
 
@@ -2837,20 +2854,32 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                           }}
                           className="relative group text-left"
                         >
-                          {faceCrops[face.face_id] ? (
-                            <img src={faceCrops[face.face_id]} alt="" className={`w-full aspect-square rounded-lg object-cover transition-all ${
-                              isSelected ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-background'
-                              : face.verified ? `${verifiedBorder} hover:ring-2 hover:ring-purple-400/50`
-                              : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50'
-                            }`} />
-                          ) : (
-                            <div className={`w-full aspect-square rounded-lg bg-secondary flex items-center justify-center ${
-                              isSelected ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-background'
-                              : face.verified ? verifiedBorder : ''
-                            }`}>
-                              <Users className="w-4 h-4 text-muted-foreground/70" />
-                            </div>
-                          )}
+                          {(() => {
+                            // Pick the right ring per face state so users
+                            // can tell verified from auto-matched without
+                            // clicking each one:
+                            //   verified  → cluster colour (purple etc.)
+                            //   matched   → grey
+                            //   else      → faint border
+                            const isMatched = !face.verified && face.match_similarity != null;
+                            const stateBorder = face.verified
+                              ? `${verifiedBorder} hover:ring-2 hover:ring-purple-400/50`
+                              : isMatched
+                                ? `${matchedBorder} hover:ring-2 hover:ring-purple-400/50`
+                                : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50';
+                            const stateBorderNoHover = face.verified ? verifiedBorder : isMatched ? matchedBorder : '';
+                            return faceCrops[face.face_id] ? (
+                              <img src={faceCrops[face.face_id]} alt="" className={`w-full aspect-square rounded-lg object-cover transition-all ${
+                                isSelected ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-background' : stateBorder
+                              }`} />
+                            ) : (
+                              <div className={`w-full aspect-square rounded-lg bg-secondary flex items-center justify-center ${
+                                isSelected ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-background' : stateBorderNoHover
+                              }`}>
+                                <Users className="w-4 h-4 text-muted-foreground/70" />
+                              </div>
+                            );
+                          })()}
                           {isSelected && (
                             <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center shadow-sm">
                               <Check className="w-3 h-3 text-white" />
@@ -3035,6 +3064,28 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                       <ImageIcon className="w-3 h-3" /> Set as main photo
                     </button>
                   )}
+                  {/* View Photo — opens the source image in the
+                      built-in viewer so the user can see context
+                      around the face crop. Only when exactly one
+                      face is selected. */}
+                  {selectedFaceIds.size === 1 && (() => {
+                    const id = Array.from(selectedFaceIds)[0];
+                    const face = data?.faces.find(f => f.face_id === id);
+                    if (!face) return null;
+                    return (
+                      <button
+                        onClick={() => {
+                          const filename = face.file_path.split(/[\\/]/).pop() || '';
+                          openSearchViewer(face.file_path, filename);
+                        }}
+                        data-pdr-variant="information"
+                        style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+                        className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        <ImageIcon className="w-3 h-3" /> View Photo
+                      </button>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -3125,15 +3176,21 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
    *  ensureClusterCrops already dedups. */
   onVisible?: () => void;
 }) {
-  // Ring colour for verified faces based on which category the cluster belongs to
+  // Ring colour for verified faces based on which category the cluster belongs to.
+  // border-[3px] (one notch up from the original border-2) so the
+  // ring reads clearly against the visual noise of multi-face rows.
   const getVerifiedBorderClass = (): string => {
-    if (!cluster.person_name) return 'border-2 border-amber-400/70'; // Unnamed
-    if (cluster.person_name === '__unsure__') return 'border-2 border-blue-400/70';
-    if (cluster.person_name === '__ignored__') return 'border-2 border-[#76899F]/70';
+    if (!cluster.person_name) return 'border-[3px] border-amber-400/80'; // Unnamed
+    if (cluster.person_name === '__unsure__') return 'border-[3px] border-blue-400/80';
+    if (cluster.person_name === '__ignored__') return 'border-[3px] border-[#76899F]/80';
     if (cluster.person_name.startsWith('__')) return '';
-    return 'border-2 border-purple-400/70'; // Named (real name)
+    return 'border-[3px] border-purple-400/80'; // Named (real name)
   };
   const verifiedBorder = getVerifiedBorderClass();
+  // Auto-matched (matched but not yet verified) — grey ring at the
+  // same thickness so the user can see at a glance which faces in
+  // a Named row still need review.
+  const matchedBorder = 'border-[3px] border-slate-400/60';
 
   const filteredPersons = (existingPersons || [])
     // Allow photo-less named people (Trees additions) in suggestions too,
@@ -3710,25 +3767,38 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                               data-face-thumb="true"
                               onClick={(e) => { e.stopPropagation(); handleFaceClick(face.face_id, faceIdx, e); }}
                             >
-                              {sampleCrops[face.face_id] ? (
-                                <img
-                                  src={sampleCrops[face.face_id]}
-                                  alt=""
-                                  className={`w-10 h-10 rounded-full object-cover cursor-pointer transition-all ${
+                              {(() => {
+                                // Same per-state ring choice as the
+                                // FaceGridModal — verified gets the
+                                // cluster colour, auto-matched gets
+                                // grey, neither gets a faint default.
+                                const isMatched = !face.verified && face.match_similarity != null;
+                                const stateBorder = face.verified
+                                  ? `${verifiedBorder} hover:ring-2 hover:ring-purple-400/50`
+                                  : isMatched
+                                    ? `${matchedBorder} hover:ring-2 hover:ring-purple-400/50`
+                                    : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50';
+                                const stateBorderNoHover = face.verified ? verifiedBorder : isMatched ? matchedBorder : '';
+                                return sampleCrops[face.face_id] ? (
+                                  <img
+                                    src={sampleCrops[face.face_id]}
+                                    alt=""
+                                    className={`w-10 h-10 rounded-full object-cover cursor-pointer transition-all ${
+                                      selectedFaces.has(face.face_id)
+                                        ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
+                                        : stateBorder
+                                    }`}
+                                  />
+                                ) : (
+                                  <div className={`w-10 h-10 rounded-full bg-secondary flex items-center justify-center cursor-pointer ${
                                     selectedFaces.has(face.face_id)
                                       ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
-                                      : face.verified ? `${verifiedBorder} hover:ring-2 hover:ring-purple-400/50` : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50'
-                                  }`}
-                                />
-                              ) : (
-                                <div className={`w-10 h-10 rounded-full bg-secondary flex items-center justify-center cursor-pointer ${
-                                  selectedFaces.has(face.face_id)
-                                    ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
-                                    : face.verified ? verifiedBorder : ''
-                                }`}>
-                                  <Users className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                </div>
-                              )}
+                                      : stateBorderNoHover
+                                  }`}>
+                                    <Users className="w-3.5 h-3.5 text-muted-foreground/70" />
+                                  </div>
+                                );
+                              })()}
                               {selectedFaces.has(face.face_id) && (
                                 <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-green-500 flex items-center justify-center shadow-sm">
                                   <Check className="w-2.5 h-2.5 text-white" />
