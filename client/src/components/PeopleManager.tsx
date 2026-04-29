@@ -1183,7 +1183,9 @@ export default function PeopleManager() {
                     }
                   }}
                   disabled={isRefining || fixActive}
-                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isRefining || fixActive ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                  data-pdr-variant="caution"
+                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isRefining || fixActive ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                  style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
                 >
                   {isRefining ? (
                     <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Improving...</>

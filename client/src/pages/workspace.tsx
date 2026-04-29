@@ -8913,9 +8913,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       side="top"
                     >
                       <Button
-                        variant="outline"
+                        variant="destructive"
                         size="sm"
-                        className="border-amber-300 text-amber-700 hover:bg-amber-100/60 dark:hover:bg-amber-950/30 shrink-0 disabled:opacity-50"
+                        className="shrink-0"
                         onClick={() => setReclusterModalOpen(true)}
                         disabled={fixActive}
                       >
