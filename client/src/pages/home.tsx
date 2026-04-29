@@ -160,27 +160,32 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <ShowcaseCard
-              icon={<LayoutDashboard className="w-5 h-5 text-primary" />}
+              accent="lavender"
+              icon={<LayoutDashboard className="w-5 h-5" />}
               title="Workspace"
               description="Copy, rename, structure and deduplicate your source libraries chronologically."
             />
             <ShowcaseCard
-              icon={<Sparkles className="w-5 h-5 text-primary" />}
+              accent="blue"
+              icon={<Sparkles className="w-5 h-5" />}
               title="Search & Discovery"
               description="Find any photo by metadata, AI object tags or facial recognition — and build parallel structures to match."
             />
             <ShowcaseCard
-              icon={<CalendarClock className="w-5 h-5 text-primary" />}
+              accent="amber"
+              icon={<CalendarClock className="w-5 h-5" />}
               title="Memories"
               description="Chronologically browse every photo across the libraries you've built."
             />
             <ShowcaseCard
-              icon={<Network className="w-5 h-5 text-primary" />}
+              accent="emerald"
+              icon={<Network className="w-5 h-5" />}
               title="Trees"
               description="See the people from your photos in family-tree form — a face for every name."
             />
             <ShowcaseCard
-              icon={<Users className="w-5 h-5 text-primary" />}
+              accent="coral"
+              icon={<Users className="w-5 h-5" />}
               title="People"
               description="Verify the AI's facial recognition with granular precision — never worry about a misidentified face."
             />
@@ -274,11 +279,30 @@ function SecondaryCard({ icon, title, description, onClick }: { icon: React.Reac
  * border only, so returning users can linger without feeling like
  * they're missing an action.
  */
-function ShowcaseCard({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) {
+// Per-app accent palette. Each Welcome card carries the colour
+// associated with its app — same colour the sidebar item for that app
+// uses, so the user builds a visual association across the app.
+// Values picked from Tailwind v3 defaults (see
+// feedback_tailwind_v4_pale_palette: v4's oklch tokens read too pale
+// on the light background, so we use explicit hex throughout).
+type AppAccent = 'lavender' | 'blue' | 'amber' | 'emerald' | 'coral';
+const APP_ACCENT: Record<AppAccent, { iconBg: string; iconFg: string; topBar: string; hoverBorder: string }> = {
+  lavender: { iconBg: '#ede9fe', iconFg: '#6d28d9', topBar: '#a99cff', hoverBorder: '#8b5cf6' },
+  blue:     { iconBg: '#dbeafe', iconFg: '#1e40af', topBar: '#3b82f6', hoverBorder: '#2563eb' },
+  amber:    { iconBg: '#fde68a', iconFg: '#78350f', topBar: '#f59e0b', hoverBorder: '#d97706' },
+  emerald:  { iconBg: '#d1fae5', iconFg: '#065f46', topBar: '#10b981', hoverBorder: '#059669' },
+  coral:    { iconBg: '#ffe4e6', iconFg: '#9f1239', topBar: '#f43f5e', hoverBorder: '#e11d48' },
+};
+
+function ShowcaseCard({ accent, icon, title, description }: { accent: AppAccent; icon: React.ReactNode, title: string, description: string }) {
+  const a = APP_ACCENT[accent];
   return (
-    <Card className="flex flex-col p-4 h-full bg-white/40 border-border/70 hover:border-primary/30 hover:bg-white/80 transition-colors">
+    <Card
+      className="flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden"
+      style={{ borderColor: '#e5e7eb', borderTopWidth: '3px', borderTopColor: a.topBar, borderTopStyle: 'solid' }}
+    >
       <div className="flex items-center gap-2.5 mb-2">
-        <div className="p-1.5 rounded-md bg-secondary/70">
+        <div className="p-1.5 rounded-md flex items-center justify-center" style={{ backgroundColor: a.iconBg, color: a.iconFg }}>
           {icon}
         </div>
         <h4 className="text-sm font-semibold text-foreground">{title}</h4>

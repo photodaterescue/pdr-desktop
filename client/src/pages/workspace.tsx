@@ -2292,6 +2292,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <SidebarItem
                 icon={<img src="./assets//pdr-workspace.png" className="w-4 h-4 object-contain" alt="Workspace" />}
                 label={sources.length > 0 ? "Dashboard" : "Workspace"}
+                accent="lavender"
                 onClick={() => {
                   if (sources.length > 0 && !isLicensed) { onFeatureLocked('dashboard'); return; }
                   onDashboardClick();
@@ -2303,6 +2304,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <SidebarItem
                 icon={<Search className="w-4 h-4 opacity-70" />}
                 label="Search & Discovery"
+                accent="blue"
                 onClick={() => {
                   if (!isLicensed) { onFeatureLocked('search-discovery'); return; }
                   onViewChange?.('search');
@@ -2314,6 +2316,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <SidebarItem
                 icon={<CalendarRange className="w-4 h-4 opacity-70" />}
                 label="Memories"
+                accent="amber"
                 onClick={() => {
                   if (!isLicensed) { onFeatureLocked('memories'); return; }
                   onViewChange?.('memories');
@@ -2325,6 +2328,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               <SidebarItem
                 icon={<Network className="w-4 h-4 opacity-70" />}
                 label="Trees"
+                accent="emerald"
                 onClick={() => {
                   if (!isLicensed) { onFeatureLocked('trees'); return; }
                   onViewChange?.('familytree');
@@ -2345,8 +2349,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           {!toolsCollapsed && (
             <div className="space-y-1">
               <SidebarItem
-                icon={<span className="w-4 h-4 rounded-md bg-purple-500/15 flex items-center justify-center"><Users className="w-3 h-3 text-purple-500" /></span>}
+                icon={<Users className="w-4 h-4 opacity-70" />}
                 label="People Manager"
+                accent="coral"
                 onClick={() => {
                   if (!isLicensed) { onFeatureLocked('people-manager'); return; }
                   onOpenPeople();
@@ -2419,16 +2424,30 @@ function SectionHeader({ label, collapsed, onToggle }: { label: string; collapse
   );
 }
 
-function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false, locked = false }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean, locked?: boolean }) {
+// Per-app accent palette — kept in sync with the Welcome screen
+// ShowcaseCard accents in home.tsx. The sidebar item for each view
+// gets a coloured left-border in its accent so the user builds a
+// "blue = S&D, green = Trees" association across the app.
+const SIDEBAR_ACCENT: Record<string, string> = {
+  lavender: '#a99cff',
+  blue: '#3b82f6',
+  amber: '#f59e0b',
+  emerald: '#10b981',
+  coral: '#f43f5e',
+};
+
+function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false, locked = false, accent }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean, locked?: boolean, accent?: keyof typeof SIDEBAR_ACCENT }) {
+  const accentColor = accent ? SIDEBAR_ACCENT[accent] : undefined;
   const content = (
     <div
-      className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
+      className={`group relative w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
         disabled
           ? 'text-muted-foreground/50 cursor-not-allowed'
           : active
             ? 'text-secondary-foreground font-medium bg-sidebar-accent/50 hover:bg-primary/15'
             : 'text-sidebar-foreground hover:bg-primary/10 hover:text-foreground'
       }`}
+      style={accentColor ? { boxShadow: `inset 3px 0 0 0 ${accentColor}` } : undefined}
       onClick={(e) => !disabled && onClick && onClick(e)}
     >
       {selectable && (
