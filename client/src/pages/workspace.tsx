@@ -1879,17 +1879,18 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   useEffect(() => { setTempExpanded(false); }, [activeView, searchResultsActive]);
 
   // Dashboard / Workspace doubles as the Source Menu — the sidebar
-  // is critical there, NOT a content-area distraction like it is on
-  // Memories / Trees / S&D-with-results. Whenever the user switches
-  // back to Dashboard, force the sidebar open: clear any prior
-  // 'closed' pin AND set tempExpanded so the auto-collapse rule
-  // can't fight us.
+  // is critical there once sources exist. When the workspace is
+  // empty (sources.length === 0) the EmptyState component shows a
+  // big centered "Add Your First Source" CTA, and forcing the
+  // sidebar open would just push that CTA off-centre. So the
+  // auto-expand only fires once there's actually content in the
+  // Source Menu to navigate.
   useEffect(() => {
-    if (activeView === 'dashboard') {
+    if (activeView === 'dashboard' && sources.length > 0) {
       if (pinState === 'closed') setPinState('auto');
       setTempExpanded(true);
     }
-  }, [activeView]);
+  }, [activeView, sources.length]);
   // Clean up any stale persisted key from previous versions
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.removeItem('pdr-sidebar-pin');

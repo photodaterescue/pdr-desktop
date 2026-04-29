@@ -28,7 +28,7 @@ interface ScoredDrive extends DriveInfo {
   isSystemDrive: boolean;
 }
 
-function scoreDrive(drive: DriveInfo): ScoredDrive {
+function scoreDrive(drive: DriveInfo, plannedCollectionGB?: number): ScoredDrive {
   let score = 0;
   let speedTier: 'fast' | 'medium' | 'slow' = 'medium';
   let speedLabel = 'Standard';
@@ -95,6 +95,25 @@ function scoreDrive(drive: DriveInfo): ScoredDrive {
   if (totalGB < 16) {
     warnings.push('This drive is too small for a permanent photo library');
     score = Math.max(0, score - 20);
+  }
+
+  // CRITICAL: Penalise drives that can't actually hold the user's
+  // planned collection. Without this a fast 1 TB internal drive with
+  // 75 GB free outranks a slow 8 TB network drive with 5 TB free —
+  // even when the user says they have a 2.4 TB library. The drive
+  // type bonus shouldn't beat "literally cannot fit the data."
+  if (plannedCollectionGB && plannedCollectionGB > 0) {
+    if (freeGB < plannedCollectionGB) {
+      // Knock the drive's score WAY down — bigger than the type bonus
+      // — so a network drive that DOES fit beats a fast drive that
+      // doesn't. Still keep the score >= 0 so we can sort drives by
+      // "least bad" if no drive fits.
+      score = Math.max(0, score - 80);
+      warnings.push(`Not enough free space for your estimated ${fmtGB(plannedCollectionGB)} library — only ${fmtGB(freeGB)} free.`);
+    } else if (freeGB >= plannedCollectionGB * 1.15) {
+      // Comfortable headroom (>=15% buffer) — bonus
+      score += 15;
+    }
   }
 
   return {
@@ -262,17 +281,28 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
     if (!isOpen) return;
     setLoading(true);
     listDrives().then(driveList => {
+      const planned = collectionSizeGB ?? undefined;
       const scored = driveList
         .filter(d => d.totalBytes > 0) // Exclude empty/unformatted
-        .map(scoreDrive)
+        .map(d => scoreDrive(d, planned))
         .sort((a, b) => b.score - a.score);
-      // Mark the top one as recommended (but never the system drive)
-      const topCandidate = scored.find(d => !d.isSystemDrive);
+      // Mark as recommended ONLY if the drive actually has enough
+      // space for the planned collection (or if no planned size is
+      // known yet, fall back to the previous behaviour). Without this
+      // gate a fast 75 GB drive would beat a slow 5 TB drive even
+      // when the user said they have a 2.4 TB library.
+      const fits = (d: ScoredDrive) => {
+        if (d.isSystemDrive) return false;
+        if (!planned) return true;
+        const freeGB = d.freeBytes / (1024 * 1024 * 1024);
+        return freeGB >= planned;
+      };
+      const topCandidate = scored.find(fits);
       if (topCandidate) topCandidate.recommended = true;
       setDrives(scored);
       setLoading(false);
     });
-  }, [isOpen]);
+  }, [isOpen, collectionSizeGB]);
 
   if (!isOpen) return null;
 
@@ -694,10 +724,21 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                 <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />Internal HDD (SATA)</span><span className="text-foreground font-medium">80–160 MB/s</span></div>
                 <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />USB 3.0 external HDD</span><span className="text-amber-600 dark:text-amber-400 font-medium">50–120 MB/s</span></div>
                 <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />USB 2.0 (any drive)</span><span className="text-red-600 dark:text-red-400 font-medium">20–35 MB/s</span></div>
-                <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />USB flash / memory stick</span><span className="text-red-600 dark:text-red-400 font-medium">5–30 MB/s</span></div>
+                <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />USB flash / memory stick</span><span className="text-red-600 dark:text-red-400 font-medium">5–60 MB/s*</span></div>
                 <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />Network / NAS (Wi-Fi)</span><span className="text-red-600 dark:text-red-400 font-medium">10–100 MB/s</span></div>
                 <div className="flex justify-between items-center"><span className="text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />Cloud sync</span><span className="text-red-600 dark:text-red-400 font-medium">1–20 MB/s</span></div>
               </div>
+              <p className="text-[10px] text-muted-foreground/70 mt-2 leading-relaxed">
+                * Most consumer USB sticks land in the 5–60 MB/s range — rare premium models (e.g. SanDisk Extreme Pro, Kingston DataTraveler Max) can match SSD speeds, but they're the exception.
+              </p>
+              <a
+                href="https://photodaterescue.com/guides/tools-recommendations"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-primary hover:underline mt-2 inline-flex items-center gap-1"
+              >
+                Read more about choosing a drive →
+              </a>
             </div>
           </div>
 
