@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   getFamilyGraph,
   listPersons,
@@ -1217,21 +1218,22 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               />
             </FilterPill>
             <FilterPill label="Generations">
+              {/* L (lower / descendants) on left, H (higher /
+                  ancestors) on right — matches Terry's spatial
+                  intuition. Each is a dropdown of 0–5 with a
+                  Custom… escape hatch for users who legitimately
+                  need deeper trees (royal families, deep
+                  historical research). No hard cap. */}
               <div className="inline-flex items-center gap-1.5">
-                <NumberStepper
-                  value={ancestorsDepth}
-                  onChange={setAncestorsDepth}
-                  min={0}
-                  max={5}
-                  layout="stacked"
-                />
-                <span className="text-xs text-muted-foreground">/</span>
-                <NumberStepper
+                <GenerationDropdown
+                  label="L"
                   value={descendantsDepth}
                   onChange={setDescendantsDepth}
-                  min={0}
-                  max={5}
-                  layout="stacked"
+                />
+                <GenerationDropdown
+                  label="H"
+                  value={ancestorsDepth}
+                  onChange={setAncestorsDepth}
                 />
               </div>
             </FilterPill>
@@ -1708,6 +1710,117 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
         +
       </button>
     </div>
+  );
+}
+
+/** Dropdown for ancestor / descendant generation depth.
+ *  Replaces the +/− NumberStepper because (a) +/− was too small to
+ *  hit comfortably and (b) the underlying max=5 cap was wrong:
+ *  some users (royal family projects, deep historical research)
+ *  legitimately want more. Shows 0–5 inline; "Custom number…"
+ *  opens a modal that accepts any non-negative integer. */
+function GenerationDropdown({ label, value, onChange }: {
+  label: 'L' | 'H';
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customDraft, setCustomDraft] = useState('');
+
+  const openCustom = () => {
+    setOpen(false);
+    setCustomDraft(String(value));
+    setCustomOpen(true);
+  };
+
+  return (
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
+            aria-label={`${label === 'L' ? 'Lower (descendants)' : 'Higher (ancestors)'} generations: ${value}`}
+          >
+            <span className="text-[10px] font-semibold text-muted-foreground tracking-wide">{label}</span>
+            <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
+            <ChevronDown className="w-3 h-3 text-muted-foreground" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-32 p-1" align="start">
+          {[0, 1, 2, 3, 4, 5].map(n => (
+            <button
+              key={n}
+              onClick={() => { onChange(n); setOpen(false); }}
+              className={`w-full text-left px-2 py-1 rounded text-sm hover:bg-accent ${value === n ? 'bg-primary/10 text-primary font-medium' : ''}`}
+            >
+              {n}
+            </button>
+          ))}
+          <div className="border-t border-border my-1" />
+          {value > 5 && (
+            <div className="px-2 py-1 text-xs text-primary font-medium bg-primary/5 rounded">
+              Current: {value}
+            </div>
+          )}
+          <button
+            onClick={openCustom}
+            className="w-full text-left px-2 py-1 rounded text-sm text-primary hover:bg-accent"
+          >
+            Custom number…
+          </button>
+        </PopoverContent>
+      </Popover>
+
+      {customOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+          onClick={(e) => { if (e.target === e.currentTarget) setCustomOpen(false); }}
+        >
+          <div className="bg-background rounded-2xl shadow-2xl border border-border w-[360px] p-5">
+            <h3 className="text-base font-semibold text-foreground mb-1">
+              {label === 'L' ? 'Descendants' : 'Ancestors'} — custom depth
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Enter how many generations {label === 'L' ? 'below' : 'above'} the focus person to show.
+            </p>
+            <input
+              type="number"
+              min={0}
+              value={customDraft}
+              onChange={e => setCustomDraft(e.target.value)}
+              autoFocus
+              className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const n = parseInt(customDraft, 10);
+                  if (Number.isFinite(n) && n >= 0) { onChange(n); setCustomOpen(false); }
+                } else if (e.key === 'Escape') {
+                  setCustomOpen(false);
+                }
+              }}
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setCustomOpen(false)}
+                className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const n = parseInt(customDraft, 10);
+                  if (Number.isFinite(n) && n >= 0) { onChange(n); setCustomOpen(false); }
+                }}
+                className="px-3 py-1.5 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
