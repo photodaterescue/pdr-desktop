@@ -1184,7 +1184,7 @@ export default function PeopleManager() {
                   }}
                   disabled={isRefining || fixActive}
                   data-pdr-variant="caution"
-                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isRefining || fixActive ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isRefining || fixActive ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
                   style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
                 >
                   {isRefining ? (
@@ -1238,7 +1238,7 @@ export default function PeopleManager() {
                     }
                   }}
                   disabled={isImportingXmp}
-                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isImportingXmp ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+                  className={`ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border bg-background text-muted-foreground border-border/70 hover:border-purple-400/50 hover:text-foreground hover:bg-purple-50/30 dark:hover:bg-purple-900/10 ${isImportingXmp ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
                 >
                   {isImportingXmp ? (
                     <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing...</>
@@ -3791,7 +3791,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                       <button
                         onClick={(e) => { e.stopPropagation(); onImproveOne(); }}
                         disabled={isImprovingOne}
-                        className={`p-1.5 rounded-lg border border-purple-300/50 bg-background hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors ${isImprovingOne ? 'opacity-60 cursor-wait' : ''}`}
+                        className={`p-1.5 rounded-lg border border-purple-300/50 bg-background hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors ${isImprovingOne ? 'opacity-70 cursor-wait' : ''}`}
                       >
                         {isImprovingOne ? <Loader2 className="w-3.5 h-3.5 text-purple-500 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-purple-500" />}
                       </button>

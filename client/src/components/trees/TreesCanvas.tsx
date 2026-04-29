@@ -2204,7 +2204,7 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
                 key={p.id}
                 className={`group flex items-center gap-1 px-2 py-1.5 rounded text-sm ${
                   isSelected ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
-                } ${busy ? 'opacity-50' : ''}`}
+                } ${busy ? 'opacity-70' : ''}`}
               >
                 <button
                   onClick={() => !busy && setSelectedLinkId(p.id)}

@@ -2195,7 +2195,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                         }
                                       };
                                       return (
-                                        <div key={p.id} className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-colors ${coCount === 0 ? 'opacity-40' : ''}`}>
+                                        <div key={p.id} className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-colors ${coCount === 0 ? 'opacity-70' : ''}`}>
                                           <span className="text-sm text-foreground flex-1 truncate">{p.name}</span>
                                           {/* Single-person count — click to toggle in OR set */}
                                           <button

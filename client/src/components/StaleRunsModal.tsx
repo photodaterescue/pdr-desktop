@@ -165,7 +165,7 @@ export default function StaleRunsModal({ isOpen, onClose, staleRuns, onResolved 
                     key={run.id}
                     className={`p-4 rounded-xl border-2 transition-all ${
                       state.action === 'relocated' ? 'border-green-500/30 bg-green-50/50 dark:bg-green-900/10' :
-                      state.action === 'removed' ? 'border-border bg-secondary/20 opacity-60' :
+                      state.action === 'removed' ? 'border-border bg-secondary/20 opacity-70' :
                       state.action === 'error' ? 'border-red-500/30 bg-red-50/50 dark:bg-red-900/10' :
                       'border-amber-500/30 bg-amber-50/30 dark:bg-amber-900/10'
                     }`}

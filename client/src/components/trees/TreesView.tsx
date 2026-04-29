@@ -90,8 +90,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // When both are ON, a person must satisfy BOTH criteria (intersection)
   // to be shown — the two filters compose rather than replace each other.
   // When both are OFF, only the focus person is visible.
+  // Steps and Generations are now always-on (toggle UI removed) —
+  // the user adjusts via +/− only. The enabled flags stay true
+  // permanently; they remain in saved-tree records for backwards
+  // compatibility but are forced true on load.
+  //
+  // The numeric values mean exactly what they look like:
+  //   • Steps = N  → people within N hops from focus
+  //   • Generations = X/Y → X generations above + Y below
+  //   • Steps = 0 or Generations 0/0 → only the focus person
+  //   • To "see everyone" the user cranks to max (Steps 6, Gens 5/5)
   const [stepsEnabled, setStepsEnabled] = useState(true);
-  const [generationsEnabled, setGenerationsEnabled] = useState(false);
+  const [generationsEnabled, setGenerationsEnabled] = useState(true);
   const [ancestorsDepth, setAncestorsDepth] = useState(2);
   const [descendantsDepth, setDescendantsDepth] = useState(2);
   const [allPersons, setAllPersons] = useState<PersonSummary[]>([]);
@@ -194,11 +204,15 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       applyingTreeRef.current = true;
       setCurrentTreeId(activate.id);
       if (activate.focusPersonId != null) setFocusPersonId(activate.focusPersonId);
-      setStepsEnabled(activate.stepsEnabled);
-      setExpandedHops(activate.stepsDepth);
-      setGenerationsEnabled(activate.generationsEnabled);
-      setAncestorsDepth(activate.ancestorsDepth);
-      setDescendantsDepth(activate.descendantsDepth);
+      // Toggle UI was removed — force enabled=true on load. Saved
+      // trees that previously stored stepsEnabled=false load as
+      // expandedHops=0 (only focus); same for generationsEnabled=false
+      // mapping to 0/0. The user can crank +/− to expand from there.
+      setStepsEnabled(true);
+      setExpandedHops(activate.stepsEnabled ? activate.stepsDepth : 0);
+      setGenerationsEnabled(true);
+      setAncestorsDepth(activate.generationsEnabled ? activate.ancestorsDepth : 0);
+      setDescendantsDepth(activate.generationsEnabled ? activate.descendantsDepth : 0);
       // Mark as opened so it stays top of the list.
       updateSavedTree(activate.id, { markOpened: true });
       // Release the suppression after one tick so setters settle.
@@ -462,6 +476,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     visible.add(focusPersonId);
     // Apply filters: intersection when both on, single when one on,
     // nothing extra when both off (focus-only).
+    // Always-on filters with intuitive semantics:
+    //   • Steps = 0 → only focus visible (0 hops out)
+    //   • Generations 0/0 → only focus visible (gen offset 0)
+    //   • Either filter at higher value → that many hops/generations
+    // The enabled flags are kept always-true now that the toggle UI
+    // is gone — see the useState block above.
     if (stepsEnabled || generationsEnabled) {
       for (const n of graph.nodes) {
         const passesSteps = !stepsEnabled ? true : n.hopsFromFocus <= expandedHops;
@@ -813,11 +833,15 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     applyingTreeRef.current = true;
     setCurrentTreeId(tree.id);
     if (tree.focusPersonId != null) setFocusPersonId(tree.focusPersonId);
-    setStepsEnabled(tree.stepsEnabled);
-    setExpandedHops(tree.stepsDepth);
-    setGenerationsEnabled(tree.generationsEnabled);
-    setAncestorsDepth(tree.ancestorsDepth);
-    setDescendantsDepth(tree.descendantsDepth);
+    // Always-on filters (toggle UI gone). See top-of-file equivalent
+    // load path for the same translation: stepsEnabled=false →
+    // expandedHops=0 (no constraint), generationsEnabled=false →
+    // ancestorsDepth=0 + descendantsDepth=0.
+    setStepsEnabled(true);
+    setExpandedHops(tree.stepsEnabled ? tree.stepsDepth : 0);
+    setGenerationsEnabled(true);
+    setAncestorsDepth(tree.generationsEnabled ? tree.ancestorsDepth : 0);
+    setDescendantsDepth(tree.generationsEnabled ? tree.descendantsDepth : 0);
     updateSavedTree(tree.id, { markOpened: true });
     setManageTreesOpen(false);
     setTimeout(() => { applyingTreeRef.current = false; }, 0);
@@ -1184,43 +1208,29 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             {/* Steps filter — toggle + +/- stepper. Styled as a clear
                 CTA pill: solid primary background when active, subtle
                 outline when off. */}
-            <FilterPill
-              label="Steps"
-              active={stepsEnabled}
-              onToggle={() => setStepsEnabled(v => !v)}
-            >
+            <FilterPill label="Steps">
               <NumberStepper
                 value={expandedHops}
                 onChange={setExpandedHops}
-                min={1}
+                min={0}
                 max={6}
-                disabled={!stepsEnabled}
               />
             </FilterPill>
-            {/* Generations filter — same look as Steps, but with two
-                steppers (ancestors / descendants). No ↑/↓ arrows —
-                Terry finds the extra chrome distracting. */}
-            <FilterPill
-              label="Generations"
-              active={generationsEnabled}
-              onToggle={() => setGenerationsEnabled(v => !v)}
-            >
+            <FilterPill label="Generations">
               <div className="inline-flex items-center gap-1.5">
                 <NumberStepper
                   value={ancestorsDepth}
                   onChange={setAncestorsDepth}
                   min={0}
                   max={5}
-                  disabled={!generationsEnabled}
                   layout="stacked"
                 />
-                <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/70'}`}>/</span>
+                <span className="text-xs text-muted-foreground">/</span>
                 <NumberStepper
                   value={descendantsDepth}
                   onChange={setDescendantsDepth}
                   min={0}
                   max={5}
-                  disabled={!generationsEnabled}
                   layout="stacked"
                 />
               </div>
@@ -1614,31 +1624,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
  *  off state looks muted but still clearly clickable. Matches the
  *  'Change focus' button's look so the three header controls read as a
  *  consistent row of actions, not a mix of labels and inputs. */
-function FilterPill({ label, active, onToggle, children }: {
-  label: string; active: boolean; onToggle: () => void; children: React.ReactNode;
+function FilterPill({ label, children }: {
+  label: string; children: React.ReactNode;
 }) {
-  // Both states use lavender chrome — active = full chip, inactive
-  // = same chip with reduced fill but the same border family. Keeps
-  // Steps and Generations visually paired in the toolbar regardless
-  // of which is currently toggled, so the user reads "two related
-  // filters, one on, one off" rather than "two unrelated controls."
+  // The label is now a non-interactive caption — only the +/−
+  // steppers inside are buttons. Previously the label itself was a
+  // toggle button which was (a) visually ambiguous with the +/−
+  // next to it, and (b) had different active/inactive colour
+  // states that made paired Steps/Generations look like two
+  // unrelated controls when one was on and the other off. Now the
+  // chrome is fixed; "off" is just a value (Steps=0 or
+  // Generations 0/0 = "no constraint" via the filter logic above).
   return (
-    <div
-      className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border transition-colors ${
-        active
-          ? 'bg-primary/10 border-primary/40'
-          : 'bg-primary/5 border-primary/30'
-      }`}
-    >
-      <button
-        onClick={onToggle}
-        aria-pressed={active}
-        className={`px-2 py-0.5 rounded text-sm font-medium transition-colors ${
-          active ? 'text-primary' : 'text-primary/70 hover:bg-accent'
-        }`}
-      >
-        {label}
-      </button>
+    <div className="inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border bg-primary/10 border-primary/40">
+      <span className="px-2 py-0.5 text-sm font-medium text-primary select-none">{label}</span>
       {children}
     </div>
   );
@@ -2227,7 +2226,7 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                     key={p.id}
                     className={`group flex items-center gap-1 px-2 py-1 rounded text-sm ${
                       p.id === currentFocusId ? 'bg-primary/15 text-primary font-medium' : 'hover:bg-accent'
-                    } ${busy ? 'opacity-50' : ''}`}
+                    } ${busy ? 'opacity-70' : ''}`}
                   >
                     <button
                       onClick={() => !busy && onPick(p.id)}

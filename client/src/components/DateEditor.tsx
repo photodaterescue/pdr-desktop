@@ -418,7 +418,7 @@ export default function DateEditor() {
                     <img src={bigPreview} alt={selected.filename} className="max-w-full max-h-[62vh] object-contain block" />
                   ) : (
                     <div className="w-[480px] h-[320px] flex items-center justify-center text-muted-foreground/70">
-                      <Search className="w-8 h-8 opacity-40" />
+                      <Search className="w-8 h-8 opacity-70" />
                     </div>
                   )}
                 </div>
