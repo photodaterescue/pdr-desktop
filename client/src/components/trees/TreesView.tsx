@@ -1205,13 +1205,14 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               active={generationsEnabled}
               onToggle={() => setGenerationsEnabled(v => !v)}
             >
-              <div className="inline-flex items-center gap-1">
+              <div className="inline-flex items-center gap-1.5">
                 <NumberStepper
                   value={ancestorsDepth}
                   onChange={setAncestorsDepth}
                   min={0}
                   max={5}
                   disabled={!generationsEnabled}
+                  layout="stacked"
                 />
                 <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>/</span>
                 <NumberStepper
@@ -1220,6 +1221,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   min={0}
                   max={5}
                   disabled={!generationsEnabled}
+                  layout="stacked"
                 />
               </div>
             </FilterPill>
@@ -1640,12 +1642,46 @@ function FilterPill({ label, active, onToggle, children }: {
 /** Compact stepper control — two buttons (−/+) around a centered number.
  *  Replaces a native <select> where quick small adjustments matter.
  *  When disabled, the whole control dims but stays rendered so the
- *  header layout doesn't shift when the parent toggle flips. */
-function NumberStepper({ value, onChange, min, max, disabled }: {
-  value: number; onChange: (n: number) => void; min: number; max: number; disabled?: boolean;
+ *  header layout doesn't shift when the parent toggle flips.
+ *
+ *  Two layouts:
+ *    horizontal (default) — `[−] 2 [+]`, used standalone (Steps).
+ *    stacked — `[+]` over `[−]` next to the number, used when two
+ *              steppers sit side-by-side (Generations) and the
+ *              horizontal width would otherwise blow up the
+ *              toolbar. Same hit-targets, half the width. */
+function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizontal' }: {
+  value: number; onChange: (n: number) => void; min: number; max: number; disabled?: boolean; layout?: 'horizontal' | 'stacked';
 }) {
   const dec = () => !disabled && onChange(Math.max(min, value - 1));
   const inc = () => !disabled && onChange(Math.min(max, value + 1));
+  if (layout === 'stacked') {
+    return (
+      <div className={`inline-flex items-center gap-1 text-xs ${disabled ? 'opacity-40' : ''}`}>
+        <span className="w-4 text-center font-mono tabular-nums leading-none">{value}</span>
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={inc}
+            disabled={disabled || value >= max}
+            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40 leading-none text-[10px]"
+            aria-label="Increase"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={dec}
+            disabled={disabled || value <= min}
+            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40 leading-none text-[10px]"
+            aria-label="Decrease"
+          >
+            −
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`inline-flex items-center text-xs ${disabled ? 'opacity-40' : ''}`}>
       <button
