@@ -4111,7 +4111,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                 <Eye className="w-3.5 h-3.5" />{isShowingChecked && totalFiles && totalFiles > 1 ? `Open ${totalFiles} in Viewer` : 'Open in Viewer'}
               </button>
             )}
-            {onOpenInExplorer && <button onClick={onOpenInExplorer} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"><FolderOpen className="w-3.5 h-3.5" />Show in Folder</button>}
+            {onOpenInExplorer && <button onClick={onOpenInExplorer} data-pdr-variant="information" className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all" style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}><FolderOpen className="w-3.5 h-3.5" />Show in Folder</button>}
           </div>
         )}
 
@@ -5805,11 +5805,11 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onCl
                         </div>
                         <div className="flex gap-1.5 pt-1 border-t border-border">
                           <button onClick={() => handleReassign(face.face_id, '__unsure__')}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-xs font-medium transition-colors">
+                            data-pdr-variant="information" className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors" style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}>
                             <HelpCircle className="w-3 h-3" /> Unsure
                           </button>
                           <button onClick={() => handleReassign(face.face_id, '__unnamed__')}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs font-medium transition-colors">
+                            data-pdr-variant="caution" className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors" style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}>
                             <Users className="w-3 h-3" /> Unnamed
                           </button>
                           <button onClick={() => handleReassign(face.face_id, '__ignored__')}
@@ -6217,11 +6217,11 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                       </div>
                       <div className="flex gap-1.5 pt-1 border-t border-border">
                         <button onClick={() => handleReassign('__unsure__')}
-                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-xs font-medium transition-colors">
+                          data-pdr-variant="information" className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors" style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}>
                           <HelpCircle className="w-3 h-3" /> Unsure
                         </button>
                         <button onClick={() => { if (reassignFaceId && onReassignFace) { onReassignFace(reassignFaceId, '__unnamed__'); setReassignFaceId(null); setReassignName(''); } }}
-                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs font-medium transition-colors">
+                          data-pdr-variant="caution" className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors" style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}>
                           <Users className="w-3 h-3" /> Unnamed
                         </button>
                         <button onClick={() => handleReassign('__ignored__')}
