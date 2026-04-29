@@ -565,7 +565,9 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
       <div className="shrink-0 px-6 py-4 border-b border-border/60 flex items-center gap-3">
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+          data-pdr-variant="information"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors"
+          style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
         >
           <ChevronLeft className="w-4 h-4" /> Back to timeline
         </button>

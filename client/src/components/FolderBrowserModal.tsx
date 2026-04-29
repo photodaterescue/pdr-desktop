@@ -892,7 +892,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                           return (
                             <div
                               key={dest}
-                              className="flex items-center gap-3 p-3 rounded-xl bg-card border border-primary/20 hover:border-primary/40 hover:bg-primary/5 transition-all group cursor-pointer"
+                              className="flex items-center gap-3 p-3 rounded-xl bg-card border border-primary/60 hover:border-primary hover:bg-primary/10 transition-all group cursor-pointer"
                               onClick={() => {
                                 setSelectedPath(dest);
                                 navigateTo(dest);
