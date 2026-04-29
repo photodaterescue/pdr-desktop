@@ -304,16 +304,24 @@ function ShowcaseCard({ accent, icon, title, description }: { accent: AppAccent;
   const a = APP_ACCENT[accent];
   return (
     <Card
-      className="flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden"
+      className="flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden text-left"
       style={{ borderColor: '#e5e7eb', borderTopWidth: '3px', borderTopColor: a.topBar, borderTopStyle: 'solid' }}
     >
-      <div className="flex items-center gap-2.5 mb-2">
-        <div className="p-1.5 rounded-md flex items-center justify-center" style={{ backgroundColor: a.iconBg, color: a.iconFg }}>
+      {/* Icon + title row.
+          • items-start so the icon stays anchored to the FIRST line of
+            the title when the title wraps (Search & Discovery), instead
+            of vertically-centering between two wrapped lines and
+            visually drifting downward.
+          • min-h on the title block keeps the description's vertical
+            position consistent across all five cards regardless of
+            whether the title is one or two lines. */}
+      <div className="flex items-start gap-2.5 mb-2 min-h-[3.5rem]">
+        <div className="p-1.5 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: a.iconBg, color: a.iconFg }}>
           {icon}
         </div>
-        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+        <h4 className="text-sm font-semibold text-foreground text-left leading-tight pt-0.5">{title}</h4>
       </div>
-      <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
+      <p className="text-xs text-muted-foreground leading-relaxed text-left">{description}</p>
     </Card>
   );
 }
