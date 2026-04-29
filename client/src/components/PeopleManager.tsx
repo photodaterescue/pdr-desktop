@@ -1261,7 +1261,7 @@ export default function PeopleManager() {
 
         <div className="flex flex-col items-center flex-1 mx-4 max-w-[260px]">
           <div className="flex items-center gap-2 mb-0.5 h-[14px]">
-            <span className="text-xs text-foreground/60 font-semibold uppercase tracking-wider">Match</span>
+            <span className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Match</span>
             {isReclustering && (
               <span className="inline-flex items-center gap-1 text-[11px] text-purple-500">
                 <Loader2 className="w-2.5 h-2.5 animate-spin" />
@@ -1818,9 +1818,13 @@ export default function PeopleManager() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/30 dark:border-blue-800/20 mb-4">
-                      <HelpCircle className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                      <p className="text-sm text-muted-foreground leading-relaxed">
+                    <div
+                      className="flex items-start gap-3 p-3 rounded-xl mb-4"
+                      style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', borderWidth: '1px', borderStyle: 'solid' }}
+                      data-pdr-variant="information"
+                    >
+                      <HelpCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#1e3a8a' }} />
+                      <p className="text-sm leading-relaxed" style={{ color: '#1e3a8a' }}>
                         These are faces you weren't sure about. Click to name them, or move them to Ignored if you'll never know.
                       </p>
                     </div>
@@ -1882,8 +1886,8 @@ export default function PeopleManager() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50/50 dark:bg-slate-900/20 border border-slate-200/30 dark:border-slate-700/20 mb-4">
-                      <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-secondary/30 border border-border mb-4">
+                      <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                       <p className="text-sm text-muted-foreground leading-relaxed">
                         These faces have been ignored. You can restore them back to Unnamed, or delete them permanently.
                       </p>
@@ -2170,8 +2174,15 @@ export default function PeopleManager() {
                 the right person even though the short name is
                 ambiguous. */}
             {fullNameCandidates.length > 1 && (
-              <div className="mt-1 rounded-lg border border-amber-300/60 bg-amber-50/40 dark:bg-amber-950/20 overflow-hidden">
-                <div className="px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400/85 border-b border-amber-300/40">
+              <div
+                className="mt-1 rounded-lg overflow-hidden"
+                style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', borderWidth: '1px', borderStyle: 'solid' }}
+                data-pdr-variant="caution"
+              >
+                <div
+                  className="px-2.5 py-1.5 text-[10px] uppercase tracking-wider"
+                  style={{ color: '#78350f', borderBottomColor: '#f59e0b', borderBottomWidth: '1px', borderBottomStyle: 'solid' }}
+                >
                   Multiple {globalReassignName.trim() || implicitShortName}s — pick one
                 </div>
                 {fullNameCandidates.map(({ person, similarity }) => {
@@ -2255,7 +2266,10 @@ export default function PeopleManager() {
                   if (targets.length === 0) return;
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalReassignFullName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unsure__', false, i < targets.length - 1); })();
-                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm font-medium transition-colors">
+                }}
+                data-pdr-variant="information"
+                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors">
                   <HelpCircle className="w-3 h-3" /> Unsure
                 </button>
               )}
@@ -2265,7 +2279,10 @@ export default function PeopleManager() {
                   if (targets.length === 0) return;
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalReassignFullName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__unnamed__', false, i < targets.length - 1); })();
-                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-medium transition-colors">
+                }}
+                data-pdr-variant="caution"
+                style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors">
                   <Users className="w-3 h-3" /> Unnamed
                 </button>
               )}
@@ -2275,7 +2292,7 @@ export default function PeopleManager() {
                   if (targets.length === 0) return;
                   setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalReassignFullName(''); setGlobalSelectedFaces(new Set());
                   (async () => { for (let i = 0; i < targets.length; i++) await handleReassignFace(targets[i], '__ignored__', false, i < targets.length - 1); })();
-                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-sm font-medium transition-colors">
+                }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-foreground text-sm font-medium transition-colors">
                   <UserX className="w-3 h-3" /> Ignore
                 </button>
               )}
@@ -2292,7 +2309,9 @@ export default function PeopleManager() {
                     await handleSetRepresentative(ownerCluster.person_id!, faceId);
                     setGlobalReassignFaceId(null); setGlobalReassignName(''); setGlobalReassignFullName(''); setGlobalSelectedFaces(new Set());
                   }}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium transition-colors"
+                  data-pdr-variant="success"
+                  style={{ backgroundColor: '#d1fae5', borderColor: '#10b981', color: '#064e3b', borderWidth: '1px', borderStyle: 'solid' }}
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
                 >
                   <ImageIcon className="w-3 h-3" /> Set as main photo
                 </button>
@@ -2932,19 +2951,23 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                   <div className="flex gap-1.5 pt-1 border-t border-border">
                     <button
                       onClick={() => handleBatchAction('__unsure__', false)}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-300/50 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm font-medium transition-colors"
+                      data-pdr-variant="information"
+                      style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
                     >
                       <HelpCircle className="w-3 h-3" /> Unsure
                     </button>
                     <button
                       onClick={() => handleBatchAction('__unnamed__', false)}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300/50 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-medium transition-colors"
+                      data-pdr-variant="caution"
+                      style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
                     >
                       <Users className="w-3 h-3" /> Unnamed
                     </button>
                     <button
                       onClick={() => handleBatchAction('__ignored__', false)}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-300/50 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/30 text-sm font-medium transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-border bg-background hover:bg-secondary text-foreground text-sm font-medium transition-colors"
                     >
                       <UserX className="w-3 h-3" /> Ignore
                     </button>
@@ -2958,7 +2981,9 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                         await onSetRepresentative(id);
                         setSelectedFaceIds(new Set());
                       }}
-                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium transition-colors"
+                      data-pdr-variant="success"
+                      style={{ backgroundColor: '#d1fae5', borderColor: '#10b981', color: '#064e3b', borderWidth: '1px', borderStyle: 'solid' }}
+                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
                     >
                       <ImageIcon className="w-3 h-3" /> Set as main photo
                     </button>
