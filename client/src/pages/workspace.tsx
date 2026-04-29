@@ -455,6 +455,12 @@ const handleActivateLicense = () => {
     const saved = localStorage.getItem('pdr-folder-structure');
     return (saved as 'year' | 'year-month' | 'year-month-day') || 'year';
   });
+  // Subtle pulse on the collapsed-sidebar burger icon, to teach
+  // first-time users where to click to re-open the side menu.
+  // Defaults to enabled; user can disable via Settings → General.
+  const [burgerPulseDisabled, setBurgerPulseDisabled] = useState(() => {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('pdr-burger-pulse-disabled') === 'true';
+  });
   const [playSound, setPlaySound] = useState(() => {
     const saved = localStorage.getItem('pdr-completion-sound');
     return saved !== 'false'; // Default to true
@@ -1467,6 +1473,7 @@ return (
 		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
 		  searchResultsActive={searchResultsActive}
 		  onOpenPeople={handleOpenPeople}
+		  burgerPulseDisabled={burgerPulseDisabled}
 		/>
       {/* Right-side content area: ribbon + panels */}
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
@@ -1668,6 +1675,11 @@ return (
 			setPlaySound(value);
 			localStorage.setItem('pdr-completion-sound', value ? 'true' : 'false');
 		  }}
+		  burgerPulseDisabled={burgerPulseDisabled}
+		  onBurgerPulseChange={(disabled) => {
+			setBurgerPulseDisabled(disabled);
+			localStorage.setItem('pdr-burger-pulse-disabled', disabled ? 'true' : 'false');
+		  }}
 		/>
       )}
 	        
@@ -1829,7 +1841,7 @@ return (
 
 type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, burgerPulseDisabled = false }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, burgerPulseDisabled?: boolean }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -2042,6 +2054,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               setTempExpanded(true);
             }}
             className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+            style={!burgerPulseDisabled ? { animation: 'outline-pulse 2.4s ease-in-out infinite' } : undefined}
           >
             <Menu className="w-4 h-4" />
           </button>
@@ -7952,13 +7965,15 @@ export function setSkipWelcomeScreen(skip: boolean): void {
   }
 }
 
-function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange }: {
+function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange, burgerPulseDisabled, onBurgerPulseChange }: {
   initialTab?: 'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup',
   onClose: () => void,
   folderStructure: 'year' | 'year-month' | 'year-month-day',
   onFolderStructureChange: (value: 'year' | 'year-month' | 'year-month-day') => void,
   playSound: boolean,
-  onPlaySoundChange: (value: boolean) => void
+  onPlaySoundChange: (value: boolean) => void,
+  burgerPulseDisabled: boolean,
+  onBurgerPulseChange: (disabled: boolean) => void
 }) {
   // Gate destructive engine operations (Re-cluster) when a Fix is
   // running anywhere — same broadcast-driven flag the rest of PDR
@@ -8420,6 +8435,21 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     checked={playSound}
                     onCheckedChange={(checked) => onPlaySoundChange(!!checked)}
                     data-testid="checkbox-completion-sound"
+                  />
+                </label>
+              </div>
+
+              {/* Sidebar burger pulse */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Pulse the sidebar burger when collapsed</span>
+                    <span className="text-xs text-muted-foreground">A subtle pulse on the menu icon helps first-time users find how to re-open the side menu. Turn off once you're used to it.</span>
+                  </div>
+                  <Checkbox
+                    checked={!burgerPulseDisabled}
+                    onCheckedChange={(checked) => onBurgerPulseChange(!checked)}
+                    data-testid="checkbox-burger-pulse"
                   />
                 </label>
               </div>
