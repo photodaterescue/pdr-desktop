@@ -1218,20 +1218,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               />
             </FilterPill>
             <FilterPill label="Generations">
-              {/* L (lower / descendants) on left, H (higher /
-                  ancestors) on right — matches Terry's spatial
-                  intuition. Each is a dropdown of 0–5 with a
-                  Custom… escape hatch for users who legitimately
-                  need deeper trees (royal families, deep
-                  historical research). No hard cap. */}
+              {/* D (descendants) on left, A (ancestors) on right —
+                  matches Terry's spatial intuition (younger below,
+                  older above). Each is a dropdown of 0–10 with
+                  type-any-number + "Add 10 more" for users who
+                  legitimately need deeper trees (royal families,
+                  deep historical research). No hard cap. */}
               <div className="inline-flex items-center gap-1.5">
                 <GenerationDropdown
-                  label="L"
+                  label="D"
                   value={descendantsDepth}
                   onChange={setDescendantsDepth}
                 />
                 <GenerationDropdown
-                  label="H"
+                  label="A"
                   value={ancestorsDepth}
                   onChange={setAncestorsDepth}
                 />
@@ -1725,7 +1725,7 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
  *  it out. This version puts every option in one always-visible
  *  pane. */
 function GenerationDropdown({ label, value, onChange }: {
-  label: 'L' | 'H';
+  label: 'D' | 'A';
   value: number;
   onChange: (n: number) => void;
 }) {
@@ -1744,21 +1744,26 @@ function GenerationDropdown({ label, value, onChange }: {
     }
   };
 
+  // The Ancestors (A) pill sits at the right edge of the toolbar; align
+  // its popover to the trigger's end so it doesn't overflow the window.
+  // The Descendants (D) pill sits further left, so start-align is fine.
+  const popoverAlign: 'start' | 'end' = label === 'A' ? 'end' : 'start';
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
-          aria-label={`${label === 'L' ? 'Lower (descendants)' : 'Higher (ancestors)'} generations: ${value}`}
+          aria-label={`${label === 'D' ? 'Descendants' : 'Ancestors'} generations: ${value}`}
         >
           <span className="text-[10px] font-semibold text-muted-foreground tracking-wide">{label}</span>
           <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
           <ChevronDown className="w-3 h-3 text-muted-foreground" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-3" align="start">
+      <PopoverContent className="w-56 p-3" align={popoverAlign} collisionPadding={12}>
         <p className="text-[10px] font-semibold text-muted-foreground tracking-wide mb-1.5 uppercase">
-          {label === 'L' ? 'Descendants' : 'Ancestors'}
+          {label === 'D' ? 'Descendants' : 'Ancestors'}
         </p>
         {/* 0-10 grid — clicking any of these SETS the value directly,
             so it doubles as the "reduce" path (currently at 200?
