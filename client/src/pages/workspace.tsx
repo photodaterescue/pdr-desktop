@@ -1535,8 +1535,13 @@ return (
             callbacks live inside DashboardPanel, and unmounting
             mid-fix would break the progress tracking + lose the
             completion screen. The PanelPlaceholder simply overlays
-            on top when activePanel is set. */}
-        <div>
+            on top when activePanel is set.
+            `h-full flex flex-col` re-establishes the flex/height
+            chain that EmptyState relies on for vertical centering;
+            without it, EmptyState's `flex-1 h-full` collapse and
+            "Your workspace is empty" anchors to the top instead of
+            centring on screen. */}
+        <div className="h-full flex flex-col">
           <MainContent
             sources={isTourPreview ? [tourPlaceholderSource] : sources}
             activeSource={activeSource}
