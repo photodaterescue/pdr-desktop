@@ -2963,11 +2963,17 @@ function DashboardPanel({
               </div>
             </div>
             
+            {/* Photos / Videos filter toggles. These are NOT status
+                indicators — they're "include in Fix" selections. So
+                the active state is brand-lavender (matches the
+                primary CTA family) rather than emerald (which is
+                reserved for "this is in a verified/correct state":
+                CONFIRMED, Analysis complete, Required-X-GB pills). */}
             <div className="flex items-center gap-2">
               <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium cursor-pointer transition-all duration-150 select-none ${
                 includePhotos
-                  ? 'border-emerald-300/60 bg-emerald-50/40 text-emerald-700 dark:border-emerald-600/40 dark:bg-emerald-900/20 dark:text-emerald-300'
-                  : 'border-border bg-muted/30 text-muted-foreground'
+                  ? 'border-primary/70 bg-primary/10 text-primary dark:border-primary/60 dark:bg-primary/15 dark:text-primary'
+                  : 'border-border bg-muted/30 text-muted-foreground hover:bg-muted/50'
               }`}>
                 <Checkbox
                   checked={includePhotos}
@@ -2979,8 +2985,8 @@ function DashboardPanel({
               </label>
               <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium cursor-pointer transition-all duration-150 select-none ${
                 includeVideos
-                  ? 'border-emerald-300/60 bg-emerald-50/40 text-emerald-700 dark:border-emerald-600/40 dark:bg-emerald-900/20 dark:text-emerald-300'
-                  : 'border-border bg-muted/30 text-muted-foreground'
+                  ? 'border-primary/70 bg-primary/10 text-primary dark:border-primary/60 dark:bg-primary/15 dark:text-primary'
+                  : 'border-border bg-muted/30 text-muted-foreground hover:bg-muted/50'
               }`}>
                 <Checkbox
                   checked={includeVideos}

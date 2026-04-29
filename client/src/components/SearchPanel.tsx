@@ -3053,7 +3053,9 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 <button
                   onClick={() => openDateEditor(query)}
                   disabled={results.total === 0}
-                  className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-primary border border-primary/30 hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  data-pdr-variant="information"
+                  className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
                 >
                   <Calendar className="w-3.5 h-3.5" />
                   {selectedFiles.size > 0
