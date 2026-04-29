@@ -510,7 +510,7 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                         <span>{line}</span>
                       </p>
                     ))}
-                    <p className="text-[10px] text-muted-foreground/50 mt-1 italic">
+                    <p className="text-[10px] text-muted-foreground/70 mt-1 italic">
                       Based on available space and drive type only.
                     </p>
                   </div>

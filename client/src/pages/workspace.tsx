@@ -2474,7 +2474,7 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
     <div
       className={`group relative w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
         disabled
-          ? 'text-muted-foreground/50 cursor-not-allowed'
+          ? 'text-muted-foreground/70 cursor-not-allowed'
           : active
             ? 'text-secondary-foreground font-medium bg-sidebar-accent/50 hover:bg-primary/15'
             : 'text-sidebar-foreground hover:bg-primary/10 hover:text-foreground'
@@ -2500,7 +2500,7 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
         <span className="truncate">{label}</span>
       </div>
       {locked && (
-        <Lock className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary transition-colors flex-shrink-0 pointer-events-none" />
+        <Lock className="w-3 h-3 text-muted-foreground/70 group-hover:text-primary transition-colors flex-shrink-0 pointer-events-none" />
       )}
     </div>
   );
@@ -5775,7 +5775,7 @@ function ReportsListModal({ onClose, onViewReport }: {
             </div>
           ) : reports.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center px-6">
-              <FileText className="w-12 h-12 text-muted-foreground/40 mb-4" />
+              <FileText className="w-12 h-12 text-muted-foreground/70 mb-4" />
               <h3 className="text-lg font-medium text-foreground mb-2">No reports yet</h3>
               <p className="text-muted-foreground text-sm max-w-sm mb-2">
                 Run your first Fix to generate a report history.
@@ -9353,7 +9353,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         }}
                         spellCheck={false}
                         autoCorrect="off"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                         placeholder="Optional name…"
                         maxLength={60}
                       />

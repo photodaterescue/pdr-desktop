@@ -1214,7 +1214,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   disabled={!generationsEnabled}
                   layout="stacked"
                 />
-                <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>/</span>
+                <span className={`text-xs ${generationsEnabled ? 'text-muted-foreground' : 'text-muted-foreground/70'}`}>/</span>
                 <NumberStepper
                   value={descendantsDepth}
                   onChange={setDescendantsDepth}
@@ -1664,7 +1664,7 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
             type="button"
             onClick={inc}
             disabled={disabled || value >= max}
-            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40 leading-none text-[10px]"
+            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70 leading-none text-[10px]"
             aria-label="Increase"
           >
             +
@@ -1673,7 +1673,7 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
             type="button"
             onClick={dec}
             disabled={disabled || value <= min}
-            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40 leading-none text-[10px]"
+            className="w-4 h-3 flex items-center justify-center rounded-sm hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70 leading-none text-[10px]"
             aria-label="Decrease"
           >
             −
@@ -1688,7 +1688,7 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
         type="button"
         onClick={dec}
         disabled={disabled || value <= min}
-        className="w-5 h-5 flex items-center justify-center rounded hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40"
+        className="w-5 h-5 flex items-center justify-center rounded hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70"
         aria-label="Decrease"
       >
         −
@@ -1698,7 +1698,7 @@ function NumberStepper({ value, onChange, min, max, disabled, layout = 'horizont
         type="button"
         onClick={inc}
         disabled={disabled || value >= max}
-        className="w-5 h-5 flex items-center justify-center rounded hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/40"
+        className="w-5 h-5 flex items-center justify-center rounded hover:bg-accent disabled:hover:bg-transparent disabled:text-muted-foreground/70"
         aria-label="Increase"
       >
         +

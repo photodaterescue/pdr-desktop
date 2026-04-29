@@ -631,7 +631,7 @@ function PersonRow({
           className={`p-1 rounded shrink-0 transition-colors ${
             isFocus
               ? 'text-amber-600 dark:text-amber-400 cursor-default'
-              : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-primary/10 focus:opacity-100'
+              : 'text-muted-foreground/70 opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-primary/10 focus:opacity-100'
           }`}
           aria-label={isFocus ? `${person.name} — current focus` : `Make ${person.name} the focus`}
         >
@@ -665,10 +665,10 @@ function PersonRow({
 /** Miniature native-SVG gender glyph — same shapes as the card badge,
  *  scaled to fit a 16x16 inline slot. */
 function GenderGlyph({ gender }: { gender: string | null }) {
-  if (!gender) return <span className="text-muted-foreground/50 text-xs">—</span>;
+  if (!gender) return <span className="text-muted-foreground/70 text-xs">—</span>;
   const showArrow = gender === 'male' || gender === 'non_binary';
   const showCross = gender === 'female' || gender === 'non_binary';
-  if (!showArrow && !showCross) return <span className="text-muted-foreground/50 text-xs">—</span>;
+  if (!showArrow && !showCross) return <span className="text-muted-foreground/70 text-xs">—</span>;
   const isNB = gender === 'non_binary';
   const cx = 8 + (isNB ? 0 : (showArrow ? -1 : 0));
   const cy = 8 + (isNB ? 0 : (showArrow ? 1 : -1));

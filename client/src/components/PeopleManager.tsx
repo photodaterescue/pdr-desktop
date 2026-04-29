@@ -1387,7 +1387,7 @@ export default function PeopleManager() {
                 value={searchFilter}
                 onChange={e => setSearchFilter(e.target.value)}
                 placeholder="Filter..."
-                className="pl-8 pr-3 py-1 text-sm rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 w-[120px] focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                className="pl-8 pr-3 py-1 text-sm rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 w-[120px] focus:outline-none focus:ring-1 focus:ring-purple-400/50"
               />
               {searchFilter && (
                 <button onClick={() => setSearchFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -2080,7 +2080,7 @@ export default function PeopleManager() {
                         }
                       }}
                       placeholder={panelImplicitName ? `Verify as ${panelImplicitName}` : 'Type person name...'}
-                      className="w-full text-base px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                      className="w-full text-base px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                       autoFocus
                       spellCheck={false}
                       autoCorrect="off"
@@ -2158,7 +2158,7 @@ export default function PeopleManager() {
                 }
               }}
               placeholder={fullPlaceholder}
-              className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+              className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="words"
@@ -2546,7 +2546,7 @@ function DiscardConfirmModal({ personName, photoCount, verifiedCount, selectedFa
               onChange={(e) => setTyped(e.target.value)}
               spellCheck={false}
               autoCorrect="off"
-              className={`w-full px-2.5 py-1.5 rounded-lg border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50 transition-colors ${
+              className={`w-full px-2.5 py-1.5 rounded-lg border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50 transition-colors ${
                 typed.length > 0 && !isMatch ? 'border-red-300/70 focus:ring-red-400/50' : 'border-border'
               }`}
               placeholder={personName}
@@ -2781,7 +2781,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                               isSelected ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-background'
                               : face.verified ? verifiedBorder : ''
                             }`}>
-                              <Users className="w-4 h-4 text-muted-foreground/40" />
+                              <Users className="w-4 h-4 text-muted-foreground/70" />
                             </div>
                           )}
                           {isSelected && (
@@ -2895,7 +2895,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                       }
                     }}
                     placeholder={implicitShortName ? `Verify as ${implicitShortName}` : 'Type person name...'}
-                    className="w-full text-base px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                    className="w-full text-base px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                     spellCheck={false}
                     autoCorrect="off"
                     autoCapitalize="words"
@@ -2906,7 +2906,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                     value={reassignFullName}
                     onChange={(e) => setReassignFullName(e.target.value)}
                     placeholder={(!userDiverged && implicitFullName) ? implicitFullName : 'Full name — optional'}
-                    className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                    className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                     spellCheck={false}
                     autoCorrect="off"
                     autoCapitalize="words"
@@ -3473,7 +3473,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                         }
                       }}
                       placeholder="Name (short) — e.g. Terry"
-                      className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
+                      className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/70 pb-0.5 min-w-0"
                       autoFocus
                       spellCheck={false}
                       autoCorrect="off"
@@ -3497,7 +3497,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                       if (e.key === 'Enter') { e.preventDefault(); if (nameInput.trim()) onSubmit(); }
                     }}
                     placeholder="Name (full) — e.g. Terry John Filmer Clapson (optional)"
-                    className="text-sm bg-transparent border-b border-border outline-none text-foreground/80 placeholder:text-muted-foreground/40 pb-0.5"
+                    className="text-sm bg-transparent border-b border-border outline-none text-foreground/80 placeholder:text-muted-foreground/70 pb-0.5"
                     spellCheck={false}
                     autoCorrect="off"
                     autoCapitalize="words"
@@ -3642,7 +3642,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                                     ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
                                     : face.verified ? verifiedBorder : ''
                                 }`}>
-                                  <Users className="w-3.5 h-3.5 text-muted-foreground/40" />
+                                  <Users className="w-3.5 h-3.5 text-muted-foreground/70" />
                                 </div>
                               )}
                               {selectedFaces.has(face.face_id) && (
@@ -3977,7 +3977,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
             <div className="flex items-center gap-1.5">
               <input ref={inputRef} type="text" value={nameInput} onChange={(e) => onNameChange(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } }}
-                placeholder="Name (short) — e.g. Terry" className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0" autoFocus
+                placeholder="Name (short) — e.g. Terry" className="flex-1 text-base bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/70 pb-0.5 min-w-0" autoFocus
                 spellCheck={false} autoCorrect="off" autoCapitalize="words" />
               <Tooltip><TooltipTrigger asChild>
                 <button type="submit" className="p-1 rounded hover:bg-purple-200/50 dark:hover:bg-purple-800/30"><Check className="w-3.5 h-3.5 text-purple-500" /></button>
@@ -3992,7 +3992,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                 if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
                 if (e.key === 'Enter') { e.preventDefault(); if (nameInput.trim()) onSubmit(); }
               }}
-              placeholder="Name (full) — optional, used in Trees" className="text-sm bg-transparent border-b border-border outline-none text-foreground/80 placeholder:text-muted-foreground/40 pb-0.5"
+              placeholder="Name (full) — optional, used in Trees" className="text-sm bg-transparent border-b border-border outline-none text-foreground/80 placeholder:text-muted-foreground/70 pb-0.5"
               spellCheck={false} autoCorrect="off" autoCapitalize="words" />
           </form>
         ) : (

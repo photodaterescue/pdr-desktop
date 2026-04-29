@@ -1303,7 +1303,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <div className="flex items-center justify-center flex-1 py-4 px-6">
                     <div className="text-center">
                       <Star className="w-6 h-6 text-foreground/20 mx-auto mb-2" />
-                      <p className="text-sm text-foreground/50 font-medium">No favourite filters yet</p>
+                      <p className="text-sm text-foreground/70 font-medium">No favourite filters yet</p>
                       <p className="text-xs text-muted-foreground mt-1">Click the <Star className="w-3 h-3 inline text-amber-500" /> star on any filter group in the other tabs to add it here (max {MAX_FAVOURITE_GROUPS})</p>
                     </div>
                   </div>
@@ -1313,7 +1313,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 <RibbonGroup label="Search">
                   <div className="flex items-center gap-2 flex-1 py-1.5">
                     <div className="relative min-w-[170px] max-w-[280px] flex-1" data-tour="sd-search-box">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/70" />
                       <input
                         ref={searchInputRef}
                         type="text"
@@ -1354,7 +1354,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           }
                         }}
                         disabled={!dbReady}
-                        className={`w-full pl-10 pr-8 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all ${!dbReady ? 'placeholder:text-foreground/50 placeholder:font-medium opacity-80' : 'placeholder:text-muted-foreground disabled:opacity-50'}`}
+                        className={`w-full pl-10 pr-8 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all ${!dbReady ? 'placeholder:text-foreground/70 placeholder:font-medium opacity-80' : 'placeholder:text-muted-foreground disabled:opacity-50'}`}
                       />
                       {searchText && (
                         <button onClick={() => { setSearchText(''); setShowSearchSuggestions(false); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -1496,7 +1496,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             activeLabel={selectedExtension.filter(e => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(e.toLowerCase())).map(e => e.toUpperCase()).join(', ') || undefined}>
                             {filterOptions?.extensions.filter(ext => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(ext.toLowerCase())).length === 0 && <p className="text-sm text-muted-foreground italic p-2">No photo formats found</p>}
                             <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
-                              <span className="text-[10px] font-semibold text-foreground/50 uppercase">Photo Formats</span>
+                              <span className="text-[10px] font-semibold text-foreground/70 uppercase">Photo Formats</span>
                               <button onClick={() => {
                                 const photoExts = filterOptions?.extensions.filter(ext => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(ext.toLowerCase())) || [];
                                 const allSelected = photoExts.every(ext => selectedExtension.includes(ext));
@@ -1524,7 +1524,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             activeLabel={selectedExtension.filter(e => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(e.toLowerCase())).map(e => e.toUpperCase()).join(', ') || undefined}>
                             {filterOptions?.extensions.filter(ext => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(ext.toLowerCase())).length === 0 && <p className="text-sm text-muted-foreground italic p-2">No video formats found</p>}
                             <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
-                              <span className="text-[10px] font-semibold text-foreground/50 uppercase">Video Formats</span>
+                              <span className="text-[10px] font-semibold text-foreground/70 uppercase">Video Formats</span>
                               <button onClick={() => {
                                 const videoExts = filterOptions?.extensions.filter(ext => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(ext.toLowerCase())) || [];
                                 const allSelected = videoExts.every(ext => selectedExtension.includes(ext));
@@ -1572,7 +1572,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Camera" onExpand={() => setOverflowModalGroup('camera')} groupId="camera" isFavourited={isGroupFavourited('camera')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1">
-                        <Camera className="w-[16px] h-[16px] text-foreground/50 shrink-0" />
+                        <Camera className="w-[16px] h-[16px] text-foreground/70 shrink-0" />
                         <div className="flex flex-col gap-0.5">
                           <FilterDropdown label="Make" active={selectedCameraMake.length > 0} selectedValues={selectedCameraMake}>
                             {filterOptions?.cameraMakes.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No camera data</p>}
@@ -2085,7 +2085,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                         value={peopleFilterSearch}
                                         onChange={(e) => setPeopleFilterSearch(e.target.value)}
                                         placeholder="Search people..."
-                                        className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                                        className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                                       />
                                     </div>
                                     {/* Sort toggle */}
@@ -2325,7 +2325,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                   value={tagsFilterSearch}
                                   onChange={(e) => setTagsFilterSearch(e.target.value)}
                                   placeholder="Search tags..."
-                                  className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                                  className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                                   autoFocus
                                 />
                               </div>
@@ -2580,8 +2580,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <IconTooltip label={sortDir === 'asc' ? 'Ascending' : 'Descending'} side="bottom">
                         <button onClick={() => setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
                           className="flex flex-col items-center justify-center px-1.5 border-l border-border hover:bg-secondary/60 transition-colors h-full py-0.5">
-                          <ChevronUp className={`w-3 h-3 ${sortDir === 'asc' ? 'text-foreground' : 'text-muted-foreground/40'}`} />
-                          <ChevronDown className={`w-3 h-3 -mt-1 ${sortDir === 'desc' ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+                          <ChevronUp className={`w-3 h-3 ${sortDir === 'asc' ? 'text-foreground' : 'text-muted-foreground/70'}`} />
+                          <ChevronDown className={`w-3 h-3 -mt-1 ${sortDir === 'desc' ? 'text-foreground' : 'text-muted-foreground/70'}`} />
                         </button>
                       </IconTooltip>
                     </div>
@@ -2638,8 +2638,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {/* Saved filter presets strip */}
               {favourites.length > 0 && (
                 <div className="px-4 py-1.5 border-t flex items-center gap-2 flex-wrap ribbon-group-border">
-                  <Bookmark className="w-4 h-4 text-foreground/40 shrink-0" />
-                  <span className="text-[10px] text-foreground/40 font-medium uppercase tracking-wider shrink-0">Saved:</span>
+                  <Bookmark className="w-4 h-4 text-foreground/70 shrink-0" />
+                  <span className="text-[10px] text-foreground/70 font-medium uppercase tracking-wider shrink-0">Saved:</span>
                   {favourites.map(fav => (
                     <button key={fav.id} onClick={() => applyFavourite(fav)} className="group flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/40 bg-primary/5 text-xs text-primary font-medium hover:bg-primary/10 transition-all">
                       <Bookmark className="w-3 h-3 fill-primary" />
@@ -2693,7 +2693,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     ))}
                   </div>
                   <div>
-                    <h4 className="text-xs font-semibold text-foreground/50 uppercase tracking-wider mb-2">Photo Formats</h4>
+                    <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wider mb-2">Photo Formats</h4>
                     <div className="flex flex-wrap gap-1.5">
                       {filterOptions?.extensions.filter(ext => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(ext.toLowerCase())).map(ext => (
                         <button key={ext} onClick={() => toggleFilter(selectedExtension, setSelectedExtension, ext)} className={`px-3 py-1.5 rounded-md border text-xs transition-all ${selectedExtension.includes(ext) ? 'text-primary border-primary/50 bg-primary/10 font-medium' : 'border-border text-foreground/70 hover:bg-secondary'}`}>{ext.toUpperCase()}</button>
@@ -2701,7 +2701,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     </div>
                   </div>
                   <div>
-                    <h4 className="text-xs font-semibold text-foreground/50 uppercase tracking-wider mb-2">Video Formats</h4>
+                    <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wider mb-2">Video Formats</h4>
                     <div className="flex flex-wrap gap-1.5">
                       {filterOptions?.extensions.filter(ext => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(ext.toLowerCase())).map(ext => (
                         <button key={ext} onClick={() => toggleFilter(selectedExtension, setSelectedExtension, ext)} className={`px-3 py-1.5 rounded-md border text-xs transition-all ${selectedExtension.includes(ext) ? 'text-primary border-primary/50 bg-primary/10 font-medium' : 'border-border text-foreground/70 hover:bg-secondary'}`}>{ext.toUpperCase()}</button>
@@ -2787,7 +2787,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {overflowModalGroup === 'iso' && (
                 <div className="flex items-center gap-3">
                   <input type="number" placeholder="Min ISO" value={isoFrom ?? ''} onChange={e => setIsoFrom(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
-                  <span className="text-foreground/40">–</span>
+                  <span className="text-foreground/70">–</span>
                   <input type="number" placeholder="Max ISO" value={isoTo ?? ''} onChange={e => setIsoTo(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
                 </div>
               )}
@@ -2797,7 +2797,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <label className="text-xs font-medium text-foreground/60">Min f/</label>
                     <input type="number" step="0.1" placeholder="e.g. 1.4" value={apertureFrom ?? ''} onChange={e => setApertureFrom(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
                   </div>
-                  <span className="text-foreground/40 mt-5">–</span>
+                  <span className="text-foreground/70 mt-5">–</span>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-foreground/60">Max f/</label>
                     <input type="number" step="0.1" placeholder="e.g. 22" value={apertureTo ?? ''} onChange={e => setApertureTo(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
@@ -2810,7 +2810,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <label className="text-xs font-medium text-foreground/60">Min mm</label>
                     <input type="number" placeholder="e.g. 24" value={focalLengthFrom ?? ''} onChange={e => setFocalLengthFrom(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
                   </div>
-                  <span className="text-foreground/40 mt-5">–</span>
+                  <span className="text-foreground/70 mt-5">–</span>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-foreground/60">Max mm</label>
                     <input type="number" placeholder="e.g. 200" value={focalLengthTo ?? ''} onChange={e => setFocalLengthTo(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
@@ -2828,7 +2828,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {overflowModalGroup === 'megapixels' && (
                 <div className="flex items-center gap-3">
                   <input type="number" step="0.1" placeholder="Min MP" value={megapixelsFrom ?? ''} onChange={e => setMegapixelsFrom(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
-                  <span className="text-foreground/40">–</span>
+                  <span className="text-foreground/70">–</span>
                   <input type="number" step="0.1" placeholder="Max MP" value={megapixelsTo ?? ''} onChange={e => setMegapixelsTo(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
                 </div>
               )}
@@ -2838,7 +2838,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <label className="text-xs font-medium text-foreground/60">Min (MB)</label>
                     <input type="number" step="0.1" placeholder="e.g. 1" value={sizeFromMB ?? ''} onChange={e => setSizeFromMB(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
                   </div>
-                  <span className="text-foreground/40 mt-5">–</span>
+                  <span className="text-foreground/70 mt-5">–</span>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-foreground/60">Max (MB)</label>
                     <input type="number" step="0.1" placeholder="e.g. 50" value={sizeToMB ?? ''} onChange={e => setSizeToMB(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
@@ -2892,7 +2892,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               { tab: 'exposure', label: 'Exposure' },
             ] as { tab: Exclude<RibbonTab, 'favourites'>; label: string }[]).map(cat => (
               <div key={cat.tab} className="mb-3">
-                <h4 className="text-xs font-semibold text-foreground/50 uppercase tracking-wider mb-1 px-3">{cat.label}</h4>
+                <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wider mb-1 px-3">{cat.label}</h4>
                 <div className="space-y-0.5">
                   {allFilterGroups.filter(g => tabGroups[cat.tab].includes(g.id)).map(group => (
                     <label key={group.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-secondary/50 cursor-pointer transition-colors">
@@ -2977,7 +2977,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
            targets a set they consciously scoped. */}
       {searchActive && !results && !hasActiveFilters && !searchText.trim() && (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
-          <Filter className="w-10 h-10 text-muted-foreground/40" />
+          <Filter className="w-10 h-10 text-muted-foreground/70" />
           <div>
             <h3 className="text-base font-semibold text-foreground">Pick a filter to see photos</h3>
             <p className="text-sm text-muted-foreground mt-1 max-w-md">
@@ -3341,7 +3341,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             <div className="w-10 h-10 rounded-lg bg-secondary/40 overflow-hidden shrink-0 flex items-center justify-center">
                               {thumbnails[file.file_path]
                                 ? <img src={thumbnails[file.file_path]} alt="" className="w-full h-full object-cover" />
-                                : file.file_type === 'video' ? <Film className="w-5 h-5 text-muted-foreground/40" /> : <ImageIcon className="w-5 h-5 text-muted-foreground/40" />}
+                                : file.file_type === 'video' ? <Film className="w-5 h-5 text-muted-foreground/70" /> : <ImageIcon className="w-5 h-5 text-muted-foreground/70" />}
                             </div>
                             <span className="text-sm text-foreground truncate flex-1 min-w-0">{file.filename}</span>
                             <span className="text-xs text-muted-foreground shrink-0">{file.derived_date ? new Date(file.derived_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
@@ -3378,7 +3378,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                   <div className="w-6 h-6 rounded bg-secondary/40 overflow-hidden flex items-center justify-center">
                                     {thumbnails[file.file_path]
                                       ? <img src={thumbnails[file.file_path]} alt="" className="w-full h-full object-cover" />
-                                      : file.file_type === 'video' ? <Film className="w-3 h-3 text-muted-foreground/40" /> : <ImageIcon className="w-3 h-3 text-muted-foreground/40" />}
+                                      : file.file_type === 'video' ? <Film className="w-3 h-3 text-muted-foreground/70" /> : <ImageIcon className="w-3 h-3 text-muted-foreground/70" />}
                                   </div>
                                 </td>
                                 <td className="py-1.5 px-2 text-foreground truncate max-w-[250px]">{file.filename}</td>
@@ -3440,7 +3440,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           ) : (
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center max-w-sm">
-                <Search className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
+                <Search className="w-8 h-8 text-muted-foreground/70 mx-auto mb-3" />
                 <h3 className="text-base font-semibold text-foreground mb-1">No matches</h3>
                 <p className="text-sm text-muted-foreground">Try adjusting your search or filters.</p>
                 <button onClick={clearFilters} className="mt-3 text-sm text-primary hover:text-primary/80 transition-colors">Clear all filters</button>
@@ -3504,7 +3504,7 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
         <span className="text-[10px] text-foreground/60 text-center font-semibold uppercase tracking-wider">{label}</span>
         {onExpand && (
           <IconTooltip label={`Open ${label} panel`} side="top">
-            <button onClick={onExpand} className="p-0 leading-none text-foreground/40 hover:text-foreground/70 transition-colors">
+            <button onClick={onExpand} className="p-0 leading-none text-foreground/70 hover:text-foreground/70 transition-colors">
               <ExternalLink className="w-2.5 h-2.5" />
             </button>
           </IconTooltip>
@@ -4043,7 +4043,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                             }
                           }}
                           placeholder="Type a name..."
-                          className="w-full text-xs bg-transparent border-b border-purple-300 dark:border-purple-600 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5"
+                          className="w-full text-xs bg-transparent border-b border-purple-300 dark:border-purple-600 outline-none text-foreground placeholder:text-muted-foreground/70 pb-0.5"
                           autoFocus
                         />
                         {/* Person suggestions dropdown — shows all existing persons, filtered by input */}
@@ -4176,7 +4176,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
                             }
                           }}
                           placeholder="Type a name..."
-                          className="flex-1 text-xs bg-transparent border-b border-purple-300 dark:border-purple-600 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
+                          className="flex-1 text-xs bg-transparent border-b border-purple-300 dark:border-purple-600 outline-none text-foreground placeholder:text-muted-foreground/70 pb-0.5 min-w-0"
                           autoFocus
                         />
                         <IconTooltip label="Save name" side="top">
@@ -4785,7 +4785,7 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
                   ))}</div>
                 )}
                 {!allowIndexRemoval && runs.length > 0 && (
-                  <p className="text-[10px] text-muted-foreground/50 mt-2 flex items-center gap-1">
+                  <p className="text-[10px] text-muted-foreground/70 mt-2 flex items-center gap-1">
                     <Info className="w-3 h-3 shrink-0" />
                     To remove a destination from the library, enable removal in the Pro tab under Settings.
                   </p>
@@ -5241,7 +5241,7 @@ function PeopleManagerModal({ onClose, onRefresh }: { onClose: () => void; onRef
                     value={searchFilter}
                     onChange={e => setSearchFilter(e.target.value)}
                     placeholder="Filter..."
-                    className="pl-8 pr-3 py-1 text-xs rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 w-[120px] focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                    className="pl-8 pr-3 py-1 text-xs rounded-md border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 w-[120px] focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                   />
                   {searchFilter && (
                     <button onClick={() => setSearchFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -5750,7 +5750,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onCl
                           <img src={faceCrops[face.face_id]} alt="" className={`w-full aspect-square rounded-lg object-cover hover:ring-2 hover:ring-purple-400/50 transition-all ${face.verified ? 'border-2 border-orange-400' : 'border border-border/50'}`} />
                         ) : (
                           <div className={`w-full aspect-square rounded-lg bg-secondary flex items-center justify-center ${face.verified ? 'border-2 border-orange-400' : ''}`}>
-                            <Users className="w-4 h-4 text-muted-foreground/40" />
+                            <Users className="w-4 h-4 text-muted-foreground/70" />
                           </div>
                         )}
                         {/* Confidence indicator */}
@@ -5778,7 +5778,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onCl
                           onChange={(e) => setReassignName(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter' && reassignName.trim()) handleReassign(face.face_id, reassignName); if (e.key === 'Escape') { setReassignFaceId(null); setReassignName(''); } }}
                           placeholder="Type person name..."
-                          className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                          className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                           autoFocus
                         />
                         {reassignSuggestions.length > 0 && (
@@ -6076,7 +6076,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                       }
                     }}
                     placeholder="Type a name..."
-                    className="flex-1 text-sm bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0"
+                    className="flex-1 text-sm bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/70 pb-0.5 min-w-0"
                     autoFocus
                   />
                   <Tooltip><TooltipTrigger asChild>
@@ -6142,7 +6142,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                               />
                             ) : (
                               <div className={`w-10 h-10 rounded-full bg-secondary flex items-center justify-center cursor-pointer ${face.verified ? 'border-2 border-orange-400' : ''}`}>
-                                <Users className="w-3.5 h-3.5 text-muted-foreground/40" />
+                                <Users className="w-3.5 h-3.5 text-muted-foreground/70" />
                               </div>
                             )}
                           </div>
@@ -6190,7 +6190,7 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
                           }
                         }}
                         placeholder="Type person name..."
-                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                         autoFocus
                       />
                       {reassignSuggestions.length > 0 && (
@@ -6398,7 +6398,7 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, on
           <form onSubmit={(e) => { e.preventDefault(); if (nameInput.trim()) onSubmit(); }} className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <input ref={inputRef} type="text" value={nameInput} onChange={(e) => onNameChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } }}
-              placeholder="Type a name..." className="flex-1 text-sm bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/50 pb-0.5 min-w-0" autoFocus />
+              placeholder="Type a name..." className="flex-1 text-sm bg-transparent border-b-2 border-purple-400 outline-none text-foreground placeholder:text-muted-foreground/70 pb-0.5 min-w-0" autoFocus />
             <Tooltip><TooltipTrigger asChild>
               <button type="submit" className="p-1 rounded hover:bg-purple-200/50 dark:hover:bg-purple-800/30"><Check className="w-3.5 h-3.5 text-purple-500" /></button>
             </TooltipTrigger><TooltipContent>Save</TooltipContent></Tooltip>

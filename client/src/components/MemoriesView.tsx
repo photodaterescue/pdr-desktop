@@ -296,7 +296,7 @@ export default function MemoriesView() {
                       {thumbs[item.file_path] ? (
                         <img src={thumbs[item.file_path]} alt={item.filename} className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground/40">
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
                           {item.file_type === 'video' ? <Film className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
                         </div>
                       )}
@@ -430,7 +430,7 @@ function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBuc
       {thumb ? (
         <img src={thumb} alt={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year}`} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105" />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/40">
+        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/70">
           <ImageIcon className="w-8 h-8" />
         </div>
       )}
@@ -660,7 +660,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
                   {thumbs[f.file_path] ? (
                     <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/40">
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
                       {f.file_type === 'video' ? <Film className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
                     </div>
                   )}

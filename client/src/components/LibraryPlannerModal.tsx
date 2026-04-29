@@ -237,7 +237,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                           <div className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}>
                             {preset.label}
                           </div>
-                          <div className="text-[11px] text-foreground/50">{preset.sublabel}</div>
+                          <div className="text-[11px] text-foreground/70">{preset.sublabel}</div>
                         </div>
                       </button>
                     );
@@ -297,7 +297,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                           <div className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}>
                             {option.label}
                           </div>
-                          <div className="text-[11px] text-foreground/50 mt-0.5">{option.sublabel}</div>
+                          <div className="text-[11px] text-foreground/70 mt-0.5">{option.sublabel}</div>
                         </div>
                       </button>
                     );
@@ -338,7 +338,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                             );
                           })}
                         </div>
-                        <p className="text-xs text-foreground/50 mt-2">
+                        <p className="text-xs text-foreground/70 mt-2">
                           On the next screen, these will be highlighted in green. Choose one as your permanent library destination.
                         </p>
                       </div>
@@ -465,7 +465,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                 )}
 
                 {/* You can still continue */}
-                <p className="text-[11px] text-foreground/40 leading-relaxed">
+                <p className="text-[11px] text-foreground/70 leading-relaxed">
                   {analysis.hasGoodOption
                     ? 'You\'re in a great position. Press Continue to choose your destination.'
                     : 'You can still continue and select a destination — this is guidance, not a blocker. But being aware now saves frustration later.'
@@ -481,7 +481,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
               {step > 1 && (
                 <button
                   onClick={() => setStep((step - 1) as 1 | 2)}
-                  className="text-xs text-foreground/50 hover:text-foreground transition-colors"
+                  className="text-xs text-foreground/70 hover:text-foreground transition-colors"
                 >
                   ← Back
                 </button>

@@ -736,7 +736,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                   </button>
                   {breadcrumbs.map((crumb, i) => (
                     <React.Fragment key={crumb.path}>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground/50 shrink-0" />
+                      <ChevronRight className="w-4 h-4 text-muted-foreground/70 shrink-0" />
                       <button
                         onClick={(e) => { e.stopPropagation(); navigateTo(crumb.path); }}
                         className={`text-sm shrink-0 transition-colors px-1.5 py-0.5 rounded ${
@@ -1199,7 +1199,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                                   className="object-cover w-full h-full"
                                 />
                               ) : (
-                                <Image className="w-6 h-6 text-muted-foreground/40" />
+                                <Image className="w-6 h-6 text-muted-foreground/70" />
                               )}
                             </div>
                             <span className="text-xs text-muted-foreground truncate w-full text-center leading-tight">
@@ -1215,7 +1215,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                       {sortedEntries.filter(e => e.isImage).map(entry => (
                         <IconTooltip key={entry.path} label={entry.name} side="top">
                           <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-secondary/30 transition-colors">
-                            <Image className="w-4 h-4 text-muted-foreground/50 shrink-0" />
+                            <Image className="w-4 h-4 text-muted-foreground/70 shrink-0" />
                             <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
                             {entry.sizeBytes > 0 && (
                               <span className="text-xs text-muted-foreground shrink-0">
@@ -1260,7 +1260,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                               <tr key={entry.path} className="border-b border-border/30 hover:bg-secondary/30 transition-colors">
                                 <td className="py-1.5 px-3 truncate max-w-[300px]">
                                   <div className="flex items-center gap-2">
-                                    <Image className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                                    <Image className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
                                     <span className="truncate">{entry.name}</span>
                                   </div>
                                 </td>
@@ -1538,7 +1538,7 @@ function TreeNodeItem({ node, depth, currentPath, onToggle, onSelect }: {
         >
           {node.hasSubfolders
             ? <FolderOpen className={`w-4 h-4 shrink-0 ${isActive ? 'text-primary' : 'text-foreground/70'}`} />
-            : <Folder className={`w-4 h-4 shrink-0 ${isActive ? 'text-primary' : 'text-foreground/50'}`} />
+            : <Folder className={`w-4 h-4 shrink-0 ${isActive ? 'text-primary' : 'text-foreground/70'}`} />
           }
           <span className="text-sm truncate">{node.name}</span>
         </button>

@@ -364,7 +364,7 @@ export default function DateEditor() {
                     {thumb ? (
                       <img src={thumb} className="w-full h-full object-cover" alt={f.filename} />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground/40">
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
                         <Icon className="w-5 h-5" />
                       </div>
                     )}
@@ -417,7 +417,7 @@ export default function DateEditor() {
                   {bigPreview ? (
                     <img src={bigPreview} alt={selected.filename} className="max-w-full max-h-[62vh] object-contain block" />
                   ) : (
-                    <div className="w-[480px] h-[320px] flex items-center justify-center text-muted-foreground/50">
+                    <div className="w-[480px] h-[320px] flex items-center justify-center text-muted-foreground/70">
                       <Search className="w-8 h-8 opacity-40" />
                     </div>
                   )}
