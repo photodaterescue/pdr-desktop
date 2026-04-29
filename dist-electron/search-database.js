@@ -529,6 +529,16 @@ export function initDatabase() {
         db.exec(`DELETE FROM ai_processing_status WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
         db.exec(`DELETE FROM face_detections WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
         db.exec(`DELETE FROM ai_tags WHERE file_id NOT IN (SELECT id FROM indexed_files)`);
+        // Clean up "Set as main photo" overrides whose underlying face row
+        // was just deleted above (or by any past re-detection run that
+        // happened before this safeguard existed). Catches the historic
+        // breakage Terry hit where his chosen main photo silently changed.
+        db.exec(`
+      UPDATE persons
+      SET representative_face_id = NULL
+      WHERE representative_face_id IS NOT NULL
+        AND representative_face_id NOT IN (SELECT id FROM face_detections)
+    `);
         // FTS5 integrity check — contentless virtual tables can drift out of
         // sync with their source tables if rows are deleted directly. If the
         // index is corrupt, rebuild it from ai_tags + face_detections.
@@ -1457,6 +1467,11 @@ export function markAiProcessed(fileId, task, modelVer) {
 export function clearUnverifiedFacesForFile(fileId) {
     const database = getDb();
     const result = database.prepare(`DELETE FROM face_detections WHERE file_id = ? AND verified = 0`).run(fileId);
+    // If any of the rows we just dropped was a person's chosen main
+    // photo, the override is now a dangling pointer — clear it so the
+    // renderer doesn't silently fall back to a different photo.
+    if (result.changes > 0)
+        clearOrphanedRepresentativeFaces();
     return result.changes;
 }
 /**
@@ -1483,6 +1498,9 @@ export function deduplicateFaceDetections() {
   `).run();
     if (result.changes > 0) {
         console.warn(`[DB] Removed ${result.changes} duplicate face_detection row(s)`);
+        // A dedup pass can drop a row that was somebody's chosen main
+        // photo. Clear any override that no longer points at a real face.
+        clearOrphanedRepresentativeFaces();
     }
     return result.changes;
 }
@@ -1756,13 +1774,45 @@ export function setPersonRepresentativeFace(personId, faceId) {
     const database = getDb();
     database.prepare(`UPDATE persons SET representative_face_id = ? WHERE id = ?`).run(faceId, personId);
 }
+/**
+ * Clear `persons.representative_face_id` on any person whose chosen
+ * face row has been physically deleted (re-detection rebuilt the
+ * face_detections table, dedup removed a duplicate, or the source file
+ * was unindexed). Without this, the renderer silently falls back to
+ * the highest-confidence face — which is exactly what the user thought
+ * they had OVERRIDDEN by clicking "Set as main photo".
+ *
+ * Deliberately ignores the case where the face row still exists but
+ * has been reassigned to a different person — that's the user's own
+ * action (reassign-out / unlink) and the fallback is the right
+ * behaviour there.
+ *
+ * Returns the number of stale overrides cleared.
+ */
+export function clearOrphanedRepresentativeFaces() {
+    const database = getDb();
+    const result = database.prepare(`
+    UPDATE persons
+    SET representative_face_id = NULL
+    WHERE representative_face_id IS NOT NULL
+      AND representative_face_id NOT IN (SELECT id FROM face_detections)
+  `).run();
+    return result.changes;
+}
 export function verifyFace(faceId) {
     const database = getDb();
     database.prepare(`UPDATE face_detections SET verified = 1 WHERE id = ?`).run(faceId);
 }
 /** Get all faces for a person or unnamed cluster, paginated, sorted by confidence ASC (lowest first) */
-export function getClusterFaces(clusterId, page = 0, perPage = 40, personId) {
+export function getClusterFaces(clusterId, page = 0, perPage = 40, personId, sortMode = 'confidence-asc') {
     const database = getDb();
+    // Sort clauses mirror what getPersonClusters' getOrderedSampleFaces
+    // does for the row thumbnails — same data, same order. NULL-date
+    // faces go to the end in chronological mode so a missing date
+    // doesn't masquerade as the oldest. Confidence ASC is the tiebreaker.
+    const orderClause = sortMode === 'chronological'
+        ? `ORDER BY (f.derived_date IS NULL) ASC, f.derived_date ASC, fd.confidence ASC`
+        : `ORDER BY fd.confidence ASC`;
     // If personId is provided, query by person (handles reassigned faces correctly)
     if (personId) {
         const total = database.prepare(`SELECT COUNT(*) as cnt FROM face_detections WHERE person_id = ?`).get(personId).cnt;
@@ -1771,7 +1821,7 @@ export function getClusterFaces(clusterId, page = 0, perPage = 40, personId) {
       FROM face_detections fd
       INNER JOIN indexed_files f ON fd.file_id = f.id
       WHERE fd.person_id = ?
-      ORDER BY fd.confidence ASC
+      ${orderClause}
       LIMIT ? OFFSET ?
     `).all(personId, perPage, page * perPage);
         return { faces, total, page, perPage, totalPages: Math.ceil(total / perPage) };
@@ -1783,7 +1833,7 @@ export function getClusterFaces(clusterId, page = 0, perPage = 40, personId) {
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
     WHERE fd.cluster_id = ? AND fd.person_id IS NULL
-    ORDER BY fd.confidence ASC
+    ${orderClause}
     LIMIT ? OFFSET ?
   `).all(clusterId, perPage, page * perPage);
     return { faces, total, page, perPage, totalPages: Math.ceil(total / perPage) };

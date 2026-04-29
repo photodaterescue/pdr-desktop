@@ -2639,29 +2639,63 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
     return 'border-2 border-purple-400/70'; // Named (real name)
   })();
 
+  // Match the row's order: real Named persons get chronological
+  // (oldest first), pseudo-persons (__unsure__/__ignored__) and
+  // unnamed clusters get confidence-asc. Mirrors getOrderedSampleFaces
+  // in search-database.ts so both surfaces show the same faces in
+  // the same positions — what the user clicked is what they see.
+  const isRealNamed = !!cluster.person_name && !cluster.person_name.startsWith('__');
+  const sortMode: 'chronological' | 'confidence-asc' = isRealNamed ? 'chronological' : 'confidence-asc';
+  const sortDescription = sortMode === 'chronological' ? 'oldest first' : 'lowest confidence first';
+
   const loadPage = async (p: number) => {
     setIsLoading(true);
-    const result = await getClusterFaces(cluster.cluster_id, p, PER_PAGE, cluster.person_id ?? undefined);
+    const result = await getClusterFaces(cluster.cluster_id, p, PER_PAGE, cluster.person_id ?? undefined, sortMode);
     if (result.success && result.data) {
       setData(result.data);
-      const crops: Record<number, string> = {};
-      await Promise.all(result.data.faces.map(async (face) => {
-        const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 96);
-        if (crop.success && crop.dataUrl) crops[face.face_id] = crop.dataUrl;
-      }));
-      setFaceCrops(prev => ({ ...prev, ...crops }));
+      // Drop the loading overlay as soon as the metadata's back so
+      // the grid renders empty squares immediately. Crops then
+      // arrive per-face — no more "blank for 2 seconds while all 40
+      // load in parallel" feel.
+      setIsLoading(false);
+      for (const face of result.data.faces) {
+        getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 96).then(crop => {
+          if (crop.success && crop.dataUrl) {
+            setFaceCrops(prev => ({ ...prev, [face.face_id]: crop.dataUrl as string }));
+          }
+        });
+      }
+      return;
     }
     setIsLoading(false);
   };
 
   useEffect(() => { loadPage(0); }, []);
 
+  // Esc closes the modal — the X in the corner can be missed during
+  // a re-render and "click harder" is not a UX. Esc is a reliable
+  // out for users who report the X feels flaky.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   // Apply an action to ALL currently-selected faces. Wraps multiple
   // single-face calls so onReassignFace's existing contract still
   // holds. After success: clears selection + reloads the page so
   // newly-verified faces re-render with their purple ring.
+  // For Verify (verified=true on the cluster's own name) we filter
+  // out already-verified faces — re-running verify on them is a
+  // no-op at the DB level but it makes the UI feel like it did
+  // something when it didn't, and it lets users select a "Verify N"
+  // count that includes faces already verified.
   const handleBatchAction = async (name: string, verified: boolean) => {
-    const ids = Array.from(selectedFaceIds);
+    let ids = Array.from(selectedFaceIds);
+    if (verified && data) {
+      const verifiedIds = new Set(data.faces.filter(f => f.verified).map(f => f.face_id));
+      ids = ids.filter(id => !verifiedIds.has(id));
+    }
     if (ids.length === 0 || !name.trim()) return;
     for (const id of ids) await onReassignFace(id, name.trim(), verified);
     setSelectedFaceIds(new Set());
@@ -2669,6 +2703,18 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
     setReassignFullName('');
     await loadPage(page);
   };
+
+  // How many of the currently-selected faces would actually be
+  // verified by clicking Verify (excludes already-verified). Drives
+  // the button label and disabled state so the user always sees
+  // exactly how many faces this click will change.
+  const unverifiedSelectedCount = (() => {
+    if (!data) return selectedFaceIds.size;
+    const verifiedIds = new Set(data.faces.filter(f => f.verified).map(f => f.face_id));
+    let n = 0;
+    for (const id of selectedFaceIds) if (!verifiedIds.has(id)) n++;
+    return n;
+  })();
 
   // Implicit name = the cluster's own name. Pre-populates placeholder
   // so the user doesn't have to type "Mel" to verify Mel's own faces.
@@ -2721,7 +2767,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                   <p className="text-sm text-muted-foreground truncate">{cluster.person_full_name}</p>
                 )}
                 <p className="text-xs text-muted-foreground/85 mt-0.5">
-                  {cluster.face_count} face{cluster.face_count === 1 ? '' : 's'} across {cluster.photo_count} photo{cluster.photo_count === 1 ? '' : 's'} · sorted by confidence (lowest first)
+                  {cluster.face_count} face{cluster.face_count === 1 ? '' : 's'} across {cluster.photo_count} photo{cluster.photo_count === 1 ? '' : 's'} · {sortDescription}
                 </p>
               </div>
             </div>
@@ -2936,12 +2982,15 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                   <div className="flex gap-1.5">
                     <button
                       onClick={() => handleBatchAction(effectiveShortName, true)}
-                      disabled={!effectiveShortName}
+                      disabled={!effectiveShortName || unverifiedSelectedCount === 0}
                       className={`flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors ${
-                        effectiveShortName ? 'animate-pulse-cta ring-2 ring-purple-300/60 ring-offset-1 ring-offset-background' : ''
+                        effectiveShortName && unverifiedSelectedCount > 0 ? 'animate-pulse-cta ring-2 ring-purple-300/60 ring-offset-1 ring-offset-background' : ''
                       }`}
+                      title={unverifiedSelectedCount === 0 ? 'All selected faces are already verified.' : undefined}
                     >
-                      Verify{selectedFaceIds.size > 1 ? ` (${selectedFaceIds.size})` : ''}
+                      {unverifiedSelectedCount === 0
+                        ? 'Already verified'
+                        : `Verify${unverifiedSelectedCount > 1 ? ` (${unverifiedSelectedCount})` : ''}`}
                     </button>
                     <button
                       onClick={() => { setSelectedFaceIds(new Set()); setReassignName(''); setReassignFullName(''); }}
@@ -3192,7 +3241,19 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
         setTimeout(() => reassignInputRef.current?.focus(), 100);
       }
     } else {
-      // Normal click — select this face, open popover (clears previous selection)
+      // Normal click — replace selection. If the only-selected face
+      // is this one, treat the click as a deselect (matches the same
+      // behaviour the FaceGridModal already has — a face you've
+      // single-selected can be unselected by clicking it again,
+      // without needing to hold Ctrl).
+      const isOnlySelected = selectedFaces.size === 1 && selectedFaces.has(faceId);
+      if (isOnlySelected) {
+        setSelectedFaces(new Set());
+        setLastSelectedFaceIdx(null);
+        setShowSelectionPrompt(false);
+        onGlobalReassignChange(null, '');
+        return;
+      }
       const newSelection = new Set<number>();
       newSelection.add(faceId);
       setSelectedFaces(newSelection);

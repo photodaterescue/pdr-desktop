@@ -1697,9 +1697,15 @@ export async function getPersonsCooccurrence(selectedPersonIds: number[]): Promi
   return { success: false };
 }
 
-export async function getClusterFaces(clusterId: number, page: number = 0, perPage: number = 40, personId?: number): Promise<{ success: boolean; data?: ClusterFacesResult }> {
+export async function getClusterFaces(
+  clusterId: number,
+  page: number = 0,
+  perPage: number = 40,
+  personId?: number,
+  sortMode?: 'chronological' | 'confidence-asc',
+): Promise<{ success: boolean; data?: ClusterFacesResult }> {
   if (isElectron() && (window as any).pdr?.ai) {
-    return (window as any).pdr.ai.clusterFaces(clusterId, page, perPage, personId);
+    return (window as any).pdr.ai.clusterFaces(clusterId, page, perPage, personId, sortMode);
   }
   return { success: false };
 }

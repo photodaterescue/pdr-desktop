@@ -2098,8 +2098,21 @@ export function verifyFace(faceId: number): void {
 }
 
 /** Get all faces for a person or unnamed cluster, paginated, sorted by confidence ASC (lowest first) */
-export function getClusterFaces(clusterId: number, page: number = 0, perPage: number = 40, personId?: number): { faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[]; total: number; page: number; perPage: number; totalPages: number } {
+export function getClusterFaces(
+  clusterId: number,
+  page: number = 0,
+  perPage: number = 40,
+  personId?: number,
+  sortMode: 'chronological' | 'confidence-asc' = 'confidence-asc',
+): { faces: { face_id: number; file_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number; confidence: number; verified: number }[]; total: number; page: number; perPage: number; totalPages: number } {
   const database = getDb();
+  // Sort clauses mirror what getPersonClusters' getOrderedSampleFaces
+  // does for the row thumbnails — same data, same order. NULL-date
+  // faces go to the end in chronological mode so a missing date
+  // doesn't masquerade as the oldest. Confidence ASC is the tiebreaker.
+  const orderClause = sortMode === 'chronological'
+    ? `ORDER BY (f.derived_date IS NULL) ASC, f.derived_date ASC, fd.confidence ASC`
+    : `ORDER BY fd.confidence ASC`;
   // If personId is provided, query by person (handles reassigned faces correctly)
   if (personId) {
     const total = (database.prepare(`SELECT COUNT(*) as cnt FROM face_detections WHERE person_id = ?`).get(personId) as any).cnt;
@@ -2108,7 +2121,7 @@ export function getClusterFaces(clusterId: number, page: number = 0, perPage: nu
       FROM face_detections fd
       INNER JOIN indexed_files f ON fd.file_id = f.id
       WHERE fd.person_id = ?
-      ORDER BY fd.confidence ASC
+      ${orderClause}
       LIMIT ? OFFSET ?
     `).all(personId, perPage, page * perPage) as any[];
     return { faces, total, page, perPage, totalPages: Math.ceil(total / perPage) };
@@ -2120,7 +2133,7 @@ export function getClusterFaces(clusterId: number, page: number = 0, perPage: nu
     FROM face_detections fd
     INNER JOIN indexed_files f ON fd.file_id = f.id
     WHERE fd.cluster_id = ? AND fd.person_id IS NULL
-    ORDER BY fd.confidence ASC
+    ${orderClause}
     LIMIT ? OFFSET ?
   `).all(clusterId, perPage, page * perPage) as any[];
   return { faces, total, page, perPage, totalPages: Math.ceil(total / perPage) };

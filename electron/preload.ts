@@ -285,7 +285,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     recordPmOpen: () => ipcRenderer.invoke('pm:recordOpen'),
     dismissPmStartupPrompt: () => ipcRenderer.invoke('pm:dismissStartupPrompt'),
     personsCooccurrence: (selectedPersonIds: number[]) => ipcRenderer.invoke('ai:personsCooccurrence', selectedPersonIds),
-    clusterFaces: (clusterId: number, page?: number, perPage?: number, personId?: number) => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId),
+    clusterFaces: (clusterId: number, page?: number, perPage?: number, personId?: number, sortMode?: 'chronological' | 'confidence-asc') => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId, sortMode),
     recluster: (threshold: number) => ipcRenderer.invoke('ai:recluster', threshold),
     faceCrop: (filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size?: number) =>
       ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),

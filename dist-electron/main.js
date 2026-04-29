@@ -3801,9 +3801,9 @@ ipcMain.handle('ai:prewarmPersonClusters', async () => {
         return { success: false, error: err.message };
     }
 });
-ipcMain.handle('ai:clusterFaces', async (_event, clusterId, page = 0, perPage = 40, personId) => {
+ipcMain.handle('ai:clusterFaces', async (_event, clusterId, page = 0, perPage = 40, personId, sortMode) => {
     try {
-        return { success: true, data: getClusterFaces(clusterId, page, perPage, personId) };
+        return { success: true, data: getClusterFaces(clusterId, page, perPage, personId, sortMode) };
     }
     catch (err) {
         return { success: false, error: err.message };

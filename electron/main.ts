@@ -4087,9 +4087,9 @@ ipcMain.handle('ai:prewarmPersonClusters', async () => {
   }
 });
 
-ipcMain.handle('ai:clusterFaces', async (_event, clusterId: number, page: number = 0, perPage: number = 40, personId?: number) => {
+ipcMain.handle('ai:clusterFaces', async (_event, clusterId: number, page: number = 0, perPage: number = 40, personId?: number, sortMode?: 'chronological' | 'confidence-asc') => {
   try {
-    return { success: true, data: getClusterFaces(clusterId, page, perPage, personId) };
+    return { success: true, data: getClusterFaces(clusterId, page, perPage, personId, sortMode) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

@@ -231,7 +231,7 @@ contextBridge.exposeInMainWorld('pdr', {
         recordPmOpen: () => ipcRenderer.invoke('pm:recordOpen'),
         dismissPmStartupPrompt: () => ipcRenderer.invoke('pm:dismissStartupPrompt'),
         personsCooccurrence: (selectedPersonIds) => ipcRenderer.invoke('ai:personsCooccurrence', selectedPersonIds),
-        clusterFaces: (clusterId, page, perPage, personId) => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId),
+        clusterFaces: (clusterId, page, perPage, personId, sortMode) => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId, sortMode),
         recluster: (threshold) => ipcRenderer.invoke('ai:recluster', threshold),
         faceCrop: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),
         faceContext: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
