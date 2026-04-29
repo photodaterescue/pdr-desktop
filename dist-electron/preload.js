@@ -189,6 +189,15 @@ contextBridge.exposeInMainWorld('pdr', {
         },
         openViewer: (filePaths, fileNames, startIndex) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames, startIndex),
         checkPathsExist: (paths) => ipcRenderer.invoke('search:checkPathsExist', paths),
+        /** Sent by the viewer window each time the user navigates to a
+         *  different photo. Other renderers (PM's FaceGridModal) can
+         *  subscribe via onViewerIndex to mirror the selection. */
+        notifyViewerIndex: (index, filePath) => ipcRenderer.send('search:viewerIndexChange', index, filePath),
+        onViewerIndex: (handler) => {
+            const listener = (_e, data) => handler(data);
+            ipcRenderer.on('search:viewerIndex', listener);
+            return () => ipcRenderer.removeListener('search:viewerIndex', listener);
+        },
     },
     ai: {
         start: () => ipcRenderer.invoke('ai:start'),
@@ -234,6 +243,7 @@ contextBridge.exposeInMainWorld('pdr', {
         clusterFaces: (clusterId, page, perPage, personId, sortMode) => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId, sortMode),
         recluster: (threshold) => ipcRenderer.invoke('ai:recluster', threshold),
         faceCrop: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),
+        faceCropBatch: (requests, size) => ipcRenderer.invoke('ai:faceCropBatch', requests, size),
         faceContext: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
         modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),
         onProgress: (callback) => {

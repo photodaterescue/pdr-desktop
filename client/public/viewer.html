@@ -490,6 +490,10 @@
       if (index < 0 || index >= files.length) return;
       currentIndex = index;
       const filePath = files[currentIndex];
+      // Tell other windows (e.g. People Manager's FaceGridModal) where
+      // we are now, so their selection ring can follow the viewer
+      // arrows without the user having to come back to PM and re-pick.
+      try { window.pdr?.search?.notifyViewerIndex?.(currentIndex, filePath); } catch {}
 
       // Remove old media
       if (mediaEl) {

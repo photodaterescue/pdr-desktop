@@ -242,6 +242,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
     openViewer: (filePaths: string[], fileNames: string[], startIndex?: number) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames, startIndex),
     checkPathsExist: (paths: string[]) => ipcRenderer.invoke('search:checkPathsExist', paths),
+    /** Sent by the viewer window each time the user navigates to a
+     *  different photo. Other renderers (PM's FaceGridModal) can
+     *  subscribe via onViewerIndex to mirror the selection. */
+    notifyViewerIndex: (index: number, filePath: string) => ipcRenderer.send('search:viewerIndexChange', index, filePath),
+    onViewerIndex: (handler: (data: { index: number; filePath: string }) => void) => {
+      const listener = (_e: any, data: { index: number; filePath: string }) => handler(data);
+      ipcRenderer.on('search:viewerIndex', listener);
+      return () => ipcRenderer.removeListener('search:viewerIndex', listener);
+    },
   },
 
   ai: {
@@ -289,6 +298,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     recluster: (threshold: number) => ipcRenderer.invoke('ai:recluster', threshold),
     faceCrop: (filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size?: number) =>
       ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),
+    faceCropBatch: (
+      requests: { face_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number }[],
+      size?: number,
+    ) => ipcRenderer.invoke('ai:faceCropBatch', requests, size),
     faceContext: (filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size?: number) =>
       ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
     modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),

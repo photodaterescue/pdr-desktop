@@ -167,30 +167,38 @@ export default function Home() {
               icon={<LayoutDashboard className="w-5 h-5" />}
               title="Workspace"
               description="Copy, rename, structure and deduplicate your source libraries chronologically."
+              onClick={() => navigate("/workspace")}
             />
             <ShowcaseCard
               accent="blue"
               icon={<Sparkles className="w-5 h-5" />}
               title="Search & Discovery"
               description="Find any photo by metadata, AI object tags or facial recognition — and build parallel structures to match."
+              onClick={() => navigate("/workspace?view=search")}
             />
             <ShowcaseCard
               accent="amber"
               icon={<CalendarClock className="w-5 h-5" />}
               title="Memories"
               description="Chronologically browse every photo across the libraries you've built."
+              onClick={() => navigate("/workspace?view=memories")}
             />
             <ShowcaseCard
               accent="emerald"
               icon={<Network className="w-5 h-5" />}
               title="Trees"
               description="See the people from your photos in family-tree form — a face for every name."
+              onClick={() => navigate("/workspace?view=familytree")}
             />
             <ShowcaseCard
               accent="pink"
               icon={<Users className="w-5 h-5" />}
               title="People"
               description="Verify the AI's facial recognition with granular precision — never worry about a misidentified face."
+              onClick={async () => {
+                const { openPeopleWindow } = await import('@/lib/electron-bridge');
+                await openPeopleWindow();
+              }}
             />
           </div>
         </motion.div>
@@ -300,12 +308,21 @@ const APP_ACCENT: Record<AppAccent, { iconBg: string; iconFg: string; topBar: st
   pink:     { iconBg: '#fce7f3', iconFg: '#831843', topBar: '#ec4899', hoverBorder: '#db2777' },
 };
 
-function ShowcaseCard({ accent, icon, title, description }: { accent: AppAccent; icon: React.ReactNode, title: string, description: string }) {
+function ShowcaseCard({ accent, icon, title, description, onClick }: { accent: AppAccent; icon: React.ReactNode, title: string, description: string, onClick?: () => void }) {
   const a = APP_ACCENT[accent];
+  // Clickable when an onClick is provided. Subtler than the top-row
+  // CTAs (no big icon-circle treatment) so the Welcome page doesn't
+  // gain a third tier of dominant CTAs — just a quiet "Open →" hint
+  // on hover that satisfies the click expectation when users go for
+  // these cards directly.
   return (
     <Card
-      className="flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden text-left"
+      className={`flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden text-left ${onClick ? 'cursor-pointer group hover:bg-white/70 hover:shadow-md' : ''}`}
       style={{ borderColor: '#e5e7eb', borderTopWidth: '3px', borderTopColor: a.topBar, borderTopStyle: 'solid' }}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
     >
       {/* Icon + title row.
           • items-start so the icon stays anchored to the FIRST line of
@@ -322,6 +339,11 @@ function ShowcaseCard({ accent, icon, title, description }: { accent: AppAccent;
         <h4 className="text-sm font-semibold text-foreground text-left leading-tight pt-0.5">{title}</h4>
       </div>
       <p className="text-xs text-muted-foreground leading-relaxed text-left">{description}</p>
+      {onClick && (
+        <span className="mt-auto pt-2 text-[10px] uppercase tracking-wider font-semibold opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: a.topBar }}>
+          Open →
+        </span>
+      )}
     </Card>
   );
 }

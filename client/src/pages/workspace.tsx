@@ -663,6 +663,18 @@ const handleActivateLicense = () => {
       setLocation('/workspace');
       return;
     }
+
+    // ?view=… deep-link from the Welcome screen's app cards. Lets the
+    // user jump straight to S&D / Memories / Trees without going via
+    // Dashboard. People isn't on the list because it's its own
+    // BrowserWindow opened by openPeopleWindow().
+    const viewParam = params.get("view") as 'dashboard' | 'search' | 'memories' | 'familytree' | null;
+    if (viewParam && (viewParam === 'dashboard' || viewParam === 'search' || viewParam === 'memories' || viewParam === 'familytree')) {
+      setActiveView(viewParam);
+      setActivePanel(null);
+      setLocation('/workspace');
+      return;
+    }
     
     const type = params.get("type") as 'folder' | 'zip' | 'drive';
     const name = params.get("name");

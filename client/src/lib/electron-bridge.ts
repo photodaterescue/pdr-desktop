@@ -1980,6 +1980,38 @@ export async function getFaceCrop(filePath: string, boxX: number, boxY: number, 
   return { success: false };
 }
 
+/**
+ * Batch face-crop fetch. One IPC round-trip + one sharp decode per
+ * unique file_path, returning a face_id → dataUrl map. Use this in
+ * place of N separate getFaceCrop calls when you have many faces to
+ * load — the FaceGridModal does this for its 40-face page.
+ */
+export async function getFaceCropBatch(
+  requests: { face_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number }[],
+  size: number = 96,
+): Promise<{ success: boolean; crops?: Record<number, string> }> {
+  if (isElectron() && (window as any).pdr?.ai?.faceCropBatch) {
+    return (window as any).pdr.ai.faceCropBatch(requests, size);
+  }
+  return { success: false };
+}
+
+/**
+ * Subscribe to viewer-window navigation events. Each time the user
+ * advances/rewinds in the photo viewer, the handler is called with
+ * the new index + filePath. Returns an unsubscribe function.
+ *
+ * Use case: PM's FaceGridModal mirrors the viewer's current photo by
+ * shifting its selected face to whichever face's file_path matches
+ * the viewer's current file.
+ */
+export function onViewerIndex(handler: (data: { index: number; filePath: string }) => void): () => void {
+  if (isElectron() && (window as any).pdr?.search?.onViewerIndex) {
+    return (window as any).pdr.search.onViewerIndex(handler);
+  }
+  return () => {};
+}
+
 export async function reclusterFaces(threshold: number): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.recluster(threshold);

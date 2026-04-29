@@ -42,9 +42,11 @@ import {
   setRepresentativeFace,
   getClusterFaces,
   getFaceCrop,
+  getFaceCropBatch,
   getFaceContext,
   getFileMetaByPath,
   openSearchViewer,
+  onViewerIndex,
   type FileMetaSlice,
   deletePersonRecord,
   unnamePersonAndDelete,
@@ -1582,6 +1584,10 @@ export default function PeopleManager() {
                         onImproveOne={cluster.person_id && cluster.person_name ? () => handleImproveOne(cluster.person_id!, cluster.person_name!) : undefined}
                         isImprovingOne={improvingPersonId === cluster.person_id}
                         currentTab={activeTab}
+                        clusterThreshold={clusterThreshold}
+                        namedSortNewestFirst={namedSortNewestFirst}
+                        showMatched={showMatched}
+                        showUnverifiedOnly={showUnverifiedOnly}
                       />
                     ))}
                   </div>
@@ -1738,6 +1744,10 @@ export default function PeopleManager() {
                         onImproveOne={cluster.person_id && cluster.person_name ? () => handleImproveOne(cluster.person_id!, cluster.person_name!) : undefined}
                         isImprovingOne={improvingPersonId === cluster.person_id}
                             currentTab={activeTab}
+                            clusterThreshold={clusterThreshold}
+                            namedSortNewestFirst={namedSortNewestFirst}
+                            showMatched={showMatched}
+                            showUnverifiedOnly={showUnverifiedOnly}
                           />
                           </div>
                           );
@@ -1865,6 +1875,10 @@ export default function PeopleManager() {
                         onImproveOne={cluster.person_id && cluster.person_name ? () => handleImproveOne(cluster.person_id!, cluster.person_name!) : undefined}
                         isImprovingOne={improvingPersonId === cluster.person_id}
                           currentTab={activeTab}
+                          clusterThreshold={clusterThreshold}
+                          namedSortNewestFirst={namedSortNewestFirst}
+                          showMatched={showMatched}
+                          showUnverifiedOnly={showUnverifiedOnly}
                         />
                       ))}
                     </div>
@@ -1926,6 +1940,10 @@ export default function PeopleManager() {
                         onImproveOne={cluster.person_id && cluster.person_name ? () => handleImproveOne(cluster.person_id!, cluster.person_name!) : undefined}
                         isImprovingOne={improvingPersonId === cluster.person_id}
                           currentTab={activeTab}
+                          clusterThreshold={clusterThreshold}
+                          namedSortNewestFirst={namedSortNewestFirst}
+                          showMatched={showMatched}
+                          showUnverifiedOnly={showUnverifiedOnly}
                         />
                       ))}
                     </div>
@@ -2600,13 +2618,23 @@ function DiscardConfirmModal({ personName, photoCount, verifiedCount, selectedFa
 
 /* ─── Face Grid Modal — paginated grid of all faces, confidence-sorted ──── */
 
-function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSetRepresentative, onClose }: {
+function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSetRepresentative, onClose, clusterThreshold, namedSortNewestFirst, showMatched, showUnverifiedOnly }: {
   cluster: PersonCluster;
   cropUrl?: string;
   existingPersons: PersonRecord[];
   onReassignFace: (faceId: number, newName: string, verified?: boolean) => Promise<void>;
   onSetRepresentative?: (faceId: number) => Promise<void>;
   onClose: () => void;
+  /** Match-strictness slider value from PM. Auto-matched faces with
+   *  match_similarity below this are filtered out — same algorithm
+   *  as the row's prepareFaces. */
+  clusterThreshold: number;
+  /** PM's date-direction toggle. Default false = oldest first. */
+  namedSortNewestFirst: boolean;
+  /** PM's "show auto-matched" toggle. */
+  showMatched: boolean;
+  /** PM's "show only unverified" toggle. */
+  showUnverifiedOnly: boolean;
 }) {
   const [page, setPage] = useState(0);
   const [data, setData] = useState<ClusterFacesResult | null>(null);
@@ -2655,7 +2683,40 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
   // the same positions — what the user clicked is what they see.
   const isRealNamed = !!cluster.person_name && !cluster.person_name.startsWith('__');
   const sortMode: 'chronological' | 'confidence-asc' = isRealNamed ? 'chronological' : 'confidence-asc';
-  const sortDescription = sortMode === 'chronological' ? 'oldest first' : 'lowest confidence first';
+  const sortDescription = isRealNamed
+    ? `matched first, then verified · ${namedSortNewestFirst ? 'newest first' : 'oldest first'}`
+    : 'lowest confidence first';
+
+  // Mirror PM's prepareFaces algorithm so the modal grid is the
+  // same set of faces in the same order as the row. Three steps:
+  //   1. Match-strictness filter (auto-matched below threshold drop out)
+  //   2. Group: matched (unverified) FIRST, then verified, so the
+  //      "what needs my attention" set is at the start regardless of
+  //      sort direction. JS Array.sort/filter is stable.
+  //   3. If user toggled newest-first, reverse each group separately
+  //      (whole-array reverse would put matched last — explicitly not
+  //      what the user wants).
+  // Then apply showMatched / showUnverifiedOnly filters.
+  const displayFaces = (() => {
+    const raw = data?.faces ?? [];
+    if (raw.length === 0) return raw;
+    let faces = raw;
+    if (isRealNamed) {
+      faces = faces.filter(f => {
+        if (f.verified) return true;
+        if (f.match_similarity == null) return true;
+        return f.match_similarity >= clusterThreshold;
+      });
+      const matched = faces.filter(f => !f.verified);
+      const verified = faces.filter(f => f.verified);
+      const m = namedSortNewestFirst ? [...matched].reverse() : matched;
+      const v = namedSortNewestFirst ? [...verified].reverse() : verified;
+      faces = [...m, ...v];
+    }
+    if (!showMatched) faces = faces.filter(f => f.verified);
+    if (showUnverifiedOnly) faces = faces.filter(f => !f.verified);
+    return faces;
+  })();
 
   const loadPage = async (p: number) => {
     setIsLoading(true);
@@ -2663,16 +2724,25 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
     if (result.success && result.data) {
       setData(result.data);
       // Drop the loading overlay as soon as the metadata's back so
-      // the grid renders empty squares immediately. Crops then
-      // arrive per-face — no more "blank for 2 seconds while all 40
-      // load in parallel" feel.
+      // the grid renders placeholder squares immediately.
       setIsLoading(false);
-      for (const face of result.data.faces) {
-        getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 96).then(crop => {
-          if (crop.success && crop.dataUrl) {
-            setFaceCrops(prev => ({ ...prev, [face.face_id]: crop.dataUrl as string }));
-          }
-        });
+      // Batch crop fetch: one IPC roundtrip, one sharp decode per
+      // unique source file. Previously we issued 40 parallel
+      // getFaceCrop calls each re-decoding their source from disk;
+      // for a 50-face/47-photo person on a network drive that
+      // routinely took ~1 minute. The batch endpoint groups by
+      // file_path and decodes each photo once.
+      const requests = result.data.faces.map(f => ({
+        face_id: f.face_id,
+        file_path: f.file_path,
+        box_x: f.box_x,
+        box_y: f.box_y,
+        box_w: f.box_w,
+        box_h: f.box_h,
+      }));
+      const batch = await getFaceCropBatch(requests, 96);
+      if (batch.success && batch.crops) {
+        setFaceCrops(prev => ({ ...prev, ...batch.crops }));
       }
       return;
     }
@@ -2689,6 +2759,27 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Track the photo viewer's current index. When the user flips
+  // through photos in the viewer using its arrows, the modal's
+  // selection ring shifts to the matching face — so it's always
+  // obvious which face the viewer is currently showing. We match
+  // by file_path because two faces from the same photo share a path
+  // and a single selection is enough to anchor the viewer.
+  useEffect(() => {
+    const unsub = onViewerIndex(({ filePath }) => {
+      const matches = (data?.faces ?? []).filter(f => f.file_path === filePath);
+      if (matches.length === 0) return;
+      const next = new Set<number>();
+      // Prefer the face that's already selected if it's in the same
+      // file; otherwise pick the first match. Avoids jumping the
+      // selection when multiple faces share the file.
+      const stillSelected = matches.find(f => selectedFaceIds.has(f.face_id));
+      next.add((stillSelected ?? matches[0]).face_id);
+      setSelectedFaceIds(next);
+    });
+    return unsub;
+  }, [data, selectedFaceIds]);
 
   // Apply an action to ALL currently-selected faces. Wraps multiple
   // single-face calls so onReassignFace's existing contract still
@@ -2780,16 +2871,22 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                 </p>
               </div>
             </div>
+            {/* Close button — built from a div with explicit
+                w/h instead of a Lucide X. Lucide's X is two thin
+                stroked paths with a hollow centre; on this modal
+                Terry repeatedly hit dead spots between the strokes
+                where SVG hit-testing returned nothing. The new
+                approach uses an opaque hit zone with two CSS-rotated
+                bars that fully cover the button area, so every pixel
+                of the 44px square is clickable. */}
             <button
+              type="button"
               onClick={onClose}
               aria-label="Close"
-              className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              className="relative shrink-0 w-11 h-11 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center"
             >
-              {/* pointer-events-none so the X glyph's empty centre
-                  doesn't swallow the click and leave a "void patch"
-                  where the close button feels broken. The whole
-                  padded button area becomes the click target. */}
-              <X className="w-5 h-5 pointer-events-none" />
+              <span className="block absolute w-5 h-[2px] bg-current rotate-45 pointer-events-none" />
+              <span className="block absolute w-5 h-[2px] bg-current -rotate-45 pointer-events-none" />
             </button>
           </div>
 
@@ -2809,9 +2906,9 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                     <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
                     <span className="ml-2 text-base text-muted-foreground">Loading faces...</span>
                   </div>
-                ) : data && data.faces.length > 0 ? (
+                ) : displayFaces.length > 0 ? (
                   <div className="grid grid-cols-7 gap-2">
-                    {data.faces.map((face, faceIdx) => {
+                    {displayFaces.map((face, faceIdx) => {
                       const isSelected = selectedFaceIds.has(face.face_id);
                       return (
                         <button
@@ -2830,13 +2927,13 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                                 return next;
                               });
                               setLastSelectedIdx(faceIdx);
-                            } else if (e.shiftKey && lastSelectedIdx !== null && data) {
+                            } else if (e.shiftKey && lastSelectedIdx !== null) {
                               const start = Math.min(lastSelectedIdx, faceIdx);
                               const end = Math.max(lastSelectedIdx, faceIdx);
                               setSelectedFaceIds(prev => {
                                 const next = new Set(prev);
                                 for (let i = start; i <= end; i++) {
-                                  if (data.faces[i]) next.add(data.faces[i].face_id);
+                                  if (displayFaces[i]) next.add(displayFaces[i].face_id);
                                 }
                                 return next;
                               });
@@ -3065,18 +3162,22 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                     </button>
                   )}
                   {/* View Photo — opens the source image in the
-                      built-in viewer so the user can see context
-                      around the face crop. Only when exactly one
-                      face is selected. */}
+                      built-in viewer. Now passes the FULL ordered
+                      list of faces in this view + the clicked face's
+                      index, so the viewer's left/right arrows step
+                      through every photo in this modal in the same
+                      order the user is seeing them. Only when exactly
+                      one face is selected. */}
                   {selectedFaceIds.size === 1 && (() => {
                     const id = Array.from(selectedFaceIds)[0];
-                    const face = data?.faces.find(f => f.face_id === id);
-                    if (!face) return null;
+                    const startIdx = displayFaces.findIndex(f => f.face_id === id);
+                    if (startIdx < 0) return null;
                     return (
                       <button
                         onClick={() => {
-                          const filename = face.file_path.split(/[\\/]/).pop() || '';
-                          openSearchViewer(face.file_path, filename);
+                          const paths = displayFaces.map(f => f.file_path);
+                          const names = paths.map(p => p.split(/[\\/]/).pop() || '');
+                          openSearchViewer(paths, names, startIdx);
                         }}
                         data-pdr-variant="information"
                         style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
@@ -3105,7 +3206,7 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 
 /* ─── Card Row — name LEFT, scrollable thumbnails RIGHT ─────────────────── */
 
-function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, existingPersons, onSelectPerson, onDiscard, onRemoveSelected, onVerifySelected, onImproveOne, isImprovingOne, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, globalHoveredFaceId, onHoveredFaceChange, currentTab, rowIndex, onVisible }: {
+function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, existingPersons, onSelectPerson, onDiscard, onRemoveSelected, onVerifySelected, onImproveOne, isImprovingOne, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, globalHoveredFaceId, onHoveredFaceChange, currentTab, rowIndex, onVisible, clusterThreshold, namedSortNewestFirst, showMatched, showUnverifiedOnly }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
@@ -3169,6 +3270,12 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
   onHoveredFaceChange: React.Dispatch<React.SetStateAction<number | null>>;
   currentTab?: 'named' | 'unnamed' | 'unsure' | 'ignored';
   rowIndex?: number;
+  /** Sort/filter state from PM, forwarded into the FaceGridModal so
+   *  the grid mirrors the row's order and visibility rules. */
+  clusterThreshold: number;
+  namedSortNewestFirst: boolean;
+  showMatched: boolean;
+  showUnverifiedOnly: boolean;
   /** Fired the first time this row's DOM element becomes visible
    *  within the scroll viewport. Used by the parent to request face-
    *  thumbnail crops lazily — off-screen rows never pay the I/O cost
@@ -4006,6 +4113,10 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
         onReassignFace={onReassignFace}
         onSetRepresentative={onSetRepresentative}
         onClose={() => setShowFaceGrid(false)}
+        clusterThreshold={clusterThreshold}
+        namedSortNewestFirst={namedSortNewestFirst}
+        showMatched={showMatched}
+        showUnverifiedOnly={showUnverifiedOnly}
       />
     )}
     </TooltipProvider>
