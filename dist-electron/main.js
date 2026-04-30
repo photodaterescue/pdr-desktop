@@ -3917,6 +3917,73 @@ ipcMain.handle('ai:recluster', async (_event, threshold) => {
  * version cuts that to 47 decodes (often much fewer when faces share
  * a photo) and runs the per-file work concurrently.
  */
+/**
+ * Single-shot avatar fetch for a person. Resolves the
+ * representative_face_id (or falls back to the highest-confidence
+ * face for the person), then returns a square face-crop dataUrl. Used
+ * by Trees prompt modals to render avatars without a separate graph
+ * fetch — covers the case where the target person isn't in the
+ * currently-rendered graph yet (e.g. a child being added before the
+ * parent_of write has happened).
+ */
+ipcMain.handle('ai:getPersonFaceCrop', async (_event, personId, size = 96) => {
+    try {
+        const { getDb } = await import('./search-database.js');
+        const db = getDb();
+        // Prefer the user-chosen representative face; fall back to the
+        // highest-confidence detection for the person if none set / the
+        // chosen face has been deleted.
+        const row = db.prepare(`
+      SELECT f.file_path, fd.box_x, fd.box_y, fd.box_w, fd.box_h
+      FROM face_detections fd
+      JOIN indexed_files f ON f.id = fd.file_id
+      WHERE fd.id = (
+        SELECT COALESCE(
+          p.representative_face_id,
+          (SELECT id FROM face_detections WHERE person_id = p.id ORDER BY confidence DESC LIMIT 1)
+        )
+        FROM persons p
+        WHERE p.id = ?
+      )
+    `).get(personId);
+        if (!row)
+            return { success: false };
+        const sharp = (await import('sharp')).default;
+        const metadata = await sharp(row.file_path, { failOnError: false }).rotate().metadata();
+        if (!metadata.width || !metadata.height)
+            return { success: false };
+        const imgW = metadata.width;
+        const imgH = metadata.height;
+        let px = Math.round(row.box_x * imgW);
+        let py = Math.round(row.box_y * imgH);
+        let pw = Math.round(row.box_w * imgW);
+        let ph = Math.round(row.box_h * imgH);
+        const padding = Math.round(Math.max(pw, ph) * 0.25);
+        const sideLen = Math.max(pw, ph) + padding * 2;
+        const cx = px + pw / 2;
+        const cy = py + ph / 2;
+        px = Math.round(cx - sideLen / 2);
+        py = Math.round(cy - sideLen / 2);
+        pw = sideLen;
+        ph = sideLen;
+        px = Math.max(0, px);
+        py = Math.max(0, py);
+        pw = Math.min(pw, imgW - px);
+        ph = Math.min(ph, imgH - py);
+        if (pw <= 0 || ph <= 0)
+            return { success: false };
+        const buffer = await sharp(row.file_path, { failOnError: false })
+            .rotate()
+            .extract({ left: px, top: py, width: pw, height: ph })
+            .resize(size, size, { fit: 'cover' })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+        return { success: true, dataUrl: `data:image/jpeg;base64,${buffer.toString('base64')}` };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 ipcMain.handle('ai:faceCropBatch', async (_event, requests, size = 96) => {
     try {
         const sharp = (await import('sharp')).default;

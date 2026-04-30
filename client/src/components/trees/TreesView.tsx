@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import {
   getFamilyGraph,
   getFaceCrop,
+  getPersonFaceCrop,
   listPersons,
   removeRelationship,
   createNamedPerson,
@@ -117,10 +118,21 @@ async function fetchPersonAvatar(
     } catch { /* fall through */ }
   }
   // Snapshot from persons.avatar_data (set when the person was named
-  // from a face cluster). Will be missing for placeholders / freshly-
-  // typed names.
+  // from a face cluster). Often null for people who weren't named
+  // from a cluster, including children added via Trees quick-add.
   const summary = allPersons.find(p => p.id === personId);
-  return summary?.avatarData ?? undefined;
+  if (summary?.avatarData) return summary.avatarData;
+  // Last-resort fallback: ask the backend to resolve this person's
+  // representative face directly. Covers the case where the target
+  // person isn't in the rendered graph yet (e.g. a child being added
+  // before the parent_of edge has been written) AND has no stored
+  // avatar_data — the path Terry hit when Carol's avatar showed as
+  // an initial despite her having photos.
+  try {
+    const r = await getPersonFaceCrop(personId, 96);
+    if (r.success && r.dataUrl) return r.dataUrl;
+  } catch { /* fall through */ }
+  return undefined;
 }
 
 /** Compute the generation offset for a single target person from the

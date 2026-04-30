@@ -244,6 +244,7 @@ contextBridge.exposeInMainWorld('pdr', {
         recluster: (threshold) => ipcRenderer.invoke('ai:recluster', threshold),
         faceCrop: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),
         faceCropBatch: (requests, size) => ipcRenderer.invoke('ai:faceCropBatch', requests, size),
+        getPersonFaceCrop: (personId, size) => ipcRenderer.invoke('ai:getPersonFaceCrop', personId, size),
         faceContext: (filePath, boxX, boxY, boxW, boxH, size) => ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
         modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),
         onProgress: (callback) => {

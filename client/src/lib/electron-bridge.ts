@@ -1997,6 +1997,21 @@ export async function getFaceCropBatch(
 }
 
 /**
+ * Per-person avatar fetch — resolves persons.representative_face_id
+ * (with a highest-confidence fallback when none set) into a face-crop
+ * dataUrl. Used by Trees confirmation prompts so the avatar can be
+ * shown even for people who aren't in the currently-rendered graph
+ * (e.g. the child of a +child quick-add, before its parent_of edge
+ * has been written).
+ */
+export async function getPersonFaceCrop(personId: number, size: number = 96): Promise<{ success: boolean; dataUrl?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.getPersonFaceCrop) {
+    return (window as any).pdr.ai.getPersonFaceCrop(personId, size);
+  }
+  return { success: false };
+}
+
+/**
  * Subscribe to viewer-window navigation events. Each time the user
  * advances/rewinds in the photo viewer, the handler is called with
  * the new index + filePath. Returns an unsubscribe function.

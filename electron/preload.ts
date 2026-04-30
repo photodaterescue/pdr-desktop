@@ -302,6 +302,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       requests: { face_id: number; file_path: string; box_x: number; box_y: number; box_w: number; box_h: number }[],
       size?: number,
     ) => ipcRenderer.invoke('ai:faceCropBatch', requests, size),
+    getPersonFaceCrop: (personId: number, size?: number) =>
+      ipcRenderer.invoke('ai:getPersonFaceCrop', personId, size),
     faceContext: (filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size?: number) =>
       ipcRenderer.invoke('ai:faceContext', filePath, boxX, boxY, boxW, boxH, size),
     modelsReady: () => ipcRenderer.invoke('ai:modelsReady'),
