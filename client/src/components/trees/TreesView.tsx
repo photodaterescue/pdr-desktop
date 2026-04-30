@@ -2670,16 +2670,17 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                 <button
                   onClick={() => handleCreate(trimmedQuery)}
                   disabled={busy}
-                  className="flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
+                  className="flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left text-foreground hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
                 >
-                  <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  {/* Wraps onto two lines for longer typed names —
-                      the previous truncate clipped the action with
-                      "...", which read as a stuck row rather than a
-                      "click to add" row. Mirrors the create-row
-                      behaviour on the placeholder picker. */}
+                  {/* Body uses text-foreground (defined typography
+                      tier) so the row reads at full contrast on
+                      white. Lavender is reserved for the icon
+                      accent + the hover background — applying it to
+                      the whole label produced washed-out body text
+                      which broke the typography rules. */}
+                  <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
                   <span className="leading-snug whitespace-normal break-words">
-                    Add <strong className="text-foreground">{trimmedQuery}</strong> as a new person — they aren't on PDR yet.
+                    Add <strong>{trimmedQuery}</strong> as a new person — they aren't on PDR yet.
                   </span>
                 </button>
               )}

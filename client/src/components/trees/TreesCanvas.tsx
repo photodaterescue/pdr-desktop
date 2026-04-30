@@ -2292,14 +2292,14 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
             <button
               onClick={() => handleName(linkQuery.trim())}
               disabled={busy}
-              className="flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
+              className="flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left text-foreground hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
             >
-              <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              {/* Action-first phrasing so the row reads as a button:
-                  "Add X as a new person — they aren't on PDR yet."
-                  Wraps onto two lines for longer names. */}
+              {/* Body in text-foreground (defined tier) so the row
+                  reads at full contrast on white. Lavender stays on
+                  the icon + hover bg only. */}
+              <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
               <span className="leading-snug whitespace-normal break-words">
-                Add <strong className="text-foreground">{linkQuery.trim()}</strong> as a new person — they aren't on PDR yet.
+                Add <strong>{linkQuery.trim()}</strong> as a new person — they aren't on PDR yet.
               </span>
             </button>
           )}
