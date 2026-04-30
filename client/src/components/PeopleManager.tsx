@@ -2078,12 +2078,24 @@ export default function PeopleManager() {
                           setPanelSuggestionIdx(prev => Math.max(prev - 1, -1));
                         } else if (e.key === 'Enter') {
                           e.preventDefault();
-                          let nameToUse = globalReassignName.trim();
+                          // If a suggestion is highlighted (via arrow
+                          // keys), Enter just FILLS the field with
+                          // that suggestion and closes the dropdown
+                          // — it doesn't proceed to verify. This
+                          // matches the mouse-click flow: clicking a
+                          // suggestion sets the name and lets the
+                          // user pick an action button next. Without
+                          // this branch, keyboard-selecting a
+                          // suggestion auto-verified, which felt
+                          // hasty and inconsistent with the mouse
+                          // path. A SECOND Enter (with no highlight,
+                          // since we just cleared it) then verifies.
                           if (panelSuggestionIdx >= 0 && panelSuggestions[panelSuggestionIdx]) {
-                            nameToUse = panelSuggestions[panelSuggestionIdx].name;
-                            setGlobalReassignName(nameToUse);
+                            setGlobalReassignName(panelSuggestions[panelSuggestionIdx].name);
                             setPanelSuggestionIdx(-1);
+                            return;
                           }
+                          const nameToUse = globalReassignName.trim();
                           if (!nameToUse) return;
                           const targets = Array.from(globalSelectedFaces);
                           if (targets.length === 0) return;
