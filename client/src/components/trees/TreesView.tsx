@@ -36,7 +36,7 @@ import { useDraggableModal } from './useDraggableModal';
 import { ManageTreesModal } from './ManageTreesModal';
 import { DateQuickEditor } from './DateQuickEditor';
 import { NameQuickEditor } from './NameQuickEditor';
-import { promptConfirm } from './promptConfirm';
+import { promptConfirm, promptChoice } from './promptConfirm';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
 
@@ -1088,20 +1088,56 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             const existingParentFullName = displayName(existingParentId, 'the other parent');
             const newParentAvatar = await fetchPersonAvatar(otherPersonId, graph, allPersons);
             const existingParentAvatar = await fetchPersonAvatar(existingParentId, graph, allPersons);
-            const yes = await promptConfirm({
-              eyebrow: 'Marriage status',
-              title: `Are ${newParentFullName} and ${existingParentFullName} married?`,
+            // Multi-choice prompt — three states map to three
+            // different relationship-edge writes:
+            //   together         → spouse_of, no flags (married /
+            //                      currently in a relationship)
+            //   previously       → spouse_of with flags.ended = true
+            //                      (divorced / separated)
+            //   coparents_only   → no edge written (parents share a
+            //                      child but were never together)
+            // Dismiss (X / backdrop / Esc) leaves the parent_of edges
+            // alone — the user just doesn't get asked again unless
+            // they trigger another add.
+            const choice = await promptChoice<'together' | 'previously' | 'coparents_only'>({
+              eyebrow: 'Relationship status',
+              title: `How are ${newParentFullName} and ${existingParentFullName} related?`,
               message: `Both are ${childFullName}'s parents.`,
               avatars: {
                 left: { src: newParentAvatar, label: newParentFullName, initial: newParentFullName.charAt(0) },
                 right: { src: existingParentAvatar, label: existingParentFullName, initial: existingParentFullName.charAt(0) },
               },
-              confirmLabel: 'Yes, married',
-              cancelLabel: 'Not married',
+              choices: [
+                {
+                  id: 'together',
+                  label: 'Married, or together',
+                  description: 'Currently in a relationship.',
+                  primary: true,
+                },
+                {
+                  id: 'previously',
+                  label: 'Previously together',
+                  description: 'Divorced, separated, or no longer a couple.',
+                },
+                {
+                  id: 'coparents_only',
+                  label: 'Just co-parents',
+                  description: 'Never were a couple.',
+                },
+              ],
             });
-            if (yes) {
+            if (choice === 'together') {
               await addRelationship({ personAId: otherPersonId, personBId: existingParentId, type: 'spouse_of' });
+            } else if (choice === 'previously') {
+              await addRelationship({
+                personAId: otherPersonId,
+                personBId: existingParentId,
+                type: 'spouse_of',
+                flags: { ended: true },
+              });
             }
+            // 'coparents_only' and null (dismissed) both mean: leave
+            // them as separate parents with no spouse edge.
           }
         }
       }

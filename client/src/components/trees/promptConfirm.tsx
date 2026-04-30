@@ -244,6 +244,146 @@ function ConfirmDialog({
   );
 }
 
+/** Multi-choice variant of promptConfirm. Same visual frame —
+ *  width, eyebrow, avatars, title, body, footer separator — but the
+ *  footer renders one button per choice instead of yes/no. Resolves
+ *  to the chosen choice's id, or null on dismiss (X / backdrop / Esc).
+ *
+ *  Used for the parent-pair-relationship prompt in Trees: when a
+ *  second parent is added for someone, ask whether the two parents
+ *  are married, previously together, or just co-parents — each
+ *  state maps to a different relationship-edge write.
+ */
+export function promptChoice<T extends string>(options: ChoiceOptions<T>): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const close = (result: T | null) => {
+      root.unmount();
+      container.remove();
+      resolve(result);
+    };
+    root.render(
+      <ChoiceDialog
+        message={options.message}
+        title={options.title}
+        eyebrow={options.eyebrow}
+        avatars={options.avatars}
+        choices={options.choices}
+        onPick={(id) => close(id)}
+        onDismiss={() => close(null)}
+      />
+    );
+  });
+}
+
+export interface ChoiceOption<T extends string> {
+  /** Stable identifier returned to the caller. */
+  id: T;
+  /** Visible button text. */
+  label: string;
+  /** Optional secondary line under the label, lighter text. */
+  description?: string;
+  /** Visually emphasises this choice as the recommended path. The
+   *  primary lavender button styling. Only one choice should set
+   *  this. */
+  primary?: boolean;
+}
+
+export interface ChoiceOptions<T extends string> {
+  message: string;
+  title?: string;
+  eyebrow?: string;
+  avatars?: { left?: ConfirmAvatar; right?: ConfirmAvatar };
+  choices: ChoiceOption<T>[];
+}
+
+function ChoiceDialog<T extends string>({
+  message, title, eyebrow, avatars, choices, onPick, onDismiss,
+}: ChoiceOptions<T> & { onPick: (id: T) => void; onDismiss: () => void }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDismiss();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onDismiss]);
+
+  const hasAvatars = !!avatars && (!!avatars.left || !!avatars.right);
+
+  return (
+    <div
+      className={`fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4 transition-opacity ${mounted ? 'opacity-100' : 'opacity-0'}`}
+      onClick={onDismiss}
+    >
+      <div
+        className={`relative bg-background rounded-2xl shadow-2xl border border-border w-full max-w-[480px] transform transition-all ${mounted ? 'scale-100' : 'scale-95'}`}
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onDismiss}
+          className="absolute right-3 top-3 p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div className="px-6 pt-6 pb-5">
+          {eyebrow && (
+            <p className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground text-center mb-4">
+              {eyebrow}
+            </p>
+          )}
+
+          {hasAvatars && (
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <Avatar avatar={avatars!.left} />
+              {avatars!.left && avatars!.right && (
+                <ChevronRight className="w-5 h-5 text-muted-foreground/60 shrink-0" />
+              )}
+              <Avatar avatar={avatars!.right} />
+            </div>
+          )}
+
+          {title && (
+            <h3 className="text-lg font-semibold text-foreground text-center mb-2 leading-snug">{title}</h3>
+          )}
+          <p className="text-sm text-muted-foreground text-center leading-relaxed">{message}</p>
+        </div>
+
+        {/* Choice column — full-width buttons stacked vertically so
+            each option's label has room to breathe. The recommended
+            choice (primary: true) gets the bold lavender treatment;
+            others render as secondary outline buttons. */}
+        <div className="flex flex-col gap-2 px-6 py-4 border-t border-border/60">
+          {choices.map(choice => (
+            <button
+              key={choice.id}
+              onClick={() => onPick(choice.id)}
+              className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                choice.primary
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
+                  : 'bg-background border border-border hover:bg-accent text-foreground'
+              }`}
+            >
+              <div>{choice.label}</div>
+              {choice.description && (
+                <div className={`text-xs font-normal mt-0.5 ${choice.primary ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                  {choice.description}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Single avatar slot — renders a face crop when src is provided,
  *  falls back to a coloured monogram circle otherwise. Used as a pair
  *  inside the modal's avatar row to anchor relationship questions. */
