@@ -1897,6 +1897,21 @@ function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
   );
 }
 
+/** Convert a relationship-edge label ("parent of") into the noun
+ *  form used in the natural-sentence placeholder prompt ("Select X's
+ *  parent"). Mirrors the verb→noun mapping for spouse / sibling /
+ *  connected-to slots; falls back to "relation" for unknown labels. */
+function roleSuffix(label: string): string {
+  const lower = label.trim().toLowerCase();
+  if (lower === 'parent of') return 'parent';
+  if (lower === 'child of') return 'child';
+  if (lower === 'partner of') return 'partner';
+  if (lower === 'ex-partner of') return 'former partner';
+  if (lower === 'sibling of') return 'sibling';
+  if (lower === 'connected to') return 'connection';
+  return 'relation';
+}
+
 /** Inline popup: "Who is this?" — lets user name, link, or remove a
  *  placeholder. Runs in TWO modes:
  *    personId (persisted placeholder): edits a real DB row. Name →
@@ -1971,18 +1986,22 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
   useEffect(() => {
     (async () => {
       const personsRes = await listPersons();
+      // Prefer FULL name in this label so it reads unambiguously
+      // ("parent of Sally Anne Clapson" vs "parent of Mum"). Falls
+      // back to short name when no full name is on file.
       const nameBy = new Map<number, string>();
       if (personsRes.success && personsRes.data) {
-        for (const p of personsRes.data) nameBy.set(p.id, p.name || '(unnamed)');
+        for (const p of personsRes.data) {
+          const full = p.full_name?.trim();
+          nameBy.set(p.id, full || p.name || '(unnamed)');
+        }
       }
       if (isVirtual) {
         if (virtualChildIds != null && virtualChildIds.length > 0) {
-          // One "Parent of X" line per child the ghost represents, so
-          // the user sees every sibling this fill-in will parent. Hides
-          // the old confusion where a shared ghost claimed to be
-          // "Parent of Alan" only, silently omitting Peter and Trisha.
+          // One "parent of X" line per child the ghost represents, so
+          // the user sees every sibling this fill-in will parent.
           setRelationships(virtualChildIds.map(id => ({
-            label: 'Parent of',
+            label: 'parent of',
             otherName: nameBy.get(id) ?? '(unknown)',
           })));
         }
@@ -1996,10 +2015,10 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
         const aIsMe = r.person_a_id === personId;
         const otherId = aIsMe ? r.person_b_id : r.person_a_id;
         const otherName = nameBy.get(otherId) ?? '(unknown)';
-        if (r.type === 'parent_of') out.push({ label: aIsMe ? 'Parent of' : 'Child of', otherName });
-        else if (r.type === 'spouse_of') out.push({ label: r.until ? 'Ex-partner of' : 'Partner of', otherName });
-        else if (r.type === 'sibling_of') out.push({ label: 'Sibling of', otherName });
-        else if (r.type === 'associated_with') out.push({ label: 'Connected to', otherName });
+        if (r.type === 'parent_of') out.push({ label: aIsMe ? 'parent of' : 'child of', otherName });
+        else if (r.type === 'spouse_of') out.push({ label: r.until ? 'ex-partner of' : 'partner of', otherName });
+        else if (r.type === 'sibling_of') out.push({ label: 'sibling of', otherName });
+        else if (r.type === 'associated_with') out.push({ label: 'connected to', otherName });
       }
       setRelationships(out);
     })();
@@ -2163,16 +2182,26 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
         </button>
       </div>
 
-      {/* Tell the user what this placeholder currently represents so
-          they can decide whether to name it, link it, or remove it. */}
+      {/* Tell the user what this placeholder currently represents
+          using a natural sentence: "Select Sally Anne Clapson's
+          parent." Falls back to a list when the placeholder fills
+          multiple roles (rare). */}
       {relationships.length > 0 && (
         <div className="mb-3 px-2.5 py-2 rounded-lg bg-muted/40 border border-border/60">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">Currently linked as</p>
-          <ul className="text-xs text-foreground space-y-0.5">
-            {relationships.map((r, i) => (
-              <li key={i}>{r.label} <strong>{r.otherName}</strong></li>
-            ))}
-          </ul>
+          {relationships.length === 1 ? (
+            <p className="text-sm text-foreground">
+              Select <strong>{relationships[0].otherName}</strong>'s {roleSuffix(relationships[0].label)}
+            </p>
+          ) : (
+            <>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">Filling slot for</p>
+              <ul className="text-xs text-foreground space-y-0.5">
+                {relationships.map((r, i) => (
+                  <li key={i}>{r.label} <strong>{r.otherName}</strong></li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
 

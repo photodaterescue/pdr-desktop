@@ -442,18 +442,43 @@ function orderParentGeneration(
   };
 
   // Sort groups left-to-right by pull x; within a group, sort members
-  // by person_id ASC so the first-created partner sits on the LEFT.
-  // Without this within-group sort the iteration order depended on
-  // graph.nodes order which depended on SQL's unspecified row order
-  // — the symptom was a partner you added first appearing on the
-  // right after a refresh because the SQL row order changed. With
-  // the ASC sort, "I added Derek first then Sylvia" reliably lays
-  // them out as [Derek, Sylvia].
+  // by the AGE of their parent_of edge to a shared child — earlier-
+  // created edges go LEFT. This matches the user's mental model: the
+  // placeholder slot you click on the LEFT was created first; when
+  // you fill it with a person the person inherits that slot's
+  // position regardless of whether the fill renamed the placeholder
+  // (preserves person_id) or merged into a different existing person
+  // (changes person_id but keeps the relationship row's id since
+  // mergePlaceholderIntoPerson uses UPDATE not DELETE+INSERT).
+  // Sorting by person_id alone broke the LEFT/RIGHT slot when a fresh
+  // placeholder (small id) sat next to a freshly-typed person (much
+  // larger id) — Terry's "I added grandad to the left placeholder
+  // but he appeared on the right" bug.
+  const earliestEdgeId = (parentId: number, childIds: number[]): number => {
+    let minId = Number.MAX_SAFE_INTEGER;
+    for (const childId of childIds) {
+      for (const e of graph.edges) {
+        if (e.derived) continue;
+        if (e.type !== 'parent_of') continue;
+        if (e.aId !== parentId || e.bId !== childId) continue;
+        if (e.id != null && e.id < minId) minId = e.id;
+      }
+    }
+    return minId;
+  };
   const sortedGroupIds = Array.from(groups.values()).sort((a, b) => pullX(a) - pullX(b));
   const result: FamilyGraphNode[] = [];
   const seen = new Set<number>();
   for (const groupParentIds of sortedGroupIds) {
-    const inGroupOrder = [...groupParentIds].sort((a, b) => a - b);
+    const sharedKids = childrenByParent.get(groupParentIds[0]) ?? [];
+    const inGroupOrder = [...groupParentIds].sort((a, b) => {
+      const ea = earliestEdgeId(a, sharedKids);
+      const eb = earliestEdgeId(b, sharedKids);
+      if (ea !== eb) return ea - eb;
+      // Last-resort tiebreak by person_id (covers the rare case where
+      // edge ids are identical / both Number.MAX_SAFE_INTEGER).
+      return a - b;
+    });
     for (const pid of inGroupOrder) {
       if (seen.has(pid) || !byId.has(pid)) continue;
       seen.add(pid);
