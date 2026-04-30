@@ -1065,10 +1065,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         right: { src: existingParentAvatar, label: existingParentFullName, initial: existingParentFullName.charAt(0) },
       },
       choices: [
-        { id: 'married', label: 'Married', description: 'Spouses — formally married couple.', primary: true },
+        { id: 'married', label: 'Married', description: 'Currently married — they\'re spouses.', primary: true },
         { id: 'partners', label: 'Partners', description: 'Together but not married — civil partnership, long-term relationship, etc.' },
         { id: 'previously', label: 'Previously together', description: 'Divorced, separated, or no longer a couple.' },
-        { id: 'coparents_only', label: 'Just co-parents', description: 'Never were a couple.' },
+        { id: 'coparents_only', label: 'Co-parents', description: 'Never were a couple.' },
       ],
     });
     if (choice === 'married') {
