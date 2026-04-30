@@ -1206,7 +1206,36 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         await addRelationship({ personAId: coparentId, personBId: otherPersonId, type: 'parent_of' });
       }
     } else if (kind === 'partner') {
-      await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of' });
+      // Ask which kind of partnership before writing — same modal
+      // style as the parent-pair prompt, three options instead of
+      // four (no co-parent option here since there's no child
+      // involved in the question). Dismiss aborts the whole add.
+      const fromFullName = displayName(fromPersonId, 'them');
+      const otherFullName = displayName(otherPersonId, otherPersonName?.trim() || 'this person');
+      const fromAvatar = await fetchPersonAvatar(fromPersonId, graph, allPersons);
+      const otherAvatar = await fetchPersonAvatar(otherPersonId, graph, allPersons);
+      const choice = await promptChoice<'married' | 'partners' | 'previously'>({
+        eyebrow: 'Relationship status',
+        title: `How are ${fromFullName} and ${otherFullName} related?`,
+        message: 'Pick the state that fits — you can change it later.',
+        avatars: {
+          left: { src: fromAvatar, label: fromFullName, initial: fromFullName.charAt(0) },
+          right: { src: otherAvatar, label: otherFullName, initial: otherFullName.charAt(0) },
+        },
+        choices: [
+          { id: 'married', label: 'Married', description: 'Currently married — they\'re spouses.', primary: true },
+          { id: 'partners', label: 'Partners', description: 'Together but not married — civil partnership, long-term relationship, etc.' },
+          { id: 'previously', label: 'Previously together', description: 'Divorced, separated, or no longer a couple.' },
+        ],
+      });
+      if (choice === null) return; // dismissed → write nothing
+      if (choice === 'married') {
+        await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of', flags: { married: true } });
+      } else if (choice === 'partners') {
+        await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of', flags: { married: false } });
+      } else if (choice === 'previously') {
+        await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of', flags: { ended: true } });
+      }
     } else if (kind === 'sibling') {
       // Ask the user what kind of sibling relationship it is, rather
       // than silently assuming full siblings and auto-filling ghost

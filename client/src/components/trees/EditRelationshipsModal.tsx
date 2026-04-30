@@ -388,7 +388,15 @@ function relationshipLabelFromGraphEdge(edge: FamilyGraphEdge, aIsMe: boolean): 
   if (edge.type === 'parent_of') return aIsMe ? 'Parent of' : 'Child of';
   if (edge.type === 'spouse_of') {
     if (edge.until) return 'Ex-partner';
-    return 'Partner / spouse';
+    // Differentiate married vs partner now that the prompt captures
+    // the distinction. Pre-existing edges (where flags.married is
+    // undefined) keep the inclusive "Partner" label rather than
+    // claiming a married status the user never confirmed.
+    const flags: any = edge.flags ?? {};
+    if (flags.ended) return 'Ex-partner';
+    if (flags.married === true) return 'Spouse';
+    if (flags.married === false) return 'Partner';
+    return 'Partner';
   }
   if (edge.type === 'sibling_of') {
     const flags: any = edge.flags ?? {};
@@ -413,7 +421,11 @@ function relationshipLabelFromRecord(edge: RelationshipRecord, aIsMe: boolean): 
   }
   if (edge.type === 'spouse_of') {
     if (edge.until) return 'Ex-partner';
-    return 'Partner / spouse';
+    const flags: any = edge.flags ?? {};
+    if (flags.ended) return 'Ex-partner';
+    if (flags.married === true) return 'Spouse';
+    if (flags.married === false) return 'Partner';
+    return 'Partner';
   }
   if (edge.type === 'sibling_of') {
     const flags: any = edge.flags ?? {};

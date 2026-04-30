@@ -648,7 +648,7 @@ const TYPE_VERBS: Record<DeclarativeRelationshipType, string> = {
 const TYPE_LABELS: Record<DeclarativeRelationshipType, string> = {
   parent: 'Parent of…',
   child: 'Child of…',
-  partner: 'Partner / spouse',
+  partner: 'Partner',
   sibling: 'Sibling',
   half_sibling: 'Half-sibling',
   adopted_sibling: 'Adopted sibling',

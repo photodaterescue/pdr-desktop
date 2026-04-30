@@ -1594,7 +1594,7 @@ function QuickAddChipMenu({ cx, cy, label, onPartner, onSibling }: {
           <g onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onPartner(); }}
              style={{ cursor: 'pointer' }}>
             <rect x={-50} y={2} width={100} height={22} fill="transparent" />
-            <text x={0} y={17} textAnchor="middle" fontSize={12} fill="#1f2937">Partner / spouse</text>
+            <text x={0} y={17} textAnchor="middle" fontSize={12} fill="#1f2937">Partner</text>
           </g>
           <line x1={-50} y1={26} x2={50} y2={26} stroke="#e5e7eb" strokeWidth={1} />
           <g onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSibling(); }}
