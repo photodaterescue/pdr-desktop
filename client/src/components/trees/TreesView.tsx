@@ -41,6 +41,12 @@ import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
 interface PersonSummary {
   id: number;
   name: string;
+  /** Optional long-form name (`persons.full_name`). Trees prompts and
+   *  any other formal-context UI should prefer this over the short
+   *  name — "Sylvia Mills" reads better in a confirmation modal than
+   *  the user's family nickname "Nan". Short name remains the fallback
+   *  when no full name is on file. */
+  fullName: string | null;
   /** Total photos this person is linked to via face detections —
    *  includes AI-suggested faces the user hasn't confirmed. Kept for
    *  legacy sorting in the picker. */
@@ -165,6 +171,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     return () => clearTimeout(t);
   }, [pulseGenerations]);
   const [allPersons, setAllPersons] = useState<PersonSummary[]>([]);
+  /** Formal-context display name for a person — full name when on file,
+   *  short name as fallback. Use this in confirmation modals, prompts,
+   *  and anywhere the user is making a decision about a specific
+   *  person; the short name (often a family nickname like "Nan" /
+   *  "Grandad") reads as ambiguous in those contexts. */
+  const displayName = useCallback((personId: number, fallback: string = 'this person'): string => {
+    const p = allPersons.find(x => x.id === personId);
+    if (!p) return fallback;
+    const full = p.fullName?.trim();
+    if (full) return full;
+    return p.name?.trim() || fallback;
+  }, [allPersons]);
   const [relationshipEditorFor, setRelationshipEditorFor] = useState<number | null>(null);
   /** Optional preselection for SetRelationshipModal's "other person" —
    *  used when Edit Relationships jumps straight into an existing edge. */
@@ -291,6 +309,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       setAllPersons(res.data.map(p => ({
         id: p.id,
         name: p.name,
+        fullName: p.full_name ?? null,
         photoCount: p.photo_count ?? 0,
         verifiedPhotoCount: (p as any).verified_photo_count ?? 0,
         gender: (p as any).gender ?? null,
@@ -1009,12 +1028,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             ),
           );
           if (!alreadySpouses) {
-            const childName = allPersons.find(p => p.id === fromPersonId)?.name?.trim() || 'this person';
-            const newParentName = otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name?.trim() || 'this parent';
-            const existingParentName = allPersons.find(p => p.id === existingParentId)?.name?.trim() || "the other parent";
+            const childFullName = displayName(fromPersonId, 'this person');
+            const newParentFullName = displayName(otherPersonId, otherPersonName || 'this parent');
+            const existingParentFullName = displayName(existingParentId, 'the other parent');
             const yes = await promptConfirm({
-              title: `Are ${newParentName} and ${existingParentName} married?`,
-              message: `Recording them as married means future siblings of ${childName} who share both parents will register as full siblings. Choose No if they're not (or never were) married — they'll still both be ${childName}'s parents either way.`,
+              title: `Are ${newParentFullName} and ${existingParentFullName} married?`,
+              message: `${newParentFullName} and ${existingParentFullName} are both ${childFullName}'s parents.`,
               confirmLabel: 'Yes, mark as married',
               cancelLabel: 'No, just both parents',
             });
@@ -1076,22 +1095,24 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         }
       }
       if (candidateIds.size > 0) {
-        const fromName = allPersons.find(p => p.id === fromPersonId)?.name?.trim() || 'them';
-        const childName = (otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name || 'this child').trim();
-        const multi = candidateIds.size > 1;
+        const fromFullName = displayName(fromPersonId, 'them');
+        const childFullName = displayName(otherPersonId, otherPersonName?.trim() || 'this child');
         for (const [candidateId, source] of candidateIds) {
-          const candidateName = allPersons.find(p => p.id === candidateId)?.name?.trim() || 'their co-parent';
-          const baseTitle = `Is ${candidateName} also ${childName}'s parent?`;
+          const candidateFullName = displayName(candidateId, 'their co-parent');
+          // Title and body use the formal full-name format because
+          // family nicknames ("Nan") read as ambiguous in a decision
+          // modal. Body says only the salient fact and lets the user
+          // decide; we intentionally don't moralise about full vs
+          // half siblings — each new child is its own question and
+          // we ask again for the next one.
           const message = source === 'spouse'
-            ? (multi
-                ? `${fromName} has multiple current partners. Answer for each — choose Yes for every partner who's also ${childName}'s parent.`
-                : `${fromName} has one current partner (${candidateName}). In most cases they're the second parent — choose No if ${childName} has a different co-parent.`)
-            : `${candidateName} is already a parent of one of ${fromName}'s other children, so they often share new children too. Saying Yes records ${candidateName} as ${childName}'s parent so future siblings appear as full siblings rather than half.`;
+            ? `${candidateFullName} is currently ${fromFullName}'s partner.`
+            : `${candidateFullName} and ${fromFullName} already share a child together.`;
           const yes = await promptConfirm({
-            title: baseTitle,
+            title: `Is ${candidateFullName} ${childFullName}'s parent also?`,
             message,
-            confirmLabel: `Yes, add ${candidateName} as parent`,
-            cancelLabel: multi ? `No, skip ${candidateName}` : 'No, just ' + fromName,
+            confirmLabel: `Yes, add ${candidateFullName} as parent`,
+            cancelLabel: `No, just ${fromFullName}`,
           });
           if (yes) {
             await addRelationship({ personAId: candidateId, personBId: otherPersonId, type: 'parent_of' });
@@ -1106,8 +1127,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       // parents. Use the just-typed name (if this was a "Name them"
       // create) before falling back to allPersons, which may not have
       // reloaded yet.
-      const fromName = allPersons.find(p => p.id === fromPersonId)?.name ?? 'this person';
-      const toName = otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name || 'this person';
+      // Prefer full names — "Sylvia Mills" reads more clearly than the
+      // short / nickname form in a decision dialog.
+      const fromName = displayName(fromPersonId, 'this person');
+      const toName = displayName(otherPersonId, otherPersonName?.trim() || 'this person');
       setSiblingKindDialog({ fromId: fromPersonId, toId: otherPersonId, fromName, toName });
       return; // dialog confirm handles the rest
     }
@@ -1150,7 +1173,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       // Couldn't find them within 10 hops — unusual; just refresh at default.
       refetchGraph(focusPersonId, fetchDepth);
     }
-  }, [quickAdd, graph, focusPersonId, expandedHops, ancestorsDepth, descendantsDepth, fetchDepth, refetchGraph]);
+  }, [quickAdd, graph, focusPersonId, expandedHops, ancestorsDepth, descendantsDepth, fetchDepth, refetchGraph, displayName, allPersons]);
 
   const handleRemovePerson = useCallback(async (personId: number) => {
     // Remove every edge touching this person in the current graph.
