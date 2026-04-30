@@ -2697,20 +2697,51 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
 
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
-        {/* Footer: cancel as a quiet text link, matching the
-            convention in promptConfirm's dialog. The actual commit
-            action is the inline create-row above; this footer just
-            offers the dismiss path. text-foreground (not faint
-            lavender) keeps the cancel readable. */}
-        <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-border">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors px-1"
-          >
-            Cancel
-          </button>
-        </div>
+        {/* Footer: muted text-link cancel + a primary CTA, matching
+            the convention used by every other modal in PDR
+            (promptConfirm, FaceGridModal, DateEditor, etc.). The
+            CTA's label and behaviour adapt to context — pick the
+            highlighted existing person, or create the typed name
+            as a new one. Disabled when there's nothing actionable. */}
+        {(() => {
+          const exactMatch = trimmedQuery.length > 0
+            ? filtered.find(p => p.name.trim().toLowerCase() === trimmedQuery.toLowerCase())
+            : null;
+          const singleMatch = !exactMatch && filtered.length === 1 ? filtered[0] : null;
+          const willCreate = !exactMatch && !singleMatch && showCreateRow;
+          const hasAction = !!(exactMatch || singleMatch || willCreate);
+          const ctaLabel = willCreate
+            ? `Add ${trimmedQuery}`
+            : exactMatch
+            ? `Pick ${exactMatch.name}`
+            : singleMatch
+            ? `Pick ${singleMatch.name}`
+            : 'Add';
+          const onCommit = () => {
+            if (exactMatch) onPick(exactMatch.id);
+            else if (singleMatch) onPick(singleMatch.id);
+            else if (willCreate) handleCreate(trimmedQuery);
+          };
+          return (
+            <div className="flex items-center justify-between gap-3 mt-3 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors px-1"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onCommit}
+                disabled={busy || !hasAction}
+                className="px-5 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {busy ? 'Adding…' : ctaLabel}
+              </button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
