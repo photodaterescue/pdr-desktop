@@ -3,7 +3,7 @@ import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as I
 import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
-import { promptConfirm } from './promptConfirm';
+import { promptConfirm, promptChoice } from './promptConfirm';
 import { HiddenSuggestionsReview } from './HiddenSuggestionsReview';
 import { useDraggableModal } from './useDraggableModal';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
@@ -1464,15 +1464,43 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
             <QuickAddChip cx={0}                  cy={-CARD_H / 2 - 16} label="parent" onClick={() => { setHovered(false); onQuickAddParent(); }} />
           )}
           <QuickAddChip cx={0}                  cy={ CARD_H / 2 + 16} label="child"  onClick={() => { setHovered(false); onQuickAddChild(); }} />
-          <QuickAddChipMenu
+          {/* Same-generation +chip on either side of the card. Tap
+              opens a modal asking Partner vs Sibling — the previous
+              SVG-inside-the-canvas popup felt out-of-place against the
+              rest of the app's modal-based decision flow. */}
+          <QuickAddChip
             cx={-CARD_W / 2 - 20} cy={0} label="partner / sibling"
-            onPartner={() => { setHovered(false); onQuickAddPartner(); }}
-            onSibling={() => { setHovered(false); onQuickAddSibling(); }}
+            onClick={async () => {
+              setHovered(false);
+              const choice = await promptChoice<'partner' | 'sibling'>({
+                eyebrow: 'Add a relative',
+                title: 'Partner or sibling?',
+                message: `Pick the relationship to add to ${node.fullName?.trim() || node.name?.trim() || 'this person'}.`,
+                choices: [
+                  { id: 'partner', label: 'Partner', description: 'Married, together, or previously together.', primary: true },
+                  { id: 'sibling', label: 'Sibling', description: 'Brother or sister.' },
+                ],
+              });
+              if (choice === 'partner') onQuickAddPartner();
+              else if (choice === 'sibling') onQuickAddSibling();
+            }}
           />
-          <QuickAddChipMenu
+          <QuickAddChip
             cx={ CARD_W / 2 + 20} cy={0} label="partner / sibling"
-            onPartner={() => { setHovered(false); onQuickAddPartner(); }}
-            onSibling={() => { setHovered(false); onQuickAddSibling(); }}
+            onClick={async () => {
+              setHovered(false);
+              const choice = await promptChoice<'partner' | 'sibling'>({
+                eyebrow: 'Add a relative',
+                title: 'Partner or sibling?',
+                message: `Pick the relationship to add to ${node.fullName?.trim() || node.name?.trim() || 'this person'}.`,
+                choices: [
+                  { id: 'partner', label: 'Partner', description: 'Married, together, or previously together.', primary: true },
+                  { id: 'sibling', label: 'Sibling', description: 'Brother or sister.' },
+                ],
+              });
+              if (choice === 'partner') onQuickAddPartner();
+              else if (choice === 'sibling') onQuickAddSibling();
+            }}
           />
         </g>
       )}
@@ -1538,75 +1566,13 @@ function GenderGlyph({ gender, cx, cy }: { gender: PersonGender | null | undefin
   );
 }
 
-/** Sideways chip that opens a small menu instead of firing a single
- *  action — used for same-generation adds so the user can pick Partner
- *  or Sibling without caring which side the chip is on. */
-function QuickAddChipMenu({ cx, cy, label, onPartner, onSibling }: {
-  cx: number; cy: number; label: string;
-  onPartner: () => void;
-  onSibling: () => void;
-}) {
-  const [hovered, setHovered] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  // Close menu if user clicks outside this chip.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = (e: MouseEvent) => {
-      const target = e.target as SVGElement;
-      if (target.closest(`[data-chip-id="${cx}-${cy}"]`)) return;
-      setMenuOpen(false);
-    };
-    window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
-  }, [menuOpen, cx, cy]);
-
-  return (
-    <g
-      transform={`translate(${cx} ${cy})`}
-      data-chip-id={`${cx}-${cy}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onMouseDown={(e) => e.stopPropagation()}
-      style={{ cursor: 'pointer' }}
-    >
-      <circle
-        r={12}
-        fill={hovered || menuOpen ? '#6366f1' : '#ffffff'}
-        stroke="#6366f1"
-        strokeWidth={1.5}
-        onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
-      />
-      <text y={4} textAnchor="middle" fontSize={16} fontWeight={600}
-        fill={hovered || menuOpen ? '#ffffff' : '#6366f1'}
-        style={{ pointerEvents: 'none' }}>+</text>
-      {hovered && !menuOpen && (
-        <g>
-          <rect x={-48} y={14} width={96} height={16} rx={3} fill="rgba(0,0,0,0.8)" />
-          <text y={26} textAnchor="middle" fontSize={10} fill="#ffffff"
-            style={{ pointerEvents: 'none' }}>{label}</text>
-        </g>
-      )}
-      {menuOpen && (
-        <g transform="translate(0 18)">
-          <rect x={-52} y={0} width={104} height={52} rx={6}
-            fill="#ffffff" stroke="#6366f1" strokeWidth={1} />
-          <g onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onPartner(); }}
-             style={{ cursor: 'pointer' }}>
-            <rect x={-50} y={2} width={100} height={22} fill="transparent" />
-            <text x={0} y={17} textAnchor="middle" fontSize={12} fill="#1f2937">Partner</text>
-          </g>
-          <line x1={-50} y1={26} x2={50} y2={26} stroke="#e5e7eb" strokeWidth={1} />
-          <g onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSibling(); }}
-             style={{ cursor: 'pointer' }}>
-            <rect x={-50} y={28} width={100} height={22} fill="transparent" />
-            <text x={0} y={43} textAnchor="middle" fontSize={12} fill="#1f2937">Sibling</text>
-          </g>
-        </g>
-      )}
-    </g>
-  );
-}
+// Note: QuickAddChipMenu (an SVG-inside-the-canvas popup with
+// Partner/Sibling rows) used to live here. It was replaced with a
+// regular QuickAddChip that opens a promptChoice modal — same UX as
+// every other relationship decision in the app, and it doesn't fight
+// the canvas pan/zoom. The previous implementation broke when the
+// user zoomed out (popup landed on the wrong side) and felt out of
+// place against the rest of the modal-driven flow.
 
 function QuickAddChip({ cx, cy, label, onClick }: { cx: number; cy: number; label: string; onClick: () => void }) {
   const [hovered, setHovered] = useState(false);
@@ -2313,10 +2279,14 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
             <button
               onClick={() => handleName(linkQuery.trim())}
               disabled={busy}
-              className="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
+              className="flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
             >
-              <UserPlus className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">
+              <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              {/* leading-snug whitespace-normal so longer typed names
+                  ("Grandad Filmer", "Auntie Gladys Robinson", etc.)
+                  wrap onto a second line instead of truncating with
+                  an ellipsis at "...". */}
+              <span className="leading-snug whitespace-normal break-words">
                 <span className="text-muted-foreground">This person isn't on PDR yet. Add </span>
                 <strong className="text-foreground">{linkQuery.trim()}</strong>
                 <span className="text-muted-foreground"> as a new person?</span>
@@ -2330,7 +2300,9 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
         <p className="text-xs text-muted-foreground mt-1">
           {selectedLinkId != null
             ? 'Click Done to turn this placeholder into the selected person. All relationships on the placeholder transfer to them.'
-            : 'Click a name to link this placeholder to them, or type a new name and press Enter to create a new person.'}
+            : showCreateRow
+            ? 'Click Done (or press Enter) to add this person to PDR.'
+            : 'Click a name to link this placeholder to them, or type a new name to create a new person.'}
         </p>
       </div>
 
@@ -2350,16 +2322,20 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
           </button>
         )}
         <div className="flex-1" />
-        {/* Done commits the selected existing person (merge placeholder
-            into them). Creating a new person uses the "+ Add X to PDR"
-            row inside the list itself — no separate Save-name button
-            needed now that the flow is unified. */}
+        {/* Done commits whichever path the user has set up:
+            - selectedLinkId set → merge placeholder into that person
+            - typed query with no match → create new person (same as
+              clicking the "+ Add X to PDR" row inline)
+            - neither → disabled */}
         <button
-          onClick={() => selectedLinkId != null && handleLink(selectedLinkId)}
-          disabled={busy || selectedLinkId == null}
+          onClick={() => {
+            if (selectedLinkId != null) handleLink(selectedLinkId);
+            else if (showCreateRow) handleName(linkQuery.trim());
+          }}
+          disabled={busy || (selectedLinkId == null && !showCreateRow)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 hover:bg-primary/90"
         >
-          {busy ? 'Linking…' : 'Done'}
+          {busy ? (selectedLinkId != null ? 'Linking…' : 'Adding…') : 'Done'}
         </button>
       </div>
       </div>
