@@ -1576,6 +1576,13 @@ function GenderGlyph({ gender, cx, cy }: { gender: PersonGender | null | undefin
 
 function QuickAddChip({ cx, cy, label, onClick }: { cx: number; cy: number; label: string; onClick: () => void }) {
   const [hovered, setHovered] = useState(false);
+  // Brand-lavender (#ad9eff = hsl(249 100% 81%) — same value as
+  // --primary in index.css). Earlier draft used indigo #6366f1
+  // which is a much darker, bluer hue and read as out-of-place
+  // against the rest of the lavender app — Terry's "the +chip
+  // labels look shit" complaint.
+  const PRIMARY = '#ad9eff';
+  const PRIMARY_DARK = '#8e7cf0'; // darker lavender for the chip stroke / hover ring
   return (
     <g
       transform={`translate(${cx} ${cy})`}
@@ -1585,13 +1592,35 @@ function QuickAddChip({ cx, cy, label, onClick }: { cx: number; cy: number; labe
       onMouseDown={(e) => e.stopPropagation()}
       style={{ cursor: 'pointer' }}
     >
-      <circle r={12} fill={hovered ? '#6366f1' : '#ffffff'} stroke="#6366f1" strokeWidth={1.5} />
-      <text y={4} textAnchor="middle" fontSize={16} fontWeight={600} fill={hovered ? '#ffffff' : '#6366f1'} style={{ pointerEvents: 'none' }}>+</text>
+      <circle r={12} fill={hovered ? PRIMARY : '#ffffff'} stroke={PRIMARY_DARK} strokeWidth={1.5} />
+      <text y={5} textAnchor="middle" fontSize={16} fontWeight={600} fill={hovered ? '#ffffff' : PRIMARY_DARK} style={{ pointerEvents: 'none', fontFamily: 'Inter, system-ui, sans-serif' }}>+</text>
+      {/* Label tooltip rendered via foreignObject so it picks up
+          PDR's typography tier (Inter 11px / 500 / soft lavender pill
+          background) instead of the previous bare SVG text on a
+          black slab. The pill matches the soft tab-pill / chip
+          pattern used elsewhere in the app. */}
       {hovered && (
-        <g>
-          <rect x={-28} y={14} width={56} height={16} rx={3} fill="rgba(0,0,0,0.8)" />
-          <text y={26} textAnchor="middle" fontSize={10} fill="#ffffff" style={{ pointerEvents: 'none' }}>{label}</text>
-        </g>
+        <foreignObject x={-60} y={16} width={120} height={28} style={{ pointerEvents: 'none', overflow: 'visible' }}>
+          <div
+            style={{
+              display: 'inline-block',
+              padding: '2px 10px',
+              borderRadius: '9999px',
+              background: 'rgba(173, 158, 255, 0.18)',
+              border: `1px solid rgba(142, 124, 240, 0.5)`,
+              color: '#3f3a7a',
+              fontFamily: 'Inter, system-ui, sans-serif',
+              fontSize: '11px',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
+              transform: 'translateX(-50%)',
+              marginLeft: '60px',
+            }}
+          >
+            {label}
+          </div>
+        </foreignObject>
       )}
     </g>
   );
