@@ -47,6 +47,13 @@ interface PersonSummary {
    *  the user's family nickname "Nan". Short name remains the fallback
    *  when no full name is on file. */
   fullName: string | null;
+  /** Avatar data URL (`persons.avatar_data`). Used by Trees prompt
+   *  modals to render a face crop alongside the question — anchors
+   *  the question visually so the user isn't parsing a long
+   *  "Sylvia Mills Carol Rouse's parent…" string. Null when no avatar
+   *  has been set; the caller falls back to a plain monogram in that
+   *  case. */
+  avatarData: string | null;
   /** Total photos this person is linked to via face detections —
    *  includes AI-suggested faces the user hasn't confirmed. Kept for
    *  legacy sorting in the picker. */
@@ -310,6 +317,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         id: p.id,
         name: p.name,
         fullName: p.full_name ?? null,
+        avatarData: p.avatar_data ?? null,
         photoCount: p.photo_count ?? 0,
         verifiedPhotoCount: (p as any).verified_photo_count ?? 0,
         gender: (p as any).gender ?? null,
@@ -1031,11 +1039,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             const childFullName = displayName(fromPersonId, 'this person');
             const newParentFullName = displayName(otherPersonId, otherPersonName || 'this parent');
             const existingParentFullName = displayName(existingParentId, 'the other parent');
+            const newParentAvatar = allPersons.find(p => p.id === otherPersonId)?.avatarData ?? undefined;
+            const existingParentAvatar = allPersons.find(p => p.id === existingParentId)?.avatarData ?? undefined;
             const yes = await promptConfirm({
+              eyebrow: 'Marriage status',
               title: `Are ${newParentFullName} and ${existingParentFullName} married?`,
-              message: `${newParentFullName} and ${existingParentFullName} are both ${childFullName}'s parents.`,
-              confirmLabel: 'Yes, mark as married',
-              cancelLabel: 'No, just both parents',
+              message: `Both are ${childFullName}'s parents.`,
+              avatars: {
+                left: { src: newParentAvatar, label: newParentFullName, initial: newParentFullName.charAt(0) },
+                right: { src: existingParentAvatar, label: existingParentFullName, initial: existingParentFullName.charAt(0) },
+              },
+              confirmLabel: 'Yes, married',
+              cancelLabel: 'Not married',
             });
             if (yes) {
               await addRelationship({ personAId: otherPersonId, personBId: existingParentId, type: 'spouse_of' });
@@ -1063,56 +1078,63 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       //      sibling edge half.
       const rels = await listRelationshipsForPerson(fromPersonId);
       const allRels = rels.success && rels.data ? rels.data : [];
-      const candidateIds = new Map<number, 'spouse' | 'implicit'>();
+      // Each candidate carries the source of the suggestion so the
+      // body copy can name the salient connection: 'spouse' = "X is
+      // currently from-person's partner", 'implicit' = "X already
+      // shares a specific child with from-person".
+      type CandidateMeta = { source: 'spouse' } | { source: 'implicit'; viaChildId: number };
+      const candidates = new Map<number, CandidateMeta>();
       for (const r of allRels) {
         if (r.type === 'spouse_of' && !r.until) {
           const otherId = r.person_a_id === fromPersonId ? r.person_b_id : r.person_a_id;
-          if (otherId !== otherPersonId) candidateIds.set(otherId, 'spouse');
+          if (otherId !== otherPersonId) candidates.set(otherId, { source: 'spouse' });
         }
       }
-      // Build set of fromPerson's existing children (excluding the new one).
+      // fromPerson's existing children (excluding the just-added one).
       const ourChildren = allRels
         .filter(r => r.type === 'parent_of' && r.person_a_id === fromPersonId && r.person_b_id !== otherPersonId)
         .map(r => r.person_b_id);
-      if (ourChildren.length > 0) {
-        // For each existing child, find OTHER parents — anyone who's
-        // a co-parent of any of these kids is a candidate co-parent
-        // for the new child too.
-        const childrenSet = new Set(ourChildren);
-        for (const r of allRels) { /* allRels is fromPerson's only — check via separate fetch */ }
-        for (const childId of childrenSet) {
-          const childRels = await listRelationshipsForPerson(childId);
-          if (!childRels.success || !childRels.data) continue;
-          for (const r of childRels.data) {
-            if (r.type !== 'parent_of') continue;
-            if (r.person_b_id !== childId) continue;
-            const parentId = r.person_a_id;
-            if (parentId === fromPersonId || parentId === otherPersonId) continue;
-            // Only add as implicit if not already covered as a spouse
-            // candidate (spouses take priority for the prompt copy).
-            if (!candidateIds.has(parentId)) candidateIds.set(parentId, 'implicit');
+      for (const childId of ourChildren) {
+        const childRels = await listRelationshipsForPerson(childId);
+        if (!childRels.success || !childRels.data) continue;
+        for (const r of childRels.data) {
+          if (r.type !== 'parent_of') continue;
+          if (r.person_b_id !== childId) continue;
+          const parentId = r.person_a_id;
+          if (parentId === fromPersonId || parentId === otherPersonId) continue;
+          // Spouse candidates take priority for prompt copy, so only
+          // record an implicit candidate if the parent isn't already
+          // a current spouse.
+          if (!candidates.has(parentId)) {
+            candidates.set(parentId, { source: 'implicit', viaChildId: childId });
           }
         }
       }
-      if (candidateIds.size > 0) {
+      if (candidates.size > 0) {
         const fromFullName = displayName(fromPersonId, 'them');
         const childFullName = displayName(otherPersonId, otherPersonName?.trim() || 'this child');
-        for (const [candidateId, source] of candidateIds) {
+        const childAvatarData = allPersons.find(p => p.id === otherPersonId)?.avatarData ?? undefined;
+        for (const [candidateId, meta] of candidates) {
           const candidateFullName = displayName(candidateId, 'their co-parent');
-          // Title and body use the formal full-name format because
-          // family nicknames ("Nan") read as ambiguous in a decision
-          // modal. Body says only the salient fact and lets the user
-          // decide; we intentionally don't moralise about full vs
-          // half siblings — each new child is its own question and
-          // we ask again for the next one.
-          const message = source === 'spouse'
+          const candidateAvatarData = allPersons.find(p => p.id === candidateId)?.avatarData ?? undefined;
+          // Body names the salient relationship that triggered the
+          // prompt — for implicit co-parents that's the existing
+          // shared child, for spouses it's the partnership. No
+          // lecturing about full vs half siblings; the modal fires
+          // again per added child anyway.
+          const message = meta.source === 'spouse'
             ? `${candidateFullName} is currently ${fromFullName}'s partner.`
-            : `${candidateFullName} and ${fromFullName} already share a child together.`;
+            : `${candidateFullName} already shares ${displayName(meta.viaChildId, 'another child')} with ${fromFullName}.`;
           const yes = await promptConfirm({
-            title: `Is ${candidateFullName} ${childFullName}'s parent also?`,
+            eyebrow: 'Confirm parentage',
+            title: `Is ${candidateFullName} also a parent?`,
             message,
-            confirmLabel: `Yes, add ${candidateFullName} as parent`,
-            cancelLabel: `No, just ${fromFullName}`,
+            avatars: {
+              left: { src: candidateAvatarData, label: candidateFullName, initial: candidateFullName.charAt(0) },
+              right: { src: childAvatarData, label: childFullName, initial: childFullName.charAt(0) },
+            },
+            confirmLabel: 'Yes, add as parent',
+            cancelLabel: 'No',
           });
           if (yes) {
             await addRelationship({ personAId: candidateId, personBId: otherPersonId, type: 'parent_of' });
