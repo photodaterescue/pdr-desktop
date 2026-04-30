@@ -155,7 +155,13 @@
       "Bash(grep -oE '\\\\.bg-blue-200[^,{}]*\\\\{[^}]*\\\\}' /c/Users/Terry/pdr-desktop/dist/public/assets/index-zo2QPSwV.css)",
       "Bash(grep -oE '\\\\@layer [a-z]+\\\\{[^}]{0,100}\\\\}' /c/Users/Terry/pdr-desktop/dist/public/assets/index-zo2QPSwV.css)",
       "PowerShell(Stop-Process -Name electron -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; $remaining = Get-Process -Name electron -ErrorAction SilentlyContinue; if \\($remaining\\) { Write-Output \"Still running: $\\($remaining.Count\\)\"; Stop-Process -Name electron -Force -ErrorAction SilentlyContinue } else { Write-Output \"all stopped\" })",
-      "Bash(grep -oE '\\\\.bg-\\\\\\\\\\\\[\\\\\\\\#dbeafe\\\\\\\\\\\\]\\\\{[^}]*\\\\}' /c/Users/Terry/pdr-desktop/dist/public/assets/index-*.css)"
+      "Bash(grep -oE '\\\\.bg-\\\\\\\\\\\\[\\\\\\\\#dbeafe\\\\\\\\\\\\]\\\\{[^}]*\\\\}' /c/Users/Terry/pdr-desktop/dist/public/assets/index-*.css)",
+      "Bash(npx electron *)",
+      "Bash(echo *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(npm run build*)"
     ]
   }
 }

@@ -352,6 +352,14 @@ export default function PeopleManager() {
     if (matches.length === 0) {
       setFullNameCandidates([]);
       setGlobalReassignPersonId(null);
+      // Clear any previously auto-filled full name. Without this, a
+      // user typing "Nan" (auto-fills "Sylvia Mills") and then
+      // continuing to type "Nanny Ada" leaves the stale "Sylvia
+      // Mills" sitting in the full-name field — implying the wrong
+      // person. Only clear if the user hasn't manually edited the
+      // field; if they have, we never auto-set it in the first
+      // place, so there's nothing of ours to clear.
+      if (!fullNameUserEdited) setGlobalReassignFullName('');
       return;
     }
     if (matches.length === 1) {
