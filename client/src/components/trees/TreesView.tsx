@@ -1026,34 +1026,75 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       }
     } else if (kind === 'child') {
       await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'parent_of' });
-      // Co-parent prompt — for every CURRENT (non-ended) spouse of the
-      // person we're adding FROM, ask whether they're also the child's
-      // parent. Previously this only fired when there was exactly ONE
-      // current spouse, silently skipping every partner in polyamorous
-      // or multi-partner configurations — so the user had to manually
-      // wire each co-parent afterwards. Now we ask per partner so no
-      // one gets silently left out.
+      // Co-parent prompt — ask, for every plausible "second parent"
+      // candidate, whether they're also a parent of the child being
+      // added. Two sources of candidates:
+      //   1. CURRENT spouses (spouse_of, not ended) — historically
+      //      the only candidate type. Multi-partner setups all get
+      //      asked individually so no one is silently skipped.
+      //   2. IMPLICIT co-parents — anyone else who is already a
+      //      parent_of one of fromPerson's existing children. This
+      //      catches the half-sister bug Terry hit: if Sylvia and
+      //      Derek are both Sally's parents but aren't recorded as
+      //      married, adding Carol as Sylvia's child needs to ask
+      //      "is Derek also Carol's parent?" so Carol becomes a
+      //      FULL sibling of Sally rather than a half. Without the
+      //      spouse_of edge there was no signal to ask, and the
+      //      child silently got one parent — making the derived
+      //      sibling edge half.
       const rels = await listRelationshipsForPerson(fromPersonId);
-      const currentSpouses = (rels.success && rels.data ? rels.data : []).filter(r =>
-        r.type === 'spouse_of' && !r.until
-      );
-      if (currentSpouses.length > 0) {
+      const allRels = rels.success && rels.data ? rels.data : [];
+      const candidateIds = new Map<number, 'spouse' | 'implicit'>();
+      for (const r of allRels) {
+        if (r.type === 'spouse_of' && !r.until) {
+          const otherId = r.person_a_id === fromPersonId ? r.person_b_id : r.person_a_id;
+          if (otherId !== otherPersonId) candidateIds.set(otherId, 'spouse');
+        }
+      }
+      // Build set of fromPerson's existing children (excluding the new one).
+      const ourChildren = allRels
+        .filter(r => r.type === 'parent_of' && r.person_a_id === fromPersonId && r.person_b_id !== otherPersonId)
+        .map(r => r.person_b_id);
+      if (ourChildren.length > 0) {
+        // For each existing child, find OTHER parents — anyone who's
+        // a co-parent of any of these kids is a candidate co-parent
+        // for the new child too.
+        const childrenSet = new Set(ourChildren);
+        for (const r of allRels) { /* allRels is fromPerson's only — check via separate fetch */ }
+        for (const childId of childrenSet) {
+          const childRels = await listRelationshipsForPerson(childId);
+          if (!childRels.success || !childRels.data) continue;
+          for (const r of childRels.data) {
+            if (r.type !== 'parent_of') continue;
+            if (r.person_b_id !== childId) continue;
+            const parentId = r.person_a_id;
+            if (parentId === fromPersonId || parentId === otherPersonId) continue;
+            // Only add as implicit if not already covered as a spouse
+            // candidate (spouses take priority for the prompt copy).
+            if (!candidateIds.has(parentId)) candidateIds.set(parentId, 'implicit');
+          }
+        }
+      }
+      if (candidateIds.size > 0) {
         const fromName = allPersons.find(p => p.id === fromPersonId)?.name?.trim() || 'them';
         const childName = (otherPersonName || allPersons.find(p => p.id === otherPersonId)?.name || 'this child').trim();
-        const multi = currentSpouses.length > 1;
-        for (const rel of currentSpouses) {
-          const spouseId = rel.person_a_id === fromPersonId ? rel.person_b_id : rel.person_a_id;
-          const spouseName = allPersons.find(p => p.id === spouseId)?.name?.trim() || 'their partner';
+        const multi = candidateIds.size > 1;
+        for (const [candidateId, source] of candidateIds) {
+          const candidateName = allPersons.find(p => p.id === candidateId)?.name?.trim() || 'their co-parent';
+          const baseTitle = `Is ${candidateName} also ${childName}'s parent?`;
+          const message = source === 'spouse'
+            ? (multi
+                ? `${fromName} has multiple current partners. Answer for each — choose Yes for every partner who's also ${childName}'s parent.`
+                : `${fromName} has one current partner (${candidateName}). In most cases they're the second parent — choose No if ${childName} has a different co-parent.`)
+            : `${candidateName} is already a parent of one of ${fromName}'s other children, so they often share new children too. Saying Yes records ${candidateName} as ${childName}'s parent so future siblings appear as full siblings rather than half.`;
           const yes = await promptConfirm({
-            title: `Is ${spouseName} also ${childName}'s parent?`,
-            message: multi
-              ? `${fromName} has multiple current partners. Answer for each — choose Yes for every partner who's also ${childName}'s parent.`
-              : `${fromName} has one current partner (${spouseName}). In most cases they're the second parent — choose No if ${childName} has a different co-parent.`,
-            confirmLabel: `Yes, add ${spouseName} as parent`,
-            cancelLabel: multi ? `No, skip ${spouseName}` : 'No, just ' + fromName,
+            title: baseTitle,
+            message,
+            confirmLabel: `Yes, add ${candidateName} as parent`,
+            cancelLabel: multi ? `No, skip ${candidateName}` : 'No, just ' + fromName,
           });
           if (yes) {
-            await addRelationship({ personAId: spouseId, personBId: otherPersonId, type: 'parent_of' });
+            await addRelationship({ personAId: candidateId, personBId: otherPersonId, type: 'parent_of' });
           }
         }
       }

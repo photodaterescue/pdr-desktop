@@ -639,12 +639,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           y={placeholderEditor.y}
           onResolved={() => { onGraphMutated(); setPlaceholderEditor(null); }}
           onClose={() => setPlaceholderEditor(null)}
-          peopleAlreadyInTree={allReachablePersonIds ?? new Set(
-            // Fallback to laid-out nodes only if the parent didn't
-            // supply the full reachable set. Prefer the parent's set
-            // because it includes people who are currently hidden by
-            // Steps or hide-ancestry — they're still "in the tree"
-            // and shouldn't be re-offered as link targets.
+          peopleAlreadyInTree={new Set(
+            // Exclude only people CURRENTLY VISIBLE on the canvas, not
+            // the full connected component from listAllRelationships.
+            // The connected-component approach used to filter Terry's
+            // already-tagged "Nan" / "Grandad" out of every placeholder
+            // picker even after he undid their relationships — because
+            // a stray edge still made them reachable from the focus,
+            // they were treated as "in the tree" forever. Layout nodes
+            // are the right denominator for "already placed somewhere
+            // visible right now".
             layout.nodes
               .filter(n => !n.isPlaceholder && n.personId > 0)
               .map(n => n.personId),
