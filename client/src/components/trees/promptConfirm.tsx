@@ -4,8 +4,15 @@ import { AlertTriangle, ChevronRight, X } from 'lucide-react';
 
 /**
  * promptConfirm(message) — async replacement for the native window.confirm().
- * Renders a PDR-styled modal and returns a Promise<boolean> that resolves
- * true if the user confirmed, false if they cancelled.
+ * Renders a PDR-styled modal and returns a Promise<boolean | null>:
+ *   - true  : user clicked the primary (Yes / Confirm) button.
+ *   - false : user clicked the secondary text link (No / Cancel).
+ *   - null  : user DISMISSED the modal (X close, backdrop click, Escape).
+ *
+ * The three-way return distinguishes an explicit "No" from a "I changed
+ * my mind, abandon the whole flow" close. Existing callers using
+ * `if (!ok) return` continue to work — null is falsy. New callers that
+ * need to abort an enclosing operation on dismissal can check `=== null`.
  *
  * Why: native confirm() shows Electron's default system dialog, which looks
  * like a Windows 95 leftover. This keeps all confirmations on-brand and
@@ -25,13 +32,13 @@ import { AlertTriangle, ChevronRight, X } from 'lucide-react';
  * Usage:
  *   if (!(await promptConfirm('Remove this?'))) return;
  */
-export function promptConfirm(options: string | ConfirmOptions): Promise<boolean> {
+export function promptConfirm(options: string | ConfirmOptions): Promise<boolean | null> {
   const opts: ConfirmOptions = typeof options === 'string' ? { message: options } : options;
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean | null>((resolve) => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
-    const close = (result: boolean) => {
+    const close = (result: boolean | null) => {
       root.unmount();
       container.remove();
       resolve(result);
@@ -49,6 +56,7 @@ export function promptConfirm(options: string | ConfirmOptions): Promise<boolean
         typeToConfirm={opts.typeToConfirm}
         onConfirm={() => close(true)}
         onCancel={() => close(false)}
+        onDismiss={() => close(null)}
       />
     );
   });
@@ -90,8 +98,8 @@ export interface ConfirmOptions {
 }
 
 function ConfirmDialog({
-  message, title, eyebrow, avatars, confirmLabel, cancelLabel, danger, hideCancel, typeToConfirm, onConfirm, onCancel,
-}: ConfirmOptions & { onConfirm: () => void; onCancel: () => void }) {
+  message, title, eyebrow, avatars, confirmLabel, cancelLabel, danger, hideCancel, typeToConfirm, onConfirm, onCancel, onDismiss,
+}: ConfirmOptions & { onConfirm: () => void; onCancel: () => void; onDismiss: () => void }) {
   const [mounted, setMounted] = useState(false);
   const [typedValue, setTypedValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -113,7 +121,10 @@ function ConfirmDialog({
       inputRef.current.focus();
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
+      // Esc dismisses (different signal from the secondary "No"
+      // button). Callers that want to abort a wider flow on
+      // dismissal listen for the null return.
+      if (e.key === 'Escape') onDismiss();
       // Only auto-confirm on Enter when the gate is passed. Without
       // this, a user hitting Enter before typing would bypass the
       // whole point of the confirmation.
@@ -128,16 +139,18 @@ function ConfirmDialog({
   return (
     <div
       className={`fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4 transition-opacity ${mounted ? 'opacity-100' : 'opacity-0'}`}
-      onClick={onCancel}
+      onClick={onDismiss}
     >
       <div
         className={`relative bg-background rounded-2xl shadow-2xl border border-border w-full max-w-[480px] transform transition-all ${mounted ? 'scale-100' : 'scale-95'}`}
         onClick={e => e.stopPropagation()}
       >
         {/* Close button — absolute so it never competes with the
-            centred content for horizontal space. */}
+            centred content for horizontal space. Dismisses (null)
+            rather than counting as a "No" — important for callers
+            that want to abort an enclosing flow on close. */}
         <button
-          onClick={onCancel}
+          onClick={onDismiss}
           className="absolute right-3 top-3 p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Close"
         >
