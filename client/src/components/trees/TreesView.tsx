@@ -378,18 +378,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     reloadPersons();
   }, [reloadPersons]);
 
-  // Subscribe to people-data-changed events so additions / renames
-  // / merges done in PM (a separate BrowserWindow) flow back into
-  // Trees' allPersons cache. Without this, a person Terry just
-  // named in PM wasn't appearing in the Trees +partner / +child
-  // pickers until the next session — the manual Refresh button
-  // covers it but should never have been required.
-  useEffect(() => {
-    return onPeopleDataChanged(() => {
-      reloadPersons();
-      if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
-    });
-  }, [reloadPersons, refetchGraph, focusPersonId, fetchDepth]);
+  // (PM data-change subscription effect lives further down — must
+  // be declared AFTER refetchGraph / fetchDepth or React hits a TDZ
+  // crash. See comment near the undo/redo block for the same rule.)
 
   // Auto-focus on first open: ONLY use the last focus you explicitly
   // chose (stored in localStorage). If there isn't one, show the picker.
@@ -543,6 +534,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       toast.error(r.error);
     }
   }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts]);
+
+  // Subscribe to PM-side data changes. Declared HERE — after the
+  // undo/redo callbacks — because the deps include refetchGraph and
+  // fetchDepth, which are themselves declared earlier in the file
+  // but only accessible after their initialiser runs. Same TDZ
+  // rule the undo/redo block warns about.
+  useEffect(() => {
+    return onPeopleDataChanged(() => {
+      reloadPersons();
+      if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
+    });
+  }, [reloadPersons, refetchGraph, focusPersonId, fetchDepth]);
 
   // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or
   // Ctrl/Cmd+Y = redo. Ignored when a text input is focused so the
