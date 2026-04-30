@@ -1253,6 +1253,52 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       } else if (choice === 'previously') {
         await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of', flags: { ended: true } });
       }
+
+      // After the spouse/partner edge is written: for each existing
+      // child of fromPerson who doesn't already have the new partner
+      // as a parent, ask whether the new partner is also that child's
+      // parent. Mirrors the implicit co-parent prompt used when
+      // adding a child — same modal style, same default "Yes, add"
+      // CTA. Dismissing one prompt skips the remaining ones but
+      // leaves the spouse edge in place (it was a confirmed action,
+      // we don't undo it here).
+      const fromRels = await listRelationshipsForPerson(fromPersonId);
+      const fromChildren = fromRels.success && fromRels.data
+        ? fromRels.data
+            .filter(r => r.type === 'parent_of' && r.person_a_id === fromPersonId)
+            .map(r => r.person_b_id)
+        : [];
+      if (fromChildren.length > 0) {
+        const otherIsParentAlready = new Set<number>();
+        const otherRels = await listRelationshipsForPerson(otherPersonId);
+        if (otherRels.success && otherRels.data) {
+          for (const r of otherRels.data) {
+            if (r.type === 'parent_of' && r.person_a_id === otherPersonId) {
+              otherIsParentAlready.add(r.person_b_id);
+            }
+          }
+        }
+        for (const childId of fromChildren) {
+          if (otherIsParentAlready.has(childId)) continue;
+          const childFullName = displayName(childId, 'this child');
+          const childAvatar = await fetchPersonAvatar(childId, graph, allPersons);
+          const result = await promptConfirm({
+            eyebrow: 'Confirm parentage',
+            title: `Is ${otherFullName} also a parent?`,
+            message: `${otherFullName} is now ${fromFullName}'s partner — are they also ${childFullName}'s parent?`,
+            avatars: {
+              left: { src: otherAvatar, label: otherFullName, initial: otherFullName.charAt(0) },
+              right: { src: childAvatar, label: childFullName, initial: childFullName.charAt(0) },
+            },
+            confirmLabel: 'Yes, add as parent',
+            cancelLabel: 'No',
+          });
+          if (result === null) break; // dismissed → skip remaining children
+          if (result === true) {
+            await addRelationship({ personAId: otherPersonId, personBId: childId, type: 'parent_of' });
+          }
+        }
+      }
     } else if (kind === 'sibling') {
       // Ask the user what kind of sibling relationship it is, rather
       // than silently assuming full siblings and auto-filling ghost
