@@ -1577,10 +1577,9 @@ function GenderGlyph({ gender, cx, cy }: { gender: PersonGender | null | undefin
 function QuickAddChip({ cx, cy, label, onClick, tooltipSide = 'bottom' }: {
   cx: number; cy: number; label: string;
   onClick: () => void;
-  /** Which side of the chip the hover label appears. Pass 'top' for
-   *  the +parent chip above the card, 'bottom' for +child below,
-   *  'left' / 'right' for the side chips so the label points away
-   *  from the next card instead of overlapping it. */
+  /** Which side of the chip Radix should anchor the tooltip. Each
+   *  call site picks an anchor that points AWAY from the nearest
+   *  card, so the label never overlaps a sibling tile. */
   tooltipSide?: 'top' | 'bottom' | 'left' | 'right';
 }) {
   const [hovered, setHovered] = useState(false);
@@ -1588,56 +1587,26 @@ function QuickAddChip({ cx, cy, label, onClick, tooltipSide = 'bottom' }: {
   // --primary in index.css).
   const PRIMARY = '#ad9eff';
   const PRIMARY_DARK = '#8e7cf0';
-  // Tooltip pill copies PDR's defined Radix TooltipContent style:
-  // solid bg-primary, white text, rounded, no transparency. Sizing
-  // chosen to tightly hug the label so it doesn't overflow into
-  // adjacent cards on left/right anchors.
-  const labelLen = label.length;
-  const pillW = Math.max(60, labelLen * 7 + 16);
-  const pillH = 22;
-  const gap = 8;
-  let foX = -pillW / 2;
-  let foY = 14;
-  if (tooltipSide === 'top') { foX = -pillW / 2; foY = -pillH - gap - 6; }
-  else if (tooltipSide === 'left') { foX = -pillW - gap - 12; foY = -pillH / 2; }
-  else if (tooltipSide === 'right') { foX = gap + 12; foY = -pillH / 2; }
+  // Hover label uses the canonical IconTooltip / Radix
+  // TooltipContent — same dark rounded pill the rest of PDR shows
+  // for icon-only buttons. Renders via a portal so it always sits
+  // above adjacent cards instead of being clipped by SVG draw
+  // order. The chip itself stays as an SVG group; Radix wraps it
+  // as a TooltipTrigger via Slot.
   return (
-    <g
-      transform={`translate(${cx} ${cy})`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
-      onMouseDown={(e) => e.stopPropagation()}
-      style={{ cursor: 'pointer' }}
-    >
-      <circle r={12} fill={hovered ? PRIMARY : '#ffffff'} stroke={PRIMARY_DARK} strokeWidth={1.5} />
-      <text y={5} textAnchor="middle" fontSize={16} fontWeight={600} fill={hovered ? '#ffffff' : PRIMARY_DARK} style={{ pointerEvents: 'none', fontFamily: 'Inter, system-ui, sans-serif' }}>+</text>
-      {hovered && (
-        <foreignObject x={foX} y={foY} width={pillW} height={pillH} style={{ pointerEvents: 'none', overflow: 'visible' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              height: '100%',
-              padding: '0 10px',
-              borderRadius: '6px',
-              background: '#ad9eff',
-              color: '#ffffff',
-              fontFamily: 'Inter, system-ui, sans-serif',
-              fontSize: '11px',
-              fontWeight: 500,
-              whiteSpace: 'nowrap',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
-              boxSizing: 'border-box',
-            }}
-          >
-            {label}
-          </div>
-        </foreignObject>
-      )}
-    </g>
+    <IconTooltip label={label} side={tooltipSide}>
+      <g
+        transform={`translate(${cx} ${cy})`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{ cursor: 'pointer' }}
+      >
+        <circle r={12} fill={hovered ? PRIMARY : '#ffffff'} stroke={PRIMARY_DARK} strokeWidth={1.5} />
+        <text y={5} textAnchor="middle" fontSize={16} fontWeight={600} fill={hovered ? '#ffffff' : PRIMARY_DARK} style={{ pointerEvents: 'none', fontFamily: 'Inter, system-ui, sans-serif' }}>+</text>
+      </g>
+    </IconTooltip>
   );
 }
 
