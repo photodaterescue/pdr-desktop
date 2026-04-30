@@ -89,6 +89,11 @@ interface TreesCanvasProps {
    *  already on this tree, warn before silently creating a duplicate.
    *  (Root cause of the double-Dorothy bug.) */
   nameConflictLookup?: (name: string) => { id: number; name: string } | null;
+  /** Fired after a placeholder has been resolved as a NEW parent of
+   *  some child. The resolver itself doesn't own the marriage prompt;
+   *  the parent (TreesView) does, so it can ask "how are these two
+   *  parents related?" once a child reaches its second parent. */
+  onParentResolved?: (parentId: number, childId: number) => Promise<void>;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -130,7 +135,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -661,6 +666,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           onHideSuggestion={onHideSuggestion}
           onUnhideSuggestion={onUnhideSuggestion}
           nameConflictLookup={nameConflictLookup}
+          onParentResolved={onParentResolved}
         />
       )}
 
@@ -1923,7 +1929,7 @@ function roleSuffix(label: string): string {
  *      and the virtual child directly; Cancel/close → NOTHING persists.
  *      This stops accidental 'Unknown' rows from piling up every time
  *      the user opens + dismisses the popup without committing. */
-function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onClose, peopleAlreadyInTree, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup }: {
+function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onClose, peopleAlreadyInTree, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved }: {
   personId: number | null;
   /** When this placeholder is a virtual ghost, the IDs of ALL children
    *  the ghost parents. A shared ghost across a sibling group must fill
@@ -1951,6 +1957,11 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
    *  so the "Name them" flow can warn before silently creating a
    *  duplicate (the root cause of the double-Dorothy bug). */
   nameConflictLookup?: (name: string) => { id: number; name: string } | null;
+  /** Fired after the placeholder is resolved (named or linked) for
+   *  each parent_of relationship the placeholder was filling. The
+   *  parent component uses this to fire the marriage / partner-status
+   *  prompt — the resolver itself doesn't own that flow. */
+  onParentResolved?: (parentId: number, childId: number) => Promise<void>;
 }) {
   const isVirtual = personId == null && virtualChildIds != null && virtualChildIds.length > 0;
   // Single-flow picker — no more tab switcher. The input below does
@@ -1967,8 +1978,10 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
   /** Relationships this placeholder already holds — shown up-top so the
    *  user knows WHAT this "?" represents before naming/linking. Answers
    *  the common confusion "why is there an extra placeholder?" — at a
-   *  glance you see e.g. "Currently: parent of Nee". */
-  const [relationships, setRelationships] = useState<{ label: string; otherName: string }[]>([]);
+   *  glance you see e.g. "Currently: parent of Nee". `otherId` is
+   *  carried so post-resolve handlers (the marriage prompt) can fire
+   *  per-relationship without a second SQL query. */
+  const [relationships, setRelationships] = useState<{ label: string; otherName: string; otherId: number; type: 'parent_of' | 'child_of' | 'spouse_of' | 'sibling_of' | 'associated_with' }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -2003,6 +2016,8 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
           setRelationships(virtualChildIds.map(id => ({
             label: 'parent of',
             otherName: nameBy.get(id) ?? '(unknown)',
+            otherId: id,
+            type: 'parent_of' as const,
           })));
         }
         return;
@@ -2010,15 +2025,15 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
       if (personId == null) return;
       const relRes = await listRelationshipsForPerson(personId);
       if (!relRes.success || !relRes.data) return;
-      const out: { label: string; otherName: string }[] = [];
+      const out: { label: string; otherName: string; otherId: number; type: 'parent_of' | 'child_of' | 'spouse_of' | 'sibling_of' | 'associated_with' }[] = [];
       for (const r of relRes.data) {
         const aIsMe = r.person_a_id === personId;
         const otherId = aIsMe ? r.person_b_id : r.person_a_id;
         const otherName = nameBy.get(otherId) ?? '(unknown)';
-        if (r.type === 'parent_of') out.push({ label: aIsMe ? 'parent of' : 'child of', otherName });
-        else if (r.type === 'spouse_of') out.push({ label: r.until ? 'ex-partner of' : 'partner of', otherName });
-        else if (r.type === 'sibling_of') out.push({ label: 'sibling of', otherName });
-        else if (r.type === 'associated_with') out.push({ label: 'connected to', otherName });
+        if (r.type === 'parent_of') out.push({ label: aIsMe ? 'parent of' : 'child of', otherName, otherId, type: aIsMe ? 'parent_of' : 'child_of' });
+        else if (r.type === 'spouse_of') out.push({ label: r.until ? 'ex-partner of' : 'partner of', otherName, otherId, type: 'spouse_of' });
+        else if (r.type === 'sibling_of') out.push({ label: 'sibling of', otherName, otherId, type: 'sibling_of' });
+        else if (r.type === 'associated_with') out.push({ label: 'connected to', otherName, otherId, type: 'associated_with' });
       }
       setRelationships(out);
     })();
@@ -2100,13 +2115,29 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
           const r = await addRelationship({ personAId: np.data, personBId: childId, type: 'parent_of' });
           if (!r.success) { setError(r.error ?? 'Could not save.'); return; }
         }
+        // Fire the post-resolve callback for each parent_of edge we
+        // just wrote — the parent component uses this to ask the
+        // marriage / partner-status question once a child reaches
+        // its second parent.
+        if (onParentResolved) {
+          for (const childId of virtualChildIds) await onParentResolved(np.data, childId);
+        }
         onResolved();
         return;
       }
       if (personId == null) return;
       const r = await namePlaceholder(personId, trimmed);
-      if (r.success) onResolved();
-      else setError(r.error ?? 'Could not save.');
+      if (r.success) {
+        // Persisted-placeholder rename keeps the placeholder's
+        // person_id, so its existing parent_of edges already point
+        // at the right children. Fire the callback for each.
+        if (onParentResolved) {
+          for (const rel of relationships) {
+            if (rel.type === 'parent_of') await onParentResolved(personId, rel.otherId);
+          }
+        }
+        onResolved();
+      } else setError(r.error ?? 'Could not save.');
     } catch (err) {
       setError((err as Error)?.message ?? 'Unexpected error while saving.');
     } finally {
@@ -2126,13 +2157,25 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
           const r = await addRelationship({ personAId: targetId, personBId: childId, type: 'parent_of' });
           if (!r.success) { setError(r.error ?? 'Could not link.'); return; }
         }
+        if (onParentResolved) {
+          for (const childId of virtualChildIds) await onParentResolved(targetId, childId);
+        }
         onResolved();
         return;
       }
       if (personId == null) return;
       const r = await mergePlaceholderIntoPerson(personId, targetId);
-      if (r.success) onResolved();
-      else setError(r.error ?? 'Could not link.');
+      if (r.success) {
+        // Merge: the placeholder's parent_of edges have been
+        // re-pointed at `targetId`. Fire the callback per edge so
+        // the parent component can ask the marriage prompt.
+        if (onParentResolved) {
+          for (const rel of relationships) {
+            if (rel.type === 'parent_of') await onParentResolved(targetId, rel.otherId);
+          }
+        }
+        onResolved();
+      } else setError(r.error ?? 'Could not link.');
     } catch (err) {
       setError((err as Error)?.message ?? 'Unexpected error while linking.');
     } finally {

@@ -1025,6 +1025,62 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     return null;
   }, [allPersons, connectedPersonIds]);
 
+  /** After a parent_of edge is added (parentId is the new parent of
+   *  childId), if the child now has exactly two parents and they
+   *  aren't already linked by a spouse_of edge, prompt the user to
+   *  pick the relationship status between the parents. Shared by
+   *  the +parent quick-add flow AND the placeholder click-to-name
+   *  flow so both produce a consistent UX — without this, filling
+   *  placeholders for grandparents was leaving them as silent
+   *  co-parents because the prompt only fired from the chip path. */
+  const maybePromptParentRelationship = useCallback(async (parentId: number, childId: number) => {
+    const childRels = await listRelationshipsForPerson(childId);
+    if (!childRels.success || !childRels.data) return;
+    const parentEdges = childRels.data.filter(r => r.type === 'parent_of' && r.person_b_id === childId);
+    const otherParentIds = parentEdges.map(r => r.person_a_id).filter(id => id !== parentId);
+    if (otherParentIds.length !== 1) return;
+    const existingParentId = otherParentIds[0];
+    // Check both endpoints' relationships for an existing spouse_of —
+    // since neither parent is the child, listRelationshipsForPerson(child)
+    // doesn't include their spouse edge. We have to ask the parent.
+    const parentRels = await listRelationshipsForPerson(parentId);
+    if (!parentRels.success || !parentRels.data) return;
+    const alreadySpouses = parentRels.data.some(r =>
+      r.type === 'spouse_of' && (
+        r.person_a_id === existingParentId || r.person_b_id === existingParentId
+      ),
+    );
+    if (alreadySpouses) return;
+    const childFullName = displayName(childId, 'this person');
+    const newParentFullName = displayName(parentId, 'this parent');
+    const existingParentFullName = displayName(existingParentId, 'the other parent');
+    const newParentAvatar = await fetchPersonAvatar(parentId, graph, allPersons);
+    const existingParentAvatar = await fetchPersonAvatar(existingParentId, graph, allPersons);
+    const choice = await promptChoice<'married' | 'partners' | 'previously' | 'coparents_only'>({
+      eyebrow: 'Relationship status',
+      title: `How are ${newParentFullName} and ${existingParentFullName} related?`,
+      message: `Both are ${childFullName}'s parents.`,
+      avatars: {
+        left: { src: newParentAvatar, label: newParentFullName, initial: newParentFullName.charAt(0) },
+        right: { src: existingParentAvatar, label: existingParentFullName, initial: existingParentFullName.charAt(0) },
+      },
+      choices: [
+        { id: 'married', label: 'Married', description: 'Spouses — formally married couple.', primary: true },
+        { id: 'partners', label: 'Partners', description: 'Together but not married — civil partnership, long-term relationship, etc.' },
+        { id: 'previously', label: 'Previously together', description: 'Divorced, separated, or no longer a couple.' },
+        { id: 'coparents_only', label: 'Just co-parents', description: 'Never were a couple.' },
+      ],
+    });
+    if (choice === 'married') {
+      await addRelationship({ personAId: parentId, personBId: existingParentId, type: 'spouse_of', flags: { married: true } });
+    } else if (choice === 'partners') {
+      await addRelationship({ personAId: parentId, personBId: existingParentId, type: 'spouse_of', flags: { married: false } });
+    } else if (choice === 'previously') {
+      await addRelationship({ personAId: parentId, personBId: existingParentId, type: 'spouse_of', flags: { ended: true } });
+    }
+    // 'coparents_only' / null: leave them as separate parents.
+  }, [graph, allPersons, displayName]);
+
   // Hidden-person list for the review panel. Computed from the current
   // tree's exclusion IDs + the allPersons name lookup so both modals
   // can render the same "N hidden — review" footer.
@@ -1057,112 +1113,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     setQuickAdd(null);
     if (kind === 'parent') {
       await addRelationship({ personAId: otherPersonId, personBId: fromPersonId, type: 'parent_of' });
-      // Marriage prompt — if fromPersonId now has TWO parents and they
-      // aren't already linked by a spouse_of edge, ask the user
-      // whether the parents were married. Without this, future
-      // additions of a sibling via just one of the parents look like
-      // a HALF-sibling because the second parent isn't recognised as
-      // a co-parent. Saying yes here pre-records the spouse_of edge
-      // so subsequent co-parent prompts work and full siblings stay
-      // full siblings. Asks per-pair only — silent when there are
-      // already 2+ parents recorded.
-      const allRels = await listRelationshipsForPerson(fromPersonId);
-      if (allRels.success && allRels.data) {
-        const parentEdges = allRels.data.filter(r => r.type === 'parent_of' && r.person_b_id === fromPersonId);
-        const otherParentIds = parentEdges.map(r => r.person_a_id).filter(id => id !== otherPersonId);
-        // Only prompt if the new addition makes the second parent
-        // (i.e. exactly one other parent already on file) — adding a
-        // 3rd, 4th, etc. parent is a less common case where auto-
-        // marrying would cause more confusion than it solves.
-        if (otherParentIds.length === 1) {
-          const existingParentId = otherParentIds[0];
-          const alreadySpouses = allRels.data.some(r =>
-            r.type === 'spouse_of' && (
-              (r.person_a_id === otherPersonId && r.person_b_id === existingParentId) ||
-              (r.person_a_id === existingParentId && r.person_b_id === otherPersonId)
-            ),
-          );
-          if (!alreadySpouses) {
-            const childFullName = displayName(fromPersonId, 'this person');
-            const newParentFullName = displayName(otherPersonId, otherPersonName || 'this parent');
-            const existingParentFullName = displayName(existingParentId, 'the other parent');
-            const newParentAvatar = await fetchPersonAvatar(otherPersonId, graph, allPersons);
-            const existingParentAvatar = await fetchPersonAvatar(existingParentId, graph, allPersons);
-            // Four-choice prompt distinguishes married couples
-            // (spouse) from unmarried partners — Terry's correction:
-            // "spouse means married; partner is for everything else
-            // that's together". Each choice maps to a different
-            // relationship-edge write:
-            //   married     → spouse_of, flags.married = true
-            //   partners    → spouse_of, flags.married = false
-            //   previously  → spouse_of, flags.ended = true
-            //                 (covers both divorced + separated; we
-            //                 don't ask which previously-was state
-            //                 because the renderer treats them the
-            //                 same)
-            //   coparents   → no edge written; the parents stay
-            //                 unconnected on the canvas
-            // Dismiss (X / backdrop / Esc) leaves parent_of in place
-            // and writes no spouse edge.
-            const choice = await promptChoice<'married' | 'partners' | 'previously' | 'coparents_only'>({
-              eyebrow: 'Relationship status',
-              title: `How are ${newParentFullName} and ${existingParentFullName} related?`,
-              message: `Both are ${childFullName}'s parents.`,
-              avatars: {
-                left: { src: newParentAvatar, label: newParentFullName, initial: newParentFullName.charAt(0) },
-                right: { src: existingParentAvatar, label: existingParentFullName, initial: existingParentFullName.charAt(0) },
-              },
-              choices: [
-                {
-                  id: 'married',
-                  label: 'Married',
-                  description: 'Spouses — formally married couple.',
-                  primary: true,
-                },
-                {
-                  id: 'partners',
-                  label: 'Partners',
-                  description: 'Together but not married — civil partnership, long-term relationship, etc.',
-                },
-                {
-                  id: 'previously',
-                  label: 'Previously together',
-                  description: 'Divorced, separated, or no longer a couple.',
-                },
-                {
-                  id: 'coparents_only',
-                  label: 'Just co-parents',
-                  description: 'Never were a couple.',
-                },
-              ],
-            });
-            if (choice === 'married') {
-              await addRelationship({
-                personAId: otherPersonId,
-                personBId: existingParentId,
-                type: 'spouse_of',
-                flags: { married: true },
-              });
-            } else if (choice === 'partners') {
-              await addRelationship({
-                personAId: otherPersonId,
-                personBId: existingParentId,
-                type: 'spouse_of',
-                flags: { married: false },
-              });
-            } else if (choice === 'previously') {
-              await addRelationship({
-                personAId: otherPersonId,
-                personBId: existingParentId,
-                type: 'spouse_of',
-                flags: { ended: true },
-              });
-            }
-            // 'coparents_only' and null (dismissed) both mean: leave
-            // them as separate parents with no spouse edge.
-          }
-        }
-      }
+      // Marriage prompt fires from the shared helper — same logic
+      // runs from the placeholder click-to-name path. See
+      // maybePromptParentRelationship for the full check.
+      await maybePromptParentRelationship(otherPersonId, fromPersonId);
     } else if (kind === 'child') {
       // Defer the parent_of(fromPerson, child) write until AFTER the
       // co-parent prompts resolve. If the user DISMISSES any prompt
@@ -1592,6 +1546,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onHideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
             onUnhideSuggestion={currentTreeId != null ? toggleExcludedSuggestion : undefined}
             nameConflictLookup={nameConflictLookup}
+            onParentResolved={maybePromptParentRelationship}
             useGenderedLabels={currentTree?.useGenderedLabels ?? true}
             simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}
             hideGenderMarker={currentTree?.hideGenderMarker ?? false}
