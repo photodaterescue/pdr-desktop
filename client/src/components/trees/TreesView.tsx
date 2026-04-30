@@ -1182,7 +1182,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       (e.aId === personId || e.bId === personId) && e.id != null && !e.derived
     );
     if (edgesToRemove.length === 0) return;
-    const personName = allPersons.find(p => p.id === personId)?.name ?? 'this person';
+    const personName = displayName(personId, 'this person');
     const confirmMsg = `This will remove all ${edgesToRemove.length} relationship${edgesToRemove.length === 1 ? '' : 's'} involving ${personName}. The person themselves stays — only the relationships go. You'll have a few seconds to undo.`;
     if (!(await promptConfirm({
       title: `Remove all relationships?`,
@@ -1526,11 +1526,17 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           chips around a node. Uses the same searchable person list with
           "create new" support as the focus picker. */}
       {quickAdd && (() => {
-        const fromPerson = allPersons.find(p => p.id === quickAdd.fromPersonId);
-        const title = quickAdd.kind === 'parent'  ? `Add ${fromPerson?.name ?? 'this person'}'s parent`
-                    : quickAdd.kind === 'child'   ? `Add ${fromPerson?.name ?? 'this person'}'s child`
-                    : quickAdd.kind === 'partner' ? `Add ${fromPerson?.name ?? 'this person'}'s partner`
-                    : `Add a sibling for ${fromPerson?.name ?? 'this person'}`;
+        // Title uses the FULL name ("Derek Mills"), not the short /
+        // family nickname ("Grandad"). The short name is fine on a
+        // node label where the user already knows who they're looking
+        // at; in a modal title it has to read unambiguously even when
+        // the user is many generations deep into a tree they've been
+        // building for hours.
+        const fromName = displayName(quickAdd.fromPersonId, 'this person');
+        const title = quickAdd.kind === 'parent'  ? `Add ${fromName}'s parent`
+                    : quickAdd.kind === 'child'   ? `Add ${fromName}'s child`
+                    : quickAdd.kind === 'partner' ? `Add ${fromName}'s partner`
+                    : `Add a sibling for ${fromName}`;
         // Filter out logically-impossible candidates so the picker only
         // suggests people who CAN hold the relationship you're adding.
         //   • Always exclude the "from" person themselves
@@ -1729,7 +1735,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           a "still living" checkbox. Saves via updatePersonLifeEvents. */}
       {dateEditor && (() => {
         const node = graph?.nodes.find(n => n.personId === dateEditor.personId);
-        const name = node?.name ?? allPersons.find(p => p.id === dateEditor.personId)?.name ?? '';
+        // Prefer full name on the date editor header — matches the
+        // formal-modal naming rule used elsewhere in Trees.
+        const name = node?.fullName?.trim() || displayName(dateEditor.personId, node?.name ?? '');
         return (
           <DateQuickEditor
             personId={dateEditor.personId}
@@ -2033,26 +2041,26 @@ function impossibleCandidates(
   fromId: number,
   kind: 'parent' | 'partner' | 'child' | 'sibling',
   graph: FamilyGraph | null,
-  /** Full DB-level family closure of the current tree (every person
-   *  reachable from the focus by any relationship chain, no depth cap).
-   *  Anyone already in the tree in some role is a poor quick-add
-   *  candidate — adding them as a new role is almost always either a
-   *  mistake (namesake confusion) or a structural change that belongs
-   *  in the Edit Relationships flow, not a casual quick-add. Optional
-   *  because the caller may not have it loaded yet on first render. */
-  connectedPersonIds?: Set<number>,
+  /** No longer used — the previous "exclude the whole connected
+   *  component" rule meant a person whose tree relationships had
+   *  been undone was still hidden from the quick-add picker because
+   *  one stale edge could keep them reachable from focus. Kept in the
+   *  signature for callers that still pass it; intentionally ignored. */
+  _connectedPersonIds?: Set<number>,
   /** Per-tree user-flagged "not part of this family" list. Persists
    *  across sessions via the saved_trees.excluded_suggestion_person_ids
    *  column. Reversible via the picker's review list. */
   excludedSuggestionPersonIds?: Iterable<number>,
 ): Set<number> {
   const out = new Set<number>([fromId]);
-  // Primary filter: exclude everyone already on this family tree via
-  // the DB closure. The graph-based checks further down are a safety
-  // net for the narrow window before connectedPersonIds resolves, plus
-  // defensively for any case where the closure is stale.
-  if (connectedPersonIds) {
-    for (const id of connectedPersonIds) out.add(id);
+  // Exclude everyone CURRENTLY VISIBLE on the canvas (graph.nodes) —
+  // these are the people already placed in some role on the tree
+  // right now. This matches what the placeholder picker does; both
+  // surfaces use the visible-set rather than the BFS-reachable
+  // connected component, so people who were undone reappear in the
+  // pickers immediately instead of staying hidden via stale edges.
+  if (graph) {
+    for (const n of graph.nodes) out.add(n.personId);
   }
   // User-curated exclusions — people they've manually flagged as not
   // part of this family (e.g. Michael Gentleman for a Clapson tree).

@@ -311,7 +311,10 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
   // is persisted upstream; we just refresh the graph once it returns.
   const pickCardBackgroundFor = useCallback((personId: number) => {
     if (!onRequestCardBackgroundPick) return;
-    const name = layout.nodes.find(n => n.personId === personId)?.name ?? 'this person';
+    const node = layout.nodes.find(n => n.personId === personId);
+    // Prefer full name in the pick-mode banner — that's a formal
+    // string the user sees while choosing a photo, not a node label.
+    const name = node?.fullName?.trim() || node?.name?.trim() || 'this person';
     onRequestCardBackgroundPick(personId, name);
   }, [onRequestCardBackgroundPick, layout.nodes]);
 
