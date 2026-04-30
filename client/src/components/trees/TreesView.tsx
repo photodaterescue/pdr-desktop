@@ -2695,9 +2695,17 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
 
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
-        <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border">
-          <div className="flex-1" />
-          <button onClick={onClose} className="px-2.5 py-1 rounded text-xs hover:bg-accent">
+        {/* Footer: cancel as a quiet text link, matching the
+            convention in promptConfirm's dialog. The actual commit
+            action is the inline create-row above; this footer just
+            offers the dismiss path. text-foreground (not faint
+            lavender) keeps the cancel readable. */}
+        <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors px-1"
+          >
             Cancel
           </button>
         </div>

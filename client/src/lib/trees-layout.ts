@@ -595,6 +595,34 @@ function orderNodesInGeneration(genNodes: FamilyGraphNode[], graph: FamilyGraph)
     else if (e.type === 'sibling_of') addUndirected(siblingMap, e.aId, e.bId);
   }
 
+  // ALSO treat implicit co-parents (two people in this generation
+  // who share a child) as spouses for LAYOUT purposes — even when
+  // no spouse_of edge exists between them. Without this, an
+  // unmarried co-parent (or a ghost placeholder added because the
+  // child only has one named parent) ends up as a "straggler" at
+  // the end of the row instead of sitting next to the parent
+  // they share a child with. Terry's case: he adds Lilly as
+  // Colin's child, the augmenter adds a ghost for Lilly's other
+  // parent, and that ghost should sit between Colin and Amie —
+  // not far right past Amie.
+  const childrenByParentInGen = new Map<number, Set<number>>();
+  for (const e of graph.edges) {
+    if (e.type !== 'parent_of') continue;
+    if (!idSet.has(e.aId)) continue;
+    if (!childrenByParentInGen.has(e.aId)) childrenByParentInGen.set(e.aId, new Set());
+    childrenByParentInGen.get(e.aId)!.add(e.bId);
+  }
+  const parentIdsInGen = Array.from(childrenByParentInGen.keys());
+  for (let i = 0; i < parentIdsInGen.length; i++) {
+    for (let j = i + 1; j < parentIdsInGen.length; j++) {
+      const aKids = childrenByParentInGen.get(parentIdsInGen[i])!;
+      const bKids = childrenByParentInGen.get(parentIdsInGen[j])!;
+      let shared = false;
+      for (const k of aKids) { if (bKids.has(k)) { shared = true; break; } }
+      if (shared) addUndirected(spouseMap, parentIdsInGen[i], parentIdsInGen[j]);
+    }
+  }
+
   const focusInThisGen = genNodes.find(n => n.personId === graph.focusPersonId);
 
   // Non-focus generations: simple recursive walk (siblings first to keep
