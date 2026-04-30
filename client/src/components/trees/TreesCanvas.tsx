@@ -2295,14 +2295,11 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
               className="flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
             >
               <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              {/* leading-snug whitespace-normal so longer typed names
-                  ("Grandad Filmer", "Auntie Gladys Robinson", etc.)
-                  wrap onto a second line instead of truncating with
-                  an ellipsis at "...". */}
+              {/* Action-first phrasing so the row reads as a button:
+                  "Add X as a new person — they aren't on PDR yet."
+                  Wraps onto two lines for longer names. */}
               <span className="leading-snug whitespace-normal break-words">
-                <span className="text-muted-foreground">This person isn't on PDR yet. Add </span>
-                <strong className="text-foreground">{linkQuery.trim()}</strong>
-                <span className="text-muted-foreground"> as a new person?</span>
+                Add <strong className="text-foreground">{linkQuery.trim()}</strong> as a new person — they aren't on PDR yet.
               </span>
             </button>
           )}

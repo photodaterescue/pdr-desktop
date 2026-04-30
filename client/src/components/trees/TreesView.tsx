@@ -2670,13 +2670,16 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
                 <button
                   onClick={() => handleCreate(trimmedQuery)}
                   disabled={busy}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
+                  className="flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left text-primary hover:bg-primary/10 border-t border-dashed border-border/60 mt-0.5 pt-2 disabled:opacity-50"
                 >
-                  <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">
-                    <span className="text-muted-foreground">This person isn't on PDR yet. Add </span>
-                    <strong className="text-foreground">{trimmedQuery}</strong>
-                    <span className="text-muted-foreground"> as a new person?</span>
+                  <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  {/* Wraps onto two lines for longer typed names —
+                      the previous truncate clipped the action with
+                      "...", which read as a stuck row rather than a
+                      "click to add" row. Mirrors the create-row
+                      behaviour on the placeholder picker. */}
+                  <span className="leading-snug whitespace-normal break-words">
+                    Add <strong className="text-foreground">{trimmedQuery}</strong> as a new person — they aren't on PDR yet.
                   </span>
                 </button>
               )}
