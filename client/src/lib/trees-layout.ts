@@ -350,8 +350,27 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       // by the overlap pass), slide it back so the centre of gravity
       // matches the desired centre. Only slides LEFT — never extends
       // beyond the natural desired positions.
-      const desiredMean = desired.reduce((a, b) => a + b, 0) / desired.length;
-      const actualMean  = placedX.reduce((a, b) => a + b, 0) / placedX.length;
+      //
+      // Compute drift over the subset of parents that ACTUALLY HAVE
+      // PLACED CHILDREN — aunts / uncles in the same generation drag
+      // the average right (they get pushed past Sally by the gap-
+      // enforcement) and the correction would over-pull every parent
+      // leftward, including the ones who do have kids. Result:
+      // Terry's siblings sit centred at x=0 but Alan + Sally end up
+      // off-centre on their left, so the kids look right-shifted
+      // relative to their parents. Restricting the average to
+      // parents-with-kids keeps THEIR midpoint above the kids'
+      // midpoint while letting the kid-less parents drift to
+      // wherever the gap-enforcement put them.
+      const idxWithKids = ordered
+        .map((_, i) => i)
+        .filter(i => (childrenByParent.get(ordered[i].personId) ?? []).length > 0);
+      const sliceFor = (arr: number[]): number[] =>
+        idxWithKids.length > 0 ? idxWithKids.map(i => arr[i]) : arr;
+      const desiredSubset = sliceFor(desired);
+      const actualSubset = sliceFor(placedX);
+      const desiredMean = desiredSubset.reduce((a, b) => a + b, 0) / desiredSubset.length;
+      const actualMean  = actualSubset.reduce((a, b) => a + b, 0) / actualSubset.length;
       const drift = actualMean - desiredMean;
       if (drift > 0) for (let i = 0; i < placedX.length; i++) placedX[i] -= drift;
       ordered.forEach((node, i) => {
