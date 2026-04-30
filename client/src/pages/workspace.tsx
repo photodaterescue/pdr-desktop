@@ -150,8 +150,14 @@ interface PreScanStats {
 }
 
 export default function Workspace() {
+	// Workspace's zoom lives under its own pdr-workspace-zoom key so
+	// it doesn't bleed into Welcome / source-selection / People
+	// Manager. (Previously a shared pdr-zoom-level key meant zooming
+	// any of those surfaces silently changed the others — Terry
+	// reported the Welcome screen unexpectedly at 125% after returning
+	// from People at that zoom level.)
 	const [zoomLevel, setZoomLevel] = useState<number>(() => {
-  const saved = localStorage.getItem("pdr-zoom-level");
+  const saved = localStorage.getItem("pdr-workspace-zoom");
   return saved ? Number(saved) : 100;
 });
 const MIN_ZOOM = 60;
@@ -160,7 +166,7 @@ const ZOOM_STEP = 5;
 
 const applyZoom = (newZoom: number) => {
   setZoomLevel(newZoom);
-  localStorage.setItem("pdr-zoom-level", String(newZoom));
+  localStorage.setItem("pdr-workspace-zoom", String(newZoom));
   // Zoom is CSS-only on the content area — no Electron setZoomFactor needed
 };
 
@@ -189,7 +195,7 @@ useEffect(() => {
         ? Math.min(MAX_ZOOM, prev + ZOOM_STEP)
         : Math.max(MIN_ZOOM, prev - ZOOM_STEP);
       if (newZoom !== prev) {
-        localStorage.setItem('pdr-zoom-level', String(newZoom));
+        localStorage.setItem('pdr-workspace-zoom', String(newZoom));
       }
       return newZoom;
     });

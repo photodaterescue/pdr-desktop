@@ -504,12 +504,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
       e.preventDefault();
       // CRITICAL: stop the event before it bubbles up to the
       // window-level Ctrl+wheel listener in workspace.tsx, which
-      // zooms the WHOLE app UI (60–150%) and persists to
-      // pdr-zoom-level. Without this, every Memories tile-zoom
-      // gesture also pulled the welcome-screen zoom down — that's
-      // the "Welcome at 60%" bug. stopImmediatePropagation also
-      // blocks any other native wheel listeners on the same chain
-      // from running, which is what we want here.
+      // zooms the WHOLE Workspace UI (60–150%) and persists to
+      // pdr-workspace-zoom. Without this, every Memories tile-zoom
+      // gesture also pulled the workspace zoom — that's the
+      // "Workspace shrinks while I scroll Memories tiles" bug.
+      // stopImmediatePropagation also blocks any other native wheel
+      // listeners on the same chain from running.
       e.stopPropagation();
       e.stopImmediatePropagation();
       setTileSizeSlider(prev => {

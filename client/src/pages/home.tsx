@@ -29,12 +29,13 @@ function setSkipWelcomeScreen(skip: boolean): void {
 export default function Home() {
   const navigate = useNavigate();
   const [skipScreen, setSkipScreen] = useState(getSkipWelcomeScreen());
-  // Shared zoom with Workspace — same pdr-zoom-level localStorage
-  // key, so a zoom choice made on Workspace persists to Welcome too
-  // and vice versa. Applied as CSS `zoom` on the content wrapper so
-  // the whole screen scales together. Ctrl+wheel is window-scoped
+  // Per-surface zoom — Welcome has its own pdr-welcome-zoom key so
+  // a zoom choice made on Workspace, People Manager, source-selection,
+  // etc. doesn't silently change the Welcome screen the next time
+  // the user lands here. Applied as CSS `zoom` on the content wrapper
+  // so the whole screen scales together. Ctrl+wheel is window-scoped
   // via the hook's internal listener.
-  const zoom = useZoomLevel();
+  const zoom = useZoomLevel('pdr-welcome-zoom');
 
   useEffect(() => {
     if (skipScreen) {

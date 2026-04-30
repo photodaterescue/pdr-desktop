@@ -19,9 +19,11 @@ export default function SourceSelection() {
   const [showLicenseModal, setShowLicenseModal] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [pendingPath, setPendingPath] = useState<{ path: string; type: 'folder' | 'drive' | 'zip'; name: string } | null>(null);
-  // Shares pdr-zoom-level with Welcome and Workspace — whatever zoom
-  // level the user picks here carries across.
-  const zoom = useZoomLevel();
+  // Per-surface zoom under its own key. Source-selection is a
+  // transient page, but giving it a separate key avoids polluting the
+  // Welcome / Workspace zoom values for a screen the user typically
+  // sees once.
+  const zoom = useZoomLevel('pdr-source-selection-zoom');
 
   const container: Variants = {
     hidden: { opacity: 0 },
