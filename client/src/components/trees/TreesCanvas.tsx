@@ -1461,15 +1461,15 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
       {(hovered || isFocus) && !hideChips && (
         <g opacity={hovered ? 1 : 0.6} style={{ pointerEvents: 'all' }}>
           {canAddParent && (
-            <QuickAddChip cx={0}                  cy={-CARD_H / 2 - 16} label="parent" onClick={() => { setHovered(false); onQuickAddParent(); }} />
+            <QuickAddChip cx={0}                  cy={-CARD_H / 2 - 16} label="parent" tooltipSide="top" onClick={() => { setHovered(false); onQuickAddParent(); }} />
           )}
-          <QuickAddChip cx={0}                  cy={ CARD_H / 2 + 16} label="child"  onClick={() => { setHovered(false); onQuickAddChild(); }} />
+          <QuickAddChip cx={0}                  cy={ CARD_H / 2 + 16} label="child"  tooltipSide="bottom" onClick={() => { setHovered(false); onQuickAddChild(); }} />
           {/* Same-generation +chip on either side of the card. Tap
               opens a modal asking Partner vs Sibling — the previous
               SVG-inside-the-canvas popup felt out-of-place against the
               rest of the app's modal-based decision flow. */}
           <QuickAddChip
-            cx={-CARD_W / 2 - 20} cy={0} label="partner / sibling"
+            cx={-CARD_W / 2 - 20} cy={0} label="partner / sibling" tooltipSide="left"
             onClick={async () => {
               setHovered(false);
               const choice = await promptChoice<'partner' | 'sibling'>({
@@ -1486,7 +1486,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
             }}
           />
           <QuickAddChip
-            cx={ CARD_W / 2 + 20} cy={0} label="partner / sibling"
+            cx={ CARD_W / 2 + 20} cy={0} label="partner / sibling" tooltipSide="right"
             onClick={async () => {
               setHovered(false);
               const choice = await promptChoice<'partner' | 'sibling'>({
@@ -1574,15 +1574,33 @@ function GenderGlyph({ gender, cx, cy }: { gender: PersonGender | null | undefin
 // user zoomed out (popup landed on the wrong side) and felt out of
 // place against the rest of the modal-driven flow.
 
-function QuickAddChip({ cx, cy, label, onClick }: { cx: number; cy: number; label: string; onClick: () => void }) {
+function QuickAddChip({ cx, cy, label, onClick, tooltipSide = 'bottom' }: {
+  cx: number; cy: number; label: string;
+  onClick: () => void;
+  /** Which side of the chip the hover label appears. Pass 'top' for
+   *  the +parent chip above the card, 'bottom' for +child below,
+   *  'left' / 'right' for the side chips so the label points away
+   *  from the next card instead of overlapping it. */
+  tooltipSide?: 'top' | 'bottom' | 'left' | 'right';
+}) {
   const [hovered, setHovered] = useState(false);
   // Brand-lavender (#ad9eff = hsl(249 100% 81%) — same value as
-  // --primary in index.css). Earlier draft used indigo #6366f1
-  // which is a much darker, bluer hue and read as out-of-place
-  // against the rest of the lavender app — Terry's "the +chip
-  // labels look shit" complaint.
+  // --primary in index.css).
   const PRIMARY = '#ad9eff';
-  const PRIMARY_DARK = '#8e7cf0'; // darker lavender for the chip stroke / hover ring
+  const PRIMARY_DARK = '#8e7cf0';
+  // Tooltip pill copies PDR's defined Radix TooltipContent style:
+  // solid bg-primary, white text, rounded, no transparency. Sizing
+  // chosen to tightly hug the label so it doesn't overflow into
+  // adjacent cards on left/right anchors.
+  const labelLen = label.length;
+  const pillW = Math.max(60, labelLen * 7 + 16);
+  const pillH = 22;
+  const gap = 8;
+  let foX = -pillW / 2;
+  let foY = 14;
+  if (tooltipSide === 'top') { foX = -pillW / 2; foY = -pillH - gap - 6; }
+  else if (tooltipSide === 'left') { foX = -pillW - gap - 12; foY = -pillH / 2; }
+  else if (tooltipSide === 'right') { foX = gap + 12; foY = -pillH / 2; }
   return (
     <g
       transform={`translate(${cx} ${cy})`}
@@ -1594,28 +1612,25 @@ function QuickAddChip({ cx, cy, label, onClick }: { cx: number; cy: number; labe
     >
       <circle r={12} fill={hovered ? PRIMARY : '#ffffff'} stroke={PRIMARY_DARK} strokeWidth={1.5} />
       <text y={5} textAnchor="middle" fontSize={16} fontWeight={600} fill={hovered ? '#ffffff' : PRIMARY_DARK} style={{ pointerEvents: 'none', fontFamily: 'Inter, system-ui, sans-serif' }}>+</text>
-      {/* Label tooltip rendered via foreignObject so it picks up
-          PDR's typography tier (Inter 11px / 500 / soft lavender pill
-          background) instead of the previous bare SVG text on a
-          black slab. The pill matches the soft tab-pill / chip
-          pattern used elsewhere in the app. */}
       {hovered && (
-        <foreignObject x={-60} y={16} width={120} height={28} style={{ pointerEvents: 'none', overflow: 'visible' }}>
+        <foreignObject x={foX} y={foY} width={pillW} height={pillH} style={{ pointerEvents: 'none', overflow: 'visible' }}>
           <div
             style={{
-              display: 'inline-block',
-              padding: '2px 10px',
-              borderRadius: '9999px',
-              background: 'rgba(173, 158, 255, 0.18)',
-              border: `1px solid rgba(142, 124, 240, 0.5)`,
-              color: '#3f3a7a',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '100%',
+              height: '100%',
+              padding: '0 10px',
+              borderRadius: '6px',
+              background: '#ad9eff',
+              color: '#ffffff',
               fontFamily: 'Inter, system-ui, sans-serif',
               fontSize: '11px',
               fontWeight: 500,
               whiteSpace: 'nowrap',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-              transform: 'translateX(-50%)',
-              marginLeft: '60px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+              boxSizing: 'border-box',
             }}
           >
             {label}
