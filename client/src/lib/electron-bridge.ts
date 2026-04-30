@@ -1129,6 +1129,13 @@ export interface RelationshipFlags {
   kind?: AssociationKind;
   label?: string;
   ended?: boolean;
+  /** On spouse_of edges only: true if the couple are/were specifically
+   *  MARRIED (not just unmarried partners). Default semantics for
+   *  pre-existing spouse_of records (where this is undefined) is
+   *  "ambiguous — could be either"; new code that asks the user
+   *  always sets it to a definite true/false. Used by Trees prompts
+   *  to use the right noun ("spouse" vs "partner") in copy. */
+  married?: boolean;
 }
 
 export interface RelationshipRecord {

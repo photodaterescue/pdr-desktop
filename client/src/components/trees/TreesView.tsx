@@ -1088,18 +1088,23 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             const existingParentFullName = displayName(existingParentId, 'the other parent');
             const newParentAvatar = await fetchPersonAvatar(otherPersonId, graph, allPersons);
             const existingParentAvatar = await fetchPersonAvatar(existingParentId, graph, allPersons);
-            // Multi-choice prompt — three states map to three
-            // different relationship-edge writes:
-            //   together         → spouse_of, no flags (married /
-            //                      currently in a relationship)
-            //   previously       → spouse_of with flags.ended = true
-            //                      (divorced / separated)
-            //   coparents_only   → no edge written (parents share a
-            //                      child but were never together)
-            // Dismiss (X / backdrop / Esc) leaves the parent_of edges
-            // alone — the user just doesn't get asked again unless
-            // they trigger another add.
-            const choice = await promptChoice<'together' | 'previously' | 'coparents_only'>({
+            // Four-choice prompt distinguishes married couples
+            // (spouse) from unmarried partners — Terry's correction:
+            // "spouse means married; partner is for everything else
+            // that's together". Each choice maps to a different
+            // relationship-edge write:
+            //   married     → spouse_of, flags.married = true
+            //   partners    → spouse_of, flags.married = false
+            //   previously  → spouse_of, flags.ended = true
+            //                 (covers both divorced + separated; we
+            //                 don't ask which previously-was state
+            //                 because the renderer treats them the
+            //                 same)
+            //   coparents   → no edge written; the parents stay
+            //                 unconnected on the canvas
+            // Dismiss (X / backdrop / Esc) leaves parent_of in place
+            // and writes no spouse edge.
+            const choice = await promptChoice<'married' | 'partners' | 'previously' | 'coparents_only'>({
               eyebrow: 'Relationship status',
               title: `How are ${newParentFullName} and ${existingParentFullName} related?`,
               message: `Both are ${childFullName}'s parents.`,
@@ -1109,10 +1114,15 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               },
               choices: [
                 {
-                  id: 'together',
-                  label: 'Married, or together',
-                  description: 'Currently in a relationship.',
+                  id: 'married',
+                  label: 'Married',
+                  description: 'Spouses — formally married couple.',
                   primary: true,
+                },
+                {
+                  id: 'partners',
+                  label: 'Partners',
+                  description: 'Together but not married — civil partnership, long-term relationship, etc.',
                 },
                 {
                   id: 'previously',
@@ -1126,8 +1136,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 },
               ],
             });
-            if (choice === 'together') {
-              await addRelationship({ personAId: otherPersonId, personBId: existingParentId, type: 'spouse_of' });
+            if (choice === 'married') {
+              await addRelationship({
+                personAId: otherPersonId,
+                personBId: existingParentId,
+                type: 'spouse_of',
+                flags: { married: true },
+              });
+            } else if (choice === 'partners') {
+              await addRelationship({
+                personAId: otherPersonId,
+                personBId: existingParentId,
+                type: 'spouse_of',
+                flags: { married: false },
+              });
             } else if (choice === 'previously') {
               await addRelationship({
                 personAId: otherPersonId,
