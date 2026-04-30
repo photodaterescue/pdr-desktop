@@ -340,6 +340,24 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     return m;
   }, [placedNodes]);
 
+  /** Per-person count of CURRENT (not ended) spouse_of edges. The
+   *  +sibling/+partner chip menu uses this to decide which option
+   *  to highlight as primary — if the user already has a partner,
+   *  Sibling is the more likely follow-up; otherwise Partner is. */
+  const currentPartnerCount = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const e of layout.edges) {
+      if (e.type !== 'spouse_of') continue;
+      if (e.derived) continue;
+      const flags = (e.flags ?? {}) as { ended?: boolean };
+      if (flags.ended) continue;
+      if (e.until) continue;
+      m.set(e.aId, (m.get(e.aId) ?? 0) + 1);
+      m.set(e.bId, (m.get(e.bId) ?? 0) + 1);
+    }
+    return m;
+  }, [layout.edges]);
+
   /** Relationship label for each person relative to the current
    *  focus — "Parent", "Sibling", "Grandchild", etc. Gendered when the
    *  tree has gendered labels enabled AND the target has a gender
@@ -594,6 +612,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 hideGenderMarker={hideGenderMarker}
                 onOpenGenderPicker={() => setGenderPickerFor(node.personId)}
                 canAddParent={true}
+                hasCurrentPartner={(currentPartnerCount.get(node.personId) ?? 0) > 0}
               />
             );
           })}
@@ -1094,7 +1113,7 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onEditName, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onEditName, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true, hasCurrentPartner = false }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
@@ -1122,6 +1141,11 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
    *  two stored parents and can't take a third (even if only one is
    *  currently visible due to Steps cutting off the other). */
   canAddParent?: boolean;
+  /** True when this person already has a current (non-ended)
+   *  spouse_of edge. Drives the +sibling/+partner chip menu's
+   *  primary CTA: if a partner is already on file, Sibling is the
+   *  more likely follow-up; otherwise Partner is. */
+  hasCurrentPartner?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const ringColor = isFocus ? '#f59e0b' : '#6366f1';
@@ -1468,18 +1492,23 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               opens a modal asking Partner vs Sibling — the previous
               SVG-inside-the-canvas popup felt out-of-place against the
               rest of the app's modal-based decision flow. */}
+          {/* Choice order + primary swaps based on whether the person
+              already has a current partner: with one on file, Sibling
+              is the more likely follow-up so it sits ON TOP and gets
+              the lavender primary CTA. Without one, Partner leads. */}
           <QuickAddChip
             cx={-CARD_W / 2 - 20} cy={0} label="partner / sibling" tooltipSide="left"
             onClick={async () => {
               setHovered(false);
+              const partnerChoice = { id: 'partner' as const, label: 'Partner', description: 'Married, together, or previously together.' };
+              const siblingChoice = { id: 'sibling' as const, label: 'Sibling', description: 'Brother or sister.' };
               const choice = await promptChoice<'partner' | 'sibling'>({
                 eyebrow: 'Add a relative',
-                title: 'Partner or sibling?',
+                title: hasCurrentPartner ? 'Sibling or partner?' : 'Partner or sibling?',
                 message: `Pick the relationship to add to ${node.fullName?.trim() || node.name?.trim() || 'this person'}.`,
-                choices: [
-                  { id: 'partner', label: 'Partner', description: 'Married, together, or previously together.', primary: true },
-                  { id: 'sibling', label: 'Sibling', description: 'Brother or sister.' },
-                ],
+                choices: hasCurrentPartner
+                  ? [{ ...siblingChoice, primary: true }, partnerChoice]
+                  : [{ ...partnerChoice, primary: true }, siblingChoice],
               });
               if (choice === 'partner') onQuickAddPartner();
               else if (choice === 'sibling') onQuickAddSibling();
@@ -1489,14 +1518,15 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
             cx={ CARD_W / 2 + 20} cy={0} label="partner / sibling" tooltipSide="right"
             onClick={async () => {
               setHovered(false);
+              const partnerChoice = { id: 'partner' as const, label: 'Partner', description: 'Married, together, or previously together.' };
+              const siblingChoice = { id: 'sibling' as const, label: 'Sibling', description: 'Brother or sister.' };
               const choice = await promptChoice<'partner' | 'sibling'>({
                 eyebrow: 'Add a relative',
-                title: 'Partner or sibling?',
+                title: hasCurrentPartner ? 'Sibling or partner?' : 'Partner or sibling?',
                 message: `Pick the relationship to add to ${node.fullName?.trim() || node.name?.trim() || 'this person'}.`,
-                choices: [
-                  { id: 'partner', label: 'Partner', description: 'Married, together, or previously together.', primary: true },
-                  { id: 'sibling', label: 'Sibling', description: 'Brother or sister.' },
-                ],
+                choices: hasCurrentPartner
+                  ? [{ ...siblingChoice, primary: true }, partnerChoice]
+                  : [{ ...partnerChoice, primary: true }, siblingChoice],
               });
               if (choice === 'partner') onQuickAddPartner();
               else if (choice === 'sibling') onQuickAddSibling();
