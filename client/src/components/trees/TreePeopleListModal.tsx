@@ -531,9 +531,9 @@ export function TreePeopleListModal({
                         <IconTooltip label="Restore to the tree and People Manager" side="left">
                           <button
                             onClick={() => handleRestoreDiscarded(p)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-primary hover:bg-primary/10"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-foreground hover:bg-primary/10"
                           >
-                            <RotateCcw className="w-3 h-3" />
+                            <RotateCcw className="w-3 h-3 text-primary" />
                             Restore
                           </button>
                         </IconTooltip>

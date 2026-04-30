@@ -2111,13 +2111,15 @@ function GenerationDropdown({ label, value, onChange }: {
           </div>
         </div>
         {/* +10 quick action — useful when the user is at e.g. 30
-            and wants 40 without typing. */}
+            and wants 40 without typing. Body in text-foreground so
+            it reads at full contrast; hover:bg-accent matches the
+            other rows in this popover. */}
         <div className="border-t border-border mt-2 pt-2">
           <button
             onClick={() => { onChange(value + 10); setOpen(false); }}
-            className="w-full px-2 py-1.5 rounded text-xs font-medium text-primary hover:bg-accent transition-colors text-left"
+            className="w-full px-2 py-1.5 rounded text-xs font-medium text-foreground hover:bg-accent transition-colors text-left"
           >
-            + Add 10 more (currently {value})
+            <span className="text-primary">+</span> Add 10 more (currently {value})
           </button>
         </div>
       </PopoverContent>

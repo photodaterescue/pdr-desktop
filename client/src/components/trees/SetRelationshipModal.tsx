@@ -447,10 +447,17 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
               {showCreateButton && (
                 <button
                   onClick={handleCreateNewPerson}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm hover:bg-primary/10 text-primary font-medium border-t border-border mt-1 pt-2"
+                  className="flex items-start gap-2 px-2 py-1.5 rounded text-left text-sm text-foreground hover:bg-primary/10 border-t border-border mt-1 pt-2"
                 >
-                  <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Add "{trimmedQuery}" as a new person</span>
+                  {/* Body in text-foreground (typography rule);
+                      lavender stays on the icon only. Wraps for
+                      longer typed names instead of clipping with
+                      "...". Mirrors the create-rows in
+                      FocusPickerModal and PlaceholderResolver. */}
+                  <UserPlus className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+                  <span className="leading-snug whitespace-normal break-words">
+                    Add <strong>{trimmedQuery}</strong> as a new person — they aren't on PDR yet.
+                  </span>
                 </button>
               )}
             </div>
