@@ -37,7 +37,7 @@ import { useDraggableModal } from './useDraggableModal';
 import { ManageTreesModal } from './ManageTreesModal';
 import { DateQuickEditor } from './DateQuickEditor';
 import { NameQuickEditor } from './NameQuickEditor';
-import { promptConfirm, promptChoice } from './promptConfirm';
+import { promptConfirm, promptChoice, promptCheckList } from './promptConfirm';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
 
@@ -1254,14 +1254,14 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         await addRelationship({ personAId: fromPersonId, personBId: otherPersonId, type: 'spouse_of', flags: { ended: true } });
       }
 
-      // After the spouse/partner edge is written: for each existing
-      // child of fromPerson who doesn't already have the new partner
-      // as a parent, ask whether the new partner is also that child's
-      // parent. Mirrors the implicit co-parent prompt used when
-      // adding a child — same modal style, same default "Yes, add"
-      // CTA. Dismissing one prompt skips the remaining ones but
-      // leaves the spouse edge in place (it was a confirmed action,
-      // we don't undo it here).
+      // After the spouse/partner edge is written: gather every child
+      // of fromPerson who doesn't already have the new partner as a
+      // parent and ask in ONE multi-select modal whether the new
+      // partner is also their parent. Replaces a previous per-child
+      // loop of confirms, which became a slog when fromPerson had
+      // several existing children. Default state: all ticked (the
+      // common case is that a new partner inherits the children the
+      // user has on file).
       const fromRels = await listRelationshipsForPerson(fromPersonId);
       const fromChildren = fromRels.success && fromRels.data
         ? fromRels.data
@@ -1278,24 +1278,44 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             }
           }
         }
-        for (const childId of fromChildren) {
-          if (otherIsParentAlready.has(childId)) continue;
-          const childFullName = displayName(childId, 'this child');
-          const childAvatar = await fetchPersonAvatar(childId, graph, allPersons);
-          const result = await promptConfirm({
+        const candidates = fromChildren.filter(id => !otherIsParentAlready.has(id));
+        if (candidates.length > 0) {
+          const items = await Promise.all(candidates.map(async id => {
+            const fullName = displayName(id, 'this child');
+            const avatar = await fetchPersonAvatar(id, graph, allPersons);
+            return {
+              id,
+              label: fullName,
+              avatar: { src: avatar, label: fullName, initial: fullName.charAt(0) },
+              checked: true,
+            };
+          }));
+          const titleLabel = candidates.length === 1
+            ? `Is ${otherFullName} also a parent?`
+            : `Is ${otherFullName} also a parent of these children?`;
+          const selected = await promptCheckList<number>({
             eyebrow: 'Confirm parentage',
-            title: `Is ${otherFullName} also a parent?`,
-            message: `${otherFullName} is now ${fromFullName}'s partner — are they also ${childFullName}'s parent?`,
+            title: titleLabel,
+            message: (
+              <>
+                <strong className="text-foreground">{otherFullName}</strong> is now{' '}
+                <strong className="text-foreground">{fromFullName}</strong>'s partner.{' '}
+                {candidates.length === 1
+                  ? 'Tick the box if they’re also this child’s parent.'
+                  : 'Tick the children they’re also a parent of.'}
+              </>
+            ),
             avatars: {
               left: { src: otherAvatar, label: otherFullName, initial: otherFullName.charAt(0) },
-              right: { src: childAvatar, label: childFullName, initial: childFullName.charAt(0) },
             },
-            confirmLabel: 'Yes, add as parent',
-            cancelLabel: 'No',
+            items,
+            confirmLabel: 'Add as parent',
+            cancelLabel: 'No, just partner',
           });
-          if (result === null) break; // dismissed → skip remaining children
-          if (result === true) {
-            await addRelationship({ personAId: otherPersonId, personBId: childId, type: 'parent_of' });
+          if (selected && selected.length > 0) {
+            for (const childId of selected) {
+              await addRelationship({ personAId: otherPersonId, personBId: childId, type: 'parent_of' });
+            }
           }
         }
       }
