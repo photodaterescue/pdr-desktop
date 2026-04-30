@@ -1867,47 +1867,40 @@ function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
   onClick: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
 }) {
-  const ghostRadius = 28; // smaller than regular nodes so they read as "not-quite-there"
+  // Replaced the bulky dashed-circle "click to name" ghost with a
+  // small chevron-up button — same UX (click opens the resolver)
+  // but a fraction of the visual footprint. Matches the
+  // Royal-tree-style convention Terry asked for: when a parent
+  // slot is unfilled the row collapses to a minimal indicator,
+  // not a full-card placeholder occupying space at every layer.
+  // Full ghost cards were swamping the canvas, especially around
+  // partners whose own ancestry is usually outside the user's
+  // immediate interest.
+  const r = 14;
   return (
     <g
       transform={`translate(${node.renderedX} ${node.renderedY})`}
-      opacity={opacity * 0.55}
+      opacity={opacity}
       style={{ cursor: 'pointer' }}
       onClick={onClick}
       onMouseDown={onMouseDown}
     >
-      {/* Invisible fill for reliable click hit-testing — dashed circles
-          with fill="none" swallow clicks in the interior. */}
-      <circle r={ghostRadius} fill="#ffffff" fillOpacity={0.001} />
-      <circle
-        r={ghostRadius}
-        fill="none"
-        stroke="#94a3b8"
-        strokeWidth={1.5}
-        strokeDasharray="4 4"
-        style={{ pointerEvents: 'none' }}
-      />
-      <text
-        y={7}
-        textAnchor="middle"
-        fontSize={28}
-        fontWeight={400}
-        fill="#94a3b8"
-        style={{ pointerEvents: 'none' }}
-      >
-        ?
-      </text>
-      <text
-        y={ghostRadius + 16}
-        textAnchor="middle"
-        fontSize={11}
-        fontStyle="italic"
-        fontWeight={500}
-        fill="#64748b"
-        style={{ pointerEvents: 'none' }}
-      >
-        click to name
-      </text>
+      <IconTooltip label="Click to name or link this person" side="top">
+        <g>
+          {/* Solid white fill so every pixel inside is clickable —
+              avoids the SVG hollow-stroke dead-zone. */}
+          <circle r={r} fill="#ffffff" stroke="#8e7cf0" strokeWidth={1.5} />
+          <path
+            d="M -6 2 L 0 -4 L 6 2"
+            stroke="#8e7cf0"
+            strokeWidth={2.2}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ pointerEvents: 'none' }}
+          />
+        </g>
+      </IconTooltip>
     </g>
   );
 }
