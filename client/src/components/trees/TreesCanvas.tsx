@@ -1227,6 +1227,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           /** SVG content size (panel sizes itself around this + header + padding). */
           contentWidth: number;
           contentHeight: number;
+          /** Top / bottom padding inside the SVG. The chevron-facing
+           *  side gets an extra MINI_ROW_GAP_Y/2 of "bracket room" so
+           *  the tether-continuation bracket can sit at the same
+           *  spacing the canvas uses for family-group brackets. */
+          padTop: number;
+          padBottom: number;
+          bracketRoom: number;
           /** Auto-computed panel size (clamped to MIN/MAX). */
           panelW: number;
           panelH: number;
@@ -1305,11 +1312,18 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             if (rowW > maxRowWidth) maxRowWidth = rowW;
           }
           const contentWidth = Math.max(CARD_W, maxRowWidth) + PANEL_PADDING * 2;
+          // Extra padding on the chevron-facing side of the SVG so the
+          // tether-continuation bracket has room to sit MINI_ROW_GAP_Y/2
+          // away from the cards — same spacing the canvas uses for its
+          // family-group brackets, so panel scaffolding visually matches.
+          const TETHER_BRACKET_ROOM = MINI_ROW_GAP_Y / 2;
+          const padTop = direction === 'descendant' ? PANEL_PADDING + TETHER_BRACKET_ROOM : PANEL_PADDING;
+          const padBottom = direction === 'ancestor' ? PANEL_PADDING + TETHER_BRACKET_ROOM : PANEL_PADDING;
           const contentHeight = sortedGens.length === 0
             ? CARD_H
             : sortedGens.length * CARD_H
               + (sortedGens.length - 1) * MINI_ROW_GAP_Y
-              + PANEL_PADDING * 2;
+              + padTop + padBottom;
           const miniPlacements: MiniPlacement[] = [];
           sortedGens.forEach((g, rowIdx) => {
             const row = byGen.get(g)!;
@@ -1319,7 +1333,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               miniPlacements.push({
                 personId: node.personId,
                 cx: startCx + i * (CARD_W + MINI_CARD_GAP_X),
-                cy: PANEL_PADDING + rowIdx * (CARD_H + MINI_ROW_GAP_Y) + CARD_H / 2,
+                cy: padTop + rowIdx * (CARD_H + MINI_ROW_GAP_Y) + CARD_H / 2,
                 node,
               });
             });
@@ -1469,6 +1483,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             miniPlacements, panelFamilyGroups, panelSpouseEdges,
             directKinIds,
             contentWidth, contentHeight,
+            padTop, padBottom, bracketRoom: TETHER_BRACKET_ROOM,
             panelW, panelH,
             defaultPanelLeft, defaultPanelTop,
             panelLeft, panelTop,
@@ -1532,17 +1547,23 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   zIndex: 30,
                 }}
               >
-                {/* CardHeader doubles as a drag handle (the SVG
-                    body below ALSO drags so empty space anywhere
-                    catches the mouse). Mouse-down primes
-                    panelDragRef with current offset + constraint
-                    bounds; the global mousemove listener then
-                    live-clamps and updates state. Double-click
-                    snaps back to the auto-computed default
-                    position. At low zoom the header collapses to a
-                    single "Surname branch" line — keeps the panel
-                    proportional to its content instead of mostly
-                    whitespace at low zoom. */}
+                {/* CardHeader and CardContent are rendered in
+                    direction-dependent order so the SVG always sits
+                    on the chevron-facing side of the panel — that
+                    way the canvas tether and the in-panel
+                    continuation meet at the same screen point with
+                    no header-height gap between them.
+                      Descendant panel (chevron above origin's row →
+                        tether enters panel TOP)  →  SVG first, header
+                        last, so the bracket continuation reads as a
+                        seamless extension of the canvas line.
+                      Ancestor panel (chevron below origin → tether
+                        enters panel BOTTOM)      →  header first,
+                        SVG last; same continuity, mirrored.
+                    Header doubles as a drag handle, and so does the
+                    SVG body so empty space anywhere catches the
+                    mouse. Double-click on the header snaps the
+                    panel back to its auto-computed default. */}
                 {(() => {
                   const startDrag = (e: React.MouseEvent) => {
                     if (e.button !== 0) return;
@@ -1570,8 +1591,9 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       return next;
                     });
                   };
-                  return (
+                  const headerNode = (
                     <CardHeader
+                      key="header"
                       className="cursor-grab active:cursor-grabbing select-none"
                       style={isAbbreviated ? { padding: '12px 16px', gap: 0 } : undefined}
                       onMouseDown={startDrag}
@@ -1596,8 +1618,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       )}
                     </CardHeader>
                   );
-                })()}
-                <CardContent className="flex-1 min-h-0 overflow-auto p-0">
+                  const contentNode = (
+                    <CardContent key="content" className="flex-1 min-h-0 overflow-auto p-0">
                   {/* Full-size canvas-card mini-tree inside the panel.
                       Reuses PersonNode at full CARD_W / CARD_H so each
                       person inside looks identical to a person on the
@@ -1657,12 +1679,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       const centerX = l.contentWidth / 2;
                       if (l.direction === 'descendant') {
                         // Drop down from panel-top into a bracket
-                        // that sits in the top padding zone, above
-                        // the head's direct children. Drops continue
-                        // to the top edge of each child card.
+                        // that sits MINI_ROW_GAP_Y/2 above the head's
+                        // direct children — same spacing the canvas
+                        // family-group brackets use, so panel and
+                        // canvas scaffolding read as a single system.
                         const entryY = 0;
-                        const cardTop = PANEL_PADDING;
-                        const bracketY = PANEL_PADDING / 2;
+                        const cardTop = l.padTop;
+                        const bracketY = l.padTop - l.bracketRoom;
                         return (
                           <g
                             stroke={l.tetherColour}
@@ -1685,12 +1708,11 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                         );
                       }
                       // Ancestor — drop UP from panel-bottom into a
-                      // bracket that sits in the bottom padding zone,
-                      // below the origin's direct parents. Drops
-                      // continue to the bottom edge of each parent.
+                      // bracket that sits MINI_ROW_GAP_Y/2 below the
+                      // in-law's direct parents (canvas-matching).
                       const entryY = l.contentHeight;
-                      const cardBottom = l.contentHeight - PANEL_PADDING;
-                      const bracketY = l.contentHeight - PANEL_PADDING / 2;
+                      const cardBottom = l.contentHeight - l.padBottom;
+                      const bracketY = l.contentHeight - l.padBottom + l.bracketRoom;
                       return (
                         <g
                           stroke={l.tetherColour}
@@ -1814,6 +1836,15 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     })}
                   </svg>
                 </CardContent>
+                  );
+                  // SVG sits on the side of the panel that faces
+                  // the chevron, so the canvas tether's panel-edge
+                  // anchor and the in-SVG bracket continuation meet
+                  // at the same point — no header-height gap.
+                  return l.direction === 'descendant'
+                    ? <>{contentNode}{headerNode}</>
+                    : <>{headerNode}{contentNode}</>;
+                })()}
               </Card>
             ))}
           </>
