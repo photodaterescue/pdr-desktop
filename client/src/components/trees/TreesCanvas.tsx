@@ -1770,7 +1770,39 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             const rowW = row.length * CARD_W + (row.length - 1) * MINI_CARD_GAP_X;
             if (rowW > maxRowWidth) maxRowWidth = rowW;
           }
-          const contentWidth = Math.max(CARD_W, maxRowWidth) + PANEL_PADDING * 2;
+          // Pre-compute the panel title here (instead of further down)
+          // so we can include its approximate rendered width in
+          // contentWidth — when a couple has only one child, the
+          // mini-tree is just one card wide and the title was getting
+          // clipped to "Patricia & Brian De" instead of fitting the
+          // full "Patricia & Brian Day Descendants". Title width
+          // estimate uses an 11 px-per-char approximation matched to
+          // the SVG's 20 px semibold Montserrat — a touch generous so
+          // wider glyphs (M, W) don't overshoot the panel border.
+          const firstNameOfTitle = (n: { fullName: string | null; name: string }): string => {
+            const raw = (n.fullName?.trim() || n.name?.trim() || '').trim();
+            if (!raw) return '';
+            const parts = raw.split(/\s+/);
+            return parts[0] || '';
+          };
+          const originName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
+          let panelTitleEarly = '';
+          if (direction === 'descendant') {
+            const headFirst = firstNameOfTitle(origin);
+            const chevInfoForTitle = sideBranchChevrons.find(c => c.headId === personId);
+            const partnerNode = chevInfoForTitle?.partnerId != null
+              ? nodeById.get(chevInfoForTitle.partnerId)
+              : null;
+            const partnerFirst = partnerNode ? firstNameOfTitle(partnerNode) : '';
+            panelTitleEarly = partnerFirst
+              ? `${headFirst} & ${partnerFirst} Descendants`
+              : `${headFirst} Descendants`;
+          } else {
+            panelTitleEarly = `${originName} Ancestry`;
+          }
+          const APPROX_TITLE_CHAR_WIDTH = 11;
+          const titleWidth = panelTitleEarly.length * APPROX_TITLE_CHAR_WIDTH;
+          const contentWidth = Math.max(CARD_W, maxRowWidth, titleWidth) + PANEL_PADDING * 2;
           // Extra padding on the chevron-facing side of the SVG so the
           // tether-continuation bracket has room to sit MINI_ROW_GAP_Y/2
           // away from the cards — same spacing the canvas uses for its
@@ -1962,32 +1994,10 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             );
             branchSurname = surnameOf(topAncestor);
           }
-          // Single-line panel title — replaces the old three-line
-          // CardHeader (caption + CardTitle + body-muted). For
-          // descendants it names BOTH parents (Carol & Graham
-          // Descendants) since the cousins came from the couple,
-          // not just the bloodline relative. For ancestors we use
-          // the in-law's full name + " Ancestry".
-          const firstNameOf = (n: { fullName: string | null; name: string }): string => {
-            const raw = (n.fullName?.trim() || n.name?.trim() || '').trim();
-            if (!raw) return '';
-            const parts = raw.split(/\s+/);
-            return parts[0] || '';
-          };
-          let panelTitle = '';
-          if (direction === 'descendant') {
-            const headFirst = firstNameOf(origin);
-            const chevInfoForTitle = sideBranchChevrons.find(c => c.headId === personId);
-            const partnerNode = chevInfoForTitle?.partnerId != null
-              ? nodeById.get(chevInfoForTitle.partnerId)
-              : null;
-            const partnerFirst = partnerNode ? firstNameOf(partnerNode) : '';
-            panelTitle = partnerFirst
-              ? `${headFirst} & ${partnerFirst} Descendants`
-              : `${headFirst} Descendants`;
-          } else {
-            panelTitle = `${personName} Ancestry`;
-          }
+          // panelTitle is computed earlier (panelTitleEarly) so its
+          // rendered width can feed contentWidth. Re-use that value
+          // here rather than re-deriving — keeps the two in lockstep.
+          const panelTitle = panelTitleEarly;
           layouts.push({
             personId, direction, panelKey, personName, directionLabel,
             contentPeople,
