@@ -668,19 +668,15 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           : (gen != null && gen >= -descendantsDepth && gen <= ancestorsDepth);
         if (passesSteps && passesGens) visible.add(n.personId);
       }
-      // Extend by ONE hop of direct family (parent / partner / sibling)
-      // past the boundary. Without this, stored family of boundary
-      // people gets clipped — e.g. Dave (Lindsay's dad) would stay
-      // invisible when Lindsay sits at the default depth edge. No
-      // cascade: a single pass only.
-      const extra: number[] = [];
-      for (const e of graph.edges) {
-        if (e.derived) continue;
-        if (e.type !== 'parent_of' && e.type !== 'spouse_of' && e.type !== 'sibling_of') continue;
-        if (visible.has(e.aId) && !visible.has(e.bId)) extra.push(e.bId);
-        else if (visible.has(e.bId) && !visible.has(e.aId)) extra.push(e.aId);
-      }
-      for (const id of extra) visible.add(id);
+      // (Previously had a "extend by ONE hop" pass that pulled in
+      // anyone parent/partner/sibling of an in-bounds person — to
+      // keep stored family of boundary people available for chevron
+      // expansion. Removed per Terry's feedback: that bypass leaked
+      // 2-hop ancestors as visible cards when Steps=1, since each
+      // grandparent is parent_of one of focus's parents and got
+      // pulled in regardless of the Steps cap. Steps now caps
+      // strictly. The new "X hidden" counter on the Steps pill
+      // tells the user when filtered-out people exist.)
     }
     if (pinnedPeople.size > 0) {
       // Build an undirected adjacency map for BFS.
@@ -868,6 +864,31 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       edges: graph.edges.filter(e => visible.has(e.aId) && visible.has(e.bId)),
     };
   }, [graph, focusPersonId, stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets, pinnedPeople, savedTrees, currentTreeId]);
+
+  // Number of people in the graph who are filtered OUT specifically
+  // by the Steps cap (but would pass Generations) — i.e. the count
+  // a "+N hidden" badge on the Steps pill should display, and the
+  // signal we use to pulse the pill so the user knows there's more
+  // available behind the cap. Only counts people who would actually
+  // become visible if Steps were higher (i.e., they pass Generations
+  // already) — bumping Steps wouldn't reveal anyone outside the
+  // Generations range, so we don't promise to.
+  const hiddenByStepsCount = useMemo(() => {
+    if (!graph || focusPersonId == null) return 0;
+    if (!stepsEnabled) return 0;
+    let count = 0;
+    for (const n of graph.nodes) {
+      if (n.personId === focusPersonId) continue;
+      if (n.hopsFromFocus <= expandedHops) continue;
+      if (generationsEnabled) {
+        const gen = generationOffsets.get(n.personId);
+        if (gen == null) continue;
+        if (gen < -descendantsDepth || gen > ancestorsDepth) continue;
+      }
+      count++;
+    }
+    return count;
+  }, [graph, focusPersonId, stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets]);
 
   // Augment the visible graph with virtual ghost parents for every named
   // person that has fewer than 2 stored parents (one generation only).
@@ -1825,11 +1846,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 +10 quick-step). Per Terry: the previous +/- stepper
                 capped at 6 was too restrictive; a dropdown matches
                 the Generations affordance and lets users go to 10
-                or any custom number. */}
-            <FilterPill label="Steps" pulse={pulseSteps}>
+                or any custom number.
+                The pill pulses (continuously) when hidden people
+                exist beyond the current Steps cap, AND briefly
+                flashes via pulseSteps when a new-add lands beyond
+                the cap. The dropdown trigger carries a "+N"
+                badge with the hidden count so the user knows
+                exactly how many more they'd see by bumping Steps. */}
+            <FilterPill label="Steps" pulse={pulseSteps || hiddenByStepsCount > 0}>
               <StepsDropdown
                 value={expandedHops}
                 onChange={setExpandedHops}
+                hiddenCount={hiddenByStepsCount}
               />
             </FilterPill>
             <FilterPill label="Generations" pulse={pulseGenerations}>
@@ -2474,9 +2502,14 @@ function GenerationDropdown({ label, value, onChange }: {
  * Sits inside the existing FilterPill so the outer "Steps"
  * label stays put — only the value picker swaps.
  */
-function StepsDropdown({ value, onChange }: {
+function StepsDropdown({ value, onChange, hiddenCount = 0 }: {
   value: number;
   onChange: (n: number) => void;
+  /** Number of people in the graph who are filtered OUT by the
+   *  current Steps cap (but pass Generations). Surfaced as a
+   *  small "+N" badge on the trigger button so the user knows
+   *  how many more relatives they'd see by bumping Steps. */
+  hiddenCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -2496,9 +2529,14 @@ function StepsDropdown({ value, onChange }: {
       <PopoverTrigger asChild>
         <button
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
-          aria-label={`Steps: ${value}`}
+          aria-label={hiddenCount > 0
+            ? `Steps: ${value}. ${hiddenCount} more ${hiddenCount === 1 ? 'person is' : 'people are'} hidden — increase to see them.`
+            : `Steps: ${value}`}
         >
           <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
+          {hiddenCount > 0 && (
+            <span className="font-mono tabular-nums text-[10px] font-semibold text-primary">+{hiddenCount}</span>
+          )}
           <ChevronDown className="w-3 h-3 text-muted-foreground" />
         </button>
       </PopoverTrigger>
