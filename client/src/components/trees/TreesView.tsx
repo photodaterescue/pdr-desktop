@@ -890,6 +890,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     return count;
   }, [graph, focusPersonId, stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets]);
 
+  // Furthest-out hop count anyone in the graph sits at — drives the
+  // outlined "max useful" marker on the Steps grid so users know the
+  // value past which raising Steps stops revealing more relatives.
+  // Beyond this number, the user is on their own — we trust them to
+  // know what they're doing if they go higher.
+  const maxHopsInGraph = useMemo(() => {
+    if (!graph) return 0;
+    let max = 0;
+    for (const n of graph.nodes) {
+      if (n.hopsFromFocus > max) max = n.hopsFromFocus;
+    }
+    return max;
+  }, [graph]);
+
   // Augment the visible graph with virtual ghost parents for every named
   // person that has fewer than 2 stored parents (one generation only).
   // Layout depth uses the widest active filter so spacing accommodates
@@ -1853,11 +1867,16 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 the cap. The dropdown trigger carries a "+N"
                 badge with the hidden count so the user knows
                 exactly how many more they'd see by bumping Steps. */}
-            <FilterPill label="Steps" pulse={pulseSteps || hiddenByStepsCount > 0}>
+            <FilterPill
+              label="Steps"
+              pulse={pulseSteps}
+              pulseSlow={hiddenByStepsCount > 0}
+            >
               <StepsDropdown
                 value={expandedHops}
                 onChange={setExpandedHops}
                 hiddenCount={hiddenByStepsCount}
+                maxUseful={maxHopsInGraph}
               />
             </FilterPill>
             <FilterPill label="Generations" pulse={pulseGenerations}>
@@ -2290,13 +2309,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
  *  off state looks muted but still clearly clickable. Matches the
  *  'Change focus' button's look so the three header controls read as a
  *  consistent row of actions, not a mix of labels and inputs. */
-function FilterPill({ label, children, pulse }: {
+function FilterPill({ label, children, pulse, pulseSlow }: {
   label: string; children: React.ReactNode;
   /** When true, the pill briefly animates to draw attention to a
    *  filter overage (e.g. user added a relative beyond the current
    *  Steps or Generations cap — the pill nudges them to consider
-   *  bumping it). */
+   *  bumping it). 1.5 s cycle — snappy "look here". */
   pulse?: boolean;
+  /** Same animation, slower 2 s cycle — used for AMBIENT signals
+   *  that should sit in peripheral vision rather than demand
+   *  attention (Steps pill while hidden relatives exist). pulse
+   *  takes priority when both are set. */
+  pulseSlow?: boolean;
 }) {
   // The label is now a non-interactive caption — only the +/−
   // steppers inside are buttons. Previously the label itself was a
@@ -2306,8 +2330,16 @@ function FilterPill({ label, children, pulse }: {
   // unrelated controls when one was on and the other off. Now the
   // chrome is fixed; "off" is just a value (Steps=0 or
   // Generations 0/0 = "no constraint" via the filter logic above).
+  // Pulse class — fast (1.5s) wins if both flags are set, otherwise
+  // slow (2s) for ambient hidden-people signal. Falls back to no
+  // animation when neither is set.
+  const pulseClass = pulse
+    ? 'animate-pulse-cta ring-2 ring-primary/40 ring-offset-1 ring-offset-background'
+    : pulseSlow
+      ? 'animate-pulse-cta-slow ring-2 ring-primary/40 ring-offset-1 ring-offset-background'
+      : '';
   return (
-    <div className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border bg-primary/10 border-primary/40 transition-shadow ${pulse ? 'animate-pulse-cta ring-2 ring-primary/40 ring-offset-1 ring-offset-background' : ''}`}>
+    <div className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border bg-primary/10 border-primary/40 transition-shadow ${pulseClass}`}>
       <span className="px-2 py-0.5 text-sm font-medium text-primary select-none">{label}</span>
       {children}
     </div>
@@ -2502,7 +2534,7 @@ function GenerationDropdown({ label, value, onChange }: {
  * Sits inside the existing FilterPill so the outer "Steps"
  * label stays put — only the value picker swaps.
  */
-function StepsDropdown({ value, onChange, hiddenCount = 0 }: {
+function StepsDropdown({ value, onChange, hiddenCount = 0, maxUseful = 0 }: {
   value: number;
   onChange: (n: number) => void;
   /** Number of people in the graph who are filtered OUT by the
@@ -2510,6 +2542,12 @@ function StepsDropdown({ value, onChange, hiddenCount = 0 }: {
    *  small "+N" badge on the trigger button so the user knows
    *  how many more relatives they'd see by bumping Steps. */
   hiddenCount?: number;
+  /** Furthest-out hop count anyone in the graph sits at. The
+   *  matching button in the 0–10 grid is outlined as the
+   *  "max useful" marker — past this value, raising Steps
+   *  stops revealing more relatives. Past 10 we trust the
+   *  user knows what they're doing. */
+  maxUseful?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -2545,18 +2583,36 @@ function StepsDropdown({ value, onChange, hiddenCount = 0 }: {
           Steps
         </p>
         <div className="grid grid-cols-6 gap-1 mb-2">
-          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-            <button
-              key={n}
-              onClick={() => { onChange(n); setOpen(false); }}
-              className={`px-2 py-1.5 rounded text-sm font-mono tabular-nums hover:bg-accent transition-colors ${
-                value === n ? 'bg-primary/10 text-primary font-semibold' : ''
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => {
+            const isCurrent = value === n;
+            // "Max useful" outline — same hop number where the
+            // furthest relative actually sits. Beyond it raising
+            // Steps stops revealing more, so we mark it with a
+            // primary-tinted ring (same colour family as the
+            // active highlight, just a ring instead of a fill so
+            // both states can co-exist when they happen to coincide).
+            const isMaxUseful = maxUseful > 0 && n === maxUseful && !isCurrent;
+            return (
+              <button
+                key={n}
+                onClick={() => { onChange(n); setOpen(false); }}
+                aria-label={isMaxUseful ? `${n} — furthest relative on this tree` : `${n}`}
+                className={`px-2 py-1.5 rounded text-sm font-mono tabular-nums hover:bg-accent transition-colors ${
+                  isCurrent ? 'bg-primary/10 text-primary font-semibold' : ''
+                } ${
+                  isMaxUseful ? 'ring-1 ring-primary/60 text-primary' : ''
+                }`}
+              >
+                {n}
+              </button>
+            );
+          })}
         </div>
+        {maxUseful > 0 && maxUseful <= 10 && (
+          <p className="text-[10px] text-muted-foreground mb-2 -mt-1">
+            <span className="text-primary font-semibold">{maxUseful}</span> covers everyone currently on this tree.
+          </p>
+        )}
         <div className="border-t border-border pt-2">
           <label className="block text-[11px] text-muted-foreground mb-1">Or type any number:</label>
           <div className="flex gap-1.5">
