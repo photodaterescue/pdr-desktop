@@ -222,6 +222,37 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     active: false, startX: 0, startY: 0, startTx: 0, startTy: 0,
   });
 
+  // World bounds (tree + open-panel anchors) in WORLD coords. Used
+  // by pan/zoom clamp to keep at least part of the world inside the
+  // viewport ("never blank canvas", design doc §6.1) and to ensure
+  // an open panel dragged far from the tree is still reachable
+  // because its chevron-and-offset anchor extends the world.
+  // Stored in a ref (not state) so the pan/zoom handlers can read
+  // the latest bounds without forcing re-renders on every mouse-move.
+  const worldBoundsRef = useRef<{ minX: number; maxX: number; minY: number; maxY: number }>({
+    minX: 0, maxX: 0, minY: 0, maxY: 0,
+  });
+  /** Apply the never-blank-canvas clamp to a candidate (tx, ty)
+   *  given the world bounds and the current viewport size. The
+   *  PADDING keeps at least 80 px of world visible from any edge —
+   *  past that the user has nothing to navigate by. If the world
+   *  is smaller than the viewport (extreme zoom-out), we leave the
+   *  candidate untouched and rely on auto-centring elsewhere. */
+  const clampViewport = useCallback((tx: number, ty: number, scale: number): { tx: number; ty: number } => {
+    const svg = svgRef.current;
+    if (!svg) return { tx, ty };
+    const rect = svg.getBoundingClientRect();
+    const w = worldBoundsRef.current;
+    const PADDING = 80;
+    const minTx = PADDING - w.maxX * scale;
+    const maxTx = rect.width - PADDING - w.minX * scale;
+    const minTy = PADDING - w.maxY * scale;
+    const maxTy = rect.height - PADDING - w.minY * scale;
+    const clampedTx = minTx > maxTx ? tx : Math.max(minTx, Math.min(maxTx, tx));
+    const clampedTy = minTy > maxTy ? ty : Math.max(minTy, Math.min(maxTy, ty));
+    return { tx: clampedTx, ty: clampedTy };
+  }, []);
+
   // ─── Centre the focus on mount / layout change ────────────────
   useEffect(() => {
     const svg = svgRef.current;
@@ -234,6 +265,43 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     });
     setContextMenu(null);
   }, [layout.focusPersonId]);
+
+  // ─── Update world bounds whenever layout or open panels change ──
+  // Tree bounds are the baseline; each open panel's chevron + drag
+  // offset is added so the panel's anchor is part of the navigable
+  // world. Without this, dragging a panel far from the tree could
+  // leave it unreachable when the user pans back to focus.
+  useEffect(() => {
+    let { minX, maxX, minY, maxY } = layout.bounds;
+    // Descendant panels — anchor at the chevron midpoint between
+    // the head and their co-parent partner, plus any drag offset
+    // (offsets are stored in WORLD units, scale-invariant).
+    for (const pid of expandedDescendantsOf ?? []) {
+      const chev = sideBranchChevrons.find(c => c.headId === pid);
+      if (!chev) continue;
+      const offset = panelOffsets.get(`${pid}-descendant`) ?? { x: 0, y: 0 };
+      const px = chev.midX + offset.x;
+      const py = chev.midY + offset.y;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+    // Ancestor panels — anchor at the in-law's own X/Y, plus drag
+    // offset. Same rule, mirrored.
+    for (const pid of expandedAncestorsOf ?? []) {
+      const node = nodeById.get(pid);
+      if (!node) continue;
+      const offset = panelOffsets.get(`${pid}-ancestor`) ?? { x: 0, y: 0 };
+      const px = node.x + offset.x;
+      const py = node.y + offset.y;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+    worldBoundsRef.current = { minX, maxX, minY, maxY };
+  }, [layout.bounds, expandedDescendantsOf, expandedAncestorsOf, panelOffsets, sideBranchChevrons, nodeById]);
 
   // ─── Lazy-load avatar face crops ───────────────────────────────
   useEffect(() => {
@@ -280,13 +348,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       // Zoom about the cursor: keep the world-point under the cursor fixed.
       const worldX = (mouseX - v.tx) / v.scale;
       const worldY = (mouseY - v.ty) / v.scale;
-      return {
-        tx: mouseX - worldX * newScale,
-        ty: mouseY - worldY * newScale,
-        scale: newScale,
-      };
+      const rawTx = mouseX - worldX * newScale;
+      const rawTy = mouseY - worldY * newScale;
+      // Apply the never-blank-canvas clamp post-zoom (design doc
+      // §6.1) so an aggressive scroll-out can't push the world off
+      // the viewport. clampViewport falls through unchanged when
+      // the world is smaller than the viewport at the new scale.
+      const { tx, ty } = clampViewport(rawTx, rawTy, newScale);
+      return { tx, ty, scale: newScale };
     });
-  }, []);
+  }, [clampViewport]);
 
   // Tracks whether the most recent mousedown started on the bare
   // canvas SVG (vs on a card / chevron) and whether the pointer
@@ -325,11 +396,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         // click, above it as a pan. Same convention browsers use
         // to fire `click` after a tiny accidental drag.
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panClickInfoRef.current.moved = true;
-        setViewport(v => ({
-          ...v,
-          tx: panState.current.startTx + dx,
-          ty: panState.current.startTy + dy,
-        }));
+        setViewport(v => {
+          const rawTx = panState.current.startTx + dx;
+          const rawTy = panState.current.startTy + dy;
+          // Never-blank-canvas clamp (design doc §6.1) — keeps at
+          // least 80 px of the world (tree + any open-panel
+          // anchors) inside the viewport so the user can't pan
+          // everything off-screen.
+          const { tx, ty } = clampViewport(rawTx, rawTy, v.scale);
+          return { ...v, tx, ty };
+        });
       }
       if (panelDragRef.current.active) {
         // Live-clamp during drag — design doc specifies hard-clamp
@@ -385,7 +461,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [viewport.scale, expandedAncestorsOf, expandedDescendantsOf, onExpandAncestors, onExpandDescendants]);
+  }, [viewport.scale, expandedAncestorsOf, expandedDescendantsOf, onExpandAncestors, onExpandDescendants, clampViewport]);
 
   // Panel-open MRU order — drives the Esc-closes-topmost gesture
   // (design doc §5). We track keys (`${personId}-${direction}`)
