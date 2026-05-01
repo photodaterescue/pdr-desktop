@@ -676,6 +676,90 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     return hidden;
   }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet]);
 
+  /** Per-side-branch-head chevron geometry: position, leader-line
+   *  endpoints, and per-parent bloodline colours. The v chevron now
+   *  sits at the midpoint between the bloodline head (Carol) and
+   *  her partner (Graham) when both are on canvas, so the chevron
+   *  reads as "this couple's cousins line" rather than just Carol's.
+   *  Two short leader lines descend from each parent's bottom edge
+   *  to the chevron, each in that parent's bloodline colour
+   *  (lavender for the bloodline head, orange for the in-law
+   *  partner) — the same dual-colour rule applied globally so every
+   *  chevron's tether is geometrically and tonally accurate.
+   *  Single-partner case only here; multi-partner heads still get
+   *  one chevron centred on the head (the per-partnership panel
+   *  split arrives in a follow-up). */
+  const sideBranchChevrons = useMemo(() => {
+    type ChevronInfo = {
+      headId: number;
+      headX: number; headY: number;
+      partnerId: number | null;
+      partnerX: number | null; partnerY: number | null;
+      midX: number; midY: number;
+      headColour: string;
+      partnerColour: string | null;
+    };
+    const list: ChevronInfo[] = [];
+    // Build a map of each head's spouse_of partners that are placed
+    // on the canvas (excluding hidden ids — partners whose card is
+    // hidden don't anchor a chevron leader).
+    const partnersOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'spouse_of') continue;
+      if (!partnersOf.has(e.aId)) partnersOf.set(e.aId, []);
+      if (!partnersOf.has(e.bId)) partnersOf.set(e.bId, []);
+      partnersOf.get(e.aId)!.push(e.bId);
+      partnersOf.get(e.bId)!.push(e.aId);
+    }
+    for (const headId of sideBranchDescendantsByHead.keys()) {
+      const headNode = nodeById.get(headId);
+      if (!headNode) continue;
+      // Pick the partner whose card is currently visible AND who is
+      // a co-parent of one of head's hideable descendants. That
+      // ensures the chevron's other leader line goes to the right
+      // person (the actual co-parent of the cousins, not some
+      // unrelated past partner).
+      const candidates = (partnersOf.get(headId) ?? [])
+        .map(pid => nodeById.get(pid))
+        .filter((n): n is NonNullable<typeof n> => n != null);
+      let partnerNode: typeof headNode | null = null;
+      for (const cand of candidates) {
+        // Co-parent test: there exists a parent_of edge from cand
+        // to a descendant of head.
+        const desc = sideBranchDescendantsByHead.get(headId)!;
+        let isCoParent = false;
+        for (const e of layout.edges) {
+          if (e.type !== 'parent_of') continue;
+          if (e.aId !== cand.personId) continue;
+          if (desc.has(e.bId) || (layout.edges.some(e2 =>
+            e2.type === 'parent_of' && e2.aId === headId && e2.bId === e.bId,
+          ))) {
+            isCoParent = true;
+            break;
+          }
+        }
+        if (isCoParent) { partnerNode = cand; break; }
+      }
+      const headOnBlood = bloodlineSet.has(headId);
+      const headColour = headOnBlood ? '#ad9eff' : '#f59e0b';
+      const partnerColour = partnerNode
+        ? (bloodlineSet.has(partnerNode.personId) ? '#ad9eff' : '#f59e0b')
+        : null;
+      const midX = partnerNode ? (headNode.x + partnerNode.x) / 2 : headNode.x;
+      const midY = partnerNode ? (headNode.y + partnerNode.y) / 2 : headNode.y;
+      list.push({
+        headId,
+        headX: headNode.x, headY: headNode.y,
+        partnerId: partnerNode?.personId ?? null,
+        partnerX: partnerNode?.x ?? null,
+        partnerY: partnerNode?.y ?? null,
+        midX, midY,
+        headColour, partnerColour,
+      });
+    }
+    return list;
+  }, [sideBranchDescendantsByHead, layout.edges, nodeById, bloodlineSet]);
+
   /** Person IDs that are CURRENTLY revealed via an expanded
    *  side-branch chevron — i.e. cousins who would normally be hidden
    *  but the user clicked the aunt's v chevron. Drives the lift /
@@ -1096,12 +1180,17 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   extendedAncestorsByPerson.has(node.personId)
                   || node.totalParentCount > (visibleParentChildCounts.parentCount.get(node.personId) ?? 0)
                 }
-                // Side-branch heads (aunts / uncles / great-aunts /
-                // etc.) get the v chevron BELOW their card, toggling
-                // their cousins. Renders only when this person has
-                // hideable bloodline descendants — heads with no
-                // children stored in DB don't paint a no-op chevron.
-                hasHideableDescendants={sideBranchDescendantsByHead.has(node.personId)}
+                // Side-branch chevron is no longer rendered inside
+                // the per-card SVG — it's drawn at the canvas level
+                // (see sideBranchChevrons memo + canvas chevron
+                // layer below) so the chevron can sit at the
+                // midpoint between BOTH parents of the cousin
+                // branch (Carol + Graham), with dual-coloured
+                // leader lines from each parent. Anchoring it to
+                // a single card no longer made geometric sense
+                // once we acknowledged the cousins descend from
+                // the couple, not from one parent alone.
+                hasHideableDescendants={false}
                 isOnBloodline={bloodlineSet.has(node.personId)}
                 onExpandAncestors={onExpandAncestors ? () => onExpandAncestors(node.personId) : undefined}
                 onExpandDescendants={onExpandDescendants ? () => onExpandDescendants(node.personId) : undefined}
@@ -1119,6 +1208,108 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 // PersonNode honours isFocus over borderOverride.
                 borderOverride={bloodlineSet.has(node.personId) ? '#ad9eff' : '#f59e0b'}
               />
+            );
+          })}
+        </g>
+
+        {/* Side-branch chevrons — drawn at the canvas level (not
+            inside per-card PersonNode SVGs) so each chevron can sit
+            at the midpoint between BOTH parents of the cousin
+            branch (e.g. between Carol and Graham), with two short
+            leader lines from each parent's bottom edge to the
+            chevron in that parent's bloodline colour. Lavender
+            from the bloodline head (Carol), orange from the in-law
+            partner (Graham) — geometrically and tonally accurate
+            so the chevron reads as "this couple's cousins line"
+            rather than just one person's. */}
+        <g>
+          {sideBranchChevrons.map(info => {
+            if (hiddenSideBranchIds.has(info.headId)) return null;
+            if (info.partnerId != null && hiddenSideBranchIds.has(info.partnerId)) return null;
+            if (hiddenExtendedIds.has(info.headId)) return null;
+            const r = 17;
+            const stemLen = 24;
+            const cardBottomY = info.headY + CARD_H / 2;
+            const chevronCy = cardBottomY + stemLen + r;
+            const chevronCx = info.midX;
+            const expanded = expandedDescendantsOf?.has(info.headId) ?? false;
+            const fill = '#ad9eff';
+            const rim = '#7e6df0';
+            const label = expanded
+              ? 'Hide cousins on this branch'
+              : 'Show cousins on this branch';
+            const glyphPath = expanded
+              ? 'M -7 2 L 0 -5 L 7 2'
+              : 'M -7 -2 L 0 5 L 7 -2';
+            return (
+              <g key={`sbc-${info.headId}`}>
+                {/* Head's leader line — from head's card bottom
+                    edge down/across to the chevron, in the head's
+                    bloodline colour. */}
+                <line
+                  x1={info.headX}
+                  y1={cardBottomY}
+                  x2={chevronCx}
+                  y2={chevronCy - r}
+                  stroke={info.headColour}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  style={{ pointerEvents: 'none' }}
+                />
+                {/* Partner's leader line — only when a partner is
+                    on canvas and is the actual co-parent of the
+                    cousins. Coloured by the partner's bloodline
+                    status (typically orange — they're the in-law
+                    married into the family). */}
+                {info.partnerId != null && info.partnerX != null && info.partnerColour && (
+                  <line
+                    x1={info.partnerX}
+                    y1={info.partnerY != null ? info.partnerY + CARD_H / 2 : cardBottomY}
+                    x2={chevronCx}
+                    y2={chevronCy - r}
+                    stroke={info.partnerColour}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
+                <g
+                  transform={`translate(${chevronCx} ${chevronCy})`}
+                  style={{ cursor: 'pointer' }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); onExpandDescendants?.(info.headId); }}
+                >
+                  <IconTooltip label={label} side="bottom">
+                    <g>
+                      <ellipse
+                        cx={0} cy={3}
+                        rx={r * 0.92} ry={r * 0.55}
+                        fill="rgba(0,0,0,0.22)"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <circle r={r} cx={0} cy={1.5} fill={rim} style={{ pointerEvents: 'none' }} />
+                      <circle r={r} fill={fill} stroke="none" />
+                      <path
+                        d={`M ${-r * 0.7} ${-r * 0.35} A ${r * 0.85} ${r * 0.85} 0 0 1 ${r * 0.7} ${-r * 0.35}`}
+                        stroke="rgba(255,255,255,0.45)"
+                        strokeWidth={1.5}
+                        fill="none"
+                        strokeLinecap="round"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <path
+                        d={glyphPath}
+                        stroke="#ffffff"
+                        strokeWidth={3}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    </g>
+                  </IconTooltip>
+                </g>
+              </g>
             );
           })}
         </g>
@@ -1262,7 +1453,17 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const originScreenY = viewport.ty + origin.renderedY * viewport.scale;
           const cardHalfHeight = (CARD_H / 2) * viewport.scale;
           const chevronOffset = (CARD_H / 2 + CHEVRON_STEM + CHEVRON_R) * viewport.scale;
-          const chevronScreenX = originScreenX;
+          // Descendant chevrons live at the MIDPOINT between the
+          // bloodline head and their co-parent (when both are on
+          // canvas), so the panel tether starts from the same
+          // spot. Ancestor chevrons stay anchored to the in-law's
+          // single card. Falls back to origin's X if no co-parent
+          // is currently on canvas.
+          const chevInfo = direction === 'descendant'
+            ? sideBranchChevrons.find(c => c.headId === personId)
+            : null;
+          const chevronWorldX = chevInfo ? chevInfo.midX : origin.renderedX;
+          const chevronScreenX = viewport.tx + chevronWorldX * viewport.scale;
           const chevronScreenY = direction === 'descendant'
             ? originScreenY + chevronOffset
             : originScreenY - chevronOffset;
