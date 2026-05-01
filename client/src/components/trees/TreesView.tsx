@@ -39,6 +39,7 @@ import { DateQuickEditor } from './DateQuickEditor';
 import { NameQuickEditor } from './NameQuickEditor';
 import { promptConfirm, promptChoice, promptCheckList } from './promptConfirm';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { Checkbox } from '@/components/ui/checkbox';
 import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
 
 interface PersonSummary {
@@ -1799,40 +1800,36 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 </button>
               </IconTooltip>
             )}
-            {/* Branch-expansion counter — combined count of every
-                chevron the user has clicked open: extended-family
-                ^ chevrons (in-laws' lineages, brand orange) + side-
-                branch v chevrons (cousins, brand lavender). One click
-                collapses ALL of them back to the tidy default, the
-                "tidy up" reset Terry asked for. Mirrors the pinned
-                pill's pill-with-icon shape; uses brand-orange because
-                that's the existing "off the bloodline" colour cue
-                (lavender would clash with the bloodline pills). */}
-            {(expandedAncestorsOf.size + expandedDescendantsOf.size) > 0 && (() => {
-              const total = expandedAncestorsOf.size + expandedDescendantsOf.size;
-              return (
-                <IconTooltip label={`${total} branch${total === 1 ? '' : 'es'} expanded beyond the default view. Click to hide them all.`} side="bottom">
-                  <button
-                    onClick={collapseAllExpansions}
-                    data-pdr-variant="caution"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                    style={{ backgroundColor: '#fed7aa', borderColor: '#f59e0b', color: '#7c2d12', borderWidth: '1px', borderStyle: 'solid' }}
-                  >
-                    <Users className="w-3 h-3" />
-                    {total} branch{total === 1 ? '' : 'es'} shown
-                  </button>
-                </IconTooltip>
-              );
-            })()}
-            {/* Steps filter — toggle + +/- stepper. Styled as a clear
-                CTA pill: solid primary background when active, subtle
-                outline when off. */}
+            {/* Branch-expansion list — popover showing every
+                chevron currently expanded, split into Bloodline
+                (cousins / descendant chevrons, lavender) and
+                Extended family (in-laws' lineages / ancestor
+                chevrons, orange). Each row has a checkbox the
+                user can toggle to close that single branch, plus
+                a "Clear all" footer to collapse the lot. Replaces
+                the previous one-click-close-all button — Terry
+                wanted granular control and a per-section colour
+                cue rather than a binary on/off. */}
+            {(expandedAncestorsOf.size + expandedDescendantsOf.size) > 0 && (
+              <BranchesShownDropdown
+                expandedAncestors={expandedAncestorsOf}
+                expandedDescendants={expandedDescendantsOf}
+                graph={graph}
+                onToggleAncestor={handleExpandAncestors}
+                onToggleDescendant={handleExpandDescendants}
+                onClearAll={collapseAllExpansions}
+              />
+            )}
+            {/* Steps filter — same dropdown style as the
+                Generations D/A pickers (0–10 grid, type-any-number,
+                +10 quick-step). Per Terry: the previous +/- stepper
+                capped at 6 was too restrictive; a dropdown matches
+                the Generations affordance and lets users go to 10
+                or any custom number. */}
             <FilterPill label="Steps" pulse={pulseSteps}>
-              <NumberStepper
+              <StepsDropdown
                 value={expandedHops}
                 onChange={setExpandedHops}
-                min={0}
-                max={6}
               />
             </FilterPill>
             <FilterPill label="Generations" pulse={pulseGenerations}>
@@ -2460,6 +2457,222 @@ function GenerationDropdown({ label, value, onChange }: {
             className="w-full px-2 py-1.5 rounded text-xs font-medium text-foreground hover:bg-accent transition-colors text-left"
           >
             <span className="text-primary">+</span> Add 10 more (currently {value})
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Steps dropdown — same affordance as the Generations D/A
+ * pickers (0–10 grid + type-any-number + +10 quick-step) wired
+ * to the steps filter. Replaces the previous +/- NumberStepper
+ * which capped at 6; per Terry's request the cap is removed and
+ * the affordance unified with Generations.
+ *
+ * Sits inside the existing FilterPill so the outer "Steps"
+ * label stays put — only the value picker swaps.
+ */
+function StepsDropdown({ value, onChange }: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => { if (open) setDraft(String(value)); }, [open, value]);
+
+  const applyDraft = () => {
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n) && n >= 0) {
+      onChange(n);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
+          aria-label={`Steps: ${value}`}
+        >
+          <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
+          <ChevronDown className="w-3 h-3 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="start" collisionPadding={12}>
+        <p className="text-[10px] font-semibold text-muted-foreground tracking-wide mb-1.5 uppercase">
+          Steps
+        </p>
+        <div className="grid grid-cols-6 gap-1 mb-2">
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+            <button
+              key={n}
+              onClick={() => { onChange(n); setOpen(false); }}
+              className={`px-2 py-1.5 rounded text-sm font-mono tabular-nums hover:bg-accent transition-colors ${
+                value === n ? 'bg-primary/10 text-primary font-semibold' : ''
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <div className="border-t border-border pt-2">
+          <label className="block text-[11px] text-muted-foreground mb-1">Or type any number:</label>
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={draft}
+              onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyDraft();
+                else if (e.key === 'Escape') setOpen(false);
+              }}
+              className="flex-1 px-2 py-1.5 rounded-md border border-border bg-background text-sm font-mono"
+            />
+            <button
+              onClick={applyDraft}
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Set
+            </button>
+          </div>
+        </div>
+        <div className="border-t border-border mt-2 pt-2">
+          <button
+            onClick={() => { onChange(value + 10); setOpen(false); }}
+            className="w-full px-2 py-1.5 rounded text-xs font-medium text-foreground hover:bg-accent transition-colors text-left"
+          >
+            <span className="text-primary">+</span> Add 10 more (currently {value})
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Branches-shown dropdown — Popover trigger styled to match the
+ * brand-orange "caution-tier" pill the previous one-click button
+ * used (so the toolbar geometry doesn't shift), but contents are
+ * a per-branch list split by Bloodline (lavender / cousins) and
+ * Extended family (orange / in-laws), each with its own toggle
+ * checkbox and a "Clear all" footer.
+ *
+ * Categorisation rule: descendant chevrons (cousins) are always
+ * bloodline by construction (the head IS the bloodline relative).
+ * Ancestor chevrons are categorised as extended family — the rare
+ * bloodline-with-out-of-scope-ancestors case is grouped there too
+ * for v1 simplicity; can be split if it becomes confusing.
+ */
+function BranchesShownDropdown({
+  expandedAncestors,
+  expandedDescendants,
+  graph,
+  onToggleAncestor,
+  onToggleDescendant,
+  onClearAll,
+}: {
+  expandedAncestors: Set<number>;
+  expandedDescendants: Set<number>;
+  graph: FamilyGraph | null;
+  onToggleAncestor: (id: number) => void;
+  onToggleDescendant: (id: number) => void;
+  onClearAll: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const total = expandedAncestors.size + expandedDescendants.size;
+
+  // Person-name lookup straight from graph.nodes — full name when
+  // available so the dropdown reads naturally ("Lindsay Clapson"
+  // not "Lindsay"), short name otherwise.
+  const nameOf = (id: number) => {
+    const n = graph?.nodes.find(p => p.personId === id);
+    return n?.fullName?.trim() || n?.name?.trim() || `#${id}`;
+  };
+
+  const bloodlineEntries = Array.from(expandedDescendants)
+    .map(id => ({ id, name: nameOf(id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const extendedEntries = Array.from(expandedAncestors)
+    .map(id => ({ id, name: nameOf(id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          aria-label={`${total} branch${total === 1 ? '' : 'es'} shown — click to manage`}
+          data-pdr-variant="caution"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          style={{ backgroundColor: '#fed7aa', borderColor: '#f59e0b', color: '#7c2d12', borderWidth: '1px', borderStyle: 'solid' }}
+        >
+          <Users className="w-3 h-3" />
+          {total} branch{total === 1 ? '' : 'es'} shown
+          <ChevronDown className="w-3 h-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3" align="end" collisionPadding={12}>
+        {bloodlineEntries.length > 0 && (
+          <div className="mb-3">
+            <p
+              className="text-[10px] font-semibold tracking-wide mb-1.5 uppercase"
+              style={{ color: '#7e6df0' }}
+            >
+              Bloodline
+            </p>
+            <ul className="space-y-1">
+              {bloodlineEntries.map(entry => (
+                <li key={`d-${entry.id}`}>
+                  <label
+                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <Checkbox
+                      checked
+                      onCheckedChange={() => onToggleDescendant(entry.id)}
+                    />
+                    <span className="text-sm" style={{ color: '#7e6df0' }}>{entry.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {extendedEntries.length > 0 && (
+          <div>
+            <p
+              className="text-[10px] font-semibold tracking-wide mb-1.5 uppercase"
+              style={{ color: '#c2740a' }}
+            >
+              Extended family
+            </p>
+            <ul className="space-y-1">
+              {extendedEntries.map(entry => (
+                <li key={`a-${entry.id}`}>
+                  <label
+                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <Checkbox
+                      checked
+                      onCheckedChange={() => onToggleAncestor(entry.id)}
+                    />
+                    <span className="text-sm" style={{ color: '#c2740a' }}>{entry.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="border-t border-border mt-3 pt-2">
+          <button
+            onClick={() => { onClearAll(); setOpen(false); }}
+            className="w-full px-2 py-1.5 rounded text-xs font-medium text-foreground hover:bg-accent transition-colors text-left"
+          >
+            Clear all
           </button>
         </div>
       </PopoverContent>
