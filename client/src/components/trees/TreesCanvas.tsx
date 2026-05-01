@@ -1060,14 +1060,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         );
       })()}
 
-      {/* ── Step 3 of TREES_PANEL_DESIGN.md: panel container shell.
-          For each currently-expanded chevron (ancestor or descendant),
-          render a floating HTML panel near its origin card. Empty
-          placeholder content for now — step 4 adds the tether,
-          step 5 adds the actual subtree content. The panels sit
-          ABOVE the dimmed SVG canvas thanks to z-index + render
-          order. Drag, multi-panel z-order, and close gestures arrive
-          in steps 6, 8, 9 respectively. */}
+      {/* ── Step 3 + Step 4 of TREES_PANEL_DESIGN.md.
+          Step 3: floating panel near each currently-expanded chevron.
+          Step 4: Bezier tether line from each chevron to its panel,
+          drawn in a separate SVG layer that sits above the dimmed
+          base canvas but below the panel HTML divs (z-index 25 vs
+          panels' 30). The tether colour matches the chevron-button:
+          lavender for bloodline-cousin chevrons, brand orange for
+          in-law chevrons. Bezier control points are pulled along
+          the direction of travel so the curve flexes naturally as
+          the panel moves (drag arrives in step 6). */}
       {(() => {
         type PanelOrigin = { personId: number; direction: 'ancestor' | 'descendant' };
         const origins: PanelOrigin[] = [];
@@ -1078,59 +1080,137 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           origins.push({ personId: pid, direction: 'descendant' });
         }
         if (origins.length === 0) return null;
-        // Convert each origin's canvas-local coords to screen coords
-        // so we can position the absolute HTML panels relative to the
-        // canvas wrapper. Panels initially sit a fixed offset away
-        // from the origin card — proper draggable positioning + the
-        // Bezier tether come in steps 4 and 6.
+
         const PANEL_W = 280;
         const PANEL_H = 200;
-        const VERTICAL_GAP = 80; // distance from origin row to panel
-        return origins.map(({ personId, direction }) => {
+        const VERTICAL_GAP = 80;
+        // Chevron-button geometry inside PersonNode — kept here so
+        // tether origin points line up exactly with where the
+        // chevron-circle sits on screen.
+        const CHEVRON_STEM = 24;
+        const CHEVRON_R = 17;
+
+        type Layout = {
+          personId: number;
+          direction: 'ancestor' | 'descendant';
+          personName: string;
+          directionLabel: string;
+          panelLeft: number;
+          panelTop: number;
+          chevronScreenX: number;
+          chevronScreenY: number;
+          panelAnchorX: number;
+          panelAnchorY: number;
+          tetherColour: string;
+        };
+        const layouts: Layout[] = [];
+        for (const { personId, direction } of origins) {
           const origin = placedNodes.find(n => n.personId === personId);
-          if (!origin) return null;
+          if (!origin) continue;
           const originScreenX = viewport.tx + origin.renderedX * viewport.scale;
           const originScreenY = viewport.ty + origin.renderedY * viewport.scale;
-          // Descendant chevron → panel sits below the origin card.
-          // Ancestor chevron → panel sits above. (Constraint clamping
-          // arrives in step 6.)
           const cardHalfHeight = (CARD_H / 2) * viewport.scale;
+          // Chevron sits at card-edge + stem + radius (in canvas
+          // units), scaled to screen.
+          const chevronOffset = (CARD_H / 2 + CHEVRON_STEM + CHEVRON_R) * viewport.scale;
+          const chevronScreenX = originScreenX;
+          const chevronScreenY = direction === 'descendant'
+            ? originScreenY + chevronOffset
+            : originScreenY - chevronOffset;
           const panelLeft = originScreenX - PANEL_W / 2;
           const panelTop = direction === 'descendant'
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
             : originScreenY - cardHalfHeight - VERTICAL_GAP - PANEL_H;
+          // Tether anchors at top-centre of panel for descendant
+          // direction (line falls into panel from above), bottom-
+          // centre for ancestor direction (line rises into panel
+          // from below).
+          const panelAnchorX = panelLeft + PANEL_W / 2;
+          const panelAnchorY = direction === 'descendant' ? panelTop : panelTop + PANEL_H;
           const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
           const directionLabel = direction === 'descendant' ? 'descendants' : 'family of origin';
-          return (
-            <Card
-              key={`panel-${personId}-${direction}`}
-              className="absolute"
-              style={{
-                left: panelLeft,
-                top: panelTop,
-                width: PANEL_W,
-                height: PANEL_H,
-                // Card primitive ships with a standard shadow; the
-                // panel needs a heavier one to read as a layer above
-                // the dimmed canvas. This is the only style-guide-
-                // sanctioned override pattern: copy the radius /
-                // palette of the closest existing surface (Card),
-                // then bump the shadow for the elevation cue.
-                boxShadow: '0 12px 32px rgba(0, 0, 0, 0.20)',
-                zIndex: 30,
-              }}
+          // Tether colour mirrors chevron-button colour rules:
+          //   • descendant chevron → always lavender (cousins are
+          //     bloodline regardless of origin's status)
+          //   • ancestor chevron → lavender if origin is bloodline
+          //     (out-of-scope ancestor case), orange if not (in-law
+          //     family-of-origin case)
+          const isOriginBloodline = bloodlineSet.has(personId);
+          const tetherColour = direction === 'descendant'
+            ? '#ad9eff'
+            : (isOriginBloodline ? '#ad9eff' : '#f59e0b');
+          layouts.push({
+            personId, direction, personName, directionLabel,
+            panelLeft, panelTop,
+            chevronScreenX, chevronScreenY,
+            panelAnchorX, panelAnchorY,
+            tetherColour,
+          });
+        }
+
+        return (
+          <>
+            {/* Tether layer — SVG path between each chevron and its
+                panel anchor. pointer-events disabled so it never
+                intercepts clicks meant for the canvas or panel. */}
+            <svg
+              className="absolute inset-0 pointer-events-none"
+              style={{ zIndex: 25 }}
             >
-              <CardHeader>
-                <div className="text-caption uppercase tracking-wider">Panel · placeholder</div>
-                <CardTitle className="text-h2">{personName}</CardTitle>
-                <div className="text-body-muted">{directionLabel}</div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-caption">Step 3 shell — content arrives in step 5.</div>
-              </CardContent>
-            </Card>
-          );
-        });
+              {layouts.map(l => {
+                // Bezier control points pulled 40% of the vertical
+                // delta along the direction of travel — produces a
+                // smooth S-curve that bends naturally if the panel
+                // is offset diagonally. (Diagonal offset arrives
+                // when drag lands in step 6.)
+                const dy = l.panelAnchorY - l.chevronScreenY;
+                const c1x = l.chevronScreenX;
+                const c1y = l.chevronScreenY + dy * 0.4;
+                const c2x = l.panelAnchorX;
+                const c2y = l.panelAnchorY - dy * 0.4;
+                const path = `M ${l.chevronScreenX} ${l.chevronScreenY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${l.panelAnchorX} ${l.panelAnchorY}`;
+                return (
+                  <path
+                    key={`tether-${l.personId}-${l.direction}`}
+                    d={path}
+                    stroke={l.tetherColour}
+                    strokeWidth={2}
+                    fill="none"
+                    strokeLinecap="round"
+                    opacity={0.9}
+                  />
+                );
+              })}
+            </svg>
+            {/* Panels */}
+            {layouts.map(l => (
+              <Card
+                key={`panel-${l.personId}-${l.direction}`}
+                className="absolute"
+                style={{
+                  left: l.panelLeft,
+                  top: l.panelTop,
+                  width: PANEL_W,
+                  height: PANEL_H,
+                  // Card primitive ships with a standard shadow; the
+                  // panel needs a heavier one to read as a layer
+                  // above the dimmed canvas.
+                  boxShadow: '0 12px 32px rgba(0, 0, 0, 0.20)',
+                  zIndex: 30,
+                }}
+              >
+                <CardHeader>
+                  <div className="text-caption uppercase tracking-wider">Panel · placeholder</div>
+                  <CardTitle className="text-h2">{l.personName}</CardTitle>
+                  <div className="text-body-muted">{l.directionLabel}</div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-caption">Step 3 shell — content arrives in step 5.</div>
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        );
       })()}
 
       {contextMenu && (
