@@ -2051,7 +2051,14 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                           hideChips={true}
                           relationshipLabel={relationshipLabels.get(p.personId)}
                           onMouseDown={(e) => e.stopPropagation()}
-                          onDoubleClick={(e) => { e.stopPropagation(); onRefocus(p.personId); }}
+                          // Reuse the canvas's double-click handler
+                          // so the same placeholder guard applies:
+                          // double-clicking a "?" card (Lindsay's
+                          // unknown grandparent, etc.) used to call
+                          // onRefocus with a placeholder personId
+                          // and the graph fetch returned empty,
+                          // leaving Terry on a blank canvas.
+                          onDoubleClick={(e) => handleNodeDoubleClick(e, p.node)}
                           onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
                           onQuickAddParent={() => {}}
                           onQuickAddPartner={() => {}}
