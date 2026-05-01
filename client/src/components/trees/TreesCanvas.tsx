@@ -1210,6 +1210,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               />
             );
           })}
+        </g>
 
         {/* Side-branch chevrons — drawn at the canvas level (not
             inside per-card PersonNode SVGs) so each chevron can sit
@@ -1222,12 +1223,18 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             so the chevron reads as "this couple's cousins line"
             rather than just one person's.
 
-            CRITICAL: this <g> sits INSIDE the outer transform
-            group (translate + scale) so its coordinates are in
-            WORLD space, the same as the cards above. Outside that
-            wrapper, the chevrons render at raw SVG coords, which
-            puts them way off-screen at any non-trivial pan/zoom. */}
-        <g>
+            This <g> wraps the chevrons in their OWN transform
+            group (same translate+scale as the cards above) but
+            WITHOUT the dim opacity that the cards group applies
+            when a panel is open. Reason: the chevron is a
+            call-to-action and its open-state cue (pulsation)
+            needs to read clearly against the dimmed canvas
+            background — it must NOT itself dim, otherwise the
+            pulse barely registers. Same world coords as the
+            cards group above, just at full opacity. */}
+        <g
+          transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}
+        >
           {sideBranchChevrons.map(info => {
             if (hiddenSideBranchIds.has(info.headId)) return null;
             if (info.partnerId != null && hiddenSideBranchIds.has(info.partnerId)) return null;
@@ -1326,7 +1333,6 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               </g>
             );
           })}
-        </g>
         </g>
 
         {/* Fixed overlay: zoom indicator */}
