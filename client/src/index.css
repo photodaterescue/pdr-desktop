@@ -556,6 +556,33 @@ body > .window-resize-hint-tr {
     transform-origin: center center;
   }
 
+  /* ── Trees: active-chevron pulse ──────────────────────────────────── */
+  /* When a chevron's panel is OPEN, the chevron pulsates — gentle
+     scale + opacity ramp on a ~1.8s cycle. Per TREES_PANEL_DESIGN.md
+     §2.4: "the chevron's glyph does NOT rotate when active. Earlier
+     rotation-on-expansion (^ → v) was visually noisy and lost the
+     directional meaning. Pulsating reuses the same vocabulary as the
+     focus-card pulse." So the glyph stays in its native direction
+     (^ for ancestor chevrons, v for descendant chevrons), and the
+     open-state cue is purely the pulsation. transform-box: fill-box
+     keeps the scale anchored to the chevron's own centre rather
+     than the SVG canvas's origin. */
+  @keyframes pdr-tree-chevron-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.12);
+    }
+  }
+  .pdr-tree-chevron-pulse {
+    animation: pdr-tree-chevron-pulse 1.8s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center center;
+  }
+
   /* ── Trees: focus-card pulse ───────────────────────────────────────── */
   /* Soft amber "ping" radiating outward from the focused card so the
      bloodline POV is obvious at a glance — Terry confused his mum's

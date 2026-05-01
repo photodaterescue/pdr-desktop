@@ -1243,9 +1243,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             const label = expanded
               ? 'Hide cousins on this branch'
               : 'Show cousins on this branch';
-            const glyphPath = expanded
-              ? 'M -7 2 L 0 -5 L 7 2'
-              : 'M -7 -2 L 0 5 L 7 -2';
+            // Glyph stays as v (down) regardless of expansion
+            // state — design doc §2.4: "the chevron's glyph does
+            // not rotate when active". Earlier rotation-on-expansion
+            // (^ ↔ v) was visually noisy and lost the directional
+            // meaning. The open-state cue is the pulsation applied
+            // to the chevron <g> below.
+            const glyphPath = 'M -7 -2 L 0 5 L 7 -2';
             return (
               <g key={`sbc-${info.headId}`}>
                 {/* Head's leader line — from head's card bottom
@@ -1285,7 +1289,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   onClick={(e) => { e.stopPropagation(); onExpandDescendants?.(info.headId); }}
                 >
                   <IconTooltip label={label} side="bottom">
-                    <g>
+                    {/* Inner <g> pulses when this chevron's panel
+                        is open — gentle scale + opacity ramp
+                        (pdr-tree-chevron-pulse keyframe). Anchored
+                        to the chevron's own centre via
+                        transform-box: fill-box on the class. */}
+                    <g className={expanded ? 'pdr-tree-chevron-pulse' : undefined}>
                       <ellipse
                         cx={0} cy={3}
                         rx={r * 0.92} ry={r * 0.55}
@@ -3069,9 +3078,11 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         const label = ancestorsExpanded
           ? (isOnBloodline ? 'Hide ancestors on this line' : 'Hide Extended Family')
           : (isOnBloodline ? 'Show more ancestors on this line' : 'Show Extended Family');
-        const glyphPath = ancestorsExpanded
-          ? 'M -7 -2 L 0 5 L 7 -2'
-          : 'M -7 2 L 0 -5 L 7 2';
+        // Glyph stays as ^ (up) regardless of expansion state —
+        // design doc §2.4: "the chevron's glyph does not rotate
+        // when active". Open-state cue is the pulsation applied
+        // to the chevron <g> below via .pdr-tree-chevron-pulse.
+        const glyphPath = 'M -7 2 L 0 -5 L 7 2';
         // Hover lifts the button by 1px and grows the drop shadow
         // beneath it; pointer-events sit on the chevronGroup so the
         // stem doesn't catch hover on its own (it's decorative).
@@ -3101,7 +3112,12 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               onClick={(e) => { e.stopPropagation(); onExpandAncestors(); }}
             >
               <IconTooltip label={label} side="top">
-                <g>
+                {/* Inner <g> pulses when this chevron's panel is
+                    open (ancestorsExpanded === true). Same
+                    pdr-tree-chevron-pulse keyframe the descendant
+                    canvas-level chevron uses, so both directions
+                    share one open-state vocabulary. */}
+                <g className={ancestorsExpanded ? 'pdr-tree-chevron-pulse' : undefined}>
                   {/* Soft drop shadow — slightly oversized circle
                       offset down + blurred via opacity stack. Two
                       stacked shadows (inner sharp, outer soft) give
