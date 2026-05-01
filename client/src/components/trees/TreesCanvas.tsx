@@ -1299,10 +1299,17 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             });
           }
           // Auto-size the panel from content — clamp between MIN and
-          // MAX so it stays draggable. Header height is added on top
-          // of contentHeight; card-bg padding sits within content.
-          const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, contentWidth));
-          const panelH = Math.max(MIN_PANEL_H, Math.min(MAX_PANEL_H, HEADER_H + contentHeight));
+          // MAX so it stays draggable. Content dimensions are
+          // multiplied by viewport.scale so the panel cards visually
+          // match whatever the canvas cards look like at the current
+          // zoom — Terry's feedback: "they are not keeping the same
+          // size as the canvas". The SVG viewBox stays in unscaled
+          // CARD_W coords; only the outer SVG width/height + the
+          // panel container scale.
+          const scaledContentW = contentWidth * viewport.scale;
+          const scaledContentH = contentHeight * viewport.scale;
+          const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, scaledContentW));
+          const panelH = Math.max(MIN_PANEL_H, Math.min(MAX_PANEL_H, HEADER_H + scaledContentH));
           const defaultPanelLeft = originScreenX - panelW / 2;
           const defaultPanelTop = direction === 'descendant'
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
@@ -1475,18 +1482,37 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   {/* Full-size canvas-card mini-tree inside the panel.
                       Reuses PersonNode at full CARD_W / CARD_H so each
                       person inside looks identical to a person on the
-                      main canvas — same avatar size, same name +
-                      relationship, same gender markers, same step
-                      badge. PersonNode is rendered inside an SVG with
-                      a viewBox sized to the precomputed contentWidth
-                      / contentHeight; CardContent's flex-1 +
-                      overflow-auto handles oversized branches with
-                      internal scroll. Step lines drawn underneath. */}
+                      main canvas — same avatar, name, gender marker,
+                      step badge. SVG viewBox stays at unscaled
+                      contentWidth/contentHeight; the outer width/
+                      height is multiplied by viewport.scale so the
+                      cards visually match the canvas's current zoom.
+                      onMouseDown on the SVG also drags the panel
+                      (PersonNode stopPropagation prevents its own
+                      clicks from bubbling here, so only empty SVG
+                      space initiates drag). */}
                   <svg
-                    width={l.contentWidth}
-                    height={l.contentHeight}
+                    width={l.contentWidth * viewport.scale}
+                    height={l.contentHeight * viewport.scale}
                     viewBox={`0 0 ${l.contentWidth} ${l.contentHeight}`}
-                    style={{ display: 'block', margin: '0 auto' }}
+                    style={{ display: 'block', margin: '0 auto', cursor: 'grab' }}
+                    onMouseDown={(e) => {
+                      if (e.button !== 0) return;
+                      e.preventDefault();
+                      const current = panelOffsets.get(l.panelKey) ?? { x: 0, y: 0 };
+                      panelDragRef.current = {
+                        active: true,
+                        panelKey: l.panelKey,
+                        startMouseX: e.clientX,
+                        startMouseY: e.clientY,
+                        startOffsetX: current.x,
+                        startOffsetY: current.y,
+                        minOffsetX: l.minOffsetX,
+                        maxOffsetX: l.maxOffsetX,
+                        minOffsetY: l.minOffsetY,
+                        maxOffsetY: l.maxOffsetY,
+                      };
+                    }}
                   >
                     {/* Parent-child step lines drawn first so cards
                         cover any line endpoints. */}
