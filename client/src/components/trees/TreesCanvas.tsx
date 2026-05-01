@@ -1151,10 +1151,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         return (
           <>
             {/* Tether layer — SVG path between each chevron and its
-                panel anchor. pointer-events disabled so it never
-                intercepts clicks meant for the canvas or panel. */}
+                panel anchor. w-full / h-full needed so the SVG has
+                a paintable area; without them the element is 0×0
+                even with inset-0 and the path renders nowhere.
+                pointer-events disabled so the line never intercepts
+                clicks meant for the canvas or panel. */}
             <svg
-              className="absolute inset-0 pointer-events-none"
+              className="absolute inset-0 w-full h-full pointer-events-none"
               style={{ zIndex: 25 }}
             >
               {layouts.map(l => {
@@ -1196,6 +1199,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   // panel needs a heavier one to read as a layer
                   // above the dimmed canvas.
                   boxShadow: '0 12px 32px rgba(0, 0, 0, 0.20)',
+                  // Panel border matches the chevron / tether colour
+                  // so the whole affordance reads as one branded
+                  // unit (lavender for bloodline content, brand
+                  // orange for in-law / extended family). Same
+                  // tokens established by the chevron-button.
+                  borderColor: l.tetherColour,
+                  borderWidth: 2,
                   zIndex: 30,
                 }}
               >
