@@ -1210,7 +1210,6 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               />
             );
           })}
-        </g>
 
         {/* Side-branch chevrons — drawn at the canvas level (not
             inside per-card PersonNode SVGs) so each chevron can sit
@@ -1221,7 +1220,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             from the bloodline head (Carol), orange from the in-law
             partner (Graham) — geometrically and tonally accurate
             so the chevron reads as "this couple's cousins line"
-            rather than just one person's. */}
+            rather than just one person's.
+
+            CRITICAL: this <g> sits INSIDE the outer transform
+            group (translate + scale) so its coordinates are in
+            WORLD space, the same as the cards above. Outside that
+            wrapper, the chevrons render at raw SVG coords, which
+            puts them way off-screen at any non-trivial pan/zoom. */}
         <g>
           {sideBranchChevrons.map(info => {
             if (hiddenSideBranchIds.has(info.headId)) return null;
@@ -1312,6 +1317,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               </g>
             );
           })}
+        </g>
         </g>
 
         {/* Fixed overlay: zoom indicator */}
