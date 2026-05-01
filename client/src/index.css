@@ -313,10 +313,11 @@
 .animate-pulse-cta  { animation: pm-pulse-cta  1.5s ease-in-out infinite; }
 /* Slower variant of the same cadence — used for AMBIENT signals
    that should sit in peripheral vision rather than demand attention
-   (e.g. the Steps filter pill when hidden relatives exist). 2 s
+   (e.g. the Steps filter pill when hidden relatives exist). 4 s
    cycle reads as "there's something here when you're ready" instead
-   of the snappier 1.5 s "look at me right now" of animate-pulse-cta. */
-.animate-pulse-cta-slow { animation: pm-pulse-cta 2s ease-in-out infinite; }
+   of the snappier 1.5 s "look at me right now" of animate-pulse-cta —
+   tuned to Terry's preference for a calmer ambient signal. */
+.animate-pulse-cta-slow { animation: pm-pulse-cta 4s ease-in-out infinite; }
 
 /* Indeterminate stripe used by the Re-cluster modal while the job is
    in flight. Slides a 1/3-width amber pill across an amber-100 track

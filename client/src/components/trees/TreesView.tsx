@@ -2562,8 +2562,17 @@ function StepsDropdown({ value, onChange, hiddenCount = 0, maxUseful = 0 }: {
     }
   };
 
+  // Explainer label for the trigger button — IconTooltip on the
+  // wrapper so the user can hover the pill (or its +N badge) and
+  // read "X people are hidden by this Steps cap" instead of being
+  // left to guess what the small primary number next to the value
+  // means.
+  const triggerTooltip = hiddenCount > 0
+    ? `${hiddenCount} ${hiddenCount === 1 ? 'person is' : 'people are'} hidden by the current Steps cap of ${value}. Click to increase.`
+    : `Steps cap. Click to change.`;
   return (
     <Popover open={open} onOpenChange={setOpen}>
+      <IconTooltip label={triggerTooltip} side="bottom">
       <PopoverTrigger asChild>
         <button
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
@@ -2578,6 +2587,7 @@ function StepsDropdown({ value, onChange, hiddenCount = 0, maxUseful = 0 }: {
           <ChevronDown className="w-3 h-3 text-muted-foreground" />
         </button>
       </PopoverTrigger>
+      </IconTooltip>
       <PopoverContent className="w-56 p-3" align="start" collisionPadding={12}>
         <p className="text-[10px] font-semibold text-muted-foreground tracking-wide mb-1.5 uppercase">
           Steps
@@ -2587,10 +2597,11 @@ function StepsDropdown({ value, onChange, hiddenCount = 0, maxUseful = 0 }: {
             const isCurrent = value === n;
             // "Max useful" outline — same hop number where the
             // furthest relative actually sits. Beyond it raising
-            // Steps stops revealing more, so we mark it with a
-            // primary-tinted ring (same colour family as the
-            // active highlight, just a ring instead of a fill so
-            // both states can co-exist when they happen to coincide).
+            // Steps stops revealing more. Marked with a GOLD
+            // ring (--color-gold = #f8c15c, the same DNA token
+            // PDR uses for focus-ring + step-badge highlights)
+            // so it stands out clearly from the lavender
+            // active-state fill — Terry's request.
             const isMaxUseful = maxUseful > 0 && n === maxUseful && !isCurrent;
             return (
               <button
@@ -2599,9 +2610,10 @@ function StepsDropdown({ value, onChange, hiddenCount = 0, maxUseful = 0 }: {
                 aria-label={isMaxUseful ? `${n} — furthest relative on this tree` : `${n}`}
                 className={`px-2 py-1.5 rounded text-sm font-mono tabular-nums hover:bg-accent transition-colors ${
                   isCurrent ? 'bg-primary/10 text-primary font-semibold' : ''
-                } ${
-                  isMaxUseful ? 'ring-1 ring-primary/60 text-primary' : ''
                 }`}
+                style={isMaxUseful
+                  ? { boxShadow: 'inset 0 0 0 1.5px #f8c15c', color: '#b07106' }
+                  : undefined}
               >
                 {n}
               </button>
@@ -2610,7 +2622,7 @@ function StepsDropdown({ value, onChange, hiddenCount = 0, maxUseful = 0 }: {
         </div>
         {maxUseful > 0 && maxUseful <= 10 && (
           <p className="text-[10px] text-muted-foreground mb-2 -mt-1">
-            <span className="text-primary font-semibold">{maxUseful}</span> covers everyone currently on this tree.
+            <span className="font-semibold" style={{ color: '#b07106' }}>{maxUseful}</span> covers everyone currently on this tree.
           </p>
         )}
         <div className="border-t border-border pt-2">
