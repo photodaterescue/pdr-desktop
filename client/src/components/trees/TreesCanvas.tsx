@@ -1618,8 +1618,23 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       )}
                     </CardHeader>
                   );
+                  // CardContent flex-aligns the SVG to the
+                  // chevron-facing edge so the SVG meets the panel
+                  // border on that side. HEADER_H is a constant
+                  // estimate of the actual rendered header height,
+                  // and the real header is ~25 px shorter than the
+                  // estimate; without justify-end on ancestor
+                  // CardContent that slack appeared as a visible
+                  // gap between the SVG bottom and the panel's
+                  // bottom border (where the canvas tether arrives),
+                  // breaking the line continuity. Descendants use
+                  // justify-start (the default) — SVG already sits
+                  // at the top of CardContent so its top touches the
+                  // panel border, slack falls below near the
+                  // bottom-rendered header.
+                  const contentJustify = l.direction === 'ancestor' ? 'justify-end' : 'justify-start';
                   const contentNode = (
-                    <CardContent key="content" className="flex-1 min-h-0 overflow-auto p-0">
+                    <CardContent key="content" className={`flex-1 min-h-0 overflow-auto p-0 flex flex-col ${contentJustify}`}>
                   {/* Full-size canvas-card mini-tree inside the panel.
                       Reuses PersonNode at full CARD_W / CARD_H so each
                       person inside looks identical to a person on the
