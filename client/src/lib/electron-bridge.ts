@@ -1246,6 +1246,10 @@ export interface FamilyGraphNode {
   /** Total parent_of count in the full DB — not limited to the
    *  currently-fetched hop window. */
   totalParentCount: number;
+  /** Total parent_of count where this person is the PARENT — used
+   *  by Trees to know whether descendants extend beyond the
+   *  current Generations setting. */
+  totalChildCount: number;
   /** True for placeholder intermediate nodes (ghost rendered in Trees). */
   isPlaceholder: boolean;
 }

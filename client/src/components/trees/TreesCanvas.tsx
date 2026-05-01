@@ -94,6 +94,26 @@ interface TreesCanvasProps {
    *  the parent (TreesView) does, so it can ask "how are these two
    *  parents related?" once a child reaches its second parent. */
   onParentResolved?: (parentId: number, childId: number) => Promise<void>;
+  /** Fired when the user clicks the ^ chevron above a person whose
+   *  totalParentCount exceeds the parents currently visible — i.e.
+   *  ancestors exist beyond the active Steps / Generations window.
+   *  TreesView probes the graph at deeper depth and pins whichever
+   *  ancestors weren't already on canvas, mirroring the behaviour
+   *  of pinning a quick-add result that lands beyond Depth. */
+  onExpandAncestors?: (personId: number) => void;
+  /** Fired when the user clicks the v chevron below a person whose
+   *  totalChildCount exceeds the children currently visible — i.e.
+   *  descendants exist beyond the active filters. Same probe-and-pin
+   *  pattern as onExpandAncestors but downward. */
+  onExpandDescendants?: (personId: number) => void;
+  /** Person IDs whose ancestors have been REVEALED via the ^ chevron.
+   *  Drives the chevron's toggle indicator: members of the set show
+   *  a "collapse" glyph; others show an "expand" glyph. Click on a
+   *  member fires onExpandAncestors as a hide instead of a reveal,
+   *  same as a second click on a folder in a file tree. */
+  expandedAncestorsOf?: Set<number>;
+  /** Mirror of expandedAncestorsOf for the v chevron below the card. */
+  expandedDescendantsOf?: Set<number>;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -135,7 +155,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved }: TreesCanvasProps) {
+export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -330,6 +350,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
 
   // Rendered positions come straight from the deterministic layout;
   // there are no per-node offsets since individual dragging is disabled.
+  // (hiddenExtendedIds is applied AT RENDER TIME below, not here, so
+  // nodeById and the various edge maps still see the full layout.)
   const placedNodes = useMemo(() => layout.nodes.map(n => ({
     ...n, renderedX: n.x, renderedY: n.y,
   })), [layout.nodes]);
@@ -357,6 +379,331 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     }
     return m;
   }, [layout.edges]);
+
+  /** How many parents and children are CURRENTLY VISIBLE on canvas
+   *  for each person — counted from the laid-out parent_of edges
+   *  (a is parent, b is child). Compared against the DB-wide
+   *  totalParentCount / totalChildCount to know whether out-of-
+   *  scope ancestors / descendants exist. Placeholder ghost edges
+   *  count too — they tell the user the slot is "filled" even if
+   *  the name isn't, so we shouldn't pretend more parents are
+   *  hiding off-screen on top of a ghost. */
+  const visibleParentChildCounts = useMemo(() => {
+    const parentCount = new Map<number, number>();
+    const childCount = new Map<number, number>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!nodeById.has(e.aId) || !nodeById.has(e.bId)) continue;
+      childCount.set(e.aId, (childCount.get(e.aId) ?? 0) + 1);
+      parentCount.set(e.bId, (parentCount.get(e.bId) ?? 0) + 1);
+    }
+    return { parentCount, childCount };
+  }, [layout.edges, nodeById]);
+
+  /** For each non-bloodline visible person, the full set of their
+   *  unique ancestors (everyone reachable upward via parent_of that
+   *  ISN'T on the focus's bloodline). This is what the per-card
+   *  chevron toggles — by default these are hidden so the tree
+   *  doesn't sprawl with every partner's family-of-origin every time
+   *  a sibling marries someone new. Empty entries (the rare case
+   *  where the non-bloodline person has no known parents at all)
+   *  are dropped so we don't paint a useless no-op chevron. */
+  /** Bloodline-of-focus set = every BLOOD RELATIVE of the focus.
+   *
+   *  A person is bloodline iff they share at least one biological
+   *  ancestor with the focus (or ARE the focus). The two-pass walk
+   *  captures the whole closure correctly:
+   *    1. Climb parent_of edges UP from focus → ancestors_of_focus.
+   *    2. From each ancestor (and from the focus itself), descend
+   *       parent_of edges DOWN → every descendant of any ancestor.
+   *  The union catches siblings (descendants of parents), nieces /
+   *  nephews (descendants of siblings), aunts / uncles (descendants
+   *  of grandparents), cousins (their offspring), great-aunts /
+   *  great-cousins, etc. — anyone reached without ever crossing a
+   *  spouse_of edge.
+   *
+   *  Crucially: the walk NEVER follows spouse_of, so people who
+   *  married INTO the family (and their parents, siblings, in-laws
+   *  by marriage, sibling's-spouse's-siblings, cousins'-partners'-
+   *  families, etc.) are correctly excluded. Half-relatives like
+   *  Sally's half-brother Graham still come out bloodline because
+   *  they share ONE parent (Sylvia) with the focus's lineage —
+   *  Graham's other parent (the unrelated half) is correctly NOT
+   *  bloodline since it's only reachable by going up from Graham
+   *  rather than down from a focus-ancestor. */
+  const bloodlineSet = useMemo(() => {
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    // Step 1: ancestors of focus (focus included).
+    const ancestors = new Set<number>([layout.focusPersonId]);
+    const upQueue: number[] = [layout.focusPersonId];
+    while (upQueue.length) {
+      const cur = upQueue.shift()!;
+      for (const p of parentsOf.get(cur) ?? []) {
+        if (ancestors.has(p)) continue;
+        ancestors.add(p);
+        upQueue.push(p);
+      }
+    }
+    // Step 2: every descendant of every ancestor.
+    const bloodline = new Set<number>(ancestors);
+    const downQueue: number[] = Array.from(ancestors);
+    while (downQueue.length) {
+      const cur = downQueue.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (bloodline.has(c)) continue;
+        bloodline.add(c);
+        downQueue.push(c);
+      }
+    }
+    return bloodline;
+  }, [layout.edges, layout.focusPersonId]);
+
+  /** "Direct line" set — every blood relative whose visibility we
+   *  consider tier-1: focus + direct ancestors + direct descendants
+   *  + focus's siblings + focus's siblings' descendants. These never
+   *  hide. Anyone in bloodline who isn't in here is part of a side
+   *  branch (aunts/uncles, cousins, great-aunts, etc.) and is
+   *  governed by the descendant chevron below.
+   *
+   *  Why focus's-siblings'-descendants are tier-1: nieces and
+   *  nephews are immediate-feeling family — Terry showed Lilly +
+   *  Daisy (his nieces) in every screenshot as part of the default
+   *  view. Hiding them by default would feel hostile. */
+  const directLineSet = useMemo(() => {
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    const set = new Set<number>([layout.focusPersonId]);
+    // Direct ancestors of focus (focus included via the seed).
+    const upQueue = [layout.focusPersonId];
+    while (upQueue.length) {
+      const cur = upQueue.shift()!;
+      for (const p of parentsOf.get(cur) ?? []) {
+        if (set.has(p)) continue;
+        set.add(p);
+        upQueue.push(p);
+      }
+    }
+    // Direct descendants of focus.
+    const downQueue = [layout.focusPersonId];
+    while (downQueue.length) {
+      const cur = downQueue.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (set.has(c)) continue;
+        set.add(c);
+        downQueue.push(c);
+      }
+    }
+    // Focus's siblings + their descendants. Siblings = other children
+    // of focus's parents. Walk down from each non-focus sibling.
+    const focusParents = parentsOf.get(layout.focusPersonId) ?? [];
+    const siblingDownQueue: number[] = [];
+    for (const fp of focusParents) {
+      for (const c of childrenOf.get(fp) ?? []) {
+        if (c === layout.focusPersonId) continue;
+        if (set.has(c)) continue;
+        set.add(c);
+        siblingDownQueue.push(c);
+      }
+    }
+    while (siblingDownQueue.length) {
+      const cur = siblingDownQueue.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (set.has(c)) continue;
+        set.add(c);
+        siblingDownQueue.push(c);
+      }
+    }
+    return set;
+  }, [layout.edges, layout.focusPersonId]);
+
+  /** For each side-branch head (an aunt / uncle / great-aunt / etc.
+   *  — anyone in bloodline who's a sibling of a direct ancestor of
+   *  focus, but isn't focus or a direct ancestor themselves), the
+   *  full transitive set of their descendants. Cousins, second
+   *  cousins, their kids — everyone reachable downward from the head
+   *  who ISN'T already in directLineSet (so we don't accidentally
+   *  hide a niece who happens to also descend from an aunt via some
+   *  cross-cousin marriage).
+   *
+   *  These descendants are HIDDEN BY DEFAULT — the v chevron on the
+   *  head's bottom edge toggles them. The head itself stays visible. */
+  const sideBranchDescendantsByHead = useMemo(() => {
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    // Strict ancestors of focus (NOT including focus itself).
+    const strictAncestors = new Set<number>();
+    const upQueue = [layout.focusPersonId];
+    while (upQueue.length) {
+      const cur = upQueue.shift()!;
+      for (const p of parentsOf.get(cur) ?? []) {
+        if (strictAncestors.has(p)) continue;
+        strictAncestors.add(p);
+        upQueue.push(p);
+      }
+    }
+    // Side-branch heads = siblings of strict ancestors (children of
+    // strict ancestors' parents, excluding the ancestor themselves
+    // and focus).
+    const heads = new Set<number>();
+    for (const a of strictAncestors) {
+      for (const p of parentsOf.get(a) ?? []) {
+        for (const c of childrenOf.get(p) ?? []) {
+          if (c === a) continue;
+          if (c === layout.focusPersonId) continue;
+          if (strictAncestors.has(c)) continue;
+          heads.add(c);
+        }
+      }
+    }
+    // For each head, walk DOWN collecting descendants that aren't in
+    // directLineSet. directLineSet exclusion guards against the rare
+    // overlap (cousin marriage, half-relations) where a node could
+    // reach focus via two routes.
+    const m = new Map<number, Set<number>>();
+    for (const head of heads) {
+      const desc = new Set<number>();
+      const queue = [head];
+      const seen = new Set<number>([head]);
+      while (queue.length) {
+        const cur = queue.shift()!;
+        for (const c of childrenOf.get(cur) ?? []) {
+          if (seen.has(c)) continue;
+          seen.add(c);
+          if (directLineSet.has(c)) continue;
+          desc.add(c);
+          queue.push(c);
+        }
+      }
+      if (desc.size > 0) m.set(head, desc);
+    }
+    return m;
+  }, [layout.edges, layout.focusPersonId, directLineSet]);
+
+  /** Person IDs hidden because their side-branch head's chevron is
+   *  collapsed. Ref-counted across heads so a cousin who descends
+   *  from two side-branch heads (e.g. cousin-marriage) only hides
+   *  when BOTH heads are collapsed. */
+  const hiddenSideBranchIds = useMemo(() => {
+    const expanded = expandedDescendantsOf ?? new Set<number>();
+    const unhidden = new Set<number>();
+    for (const head of expanded) {
+      const desc = sideBranchDescendantsByHead.get(head);
+      if (!desc) continue;
+      for (const id of desc) unhidden.add(id);
+    }
+    const hidden = new Set<number>();
+    for (const [head, desc] of sideBranchDescendantsByHead) {
+      if (expanded.has(head)) continue;
+      for (const id of desc) {
+        if (!unhidden.has(id)) hidden.add(id);
+      }
+    }
+    return hidden;
+  }, [sideBranchDescendantsByHead, expandedDescendantsOf]);
+
+  /** Person IDs that are CURRENTLY revealed via an expanded
+   *  side-branch chevron — i.e. cousins who would normally be hidden
+   *  but the user clicked the aunt's v chevron. Drives the lift /
+   *  drop-shadow polish on revealed cards (premium "popped out"
+   *  feel without committing to actual 3D). */
+  const revealedSideBranchIds = useMemo(() => {
+    const set = new Set<number>();
+    const expanded = expandedDescendantsOf ?? new Set<number>();
+    for (const head of expanded) {
+      const desc = sideBranchDescendantsByHead.get(head);
+      if (!desc) continue;
+      for (const id of desc) set.add(id);
+    }
+    return set;
+  }, [sideBranchDescendantsByHead, expandedDescendantsOf]);
+
+  /** For each non-bloodline person on canvas, the transitive set of
+   *  their unique ancestors (everyone reachable upward via parent_of
+   *  that ISN'T already on the focus's bloodline). Drives:
+   *    1. the per-card chevron — rendered when this set is non-empty
+   *       so the user has something to toggle, skipped when empty
+   *       (would be a no-op click).
+   *    2. the default-hidden filter — every person in any of these
+   *       sets gets filtered out at render time UNLESS their owner is
+   *       in expandedAncestorsOf. Keeps Lindsay's family-of-origin
+   *       collapsed by default so partners marrying in don't double
+   *       the canvas size. */
+  const extendedAncestorsByPerson = useMemo(() => {
+    const m = new Map<number, Set<number>>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    for (const node of layout.nodes) {
+      if (bloodlineSet.has(node.personId)) continue;
+      // Walk upward, collecting only ancestors NOT in bloodline.
+      // Stop ascending past a bloodline ancestor — those upper rungs
+      // are shared with the focus and shouldn't get tied to this
+      // chevron's collapse state.
+      const extended = new Set<number>();
+      const stack: number[] = [node.personId];
+      const seen = new Set<number>([node.personId]);
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const p of parentsOf.get(cur) ?? []) {
+          if (seen.has(p)) continue;
+          seen.add(p);
+          if (bloodlineSet.has(p)) continue;
+          extended.add(p);
+          stack.push(p);
+        }
+      }
+      if (extended.size > 0) m.set(node.personId, extended);
+    }
+    return m;
+  }, [layout.nodes, layout.edges, bloodlineSet]);
+
+  /** Person IDs to FILTER OUT of the rendered tree. Computed from
+   *  extendedAncestorsByPerson minus anyone unhidden by an expanded
+   *  chevron — ref-counted so two non-bloodline people who share an
+   *  ancestor (e.g. two sisters-in-law from the same family) only
+   *  hide it when BOTH are collapsed. */
+  const hiddenExtendedIds = useMemo(() => {
+    const expanded = expandedAncestorsOf ?? new Set<number>();
+    const unhidden = new Set<number>();
+    for (const expander of expanded) {
+      const ext = extendedAncestorsByPerson.get(expander);
+      if (!ext) continue;
+      for (const id of ext) unhidden.add(id);
+    }
+    const hidden = new Set<number>();
+    for (const [personId, extended] of extendedAncestorsByPerson) {
+      if (expanded.has(personId)) continue;
+      for (const id of extended) {
+        if (!unhidden.has(id)) hidden.add(id);
+      }
+    }
+    return hidden;
+  }, [extendedAncestorsByPerson, expandedAncestorsOf]);
 
   /** Relationship label for each person relative to the current
    *  focus — "Parent", "Sibling", "Grandchild", etc. Gendered when the
@@ -436,6 +783,15 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               per parent-set. Drawn BEFORE individual edges so they sit
               underneath the nodes. */}
           {familyGroups.map((group, i) => {
+            // Skip families whose ENTIRE parent set is hidden — either
+            // collapsed extended ancestry (in-laws) or collapsed
+            // side-branch descendants (cousins). Their children may
+            // still render via other family groups; we just don't draw
+            // the marriage bar / sibling bracket from a hidden parent.
+            const allParentsHidden = group.parentIds.every(id =>
+              hiddenExtendedIds.has(id) || hiddenSideBranchIds.has(id),
+            );
+            if (allParentsHidden) return null;
             // Are the parents married (stored spouse_of between any of
             // them)? If yes, EdgeLine draws the partnership connector —
             // we skip our own marriage bar to avoid duplicate overlap.
@@ -482,6 +838,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           {layout.edges.map((edge, idx) => {
             if (!edge.visible) return null;
             if (edge.type === 'parent_of') return null;
+            // Skip any edge whose endpoint has been collapsed-hidden by
+            // EITHER an inactive non-bloodline chevron (in-laws) OR an
+            // inactive side-branch chevron (cousins). Otherwise we'd
+            // draw a partnership / sibling line into thin air.
+            if (hiddenExtendedIds.has(edge.aId) || hiddenExtendedIds.has(edge.bId)) return null;
+            if (hiddenSideBranchIds.has(edge.aId) || hiddenSideBranchIds.has(edge.bId)) return null;
             // Derived sibling_of edges are redundant when the shared
             // parent is already on-screen — the Alan-Sally bracket
             // above their children already says "these four are
@@ -575,10 +937,32 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
 
           {/* Nodes */}
           {placedNodes.map(node => {
+            // Hidden by either filter — collapsed extended-family
+            // ancestor (in-law lineage) or collapsed side-branch
+            // descendant (cousin / second cousin). Skip the card and
+            // any placeholder ghost variant so collapsed branches
+            // stay genuinely off the canvas.
+            if (hiddenExtendedIds.has(node.personId)) return null;
+            if (hiddenSideBranchIds.has(node.personId)) return null;
             const avatar = avatars.get(node.personId);
             const isFocus = node.personId === layout.focusPersonId;
             const dimOpacity = Math.max(0.5, 1 - node.hopsFromFocus * 0.1);
             if (node.isPlaceholder) {
+              // Bloodline status of a ghost is INHERITED from any child
+              // it parents. If at least one child is bloodline, the
+              // ghost itself is a bloodline ancestor (paint purple);
+              // otherwise it sits above an in-law and paints orange.
+              // Walking layout.edges once per ghost is fine — there are
+              // typically only a handful of ghosts on canvas.
+              let ghostIsOnBloodline = false;
+              for (const e of layout.edges) {
+                if (e.type !== 'parent_of') continue;
+                if (e.aId !== node.personId) continue;
+                if (bloodlineSet.has(e.bId)) {
+                  ghostIsOnBloodline = true;
+                  break;
+                }
+              }
               return (
                 <PlaceholderNode
                   key={node.personId}
@@ -586,6 +970,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   opacity={dimOpacity}
                   onClick={(e) => handleNodeClick(e, node)}
                   onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  isOnBloodline={ghostIsOnBloodline}
                 />
               );
             }
@@ -613,6 +998,34 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 onOpenGenderPicker={() => setGenderPickerFor(node.personId)}
                 canAddParent={true}
                 hasCurrentPartner={(currentPartnerCount.get(node.personId) ?? 0) > 0}
+                hasOutOfScopeAncestors={
+                  // Two cases trigger the ^ chevron:
+                  //   1. Non-bloodline person with hideable extended
+                  //      ancestry — chevron always paints so the user
+                  //      can reveal their family-of-origin on demand
+                  //      (default state: hidden).
+                  //   2. Bloodline person whose DB-recorded ancestor
+                  //      count exceeds what's currently visible — the
+                  //      old "out-of-scope" capacity case.
+                  extendedAncestorsByPerson.has(node.personId)
+                  || node.totalParentCount > (visibleParentChildCounts.parentCount.get(node.personId) ?? 0)
+                }
+                // Side-branch heads (aunts / uncles / great-aunts /
+                // etc.) get the v chevron BELOW their card, toggling
+                // their cousins. Renders only when this person has
+                // hideable bloodline descendants — heads with no
+                // children stored in DB don't paint a no-op chevron.
+                hasHideableDescendants={sideBranchDescendantsByHead.has(node.personId)}
+                isOnBloodline={bloodlineSet.has(node.personId)}
+                onExpandAncestors={onExpandAncestors ? () => onExpandAncestors(node.personId) : undefined}
+                onExpandDescendants={onExpandDescendants ? () => onExpandDescendants(node.personId) : undefined}
+                ancestorsExpanded={expandedAncestorsOf?.has(node.personId) ?? false}
+                descendantsExpanded={expandedDescendantsOf?.has(node.personId) ?? false}
+                // Lift styling for cards revealed via someone else's
+                // side-branch chevron — the "popped out" feel without
+                // committing to real 3D. Drop-shadow + slight scale
+                // applied inside PersonNode.
+                lifted={revealedSideBranchIds.has(node.personId)}
               />
             );
           })}
@@ -760,28 +1173,34 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
   const barRightX = rightParent.renderedX - halfWidthFor(rightParent);
   const marriageBarMidX = (leftParent.renderedX + rightParent.renderedX) / 2;
 
-  // Bracket geometry. Two cases:
-  //   • SINGLE child — extend the bracket horizontally to include the
-  //     marriage midpoint, so the drop comes straight down from
-  //     between the two parents and bends via a mini-bracket to the
-  //     child's column. This produces the classic pedigree "T with
-  //     shoulder" look: midpoint centered, child offset to one side.
-  //   • MULTI child — clamp the drop to the children's range so the
-  //     bracket never extends past unrelated cards (otherwise a
-  //     spouse's parents laid out with a wide midpoint could paint
-  //     the bracket horizontal across a non-child's column). A short
-  //     connector at parentY bridges the midpoint to the drop column
-  //     in that edge case.
+  // Bracket geometry — UNIFIED rule for any number of children:
+  //   • The drop ALWAYS originates at the marriage-bar midpoint
+  //     (or the lone parent's centre when there's only one). This is
+  //     the "where do the kids come from" anchor in pedigree
+  //     diagrams; it's wrong to make it follow whichever child
+  //     happens to sit nearest one parent.
+  //   • The horizontal bracket spans from min(childMinX, midpoint)
+  //     to max(childMaxX, midpoint) — i.e. it stretches to encompass
+  //     both the drop anchor AND every child. This works whether the
+  //     midpoint sits inside, left of, or right of the children's
+  //     range.
+  //
+  // The earlier code clamped the drop into the children's range and
+  // bridged with a parent-level connector when the midpoint was
+  // outside it. That produced the visible bug where a couple's
+  // children all sitting under ONE parent (e.g. Alan + Sally with
+  // kids stacked under Sally) would drop a vertical from Sally's
+  // column rather than from between the two parents. The bracket
+  // sits in the empty band between parent and child rows, so it
+  // can't collide with another card horizontally — there was never
+  // a real reason to clamp.
   const childXs = children.map(c => c.renderedX).sort((a, b) => a - b);
   const childMinX = childXs[0];
   const childMaxX = childXs[childXs.length - 1];
-  const isSingleChild = childMinX === childMaxX;
-  const bracketStart = isSingleChild ? Math.min(childMinX, marriageBarMidX) : childMinX;
-  const bracketEnd   = isSingleChild ? Math.max(childMaxX, marriageBarMidX) : childMaxX;
-  const dropAnchorX = isSingleChild
-    ? marriageBarMidX
-    : Math.max(childMinX, Math.min(childMaxX, marriageBarMidX));
-  const needsConnector = !isSingleChild && Math.abs(dropAnchorX - marriageBarMidX) > 0.5;
+  const bracketStart = Math.min(childMinX, marriageBarMidX);
+  const bracketEnd   = Math.max(childMaxX, marriageBarMidX);
+  const dropAnchorX = marriageBarMidX;
+  const needsConnector = false;
 
   // Stroke darkens + thickens with contrast so the family scaffolding
   // (marriage bar, bracket, child drops) reads clearly against busy
@@ -1113,7 +1532,7 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onEditName, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true, hasCurrentPartner = false }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onEditName, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true, hasCurrentPartner = false, hasOutOfScopeAncestors = false, hasHideableDescendants = false, isOnBloodline = false, onExpandAncestors, onExpandDescendants, ancestorsExpanded = false, descendantsExpanded = false, lifted = false }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
@@ -1146,8 +1565,44 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
    *  primary CTA: if a partner is already on file, Sibling is the
    *  more likely follow-up; otherwise Partner is. */
   hasCurrentPartner?: boolean;
+  /** True when DB knows of more parents than the canvas currently
+   *  shows. Renders a small ^ chevron above the card inviting the
+   *  user to pull those ancestors in (probe + pin). */
+  hasOutOfScopeAncestors?: boolean;
+  /** True when this person is a side-branch head (aunt / uncle /
+   *  great-aunt / etc.) with bloodline descendants currently hidden
+   *  by default. Paints the v chevron below the card; click toggles
+   *  reveal/hide of every cousin / second-cousin in their branch. */
+  hasHideableDescendants?: boolean;
+  /** True when this person is on the focus's direct bloodline
+   *  (focus + transitive ancestors + transitive descendants).
+   *  Drives the chevron stroke palette: lavender for bloodline,
+   *  slate for extended / in-laws. */
+  isOnBloodline?: boolean;
+  /** Click handler for the ^ chevron. Undefined disables the
+   *  chevron entirely (TreesView didn't wire it). */
+  onExpandAncestors?: () => void;
+  /** Click handler for the v chevron. Undefined disables it. */
+  onExpandDescendants?: () => void;
+  /** True when this person's beyond-cap ancestors are currently
+   *  pinned in via the chevron. Flips the chevron's tooltip + glyph
+   *  to a "collapse" affordance so a second click hides them again. */
+  ancestorsExpanded?: boolean;
+  /** Mirror of ancestorsExpanded for the descendants chevron below. */
+  descendantsExpanded?: boolean;
+  /** True when this card has been REVEALED by an expanded
+   *  side-branch chevron (i.e. a cousin / second cousin appearing
+   *  via their aunt's expansion). Drives the lift / drop-shadow
+   *  treatment that gives revealed branches a "popped out" feel
+   *  without committing to actual 3D rendering. */
+  lifted?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
+  // Separate hover state for the extend / collapse chevron above the
+  // card. While the user is over the chevron we hide the four +chips
+  // on this card so they don't fight for the same screen edge — see
+  // the chip render block below for the gate.
+  const [chevronHovered, setChevronHovered] = useState(false);
   const ringColor = isFocus ? '#f59e0b' : '#6366f1';
   // Trees prefers the long-form name when set — that's where
   // genealogical detail (middle names, surnames) actually matters.
@@ -1163,7 +1618,17 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
     <g
       transform={`translate(${node.renderedX} ${node.renderedY})`}
       opacity={opacity}
-      style={{ cursor: 'default' }}
+      // Lift treatment for cards revealed via a side-branch chevron.
+      // CSS drop-shadow gives the card a "popped out" feel without
+      // committing to actual 3D rendering — Terry asked for the
+      // hover-menu metaphor, this is the cheap version. Class wires
+      // through to the chevron-revealed-card animation in
+      // index.css (fade + slight scale on appearance).
+      className={lifted ? 'pdr-tree-lifted-card' : undefined}
+      style={{
+        cursor: 'default',
+        ...(lifted ? { filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.18))' } : {}),
+      }}
       onMouseDown={onMouseDown}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
@@ -1182,19 +1647,39 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         fill="white"
         fillOpacity={0.001}
       />
-      {/* Focus halo — slightly larger card outline behind */}
+      {/* Focus halo — slightly larger card outline behind. The pulsing
+          outer rect is the "I am focused" heartbeat so users don't
+          mistake which card drives the bloodline POV (Terry confused
+          his mum's focus state for his own previously). Static halo
+          stays underneath so the focus ring is visible even at the
+          dim end of the pulse cycle. */}
       {isFocus && (
-        <rect
-          x={-CARD_W / 2 - 6}
-          y={-CARD_H / 2 - 6}
-          width={CARD_W + 12}
-          height={CARD_H + 12}
-          rx={14}
-          ry={14}
-          fill="rgba(245, 158, 11, 0.10)"
-          stroke="rgba(245, 158, 11, 0.55)"
-          strokeWidth={1.5}
-        />
+        <>
+          <rect
+            className="pdr-tree-focus-pulse"
+            x={-CARD_W / 2 - 10}
+            y={-CARD_H / 2 - 10}
+            width={CARD_W + 20}
+            height={CARD_H + 20}
+            rx={16}
+            ry={16}
+            fill="none"
+            stroke="#f59e0b"
+            strokeWidth={2.5}
+            style={{ pointerEvents: 'none' }}
+          />
+          <rect
+            x={-CARD_W / 2 - 6}
+            y={-CARD_H / 2 - 6}
+            width={CARD_W + 12}
+            height={CARD_H + 12}
+            rx={14}
+            ry={14}
+            fill="rgba(245, 158, 11, 0.10)"
+            stroke="rgba(245, 158, 11, 0.55)"
+            strokeWidth={1.5}
+          />
+        </>
       )}
       {/* Contrast halo — a soft white-ish glow behind the card so it
           pops against busy canvas backgrounds. Only visible when
@@ -1477,17 +1962,221 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
           </g>
         );
       })()}
+      {/* Beyond-capacity ancestor chevron — small stemmed indicator
+          above the card. Renders ONLY when the DB knows of more
+          parents than the canvas is currently showing (i.e. ancestors
+          exist past the active Steps / Generations cap). Click toggles
+          hide/reveal: if those ancestors are already pinned in
+          (ancestorsExpanded=true) the glyph flips to "v" so a second
+          click collapses them back. Stroke swaps lavender (#8e7cf0 —
+          bloodline) vs slate (#94a3b8 — extended / in-laws) based on
+          whether this person is on the focus's direct line. */}
+      {hasOutOfScopeAncestors && onExpandAncestors && (() => {
+        // Chevron sized 40% larger than the v1 token — the solid-fill
+        // treatment needs more presence to read as a deliberate
+        // affordance rather than a stray dot. Stem and glyph stroke
+        // are bumped in lockstep so proportions stay tight.
+        const r = 17;
+        const stemLen = 24;
+        const cardTop = -CARD_H / 2;
+        const chevronCy = cardTop - stemLen - r;
+        // Brand palette per Terry: lavender (#ad9eff = --primary) for
+        // bloodline, gold/orange (#f59e0b — the same token used for
+        // the focus ring + STEP_BADGE_FILL gold) for extended family.
+        const fill = isOnBloodline ? '#ad9eff' : '#f59e0b';
+        // Slightly darker rim on the bottom edge of the chevron gives
+        // it a button-like rounded shape rather than reading flat. The
+        // shadow / highlight palette is derived from the brand fill so
+        // it stays on-tone whichever variant is rendered.
+        const rim = isOnBloodline ? '#7e6df0' : '#c2740a';
+        const label = ancestorsExpanded
+          ? (isOnBloodline ? 'Hide ancestors on this line' : 'Hide Extended Family')
+          : (isOnBloodline ? 'Show more ancestors on this line' : 'Show Extended Family');
+        const glyphPath = ancestorsExpanded
+          ? 'M -7 -2 L 0 5 L 7 -2'
+          : 'M -7 2 L 0 -5 L 7 2';
+        // Hover lifts the button by 1px and grows the drop shadow
+        // beneath it; pointer-events sit on the chevronGroup so the
+        // stem doesn't catch hover on its own (it's decorative).
+        const lift = chevronHovered ? -1 : 0;
+        return (
+          <g>
+            {/* Stem — drawn separately from the lifted button so the
+                hover lift doesn't drag the line up too. The line is
+                purely visual; pointerEvents none lets clicks fall
+                through to whatever's underneath at canvas level. */}
+            <line
+              x1={0}
+              y1={cardTop}
+              x2={0}
+              y2={chevronCy + r}
+              stroke={fill}
+              strokeWidth={2}
+              strokeLinecap="round"
+              style={{ pointerEvents: 'none' }}
+            />
+            <g
+              transform={`translate(0 ${chevronCy + lift})`}
+              style={{ cursor: 'pointer', transition: 'transform 120ms ease-out' }}
+              onMouseEnter={() => setChevronHovered(true)}
+              onMouseLeave={() => setChevronHovered(false)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onExpandAncestors(); }}
+            >
+              <IconTooltip label={label} side="top">
+                <g>
+                  {/* Soft drop shadow — slightly oversized circle
+                      offset down + blurred via opacity stack. Two
+                      stacked shadows (inner sharp, outer soft) give
+                      the chip a real "raised button" feel without
+                      needing an SVG <filter>. Hover deepens both. */}
+                  <ellipse
+                    cx={0}
+                    cy={chevronHovered ? 5 : 3}
+                    rx={r * 0.92}
+                    ry={r * 0.55}
+                    fill="rgba(0,0,0,0.22)"
+                    style={{ pointerEvents: 'none', transition: 'all 120ms ease-out' }}
+                  />
+                  {/* Rim — slightly darker disc behind the main fill,
+                      offset 1.5px down. Reads as the "underside" of
+                      the button so the top fill looks proud of it. */}
+                  <circle
+                    r={r}
+                    cx={0}
+                    cy={1.5}
+                    fill={rim}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  {/* Main button face */}
+                  <circle r={r} fill={fill} stroke="none" />
+                  {/* Top highlight — thin lighter arc along the upper
+                      edge to suggest a glossy bevel. White at low
+                      opacity reads consistent over both lavender and
+                      orange variants. */}
+                  <path
+                    d={`M ${-r * 0.7} ${-r * 0.35} A ${r * 0.85} ${r * 0.85} 0 0 1 ${r * 0.7} ${-r * 0.35}`}
+                    stroke="rgba(255,255,255,0.45)"
+                    strokeWidth={1.5}
+                    fill="none"
+                    strokeLinecap="round"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  {/* Chevron glyph */}
+                  <path
+                    d={glyphPath}
+                    stroke="#ffffff"
+                    strokeWidth={3}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                </g>
+              </IconTooltip>
+            </g>
+          </g>
+        );
+      })()}
+      {/* Side-branch descendant chevron — paints below the card on
+          aunts / uncles / great-aunts (anyone who is bloodline AND a
+          sibling of a direct ancestor of focus). Click toggles
+          reveal / hide of their cousins-and-beyond. Always lavender
+          (cousins are bloodline — the brand purple). Default state:
+          collapsed, so the canvas opens tidy with only focus's direct
+          line + siblings + niblings shown. Stem-and-stud styling
+          mirrors the ^ chevron above for visual consistency. */}
+      {hasHideableDescendants && onExpandDescendants && (() => {
+        const r = 17;
+        const stemLen = 24;
+        const cardBottom = CARD_H / 2;
+        const chevronCy = cardBottom + stemLen + r;
+        // Cousins are bloodline → use the lavender palette regardless
+        // of isOnBloodline (the head themselves should always be in
+        // bloodline anyway since side-branch heads are derived from
+        // the bloodline closure).
+        const fill = '#ad9eff';
+        const rim = '#7e6df0';
+        const label = descendantsExpanded
+          ? 'Hide cousins on this branch'
+          : 'Show cousins on this branch';
+        // When expanded the glyph flips upward (^) — "click to fold
+        // the branch back up". Same toggle pattern as the ^ chevron.
+        const glyphPath = descendantsExpanded
+          ? 'M -7 2 L 0 -5 L 7 2'
+          : 'M -7 -2 L 0 5 L 7 -2';
+        const lift = chevronHovered ? 1 : 0; // hover deepens DOWNWARD for v chevron
+        return (
+          <g>
+            <line
+              x1={0}
+              y1={cardBottom}
+              x2={0}
+              y2={chevronCy - r}
+              stroke={fill}
+              strokeWidth={2}
+              strokeLinecap="round"
+              style={{ pointerEvents: 'none' }}
+            />
+            <g
+              transform={`translate(0 ${chevronCy + lift})`}
+              style={{ cursor: 'pointer', transition: 'transform 120ms ease-out' }}
+              onMouseEnter={() => setChevronHovered(true)}
+              onMouseLeave={() => setChevronHovered(false)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onExpandDescendants(); }}
+            >
+              <IconTooltip label={label} side="bottom">
+                <g>
+                  <ellipse
+                    cx={0}
+                    cy={chevronHovered ? 5 : 3}
+                    rx={r * 0.92}
+                    ry={r * 0.55}
+                    fill="rgba(0,0,0,0.22)"
+                    style={{ pointerEvents: 'none', transition: 'all 120ms ease-out' }}
+                  />
+                  <circle r={r} cx={0} cy={1.5} fill={rim} style={{ pointerEvents: 'none' }} />
+                  <circle r={r} fill={fill} stroke="none" />
+                  <path
+                    d={`M ${-r * 0.7} ${-r * 0.35} A ${r * 0.85} ${r * 0.85} 0 0 1 ${r * 0.7} ${-r * 0.35}`}
+                    stroke="rgba(255,255,255,0.45)"
+                    strokeWidth={1.5}
+                    fill="none"
+                    strokeLinecap="round"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <path
+                    d={glyphPath}
+                    stroke="#ffffff"
+                    strokeWidth={3}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                </g>
+              </IconTooltip>
+            </g>
+          </g>
+        );
+      })()}
       {/* Quick-add chips — four plus buttons that appear on hover.
           Anchored to the four edges of the CARD (not the smaller avatar
           circle). When any chip is clicked, we force `hovered=false` so
           the chips disappear under the modal — otherwise they stay sticky
           if the user cancels the picker and moves the mouse away. */}
-      {(hovered || isFocus) && !hideChips && (
+      {(hovered || isFocus) && !hideChips && !chevronHovered && (
         <g opacity={hovered ? 1 : 0.6} style={{ pointerEvents: 'all' }}>
+          {/* Quick-add + chips overlap the card edge — half on, half
+              off. Centring each chip exactly on the boundary keeps the
+              hover hit-area tight to the card, looks intentional next
+              to the corner badges, and stops the chips reading as
+              free-floating dots in negative space. */}
           {canAddParent && (
-            <QuickAddChip cx={0}                  cy={-CARD_H / 2 - 16} label="parent" tooltipSide="top" onClick={() => { setHovered(false); onQuickAddParent(); }} />
+            <QuickAddChip cx={0}                  cy={-CARD_H / 2} label="parent" tooltipSide="top" onClick={() => { setHovered(false); onQuickAddParent(); }} />
           )}
-          <QuickAddChip cx={0}                  cy={ CARD_H / 2 + 16} label="child"  tooltipSide="bottom" onClick={() => { setHovered(false); onQuickAddChild(); }} />
+          <QuickAddChip cx={0}                  cy={ CARD_H / 2} label="child"  tooltipSide="bottom" onClick={() => { setHovered(false); onQuickAddChild(); }} />
           {/* Same-generation +chip on either side of the card. Tap
               opens a modal asking Partner vs Sibling — the previous
               SVG-inside-the-canvas popup felt out-of-place against the
@@ -1497,7 +2186,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               is the more likely follow-up so it sits ON TOP and gets
               the lavender primary CTA. Without one, Partner leads. */}
           <QuickAddChip
-            cx={-CARD_W / 2 - 20} cy={0} label="partner / sibling" tooltipSide="left"
+            cx={-CARD_W / 2} cy={0} label="partner / sibling" tooltipSide="left"
             onClick={async () => {
               setHovered(false);
               const partnerChoice = { id: 'partner' as const, label: 'Partner', description: 'Married, together, or previously together.' };
@@ -1515,7 +2204,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
             }}
           />
           <QuickAddChip
-            cx={ CARD_W / 2 + 20} cy={0} label="partner / sibling" tooltipSide="right"
+            cx={ CARD_W / 2} cy={0} label="partner / sibling" tooltipSide="right"
             onClick={async () => {
               setHovered(false);
               const partnerChoice = { id: 'partner' as const, label: 'Partner', description: 'Married, together, or previously together.' };
@@ -1861,22 +2550,27 @@ function MenuItem({ icon, label, onClick, danger }: { icon: React.ReactNode; lab
 
 /** Faded dashed circle with a "?" icon — stands in for an unnamed
  *  intermediate person. Clicking opens the resolver to name or link. */
-function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
+function PlaceholderNode({ node, opacity, onClick, onMouseDown, isOnBloodline = true }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   opacity: number;
   onClick: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
+  /** Inherited bloodline status of the CHILD this ghost is parent of.
+   *  Bloodline child → render in brand purple (the ghost is a
+   *  bloodline ancestor). Non-bloodline child → render in brand
+   *  orange (the ghost is in-law / extended family territory).
+   *  Visual is the REVERSE of the expand-chevron buttons: white
+   *  fill, coloured stroke, coloured chevron — so the two surfaces
+   *  read as "click to populate" (placeholder) vs "click to
+   *  reveal/hide" (chevron button). */
+  isOnBloodline?: boolean;
 }) {
-  // Replaced the bulky dashed-circle "click to name" ghost with a
-  // small chevron-up button — same UX (click opens the resolver)
-  // but a fraction of the visual footprint. Matches the
-  // Royal-tree-style convention Terry asked for: when a parent
-  // slot is unfilled the row collapses to a minimal indicator,
-  // not a full-card placeholder occupying space at every layer.
-  // Full ghost cards were swamping the canvas, especially around
-  // partners whose own ancestry is usually outside the user's
-  // immediate interest.
   const r = 14;
+  // Brand palette: lavender for bloodline (ghost above a blood
+  // relative), orange for non-bloodline (ghost above an in-law).
+  // Slightly darker variants of the brand fills so the stroke reads
+  // crisp against white.
+  const stroke = isOnBloodline ? '#8e7cf0' : '#f59e0b';
   return (
     <g
       transform={`translate(${node.renderedX} ${node.renderedY})`}
@@ -1889,10 +2583,10 @@ function PlaceholderNode({ node, opacity, onClick, onMouseDown }: {
         <g>
           {/* Solid white fill so every pixel inside is clickable —
               avoids the SVG hollow-stroke dead-zone. */}
-          <circle r={r} fill="#ffffff" stroke="#8e7cf0" strokeWidth={1.5} />
+          <circle r={r} fill="#ffffff" stroke={stroke} strokeWidth={1.5} />
           <path
             d="M -6 2 L 0 -4 L 6 2"
-            stroke="#8e7cf0"
+            stroke={stroke}
             strokeWidth={2.2}
             fill="none"
             strokeLinecap="round"

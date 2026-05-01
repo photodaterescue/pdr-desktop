@@ -4200,6 +4200,11 @@ export interface FamilyGraphNode {
    *  Lets the client suppress ghost placeholders when real parents
    *  exist but sit beyond Steps, and gate the +parent chip. */
   totalParentCount: number;
+  /** Total parent_of edges in the FULL DB where this person is the
+   *  PARENT — used by the renderer to paint a v chevron below
+   *  anyone whose descendants extend past the current Generations
+   *  setting. */
+  totalChildCount: number;
   /** True for placeholder nodes bridging skip-generation relationships
    *  (grandparent, aunt/uncle, cousin) where the intermediate person
    *  isn't yet named. The renderer styles these as ghost circles. */
@@ -4392,6 +4397,22 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   const totalParentCountByPerson = new Map<number, number>();
   for (const r of totalParentCountRows) totalParentCountByPerson.set(r.child_id, r.cnt);
 
+  // True total CHILD count per person — same idea as the parent
+  // count above but inverted. Trees uses this to know whether a
+  // person has descendants beyond what the current Generations
+  // setting reveals, so the renderer can paint a v chevron beneath
+  // them inviting the user to expand downward.
+  const totalChildCountRows = db.prepare(`
+    SELECT r.person_a_id AS parent_id, COUNT(*) AS cnt
+    FROM relationships r
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE r.type = 'parent_of' AND r.person_a_id IN (${placeholders})
+      AND b.discarded_at IS NULL
+    GROUP BY r.person_a_id
+  `).all(...ids) as { parent_id: number; cnt: number }[];
+  const totalChildCountByPerson = new Map<number, number>();
+  for (const r of totalChildCountRows) totalChildCountByPerson.set(r.parent_id, r.cnt);
+
   // Face thumbnail coords per person — prefer the user-chosen representative
   // face; fall back to any face for that person so a new cluster still
   // gets an avatar until the user picks one in People Manager.
@@ -4435,6 +4456,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
       hopsFromFocus: visited.get(row.id) ?? maxHops,
       photoCount: photoCountByPerson.get(row.id) ?? 0,
       totalParentCount: totalParentCountByPerson.get(row.id) ?? 0,
+      totalChildCount: totalChildCountByPerson.get(row.id) ?? 0,
       isPlaceholder: row.is_placeholder === 1,
     };
   });

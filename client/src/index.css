@@ -533,4 +533,52 @@ body > .window-resize-hint-tr {
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
     border-radius: 10px;
   }
+
+  /* ── Trees: side-branch lifted-card animation ──────────────────────── */
+  /* Cousins / second-cousins revealed via the v chevron animate in with
+     a brief opacity + scale ramp so they read as "popping out" of the
+     tree, not jumping in. Mirrors the premium hover-menu metaphor Terry
+     asked for, without committing to real 3D rendering — drop-shadow
+     is applied inline on the SVG group, this just handles the entry. */
+  @keyframes pdr-tree-card-lift-in {
+    0% {
+      opacity: 0;
+      transform: translateY(8px) scale(0.94);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .pdr-tree-lifted-card {
+    animation: pdr-tree-card-lift-in 220ms ease-out;
+    transform-box: fill-box;
+    transform-origin: center center;
+  }
+
+  /* ── Trees: focus-card pulse ───────────────────────────────────────── */
+  /* Soft amber "ping" radiating outward from the focused card so the
+     bloodline POV is obvious at a glance — Terry confused his mum's
+     focus state for his own previously, this is the cheap fix.
+     Three-second cycle, gentle scale + fade so it reads as a heartbeat
+     not a flashing alarm. */
+  @keyframes pdr-tree-focus-pulse {
+    0% {
+      opacity: 0.65;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.15;
+      transform: scale(1.05);
+    }
+    100% {
+      opacity: 0.65;
+      transform: scale(1);
+    }
+  }
+  .pdr-tree-focus-pulse {
+    animation: pdr-tree-focus-pulse 2.6s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center center;
+  }
 }

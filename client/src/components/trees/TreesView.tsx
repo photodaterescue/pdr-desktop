@@ -317,6 +317,21 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [pinnedPeople, setPinnedPeople] = useState<Map<number, number>>(new Map());
   const lastFocusRef = useRef<number | null>(null);
 
+  /** People whose beyond-capacity ancestors have been REVEALED via
+   *  the ^ chevron above their card. Each member also gets a
+   *  ref-counted entry in pinSourceCount per ancestor they brought
+   *  in, so collapsing one expansion doesn't accidentally remove
+   *  pins another expansion still holds. */
+  const [expandedAncestorsOf, setExpandedAncestorsOf] = useState<Set<number>>(new Set());
+  const [expandedDescendantsOf, setExpandedDescendantsOf] = useState<Set<number>>(new Set());
+  /** For each expander personId, the set of ancestors / descendants
+   *  it pulled into pinnedPeople. Used to UNDO the pinning on
+   *  collapse. Ref-counted (a pin only disappears from pinnedPeople
+   *  when every expander that contributed it has collapsed) so
+   *  multiple chevrons can share an ancestor cleanly. */
+  const ancestorPinSourcesRef = useRef<Map<number, Set<number>>>(new Map());
+  const descendantPinSourcesRef = useRef<Map<number, Set<number>>>(new Map());
+
   // ── Saved trees: initial load ──────────────────────────────────
   // On mount, load every saved tree and activate the most-recently-
   // opened one. If none exist this is the user's first visit — we
@@ -445,8 +460,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     if (focusPersonId == null) return;
     if (lastFocusRef.current !== focusPersonId) {
       // Focus changed → pins are from the previous focus's perspective,
-      // so drop them rather than keep stale hop numbers around.
+      // so drop them rather than keep stale hop numbers around. Same
+      // logic for revealed extended-family branches: "Lindsay's
+      // family-of-origin shown" only makes sense from her angle on
+      // the tree; once the user re-focuses on someone else (where
+      // Lindsay may not even appear), the expansion is meaningless.
+      // Clear the ref maps too so collapseAllExpansions doesn't see
+      // stale entries on the next reset click.
       setPinnedPeople(new Map());
+      setExpandedAncestorsOf(new Set());
+      setExpandedDescendantsOf(new Set());
+      ancestorPinSourcesRef.current.clear();
+      descendantPinSourcesRef.current.clear();
       lastFocusRef.current = focusPersonId;
     }
     refetchGraph(focusPersonId, fetchDepth);
@@ -1373,6 +1398,201 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     }
   }, [quickAdd, graph, focusPersonId, expandedHops, ancestorsDepth, descendantsDepth, fetchDepth, refetchGraph, displayName, allPersons]);
 
+  /** Toggle reveal/hide for one person's beyond-capacity ancestors.
+   *  First click probes deeper graph, walks parent_of edges upward
+   *  from `personId`, and pins each newly-discovered ancestor —
+   *  recording in ancestorPinSourcesRef which pins THIS expansion
+   *  contributed. Second click reverses: removes from pinnedPeople
+   *  any ancestor whose only remaining contributor was this
+   *  expansion. Ref-counting means two chevrons can both reveal a
+   *  shared ancestor without one collapse erasing the other's view.
+   *
+   *  Direction-aware: walks ONLY upward, so clicking the chevron
+   *  above Lindsay doesn't drag in her partner's lineage. */
+  const handleExpandAncestors = useCallback(async (personId: number) => {
+    if (focusPersonId == null) return;
+
+    // ── Collapse path ───────────────────────────────────────────────
+    if (expandedAncestorsOf.has(personId)) {
+      const sourced = ancestorPinSourcesRef.current.get(personId) ?? new Set<number>();
+      // Remove this expander's claim from every pin it contributed.
+      // A pin disappears from pinnedPeople only when no other
+      // expander is still claiming it. Remaining claimants are
+      // tracked by walking the OTHER expanded sets.
+      const stillClaimedBy = new Map<number, number>(); // pinId → count
+      for (const otherExpander of expandedAncestorsOf) {
+        if (otherExpander === personId) continue;
+        const otherSourced = ancestorPinSourcesRef.current.get(otherExpander);
+        if (!otherSourced) continue;
+        for (const pid of otherSourced) stillClaimedBy.set(pid, (stillClaimedBy.get(pid) ?? 0) + 1);
+      }
+      for (const otherExpander of expandedDescendantsOf) {
+        const otherSourced = descendantPinSourcesRef.current.get(otherExpander);
+        if (!otherSourced) continue;
+        for (const pid of otherSourced) stillClaimedBy.set(pid, (stillClaimedBy.get(pid) ?? 0) + 1);
+      }
+      setPinnedPeople(prev => {
+        const next = new Map(prev);
+        for (const pid of sourced) {
+          if ((stillClaimedBy.get(pid) ?? 0) === 0) next.delete(pid);
+        }
+        return next;
+      });
+      ancestorPinSourcesRef.current.delete(personId);
+      setExpandedAncestorsOf(prev => {
+        const next = new Set(prev);
+        next.delete(personId);
+        return next;
+      });
+      return;
+    }
+
+    // ── Reveal path ─────────────────────────────────────────────────
+    // Fast path: if the current graph already contains ancestors above
+    // this person (the common case when toggling a non-bloodline
+    // chevron — Lindsay's family-of-origin is usually fetched but
+    // hidden by default), just flip the expanded flag. The render-
+    // level filter (hiddenExtendedIds) does the rest. No probe, no
+    // pin churn.
+    if (graph) {
+      const parentsOfFast = new Map<number, number[]>();
+      for (const e of graph.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (!parentsOfFast.has(e.bId)) parentsOfFast.set(e.bId, []);
+        parentsOfFast.get(e.bId)!.push(e.aId);
+      }
+      let hasAncestorInGraph = false;
+      const stack = [personId];
+      const seenFast = new Set<number>([personId]);
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const p of parentsOfFast.get(cur) ?? []) {
+          if (seenFast.has(p)) continue;
+          seenFast.add(p);
+          hasAncestorInGraph = true;
+          stack.push(p);
+        }
+      }
+      if (hasAncestorInGraph) {
+        setExpandedAncestorsOf(prev => {
+          const next = new Set(prev);
+          next.add(personId);
+          return next;
+        });
+        // No pin contributions — these ancestors were already in
+        // graph, just hidden by the filter. Empty source set keeps
+        // the collapse-path bookkeeping consistent.
+        ancestorPinSourcesRef.current.set(personId, new Set());
+        return;
+      }
+    }
+
+    // Slow path: nothing above this person in current graph — they're
+    // genuinely beyond the active fetch depth. Probe deeper, pin the
+    // newly-discovered ancestors, mark expanded.
+    const startingPersonIds = new Set<number>(graph?.nodes.map(n => n.personId) ?? []);
+    let probeDepth = fetchDepth;
+    for (let i = 0; i < 4 && probeDepth <= 10; i++) {
+      probeDepth++;
+      const res = await getFamilyGraph(focusPersonId, probeDepth);
+      if (!res.success || !res.data) continue;
+      const parentsOf = new Map<number, number[]>();
+      for (const e of res.data.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+        parentsOf.get(e.bId)!.push(e.aId);
+      }
+      const queue: number[] = [personId];
+      const newlyRevealed = new Map<number, number>(); // personId → hopsFromFocus
+      const seen = new Set<number>([personId]);
+      while (queue.length) {
+        const cur = queue.shift()!;
+        for (const p of parentsOf.get(cur) ?? []) {
+          if (seen.has(p)) continue;
+          seen.add(p);
+          if (!startingPersonIds.has(p)) {
+            const hop = res.data.nodes.find(n => n.personId === p)?.hopsFromFocus;
+            if (hop != null) newlyRevealed.set(p, hop);
+          }
+          queue.push(p);
+        }
+      }
+      if (newlyRevealed.size > 0) {
+        setGraph(res.data);
+        setPinnedPeople(prev => {
+          const next = new Map(prev);
+          for (const [pid, hop] of newlyRevealed) next.set(pid, hop);
+          return next;
+        });
+        ancestorPinSourcesRef.current.set(personId, new Set(newlyRevealed.keys()));
+        setExpandedAncestorsOf(prev => {
+          const next = new Set(prev);
+          next.add(personId);
+          return next;
+        });
+        setPulseSteps(true);
+        return;
+      }
+    }
+    refetchGraph(focusPersonId, fetchDepth);
+  }, [focusPersonId, graph, fetchDepth, refetchGraph, expandedAncestorsOf, expandedDescendantsOf]);
+
+  /** Toggle reveal/hide for a side-branch head's cousins (bloodline
+   *  descendants of an aunt / uncle / great-aunt). Pure flag flip —
+   *  no graph probe needed because cousins are already in the
+   *  fetched graph (they're bloodline, included in the connected-
+   *  component fetch); the canvas's render filter
+   *  (hiddenSideBranchIds) is what was hiding them. Mirrors the
+   *  fast-path of handleExpandAncestors. */
+  const handleExpandDescendants = useCallback((personId: number) => {
+    if (focusPersonId == null) return;
+    if (expandedDescendantsOf.has(personId)) {
+      // Collapse — just clear the flag. No pin contributions to
+      // unwind because the reveal path doesn't pin (cousins are in
+      // graph by default).
+      setExpandedDescendantsOf(prev => {
+        const next = new Set(prev);
+        next.delete(personId);
+        return next;
+      });
+      descendantPinSourcesRef.current.delete(personId);
+      return;
+    }
+    setExpandedDescendantsOf(prev => {
+      const next = new Set(prev);
+      next.add(personId);
+      return next;
+    });
+    descendantPinSourcesRef.current.set(personId, new Set());
+  }, [focusPersonId, expandedDescendantsOf]);
+
+  /** Hide every revealed extended-family branch in one click — the
+   *  "tidy up" reset that keeps the tree from sprawling once the user
+   *  has explored several in-laws' lineages. Removes any pins those
+   *  expansions contributed (leaves quick-add pins alone since they
+   *  don't sit in the expansion ref maps), then clears all expansion
+   *  state. */
+  const collapseAllExpansions = useCallback(() => {
+    const allContributed = new Set<number>();
+    for (const sourced of ancestorPinSourcesRef.current.values()) {
+      for (const id of sourced) allContributed.add(id);
+    }
+    for (const sourced of descendantPinSourcesRef.current.values()) {
+      for (const id of sourced) allContributed.add(id);
+    }
+    if (allContributed.size > 0) {
+      setPinnedPeople(prev => {
+        const next = new Map(prev);
+        for (const id of allContributed) next.delete(id);
+        return next;
+      });
+    }
+    ancestorPinSourcesRef.current.clear();
+    descendantPinSourcesRef.current.clear();
+    setExpandedAncestorsOf(new Set());
+    setExpandedDescendantsOf(new Set());
+  }, []);
+
   const handleRemovePerson = useCallback(async (personId: number) => {
     // Remove every edge touching this person in the current graph.
     if (!graph) return;
@@ -1579,6 +1799,31 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 </button>
               </IconTooltip>
             )}
+            {/* Branch-expansion counter — combined count of every
+                chevron the user has clicked open: extended-family
+                ^ chevrons (in-laws' lineages, brand orange) + side-
+                branch v chevrons (cousins, brand lavender). One click
+                collapses ALL of them back to the tidy default, the
+                "tidy up" reset Terry asked for. Mirrors the pinned
+                pill's pill-with-icon shape; uses brand-orange because
+                that's the existing "off the bloodline" colour cue
+                (lavender would clash with the bloodline pills). */}
+            {(expandedAncestorsOf.size + expandedDescendantsOf.size) > 0 && (() => {
+              const total = expandedAncestorsOf.size + expandedDescendantsOf.size;
+              return (
+                <IconTooltip label={`${total} branch${total === 1 ? '' : 'es'} expanded beyond the default view. Click to hide them all.`} side="bottom">
+                  <button
+                    onClick={collapseAllExpansions}
+                    data-pdr-variant="caution"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    style={{ backgroundColor: '#fed7aa', borderColor: '#f59e0b', color: '#7c2d12', borderWidth: '1px', borderStyle: 'solid' }}
+                  >
+                    <Users className="w-3 h-3" />
+                    {total} branch{total === 1 ? '' : 'es'} shown
+                  </button>
+                </IconTooltip>
+              );
+            })()}
             {/* Steps filter — toggle + +/- stepper. Styled as a clear
                 CTA pill: solid primary background when active, subtle
                 outline when off. */}
@@ -1649,6 +1894,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onQuickAddPartner={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'partner' })}
             onQuickAddChild={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'child' })}
             onQuickAddSibling={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'sibling' })}
+            onExpandAncestors={handleExpandAncestors}
+            onExpandDescendants={handleExpandDescendants}
+            expandedAncestorsOf={expandedAncestorsOf}
+            expandedDescendantsOf={expandedDescendantsOf}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
             showDates={showDates}
             onEditDates={(personId, screenX, screenY) => {

@@ -3784,6 +3784,22 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
     const totalParentCountByPerson = new Map();
     for (const r of totalParentCountRows)
         totalParentCountByPerson.set(r.child_id, r.cnt);
+    // True total CHILD count per person — same idea as the parent
+    // count above but inverted. Trees uses this to know whether a
+    // person has descendants beyond what the current Generations
+    // setting reveals, so the renderer can paint a v chevron beneath
+    // them inviting the user to expand downward.
+    const totalChildCountRows = db.prepare(`
+    SELECT r.person_a_id AS parent_id, COUNT(*) AS cnt
+    FROM relationships r
+    JOIN persons b ON b.id = r.person_b_id
+    WHERE r.type = 'parent_of' AND r.person_a_id IN (${placeholders})
+      AND b.discarded_at IS NULL
+    GROUP BY r.person_a_id
+  `).all(...ids);
+    const totalChildCountByPerson = new Map();
+    for (const r of totalChildCountRows)
+        totalChildCountByPerson.set(r.parent_id, r.cnt);
     // Face thumbnail coords per person — prefer the user-chosen representative
     // face; fall back to any face for that person so a new cluster still
     // gets an avatar until the user picks one in People Manager.
@@ -3825,6 +3841,7 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
             hopsFromFocus: visited.get(row.id) ?? maxHops,
             photoCount: photoCountByPerson.get(row.id) ?? 0,
             totalParentCount: totalParentCountByPerson.get(row.id) ?? 0,
+            totalChildCount: totalChildCountByPerson.get(row.id) ?? 0,
             isPlaceholder: row.is_placeholder === 1,
         };
     });
