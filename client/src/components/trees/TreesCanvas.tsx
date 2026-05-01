@@ -2292,7 +2292,17 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                           opacity={1}
                           hideChips={true}
                           relationshipLabel={relationshipLabels.get(p.personId)}
-                          onMouseDown={(e) => e.stopPropagation()}
+                          // No-op mousedown so the event bubbles to
+                          // the panel's outer SVG and starts the
+                          // panel drag — Terry: "the user should be
+                          // able to grab the panel anywhere and
+                          // move it". Action affordances inside
+                          // PersonNode (gender badge, step badge,
+                          // chevrons) keep their OWN
+                          // e.stopPropagation() on mousedown, so
+                          // those still behave as buttons; the bare
+                          // card body falls through to drag.
+                          onMouseDown={() => {}}
                           // Reuse the canvas's double-click handler
                           // so the same placeholder guard applies:
                           // double-clicking a "?" card (Lindsay's
