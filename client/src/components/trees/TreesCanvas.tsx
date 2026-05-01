@@ -648,23 +648,33 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
   }, [layout.edges, layout.focusPersonId, directLineSet]);
 
   /** Person IDs ALWAYS hidden from the dimmed canvas because they
-   *  belong to a side-branch (cousins + their descendants). When a
-   *  chevron is expanded these people render INSIDE the tethered
-   *  panel — never on the base canvas. Per Option B agreed with
-   *  Terry: the panel "owns" the revealed branch, the canvas keeps
-   *  showing only the focus's bloodline + immediate family.
+   *  belong to a side-branch (cousins + their descendants + the
+   *  cousins' non-bloodline partners). Per Option B: the panel
+   *  "owns" the revealed branch, the canvas stays focused on
+   *  bloodline + immediate family.
    *
-   *  Used to ref-count visibility based on chevron state; with the
-   *  panel UX that's unnecessary because the panel itself is the
-   *  visibility container. The set is now just every person
-   *  reachable as a descendant of any side-branch head. */
+   *  Includes:
+   *    1. Every bloodline descendant of any side-branch head
+   *       (cousins of focus + their kids, etc.).
+   *    2. Non-bloodline partners of those descendants — so when
+   *       Ben joins his aunt's panel, his wife Karen comes with him
+   *       (otherwise Karen lingers on the canvas as a stranded
+   *       in-law card while her husband and kids are in the panel).
+   */
   const hiddenSideBranchIds = useMemo(() => {
     const hidden = new Set<number>();
     for (const [, desc] of sideBranchDescendantsByHead) {
       for (const id of desc) hidden.add(id);
     }
+    // Sweep spouse_of edges once to pull in non-bloodline partners
+    // of any already-hidden side-branch descendant.
+    for (const e of layout.edges) {
+      if (e.type !== 'spouse_of') continue;
+      if (hidden.has(e.aId) && !bloodlineSet.has(e.bId)) hidden.add(e.bId);
+      if (hidden.has(e.bId) && !bloodlineSet.has(e.aId)) hidden.add(e.aId);
+    }
     return hidden;
-  }, [sideBranchDescendantsByHead]);
+  }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet]);
 
   /** Person IDs that are CURRENTLY revealed via an expanded
    *  side-branch chevron — i.e. cousins who would normally be hidden
@@ -1308,7 +1318,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             {layouts.map(l => (
               <Card
                 key={`panel-${l.personId}-${l.direction}`}
-                className="absolute"
+                className="absolute flex flex-col overflow-hidden"
                 style={{
                   left: l.panelLeft,
                   top: l.panelTop,
@@ -1369,7 +1379,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       : `${l.contentPeople.length} ancestor${l.contentPeople.length === 1 ? '' : 's'} on this line`}
                   </div>
                 </CardHeader>
-                <CardContent className="overflow-auto" style={{ maxHeight: PANEL_H - 110 }}>
+                <CardContent className="flex-1 min-h-0 overflow-auto">
                   {/* Step 5 MVP: simple vertical list of people in
                       this branch. Each row is a compact card with
                       avatar, name, and relationship label. Step 5b
