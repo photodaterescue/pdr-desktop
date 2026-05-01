@@ -678,8 +678,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     if (gen <= 0) continue;
     const genNodes = byGen.get(gen)!;
     if (genNodes.length === 0) continue;
-    // For each parent in this gen, the mean X of their visible
-    // children below.
+    // For each parent in this gen, the placed children below.
     const childrenByParent = new Map<number, number[]>();
     for (const e of graph.edges) {
       if (e.type !== 'parent_of') continue;
@@ -695,41 +694,83 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       .filter((n): n is LaidOutNode => n != null)
       .sort((a, b) => a.x - b.x);
     if (sorted.length === 0) continue;
-    const sharesAnyChild = (a: number, b: number): boolean => {
-      const aKids = childrenByParent.get(a);
-      const bKids = childrenByParent.get(b);
-      if (!aKids || !bKids) return false;
-      for (const k of aKids) if (bKids.includes(k)) return true;
-      return false;
+
+    // ── Per-family centring (replaces the row-wide bias shift) ──────────
+    // Group parents by their kid-set signature. Every parent who shares
+    // the SAME set of placed kids forms one family group whose desired
+    // centre is that kid-set's midpoint. Patricia / Peter (no placed
+    // kids = aunts/uncles of focus whose own children are hidden in
+    // panels) and other kid-less in-laws form per-person solo groups
+    // that just keep their current x — they fill the gap between the
+    // kid-having groups without dragging the average.
+    //
+    // Each kid-having group is then centred at its OWN desired,
+    // groups laid out left-to-right with nodeSpacing between them.
+    // Net effect: Alan+Sally sit above Terry+Colin+Amie's midpoint
+    // AND Carol+Graham sit above Ben+Jenny's midpoint — independent
+    // of how far apart those two kid groups are. Replaces the old
+    // single-shift bias correction which averaged the two desired
+    // centres and put NEITHER family directly above its kids when
+    // both were in the same row.
+    type FamilyGroup = {
+      key: string;
+      members: number[];
+      desired: number;
+      hasKids: boolean;
     };
-    const desired = sorted.map(p => {
-      const kids = childrenByParent.get(p.personId) ?? [];
-      const xs = kids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
-      if (xs.length === 0) return p.x; // no kids → keep current position
-      return xs.reduce((a, b) => a + b, 0) / xs.length;
-    });
-    const newPlacedX: number[] = [];
-    for (let i = 0; i < sorted.length; i++) {
-      const want = desired[i];
-      if (i === 0) { newPlacedX.push(want); continue; }
-      const minGap = sharesAnyChild(sorted[i - 1].personId, sorted[i].personId)
-        ? opts.spouseOffset
-        : opts.nodeSpacing;
-      newPlacedX.push(Math.max(want, newPlacedX[i - 1] + minGap));
+    const groupsByKey = new Map<string, FamilyGroup>();
+    const groupOrder: FamilyGroup[] = [];
+    for (const node of sorted) {
+      const kids = childrenByParent.get(node.personId) ?? [];
+      const hasKids = kids.length > 0;
+      // Solo key for kid-less people — keeps each in their own slot,
+      // sorted by current x so adjacency / order from earlier passes
+      // is preserved.
+      const key = hasKids
+        ? [...kids].sort((a, b) => a - b).join(',')
+        : `__solo_${node.personId}`;
+      let g = groupsByKey.get(key);
+      if (!g) {
+        let desiredCentre = node.x;
+        if (hasKids) {
+          const xs = kids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
+          if (xs.length > 0) desiredCentre = xs.reduce((a, b) => a + b, 0) / xs.length;
+        }
+        g = { key, members: [], desired: desiredCentre, hasKids };
+        groupsByKey.set(key, g);
+        groupOrder.push(g);
+      }
+      g.members.push(node.personId);
     }
-    // Bias-correct (same as first-pass): on the parents-with-kids
-    // subset only, so kid-less in-laws don't drag the average.
-    const idxWithKids = sorted
-      .map((_, i) => i)
-      .filter(i => (childrenByParent.get(sorted[i].personId) ?? []).length > 0);
-    if (idxWithKids.length > 0) {
-      const desiredMean = idxWithKids.map(i => desired[i]).reduce((a, b) => a + b, 0) / idxWithKids.length;
-      const actualMean = idxWithKids.map(i => newPlacedX[i]).reduce((a, b) => a + b, 0) / idxWithKids.length;
-      const drift = actualMean - desiredMean;
-      if (drift > 0) for (let i = 0; i < newPlacedX.length; i++) newPlacedX[i] -= drift;
+
+    // Sort groups left-to-right by desired centre. Stable tiebreak on
+    // group key so equal-desired groups keep a deterministic order
+    // across renders.
+    groupOrder.sort((a, b) => a.desired - b.desired || a.key.localeCompare(b.key));
+
+    // Place each group — kid-having groups centre on their desired,
+    // solo (kid-less) groups are placed at the kid-less node's
+    // existing position. nodeSpacing enforced between adjacent
+    // groups so the row reads cleanly left-to-right.
+    const newX = new Map<number, number>();
+    let prevRight = -Infinity;
+    for (const g of groupOrder) {
+      const groupSize = g.members.length;
+      const halfSpan = (groupSize - 1) * opts.spouseOffset / 2;
+      let leftEdge = g.desired - halfSpan;
+      if (prevRight !== -Infinity) {
+        leftEdge = Math.max(leftEdge, prevRight + opts.nodeSpacing);
+      }
+      g.members.forEach((pid, i) => {
+        newX.set(pid, leftEdge + i * opts.spouseOffset);
+      });
+      prevRight = leftEdge + (groupSize - 1) * opts.spouseOffset;
     }
-    sorted.forEach((node, i) => {
-      placed.set(node.personId, { ...node, x: newPlacedX[i] });
+
+    sorted.forEach((node) => {
+      const x = newX.get(node.personId);
+      if (x == null) return;
+      placed.set(node.personId, { ...node, x });
     });
   }
 
