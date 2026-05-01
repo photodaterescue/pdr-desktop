@@ -266,42 +266,10 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     setContextMenu(null);
   }, [layout.focusPersonId]);
 
-  // ─── Update world bounds whenever layout or open panels change ──
-  // Tree bounds are the baseline; each open panel's chevron + drag
-  // offset is added so the panel's anchor is part of the navigable
-  // world. Without this, dragging a panel far from the tree could
-  // leave it unreachable when the user pans back to focus.
-  useEffect(() => {
-    let { minX, maxX, minY, maxY } = layout.bounds;
-    // Descendant panels — anchor at the chevron midpoint between
-    // the head and their co-parent partner, plus any drag offset
-    // (offsets are stored in WORLD units, scale-invariant).
-    for (const pid of expandedDescendantsOf ?? []) {
-      const chev = sideBranchChevrons.find(c => c.headId === pid);
-      if (!chev) continue;
-      const offset = panelOffsets.get(`${pid}-descendant`) ?? { x: 0, y: 0 };
-      const px = chev.midX + offset.x;
-      const py = chev.midY + offset.y;
-      if (px < minX) minX = px;
-      if (px > maxX) maxX = px;
-      if (py < minY) minY = py;
-      if (py > maxY) maxY = py;
-    }
-    // Ancestor panels — anchor at the in-law's own X/Y, plus drag
-    // offset. Same rule, mirrored.
-    for (const pid of expandedAncestorsOf ?? []) {
-      const node = nodeById.get(pid);
-      if (!node) continue;
-      const offset = panelOffsets.get(`${pid}-ancestor`) ?? { x: 0, y: 0 };
-      const px = node.x + offset.x;
-      const py = node.y + offset.y;
-      if (px < minX) minX = px;
-      if (px > maxX) maxX = px;
-      if (py < minY) minY = py;
-      if (py > maxY) maxY = py;
-    }
-    worldBoundsRef.current = { minX, maxX, minY, maxY };
-  }, [layout.bounds, expandedDescendantsOf, expandedAncestorsOf, panelOffsets, sideBranchChevrons, nodeById]);
+  // (worldBoundsRef is updated in a useEffect placed AFTER
+  // sideBranchChevrons / nodeById are declared — it can't live up
+  // here because those constants don't exist yet at this point in
+  // the function body.)
 
   // ─── Lazy-load avatar face crops ───────────────────────────────
   useEffect(() => {
@@ -955,6 +923,46 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     }
     return set;
   }, [sideBranchDescendantsByHead, expandedDescendantsOf]);
+
+  // ─── Update world bounds whenever layout or open panels change ──
+  // Tree bounds are the baseline; each open panel's chevron + drag
+  // offset is added so the panel's anchor is part of the navigable
+  // world. Without this, dragging a panel far from the tree could
+  // leave it unreachable when the user pans back to focus. Lives
+  // here (after sideBranchChevrons / nodeById are declared) because
+  // those are referenced in the dep array — earlier and we'd hit a
+  // TDZ error and the whole Trees view fails to mount.
+  useEffect(() => {
+    let { minX, maxX, minY, maxY } = layout.bounds;
+    // Descendant panels — anchor at the chevron midpoint between
+    // the head and their co-parent partner, plus any drag offset
+    // (offsets are stored in WORLD units, scale-invariant).
+    for (const pid of expandedDescendantsOf ?? []) {
+      const chev = sideBranchChevrons.find(c => c.headId === pid);
+      if (!chev) continue;
+      const offset = panelOffsets.get(`${pid}-descendant`) ?? { x: 0, y: 0 };
+      const px = chev.midX + offset.x;
+      const py = chev.midY + offset.y;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+    // Ancestor panels — anchor at the in-law's own X/Y, plus drag
+    // offset. Same rule, mirrored.
+    for (const pid of expandedAncestorsOf ?? []) {
+      const node = nodeById.get(pid);
+      if (!node) continue;
+      const offset = panelOffsets.get(`${pid}-ancestor`) ?? { x: 0, y: 0 };
+      const px = node.x + offset.x;
+      const py = node.y + offset.y;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+    worldBoundsRef.current = { minX, maxX, minY, maxY };
+  }, [layout.bounds, expandedDescendantsOf, expandedAncestorsOf, panelOffsets, sideBranchChevrons, nodeById]);
 
   /** For each non-bloodline person on canvas, the transitive set of
    *  their unique ancestors (everyone reachable upward via parent_of
