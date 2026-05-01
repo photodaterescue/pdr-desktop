@@ -24,7 +24,7 @@ This replaces the previous flat-injection-with-CSS-shadow approach.
 ## 2. Visual & interaction rules
 
 ### 2.1 Base-canvas dimming
-- When at least one panel is open, the base canvas dims to **35 % opacity**.
+- When at least one panel is open, the base canvas dims to **55 % opacity** (originally spec'd at 35 %, bumped after the first sanity check — 35 % was unreadable, 55 % reads as recessed without losing legibility).
 - Tree lines and cards in the dimmed base remain visible (so the user keeps spatial context for the tether), just visibly recessed.
 - Header (filter pills, branch counters, etc.) remains full-strength — chrome doesn't dim.
 

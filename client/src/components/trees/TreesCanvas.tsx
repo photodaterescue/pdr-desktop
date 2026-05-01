@@ -772,12 +772,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       )}
       {(() => {
         // Step 2 of the floating-panel plan (TREES_PANEL_DESIGN.md):
-        // when ANY chevron has been expanded, the base canvas dims to
-        // 35% opacity so the eventual panel layer reads as elevated
-        // above the rest of the tree. Right now no panel content
-        // renders yet — this commit lands only the dim, so we can
-        // sanity-check that the dimmed tree stays legible. Subsequent
-        // commits add the panel shell, tether, content, drag, etc.
+        // when ANY chevron has been expanded, the base canvas dims so
+        // the eventual panel layer reads as elevated above the rest
+        // of the tree. Originally spec'd at 35% but bumped to 55%
+        // after Terry tested it — at 35% the tree was unreadable.
+        // 55% feels recessed without losing legibility. The doc has
+        // been updated to match.
         // Computed inside the SVG block so future panel rendering
         // can read the same value off props.
         const anyPanelOpen =
@@ -793,7 +793,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           >
             <g
               transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}
-              opacity={anyPanelOpen ? 0.35 : 1}
+              opacity={anyPanelOpen ? 0.55 : 1}
               style={{ transition: 'opacity 220ms ease-out' }}
             >
           {/* Pedigree family groups — one marriage bar + sibling bracket
