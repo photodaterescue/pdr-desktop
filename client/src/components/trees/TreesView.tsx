@@ -2581,9 +2581,12 @@ function StepsDropdown({ value, onChange, hiddenCount = 0, maxUseful = 0 }: {
             : `Steps: ${value}`}
         >
           <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
-          {hiddenCount > 0 && (
-            <span className="font-mono tabular-nums text-[10px] font-semibold text-primary">+{hiddenCount}</span>
-          )}
+          {/* +N badge removed — Terry: it just read as confusion
+              next to the value. The hover IconTooltip on the
+              wrapper still surfaces the count and explains it
+              ("N people are hidden by the current Steps cap…");
+              the slow ambient pulse on the FilterPill remains
+              the at-a-glance signal that hidden people exist. */}
           <ChevronDown className="w-3 h-3 text-muted-foreground" />
         </button>
       </PopoverTrigger>
