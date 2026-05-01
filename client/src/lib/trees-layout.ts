@@ -619,57 +619,21 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
 
     groupOrder.sort((a, b) => a.centre - b.centre || a.key.localeCompare(b.key));
 
-    // Subtree-width-aware sibling spacing — each member's slot
-    // half-width tracks how wide their family branch is below.
-    // Sally with 4 visible kids gets a half-width spanning that
-    // whole branch; Graham with no descendants takes the minimum
-    // (spouseOffset/2). This is what gives the family branches
-    // below enough horizontal room without forcing the descendant
-    // pass to shift them off-centre. Couples (Alan + Sally) share
-    // the same descendants, so each reports the same span — they
-    // overlap, no double-allocation.
-    //
-    // The grandparent-drift regression that earlier killed this
-    // approach is solved by the bottom-up ancestor recentring
-    // pass that runs AFTER this whole second pass — see "Third
-    // pass" below. So we get both: subtree-aware spacing here,
-    // grandparents tracking their kids there.
-    const childrenOf = new Map<number, number[]>();
-    for (const e of graph.edges) {
-      if (e.type !== 'parent_of') continue;
-      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
-      childrenOf.get(e.aId)!.push(e.bId);
-    }
-    const subtreeSpan = (pid: number): number => {
-      let minX = Infinity, maxX = -Infinity;
-      const seen = new Set<number>([pid]);
-      const queue = [pid];
-      while (queue.length) {
-        const cur = queue.shift()!;
-        for (const c of childrenOf.get(cur) ?? []) {
-          if (seen.has(c)) continue;
-          seen.add(c);
-          const p = placed.get(c);
-          if (p && p.generation < gen) {
-            minX = Math.min(minX, p.x);
-            maxX = Math.max(maxX, p.x);
-          }
-          queue.push(c);
-        }
-      }
-      if (minX === Infinity) return opts.spouseOffset;
-      return (maxX - minX) + opts.spouseOffset;
-    };
-
+    // RULE: siblings stay tight. Every member of a family group sits
+    // exactly `spouseOffset` from the next, whether the adjacency is
+    // couple-couple (Alan + Sally), couple-sibling (Sally + Carol),
+    // or sibling-sibling (Carol + Graham). No subtree-width-driven
+    // spreading — Terry's preference is the visual where Sally and
+    // Carol sit shoulder-to-shoulder under D + S, with their
+    // descendant families below shifted as needed to fit. That
+    // shifting happens automatically in the descendant pass; this
+    // pass focuses on parent-row tightness.
     const newX = new Map<number, number>();
     let prevRight = -Infinity;
     for (const g of groupOrder) {
-      const halfW = g.members.map(mid =>
-        Math.max(opts.spouseOffset / 2, subtreeSpan(mid) / 2)
-      );
-      const offsets: number[] = [0];
-      for (let i = 1; i < g.members.length; i++) {
-        offsets.push(offsets[i - 1] + halfW[i - 1] + halfW[i]);
+      const offsets: number[] = [];
+      for (let i = 0; i < g.members.length; i++) {
+        offsets.push(i * opts.spouseOffset);
       }
       let leftEdge: number;
       if (g.bloodlineIdx.length > 0) {
@@ -681,15 +645,13 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         const meanOffset = offsets.reduce((a, b) => a + b, 0) / offsets.length;
         leftEdge = g.centre - meanOffset;
       }
-      const groupLeftEdge = leftEdge - halfW[0];
-      if (prevRight !== -Infinity && groupLeftEdge < prevRight + opts.nodeSpacing) {
-        leftEdge += (prevRight + opts.nodeSpacing) - groupLeftEdge;
+      if (prevRight !== -Infinity) {
+        leftEdge = Math.max(leftEdge, prevRight + opts.nodeSpacing);
       }
       g.members.forEach((mid, i) => {
         newX.set(mid, leftEdge + offsets[i]);
       });
-      const lastIdx = g.members.length - 1;
-      prevRight = leftEdge + offsets[lastIdx] + halfW[lastIdx];
+      prevRight = leftEdge + offsets[offsets.length - 1];
     }
     for (const node of genNodes) {
       const x = newX.get(node.personId);
