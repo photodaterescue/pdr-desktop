@@ -850,15 +850,26 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               per parent-set. Drawn BEFORE individual edges so they sit
               underneath the nodes. */}
           {familyGroups.map((group, i) => {
-            // Skip families whose ENTIRE parent set is hidden — either
-            // collapsed extended ancestry (in-laws) or collapsed
-            // side-branch descendants (cousins). Their children may
-            // still render via other family groups; we just don't draw
-            // the marriage bar / sibling bracket from a hidden parent.
+            // Skip families where the parent-side OR child-side has
+            // nothing visible to anchor against:
+            //  • All parents hidden — children may still render via
+            //    a different family group; we just don't draw the
+            //    marriage bar / sibling bracket from hidden parents.
+            //  • All children hidden — the marriage bar can stay
+            //    (parents are visible) but there's no descendant
+            //    bracket to draw, so the family-group's drop line +
+            //    horizontal bracket would otherwise dangle into
+            //    empty canvas. This was the "lines going to no
+            //    one" Terry flagged when Carol + Graham's cousins
+            //    moved into the panel.
             const allParentsHidden = group.parentIds.every(id =>
               hiddenExtendedIds.has(id) || hiddenSideBranchIds.has(id),
             );
             if (allParentsHidden) return null;
+            const allChildrenHidden = group.childIds.every(id =>
+              hiddenExtendedIds.has(id) || hiddenSideBranchIds.has(id),
+            );
+            if (allChildrenHidden) return null;
             // Are the parents married (stored spouse_of between any of
             // them)? If yes, EdgeLine draws the partnership connector —
             // we skip our own marriage bar to avoid duplicate overlap.
