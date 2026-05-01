@@ -431,6 +431,9 @@ export function TreePeopleListModal({
         <div className="px-4 pt-1 pb-2 shrink-0">
           <input
             type="text"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search by name…"

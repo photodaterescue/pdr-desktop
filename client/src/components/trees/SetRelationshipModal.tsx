@@ -423,6 +423,9 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">The other person</label>
             <input
               type="text"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search or type a new name…"

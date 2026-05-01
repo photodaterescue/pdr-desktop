@@ -4303,6 +4303,9 @@ function PlaceholderResolver({ personId, virtualChildIds, x, y, onResolved, onCl
         <input
           type="text"
           autoFocus
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
           value={linkQuery}
           onChange={e => { setLinkQuery(e.target.value); setSelectedLinkId(null); }}
           onKeyDown={e => {

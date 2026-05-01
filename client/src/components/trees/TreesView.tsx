@@ -3135,6 +3135,14 @@ function FocusPickerModal({ persons, currentFocusId, title, cooccurrenceAnchorId
           <input
               type="text"
               autoFocus
+              // Family names like "Filmer" trip the OS spell-checker
+              // and the red squiggle is permanent visual noise. Same
+              // rule we apply on NameQuickEditor — names aren't
+              // dictionary words. autoCorrect / autoCapitalize off
+              // for the same reason (iOS / Android web views).
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => {
