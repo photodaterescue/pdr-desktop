@@ -770,15 +770,32 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           }}
         />
       )}
-      <svg
-        ref={svgRef}
-        data-tree-canvas="true"
-        className={`w-full h-full cursor-grab active:cursor-grabbing ${canvasBackground ? '' : 'bg-[radial-gradient(circle,_rgba(167,139,250,0.06)_1px,_transparent_1px)] [background-size:24px_24px]'}`}
-        onWheel={handleWheel}
-        onMouseDown={handlePanStart}
-        onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
-      >
-        <g transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}>
+      {(() => {
+        // Step 2 of the floating-panel plan (TREES_PANEL_DESIGN.md):
+        // when ANY chevron has been expanded, the base canvas dims to
+        // 35% opacity so the eventual panel layer reads as elevated
+        // above the rest of the tree. Right now no panel content
+        // renders yet — this commit lands only the dim, so we can
+        // sanity-check that the dimmed tree stays legible. Subsequent
+        // commits add the panel shell, tether, content, drag, etc.
+        // Computed inside the SVG block so future panel rendering
+        // can read the same value off props.
+        const anyPanelOpen =
+          (expandedAncestorsOf?.size ?? 0) + (expandedDescendantsOf?.size ?? 0) > 0;
+        return (
+          <svg
+            ref={svgRef}
+            data-tree-canvas="true"
+            className={`w-full h-full cursor-grab active:cursor-grabbing ${canvasBackground ? '' : 'bg-[radial-gradient(circle,_rgba(167,139,250,0.06)_1px,_transparent_1px)] [background-size:24px_24px]'}`}
+            onWheel={handleWheel}
+            onMouseDown={handlePanStart}
+            onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+          >
+            <g
+              transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}
+              opacity={anyPanelOpen ? 0.35 : 1}
+              style={{ transition: 'opacity 220ms ease-out' }}
+            >
           {/* Pedigree family groups — one marriage bar + sibling bracket
               per parent-set. Drawn BEFORE individual edges so they sit
               underneath the nodes. */}
@@ -1039,6 +1056,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           </text>
         </g>
       </svg>
+        );
+      })()}
 
       {contextMenu && (
         <NodeContextMenu
