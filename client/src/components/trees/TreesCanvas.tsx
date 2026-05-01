@@ -161,6 +161,34 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ personId: number; x: number; y: number } | null>(null);
+
+  /** Step 6 of TREES_PANEL_DESIGN.md — drag mechanics + constraints +
+   *  position memory. Per-panel offset (in screen pixels) from the
+   *  panel's auto-computed default position. Keyed by
+   *  `${personId}-${direction}` so each chevron's panel remembers its
+   *  drag position independently within the session. */
+  const [panelOffsets, setPanelOffsets] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const panelDragRef = useRef<{
+    active: boolean;
+    panelKey: string;
+    startMouseX: number;
+    startMouseY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+    // Cached for live-clamp during drag — without these we'd have to
+    // re-derive the constraint bounds on every mousemove.
+    minOffsetX: number;
+    maxOffsetX: number;
+    minOffsetY: number;
+    maxOffsetY: number;
+  }>({
+    active: false,
+    panelKey: '',
+    startMouseX: 0, startMouseY: 0,
+    startOffsetX: 0, startOffsetY: 0,
+    minOffsetX: 0, maxOffsetX: 0,
+    minOffsetY: 0, maxOffsetY: 0,
+  });
   /** Popup editor anchored to a clicked edge. Only set while the popup is open. */
   const [edgeEditor, setEdgeEditor] = useState<{ edge: FamilyGraphEdge; x: number; y: number } | null>(null);
   /** Popup for resolving a placeholder ghost node (name/link/remove). */
@@ -262,9 +290,26 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           ty: panState.current.startTy + (e.clientY - panState.current.startY),
         }));
       }
+      if (panelDragRef.current.active) {
+        // Live-clamp during drag — design doc specifies hard-clamp
+        // behaviour (no spring-back), so we apply min/max bounds at
+        // every mousemove rather than letting the offset go free
+        // and snapping later.
+        const d = panelDragRef.current;
+        const rawX = d.startOffsetX + (e.clientX - d.startMouseX);
+        const rawY = d.startOffsetY + (e.clientY - d.startMouseY);
+        const x = Math.max(d.minOffsetX, Math.min(d.maxOffsetX, rawX));
+        const y = Math.max(d.minOffsetY, Math.min(d.maxOffsetY, rawY));
+        setPanelOffsets(prev => {
+          const next = new Map(prev);
+          next.set(d.panelKey, { x, y });
+          return next;
+        });
+      }
     };
     const onUp = () => {
       panState.current.active = false;
+      panelDragRef.current.active = false;
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -1093,10 +1138,20 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         type Layout = {
           personId: number;
           direction: 'ancestor' | 'descendant';
+          panelKey: string;
           personName: string;
           directionLabel: string;
+          // Default (auto-computed) panel position before drag offset.
+          defaultPanelLeft: number;
+          defaultPanelTop: number;
+          // Final panel position after applying any drag offset.
           panelLeft: number;
           panelTop: number;
+          // Constraint bounds on the offset (used by drag-start).
+          minOffsetX: number;
+          maxOffsetX: number;
+          minOffsetY: number;
+          maxOffsetY: number;
           chevronScreenX: number;
           chevronScreenY: number;
           panelAnchorX: number;
@@ -1110,38 +1165,65 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const originScreenX = viewport.tx + origin.renderedX * viewport.scale;
           const originScreenY = viewport.ty + origin.renderedY * viewport.scale;
           const cardHalfHeight = (CARD_H / 2) * viewport.scale;
-          // Chevron sits at card-edge + stem + radius (in canvas
-          // units), scaled to screen.
           const chevronOffset = (CARD_H / 2 + CHEVRON_STEM + CHEVRON_R) * viewport.scale;
           const chevronScreenX = originScreenX;
           const chevronScreenY = direction === 'descendant'
             ? originScreenY + chevronOffset
             : originScreenY - chevronOffset;
-          const panelLeft = originScreenX - PANEL_W / 2;
-          const panelTop = direction === 'descendant'
+          const defaultPanelLeft = originScreenX - PANEL_W / 2;
+          const defaultPanelTop = direction === 'descendant'
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
             : originScreenY - cardHalfHeight - VERTICAL_GAP - PANEL_H;
-          // Tether anchors at top-centre of panel for descendant
-          // direction (line falls into panel from above), bottom-
-          // centre for ancestor direction (line rises into panel
-          // from below).
+          // Drag offset (set by drag handlers, persisted in
+          // panelOffsets state for position memory within session).
+          const panelKey = `${personId}-${direction}`;
+          const offset = panelOffsets.get(panelKey) ?? { x: 0, y: 0 };
+          // Constraint bounds on the offset (per design doc §3.1):
+          //  • Vertical: descendant panel top must be ≥ origin row's
+          //    bottom + small gap (10 px tolerance); ancestor panel
+          //    bottom ≤ origin row's top - small gap.
+          //  • Horizontal: panel centre within ±1.5 × PANEL_W of
+          //    origin's X.
+          const minOffsetX = -PANEL_W * 1.5;
+          const maxOffsetX = PANEL_W * 1.5;
+          let minOffsetY: number;
+          let maxOffsetY: number;
+          if (direction === 'descendant') {
+            // Panel-top must remain ≥ origin's row-bottom (with a
+            // 10 px upward tolerance for fine positioning, no further).
+            const minPanelTop = originScreenY + cardHalfHeight - 10;
+            // Panel can drift downward indefinitely — actual far-
+            // downward limit is whatever's reasonable visually.
+            minOffsetY = minPanelTop - defaultPanelTop;
+            maxOffsetY = 4 * PANEL_H; // generous downward room
+          } else {
+            // Ancestor panel — bottom must remain ≤ origin's row-top.
+            const maxPanelBottom = originScreenY - cardHalfHeight + 10;
+            const maxPanelTop = maxPanelBottom - PANEL_H;
+            minOffsetY = -4 * PANEL_H;
+            maxOffsetY = maxPanelTop - defaultPanelTop;
+          }
+          // Apply offset to compute final panel position. Already
+          // clamped on commit by the drag handler; re-clamping here
+          // is defensive in case viewport changes mid-session push
+          // an old offset out of range.
+          const clampedX = Math.max(minOffsetX, Math.min(maxOffsetX, offset.x));
+          const clampedY = Math.max(minOffsetY, Math.min(maxOffsetY, offset.y));
+          const panelLeft = defaultPanelLeft + clampedX;
+          const panelTop = defaultPanelTop + clampedY;
           const panelAnchorX = panelLeft + PANEL_W / 2;
           const panelAnchorY = direction === 'descendant' ? panelTop : panelTop + PANEL_H;
           const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
           const directionLabel = direction === 'descendant' ? 'descendants' : 'family of origin';
-          // Tether colour mirrors chevron-button colour rules:
-          //   • descendant chevron → always lavender (cousins are
-          //     bloodline regardless of origin's status)
-          //   • ancestor chevron → lavender if origin is bloodline
-          //     (out-of-scope ancestor case), orange if not (in-law
-          //     family-of-origin case)
           const isOriginBloodline = bloodlineSet.has(personId);
           const tetherColour = direction === 'descendant'
             ? '#ad9eff'
             : (isOriginBloodline ? '#ad9eff' : '#f59e0b');
           layouts.push({
-            personId, direction, personName, directionLabel,
+            personId, direction, panelKey, personName, directionLabel,
+            defaultPanelLeft, defaultPanelTop,
             panelLeft, panelTop,
+            minOffsetX, maxOffsetX, minOffsetY, maxOffsetY,
             chevronScreenX, chevronScreenY,
             panelAnchorX, panelAnchorY,
             tetherColour,
@@ -1195,21 +1277,37 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   top: l.panelTop,
                   width: PANEL_W,
                   height: PANEL_H,
-                  // Card primitive ships with a standard shadow; the
-                  // panel needs a heavier one to read as a layer
-                  // above the dimmed canvas.
                   boxShadow: '0 12px 32px rgba(0, 0, 0, 0.20)',
-                  // Panel border matches the chevron / tether colour
-                  // so the whole affordance reads as one branded
-                  // unit (lavender for bloodline content, brand
-                  // orange for in-law / extended family). Same
-                  // tokens established by the chevron-button.
                   borderColor: l.tetherColour,
                   borderWidth: 2,
                   zIndex: 30,
                 }}
               >
-                <CardHeader>
+                {/* CardHeader doubles as the drag handle. Mouse-down
+                    here primes panelDragRef with the current offset
+                    + the constraint bounds; the global mousemove
+                    listener then live-clamps and updates state.
+                    Cursor changes to grab/grabbing for affordance. */}
+                <CardHeader
+                  className="cursor-grab active:cursor-grabbing select-none"
+                  onMouseDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    const current = panelOffsets.get(l.panelKey) ?? { x: 0, y: 0 };
+                    panelDragRef.current = {
+                      active: true,
+                      panelKey: l.panelKey,
+                      startMouseX: e.clientX,
+                      startMouseY: e.clientY,
+                      startOffsetX: current.x,
+                      startOffsetY: current.y,
+                      minOffsetX: l.minOffsetX,
+                      maxOffsetX: l.maxOffsetX,
+                      minOffsetY: l.minOffsetY,
+                      maxOffsetY: l.maxOffsetY,
+                    };
+                  }}
+                >
                   <div className="text-caption uppercase tracking-wider">Panel · placeholder</div>
                   <CardTitle className="text-h2">{l.personName}</CardTitle>
                   <div className="text-body-muted">{l.directionLabel}</div>
