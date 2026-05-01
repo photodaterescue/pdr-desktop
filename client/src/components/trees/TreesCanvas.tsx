@@ -839,6 +839,41 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     return hidden;
   }, [extendedAncestorsByPerson]);
 
+  /** Per-person extended-ancestor chevron geometry. Mirrors
+   *  sideBranchChevrons but for the ^ chevron above each card.
+   *  Lifted out of PersonNode so we can render every chevron in
+   *  one canvas-level non-dimmed group — chevrons are CTAs and
+   *  must NOT dim with the cards group when a panel is open;
+   *  otherwise the open-state pulse barely registers. */
+  const extendedAncestorChevrons = useMemo(() => {
+    type ChevronInfo = {
+      personId: number;
+      x: number;
+      y: number;
+      isOnBloodline: boolean;
+    };
+    const list: ChevronInfo[] = [];
+    for (const node of placedNodes) {
+      if (node.isPlaceholder) continue;
+      // Same condition that previously drove PersonNode's
+      // hasOutOfScopeAncestors prop:
+      //   1. non-bloodline person with hideable extended ancestry
+      //      (their family-of-origin), OR
+      //   2. bloodline person whose DB-recorded ancestor count
+      //      exceeds what's currently on canvas.
+      const has = extendedAncestorsByPerson.has(node.personId)
+        || node.totalParentCount > (visibleParentChildCounts.parentCount.get(node.personId) ?? 0);
+      if (!has) continue;
+      list.push({
+        personId: node.personId,
+        x: node.x,
+        y: node.y,
+        isOnBloodline: bloodlineSet.has(node.personId),
+      });
+    }
+    return list;
+  }, [placedNodes, extendedAncestorsByPerson, visibleParentChildCounts, bloodlineSet]);
+
   /** Relationship label for each person relative to the current
    *  focus — "Parent", "Sibling", "Grandchild", etc. Gendered when the
    *  tree has gendered labels enabled AND the target has a gender
@@ -1168,18 +1203,14 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 onOpenGenderPicker={() => setGenderPickerFor(node.personId)}
                 canAddParent={true}
                 hasCurrentPartner={(currentPartnerCount.get(node.personId) ?? 0) > 0}
-                hasOutOfScopeAncestors={
-                  // Two cases trigger the ^ chevron:
-                  //   1. Non-bloodline person with hideable extended
-                  //      ancestry — chevron always paints so the user
-                  //      can reveal their family-of-origin on demand
-                  //      (default state: hidden).
-                  //   2. Bloodline person whose DB-recorded ancestor
-                  //      count exceeds what's currently visible — the
-                  //      old "out-of-scope" capacity case.
-                  extendedAncestorsByPerson.has(node.personId)
-                  || node.totalParentCount > (visibleParentChildCounts.parentCount.get(node.personId) ?? 0)
-                }
+                // Ancestor (^) chevron is no longer rendered inside
+                // the per-card SVG either — it's drawn at the canvas
+                // level (extendedAncestorChevrons memo + the same
+                // non-dimmed canvas chevron layer that owns the v
+                // chevrons) so it stays full-opacity when a panel
+                // is open. Same logic the descendant chevron uses,
+                // mirrored for the ancestor direction.
+                hasOutOfScopeAncestors={false}
                 // Side-branch chevron is no longer rendered inside
                 // the per-card SVG — it's drawn at the canvas level
                 // (see sideBranchChevrons memo + canvas chevron
@@ -1301,6 +1332,83 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                         (pdr-tree-chevron-pulse keyframe). Anchored
                         to the chevron's own centre via
                         transform-box: fill-box on the class. */}
+                    <g className={expanded ? 'pdr-tree-chevron-pulse' : undefined}>
+                      <ellipse
+                        cx={0} cy={3}
+                        rx={r * 0.92} ry={r * 0.55}
+                        fill="rgba(0,0,0,0.22)"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <circle r={r} cx={0} cy={1.5} fill={rim} style={{ pointerEvents: 'none' }} />
+                      <circle r={r} fill={fill} stroke="none" />
+                      <path
+                        d={`M ${-r * 0.7} ${-r * 0.35} A ${r * 0.85} ${r * 0.85} 0 0 1 ${r * 0.7} ${-r * 0.35}`}
+                        stroke="rgba(255,255,255,0.45)"
+                        strokeWidth={1.5}
+                        fill="none"
+                        strokeLinecap="round"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <path
+                        d={glyphPath}
+                        stroke="#ffffff"
+                        strokeWidth={3}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    </g>
+                  </IconTooltip>
+                </g>
+              </g>
+            );
+          })}
+          {/* Extended-family / out-of-scope-ancestor (^) chevrons
+              — same canonical drawing the descendant v chevron
+              uses, mirrored above the card. Lifted out of
+              PersonNode so it sits in this non-dimmed group and
+              its open-state pulse reads clearly when a panel
+              is open. Bloodline persons get the lavender brand
+              colour (cousins-line variant); non-bloodline persons
+              get orange (in-law extended family). */}
+          {extendedAncestorChevrons.map(info => {
+            if (hiddenSideBranchIds.has(info.personId)) return null;
+            if (hiddenExtendedIds.has(info.personId)) return null;
+            const r = 17;
+            const stemLen = 24;
+            const cardTop = info.y - CARD_H / 2;
+            const chevronCy = cardTop - stemLen - r;
+            const chevronCx = info.x;
+            const expanded = expandedAncestorsOf?.has(info.personId) ?? false;
+            const fill = info.isOnBloodline ? '#ad9eff' : '#f59e0b';
+            const rim = info.isOnBloodline ? '#7e6df0' : '#c2740a';
+            const label = expanded
+              ? (info.isOnBloodline ? 'Hide ancestors on this line' : 'Hide Extended Family')
+              : (info.isOnBloodline ? 'Show more ancestors on this line' : 'Show Extended Family');
+            // Glyph stays as ^ regardless of expansion state —
+            // design doc §2.4 (no glyph rotation; pulse is the
+            // open-state cue).
+            const glyphPath = 'M -7 2 L 0 -5 L 7 2';
+            return (
+              <g key={`eac-${info.personId}`}>
+                <line
+                  x1={chevronCx}
+                  y1={cardTop}
+                  x2={chevronCx}
+                  y2={chevronCy + r}
+                  stroke={fill}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  style={{ pointerEvents: 'none' }}
+                />
+                <g
+                  transform={`translate(${chevronCx} ${chevronCy})`}
+                  style={{ cursor: 'pointer' }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); onExpandAncestors?.(info.personId); }}
+                >
+                  <IconTooltip label={label} side="top">
                     <g className={expanded ? 'pdr-tree-chevron-pulse' : undefined}>
                       <ellipse
                         cx={0} cy={3}
