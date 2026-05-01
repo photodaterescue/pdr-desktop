@@ -9,6 +9,7 @@ import { useDraggableModal } from './useDraggableModal';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { GenderPickerModal, genderMarkerSymbol } from './GenderPickerModal';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { setPersonGender as setPersonGenderApi, type PersonGender } from '@/lib/electron-bridge';
 
 interface TreesCanvasProps {
@@ -1057,6 +1058,79 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         </g>
       </svg>
         );
+      })()}
+
+      {/* ── Step 3 of TREES_PANEL_DESIGN.md: panel container shell.
+          For each currently-expanded chevron (ancestor or descendant),
+          render a floating HTML panel near its origin card. Empty
+          placeholder content for now — step 4 adds the tether,
+          step 5 adds the actual subtree content. The panels sit
+          ABOVE the dimmed SVG canvas thanks to z-index + render
+          order. Drag, multi-panel z-order, and close gestures arrive
+          in steps 6, 8, 9 respectively. */}
+      {(() => {
+        type PanelOrigin = { personId: number; direction: 'ancestor' | 'descendant' };
+        const origins: PanelOrigin[] = [];
+        for (const pid of expandedAncestorsOf ?? new Set<number>()) {
+          origins.push({ personId: pid, direction: 'ancestor' });
+        }
+        for (const pid of expandedDescendantsOf ?? new Set<number>()) {
+          origins.push({ personId: pid, direction: 'descendant' });
+        }
+        if (origins.length === 0) return null;
+        // Convert each origin's canvas-local coords to screen coords
+        // so we can position the absolute HTML panels relative to the
+        // canvas wrapper. Panels initially sit a fixed offset away
+        // from the origin card — proper draggable positioning + the
+        // Bezier tether come in steps 4 and 6.
+        const PANEL_W = 280;
+        const PANEL_H = 200;
+        const VERTICAL_GAP = 80; // distance from origin row to panel
+        return origins.map(({ personId, direction }) => {
+          const origin = placedNodes.find(n => n.personId === personId);
+          if (!origin) return null;
+          const originScreenX = viewport.tx + origin.renderedX * viewport.scale;
+          const originScreenY = viewport.ty + origin.renderedY * viewport.scale;
+          // Descendant chevron → panel sits below the origin card.
+          // Ancestor chevron → panel sits above. (Constraint clamping
+          // arrives in step 6.)
+          const cardHalfHeight = (CARD_H / 2) * viewport.scale;
+          const panelLeft = originScreenX - PANEL_W / 2;
+          const panelTop = direction === 'descendant'
+            ? originScreenY + cardHalfHeight + VERTICAL_GAP
+            : originScreenY - cardHalfHeight - VERTICAL_GAP - PANEL_H;
+          const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
+          const directionLabel = direction === 'descendant' ? 'descendants' : 'family of origin';
+          return (
+            <Card
+              key={`panel-${personId}-${direction}`}
+              className="absolute"
+              style={{
+                left: panelLeft,
+                top: panelTop,
+                width: PANEL_W,
+                height: PANEL_H,
+                // Card primitive ships with a standard shadow; the
+                // panel needs a heavier one to read as a layer above
+                // the dimmed canvas. This is the only style-guide-
+                // sanctioned override pattern: copy the radius /
+                // palette of the closest existing surface (Card),
+                // then bump the shadow for the elevation cue.
+                boxShadow: '0 12px 32px rgba(0, 0, 0, 0.20)',
+                zIndex: 30,
+              }}
+            >
+              <CardHeader>
+                <div className="text-caption uppercase tracking-wider">Panel · placeholder</div>
+                <CardTitle className="text-h2">{personName}</CardTitle>
+                <div className="text-body-muted">{directionLabel}</div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-caption">Step 3 shell — content arrives in step 5.</div>
+              </CardContent>
+            </Card>
+          );
+        });
       })()}
 
       {contextMenu && (
