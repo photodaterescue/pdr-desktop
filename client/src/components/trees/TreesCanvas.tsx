@@ -877,6 +877,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               e.type === 'spouse_of' && !e.derived
               && group.parentIds.includes(e.aId) && group.parentIds.includes(e.bId)
             );
+            // Bloodline-aware tinting: a family group counts as
+            // bloodline if at least one child is in bloodlineSet.
+            // Visible canvas content is bloodline-only after the
+            // panel UX moved cousins / in-laws into panels, so this
+            // effectively turns every visible canvas family into
+            // lavender — bloodline lines instead of grey scaffolding.
+            const isFamilyBloodline = group.childIds.some(id => bloodlineSet.has(id));
             return (
               <FamilyGroup
                 key={`fam-${i}-${group.parentIds.join('_')}`}
@@ -887,6 +894,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 // the same horizontal line. Deterministic per-group offset.
                 bracketOffset={i * 8}
                 contrast={treeContrast}
+                strokeOverride={isFamilyBloodline ? '#ad9eff' : undefined}
                 onParentClick={(parentId) => {
                   const parent = nodeById.get(parentId);
                   if (!parent) return;
@@ -1191,8 +1199,14 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           branchSurname: string;
           /** Per-card placements inside the panel SVG (centre coords). */
           miniPlacements: MiniPlacement[];
-          /** Orthogonal step-line paths between parents and children. */
-          miniLines: StepLine[];
+          /** Family groups inside the panel — used to render the
+           *  marriage-bar + drop + sibling-bracket geometry that
+           *  matches the canvas exactly (via FamilyGroup component). */
+          panelFamilyGroups: { parentIds: number[]; childIds: number[] }[];
+          /** Spouse_of edges between panel content people — rendered
+           *  as EdgeLine partnership lines so the marriage bar is
+           *  visible alongside FamilyGroup's brackets. */
+          panelSpouseEdges: LaidOutEdge[];
           /** SVG content size (panel sizes itself around this + header + padding). */
           contentWidth: number;
           contentHeight: number;
@@ -1294,34 +1308,49 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             });
           });
           const placedById = new Map<number, MiniPlacement>(miniPlacements.map(p => [p.personId, p]));
-          const miniLines: StepLine[] = [];
+          // Build family groups inside the panel so we can use the
+          // canvas's FamilyGroup component (marriage-bar + drop +
+          // sibling bracket geometry) instead of custom step-lines.
+          // Same algorithm as the canvas's familyGroups memo.
+          const panelParentsByChild = new Map<number, number[]>();
           for (const e of layout.edges) {
             if (e.type !== 'parent_of') continue;
-            const parent = placedById.get(e.aId);
-            const child = placedById.get(e.bId);
-            if (!parent || !child) continue;
-            const px = parent.cx;
-            const py = parent.cy + CARD_H / 2;
-            const ccx = child.cx;
-            const ccy = child.cy - CARD_H / 2;
-            const midY = (py + ccy) / 2;
-            miniLines.push({
-              key: `${e.aId}-${e.bId}`,
-              d: `M ${px} ${py} L ${px} ${midY} L ${ccx} ${midY} L ${ccx} ${ccy}`,
-            });
+            if (!placedById.has(e.aId) || !placedById.has(e.bId)) continue;
+            if (!panelParentsByChild.has(e.bId)) panelParentsByChild.set(e.bId, []);
+            panelParentsByChild.get(e.bId)!.push(e.aId);
+          }
+          type PanelFamilyGroup = { parentIds: number[]; childIds: number[] };
+          const panelFamilyGroupsMap = new Map<string, PanelFamilyGroup>();
+          for (const [childId, parentIds] of panelParentsByChild) {
+            const sorted = [...parentIds].sort((a, b) => a - b);
+            const key = sorted.join(',');
+            if (!panelFamilyGroupsMap.has(key)) panelFamilyGroupsMap.set(key, { parentIds: sorted, childIds: [] });
+            panelFamilyGroupsMap.get(key)!.childIds.push(childId);
+          }
+          const panelFamilyGroups = Array.from(panelFamilyGroupsMap.values());
+          // Spouse-of edges between people in the panel — used to
+          // decide which family groups have stored partnership lines
+          // (so FamilyGroup skips its dashed bar) and to render
+          // partnership EdgeLines below.
+          const panelSpouseEdges: typeof layout.edges = [];
+          for (const e of layout.edges) {
+            if (e.type !== 'spouse_of') continue;
+            if (!placedById.has(e.aId) || !placedById.has(e.bId)) continue;
+            panelSpouseEdges.push(e);
           }
           // Auto-size the panel from content — clamp between MIN and
           // MAX so it stays draggable. Content dimensions are
           // multiplied by viewport.scale so the panel cards visually
-          // match whatever the canvas cards look like at the current
-          // zoom — Terry's feedback: "they are not keeping the same
-          // size as the canvas". The SVG viewBox stays in unscaled
-          // CARD_W coords; only the outer SVG width/height + the
-          // panel container scale.
+          // match the canvas cards at the current zoom. We add 2 px
+          // panel border on each side (4 px total) to the size so
+          // the SVG content fits inside the border without forcing
+          // a scrollbar — Terry flagged sloppy scrollbars when
+          // content already fitted.
+          const PANEL_BORDER = 2;
           const scaledContentW = contentWidth * viewport.scale;
           const scaledContentH = contentHeight * viewport.scale;
-          const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, scaledContentW));
-          const panelH = Math.max(MIN_PANEL_H, Math.min(MAX_PANEL_H, HEADER_H + scaledContentH));
+          const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, scaledContentW + PANEL_BORDER * 2));
+          const panelH = Math.max(MIN_PANEL_H, Math.min(MAX_PANEL_H, HEADER_H + scaledContentH + PANEL_BORDER * 2));
           const defaultPanelLeft = originScreenX - panelW / 2;
           const defaultPanelTop = direction === 'descendant'
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
@@ -1398,7 +1427,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             personId, direction, panelKey, personName, directionLabel,
             contentPeople,
             branchSurname,
-            miniPlacements, miniLines, contentWidth, contentHeight,
+            miniPlacements, panelFamilyGroups, panelSpouseEdges,
+            contentWidth, contentHeight,
             panelW, panelH,
             defaultPanelLeft, defaultPanelTop,
             panelLeft, panelTop,
@@ -1563,22 +1593,65 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       };
                     }}
                   >
-                    {/* Parent-child step lines drawn first so cards
-                        cover any line endpoints. Tinted with the
-                        same brand colour as the panel border /
-                        tether (lavender for bloodline, orange for
-                        in-law / extended) so the whole panel reads
-                        as a single branded unit. */}
-                    {l.miniLines.map(line => (
-                      <path
-                        key={line.key}
-                        d={line.d}
-                        stroke={l.tetherColour}
-                        strokeWidth={1.5}
-                        fill="none"
-                        opacity={0.7}
-                      />
-                    ))}
+                    {/* Family-group brackets — same FamilyGroup
+                        component the canvas uses, so panel geometry
+                        matches the canvas exactly: marriage bar
+                        between couples (drawn either by FamilyGroup
+                        as a dashed bar OR by the EdgeLine partnership
+                        line below), drop from the bar's midpoint,
+                        sibling bracket, drops to each child.
+                        strokeOverride tints the scaffolding with the
+                        panel's brand colour (lavender for bloodline,
+                        orange for in-law). */}
+                    {l.panelFamilyGroups.map((group, i) => {
+                      const parentNodes = group.parentIds
+                        .map(id => l.miniPlacements.find(p => p.personId === id))
+                        .filter((p): p is MiniPlacement => p != null)
+                        .map(p => ({ ...p.node, renderedX: p.cx, renderedY: p.cy, isPlaceholder: false }));
+                      const childNodes = group.childIds
+                        .map(id => l.miniPlacements.find(p => p.personId === id))
+                        .filter((p): p is MiniPlacement => p != null)
+                        .map(p => ({ ...p.node, renderedX: p.cx, renderedY: p.cy }));
+                      const hasStoredSpouse = l.panelSpouseEdges.some(e =>
+                        !e.derived && group.parentIds.includes(e.aId) && group.parentIds.includes(e.bId),
+                      );
+                      return (
+                        <FamilyGroup
+                          key={`pf-${i}-${group.parentIds.join('_')}`}
+                          parents={parentNodes}
+                          children={childNodes}
+                          parentsAreSpouses={hasStoredSpouse}
+                          bracketOffset={i * 8}
+                          contrast={treeContrast}
+                          strokeOverride={l.tetherColour}
+                          onParentClick={() => {}}
+                        />
+                      );
+                    })}
+                    {/* Partnership lines — same EdgeLine component
+                        the canvas uses, so the marriage bar between
+                        couples renders identically inside the panel
+                        (dotted-pair, ended-states, etc.). */}
+                    {l.panelSpouseEdges.map((edge, idx) => {
+                      const a = l.miniPlacements.find(p => p.personId === edge.aId);
+                      const b = l.miniPlacements.find(p => p.personId === edge.bId);
+                      if (!a || !b) return null;
+                      return (
+                        <EdgeLine
+                          key={`pe-${edge.aId}-${edge.bId}-${idx}`}
+                          ax={a.cx}
+                          ay={a.cy}
+                          bx={b.cx}
+                          by={b.cy}
+                          type="spouse_of"
+                          until={edge.until}
+                          opacity={1}
+                          derived={edge.derived}
+                          flags={edge.flags as { half?: boolean; adopted?: boolean } | null}
+                          contrast={treeContrast}
+                        />
+                      );
+                    })}
                     {/* Each panel-person rendered as a full PersonNode
                         with all interactions disabled (hideChips, no
                         chevrons, no quick-add handlers, no edit
@@ -1611,6 +1684,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                           hasOutOfScopeAncestors={false}
                           hasHideableDescendants={false}
                           isOnBloodline={bloodlineSet.has(p.personId)}
+                          borderOverride={l.tetherColour}
                         />
                       );
                     })}
@@ -1716,7 +1790,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
  * Accepts any N parents and any M children. When N=1 the marriage bar
  * is skipped and the drop comes straight from the lone parent.
  */
-function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onParentClick, contrast = 0.3 }: {
+function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onParentClick, contrast = 0.3, strokeOverride }: {
   parents: (LaidOutNode & { renderedX: number; renderedY: number; isPlaceholder: boolean })[];
   children: (LaidOutNode & { renderedX: number; renderedY: number })[];
   /** True when a stored spouse_of edge exists between parents. In that
@@ -1726,6 +1800,12 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
   bracketOffset: number;
   onParentClick: (parentId: number) => void;
   contrast?: number;
+  /** Optional override for the stroke colour. When set, replaces
+   *  the contrast-driven default for ALL scaffolding lines (marriage
+   *  bar, drop, bracket, child drops). Used by the panel to tint
+   *  the family-group geometry with the panel's brand colour, and
+   *  by the canvas to tint bloodline families lavender. */
+  strokeOverride?: string;
 }) {
   if (parents.length === 0 || children.length === 0) return null;
 
@@ -1789,7 +1869,7 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
   // backgrounds. Halo is a wider white underlay drawn first.
   const strokeBase = '#64748b';
   const strokeDark = '#1f2937';
-  const stroke = contrast > 0.5 ? strokeDark : strokeBase;
+  const stroke = strokeOverride ?? (contrast > 0.5 ? strokeDark : strokeBase);
   const strokeWidth = 1.5 + contrast * 1.5;
   const haloWidth = strokeWidth + 3 + contrast * 3;
   const haloOpacity = 0.35 + contrast * 0.5;
@@ -2114,7 +2194,7 @@ function colorFromId(id: number): string {
   return INITIAL_COLORS[id % INITIAL_COLORS.length];
 }
 
-function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onEditName, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true, hasCurrentPartner = false, hasOutOfScopeAncestors = false, hasHideableDescendants = false, isOnBloodline = false, onExpandAncestors, onExpandDescendants, ancestorsExpanded = false, descendantsExpanded = false, lifted = false }: {
+function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEditDates, onEditName, onMouseDown, onDoubleClick, onContextMenu, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, contrast = 0.3, relationshipLabel, hideGenderMarker, onOpenGenderPicker, canAddParent = true, hasCurrentPartner = false, hasOutOfScopeAncestors = false, hasHideableDescendants = false, isOnBloodline = false, onExpandAncestors, onExpandDescendants, ancestorsExpanded = false, descendantsExpanded = false, lifted = false, borderOverride }: {
   node: LaidOutNode & { renderedX: number; renderedY: number };
   avatar: string | undefined;
   isFocus: boolean;
@@ -2178,6 +2258,12 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
    *  treatment that gives revealed branches a "popped out" feel
    *  without committing to actual 3D rendering. */
   lifted?: boolean;
+  /** When set, overrides the card's outer border colour. Used inside
+   *  panels so each card's outline matches the panel's brand colour
+   *  (lavender for bloodline, orange for in-law) — the whole panel,
+   *  including its cards, reads as one branded unit. Does NOT apply
+   *  to the focus halo (focus retains its amber ring). */
+  borderOverride?: string;
 }) {
   const [hovered, setHovered] = useState(false);
   // Separate hover state for the extend / collapse chevron above the
@@ -2302,8 +2388,8 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         rx={10}
         ry={10}
         fill="#ffffff"
-        stroke={isFocus ? ringColor : `rgba(0,0,0,${0.08 + 0.35 * contrast})`}
-        strokeWidth={isFocus ? 2 : 1 + contrast}
+        stroke={isFocus ? ringColor : (borderOverride ?? `rgba(0,0,0,${0.08 + 0.35 * contrast})`)}
+        strokeWidth={isFocus ? 2 : (borderOverride ? 2 : 1 + contrast)}
       />
       {/* Optional per-card background image — faded behind the card
           contents. Clipped to the card's rounded shape via a per-node
