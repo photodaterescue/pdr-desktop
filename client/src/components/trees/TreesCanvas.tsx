@@ -247,7 +247,15 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
   }, [layout.nodes]);
 
   // ─── Viewport interactions ─────────────────────────────────────
-  const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    // Type relaxed from <SVGSVGElement> to plain WheelEvent so the
+    // panel HTML overlays can forward their wheel events here too.
+    // The math doesn't use e.currentTarget — we always measure
+    // against the canvas SVG via svgRef — so cursor-anchored zoom
+    // still works correctly when the wheel was over a panel,
+    // because we deliberately pin the zoom origin to the actual
+    // mouse position inside the canvas regardless of which
+    // element the event fired on.
     e.preventDefault();
     const svg = svgRef.current;
     if (!svg) return;
@@ -2028,6 +2036,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   borderWidth: 2,
                   zIndex: 30,
                 }}
+                // Forward wheel events to the canvas's zoom handler
+                // so the user can scroll-zoom even when the cursor
+                // is over a panel — without this the panel HTML
+                // overlay swallows wheel events and the canvas
+                // doesn't react until the cursor leaves the panel.
+                onWheel={handleWheel}
               >
                 {/* No CardHeader chrome any more — the panel title
                     is rendered as a small <text> element INSIDE the
