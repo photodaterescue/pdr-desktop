@@ -1637,7 +1637,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const scaledContentH = contentHeight * viewport.scale;
           const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, scaledContentW + PANEL_BORDER * 2));
           const panelH = Math.max(MIN_PANEL_H, Math.min(MAX_PANEL_H, HEADER_H + scaledContentH + PANEL_BORDER * 2));
-          const defaultPanelLeft = originScreenX - panelW / 2;
+          // Centre the panel on the CHEVRON's screen position, not
+          // the origin's. For descendant panels the chevron sits at
+          // the midpoint between the bloodline head (Carol) and the
+          // co-parent partner (Graham), so the panel needs to drop
+          // straight down from THAT point — not from Carol alone,
+          // which previously left the panel off-centre to the left
+          // of the couple. Ancestor panels still anchor to the
+          // origin's X (chevronScreenX falls back to the origin's
+          // own X when no co-parent is involved).
+          const defaultPanelLeft = chevronScreenX - panelW / 2;
           const defaultPanelTop = direction === 'descendant'
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
             : originScreenY - cardHalfHeight - VERTICAL_GAP - panelH;
@@ -1862,28 +1871,6 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       (PersonNode stopPropagation prevents its own
                       clicks from bubbling here, so only empty SVG
                       space initiates drag). */}
-                  {/* Panel title — HTML overlay (NOT inside the
-                      SVG) so it uses the proper Montserrat heading
-                      font + text-h1 typography tier and stays at
-                      a fixed legible size independent of the SVG's
-                      zoom-scaled cards. pointer-events: none lets
-                      mousedown/double-click pass through to the
-                      SVG below for drag/reset.
-                        descendant — top-LEFT corner label, leaves
-                          the central tether-continuation line free.
-                        ancestor   — top-CENTRE; the bottom is
-                          occupied by the tether continuation,
-                          the top is free. */}
-                  <div
-                    className={`absolute z-10 text-h1 text-foreground select-none whitespace-nowrap ${
-                      l.direction === 'descendant'
-                        ? 'top-3 left-5'
-                        : 'top-3 left-1/2 -translate-x-1/2'
-                    }`}
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {l.panelTitle}
-                  </div>
                   <svg
                     width={l.contentWidth * viewport.scale}
                     height={l.contentHeight * viewport.scale}
@@ -1892,6 +1879,34 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     onMouseDown={startDrag}
                     onDoubleClick={resetPosition}
                   >
+                    {/* Panel title — rendered as <text> inside the
+                        SVG so it scales with viewport.scale (the
+                        same way every card and bracket scales).
+                        Terry's earlier "stays the same size while
+                        zooming looks ridiculous" complaint — fixed
+                        by living inside the same scaled coordinate
+                        system as the rest of the panel content.
+                        Explicit fontFamily / fontSize / fontWeight
+                        because SVG <text> doesn't reliably inherit
+                        from Tailwind utility classes; values
+                        mirror the text-h1 tier from the style
+                        guide (Montserrat 20-ish px semibold). Sits
+                        at top-LEFT for descendants, top-CENTRE for
+                        ancestors — symmetric breathing room above
+                        and below thanks to TITLE_ROOM padding. */}
+                    <text
+                      x={l.direction === 'descendant' ? PANEL_PADDING : l.contentWidth / 2}
+                      y={32}
+                      textAnchor={l.direction === 'descendant' ? 'start' : 'middle'}
+                      fontSize={20}
+                      fontWeight={600}
+                      fontFamily='"Montserrat", "Inter", system-ui, -apple-system, sans-serif'
+                      fill="currentColor"
+                      className="text-foreground"
+                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    >
+                      {l.panelTitle}
+                    </text>
                     {/* Tether-continuation drop-line — extends the
                         canvas tether INTO the panel as a family-tree
                         drop + sibling bracket connecting the panel
