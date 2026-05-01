@@ -1551,7 +1551,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         }
         if (origins.length === 0) return null;
 
-        const VERTICAL_GAP = 80;
+        // Vertical gap between the origin's row and the panel's
+        // edge — scaled by viewport.scale so the gap shrinks
+        // proportionally as the user zooms out. Without this
+        // scaling, at very low zoom the canvas cards become tiny
+        // but the gap stays at 80 px, which throws the panel
+        // visually far from its chevron.
+        const VERTICAL_GAP = 80 * viewport.scale;
         // Chevron-button geometry inside PersonNode — kept here so
         // tether origin points line up exactly with where the
         // chevron-circle sits on screen.
@@ -1566,13 +1572,21 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         // panel height. HEADER_H stays as a constant (= 0) so the
         // panelH formula below stays explicit about the lack of
         // header instead of silently dropping it.
+        // MIN clamps scale with viewport.scale too — Terry's
+        // observation: when zooming out, the panel must stay
+        // proportional to the canvas, otherwise the panel looms
+        // huge over a shrunken canvas and visually appears to
+        // detach from its chevron. Multiplying the MIN by scale
+        // keeps the panel-to-canvas ratio fixed at every zoom
+        // level (the panel-to-chevron centre stays anchored
+        // because defaultPanelLeft already uses chevronScreenX).
         const isAbbreviated = viewport.scale < 0.5;
         const HEADER_H = 0;
         const PANEL_PADDING = 24;
         const MINI_CARD_GAP_X = 30;
         const MINI_ROW_GAP_Y = 60;
-        const MIN_PANEL_W = isAbbreviated ? 140 : 280;
-        const MIN_PANEL_H = isAbbreviated ? 100 : 180;
+        const MIN_PANEL_W = (isAbbreviated ? 140 : 280) * viewport.scale;
+        const MIN_PANEL_H = (isAbbreviated ? 100 : 180) * viewport.scale;
         const MAX_PANEL_W = 1200;
         const MAX_PANEL_H = 800;
 
