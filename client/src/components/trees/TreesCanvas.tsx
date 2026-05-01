@@ -1390,47 +1390,172 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       : `${l.contentPeople.length} ancestor${l.contentPeople.length === 1 ? '' : 's'} on this line`}
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 min-h-0 overflow-auto">
-                  {/* Step 5 MVP: simple vertical list of people in
-                      this branch. Each row is a compact card with
-                      avatar, name, and relationship label. Step 5b
-                      (future) will replace this with a real mini-
-                      tree using the same layout primitives as the
-                      main canvas. */}
-                  <div className="flex flex-col gap-1.5">
-                    {l.contentPeople.map(pid => {
-                      const node = nodeById.get(pid);
-                      if (!node) return null;
-                      const treeName = (node.fullName && node.fullName.trim()) || node.name || 'Unknown';
-                      const initials = initialsOf(treeName);
-                      const avatar = avatars.get(pid);
-                      const relLabel = relationshipLabels.get(pid) ?? '';
-                      const bgColor = colorFromId(pid);
-                      return (
-                        <div
-                          key={pid}
-                          className="flex items-center gap-2 p-1.5 rounded-md border border-border bg-background"
+                <CardContent className="flex-1 min-h-0 overflow-auto p-2">
+                  {/* Step 5b: mini-tree geometry inside the panel.
+                      Each person rendered as a compact card; cards
+                      grouped into generation rows; orthogonal step
+                      lines connect parents to children. Same layout
+                      primitives as the main canvas, just at a smaller
+                      scale. */}
+                  {(() => {
+                    const MINI_CARD_W = 88;
+                    const MINI_CARD_H = 64;
+                    const MINI_CARD_GAP = 10;
+                    const MINI_GEN_GAP = 32;
+                    const PADDING = 12;
+                    type MiniPerson = LaidOutNode & { renderedX: number; renderedY: number };
+                    const peopleInPanel = l.contentPeople
+                      .map(id => nodeById.get(id))
+                      .filter((n): n is MiniPerson => n != null);
+                    if (peopleInPanel.length === 0) return null;
+                    // Group by generation; sort each row by original
+                    // x so partner-adjacent ordering survives.
+                    const byGen = new Map<number, MiniPerson[]>();
+                    for (const p of peopleInPanel) {
+                      if (!byGen.has(p.generation)) byGen.set(p.generation, []);
+                      byGen.get(p.generation)!.push(p);
+                    }
+                    for (const gen of byGen.keys()) {
+                      byGen.get(gen)!.sort((a, b) => a.x - b.x);
+                    }
+                    // Generation order: highest first (top of panel).
+                    const sortedGens = Array.from(byGen.keys()).sort((a, b) => b - a);
+                    // Compute the widest row so all rows centre into
+                    // the same canvas width.
+                    let maxRowWidth = 0;
+                    for (const gen of sortedGens) {
+                      const row = byGen.get(gen)!;
+                      const rowWidth = row.length * MINI_CARD_W + (row.length - 1) * MINI_CARD_GAP;
+                      if (rowWidth > maxRowWidth) maxRowWidth = rowWidth;
+                    }
+                    const contentWidth = maxRowWidth + PADDING * 2;
+                    const contentHeight = sortedGens.length * MINI_CARD_H
+                      + (sortedGens.length - 1) * MINI_GEN_GAP
+                      + PADDING * 2;
+                    type Placement = { personId: number; x: number; y: number; node: MiniPerson };
+                    const placements: Placement[] = [];
+                    sortedGens.forEach((gen, rowIdx) => {
+                      const row = byGen.get(gen)!;
+                      const rowWidth = row.length * MINI_CARD_W + (row.length - 1) * MINI_CARD_GAP;
+                      const startX = (contentWidth - rowWidth) / 2;
+                      row.forEach((node, i) => {
+                        placements.push({
+                          personId: node.personId,
+                          x: startX + i * (MINI_CARD_W + MINI_CARD_GAP),
+                          y: PADDING + rowIdx * (MINI_CARD_H + MINI_GEN_GAP),
+                          node,
+                        });
+                      });
+                    });
+                    const placedById = new Map<number, Placement>(placements.map(p => [p.personId, p]));
+                    // Parent-child orthogonal step lines (cleaner
+                    // than diagonals — each line drops from parent's
+                    // bottom-centre, kicks across at the midpoint
+                    // between rows, and drops into child's
+                    // top-centre).
+                    type StepLine = { d: string; key: string };
+                    const lines: StepLine[] = [];
+                    for (const e of layout.edges) {
+                      if (e.type !== 'parent_of') continue;
+                      const parent = placedById.get(e.aId);
+                      const child = placedById.get(e.bId);
+                      if (!parent || !child) continue;
+                      const px = parent.x + MINI_CARD_W / 2;
+                      const py = parent.y + MINI_CARD_H;
+                      const cx = child.x + MINI_CARD_W / 2;
+                      const cy = child.y;
+                      const midY = (py + cy) / 2;
+                      lines.push({
+                        key: `${e.aId}-${e.bId}`,
+                        d: `M ${px} ${py} L ${px} ${midY} L ${cx} ${midY} L ${cx} ${cy}`,
+                      });
+                    }
+                    // Spouse-bar between adjacent partner cards in
+                    // the same generation. Drawn as a short horizontal
+                    // line at the midline of the two cards.
+                    type SpouseBar = { key: string; x1: number; x2: number; y: number };
+                    const spouseBars: SpouseBar[] = [];
+                    for (const e of layout.edges) {
+                      if (e.type !== 'spouse_of') continue;
+                      const a = placedById.get(e.aId);
+                      const b = placedById.get(e.bId);
+                      if (!a || !b) continue;
+                      if (a.y !== b.y) continue; // only same-row partners
+                      const left = a.x < b.x ? a : b;
+                      const right = a.x < b.x ? b : a;
+                      spouseBars.push({
+                        key: `${e.aId}-${e.bId}`,
+                        x1: left.x + MINI_CARD_W,
+                        x2: right.x,
+                        y: left.y + MINI_CARD_H / 2,
+                      });
+                    }
+                    return (
+                      <div className="relative" style={{ width: contentWidth, height: contentHeight, margin: '0 auto' }}>
+                        <svg
+                          className="absolute inset-0 pointer-events-none"
+                          width={contentWidth}
+                          height={contentHeight}
                         >
-                          <div
-                            className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
-                            style={{ backgroundColor: avatar ? '#fff' : bgColor }}
-                          >
-                            {avatar ? (
-                              <img src={avatar} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-label" style={{ color: '#fff' }}>{initials}</span>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-label text-foreground truncate">{treeName}</div>
-                            {relLabel && (
-                              <div className="text-caption truncate">{relLabel}</div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          {lines.map(line => (
+                            <path
+                              key={line.key}
+                              d={line.d}
+                              stroke="hsl(var(--muted-foreground))"
+                              strokeWidth={1}
+                              fill="none"
+                              opacity={0.6}
+                            />
+                          ))}
+                          {spouseBars.map(bar => (
+                            <line
+                              key={bar.key}
+                              x1={bar.x1}
+                              y1={bar.y}
+                              x2={bar.x2}
+                              y2={bar.y}
+                              stroke="hsl(var(--muted-foreground))"
+                              strokeWidth={1.5}
+                              opacity={0.7}
+                            />
+                          ))}
+                        </svg>
+                        {placements.map(p => {
+                          const treeName = (p.node.fullName && p.node.fullName.trim()) || p.node.name || 'Unknown';
+                          const initials = initialsOf(treeName);
+                          const avatar = avatars.get(p.personId);
+                          const bgColor = colorFromId(p.personId);
+                          const displayName = treeName.length > 14 ? treeName.slice(0, 12) + '…' : treeName;
+                          return (
+                            <div
+                              key={p.personId}
+                              className="absolute flex flex-col items-center"
+                              style={{
+                                left: p.x,
+                                top: p.y,
+                                width: MINI_CARD_W,
+                                height: MINI_CARD_H,
+                              }}
+                            >
+                              <div
+                                className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden border border-border bg-card"
+                                style={{ backgroundColor: avatar ? '#fff' : bgColor }}
+                              >
+                                {avatar ? (
+                                  <img src={avatar} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-label" style={{ color: '#fff' }}>{initials}</span>
+                                )}
+                              </div>
+                              <div className="text-caption text-foreground text-center mt-1 leading-tight">
+                                {displayName}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             ))}
