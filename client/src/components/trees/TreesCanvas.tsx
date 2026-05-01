@@ -1141,14 +1141,33 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         }
         if (origins.length === 0) return null;
 
-        const PANEL_W = 280;
-        const PANEL_H = 200;
         const VERTICAL_GAP = 80;
         // Chevron-button geometry inside PersonNode — kept here so
         // tether origin points line up exactly with where the
         // chevron-circle sits on screen.
         const CHEVRON_STEM = 24;
         const CHEVRON_R = 17;
+        // Panel size is now AUTO-COMPUTED per panel from its mini-
+        // tree content, capped at a max so even a wide branch stays
+        // draggable without filling the screen. Min-W/H are large
+        // enough for a single full-size canvas card plus padding.
+        const HEADER_H = 130; // CardHeader natural height (rough estimate)
+        const PANEL_PADDING = 24;
+        const MINI_CARD_GAP_X = 30;
+        const MINI_ROW_GAP_Y = 60;
+        const MIN_PANEL_W = 280;
+        const MIN_PANEL_H = 220;
+        const MAX_PANEL_W = 700;
+        const MAX_PANEL_H = 540;
+
+        type MiniPlacement = {
+          personId: number;
+          /** Centre coordinates of the card inside the panel SVG. */
+          cx: number;
+          cy: number;
+          node: LaidOutNode & { renderedX: number; renderedY: number };
+        };
+        type StepLine = { key: string; d: string };
 
         type Layout = {
           personId: number;
@@ -1156,12 +1175,18 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           panelKey: string;
           personName: string;
           directionLabel: string;
-          /** Person IDs to render INSIDE the panel (step 5).
-           *  Descendant chevron → the head's bloodline descendants
-           *  + their non-bloodline partners (so a cousin's spouse
-           *  shows up next to them). Ancestor chevron → the
-           *  non-bloodline person's family-of-origin ancestors. */
+          /** Person IDs to render INSIDE the panel. */
           contentPeople: number[];
+          /** Per-card placements inside the panel SVG (centre coords). */
+          miniPlacements: MiniPlacement[];
+          /** Orthogonal step-line paths between parents and children. */
+          miniLines: StepLine[];
+          /** SVG content size (panel sizes itself around this + header + padding). */
+          contentWidth: number;
+          contentHeight: number;
+          /** Auto-computed panel size (clamped to MIN/MAX). */
+          panelW: number;
+          panelH: number;
           // Default (auto-computed) panel position before drag offset.
           defaultPanelLeft: number;
           defaultPanelTop: number;
@@ -1191,10 +1216,97 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const chevronScreenY = direction === 'descendant'
             ? originScreenY + chevronOffset
             : originScreenY - chevronOffset;
-          const defaultPanelLeft = originScreenX - PANEL_W / 2;
+          // Compute the panel's content set FIRST — needed before
+          // the mini-tree layout so we know who to lay out.
+          //  • Descendant chevron — bloodline descendants of the
+          //    head + their non-bloodline partners.
+          //  • Ancestor chevron — the non-bloodline person's
+          //    family-of-origin ancestors.
+          const contentSet = new Set<number>();
+          if (direction === 'descendant') {
+            const desc = sideBranchDescendantsByHead.get(personId);
+            if (desc) for (const id of desc) contentSet.add(id);
+            for (const e of layout.edges) {
+              if (e.type !== 'spouse_of') continue;
+              if (contentSet.has(e.aId) && !bloodlineSet.has(e.bId)) contentSet.add(e.bId);
+              if (contentSet.has(e.bId) && !bloodlineSet.has(e.aId)) contentSet.add(e.aId);
+            }
+          } else {
+            const ext = extendedAncestorsByPerson.get(personId);
+            if (ext) for (const id of ext) contentSet.add(id);
+          }
+          const contentPeople = Array.from(contentSet)
+            .map(id => ({ id, x: nodeById.get(id)?.x ?? 0 }))
+            .sort((a, b) => a.x - b.x)
+            .map(o => o.id);
+
+          // Compute the mini-tree layout for this panel's content —
+          // we use its size to auto-size the panel itself. The
+          // mini-tree uses full canvas-card dimensions (CARD_W /
+          // CARD_H) so each person inside the panel looks identical
+          // to a person on the main canvas.
+          const peopleInPanel = contentPeople
+            .map(id => placedNodes.find(n => n.personId === id))
+            .filter((n): n is (LaidOutNode & { renderedX: number; renderedY: number }) => n != null);
+          const byGen = new Map<number, typeof peopleInPanel>();
+          for (const p of peopleInPanel) {
+            if (!byGen.has(p.generation)) byGen.set(p.generation, []);
+            byGen.get(p.generation)!.push(p);
+          }
+          for (const g of byGen.keys()) byGen.get(g)!.sort((a, b) => a.x - b.x);
+          const sortedGens = Array.from(byGen.keys()).sort((a, b) => b - a);
+          let maxRowWidth = 0;
+          for (const g of sortedGens) {
+            const row = byGen.get(g)!;
+            const rowW = row.length * CARD_W + (row.length - 1) * MINI_CARD_GAP_X;
+            if (rowW > maxRowWidth) maxRowWidth = rowW;
+          }
+          const contentWidth = Math.max(CARD_W, maxRowWidth) + PANEL_PADDING * 2;
+          const contentHeight = sortedGens.length === 0
+            ? CARD_H
+            : sortedGens.length * CARD_H
+              + (sortedGens.length - 1) * MINI_ROW_GAP_Y
+              + PANEL_PADDING * 2;
+          const miniPlacements: MiniPlacement[] = [];
+          sortedGens.forEach((g, rowIdx) => {
+            const row = byGen.get(g)!;
+            const rowW = row.length * CARD_W + (row.length - 1) * MINI_CARD_GAP_X;
+            const startCx = (contentWidth - rowW) / 2 + CARD_W / 2;
+            row.forEach((node, i) => {
+              miniPlacements.push({
+                personId: node.personId,
+                cx: startCx + i * (CARD_W + MINI_CARD_GAP_X),
+                cy: PANEL_PADDING + rowIdx * (CARD_H + MINI_ROW_GAP_Y) + CARD_H / 2,
+                node,
+              });
+            });
+          });
+          const placedById = new Map<number, MiniPlacement>(miniPlacements.map(p => [p.personId, p]));
+          const miniLines: StepLine[] = [];
+          for (const e of layout.edges) {
+            if (e.type !== 'parent_of') continue;
+            const parent = placedById.get(e.aId);
+            const child = placedById.get(e.bId);
+            if (!parent || !child) continue;
+            const px = parent.cx;
+            const py = parent.cy + CARD_H / 2;
+            const ccx = child.cx;
+            const ccy = child.cy - CARD_H / 2;
+            const midY = (py + ccy) / 2;
+            miniLines.push({
+              key: `${e.aId}-${e.bId}`,
+              d: `M ${px} ${py} L ${px} ${midY} L ${ccx} ${midY} L ${ccx} ${ccy}`,
+            });
+          }
+          // Auto-size the panel from content — clamp between MIN and
+          // MAX so it stays draggable. Header height is added on top
+          // of contentHeight; card-bg padding sits within content.
+          const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, contentWidth));
+          const panelH = Math.max(MIN_PANEL_H, Math.min(MAX_PANEL_H, HEADER_H + contentHeight));
+          const defaultPanelLeft = originScreenX - panelW / 2;
           const defaultPanelTop = direction === 'descendant'
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
-            : originScreenY - cardHalfHeight - VERTICAL_GAP - PANEL_H;
+            : originScreenY - cardHalfHeight - VERTICAL_GAP - panelH;
           // Drag offset (set by drag handlers, persisted in
           // panelOffsets state for position memory within session).
           const panelKey = `${personId}-${direction}`;
@@ -1210,23 +1322,21 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           //    parking spot. ±3 gives ~2 panel widths of drift in
           //    each direction, enough to dodge the tree without
           //    the tether becoming absurd.
-          const minOffsetX = -PANEL_W * 3;
-          const maxOffsetX = PANEL_W * 3;
+          const minOffsetX = -panelW * 3;
+          const maxOffsetX = panelW * 3;
           let minOffsetY: number;
           let maxOffsetY: number;
           if (direction === 'descendant') {
             // Panel-top must remain ≥ origin's row-bottom (with a
             // 10 px upward tolerance for fine positioning, no further).
             const minPanelTop = originScreenY + cardHalfHeight - 10;
-            // Panel can drift downward indefinitely — actual far-
-            // downward limit is whatever's reasonable visually.
             minOffsetY = minPanelTop - defaultPanelTop;
-            maxOffsetY = 4 * PANEL_H; // generous downward room
+            maxOffsetY = 4 * panelH; // generous downward room
           } else {
             // Ancestor panel — bottom must remain ≤ origin's row-top.
             const maxPanelBottom = originScreenY - cardHalfHeight + 10;
-            const maxPanelTop = maxPanelBottom - PANEL_H;
-            minOffsetY = -4 * PANEL_H;
+            const maxPanelTop = maxPanelBottom - panelH;
+            minOffsetY = -4 * panelH;
             maxOffsetY = maxPanelTop - defaultPanelTop;
           }
           // Apply offset to compute final panel position. Already
@@ -1237,48 +1347,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const clampedY = Math.max(minOffsetY, Math.min(maxOffsetY, offset.y));
           const panelLeft = defaultPanelLeft + clampedX;
           const panelTop = defaultPanelTop + clampedY;
-          const panelAnchorX = panelLeft + PANEL_W / 2;
-          const panelAnchorY = direction === 'descendant' ? panelTop : panelTop + PANEL_H;
+          const panelAnchorX = panelLeft + panelW / 2;
+          const panelAnchorY = direction === 'descendant' ? panelTop : panelTop + panelH;
           const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
           const directionLabel = direction === 'descendant' ? 'descendants' : 'family of origin';
           const isOriginBloodline = bloodlineSet.has(personId);
           const tetherColour = direction === 'descendant'
             ? '#ad9eff'
             : (isOriginBloodline ? '#ad9eff' : '#f59e0b');
-          // Compute the panel's content set:
-          //  • Descendant chevron — bloodline descendants of the
-          //    head + their non-bloodline partners (so each cousin's
-          //    spouse shows up alongside them in the panel).
-          //  • Ancestor chevron — the non-bloodline person's
-          //    family-of-origin ancestors (already keyed by
-          //    extendedAncestorsByPerson).
-          // Ordered using the layout's existing x-position so people
-          // who would have sat left-to-right on the canvas appear in
-          // the same order in the panel list.
-          const contentSet = new Set<number>();
-          if (direction === 'descendant') {
-            const desc = sideBranchDescendantsByHead.get(personId);
-            if (desc) for (const id of desc) contentSet.add(id);
-            // Pull in spouses of any descendant who's currently
-            // visible-in-graph but rendered as non-bloodline (married
-            // into the cousin family). Walking spouse_of edges out
-            // from the bloodline descendants once is enough.
-            for (const e of layout.edges) {
-              if (e.type !== 'spouse_of') continue;
-              if (contentSet.has(e.aId) && !bloodlineSet.has(e.bId)) contentSet.add(e.bId);
-              if (contentSet.has(e.bId) && !bloodlineSet.has(e.aId)) contentSet.add(e.aId);
-            }
-          } else {
-            const ext = extendedAncestorsByPerson.get(personId);
-            if (ext) for (const id of ext) contentSet.add(id);
-          }
-          const contentPeople = Array.from(contentSet)
-            .map(id => ({ id, x: nodeById.get(id)?.x ?? 0 }))
-            .sort((a, b) => a.x - b.x)
-            .map(o => o.id);
           layouts.push({
             personId, direction, panelKey, personName, directionLabel,
             contentPeople,
+            miniPlacements, miniLines, contentWidth, contentHeight,
+            panelW, panelH,
             defaultPanelLeft, defaultPanelTop,
             panelLeft, panelTop,
             minOffsetX, maxOffsetX, minOffsetY, maxOffsetY,
@@ -1333,8 +1414,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 style={{
                   left: l.panelLeft,
                   top: l.panelTop,
-                  width: PANEL_W,
-                  height: PANEL_H,
+                  width: l.panelW,
+                  height: l.panelH,
                   boxShadow: '0 12px 32px rgba(0, 0, 0, 0.20)',
                   borderColor: l.tetherColour,
                   borderWidth: 2,
@@ -1390,172 +1471,71 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       : `${l.contentPeople.length} ancestor${l.contentPeople.length === 1 ? '' : 's'} on this line`}
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 min-h-0 overflow-auto p-2">
-                  {/* Step 5b: mini-tree geometry inside the panel.
-                      Each person rendered as a compact card; cards
-                      grouped into generation rows; orthogonal step
-                      lines connect parents to children. Same layout
-                      primitives as the main canvas, just at a smaller
-                      scale. */}
-                  {(() => {
-                    const MINI_CARD_W = 88;
-                    const MINI_CARD_H = 64;
-                    const MINI_CARD_GAP = 10;
-                    const MINI_GEN_GAP = 32;
-                    const PADDING = 12;
-                    type MiniPerson = LaidOutNode & { renderedX: number; renderedY: number };
-                    const peopleInPanel = l.contentPeople
-                      .map(id => nodeById.get(id))
-                      .filter((n): n is MiniPerson => n != null);
-                    if (peopleInPanel.length === 0) return null;
-                    // Group by generation; sort each row by original
-                    // x so partner-adjacent ordering survives.
-                    const byGen = new Map<number, MiniPerson[]>();
-                    for (const p of peopleInPanel) {
-                      if (!byGen.has(p.generation)) byGen.set(p.generation, []);
-                      byGen.get(p.generation)!.push(p);
-                    }
-                    for (const gen of byGen.keys()) {
-                      byGen.get(gen)!.sort((a, b) => a.x - b.x);
-                    }
-                    // Generation order: highest first (top of panel).
-                    const sortedGens = Array.from(byGen.keys()).sort((a, b) => b - a);
-                    // Compute the widest row so all rows centre into
-                    // the same canvas width.
-                    let maxRowWidth = 0;
-                    for (const gen of sortedGens) {
-                      const row = byGen.get(gen)!;
-                      const rowWidth = row.length * MINI_CARD_W + (row.length - 1) * MINI_CARD_GAP;
-                      if (rowWidth > maxRowWidth) maxRowWidth = rowWidth;
-                    }
-                    const contentWidth = maxRowWidth + PADDING * 2;
-                    const contentHeight = sortedGens.length * MINI_CARD_H
-                      + (sortedGens.length - 1) * MINI_GEN_GAP
-                      + PADDING * 2;
-                    type Placement = { personId: number; x: number; y: number; node: MiniPerson };
-                    const placements: Placement[] = [];
-                    sortedGens.forEach((gen, rowIdx) => {
-                      const row = byGen.get(gen)!;
-                      const rowWidth = row.length * MINI_CARD_W + (row.length - 1) * MINI_CARD_GAP;
-                      const startX = (contentWidth - rowWidth) / 2;
-                      row.forEach((node, i) => {
-                        placements.push({
-                          personId: node.personId,
-                          x: startX + i * (MINI_CARD_W + MINI_CARD_GAP),
-                          y: PADDING + rowIdx * (MINI_CARD_H + MINI_GEN_GAP),
-                          node,
-                        });
-                      });
-                    });
-                    const placedById = new Map<number, Placement>(placements.map(p => [p.personId, p]));
-                    // Parent-child orthogonal step lines (cleaner
-                    // than diagonals — each line drops from parent's
-                    // bottom-centre, kicks across at the midpoint
-                    // between rows, and drops into child's
-                    // top-centre).
-                    type StepLine = { d: string; key: string };
-                    const lines: StepLine[] = [];
-                    for (const e of layout.edges) {
-                      if (e.type !== 'parent_of') continue;
-                      const parent = placedById.get(e.aId);
-                      const child = placedById.get(e.bId);
-                      if (!parent || !child) continue;
-                      const px = parent.x + MINI_CARD_W / 2;
-                      const py = parent.y + MINI_CARD_H;
-                      const cx = child.x + MINI_CARD_W / 2;
-                      const cy = child.y;
-                      const midY = (py + cy) / 2;
-                      lines.push({
-                        key: `${e.aId}-${e.bId}`,
-                        d: `M ${px} ${py} L ${px} ${midY} L ${cx} ${midY} L ${cx} ${cy}`,
-                      });
-                    }
-                    // Spouse-bar between adjacent partner cards in
-                    // the same generation. Drawn as a short horizontal
-                    // line at the midline of the two cards.
-                    type SpouseBar = { key: string; x1: number; x2: number; y: number };
-                    const spouseBars: SpouseBar[] = [];
-                    for (const e of layout.edges) {
-                      if (e.type !== 'spouse_of') continue;
-                      const a = placedById.get(e.aId);
-                      const b = placedById.get(e.bId);
-                      if (!a || !b) continue;
-                      if (a.y !== b.y) continue; // only same-row partners
-                      const left = a.x < b.x ? a : b;
-                      const right = a.x < b.x ? b : a;
-                      spouseBars.push({
-                        key: `${e.aId}-${e.bId}`,
-                        x1: left.x + MINI_CARD_W,
-                        x2: right.x,
-                        y: left.y + MINI_CARD_H / 2,
-                      });
-                    }
-                    return (
-                      <div className="relative" style={{ width: contentWidth, height: contentHeight, margin: '0 auto' }}>
-                        <svg
-                          className="absolute inset-0 pointer-events-none"
-                          width={contentWidth}
-                          height={contentHeight}
-                        >
-                          {lines.map(line => (
-                            <path
-                              key={line.key}
-                              d={line.d}
-                              stroke="hsl(var(--muted-foreground))"
-                              strokeWidth={1}
-                              fill="none"
-                              opacity={0.6}
-                            />
-                          ))}
-                          {spouseBars.map(bar => (
-                            <line
-                              key={bar.key}
-                              x1={bar.x1}
-                              y1={bar.y}
-                              x2={bar.x2}
-                              y2={bar.y}
-                              stroke="hsl(var(--muted-foreground))"
-                              strokeWidth={1.5}
-                              opacity={0.7}
-                            />
-                          ))}
-                        </svg>
-                        {placements.map(p => {
-                          const treeName = (p.node.fullName && p.node.fullName.trim()) || p.node.name || 'Unknown';
-                          const initials = initialsOf(treeName);
-                          const avatar = avatars.get(p.personId);
-                          const bgColor = colorFromId(p.personId);
-                          const displayName = treeName.length > 14 ? treeName.slice(0, 12) + '…' : treeName;
-                          return (
-                            <div
-                              key={p.personId}
-                              className="absolute flex flex-col items-center"
-                              style={{
-                                left: p.x,
-                                top: p.y,
-                                width: MINI_CARD_W,
-                                height: MINI_CARD_H,
-                              }}
-                            >
-                              <div
-                                className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden border border-border bg-card"
-                                style={{ backgroundColor: avatar ? '#fff' : bgColor }}
-                              >
-                                {avatar ? (
-                                  <img src={avatar} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="text-label" style={{ color: '#fff' }}>{initials}</span>
-                                )}
-                              </div>
-                              <div className="text-caption text-foreground text-center mt-1 leading-tight">
-                                {displayName}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
+                <CardContent className="flex-1 min-h-0 overflow-auto p-0">
+                  {/* Full-size canvas-card mini-tree inside the panel.
+                      Reuses PersonNode at full CARD_W / CARD_H so each
+                      person inside looks identical to a person on the
+                      main canvas — same avatar size, same name +
+                      relationship, same gender markers, same step
+                      badge. PersonNode is rendered inside an SVG with
+                      a viewBox sized to the precomputed contentWidth
+                      / contentHeight; CardContent's flex-1 +
+                      overflow-auto handles oversized branches with
+                      internal scroll. Step lines drawn underneath. */}
+                  <svg
+                    width={l.contentWidth}
+                    height={l.contentHeight}
+                    viewBox={`0 0 ${l.contentWidth} ${l.contentHeight}`}
+                    style={{ display: 'block', margin: '0 auto' }}
+                  >
+                    {/* Parent-child step lines drawn first so cards
+                        cover any line endpoints. */}
+                    {l.miniLines.map(line => (
+                      <path
+                        key={line.key}
+                        d={line.d}
+                        stroke="hsl(var(--muted-foreground))"
+                        strokeWidth={1.5}
+                        fill="none"
+                        opacity={0.6}
+                      />
+                    ))}
+                    {/* Each panel-person rendered as a full PersonNode
+                        with all interactions disabled (hideChips, no
+                        chevrons, no quick-add handlers, no edit
+                        handlers). The card visual itself is unchanged
+                        — same primitive as the main canvas. */}
+                    {l.miniPlacements.map(p => {
+                      const nodeAtPanelCoords = {
+                        ...p.node,
+                        renderedX: p.cx,
+                        renderedY: p.cy,
+                      };
+                      return (
+                        <PersonNode
+                          key={p.personId}
+                          node={nodeAtPanelCoords}
+                          avatar={avatars.get(p.personId)}
+                          isFocus={false}
+                          opacity={1}
+                          hideChips={true}
+                          relationshipLabel={relationshipLabels.get(p.personId)}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => { e.stopPropagation(); onRefocus(p.personId); }}
+                          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          onQuickAddParent={() => {}}
+                          onQuickAddPartner={() => {}}
+                          onQuickAddChild={() => {}}
+                          onQuickAddSibling={() => {}}
+                          contrast={treeContrast}
+                          canAddParent={false}
+                          hasOutOfScopeAncestors={false}
+                          hasHideableDescendants={false}
+                          isOnBloodline={bloodlineSet.has(p.personId)}
+                        />
+                      );
+                    })}
+                  </svg>
                 </CardContent>
               </Card>
             ))}
