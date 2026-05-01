@@ -173,14 +173,24 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     panelKey: string;
     startMouseX: number;
     startMouseY: number;
+    // startOffsetX/Y are in WORLD units (scale-invariant) — same
+    // semantics as panelOffsets state. The screen-space drag delta
+    // is divided by `scale` to get world-units delta on each
+    // mousemove, so the panel stays glued to its chevron's WORLD
+    // position regardless of zoom changes during the session.
     startOffsetX: number;
     startOffsetY: number;
-    // Cached for live-clamp during drag — without these we'd have to
-    // re-derive the constraint bounds on every mousemove.
+    // Constraint bounds also in WORLD units. Cached at drag-start
+    // so live-clamp doesn't have to re-derive them every mousemove.
     minOffsetX: number;
     maxOffsetX: number;
     minOffsetY: number;
     maxOffsetY: number;
+    // viewport.scale captured at drag-start. Multi-step drags
+    // (mouse held while user scrolls to zoom) keep using the
+    // start-time scale to convert screen delta → world delta;
+    // capturing it here avoids races with the React state update.
+    scale: number;
   }>({
     active: false,
     panelKey: '',
@@ -188,6 +198,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     startOffsetX: 0, startOffsetY: 0,
     minOffsetX: 0, maxOffsetX: 0,
     minOffsetY: 0, maxOffsetY: 0,
+    scale: 1,
   });
   /** Popup editor anchored to a clicked edge. Only set while the popup is open. */
   const [edgeEditor, setEdgeEditor] = useState<{ edge: FamilyGraphEdge; x: number; y: number } | null>(null);
@@ -324,10 +335,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         // Live-clamp during drag — design doc specifies hard-clamp
         // behaviour (no spring-back), so we apply min/max bounds at
         // every mousemove rather than letting the offset go free
-        // and snapping later.
+        // and snapping later. Screen delta is divided by the scale
+        // captured at drag-start, so the offset stored in state is
+        // in WORLD units (= scale-invariant). Zooming after a drag
+        // commit then re-applies the same world-units offset
+        // proportionally, so the panel stays anchored to its
+        // chevron at any zoom.
         const d = panelDragRef.current;
-        const rawX = d.startOffsetX + (e.clientX - d.startMouseX);
-        const rawY = d.startOffsetY + (e.clientY - d.startMouseY);
+        const screenDx = e.clientX - d.startMouseX;
+        const screenDy = e.clientY - d.startMouseY;
+        const worldDx = screenDx / (d.scale || 1);
+        const worldDy = screenDy / (d.scale || 1);
+        const rawX = d.startOffsetX + worldDx;
+        const rawY = d.startOffsetY + worldDy;
         const x = Math.max(d.minOffsetX, Math.min(d.maxOffsetX, rawX));
         const y = Math.max(d.minOffsetY, Math.min(d.maxOffsetY, rawY));
         setPanelOffsets(prev => {
@@ -1873,44 +1893,47 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             : originScreenY - cardHalfHeight - VERTICAL_GAP - panelH;
           // Drag offset (set by drag handlers, persisted in
           // panelOffsets state for position memory within session).
+          // STORED IN WORLD UNITS — scale-invariant — so a panel
+          // dragged 200 px right at scale=1 stays "200 world units
+          // right of the chevron" at any zoom level. Without this,
+          // the same screen-pixel offset translated to wildly
+          // different world distances at different zooms and the
+          // panel appeared to drift away from its chevron when the
+          // user zoomed in / out.
           const panelKey = `${personId}-${direction}`;
-          const offset = panelOffsets.get(panelKey) ?? { x: 0, y: 0 };
-          // Constraint bounds on the offset (per design doc §3.1,
-          // tuned after Terry's drag test):
-          //  • Vertical: descendant panel top must be ≥ origin row's
-          //    bottom + small gap (10 px tolerance); ancestor panel
-          //    bottom ≤ origin row's top - small gap.
+          const offsetWorld = panelOffsets.get(panelKey) ?? { x: 0, y: 0 };
+          // Constraint bounds on the WORLD-units offset. Same
+          // limits the screen-space version had (per design doc
+          // §3.1) but divided by scale so they correctly bound
+          // a world-units offset.
           //  • Horizontal: panel centre within ±3 × PANEL_W of
-          //    origin's X. Initial ±1.5 × value was too tight —
-          //    Terry was forced to overlap the tree to find a
-          //    parking spot. ±3 gives ~2 panel widths of drift in
-          //    each direction, enough to dodge the tree without
-          //    the tether becoming absurd.
-          const minOffsetX = -panelW * 3;
-          const maxOffsetX = panelW * 3;
+          //    chevron's X (Terry's tuned ±3 width budget).
+          //  • Vertical (descendant): panel top must remain
+          //    ≥ origin row's bottom + 10 px tolerance.
+          //  • Vertical (ancestor): panel bottom must remain
+          //    ≤ origin row's top + 10 px tolerance.
+          const scaleSafe = viewport.scale || 1;
+          const minOffsetX = (-panelW * 3) / scaleSafe;
+          const maxOffsetX = (panelW * 3) / scaleSafe;
           let minOffsetY: number;
           let maxOffsetY: number;
           if (direction === 'descendant') {
-            // Panel-top must remain ≥ origin's row-bottom (with a
-            // 10 px upward tolerance for fine positioning, no further).
             const minPanelTop = originScreenY + cardHalfHeight - 10;
-            minOffsetY = minPanelTop - defaultPanelTop;
-            maxOffsetY = 4 * panelH; // generous downward room
+            minOffsetY = (minPanelTop - defaultPanelTop) / scaleSafe;
+            maxOffsetY = (4 * panelH) / scaleSafe;
           } else {
-            // Ancestor panel — bottom must remain ≤ origin's row-top.
             const maxPanelBottom = originScreenY - cardHalfHeight + 10;
             const maxPanelTop = maxPanelBottom - panelH;
-            minOffsetY = -4 * panelH;
-            maxOffsetY = maxPanelTop - defaultPanelTop;
+            minOffsetY = (-4 * panelH) / scaleSafe;
+            maxOffsetY = (maxPanelTop - defaultPanelTop) / scaleSafe;
           }
-          // Apply offset to compute final panel position. Already
-          // clamped on commit by the drag handler; re-clamping here
-          // is defensive in case viewport changes mid-session push
-          // an old offset out of range.
-          const clampedX = Math.max(minOffsetX, Math.min(maxOffsetX, offset.x));
-          const clampedY = Math.max(minOffsetY, Math.min(maxOffsetY, offset.y));
-          const panelLeft = defaultPanelLeft + clampedX;
-          const panelTop = defaultPanelTop + clampedY;
+          // Clamp the WORLD-units offset, then multiply by scale
+          // to get the screen-pixel offset applied to defaultPanel*
+          // (which are already in screen pixels).
+          const clampedWorldX = Math.max(minOffsetX, Math.min(maxOffsetX, offsetWorld.x));
+          const clampedWorldY = Math.max(minOffsetY, Math.min(maxOffsetY, offsetWorld.y));
+          const panelLeft = defaultPanelLeft + clampedWorldX * scaleSafe;
+          const panelTop = defaultPanelTop + clampedWorldY * scaleSafe;
           const panelAnchorX = panelLeft + panelW / 2;
           const panelAnchorY = direction === 'descendant' ? panelTop : panelTop + panelH;
           const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
@@ -2067,12 +2090,18 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       panelKey: l.panelKey,
                       startMouseX: e.clientX,
                       startMouseY: e.clientY,
+                      // World-units start values + constraints,
+                      // see panelDragRef typedef. Scale captured at
+                      // drag-start so screen→world delta conversion
+                      // stays consistent if the user zooms during
+                      // the drag (rare but defensible).
                       startOffsetX: current.x,
                       startOffsetY: current.y,
                       minOffsetX: l.minOffsetX,
                       maxOffsetX: l.maxOffsetX,
                       minOffsetY: l.minOffsetY,
                       maxOffsetY: l.maxOffsetY,
+                      scale: viewport.scale || 1,
                     };
                   };
                   const resetPosition = (e: React.MouseEvent) => {
