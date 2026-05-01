@@ -1360,19 +1360,20 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         const CHEVRON_R = 17;
         // Panel size is AUTO-COMPUTED per panel from its mini-tree
         // content, scaled by viewport.scale so panel cards visually
-        // match canvas cards. The abbreviated mode (zoomed-out)
-        // collapses the header to a single "Surname branch" line,
-        // so HEADER_H and MIN_PANEL_H shrink in lockstep — keeps
-        // the panel from being mostly whitespace at low zoom.
-        // MAX bumped to 1200x800 so most branches open at full
-        // content size without forcing internal scroll.
+        // match canvas cards. There is no longer a separate
+        // CardHeader chrome above the SVG — the panel title is
+        // rendered as <text> inside the SVG itself, sitting in the
+        // existing top padding zone so it doesn't add any extra
+        // panel height. HEADER_H stays as a constant (= 0) so the
+        // panelH formula below stays explicit about the lack of
+        // header instead of silently dropping it.
         const isAbbreviated = viewport.scale < 0.5;
-        const HEADER_H = isAbbreviated ? 56 : 130;
+        const HEADER_H = 0;
         const PANEL_PADDING = 24;
         const MINI_CARD_GAP_X = 30;
         const MINI_ROW_GAP_Y = 60;
         const MIN_PANEL_W = isAbbreviated ? 140 : 280;
-        const MIN_PANEL_H = isAbbreviated ? 100 : 220;
+        const MIN_PANEL_H = isAbbreviated ? 100 : 180;
         const MAX_PANEL_W = 1200;
         const MAX_PANEL_H = 800;
 
@@ -1400,6 +1401,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
            *  ancestor's surname (Lindsay's parent Keith McCall →
            *  McCall). */
           branchSurname: string;
+          /** Single-line panel title rendered as <text> inside the
+           *  SVG (no separate CardHeader chrome).
+           *    Descendant — "{Head} & {Partner} Descendants" (or
+           *      just "{Head} Descendants" if no co-parent on canvas).
+           *    Ancestor   — "{Name} Ancestry".
+           *  Sits at top-left for descendants (corner label, leaves
+           *  the central tether continuation unobstructed) and
+           *  top-centre for ancestors (the bottom is occupied by
+           *  the tether continuation; the top is free). */
+          panelTitle: string;
           /** Per-card placements inside the panel SVG (centre coords). */
           miniPlacements: MiniPlacement[];
           /** Family groups inside the panel — used to render the
@@ -1523,8 +1534,17 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           // tether-continuation bracket has room to sit MINI_ROW_GAP_Y/2
           // away from the cards — same spacing the canvas uses for its
           // family-group brackets, so panel scaffolding visually matches.
+          // Plus extra TITLE_ROOM on the OPPOSITE side (the side that
+          // bears the panel title text) so the title doesn't crowd the
+          // topmost row of cards. For descendants the bracket-room
+          // already provides enough vertical space for a top-LEFT
+          // corner title; for ancestors the title sits top-CENTRE
+          // and explicitly needs reserved space above the cards.
           const TETHER_BRACKET_ROOM = MINI_ROW_GAP_Y / 2;
-          const padTop = direction === 'descendant' ? PANEL_PADDING + TETHER_BRACKET_ROOM : PANEL_PADDING;
+          const TITLE_ROOM = 30;
+          const padTop = direction === 'descendant'
+            ? PANEL_PADDING + TETHER_BRACKET_ROOM
+            : PANEL_PADDING + TITLE_ROOM;
           const padBottom = direction === 'ancestor' ? PANEL_PADDING + TETHER_BRACKET_ROOM : PANEL_PADDING;
           const contentHeight = sortedGens.length === 0
             ? CARD_H
@@ -1683,10 +1703,37 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             );
             branchSurname = surnameOf(topAncestor);
           }
+          // Single-line panel title — replaces the old three-line
+          // CardHeader (caption + CardTitle + body-muted). For
+          // descendants it names BOTH parents (Carol & Graham
+          // Descendants) since the cousins came from the couple,
+          // not just the bloodline relative. For ancestors we use
+          // the in-law's full name + " Ancestry".
+          const firstNameOf = (n: { fullName: string | null; name: string }): string => {
+            const raw = (n.fullName?.trim() || n.name?.trim() || '').trim();
+            if (!raw) return '';
+            const parts = raw.split(/\s+/);
+            return parts[0] || '';
+          };
+          let panelTitle = '';
+          if (direction === 'descendant') {
+            const headFirst = firstNameOf(origin);
+            const chevInfoForTitle = sideBranchChevrons.find(c => c.headId === personId);
+            const partnerNode = chevInfoForTitle?.partnerId != null
+              ? nodeById.get(chevInfoForTitle.partnerId)
+              : null;
+            const partnerFirst = partnerNode ? firstNameOf(partnerNode) : '';
+            panelTitle = partnerFirst
+              ? `${headFirst} & ${partnerFirst} Descendants`
+              : `${headFirst} Descendants`;
+          } else {
+            panelTitle = `${personName} Ancestry`;
+          }
           layouts.push({
             personId, direction, panelKey, personName, directionLabel,
             contentPeople,
             branchSurname,
+            panelTitle,
             miniPlacements, panelFamilyGroups, panelSpouseEdges,
             directKinIds,
             contentWidth, contentHeight,
@@ -1754,23 +1801,20 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   zIndex: 30,
                 }}
               >
-                {/* CardHeader and CardContent are rendered in
-                    direction-dependent order so the SVG always sits
-                    on the chevron-facing side of the panel — that
-                    way the canvas tether and the in-panel
-                    continuation meet at the same screen point with
-                    no header-height gap between them.
-                      Descendant panel (chevron above origin's row →
-                        tether enters panel TOP)  →  SVG first, header
-                        last, so the bracket continuation reads as a
-                        seamless extension of the canvas line.
-                      Ancestor panel (chevron below origin → tether
-                        enters panel BOTTOM)      →  header first,
-                        SVG last; same continuity, mirrored.
-                    Header doubles as a drag handle, and so does the
-                    SVG body so empty space anywhere catches the
-                    mouse. Double-click on the header snaps the
-                    panel back to its auto-computed default. */}
+                {/* No CardHeader chrome any more — the panel title
+                    is rendered as a small <text> element INSIDE the
+                    SVG (top-left for descendants, top-centre for
+                    ancestors), sitting in the existing top padding
+                    zone. That keeps the SVG (and its
+                    tether-continuation line) aligned edge-to-edge
+                    with the panel border on the chevron-facing side
+                    — no header-height gap anywhere — while still
+                    naming the branch.
+                    Drag handlers live on the SVG itself; the SVG
+                    fills the panel content so anywhere outside a
+                    PersonNode (which stops propagation) initiates
+                    drag. Double-click on the SVG resets the panel
+                    to its auto-computed default position. */}
                 {(() => {
                   const startDrag = (e: React.MouseEvent) => {
                     if (e.button !== 0) return;
@@ -1798,50 +1842,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       return next;
                     });
                   };
-                  const headerNode = (
-                    <CardHeader
-                      key="header"
-                      className="cursor-grab active:cursor-grabbing select-none"
-                      style={isAbbreviated ? { padding: '12px 16px', gap: 0 } : undefined}
-                      onMouseDown={startDrag}
-                      onDoubleClick={resetPosition}
-                    >
-                      {isAbbreviated ? (
-                        <CardTitle className="text-h2 text-foreground">
-                          {l.branchSurname || l.personName} branch
-                        </CardTitle>
-                      ) : (
-                        <>
-                          <div className="text-caption uppercase tracking-wider">
-                            {l.direction === 'descendant' ? "Cousins of focus" : "Family of origin"}
-                          </div>
-                          <CardTitle className="text-h2">{l.personName}</CardTitle>
-                          <div className="text-body-muted">
-                            {l.direction === 'descendant'
-                              ? `${l.contentPeople.length} relative${l.contentPeople.length === 1 ? '' : 's'} on this branch`
-                              : `${l.contentPeople.length} ancestor${l.contentPeople.length === 1 ? '' : 's'} on this line`}
-                          </div>
-                        </>
-                      )}
-                    </CardHeader>
-                  );
-                  // CardContent flex-aligns the SVG to the
-                  // chevron-facing edge so the SVG meets the panel
-                  // border on that side. HEADER_H is a constant
-                  // estimate of the actual rendered header height,
-                  // and the real header is ~25 px shorter than the
-                  // estimate; without justify-end on ancestor
-                  // CardContent that slack appeared as a visible
-                  // gap between the SVG bottom and the panel's
-                  // bottom border (where the canvas tether arrives),
-                  // breaking the line continuity. Descendants use
-                  // justify-start (the default) — SVG already sits
-                  // at the top of CardContent so its top touches the
-                  // panel border, slack falls below near the
-                  // bottom-rendered header.
-                  const contentJustify = l.direction === 'ancestor' ? 'justify-end' : 'justify-start';
-                  const contentNode = (
-                    <CardContent key="content" className={`flex-1 min-h-0 overflow-auto p-0 flex flex-col ${contentJustify}`}>
+                  return (
+                    <CardContent key="content" className="flex-1 min-h-0 overflow-auto p-0 flex flex-col">
                   {/* Full-size canvas-card mini-tree inside the panel.
                       Reuses PersonNode at full CARD_W / CARD_H so each
                       person inside looks identical to a person on the
@@ -1859,24 +1861,32 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     height={l.contentHeight * viewport.scale}
                     viewBox={`0 0 ${l.contentWidth} ${l.contentHeight}`}
                     style={{ display: 'block', margin: '0 auto', cursor: 'grab' }}
-                    onMouseDown={(e) => {
-                      if (e.button !== 0) return;
-                      e.preventDefault();
-                      const current = panelOffsets.get(l.panelKey) ?? { x: 0, y: 0 };
-                      panelDragRef.current = {
-                        active: true,
-                        panelKey: l.panelKey,
-                        startMouseX: e.clientX,
-                        startMouseY: e.clientY,
-                        startOffsetX: current.x,
-                        startOffsetY: current.y,
-                        minOffsetX: l.minOffsetX,
-                        maxOffsetX: l.maxOffsetX,
-                        minOffsetY: l.minOffsetY,
-                        maxOffsetY: l.maxOffsetY,
-                      };
-                    }}
+                    onMouseDown={startDrag}
+                    onDoubleClick={resetPosition}
                   >
+                    {/* Panel title — a single line of label text
+                        rendered as <text> inside the SVG so the
+                        SVG can fill the entire panel without a
+                        separate CardHeader stealing vertical space.
+                        Sits in the top padding zone:
+                          descendant — top-LEFT (corner label,
+                            leaves the central tether-continuation
+                            line unobstructed),
+                          ancestor   — top-CENTRE (the bottom is
+                            occupied by the tether continuation;
+                            the top is free).
+                        Uses the text-h2 typography tier and
+                        text-foreground colour token (style guide). */}
+                    <text
+                      x={l.direction === 'descendant' ? PANEL_PADDING : l.contentWidth / 2}
+                      y={20}
+                      textAnchor={l.direction === 'descendant' ? 'start' : 'middle'}
+                      className="text-h2 text-foreground select-none"
+                      fill="currentColor"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      {l.panelTitle}
+                    </text>
                     {/* Tether-continuation drop-line — extends the
                         canvas tether INTO the panel as a family-tree
                         drop + sibling bracket connecting the panel
@@ -2059,13 +2069,6 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   </svg>
                 </CardContent>
                   );
-                  // SVG sits on the side of the panel that faces
-                  // the chevron, so the canvas tether's panel-edge
-                  // anchor and the in-SVG bracket continuation meet
-                  // at the same point — no header-height gap.
-                  return l.direction === 'descendant'
-                    ? <>{contentNode}{headerNode}</>
-                    : <>{headerNode}{contentNode}</>;
                 })()}
               </Card>
             ))}
