@@ -269,9 +269,25 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     });
   }, []);
 
+  // Tracks whether the most recent mousedown started on the bare
+  // canvas SVG (vs on a card / chevron) and whether the pointer
+  // moved enough during the drag to count as a pan rather than a
+  // click. Drives the "click on dimmed canvas closes all panels"
+  // gesture from design doc §5: mouseDOWN on canvas + mouseUP
+  // before any meaningful movement = close-all click.
+  const panClickInfoRef = useRef<{ onCanvas: boolean; moved: boolean }>({ onCanvas: false, moved: false });
+
   const handlePanStart = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     setContextMenu(null);
+    panClickInfoRef.current = {
+      // True only when the actual target is the SVG itself —
+      // mousedown on a card / chevron / text element bubbles up
+      // here too but with a deeper target, which we don't want
+      // to treat as a "close all" click.
+      onCanvas: e.target === e.currentTarget,
+      moved: false,
+    };
     panState.current = {
       active: true,
       startX: e.clientX,
@@ -284,10 +300,16 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (panState.current.active) {
+        const dx = e.clientX - panState.current.startX;
+        const dy = e.clientY - panState.current.startY;
+        // 3 px threshold — below that we treat the gesture as a
+        // click, above it as a pan. Same convention browsers use
+        // to fire `click` after a tiny accidental drag.
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panClickInfoRef.current.moved = true;
         setViewport(v => ({
           ...v,
-          tx: panState.current.startTx + (e.clientX - panState.current.startX),
-          ty: panState.current.startTy + (e.clientY - panState.current.startY),
+          tx: panState.current.startTx + dx,
+          ty: panState.current.startTy + dy,
         }));
       }
       if (panelDragRef.current.active) {
@@ -308,8 +330,26 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       }
     };
     const onUp = () => {
+      // Click-on-dimmed-canvas-closes-all panels gesture
+      // (design doc §5). Fires only when (a) the mousedown was
+      // on the SVG itself (empty canvas), (b) the pointer didn't
+      // move enough to count as a pan, and (c) at least one
+      // panel is open. Toggling each open chevron via its
+      // existing onExpand* callback closes the corresponding
+      // panel — same code path the chevron-click takes.
+      const isClickOnCanvas = panState.current.active
+        && panClickInfoRef.current.onCanvas
+        && !panClickInfoRef.current.moved;
       panState.current.active = false;
       panelDragRef.current.active = false;
+      if (isClickOnCanvas) {
+        const ancArr = Array.from(expandedAncestorsOf ?? []);
+        const descArr = Array.from(expandedDescendantsOf ?? []);
+        if (ancArr.length + descArr.length > 0) {
+          for (const id of ancArr) onExpandAncestors?.(id);
+          for (const id of descArr) onExpandDescendants?.(id);
+        }
+      }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -317,7 +357,43 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [viewport.scale]);
+  }, [viewport.scale, expandedAncestorsOf, expandedDescendantsOf, onExpandAncestors, onExpandDescendants]);
+
+  // Panel-open MRU order — drives the Esc-closes-topmost gesture
+  // (design doc §5). We track keys (`${personId}-${direction}`)
+  // pushed in the order panels were opened; on Esc we pop the
+  // last one and toggle its corresponding chevron via the
+  // appropriate onExpand* callback.
+  const panelOpenOrderRef = useRef<string[]>([]);
+  useEffect(() => {
+    const liveKeys = new Set<string>();
+    for (const id of expandedAncestorsOf ?? []) liveKeys.add(`${id}-ancestor`);
+    for (const id of expandedDescendantsOf ?? []) liveKeys.add(`${id}-descendant`);
+    // Drop keys for panels that closed since last sync.
+    panelOpenOrderRef.current = panelOpenOrderRef.current.filter(k => liveKeys.has(k));
+    // Append keys for newly-opened panels (preserves the order
+    // they were added in this render).
+    for (const k of liveKeys) {
+      if (!panelOpenOrderRef.current.includes(k)) panelOpenOrderRef.current.push(k);
+    }
+  }, [expandedAncestorsOf, expandedDescendantsOf]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const stack = panelOpenOrderRef.current;
+      if (stack.length === 0) return;
+      e.preventDefault();
+      const last = stack[stack.length - 1];
+      const dashIdx = last.lastIndexOf('-');
+      const id = parseInt(last.slice(0, dashIdx));
+      const dir = last.slice(dashIdx + 1);
+      if (dir === 'ancestor') onExpandAncestors?.(id);
+      else if (dir === 'descendant') onExpandDescendants?.(id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onExpandAncestors, onExpandDescendants]);
 
   // Individual-node dragging is intentionally disabled — the layout is
   // deterministic and stable, so letting users drag people around just
