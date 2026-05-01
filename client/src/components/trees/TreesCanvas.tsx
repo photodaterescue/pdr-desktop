@@ -1856,6 +1856,28 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       (PersonNode stopPropagation prevents its own
                       clicks from bubbling here, so only empty SVG
                       space initiates drag). */}
+                  {/* Panel title — HTML overlay (NOT inside the
+                      SVG) so it uses the proper Montserrat heading
+                      font + text-h1 typography tier and stays at
+                      a fixed legible size independent of the SVG's
+                      zoom-scaled cards. pointer-events: none lets
+                      mousedown/double-click pass through to the
+                      SVG below for drag/reset.
+                        descendant — top-LEFT corner label, leaves
+                          the central tether-continuation line free.
+                        ancestor   — top-CENTRE; the bottom is
+                          occupied by the tether continuation,
+                          the top is free. */}
+                  <div
+                    className={`absolute z-10 text-h1 text-foreground select-none whitespace-nowrap ${
+                      l.direction === 'descendant'
+                        ? 'top-3 left-5'
+                        : 'top-3 left-1/2 -translate-x-1/2'
+                    }`}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {l.panelTitle}
+                  </div>
                   <svg
                     width={l.contentWidth * viewport.scale}
                     height={l.contentHeight * viewport.scale}
@@ -1864,29 +1886,6 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     onMouseDown={startDrag}
                     onDoubleClick={resetPosition}
                   >
-                    {/* Panel title — a single line of label text
-                        rendered as <text> inside the SVG so the
-                        SVG can fill the entire panel without a
-                        separate CardHeader stealing vertical space.
-                        Sits in the top padding zone:
-                          descendant — top-LEFT (corner label,
-                            leaves the central tether-continuation
-                            line unobstructed),
-                          ancestor   — top-CENTRE (the bottom is
-                            occupied by the tether continuation;
-                            the top is free).
-                        Uses the text-h2 typography tier and
-                        text-foreground colour token (style guide). */}
-                    <text
-                      x={l.direction === 'descendant' ? PANEL_PADDING : l.contentWidth / 2}
-                      y={20}
-                      textAnchor={l.direction === 'descendant' ? 'start' : 'middle'}
-                      className="text-h2 text-foreground select-none"
-                      fill="currentColor"
-                      style={{ pointerEvents: 'none' }}
-                    >
-                      {l.panelTitle}
-                    </text>
                     {/* Tether-continuation drop-line — extends the
                         canvas tether INTO the panel as a family-tree
                         drop + sibling bracket connecting the panel
@@ -2932,8 +2931,8 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
         const fill = STEP_BADGE_FILL[node.hopsFromFocus] ?? '#ffffff';
         const stepsLabel = `${node.hopsFromFocus} step${node.hopsFromFocus === 1 ? '' : 's'} from focus`;
         return (
+          <IconTooltip label={stepsLabel} side="top">
           <g style={{ pointerEvents: 'all' }}>
-            <title>{stepsLabel}</title>
             <circle
               cx={cornerX}
               cy={cornerY}
@@ -2954,6 +2953,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               {node.hopsFromFocus}
             </text>
           </g>
+          </IconTooltip>
         );
       })()}
       {/* Gender marker — top-right corner. Shows a small "G" button
@@ -2977,13 +2977,13 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
           : node.gender === 'combined' ? 'Mixed — click to change'
           : 'Click to set gender';
         return (
+          <IconTooltip label={genderLabel} side="top">
           <g
             style={{ cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); onOpenGenderPicker(); }}
             onMouseDown={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
           >
-            <title>{genderLabel}</title>
             <circle
               cx={cornerX}
               cy={cornerY}
@@ -3008,6 +3008,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               </text>
             )}
           </g>
+          </IconTooltip>
         );
       })()}
       {/* Beyond-capacity ancestor chevron — small stemmed indicator
