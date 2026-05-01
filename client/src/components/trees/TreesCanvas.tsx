@@ -1112,6 +1112,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 // committing to real 3D. Drop-shadow + slight scale
                 // applied inside PersonNode.
                 lifted={revealedSideBranchIds.has(node.personId)}
+                // Branded card outline by bloodline status: lavender
+                // for blood relatives, brand orange for in-laws who
+                // married in (Alan, Lindsay, Karen, Dan, etc.). The
+                // focus halo (amber) still wins on the focus card —
+                // PersonNode honours isFocus over borderOverride.
+                borderOverride={bloodlineSet.has(node.personId) ? '#ad9eff' : '#f59e0b'}
               />
             );
           })}

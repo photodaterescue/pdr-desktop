@@ -161,6 +161,19 @@ Each step lands as its own commit + push. No big-bang rollout.
 - Print/export with panels open vs closed.
 - Keyboard navigation between panels (Tab to switch).
 
+## 11. Phase 12 — maiden names (deferred)
+
+The branch-surname header for in-law ancestor panels (rule 2.x) currently uses whatever surname is stored against the topmost ancestor. For Lindsay Clapson's family-of-origin panel that means we'd want her *maiden* surname (McCall) on the abbreviated header, not her married surname (Clapson). PDR doesn't yet model maiden names — every person has a single name field — so we use whatever's stored.
+
+Phase 12 work:
+
+1. Add an optional `maiden_name` column on the persons table (nullable, free-text).
+2. People Manager: surface a "Maiden name" field on the person editor (visible for any person regardless of gender — same field).
+3. Trees Panel header: prefer `maiden_name` over the surname extracted from `name`/`full_name` when computing `branchSurname` for ancestor chevrons.
+4. Decide whether the canvas card name display ever shows the maiden name (probably not — primary identity is current name).
+
+Marked as **phase 12** so we revisit after the panel UX is fully landed.
+
 ---
 
 End of design doc. Implementation begins after Terry signs off on this document.
