@@ -1147,18 +1147,23 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
         // chevron-circle sits on screen.
         const CHEVRON_STEM = 24;
         const CHEVRON_R = 17;
-        // Panel size is now AUTO-COMPUTED per panel from its mini-
-        // tree content, capped at a max so even a wide branch stays
-        // draggable without filling the screen. Min-W/H are large
-        // enough for a single full-size canvas card plus padding.
-        const HEADER_H = 130; // CardHeader natural height (rough estimate)
+        // Panel size is AUTO-COMPUTED per panel from its mini-tree
+        // content, scaled by viewport.scale so panel cards visually
+        // match canvas cards. The abbreviated mode (zoomed-out)
+        // collapses the header to a single "Surname branch" line,
+        // so HEADER_H and MIN_PANEL_H shrink in lockstep — keeps
+        // the panel from being mostly whitespace at low zoom.
+        // MAX bumped to 1200x800 so most branches open at full
+        // content size without forcing internal scroll.
+        const isAbbreviated = viewport.scale < 0.5;
+        const HEADER_H = isAbbreviated ? 56 : 130;
         const PANEL_PADDING = 24;
         const MINI_CARD_GAP_X = 30;
         const MINI_ROW_GAP_Y = 60;
-        const MIN_PANEL_W = 280;
-        const MIN_PANEL_H = 220;
-        const MAX_PANEL_W = 700;
-        const MAX_PANEL_H = 540;
+        const MIN_PANEL_W = isAbbreviated ? 140 : 280;
+        const MIN_PANEL_H = isAbbreviated ? 100 : 220;
+        const MAX_PANEL_W = 1200;
+        const MAX_PANEL_H = 800;
 
         type MiniPlacement = {
           personId: number;
@@ -1177,6 +1182,13 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           directionLabel: string;
           /** Person IDs to render INSIDE the panel. */
           contentPeople: number[];
+          /** Single-word surname representing this branch — used
+           *  for the abbreviated header at low zoom ("McCall branch"
+           *  / "Rouse branch"). For descendants: the head's surname
+           *  (Carol Rouse → Rouse). For ancestors: the topmost
+           *  ancestor's surname (Lindsay's parent Keith McCall →
+           *  McCall). */
+          branchSurname: string;
           /** Per-card placements inside the panel SVG (centre coords). */
           miniPlacements: MiniPlacement[];
           /** Orthogonal step-line paths between parents and children. */
@@ -1362,9 +1374,30 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const tetherColour = direction === 'descendant'
             ? '#ad9eff'
             : (isOriginBloodline ? '#ad9eff' : '#f59e0b');
+          // Branch surname for the abbreviated zoomed-out header.
+          // Descendant: head's own surname (the cousins' family
+          // name typically follows it). Ancestor: topmost
+          // ancestor's surname (the in-law family-of-origin).
+          const surnameOf = (n: { fullName: string | null; name: string }): string => {
+            const raw = (n.fullName?.trim() || n.name?.trim() || '').trim();
+            if (!raw) return '';
+            const parts = raw.split(/\s+/);
+            return parts[parts.length - 1] || '';
+          };
+          let branchSurname = '';
+          if (direction === 'descendant') {
+            branchSurname = surnameOf(origin);
+          } else if (peopleInPanel.length > 0) {
+            const topAncestor = peopleInPanel.reduce(
+              (acc, n) => n.generation > acc.generation ? n : acc,
+              peopleInPanel[0],
+            );
+            branchSurname = surnameOf(topAncestor);
+          }
           layouts.push({
             personId, direction, panelKey, personName, directionLabel,
             contentPeople,
+            branchSurname,
             miniPlacements, miniLines, contentWidth, contentHeight,
             panelW, panelH,
             defaultPanelLeft, defaultPanelTop,
@@ -1429,19 +1462,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   zIndex: 30,
                 }}
               >
-                {/* CardHeader doubles as the drag handle. Mouse-down
-                    here primes panelDragRef with the current offset
-                    + the constraint bounds; the global mousemove
-                    listener then live-clamps and updates state.
-                    Double-click resets the panel back to its
-                    auto-computed default position — the "rest
-                    position" gesture Terry asked for so users can
-                    snap a wandered panel back without hunting for
-                    the original spot. Cursor changes to grab/
-                    grabbing for affordance. */}
-                <CardHeader
-                  className="cursor-grab active:cursor-grabbing select-none"
-                  onMouseDown={(e) => {
+                {/* CardHeader doubles as a drag handle (the SVG
+                    body below ALSO drags so empty space anywhere
+                    catches the mouse). Mouse-down primes
+                    panelDragRef with current offset + constraint
+                    bounds; the global mousemove listener then
+                    live-clamps and updates state. Double-click
+                    snaps back to the auto-computed default
+                    position. At low zoom the header collapses to a
+                    single "Surname branch" line — keeps the panel
+                    proportional to its content instead of mostly
+                    whitespace at low zoom. */}
+                {(() => {
+                  const startDrag = (e: React.MouseEvent) => {
                     if (e.button !== 0) return;
                     e.preventDefault();
                     const current = panelOffsets.get(l.panelKey) ?? { x: 0, y: 0 };
@@ -1457,8 +1490,8 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       minOffsetY: l.minOffsetY,
                       maxOffsetY: l.maxOffsetY,
                     };
-                  }}
-                  onDoubleClick={(e) => {
+                  };
+                  const resetPosition = (e: React.MouseEvent) => {
                     e.preventDefault();
                     panelDragRef.current.active = false;
                     setPanelOffsets(prev => {
@@ -1466,18 +1499,34 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       next.delete(l.panelKey);
                       return next;
                     });
-                  }}
-                >
-                  <div className="text-caption uppercase tracking-wider">
-                    {l.direction === 'descendant' ? "Cousins of focus" : "Family of origin"}
-                  </div>
-                  <CardTitle className="text-h2">{l.personName}</CardTitle>
-                  <div className="text-body-muted">
-                    {l.direction === 'descendant'
-                      ? `${l.contentPeople.length} relative${l.contentPeople.length === 1 ? '' : 's'} on this branch`
-                      : `${l.contentPeople.length} ancestor${l.contentPeople.length === 1 ? '' : 's'} on this line`}
-                  </div>
-                </CardHeader>
+                  };
+                  return (
+                    <CardHeader
+                      className="cursor-grab active:cursor-grabbing select-none"
+                      style={isAbbreviated ? { padding: '12px 16px', gap: 0 } : undefined}
+                      onMouseDown={startDrag}
+                      onDoubleClick={resetPosition}
+                    >
+                      {isAbbreviated ? (
+                        <CardTitle className="text-h2 text-foreground">
+                          {l.branchSurname || l.personName} branch
+                        </CardTitle>
+                      ) : (
+                        <>
+                          <div className="text-caption uppercase tracking-wider">
+                            {l.direction === 'descendant' ? "Cousins of focus" : "Family of origin"}
+                          </div>
+                          <CardTitle className="text-h2">{l.personName}</CardTitle>
+                          <div className="text-body-muted">
+                            {l.direction === 'descendant'
+                              ? `${l.contentPeople.length} relative${l.contentPeople.length === 1 ? '' : 's'} on this branch`
+                              : `${l.contentPeople.length} ancestor${l.contentPeople.length === 1 ? '' : 's'} on this line`}
+                          </div>
+                        </>
+                      )}
+                    </CardHeader>
+                  );
+                })()}
                 <CardContent className="flex-1 min-h-0 overflow-auto p-0">
                   {/* Full-size canvas-card mini-tree inside the panel.
                       Reuses PersonNode at full CARD_W / CARD_H so each
@@ -1515,15 +1564,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     }}
                   >
                     {/* Parent-child step lines drawn first so cards
-                        cover any line endpoints. */}
+                        cover any line endpoints. Tinted with the
+                        same brand colour as the panel border /
+                        tether (lavender for bloodline, orange for
+                        in-law / extended) so the whole panel reads
+                        as a single branded unit. */}
                     {l.miniLines.map(line => (
                       <path
                         key={line.key}
                         d={line.d}
-                        stroke="hsl(var(--muted-foreground))"
+                        stroke={l.tetherColour}
                         strokeWidth={1.5}
                         fill="none"
-                        opacity={0.6}
+                        opacity={0.7}
                       />
                     ))}
                     {/* Each panel-person rendered as a full PersonNode
