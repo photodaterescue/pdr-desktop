@@ -1541,9 +1541,15 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           // corner title; for ancestors the title sits top-CENTRE
           // and explicitly needs reserved space above the cards.
           const TETHER_BRACKET_ROOM = MINI_ROW_GAP_Y / 2;
-          const TITLE_ROOM = 30;
+          // TITLE_ROOM = title's HTML overlay top-offset (12) plus
+          // its line-height (~28) = ~40 px of vertical space the
+          // text occupies below the panel border. We add THAT much
+          // PLUS another 12 px so the bracket / topmost row sits
+          // an equal distance below the title as the title sits
+          // below the panel border. Symmetric breathing room.
+          const TITLE_ROOM = 40;
           const padTop = direction === 'descendant'
-            ? PANEL_PADDING + TETHER_BRACKET_ROOM
+            ? PANEL_PADDING + TETHER_BRACKET_ROOM + TITLE_ROOM
             : PANEL_PADDING + TITLE_ROOM;
           const padBottom = direction === 'ancestor' ? PANEL_PADDING + TETHER_BRACKET_ROOM : PANEL_PADDING;
           const contentHeight = sortedGens.length === 0
