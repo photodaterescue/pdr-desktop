@@ -1213,6 +1213,17 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
            *  as EdgeLine partnership lines so the marriage bar is
            *  visible alongside FamilyGroup's brackets. */
           panelSpouseEdges: LaidOutEdge[];
+          /** Direct bloodline kin of the origin that live INSIDE the
+           *  panel — used by the tether-continuation drop-line to
+           *  bracket them as if the canvas tether were a real
+           *  family-tree line crossing the panel boundary.
+           *    descendant — origin's direct children (e.g. Carol →
+           *      Ben + Jenny). Karen / Dan (Ben + Jenny's spouses)
+           *      are intentionally excluded — they're not Carol's
+           *      direct children, only her children's partners.
+           *    ancestor   — origin's direct parents (e.g. Lindsay →
+           *      Keith + her mother). */
+          directKinIds: number[];
           /** SVG content size (panel sizes itself around this + header + padding). */
           contentWidth: number;
           contentHeight: number;
@@ -1344,6 +1355,28 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             if (!placedById.has(e.aId) || !placedById.has(e.bId)) continue;
             panelSpouseEdges.push(e);
           }
+          // Direct kin of the origin that live INSIDE the panel.
+          //  descendant: parent_of edges where origin is the parent →
+          //    origin's direct bloodline children. Excludes spouses
+          //    (those come in via spouse_of, not parent_of).
+          //  ancestor: parent_of edges where origin is the child →
+          //    origin's direct parents.
+          // The tether-continuation drop-line brackets these so the
+          // canvas tether reads as a real family-tree line crossing
+          // the panel boundary.
+          const directKinSeen = new Set<number>();
+          const directKinIds: number[] = [];
+          for (const e of layout.edges) {
+            if (e.type !== 'parent_of') continue;
+            let kinId: number | null = null;
+            if (direction === 'descendant' && e.aId === personId) kinId = e.bId;
+            else if (direction === 'ancestor' && e.bId === personId) kinId = e.aId;
+            if (kinId == null) continue;
+            if (!placedById.has(kinId)) continue;
+            if (directKinSeen.has(kinId)) continue;
+            directKinSeen.add(kinId);
+            directKinIds.push(kinId);
+          }
           // Auto-size the panel from content — clamp between MIN and
           // MAX so it stays draggable. Content dimensions are
           // multiplied by viewport.scale so the panel cards visually
@@ -1434,6 +1467,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             contentPeople,
             branchSurname,
             miniPlacements, panelFamilyGroups, panelSpouseEdges,
+            directKinIds,
             contentWidth, contentHeight,
             panelW, panelH,
             defaultPanelLeft, defaultPanelTop,
@@ -1599,6 +1633,85 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       };
                     }}
                   >
+                    {/* Tether-continuation drop-line — extends the
+                        canvas tether INTO the panel as a family-tree
+                        drop + sibling bracket connecting the panel
+                        edge to the origin's direct kin. So Carol's
+                        lavender tether reads as one continuous
+                        family-tree line crossing the panel boundary
+                        and bracketing Ben + Jenny inside; Lindsay's
+                        orange tether mirrors that, going UP from the
+                        panel's bottom edge to bracket her parents in
+                        the bottom row. Drawn first so FamilyGroup
+                        scaffolding paints over it where they meet
+                        (avoids cosmetic over-strikes at junctions). */}
+                    {(() => {
+                      if (l.directKinIds.length === 0) return null;
+                      const kinPlacements = l.directKinIds
+                        .map(id => l.miniPlacements.find(p => p.personId === id))
+                        .filter((p): p is MiniPlacement => p != null);
+                      if (kinPlacements.length === 0) return null;
+                      const xs = kinPlacements.map(p => p.cx);
+                      const minX = Math.min(...xs);
+                      const maxX = Math.max(...xs);
+                      const centerX = l.contentWidth / 2;
+                      if (l.direction === 'descendant') {
+                        // Drop down from panel-top into a bracket
+                        // that sits in the top padding zone, above
+                        // the head's direct children. Drops continue
+                        // to the top edge of each child card.
+                        const entryY = 0;
+                        const cardTop = PANEL_PADDING;
+                        const bracketY = PANEL_PADDING / 2;
+                        return (
+                          <g
+                            stroke={l.tetherColour}
+                            strokeWidth={2}
+                            fill="none"
+                            strokeLinecap="round"
+                          >
+                            <line x1={centerX} y1={entryY} x2={centerX} y2={bracketY} />
+                            <line x1={minX} y1={bracketY} x2={maxX} y2={bracketY} />
+                            {kinPlacements.map(p => (
+                              <line
+                                key={`tcd-${p.personId}`}
+                                x1={p.cx}
+                                y1={bracketY}
+                                x2={p.cx}
+                                y2={cardTop}
+                              />
+                            ))}
+                          </g>
+                        );
+                      }
+                      // Ancestor — drop UP from panel-bottom into a
+                      // bracket that sits in the bottom padding zone,
+                      // below the origin's direct parents. Drops
+                      // continue to the bottom edge of each parent.
+                      const entryY = l.contentHeight;
+                      const cardBottom = l.contentHeight - PANEL_PADDING;
+                      const bracketY = l.contentHeight - PANEL_PADDING / 2;
+                      return (
+                        <g
+                          stroke={l.tetherColour}
+                          strokeWidth={2}
+                          fill="none"
+                          strokeLinecap="round"
+                        >
+                          <line x1={centerX} y1={entryY} x2={centerX} y2={bracketY} />
+                          <line x1={minX} y1={bracketY} x2={maxX} y2={bracketY} />
+                          {kinPlacements.map(p => (
+                            <line
+                              key={`tca-${p.personId}`}
+                              x1={p.cx}
+                              y1={bracketY}
+                              x2={p.cx}
+                              y2={cardBottom}
+                            />
+                          ))}
+                        </g>
+                      );
+                    })()}
                     {/* Family-group brackets — same FamilyGroup
                         component the canvas uses, so panel geometry
                         matches the canvas exactly: marriage bar
@@ -1690,7 +1803,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                           hasOutOfScopeAncestors={false}
                           hasHideableDescendants={false}
                           isOnBloodline={bloodlineSet.has(p.personId)}
-                          borderOverride={l.tetherColour}
+                          // Per-person bloodline colour (lavender =
+                          // bloodline, orange = in-law). Same rule as
+                          // canvas — Karen and Dan get orange even
+                          // inside Carol's lavender panel because
+                          // they're non-bloodline.
+                          borderOverride={bloodlineSet.has(p.personId) ? '#ad9eff' : '#f59e0b'}
                         />
                       );
                     })}
