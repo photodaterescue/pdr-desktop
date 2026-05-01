@@ -647,27 +647,24 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     return m;
   }, [layout.edges, layout.focusPersonId, directLineSet]);
 
-  /** Person IDs hidden because their side-branch head's chevron is
-   *  collapsed. Ref-counted across heads so a cousin who descends
-   *  from two side-branch heads (e.g. cousin-marriage) only hides
-   *  when BOTH heads are collapsed. */
+  /** Person IDs ALWAYS hidden from the dimmed canvas because they
+   *  belong to a side-branch (cousins + their descendants). When a
+   *  chevron is expanded these people render INSIDE the tethered
+   *  panel — never on the base canvas. Per Option B agreed with
+   *  Terry: the panel "owns" the revealed branch, the canvas keeps
+   *  showing only the focus's bloodline + immediate family.
+   *
+   *  Used to ref-count visibility based on chevron state; with the
+   *  panel UX that's unnecessary because the panel itself is the
+   *  visibility container. The set is now just every person
+   *  reachable as a descendant of any side-branch head. */
   const hiddenSideBranchIds = useMemo(() => {
-    const expanded = expandedDescendantsOf ?? new Set<number>();
-    const unhidden = new Set<number>();
-    for (const head of expanded) {
-      const desc = sideBranchDescendantsByHead.get(head);
-      if (!desc) continue;
-      for (const id of desc) unhidden.add(id);
-    }
     const hidden = new Set<number>();
-    for (const [head, desc] of sideBranchDescendantsByHead) {
-      if (expanded.has(head)) continue;
-      for (const id of desc) {
-        if (!unhidden.has(id)) hidden.add(id);
-      }
+    for (const [, desc] of sideBranchDescendantsByHead) {
+      for (const id of desc) hidden.add(id);
     }
     return hidden;
-  }, [sideBranchDescendantsByHead, expandedDescendantsOf]);
+  }, [sideBranchDescendantsByHead]);
 
   /** Person IDs that are CURRENTLY revealed via an expanded
    *  side-branch chevron — i.e. cousins who would normally be hidden
@@ -734,22 +731,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
    *  ancestor (e.g. two sisters-in-law from the same family) only
    *  hide it when BOTH are collapsed. */
   const hiddenExtendedIds = useMemo(() => {
-    const expanded = expandedAncestorsOf ?? new Set<number>();
-    const unhidden = new Set<number>();
-    for (const expander of expanded) {
-      const ext = extendedAncestorsByPerson.get(expander);
-      if (!ext) continue;
-      for (const id of ext) unhidden.add(id);
-    }
+    // Step 5 of TREES_PANEL_DESIGN.md: extended ancestors (in-law
+    // family-of-origin) are now ALWAYS hidden from the dimmed
+    // canvas. When a chevron is expanded, those people render in
+    // the tethered panel instead. Same Option B principle as the
+    // side-branch descendants above — the panel owns the revealed
+    // branch, the canvas stays focused on bloodline + immediate
+    // family.
     const hidden = new Set<number>();
-    for (const [personId, extended] of extendedAncestorsByPerson) {
-      if (expanded.has(personId)) continue;
-      for (const id of extended) {
-        if (!unhidden.has(id)) hidden.add(id);
-      }
+    for (const [, extended] of extendedAncestorsByPerson) {
+      for (const id of extended) hidden.add(id);
     }
     return hidden;
-  }, [extendedAncestorsByPerson, expandedAncestorsOf]);
+  }, [extendedAncestorsByPerson]);
 
   /** Relationship label for each person relative to the current
    *  focus — "Parent", "Sibling", "Grandchild", etc. Gendered when the
@@ -1141,6 +1135,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           panelKey: string;
           personName: string;
           directionLabel: string;
+          /** Person IDs to render INSIDE the panel (step 5).
+           *  Descendant chevron → the head's bloodline descendants
+           *  + their non-bloodline partners (so a cousin's spouse
+           *  shows up next to them). Ancestor chevron → the
+           *  non-bloodline person's family-of-origin ancestors. */
+          contentPeople: number[];
           // Default (auto-computed) panel position before drag offset.
           defaultPanelLeft: number;
           defaultPanelTop: number;
@@ -1224,8 +1224,40 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const tetherColour = direction === 'descendant'
             ? '#ad9eff'
             : (isOriginBloodline ? '#ad9eff' : '#f59e0b');
+          // Compute the panel's content set:
+          //  • Descendant chevron — bloodline descendants of the
+          //    head + their non-bloodline partners (so each cousin's
+          //    spouse shows up alongside them in the panel).
+          //  • Ancestor chevron — the non-bloodline person's
+          //    family-of-origin ancestors (already keyed by
+          //    extendedAncestorsByPerson).
+          // Ordered using the layout's existing x-position so people
+          // who would have sat left-to-right on the canvas appear in
+          // the same order in the panel list.
+          const contentSet = new Set<number>();
+          if (direction === 'descendant') {
+            const desc = sideBranchDescendantsByHead.get(personId);
+            if (desc) for (const id of desc) contentSet.add(id);
+            // Pull in spouses of any descendant who's currently
+            // visible-in-graph but rendered as non-bloodline (married
+            // into the cousin family). Walking spouse_of edges out
+            // from the bloodline descendants once is enough.
+            for (const e of layout.edges) {
+              if (e.type !== 'spouse_of') continue;
+              if (contentSet.has(e.aId) && !bloodlineSet.has(e.bId)) contentSet.add(e.bId);
+              if (contentSet.has(e.bId) && !bloodlineSet.has(e.aId)) contentSet.add(e.aId);
+            }
+          } else {
+            const ext = extendedAncestorsByPerson.get(personId);
+            if (ext) for (const id of ext) contentSet.add(id);
+          }
+          const contentPeople = Array.from(contentSet)
+            .map(id => ({ id, x: nodeById.get(id)?.x ?? 0 }))
+            .sort((a, b) => a.x - b.x)
+            .map(o => o.id);
           layouts.push({
             personId, direction, panelKey, personName, directionLabel,
+            contentPeople,
             defaultPanelLeft, defaultPanelTop,
             panelLeft, panelTop,
             minOffsetX, maxOffsetX, minOffsetY, maxOffsetY,
@@ -1327,12 +1359,57 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     });
                   }}
                 >
-                  <div className="text-caption uppercase tracking-wider">Panel · placeholder</div>
+                  <div className="text-caption uppercase tracking-wider">
+                    {l.direction === 'descendant' ? "Cousins of focus" : "Family of origin"}
+                  </div>
                   <CardTitle className="text-h2">{l.personName}</CardTitle>
-                  <div className="text-body-muted">{l.directionLabel}</div>
+                  <div className="text-body-muted">
+                    {l.direction === 'descendant'
+                      ? `${l.contentPeople.length} relative${l.contentPeople.length === 1 ? '' : 's'} on this branch`
+                      : `${l.contentPeople.length} ancestor${l.contentPeople.length === 1 ? '' : 's'} on this line`}
+                  </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-caption">Step 3 shell — content arrives in step 5.</div>
+                <CardContent className="overflow-auto" style={{ maxHeight: PANEL_H - 110 }}>
+                  {/* Step 5 MVP: simple vertical list of people in
+                      this branch. Each row is a compact card with
+                      avatar, name, and relationship label. Step 5b
+                      (future) will replace this with a real mini-
+                      tree using the same layout primitives as the
+                      main canvas. */}
+                  <div className="flex flex-col gap-1.5">
+                    {l.contentPeople.map(pid => {
+                      const node = nodeById.get(pid);
+                      if (!node) return null;
+                      const treeName = (node.fullName && node.fullName.trim()) || node.name || 'Unknown';
+                      const initials = initialsOf(treeName);
+                      const avatar = avatars.get(pid);
+                      const relLabel = relationshipLabels.get(pid) ?? '';
+                      const bgColor = colorFromId(pid);
+                      return (
+                        <div
+                          key={pid}
+                          className="flex items-center gap-2 p-1.5 rounded-md border border-border bg-background"
+                        >
+                          <div
+                            className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
+                            style={{ backgroundColor: avatar ? '#fff' : bgColor }}
+                          >
+                            {avatar ? (
+                              <img src={avatar} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-label" style={{ color: '#fff' }}>{initials}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-label text-foreground truncate">{treeName}</div>
+                            {relLabel && (
+                              <div className="text-caption truncate">{relLabel}</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </CardContent>
               </Card>
             ))}
