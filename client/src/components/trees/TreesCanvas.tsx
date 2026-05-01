@@ -1178,14 +1178,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           // panelOffsets state for position memory within session).
           const panelKey = `${personId}-${direction}`;
           const offset = panelOffsets.get(panelKey) ?? { x: 0, y: 0 };
-          // Constraint bounds on the offset (per design doc §3.1):
+          // Constraint bounds on the offset (per design doc §3.1,
+          // tuned after Terry's drag test):
           //  • Vertical: descendant panel top must be ≥ origin row's
           //    bottom + small gap (10 px tolerance); ancestor panel
           //    bottom ≤ origin row's top - small gap.
-          //  • Horizontal: panel centre within ±1.5 × PANEL_W of
-          //    origin's X.
-          const minOffsetX = -PANEL_W * 1.5;
-          const maxOffsetX = PANEL_W * 1.5;
+          //  • Horizontal: panel centre within ±3 × PANEL_W of
+          //    origin's X. Initial ±1.5 × value was too tight —
+          //    Terry was forced to overlap the tree to find a
+          //    parking spot. ±3 gives ~2 panel widths of drift in
+          //    each direction, enough to dodge the tree without
+          //    the tether becoming absurd.
+          const minOffsetX = -PANEL_W * 3;
+          const maxOffsetX = PANEL_W * 3;
           let minOffsetY: number;
           let maxOffsetY: number;
           if (direction === 'descendant') {
@@ -1287,7 +1292,12 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     here primes panelDragRef with the current offset
                     + the constraint bounds; the global mousemove
                     listener then live-clamps and updates state.
-                    Cursor changes to grab/grabbing for affordance. */}
+                    Double-click resets the panel back to its
+                    auto-computed default position — the "rest
+                    position" gesture Terry asked for so users can
+                    snap a wandered panel back without hunting for
+                    the original spot. Cursor changes to grab/
+                    grabbing for affordance. */}
                 <CardHeader
                   className="cursor-grab active:cursor-grabbing select-none"
                   onMouseDown={(e) => {
@@ -1306,6 +1316,15 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       minOffsetY: l.minOffsetY,
                       maxOffsetY: l.maxOffsetY,
                     };
+                  }}
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    panelDragRef.current.active = false;
+                    setPanelOffsets(prev => {
+                      const next = new Map(prev);
+                      next.delete(l.panelKey);
+                      return next;
+                    });
                   }}
                 >
                   <div className="text-caption uppercase tracking-wider">Panel · placeholder</div>
