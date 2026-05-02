@@ -1405,7 +1405,10 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             // stays consistent.
             const isCluster = visibleChildren.some(c => bloodlineSet.has(c.personId));
             const stroke = isCluster ? '#ad9eff' : (treeContrast > 0.5 ? '#1f2937' : '#64748b');
-            const strokeWidth = 1.5 + treeContrast * 1.5;
+            // Doubled from 1.5 + contrast*1.5 per Terry's request — thicker
+            // lines so visual-effect overlays (comet trails / LED tubes)
+            // have a runway wide enough to read against the canvas.
+            const strokeWidth = 3 + treeContrast * 3;
             const haloWidth = strokeWidth + 3 + treeContrast * 3;
             const haloOpacity = 0.35 + treeContrast * 0.5;
             const withHalo = treeContrast > 0;
@@ -3126,7 +3129,10 @@ function FamilyGroup({ parents, children, parentsAreSpouses, bracketOffset, onPa
   const strokeBase = '#64748b';
   const strokeDark = '#1f2937';
   const stroke = strokeOverride ?? (contrast > 0.5 ? strokeDark : strokeBase);
-  const strokeWidth = 1.5 + contrast * 1.5;
+  // Doubled from 1.5 + contrast*1.5 per Terry's request — thicker
+  // lines so visual-effect overlays (comet trails / LED tubes) have
+  // a runway wide enough to read against the canvas.
+  const strokeWidth = 3 + contrast * 3;
   const haloWidth = strokeWidth + 3 + contrast * 3;
   const haloOpacity = 0.35 + contrast * 0.5;
   const withHalo = contrast > 0;
@@ -3321,14 +3327,14 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
           )}
           <line x1={ax} y1={ay} x2={bx} y2={by}
             stroke={contrast > 0.5 ? '#7c3aed' : '#a78bfa'}
-            strokeWidth={1 + contrast * 0.75}
+            strokeWidth={2 + contrast * 1.5}
             strokeDasharray="2 4" opacity={opacity * 0.6} />
         </g>
       );
     }
     const stroke = flags?.adopted ? '#14b8a6' : (contrast > 0.5 ? '#7c3aed' : '#a78bfa');
     const dash = flags?.adopted ? '8 4' : flags?.half ? '4 3' : undefined;
-    const width = 1.5 + contrast * 1.25;
+    const width = 3 + contrast * 2.5;
     return (
       <g onClick={onClick}>
         {hitArea}
@@ -3352,7 +3358,7 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
     const yMid = (ay + by) / 2 + AVATAR_CY; // avatar-level horizontal
     const xMid = (xLeft + xRight) / 2;
     const spouseStroke = contrast > 0.5 ? '#1f2937' : '#64748b';
-    const spouseWidth = 1.5 + contrast * 1.5;
+    const spouseWidth = 3 + contrast * 3;
     return (
       <g onClick={onClick}>
         {hitArea}
@@ -3374,7 +3380,7 @@ function EdgeLine({ ax, ay, bx, by, type, until, opacity, derived, flags, onClic
   // child. Classic pedigree-chart elbows rather than chaotic S-curves.
   const orthPath = `M ${ax} ${ay} L ${ax} ${midY} L ${bx} ${midY} L ${bx} ${by}`;
   const parentStroke = contrast > 0.5 ? '#4338ca' : '#6366f1';
-  const parentWidth = 1.75 + contrast * 1.5;
+  const parentWidth = 3.5 + contrast * 3;
   return (
     <g onClick={onClick}>
       {onClick && (
