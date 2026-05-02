@@ -15,32 +15,37 @@ import type { TreeLayout, LaidOutNode } from '@/lib/trees-layout';
  *   - Lavender (#ad9eff = --primary) by default — same brand colour
  *     used for bloodline lines so the highlight reads as part of the
  *     tree's existing colour vocabulary, just brighter and moving.
- *   - On arrival: a single animated stroke-dashoffset traces around the
- *     target card's perimeter once, then leaves a soft glow that fades
- *     over ~1.2s. (Spec also mentions a "star" sparkle at the starting
- *     corner; deferred to a follow-up commit.)
+ *   - On arrival: stroke-dashoffset traces around the target card's
+ *     perimeter once, then a soft glow fades over ~1.2 s.
+ *
+ * Important React gotchas baked in here:
+ *   - Parent passes key={targetId} on the component so each new target
+ *     is a full remount; SVG <animate> only fires on mount.
+ *   - useEffect for the onComplete timer fires ONCE per mount via a
+ *     mounted-ref, so re-renders during the animation don't kill the
+ *     timer (or worse, stop it firing and freeze highlightTarget).
  */
 
-const COMET_RADIUS = 7;
-const TRAIL_RADIUS = 11;
+const COMET_RADIUS = 11;          // bumped up — Terry was missing the effect
+const TRAIL_RADIUS = 17;          // bumped halo
 const COMET_COLOUR = '#ad9eff';
-const COMET_GLOW = 'rgba(173, 158, 255, 0.45)';
+const COMET_GLOW = 'rgba(173, 158, 255, 0.55)';
+const PATH_TRAIL_OPACITY = 0.45;  // visible path the comet rides along
 
-/** Travel time per segment in the path. Tuned so a 6-hop path (great-
- *  uncle's grandchild → focus, the kind of distance Terry's tree
- *  routinely shows) arrives in around 2.5s — long enough to read as a
- *  journey, short enough not to feel sluggish. */
-const SECONDS_PER_SEGMENT = 0.45;
+/** Travel time per segment in the path. Bumped from 0.45 s to 0.85 s
+ *  per segment so even a 1-hop path runs for ~0.85 s instead of half
+ *  a second of comet — Terry's first test couldn't see anything at
+ *  the shorter timing, blink and you miss it. */
+const SECONDS_PER_SEGMENT = 0.85;
 
 /** Card-lap arrival animation. The lap traces a rounded rectangle
  *  matching the card's border once, then the whole highlight fades. */
-const CARD_LAP_DURATION_MS = 900;
-const CARD_FADE_DURATION_MS = 600;
+const CARD_LAP_DURATION_MS = 1100;
+const CARD_FADE_DURATION_MS = 700;
 
 interface Props {
   layout: TreeLayout;
-  /** PersonId of the target the comet flies TO. Setting this kicks off
-   *  a fresh animation; setting back to null clears the highlight. */
+  /** PersonId of the target the comet flies TO. */
   targetId: number | null;
   /** Card width / height in world coordinates — used to draw the
    *  arrival lap around the target's border. Same constants the canvas
@@ -95,8 +100,8 @@ function findShortestPath(
   return path;
 }
 
-/** Build an SVG path-d string that walks orthogonally from each node to
- *  the next, ALONG where the canvas would draw connection lines:
+/** Build an SVG path-d string that walks orthogonally from each node
+ *  to the next ALONG where the canvas would draw connection lines:
  *    - same-y pair (siblings, spouses): horizontal segment
  *    - different-y pair (parent/child): vertical → horizontal → vertical
  *      Z-shape using midY between the two rows
@@ -154,22 +159,31 @@ export function PathwayHighlight({
     };
   }, [layout, focusId, targetId]);
 
-  // Fire onComplete once travel + lap + fade have all finished. Stored
-  // in a ref so React-strict-mode double-invokes don't double-fire.
-  const completeFiredRef = useRef<number | null>(null);
+  // Fire onComplete exactly once per mount. timerSetRef ensures the
+  // setTimeout is only created on first effect run; subsequent re-
+  // renders of the same instance (caused by viewport pan / zoom /
+  // unrelated state churn) leave the timer alone instead of cancel-
+  // ling and bailing out, which was Terry's "no effects" symptom on
+  // the first version of this hook.
+  const timerSetRef = useRef(false);
   useEffect(() => {
     if (!pathInfo || !onComplete) return;
-    if (completeFiredRef.current === targetId) return;
-    completeFiredRef.current = targetId;
+    if (timerSetRef.current) return;
+    timerSetRef.current = true;
     const total =
       pathInfo.travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS;
     const t = setTimeout(() => onComplete(), total + 80); // 80 ms cushion
     return () => clearTimeout(t);
-  }, [pathInfo, targetId, onComplete]);
+    // pathInfo / onComplete identity changes on every parent render;
+    // the ref guard makes that harmless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!pathInfo) return null;
   const { pathD, target, travelDurationMs } = pathInfo;
   const travelDurationS = travelDurationMs / 1000;
+  const totalDurationS =
+    (travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS) / 1000;
   // Card-perimeter rect — drawn from the target's centre out to the
   // card edges. Same +/-half-W/H math the canvas uses for PersonNode
   // hit zones, plus a small outward offset so the lap sits proud of
@@ -184,36 +198,44 @@ export function PathwayHighlight({
   // handles begin time so we can chain it directly after the comet
   // arrives without a useEffect / setTimeout.
   const lapPerimeter = 2 * (lapW + lapH) + 16; // generous overshoot for rounded corners
+  // Fraction of the total animation lifetime when the comet finishes
+  // travelling. Used to schedule the path-glow fade so it stays
+  // visible during the card lap instead of vanishing the moment the
+  // comet hits the target.
+  const travelFraction = travelDurationMs / (travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS);
+  const lapEndFraction = (travelDurationMs + CARD_LAP_DURATION_MS) / (travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS);
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {/* Faint backing-trail along the entire path — gives the comet a
-          visible "rail" to ride along even before it reaches each
-          segment. Fades out together with the comet at the end. */}
+      {/* Backing-trail along the entire path — drawn first so the
+          comet rides on top of it. Stays visible during the comet's
+          travel AND during the card lap, then fades out together
+          with the lap glow. */}
       <path
         d={pathD}
         fill="none"
         stroke={COMET_COLOUR}
-        strokeWidth={2.5}
+        strokeWidth={4}
         strokeOpacity={0}
         strokeLinecap="round"
         strokeLinejoin="round"
       >
         <animate
           attributeName="stroke-opacity"
-          values="0;0.32;0.32;0"
-          keyTimes={`0;0.1;${(travelDurationMs - 100) / (travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS)};1`}
-          dur={`${(travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS) / 1000}s`}
+          values={`0;${PATH_TRAIL_OPACITY};${PATH_TRAIL_OPACITY};${PATH_TRAIL_OPACITY};0`}
+          keyTimes={`0;0.05;${travelFraction};${lapEndFraction};1`}
+          dur={`${totalDurationS}s`}
           repeatCount="1"
           fill="freeze"
         />
       </path>
-      {/* Comet trail — a larger blurred-feel circle rides one step
-          behind the head, giving the LED-tube glow Terry asked for
-          without needing an SVG <filter>. */}
+      {/* Comet halo — the wider, softer glow that gives the LED-tube
+          feel without an SVG <filter>. Rides one step behind the
+          bright head (same animateMotion path; native renderer puts
+          the head's circle on top because it's drawn later). */}
       <circle r={TRAIL_RADIUS} fill={COMET_GLOW} opacity={0}>
         <animate
           attributeName="opacity"
-          values="0;0.85;0.85;0"
+          values="0;0.95;0.95;0"
           keyTimes="0;0.05;0.95;1"
           dur={`${travelDurationS}s`}
           repeatCount="1"
@@ -257,7 +279,7 @@ export function PathwayHighlight({
         ry={14}
         fill="none"
         stroke={COMET_COLOUR}
-        strokeWidth={4}
+        strokeWidth={5}
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeDasharray={lapPerimeter}
@@ -294,12 +316,12 @@ export function PathwayHighlight({
         ry={16}
         fill="none"
         stroke={COMET_GLOW}
-        strokeWidth={9}
+        strokeWidth={11}
         opacity={0}
       >
         <animate
           attributeName="opacity"
-          values="0;0.7;0"
+          values="0;0.85;0"
           keyTimes="0;0.4;1"
           begin={`${travelDurationS}s`}
           dur={`${(CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS) / 1000}s`}

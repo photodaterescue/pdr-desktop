@@ -1881,6 +1881,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, onHighlightCompl
               off / idle is one cheap render. */}
           {highlightTargetId != null && (
             <PathwayHighlight
+              // key forces a full remount whenever the target changes —
+              // SVG SMIL <animate> elements only fire on mount, so
+              // without this the second add would reuse the existing
+              // (already-finished) instance and stay invisible.
+              key={`hi-${highlightTargetId}`}
               layout={layout}
               targetId={highlightTargetId}
               cardW={CARD_W}
