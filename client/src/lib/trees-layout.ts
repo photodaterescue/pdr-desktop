@@ -818,62 +818,114 @@ function orderParentGeneration(
     childrenByParent.get(e.aId)!.push(e.bId);
   }
 
-  // ── Focus-parent ordering rule (Terry's pathway preference) ────────────
-  // When this generation contains focus's direct parents, apply a
-  // specific ordering rule:
-  //   * Father (the focus parent on the LEFT of the pair) sits at the
-  //     RIGHTMOST of his sibling group — paternal aunts/uncles sit to
-  //     HIS left, with each aunt/uncle's in-law spouse further left
-  //     still (outermost = furthest from focus).
-  //   * Mother (the focus parent on the RIGHT of the pair) sits at
-  //     the LEFTMOST of her sibling group — maternal aunts/uncles
-  //     sit to HER right, with each aunt/uncle's in-law spouse
-  //     further right still.
-  // Net effect: father and mother stay adjacent in the middle, each
-  // parent's siblings fan OUTWARD from them, and in-law spouses are
-  // further out still — no overlap with the other parent's family,
-  // and the row reads left-to-right as one unbroken pathway.
-  const focusParentIds: number[] = [];
-  for (const e of graph.edges) {
-    if (e.type !== 'parent_of') continue;
-    if (e.bId !== graph.focusPersonId) continue;
-    if (!idSet.has(e.aId)) continue;
-    if (!focusParentIds.includes(e.aId)) focusParentIds.push(e.aId);
+  // ── Bloodline-pathway pair ordering rule (recursive) ───────────────────
+  // At every ancestor generation, each bloodline-pathway PAIR (a couple
+  // whose child sits on the focus → ancestors pathway) gets the same
+  // fan-out treatment Terry asked for at his immediate parents row:
+  //   * Within each pair, the LEFT parent (= "father") is rightmost of
+  //     his sibling group — siblings + their in-law spouses fan LEFT.
+  //   * Within each pair, the RIGHT parent (= "mother") is leftmost of
+  //     her sibling group — siblings + their in-law spouses fan RIGHT.
+  // Net effect: each ancestor couple sits with its own siblings on the
+  // outward side at every gen, recursively. Paternal grandparents pair
+  // sits left-of-canvas, maternal pair sits right-of-canvas, each with
+  // their own great-aunts/uncles fanning out away from focus's bloodline.
+  // pathwaySet = focus + every ancestor reachable via parent_of (BFS up).
+  const pathwaySet = new Set<number>([graph.focusPersonId]);
+  {
+    const queue = [graph.focusPersonId];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      for (const e of graph.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (e.bId !== cur) continue;
+        if (pathwaySet.has(e.aId)) continue;
+        pathwaySet.add(e.aId);
+        queue.push(e.aId);
+      }
+    }
   }
-  if (focusParentIds.length > 0) {
-    // Sort focus's parents by pull-X (then earliest edge to focus,
-    // then person_id). This identifies which is on the LEFT vs RIGHT.
+  const pathwayInGen: number[] = genNodes
+    .filter(n => pathwaySet.has(n.personId))
+    .map(n => n.personId);
+  if (pathwayInGen.length > 0) {
     const pullXOf = (pid: number): number => {
       const kids = childrenByParent.get(pid) ?? [];
       const xs = kids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
       if (xs.length === 0) return 0;
       return xs.reduce((a, b) => a + b, 0) / xs.length;
     };
-    const earliestEdgeIdToFocus = (pid: number): number => {
-      let minId = Number.MAX_SAFE_INTEGER;
-      for (const e of graph.edges) {
-        if (e.derived) continue;
-        if (e.type !== 'parent_of') continue;
-        if (e.aId !== pid || e.bId !== graph.focusPersonId) continue;
-        if (e.id != null && e.id < minId) minId = e.id;
+    // Group pathway-parents into PAIRS — two pathway parents form a
+    // pair when they share at least one placed child who is also on
+    // the bloodline pathway (= the child connecting down toward focus).
+    type Pair = { left: number; right: number | null; pullX: number; key: string };
+    const pairs: Pair[] = [];
+    const parentToPair = new Map<number, number>();
+    for (const aId of pathwayInGen) {
+      if (parentToPair.has(aId)) continue;
+      const aKids = (childrenByParent.get(aId) ?? []).filter(k => pathwaySet.has(k));
+      // Find a co-parent in pathwayInGen who shares one of aKids.
+      let coParent: number | null = null;
+      for (const bId of pathwayInGen) {
+        if (bId === aId) continue;
+        if (parentToPair.has(bId)) continue;
+        const bKids = (childrenByParent.get(bId) ?? []).filter(k => pathwaySet.has(k));
+        if (bKids.some(k => aKids.includes(k))) {
+          coParent = bId;
+          break;
+        }
       }
-      return minId;
-    };
-    const sortedFocusParents = [...focusParentIds].sort((a, b) => {
-      const dx = pullXOf(a) - pullXOf(b);
-      if (dx !== 0) return dx;
-      const ea = earliestEdgeIdToFocus(a) - earliestEdgeIdToFocus(b);
-      if (ea !== 0) return ea;
-      return a - b;
-    });
-    const leftFP = sortedFocusParents[0];
-    const rightFP = sortedFocusParents[sortedFocusParents.length - 1];
-    const focusParentSet = new Set(focusParentIds);
+      // Order pair members by pull-X, then earliest parent_of edge to
+      // the shared bloodline child, then person_id (matches the
+      // existing slot-order rule for focus's parents).
+      const candidates = [aId, ...(coParent != null ? [coParent] : [])];
+      const sharedKid = (() => {
+        if (coParent == null) return null;
+        const aKidSet = new Set(aKids);
+        const cKids = (childrenByParent.get(coParent) ?? []).filter(k => pathwaySet.has(k));
+        return cKids.find(k => aKidSet.has(k)) ?? null;
+      })();
+      const earliestEdgeToShared = (pid: number): number => {
+        if (sharedKid == null) return Number.MAX_SAFE_INTEGER;
+        let minId = Number.MAX_SAFE_INTEGER;
+        for (const e of graph.edges) {
+          if (e.derived) continue;
+          if (e.type !== 'parent_of') continue;
+          if (e.aId !== pid || e.bId !== sharedKid) continue;
+          if (e.id != null && e.id < minId) minId = e.id;
+        }
+        return minId;
+      };
+      const sorted = [...candidates].sort((x, y) => {
+        const dx = pullXOf(x) - pullXOf(y);
+        if (dx !== 0) return dx;
+        const ea = earliestEdgeToShared(x) - earliestEdgeToShared(y);
+        if (ea !== 0) return ea;
+        return x - y;
+      });
+      const left = sorted[0];
+      const right = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+      const pairPullX = pullXOf(left);
+      const key = right != null ? `${Math.min(left, right)}-${Math.max(left, right)}` : `${left}-solo`;
+      const idx = pairs.length;
+      pairs.push({ left, right, pullX: pairPullX, key });
+      parentToPair.set(left, idx);
+      if (right != null) parentToPair.set(right, idx);
+    }
 
-    // Find each focus parent's siblings — others in this gen who
-    // share at least one parent (= focus's grandparent) with the
-    // focus parent. Excludes the OTHER focus parent (if both share
-    // grandparents, that's a different topology we don't handle).
+    // Sort pairs left-to-right by pull-X so paternal-line stays on
+    // the canvas's left side and maternal-line on the right.
+    pairs.sort((p, q) => p.pullX - q.pullX || p.key.localeCompare(q.key));
+
+    const pairMembers = new Set<number>(parentToPair.keys());
+
+    // Find each pathway-parent's siblings (other children of their
+    // own parents in this gen — = great-aunts/uncles via this
+    // ancestor). Excludes pair-mates so paternal grandfather doesn't
+    // get paternal grandmother counted as a sibling even when they
+    // happen to share a grandparent (the rare incest topology — we
+    // don't handle that gracefully, but excluding pair-mates is the
+    // sane default).
     const findSiblings = (parentId: number): number[] => {
       const grandparentIds = new Set<number>();
       for (const e of graph.edges) {
@@ -886,17 +938,11 @@ function orderParentGeneration(
         if (e.type !== 'parent_of') continue;
         if (!grandparentIds.has(e.aId)) continue;
         if (e.bId === parentId) continue;
-        if (focusParentSet.has(e.bId)) continue;
+        if (pairMembers.has(e.bId)) continue;
         if (idSet.has(e.bId)) sibs.add(e.bId);
       }
       return [...sibs];
     };
-    const leftSibs = findSiblings(leftFP);
-    const rightSibs = leftFP === rightFP ? [] : findSiblings(rightFP);
-
-    // For each aunt/uncle, find the in-law spouse(s) in this gen.
-    // (Spouses who are themselves bloodline don't get the in-law
-    // outermost treatment — they'd be focus's other relatives.)
     const findInLawSpouses = (auntUncleId: number): number[] => {
       const spouses: number[] = [];
       for (const e of graph.edges) {
@@ -906,40 +952,36 @@ function orderParentGeneration(
         else if (e.bId === auntUncleId) other = e.aId;
         if (other == null) continue;
         if (other === auntUncleId) continue;
-        if (focusParentSet.has(other)) continue;
+        if (pairMembers.has(other)) continue;
         if (!idSet.has(other)) continue;
         if (!spouses.includes(other)) spouses.push(other);
       }
       return spouses;
     };
 
-    // Build the ordered list. Stable tiebreak on aunt/uncle order:
-    // sort by person_id so the layout doesn't reshuffle between
-    // refreshes. (Could swap to earliest-edge later if Terry asks.)
     const used = new Set<number>();
     const orderedIds: number[] = [];
-    const sortedLeftSibs = [...leftSibs].sort((a, b) => a - b);
-    for (const auntUncleId of sortedLeftSibs) {
-      // In-law spouse(s) outermost (furthest from focus parent),
-      // then the bloodline aunt/uncle adjacent to leftFP.
-      for (const spId of findInLawSpouses(auntUncleId)) {
-        if (!used.has(spId)) { used.add(spId); orderedIds.push(spId); }
+    for (const pair of pairs) {
+      const leftSibs = [...findSiblings(pair.left)].sort((a, b) => a - b);
+      const rightSibs = pair.right != null ? [...findSiblings(pair.right)].sort((a, b) => a - b) : [];
+      for (const auntUncleId of leftSibs) {
+        for (const spId of findInLawSpouses(auntUncleId)) {
+          if (!used.has(spId)) { used.add(spId); orderedIds.push(spId); }
+        }
+        if (!used.has(auntUncleId)) { used.add(auntUncleId); orderedIds.push(auntUncleId); }
       }
-      if (!used.has(auntUncleId)) { used.add(auntUncleId); orderedIds.push(auntUncleId); }
-    }
-    if (!used.has(leftFP)) { used.add(leftFP); orderedIds.push(leftFP); }
-    if (rightFP !== leftFP && !used.has(rightFP)) { used.add(rightFP); orderedIds.push(rightFP); }
-    const sortedRightSibs = [...rightSibs].sort((a, b) => a - b);
-    for (const auntUncleId of sortedRightSibs) {
-      // Bloodline aunt/uncle adjacent to rightFP, in-law spouse(s)
-      // outermost (furthest from focus parent).
-      if (!used.has(auntUncleId)) { used.add(auntUncleId); orderedIds.push(auntUncleId); }
-      for (const spId of findInLawSpouses(auntUncleId)) {
-        if (!used.has(spId)) { used.add(spId); orderedIds.push(spId); }
+      if (!used.has(pair.left)) { used.add(pair.left); orderedIds.push(pair.left); }
+      if (pair.right != null && !used.has(pair.right)) { used.add(pair.right); orderedIds.push(pair.right); }
+      for (const auntUncleId of rightSibs) {
+        if (!used.has(auntUncleId)) { used.add(auntUncleId); orderedIds.push(auntUncleId); }
+        for (const spId of findInLawSpouses(auntUncleId)) {
+          if (!used.has(spId)) { used.add(spId); orderedIds.push(spId); }
+        }
       }
     }
-    // Anyone still unplaced (extra focus parents from a second
-    // marriage, edge cases) trail at the end stable-sorted.
+    // Trail anything not connected to a bloodline-pathway pair —
+    // typically aunts/uncles whose own bloodline pair-mate isn't on
+    // canvas, or stray non-pathway nodes. Stable sort by person_id.
     for (const n of [...genNodes].sort((a, b) => a.personId - b.personId)) {
       if (!used.has(n.personId)) { used.add(n.personId); orderedIds.push(n.personId); }
     }
