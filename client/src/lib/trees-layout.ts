@@ -875,9 +875,20 @@ function orderParentGeneration(
           break;
         }
       }
-      // Order pair members by pull-X, then earliest parent_of edge to
-      // the shared bloodline child, then person_id (matches the
-      // existing slot-order rule for focus's parents).
+      // Order pair members by:
+      //   1. pull-X (mean of placed children's x — usually a tie
+      //      because both parents share the same kids).
+      //   2. GENDER — male first, so the "father" of the pair sits
+      //      on the LEFT and "mother" on the RIGHT whenever the
+      //      data has gender set. Without this, the left/right
+      //      slot was decided purely by whichever parent_of edge
+      //      was created first, which is fragile (Sylvia added
+      //      before Derek would land Sylvia on the left even
+      //      though she's the mother).
+      //   3. Earliest parent_of edge to the shared bloodline child
+      //      — the existing slot-order rule (matters when both
+      //      parents are same-gender or have no gender on file).
+      //   4. person_id as a final stable tiebreak.
       const candidates = [aId, ...(coParent != null ? [coParent] : [])];
       const sharedKid = (() => {
         if (coParent == null) return null;
@@ -896,9 +907,21 @@ function orderParentGeneration(
         }
         return minId;
       };
+      // Gender rank: male=0 (left), female=1 (right), unknown=0.5
+      // (sits between, falls through to other tiebreaks). 'combined'
+      // (intersex / both) treated as unknown for layout — same
+      // tiebreak path as no-gender.
+      const genderRank = (pid: number): number => {
+        const g = byId.get(pid)?.gender;
+        if (g === 'male') return 0;
+        if (g === 'female') return 1;
+        return 0.5;
+      };
       const sorted = [...candidates].sort((x, y) => {
         const dx = pullXOf(x) - pullXOf(y);
         if (dx !== 0) return dx;
+        const dg = genderRank(x) - genderRank(y);
+        if (dg !== 0) return dg;
         const ea = earliestEdgeToShared(x) - earliestEdgeToShared(y);
         if (ea !== 0) return ea;
         return x - y;
