@@ -3098,43 +3098,144 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         );
       })()}
 
-      {/* Visual-Effects pathway overlay — its OWN IIFE so it runs
-          regardless of whether any panels are open. The panel IIFE
-          above returns null when no chevrons are expanded, which was
-          accidentally killing the highlight rendering too. The
-          position map and panel-transition map only get populated
-          when there ARE open panels; with none open we just feed
-          PathwayHighlight an empty map and the comet rides canvas
-          coords directly. zIndex 35 keeps it ABOVE panels (z 30) so
-          the comet draws over panel cards instead of being clipped
-          behind them. */}
+      {/* Visual-Effects pathway overlay — its own IIFE so it runs
+          regardless of panel state. Builds an `edgeSegments` callback
+          that returns the EXACT waypoint array the canvas would
+          paint between any two nodes:
+            • parent_of — through the family group's marriage-bar
+              midpoint, drop, bracket, child drop (matches
+              FamilyGroup geometry verbatim).
+            • parent_of with no family group — EdgeLine's orthogonal
+              Z (parent.x → midY → child.x → child.y).
+            • spouse_of — avatar-y horizontal between cards
+              (EdgeLine's spouse path).
+            • sibling via shared family — child drop UP, across the
+              family bracket, child drop DOWN (FamilyGroup again).
+            • fallback — generic Z.
+          PathwayHighlight composes the comet's full path by chaining
+          these per-pair segments. So the comet rides the same line
+          shapes the canvas paints, never inventing geometry. */}
       {highlightTargetId != null && (() => {
         const scaleSafe = viewport.scale || 1;
-        const worldPositionByPersonId = new Map<number, { x: number; y: number }>();
-        for (const node of layout.nodes) {
-          worldPositionByPersonId.set(node.personId, { x: node.x, y: node.y });
-        }
-        const panelTransitionByDescendantId = new Map<number, {
-          chevronX: number; chevronY: number;
-          anchorX: number; anchorY: number;
-        }>();
-        // Re-derive open-panel layouts from state — same set the panel
-        // IIFE above iterates over. We only need panelLeft / panelTop
-        // / chevronScreenX,Y / panelAnchorX,Y / miniPlacements which
-        // we get by re-running the same per-origin computation in a
-        // lighter-weight pass. To avoid duplicating that big chunk,
-        // we walk sideBranchChevrons + extendedAncestorChevrons +
-        // expandedAncestorsOf / expandedDescendantsOf to identify
-        // which descendants belong to which panel, and we look up
-        // their canvas chevron positions for the tether anchor.
-        // (Full panel-routing precision when panels are open arrives
-        // when the panel IIFE has run; this fallback at minimum makes
-        // sure the trigger fires even with no panels open.)
-        const allOpenIds = new Set<number>();
-        for (const id of expandedAncestorsOf ?? []) allOpenIds.add(id);
-        for (const id of expandedDescendantsOf ?? []) allOpenIds.add(id);
-        // (Empty when no panels open — that's fine, both maps stay
-        // canvas-only and the comet rides canvas coords throughout.)
+        // Helper: find the family group, if any, that contains a
+        // parent_of edge from `parentId` to `childId`.
+        const familyGroupForParentChild = (parentId: number, childId: number) =>
+          familyGroups.find(g => g.parentIds.includes(parentId) && g.childIds.includes(childId));
+        // Helper: find the family group that has BOTH children in its
+        // childIds — these are siblings via a shared parent set.
+        const familyGroupForSiblings = (aId: number, bId: number) =>
+          familyGroups.find(g => g.childIds.includes(aId) && g.childIds.includes(bId));
+        // Compute a FamilyGroup's bracket Y exactly as the FamilyGroup
+        // component does at line ~3245: parentCardBottom + (childTop -
+        // parentCardBottom) * 0.45. Used both for parent→child and
+        // sibling↔sibling segments.
+        const familyBracketY = (parentIds: number[], childIds: number[]): number | null => {
+          const parents = parentIds.map(id => nodeById.get(id)).filter((n): n is LaidOutNode => n != null);
+          const children = childIds.map(id => nodeById.get(id)).filter((n): n is LaidOutNode => n != null);
+          if (parents.length === 0 || children.length === 0) return null;
+          const parentCardBottom = parents[0].y + CARD_H / 2;
+          const childTop = children[0].y - CARD_H / 2;
+          return parentCardBottom + (childTop - parentCardBottom) * 0.45;
+        };
+        // Compute the marriage-bar midpoint X for a family group's
+        // parents — same as FamilyGroup.marriageBarMidX.
+        const marriageBarMidX = (parentIds: number[]): number | null => {
+          const parents = parentIds.map(id => nodeById.get(id)).filter((n): n is LaidOutNode => n != null);
+          if (parents.length === 0) return null;
+          if (parents.length === 1) return parents[0].x;
+          const sorted = [...parents].sort((a, b) => a.x - b.x);
+          return (sorted[0].x + sorted[sorted.length - 1].x) / 2;
+        };
+        // Returns the world-coords waypoint sequence the canvas
+        // actually paints between aId and bId. Each waypoint is an
+        // x/y pair the comet rides through in order.
+        const edgeSegments = (aId: number, bId: number): { x: number; y: number }[] | null => {
+          const a = nodeById.get(aId);
+          const b = nodeById.get(bId);
+          if (!a || !b) return null;
+          // ── parent_of ──
+          const parentOf = layout.edges.find(e =>
+            e.type === 'parent_of' && (
+              (e.aId === aId && e.bId === bId) ||
+              (e.aId === bId && e.bId === aId)
+            ),
+          );
+          if (parentOf) {
+            const parent = parentOf.aId === aId ? a : b;
+            const child = parentOf.aId === aId ? b : a;
+            const fg = familyGroupForParentChild(parent.personId, child.personId);
+            if (fg) {
+              const bracketY = familyBracketY(fg.parentIds, fg.childIds);
+              const midX = marriageBarMidX(fg.parentIds);
+              const parentY = parent.y + AVATAR_CY;
+              if (bracketY != null && midX != null) {
+                // Parent → child via family group: parent.center →
+                // parent.x at avatarY → marriageBarMidX at avatarY →
+                // marriageBarMidX at bracketY → child.x at bracketY →
+                // child.x at child.top → child.center.
+                return [
+                  { x: parent.x, y: parent.y },
+                  { x: parent.x, y: parentY },
+                  { x: midX, y: parentY },
+                  { x: midX, y: bracketY },
+                  { x: child.x, y: bracketY },
+                  { x: child.x, y: child.y - CARD_H / 2 },
+                  { x: child.x, y: child.y },
+                ];
+              }
+            }
+            // Standalone parent_of (no family group) — EdgeLine's Z.
+            const midY = (a.y + b.y) / 2;
+            return [
+              { x: a.x, y: a.y },
+              { x: a.x, y: midY },
+              { x: b.x, y: midY },
+              { x: b.x, y: b.y },
+            ];
+          }
+          // ── spouse_of ──
+          const spouse = layout.edges.find(e =>
+            e.type === 'spouse_of' && (
+              (e.aId === aId && e.bId === bId) ||
+              (e.aId === bId && e.bId === aId)
+            ),
+          );
+          if (spouse) {
+            const avatarY = (a.y + b.y) / 2 + AVATAR_CY;
+            return [
+              { x: a.x, y: a.y },
+              { x: a.x, y: avatarY },
+              { x: b.x, y: avatarY },
+              { x: b.x, y: b.y },
+            ];
+          }
+          // ── sibling via shared family group ──
+          const fg = familyGroupForSiblings(aId, bId);
+          if (fg) {
+            const bracketY = familyBracketY(fg.parentIds, fg.childIds);
+            if (bracketY != null) {
+              return [
+                { x: a.x, y: a.y },
+                { x: a.x, y: a.y - CARD_H / 2 },
+                { x: a.x, y: bracketY },
+                { x: b.x, y: bracketY },
+                { x: b.x, y: b.y - CARD_H / 2 },
+                { x: b.x, y: b.y },
+              ];
+            }
+          }
+          // ── fallback Z ──
+          if (a.y === b.y) {
+            return [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+          }
+          const midY = (a.y + b.y) / 2;
+          return [
+            { x: a.x, y: a.y },
+            { x: a.x, y: midY },
+            { x: b.x, y: midY },
+            { x: b.x, y: b.y },
+          ];
+        };
         return (
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none"
@@ -3147,8 +3248,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 targetId={highlightTargetId}
                 cardW={CARD_W}
                 cardH={CARD_H}
-                positionByPersonId={worldPositionByPersonId}
-                panelTransitionByDescendantId={panelTransitionByDescendantId}
+                edgeSegments={edgeSegments}
                 mode={highlightMode}
                 onComplete={onHighlightComplete}
               />

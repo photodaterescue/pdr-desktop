@@ -62,6 +62,14 @@ interface Props {
     chevronX: number; chevronY: number;
     anchorX: number; anchorY: number;
   }>;
+  /** Returns the world-coords waypoint sequence the canvas ACTUALLY
+   *  paints between two people. The parent supplies this so the
+   *  comet rides the same path shape the canvas renders for that
+   *  edge — parent_of via FamilyGroup's marriage-bar / drop /
+   *  bracket / child-drop, sibling via the shared family bracket,
+   *  spouse via avatar-y, etc. Returning null falls back to the
+   *  built-in generic Z. */
+  edgeSegments?: (aId: number, bId: number) => { x: number; y: number }[] | null;
   /** Which effect modes are active. Multiple modes can run together;
    *  each draws its own layer. Defaulted to comet-only. */
   mode?: {
@@ -314,6 +322,7 @@ export function PathwayHighlight({
   cardH,
   positionByPersonId,
   panelTransitionByDescendantId,
+  edgeSegments,
   mode = { comet: true },
   onComplete,
 }: Props) {
@@ -347,7 +356,47 @@ export function PathwayHighlight({
       })
       .filter((n): n is LaidOutNode => n != null);
     if (nodes.length < 2) return null;
-    const waypoints = buildWaypoints(nodes, layout.edges, panelTransitionByDescendantId);
+    // PREFER the parent-supplied edgeSegments callback. It returns
+    // the EXACT canvas-painted waypoints between each consecutive
+    // pair (FamilyGroup marriage-bar/drop/bracket/child-drop for
+    // parent_of, family-bracket for siblings, avatar-y for spouses).
+    // Concatenate per-pair segments into one continuous path so the
+    // comet rides the same shape the canvas already paints. Fall
+    // back to the built-in waypoint builder when no callback is
+    // supplied (tests / standalone usage).
+    let waypoints: { x: number; y: number }[];
+    if (edgeSegments) {
+      waypoints = [];
+      for (let i = 0; i < nodes.length - 1; i++) {
+        const seg = edgeSegments(nodes[i].personId, nodes[i + 1].personId);
+        if (!seg || seg.length === 0) continue;
+        if (waypoints.length === 0) {
+          waypoints.push(...seg);
+        } else {
+          // Skip seg[0] when it equals the previous endpoint (avoid
+          // duplicate vertex causing zero-length zero-tangent edges
+          // in the comet's positionAlong calc).
+          const last = waypoints[waypoints.length - 1];
+          const start = seg[0];
+          if (last.x === start.x && last.y === start.y) {
+            waypoints.push(...seg.slice(1));
+          } else {
+            // Bridge a non-matching join with the next vertex so the
+            // path stays continuous (rare — happens if the parent's
+            // pair-geometry ends somewhere other than where the next
+            // pair's geometry begins).
+            waypoints.push(...seg);
+          }
+        }
+      }
+      if (waypoints.length < 2) {
+        // Callback returned nothing useful — fall back so the comet
+        // still fires.
+        waypoints = buildWaypoints(nodes, layout.edges, panelTransitionByDescendantId);
+      }
+    } else {
+      waypoints = buildWaypoints(nodes, layout.edges, panelTransitionByDescendantId);
+    }
     return {
       ids,
       nodes,
@@ -356,7 +405,7 @@ export function PathwayHighlight({
       target: nodes[nodes.length - 1],
       travelDurationMs: (nodes.length - 1) * SECONDS_PER_SEGMENT * 1000,
     };
-  }, [layout, focusId, targetId, positionByPersonId, panelTransitionByDescendantId]);
+  }, [layout, focusId, targetId, positionByPersonId, panelTransitionByDescendantId, edgeSegments]);
 
   // RAF-driven progress. Updated 60 times a second so the React tree
   // re-renders the comet's position. Cheap because PathwayHighlight is
