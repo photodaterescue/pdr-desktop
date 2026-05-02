@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move } from 'lucide-react';
+import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap } from 'lucide-react';
 import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
@@ -32,6 +32,19 @@ interface TreesCanvasProps {
    *  independent; multiple layers can render simultaneously. */
   highlightMode?: { comet?: boolean; sonar?: boolean; sweep?: boolean; electric?: boolean; fiber?: boolean; led?: boolean };
   onHighlightComplete?: () => void;
+  /** Imperative trigger fired by the in-canvas affordances (right-
+   *  click → "Show pathway", Alt-click on card, hover-after-delay).
+   *  Null = those affordances are disabled. */
+  onTriggerHighlight?: (personId: number) => void;
+  /** Whether right-click should expose the "Show pathway from focus"
+   *  menu item. Toggled in Trees Settings → Visual Effects. */
+  triggerHighlightOnRightClick?: boolean;
+  /** Whether Alt-click anywhere on a card should fire the pathway
+   *  highlight. Toggled in Trees Settings → Visual Effects. */
+  triggerHighlightOnAltClick?: boolean;
+  /** Whether hovering a card for >500 ms should ambient-fire the
+   *  pathway highlight. Toggled in Trees Settings → Visual Effects. */
+  triggerHighlightOnHover?: boolean;
   onRefocus: (personId: number) => void;
   onSetRelationship: (personId: number) => void;
   /** Opens a list of all existing relationships touching this person,
@@ -174,7 +187,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -527,6 +540,24 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
   }, [layout.focusPersonId, onRefocus]);
 
   const handleNodeClick = useCallback(async (e: React.MouseEvent, node: LaidOutNode) => {
+    // Alt-click anywhere on a card → fire the visual-effects pathway
+    // highlight from focus to this person. Toggled via Trees Settings;
+    // when off the modifier check still falls through to the regular
+    // click handler so nothing else changes for users who don't enable
+    // it. Skips when the click is on the focus person themselves
+    // (highlight from focus to focus = nothing to draw).
+    if (
+      triggerHighlightOnAltClick
+      && e.altKey
+      && !node.isPlaceholder
+      && node.personId !== layout.focusPersonId
+      && onTriggerHighlight
+    ) {
+      e.stopPropagation();
+      e.preventDefault();
+      onTriggerHighlight(node.personId);
+      return;
+    }
     // Only single-click matters for placeholders: opens the resolver popup.
     if (!node.isPlaceholder) return;
     e.stopPropagation();
@@ -555,7 +586,31 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     }
     setEdgeEditor(null);
     setContextMenu(null);
-  }, [viewport, layout]);
+  }, [viewport, layout, triggerHighlightOnAltClick, onTriggerHighlight]);
+
+  // ─── Hover-to-highlight timer ──────────────────────────────────
+  // When triggerHighlightOnHover is enabled, hovering a card for
+  // ~500 ms fires the visual-effects pathway highlight from focus
+  // to that person. Implementation: mouse-enter starts a timer,
+  // mouse-leave (or another card's mouse-enter) cancels it. Stored
+  // in a ref so re-renders during hover don't reset the timer.
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startHoverHighlight = useCallback((personId: number) => {
+    if (!triggerHighlightOnHover) return;
+    if (!onTriggerHighlight) return;
+    if (personId === layout.focusPersonId) return;
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      onTriggerHighlight(personId);
+      hoverTimerRef.current = null;
+    }, 500);
+  }, [triggerHighlightOnHover, onTriggerHighlight, layout.focusPersonId]);
+  const cancelHoverHighlight = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
 
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: LaidOutNode) => {
     e.preventDefault();
@@ -1619,8 +1674,13 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               );
             }
             return (
-              <PersonNode
+              <g
                 key={node.personId}
+                onMouseEnter={() => startHoverHighlight(node.personId)}
+                onMouseLeave={cancelHoverHighlight}
+                onClick={(e) => handleNodeClick(e, node)}
+              >
+              <PersonNode
                 node={node}
                 avatar={avatar}
                 isFocus={isFocus}
@@ -1678,6 +1738,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 // PersonNode honours isFocus over borderOverride.
                 borderOverride={bloodlineSet.has(node.personId) ? '#ad9eff' : '#f59e0b'}
               />
+              </g>
             );
           })}
         </g>
@@ -3068,6 +3129,8 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           hasCardBackground={!!nodeById.get(contextMenu.personId)?.cardBackground}
           ancestryHidden={!!hiddenAncestorPersonIds?.includes(contextMenu.personId)}
           canHideAncestry={contextMenu.personId !== layout.focusPersonId && !!onToggleHiddenAncestor}
+          canShowPathway={!!onTriggerHighlight && triggerHighlightOnRightClick && contextMenu.personId !== layout.focusPersonId}
+          onShowPathway={() => { onTriggerHighlight?.(contextMenu.personId); setContextMenu(null); }}
           onSetRelationship={() => { onSetRelationship(contextMenu.personId); setContextMenu(null); }}
           onEditRelationships={() => { onEditRelationships(contextMenu.personId); setContextMenu(null); }}
           onRefocus={() => { onRefocus(contextMenu.personId); setContextMenu(null); }}
@@ -4514,13 +4577,18 @@ function EdgeQuickEditor({ edge, x, y, personNameLookup, onSaved, onClose }: {
   );
 }
 
-function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, canHideAncestry, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onToggleAncestry, onClose }: {
+function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onToggleAncestry, onClose }: {
   x: number; y: number;
   personId: number;
   isFocus: boolean;
   hasCardBackground: boolean;
   ancestryHidden: boolean;
   canHideAncestry: boolean;
+  /** Whether the "Show pathway from focus" menu item should be
+   *  rendered. Driven by the Visual Effects → Right-click toggle in
+   *  Trees Settings + the master "Enable visual effects" gate. */
+  canShowPathway: boolean;
+  onShowPathway: () => void;
   onSetRelationship: () => void;
   onEditRelationships: () => void;
   onRefocus: () => void;
@@ -4550,6 +4618,9 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, can
       {!isFocus && (
         <>
           <MenuItem icon={<Eye className="w-4 h-4" />} label="Focus on this person" onClick={onRefocus} />
+          {canShowPathway && (
+            <MenuItem icon={<Zap className="w-4 h-4" />} label="Show pathway from focus" onClick={onShowPathway} />
+          )}
           <div className="border-t border-border my-1" />
         </>
       )}

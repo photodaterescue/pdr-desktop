@@ -296,6 +296,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [effectElectric, setEffectElectric] = useState(persistedBool('pdr-trees-effect-electric', false));
   const [effectFiber, setEffectFiber] = useState(persistedBool('pdr-trees-effect-fiber', false));
   const [effectLed, setEffectLed] = useState(persistedBool('pdr-trees-effect-led', false));
+  // Trigger-mechanism toggles — what user actions fire a pathway
+  // highlight, separate from WHAT the highlight looks like (the styles
+  // above). All gated by the master `effectsEnabled` switch.
+  const [triggerOnRightClick, setTriggerOnRightClick] = useState(persistedBool('pdr-trees-trigger-rightclick', true));
+  const [triggerOnAltClick, setTriggerOnAltClick] = useState(persistedBool('pdr-trees-trigger-altclick', true));
+  const [triggerOnHover, setTriggerOnHover] = useState(persistedBool('pdr-trees-trigger-hover', false));
   const persistEffectStyle = useCallback((key: string, setter: (v: boolean) => void, value: boolean) => {
     setter(value);
     if (typeof window !== 'undefined') {
@@ -338,6 +344,26 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
    *  master + per-effect toggles so disabled effects produce zero UI
    *  noise. The mode object passed through carries every per-style
    *  flag so PathwayHighlight knows which visual layers to render. */
+  /** Generic trigger fired by the in-canvas affordances (right-click,
+   *  Alt-click, hover-after-delay). Gated on the master "Enable
+   *  visual effects" switch only — independent of the
+   *  effectsCreationBurst toggle which only governs auto-firing on
+   *  add. Same persisted style toggles drive what the highlight
+   *  looks like. */
+  const triggerHighlightToPerson = useCallback((personId: number) => {
+    if (!effectsEnabled) return;
+    if (personId === focusPersonId) return;
+    const mode: EffectMode = {
+      comet: effectComet,
+      sonar: effectSonar,
+      sweep: effectSweep,
+      electric: effectElectric,
+      fiber: effectFiber,
+      led: effectLed,
+    };
+    if (!Object.values(mode).some(Boolean)) mode.comet = true;
+    setHighlightTarget(personId, mode);
+  }, [effectsEnabled, focusPersonId, effectComet, effectSonar, effectSweep, effectElectric, effectFiber, effectLed, setHighlightTarget]);
   const triggerCreationHighlight = useCallback((personId: number) => {
     if (!effectsEnabled) return;
     if (!effectsCreationBurst) return;
@@ -2325,6 +2351,36 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                     </IconTooltip>
                   </div>
                 ))}
+                {/* Trigger-mechanism toggles — separate from the
+                    style toggles above. These control WHICH user
+                    actions can fire a pathway highlight (right-click
+                    menu, Alt-click on a card, hover-after-delay).
+                    The persisted style toggles control what the
+                    fired highlight looks like. */}
+                <div className="h-px bg-border my-1" />
+                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
+                  Trigger on click / hover
+                </p>
+                {([
+                  { key: 'rightclick', label: 'Right-click → Show pathway', hint: 'menu item',     state: triggerOnRightClick, set: setTriggerOnRightClick, storageKey: 'pdr-trees-trigger-rightclick' },
+                  { key: 'altclick',   label: 'Alt-click a card',           hint: 'modifier-click', state: triggerOnAltClick,   set: setTriggerOnAltClick,   storageKey: 'pdr-trees-trigger-altclick' },
+                  { key: 'hover',      label: 'Hover a card (½ s)',         hint: 'ambient',        state: triggerOnHover,      set: setTriggerOnHover,      storageKey: 'pdr-trees-trigger-hover' },
+                ] as const).map(row => (
+                  <label
+                    key={row.key}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent cursor-pointer' : 'text-muted-foreground/60 cursor-not-allowed'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={row.state}
+                      disabled={!effectsEnabled}
+                      onChange={e => persistEffectStyle(row.storageKey, row.set, e.target.checked)}
+                      className="accent-primary"
+                    />
+                    <span className="flex-1">{row.label}</span>
+                    <span className="text-[10px] text-muted-foreground">{row.hint}</span>
+                  </label>
+                ))}
               </PopoverContent>
             </Popover>
             <IconTooltip label="Change the focus person" side="bottom">
@@ -2454,6 +2510,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             highlightTargetId={highlightTarget?.id ?? null}
             highlightNonce={highlightTarget?.nonce ?? 0}
             highlightMode={highlightTarget?.mode ?? {}}
+            onTriggerHighlight={triggerHighlightToPerson}
+            triggerHighlightOnRightClick={effectsEnabled && triggerOnRightClick}
+            triggerHighlightOnAltClick={effectsEnabled && triggerOnAltClick}
+            triggerHighlightOnHover={effectsEnabled && triggerOnHover}
             onHighlightComplete={() => setHighlightTarget(null)}
             onRefocus={handleRefocus}
             onSetRelationship={(personId) => { setRelationshipEditorInitialTo(null); setRelationshipEditorFor(personId); }}
