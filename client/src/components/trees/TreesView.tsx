@@ -935,15 +935,82 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // above someone whose only "missing" parents were placeholders.
   const layoutGraph = (() => {
     if (!visibleGraph) return null;
-    const placeholderIds = new Set<number>();
+    // Classify each placeholder by its graph topology:
+    //
+    //  • SIBLING-STUB — a placeholder whose only purpose is to glue
+    //    two named siblings together via a shared "Unknown" parent
+    //    (e.g. when the user marks Sylvia + Gladys as siblings, the
+    //    backend creates a placeholder so a parent_of relationship
+    //    can derive sibling_of). These are visual debris — strip.
+    //    Topology: the placeholder's children DO NOT all share a
+    //    single named non-placeholder co-parent.
+    //
+    //  • CO-PARENT — a placeholder representing a real-but-unnamed
+    //    second parent (e.g. Ian's ex-wife who's Chloe + Abby's
+    //    mother but the user hasn't typed her name yet). These are
+    //    semantically meaningful and must remain visible so the
+    //    user can see "Chloe has another parent we haven't named"
+    //    and click in to fill her in. Stripping them silently
+    //    discards the relationship the user just asserted.
+    //    Topology: the placeholder has 1+ children, and every one
+    //    of those children has the SAME single named non-placeholder
+    //    co-parent (so this placeholder is uniquely the OTHER parent
+    //    of all those children).
+    const allPlaceholderIds = new Set<number>();
     for (const n of visibleGraph.nodes) {
-      if (n.isPlaceholder) placeholderIds.add(n.personId);
+      if (n.isPlaceholder) allPlaceholderIds.add(n.personId);
+    }
+    // For each placeholder, gather its children and decide which class.
+    const childrenByPlaceholder = new Map<number, number[]>();
+    const parentsByChild = new Map<number, number[]>();
+    for (const e of visibleGraph.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (allPlaceholderIds.has(e.aId)) {
+        if (!childrenByPlaceholder.has(e.aId)) childrenByPlaceholder.set(e.aId, []);
+        childrenByPlaceholder.get(e.aId)!.push(e.bId);
+      }
+      if (!parentsByChild.has(e.bId)) parentsByChild.set(e.bId, []);
+      parentsByChild.get(e.bId)!.push(e.aId);
+    }
+    const stripIds = new Set<number>();
+    for (const phId of allPlaceholderIds) {
+      const kids = childrenByPlaceholder.get(phId) ?? [];
+      if (kids.length === 0) {
+        // Placeholder with no children — likely a sibling-stub on the
+        // OTHER side (e.g. an unnamed grandparent). No descendants to
+        // anchor a co-parent reading, so strip.
+        stripIds.add(phId);
+        continue;
+      }
+      // Find each kid's other (non-placeholder) parents.
+      const namedCoParentSets: Set<number>[] = [];
+      for (const kidId of kids) {
+        const others = (parentsByChild.get(kidId) ?? [])
+          .filter(pid => pid !== phId && !allPlaceholderIds.has(pid));
+        namedCoParentSets.push(new Set(others));
+      }
+      // Keep only if every kid has at least one named co-parent AND
+      // the SAME single named co-parent is common to every kid's set.
+      // A single common name → unambiguously the same other parent.
+      if (namedCoParentSets.some(s => s.size === 0)) {
+        stripIds.add(phId);
+        continue;
+      }
+      // Intersect across all kids' named-coparent sets.
+      const common = new Set(namedCoParentSets[0]);
+      for (let i = 1; i < namedCoParentSets.length; i++) {
+        for (const v of Array.from(common)) {
+          if (!namedCoParentSets[i].has(v)) common.delete(v);
+        }
+      }
+      if (common.size === 0) stripIds.add(phId);
+      // common.size >= 1 → this placeholder is a co-parent → keep.
     }
     return {
       ...visibleGraph,
-      nodes: visibleGraph.nodes.filter(n => !n.isPlaceholder),
+      nodes: visibleGraph.nodes.filter(n => !stripIds.has(n.personId)),
       edges: visibleGraph.edges.filter(
-        e => !placeholderIds.has(e.aId) && !placeholderIds.has(e.bId),
+        e => !stripIds.has(e.aId) && !stripIds.has(e.bId),
       ),
     };
   })();
