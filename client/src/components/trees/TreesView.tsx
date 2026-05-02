@@ -993,9 +993,60 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       await addRelationship({ personAId: fromId, personBId: toId, type: 'sibling_of' });
     }
 
-    // Refresh the graph.
-    if (focusPersonId != null) refetchGraph(focusPersonId, fetchDepth);
-  }, [siblingKindDialog, focusPersonId, fetchDepth, refetchGraph]);
+    // Refresh the graph + run the same Steps/Generations awareness
+    // checks the parent/partner/child path runs in finaliseQuickAdd:
+    // probe deeper if needed to discover the new sibling's hop
+    // distance, pin them if they land beyond expandedHops (so they
+    // stay visible), pulse the Steps pill, and prompt the user to
+    // bump Steps so the new sibling becomes naturally visible.
+    // Without this, adding e.g. Sylvia's sister Gladys at Steps=2
+    // dropped her quietly past the cap with no nudge and no prompt.
+    if (focusPersonId != null) {
+      let probeDepth = fetchDepth;
+      for (let i = 0; i < 7 && probeDepth <= 10; i++) {
+        const res = await getFamilyGraph(focusPersonId, probeDepth);
+        if (res.success && res.data) {
+          const found = res.data.nodes.find(n => n.personId === toId);
+          if (found) {
+            setGraph(res.data);
+            if (found.hopsFromFocus > expandedHops) {
+              setPinnedPeople(prev => {
+                const next = new Map(prev);
+                next.set(toId, found.hopsFromFocus);
+                return next;
+              });
+              setPulseSteps(true);
+              const requiredSteps = found.hopsFromFocus;
+              const newPersonFullName = displayName(toId, 'this person');
+              promptConfirm({
+                eyebrow: 'Beyond your current view',
+                title: `${newPersonFullName} sits ${requiredSteps} steps from focus`,
+                message: `Your Steps cap is ${expandedHops}, so they're pinned visible just for this session. Increase Steps to ${requiredSteps} to see them naturally and bring along anyone else at that distance too.`,
+                confirmLabel: `Increase Steps to ${requiredSteps}`,
+                cancelLabel: 'Keep them pinned',
+              }).then(result => {
+                if (result === true) {
+                  setExpandedHops(requiredSteps);
+                  setPinnedPeople(prev => {
+                    const next = new Map(prev);
+                    next.delete(toId);
+                    return next;
+                  });
+                }
+              });
+            }
+            const newGen = computeGenerationOffset(res.data, focusPersonId, toId);
+            if (newGen != null && (newGen > ancestorsDepth || newGen < -descendantsDepth)) {
+              setPulseGenerations(true);
+            }
+            return;
+          }
+        }
+        probeDepth++;
+      }
+      refetchGraph(focusPersonId, fetchDepth);
+    }
+  }, [siblingKindDialog, focusPersonId, fetchDepth, refetchGraph, expandedHops, ancestorsDepth, descendantsDepth, displayName]);
 
   // ── Saved trees: auto-save on state change ────────────────────
   // Persist the current filter / focus state to the active tree
