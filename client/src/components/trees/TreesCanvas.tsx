@@ -850,15 +850,38 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     // panel. Terry's case: Sam is the mother of two of Ian's
     // daughters but has no spouse_of edge to him; she has to ride
     // along with the panel just as Wendy does for whichever
-    // cousin she actually married. Walks each parent_of edge: if
-    // the CHILD is a side-branch descendant and the PARENT isn't
-    // bloodline, the parent is a non-bloodline co-parent and joins
-    // the hidden-from-canvas set.
+    // cousin she actually married.
+    //
+    // CRITICAL: only add the parent when their CHILD has another
+    // parent who is ALSO in `hidden`. Otherwise this sweep also
+    // catches the in-law spouse of every side-branch HEAD (e.g.
+    // Peter Clapson married to bloodline aunt Mary Louise; their
+    // children Adam/Neil/Ian are hidden side-branch descendants,
+    // but Mary Louise herself is the head and stays visible —
+    // adding Peter would wrongly disappear him from the canvas
+    // even though his bloodline partner is right there beside him).
+    // Build a parents-by-child index from this same edge list once,
+    // then check each (child, otherParent) co-parent.
+    const parentsByChildHB = new Map<number, number[]>();
     for (const e of layout.edges) {
       if (e.type !== 'parent_of') continue;
-      if (!hidden.has(e.bId)) continue; // only when CHILD is side-branch
-      if (bloodlineSet.has(e.aId)) continue; // never hide bloodline
-      hidden.add(e.aId);
+      if (!parentsByChildHB.has(e.bId)) parentsByChildHB.set(e.bId, []);
+      parentsByChildHB.get(e.bId)!.push(e.aId);
+    }
+    for (const [childId, parents] of parentsByChildHB) {
+      if (!hidden.has(childId)) continue; // only when child is side-branch
+      // For each parent of this child, decide whether to hide them.
+      // A parent is hidden iff: (a) they're not bloodline, AND
+      // (b) at least one OTHER parent of this child is already hidden.
+      // Condition (b) is what keeps Peter visible (his only co-parent
+      // is Mary Louise, who is the head and NOT hidden) while
+      // pulling in Sam (her co-parent Ian IS hidden).
+      for (const pid of parents) {
+        if (hidden.has(pid)) continue;
+        if (bloodlineSet.has(pid)) continue;
+        const anyOtherParentHidden = parents.some(o => o !== pid && hidden.has(o));
+        if (anyOtherParentHidden) hidden.add(pid);
+      }
     }
     return hidden;
   }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet]);
@@ -2032,11 +2055,29 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             // the previous pass. Required so Sam (Ian's ex-wife,
             // mother of Chloe + Abby, no recorded marriage) appears
             // inside Ian's branch instead of going invisible.
+            //
+            // Same guard as hiddenSideBranchIds above: only pull in
+            // a non-bloodline parent when their CHILD has another
+            // parent already in contentSet. Otherwise an in-law
+            // spouse of the panel's HEAD (e.g. Peter Clapson married
+            // to bloodline Mary Louise — their kids Adam/Neil/Ian
+            // are panel residents but Mary Louise stays on canvas
+            // as the head's partner) would wrongly land inside the
+            // panel.
+            const parentsByChildPanel = new Map<number, number[]>();
             for (const e of layout.edges) {
               if (e.type !== 'parent_of') continue;
-              if (!contentSet.has(e.bId)) continue; // only when CHILD is in panel
-              if (bloodlineSet.has(e.aId)) continue; // bloodline parents stay outside the panel
-              contentSet.add(e.aId);
+              if (!parentsByChildPanel.has(e.bId)) parentsByChildPanel.set(e.bId, []);
+              parentsByChildPanel.get(e.bId)!.push(e.aId);
+            }
+            for (const [childId, parents] of parentsByChildPanel) {
+              if (!contentSet.has(childId)) continue;
+              for (const pid of parents) {
+                if (contentSet.has(pid)) continue;
+                if (bloodlineSet.has(pid)) continue;
+                const anyOtherParentInPanel = parents.some(o => o !== pid && contentSet.has(o));
+                if (anyOtherParentInPanel) contentSet.add(pid);
+              }
             }
           } else {
             const ext = extendedAncestorsByPerson.get(personId);
