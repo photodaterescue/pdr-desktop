@@ -13,9 +13,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { setPersonGender as setPersonGenderApi, type PersonGender } from '@/lib/electron-bridge';
+import { PathwayHighlight } from './PathwayHighlight';
 
 interface TreesCanvasProps {
   layout: TreeLayout & { collapsedCountPerAnchor?: Map<number, number> };
+  /** When set, fires the Visual-Effects comet trail from focus to this
+   *  personId and traces a lap around their card on arrival. Cleared
+   *  by the parent's onHighlightComplete callback once the animation
+   *  finishes (animation timing is owned inside PathwayHighlight). */
+  highlightTargetId?: number | null;
+  onHighlightComplete?: () => void;
   onRefocus: (personId: number) => void;
   onSetRelationship: (personId: number) => void;
   /** Opens a list of all existing relationships touching this person,
@@ -158,7 +165,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, onHighlightComplete, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -1864,6 +1871,23 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               </g>
             );
           })}
+          {/* Visual-Effects pathway highlight — comet trail from focus
+              to the most recently added person, with a card-perimeter
+              lap on arrival. Rendered INSIDE the same world-coords <g>
+              transform as the cards so the comet rides at the correct
+              x/y in world space and the lap rect lines up exactly with
+              the target card. The component is null-safe when
+              highlightTargetId is null, so the cost when effects are
+              off / idle is one cheap render. */}
+          {highlightTargetId != null && (
+            <PathwayHighlight
+              layout={layout}
+              targetId={highlightTargetId}
+              cardW={CARD_W}
+              cardH={CARD_H}
+              onComplete={onHighlightComplete}
+            />
+          )}
         </g>
 
         {/* Fixed overlay: zoom indicator */}

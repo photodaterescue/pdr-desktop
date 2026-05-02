@@ -269,6 +269,45 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [showDates, setShowDates] = useState(
     typeof window !== 'undefined' && localStorage.getItem('pdr-trees-show-dates') === 'true'
   );
+  /** Visual-effects toggles. Master switch + per-effect on/off.
+   *  Persisted to localStorage; default ON for the first launch so
+   *  the comet trail is visible without the user having to opt in. */
+  const [effectsEnabled, setEffectsEnabled] = useState(
+    typeof window !== 'undefined'
+      ? localStorage.getItem('pdr-trees-effects-enabled') !== 'false'
+      : true,
+  );
+  const [effectsCreationBurst, setEffectsCreationBurst] = useState(
+    typeof window !== 'undefined'
+      ? localStorage.getItem('pdr-trees-effects-creation') !== 'false'
+      : true,
+  );
+  /** Person currently being highlighted by the comet trail. Set by
+   *  the create flows (finaliseQuickAdd, etc.); cleared by
+   *  PathwayHighlight's onComplete callback when the animation
+   *  finishes. */
+  const [highlightTarget, setHighlightTarget] = useState<number | null>(null);
+  const persistEffectsEnabled = useCallback((v: boolean) => {
+    setEffectsEnabled(v);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pdr-trees-effects-enabled', v ? 'true' : 'false');
+    }
+  }, []);
+  const persistEffectsCreationBurst = useCallback((v: boolean) => {
+    setEffectsCreationBurst(v);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pdr-trees-effects-creation', v ? 'true' : 'false');
+    }
+  }, []);
+  /** Fired by the create flows after an addRelationship resolves to
+   *  light up the path from focus to the new person. Gated on the
+   *  master + per-effect toggles so disabled effects produce zero UI
+   *  noise. */
+  const triggerCreationHighlight = useCallback((personId: number) => {
+    if (!effectsEnabled) return;
+    if (!effectsCreationBurst) return;
+    setHighlightTarget(personId);
+  }, [effectsEnabled, effectsCreationBurst]);
   /** Date editor target — { personId, x, y } where x/y are screen
    *  coords for the popup. Null = editor closed. */
   const [dateEditor, setDateEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
@@ -1626,6 +1665,13 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             if (newGen != null && (newGen > ancestorsDepth || newGen < -descendantsDepth)) {
               setPulseGenerations(true);
             }
+            // Fire the comet trail showing the path from focus to the
+            // newly-added person. Gated inside triggerCreationHighlight
+            // on the master + per-effect Visual Effects toggles, so a
+            // user who turned them off sees nothing. Setting this AFTER
+            // setGraph(res.data) so the layout already contains the
+            // new person when PathwayHighlight runs its BFS.
+            triggerCreationHighlight(otherPersonId);
             return;
           }
         }
@@ -1633,8 +1679,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       }
       // Couldn't find them within 10 hops — unusual; just refresh at default.
       refetchGraph(focusPersonId, fetchDepth);
+      triggerCreationHighlight(otherPersonId);
     }
-  }, [quickAdd, graph, focusPersonId, expandedHops, ancestorsDepth, descendantsDepth, fetchDepth, refetchGraph, displayName, allPersons]);
+  }, [quickAdd, graph, focusPersonId, expandedHops, ancestorsDepth, descendantsDepth, fetchDepth, refetchGraph, displayName, allPersons, triggerCreationHighlight]);
 
   /** Toggle reveal/hide for one person's beyond-capacity ancestors.
    *  First click probes deeper graph, walks parent_of edges upward
@@ -2060,6 +2107,32 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   <span className="flex-1">Dates Living</span>
                   <span className="text-[10px] text-muted-foreground">1948–Living</span>
                 </label>
+                <div className="h-px bg-border my-1" />
+                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
+                  Visual Effects
+                </p>
+                <label className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={effectsEnabled}
+                    onChange={e => persistEffectsEnabled(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  <span className="flex-1">Enable visual effects</span>
+                </label>
+                <label
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors cursor-pointer ${effectsEnabled ? 'text-foreground hover:bg-accent' : 'text-muted-foreground/60 cursor-not-allowed'}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={effectsCreationBurst}
+                    disabled={!effectsEnabled}
+                    onChange={e => persistEffectsCreationBurst(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  <span className="flex-1">Pathway burst on add</span>
+                  <span className="text-[10px] text-muted-foreground">comet</span>
+                </label>
               </PopoverContent>
             </Popover>
             <IconTooltip label="Change the focus person" side="bottom">
@@ -2186,6 +2259,8 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         {layout && (
           <TreesCanvas
             layout={layout}
+            highlightTargetId={highlightTarget}
+            onHighlightComplete={() => setHighlightTarget(null)}
             onRefocus={handleRefocus}
             onSetRelationship={(personId) => { setRelationshipEditorInitialTo(null); setRelationshipEditorFor(personId); }}
             onEditRelationships={(personId) => setEditRelationshipsFor(personId)}
