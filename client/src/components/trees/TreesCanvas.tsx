@@ -25,10 +25,12 @@ interface TreesCanvasProps {
   /** Per-trigger nonce — bumped on each call to setHighlightTarget in
    *  the parent, even when the targetId is unchanged. Combined with
    *  the targetId in PathwayHighlight's React key so consecutive
-   *  triggers always remount the SVG, restarting all SMIL animations
-   *  from t=0 (which is the only way they fire — they don't replay
-   *  on prop change). */
+   *  triggers always remount, restarting all animations from t=0. */
   highlightNonce?: number;
+  /** Which visual-effect layers to render on the highlight pathway —
+   *  pass-through to PathwayHighlight's `mode` prop. Each flag is
+   *  independent; multiple layers can render simultaneously. */
+  highlightMode?: { comet?: boolean; sonar?: boolean; sweep?: boolean; electric?: boolean; fiber?: boolean; led?: boolean };
   onHighlightComplete?: () => void;
   onRefocus: (personId: number) => void;
   onSetRelationship: (personId: number) => void;
@@ -172,7 +174,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, onHighlightComplete, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -1891,12 +1893,15 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               // key combines target + per-call nonce so a fresh mount
               // happens on EVERY trigger — even when the same target
               // is highlighted back-to-back (e.g. mashing the preview
-              // play button). SVG SMIL <animate> only fires on mount.
+              // play button). The RAF-driven animation in
+              // PathwayHighlight only starts on mount, so a stable
+              // key would freeze the second trigger.
               key={`hi-${highlightTargetId}-${highlightNonce}`}
               layout={layout}
               targetId={highlightTargetId}
               cardW={CARD_W}
               cardH={CARD_H}
+              mode={highlightMode}
               onComplete={onHighlightComplete}
             />
           )}

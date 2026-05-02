@@ -282,6 +282,26 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       ? localStorage.getItem('pdr-trees-effects-creation') !== 'false'
       : true,
   );
+  // Per-style toggles for the trigger-based effect. Each one is a
+  // separate visual layer that can be combined with any other; the
+  // user picks which look they want via the popover. Default on for
+  // comet, off for the rest so the first launch is the simplest read.
+  const persistedBool = (key: string, fallback: boolean) =>
+    typeof window !== 'undefined'
+      ? localStorage.getItem(key) === null ? fallback : localStorage.getItem(key) === 'true'
+      : fallback;
+  const [effectComet, setEffectComet] = useState(persistedBool('pdr-trees-effect-comet', true));
+  const [effectSonar, setEffectSonar] = useState(persistedBool('pdr-trees-effect-sonar', false));
+  const [effectSweep, setEffectSweep] = useState(persistedBool('pdr-trees-effect-sweep', false));
+  const [effectElectric, setEffectElectric] = useState(persistedBool('pdr-trees-effect-electric', false));
+  const [effectFiber, setEffectFiber] = useState(persistedBool('pdr-trees-effect-fiber', false));
+  const [effectLed, setEffectLed] = useState(persistedBool('pdr-trees-effect-led', false));
+  const persistEffectStyle = useCallback((key: string, setter: (v: boolean) => void, value: boolean) => {
+    setter(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(key, value ? 'true' : 'false');
+    }
+  }, []);
   /** Trees Settings popover open state — controlled so the play
    *  button can close it before firing a preview, otherwise the
    *  popover overlay sits on top of the comet path and the user
@@ -295,10 +315,11 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
    *  highlighted back-to-back — without it, React reconciles in
    *  place and the SVG SMIL <animate> elements never re-fire on
    *  consecutive triggers. */
-  const [highlightTarget, setHighlightTargetState] = useState<{ id: number; nonce: number } | null>(null);
-  const setHighlightTarget = useCallback((id: number | null) => {
+  type EffectMode = { comet?: boolean; sonar?: boolean; sweep?: boolean; electric?: boolean; fiber?: boolean; led?: boolean };
+  const [highlightTarget, setHighlightTargetState] = useState<{ id: number; nonce: number; mode: EffectMode } | null>(null);
+  const setHighlightTarget = useCallback((id: number | null, mode: EffectMode = {}) => {
     if (id == null) setHighlightTargetState(null);
-    else setHighlightTargetState({ id, nonce: Date.now() });
+    else setHighlightTargetState({ id, nonce: Date.now(), mode });
   }, []);
   const persistEffectsEnabled = useCallback((v: boolean) => {
     setEffectsEnabled(v);
@@ -315,12 +336,25 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   /** Fired by the create flows after an addRelationship resolves to
    *  light up the path from focus to the new person. Gated on the
    *  master + per-effect toggles so disabled effects produce zero UI
-   *  noise. */
+   *  noise. The mode object passed through carries every per-style
+   *  flag so PathwayHighlight knows which visual layers to render. */
   const triggerCreationHighlight = useCallback((personId: number) => {
     if (!effectsEnabled) return;
     if (!effectsCreationBurst) return;
-    setHighlightTarget(personId);
-  }, [effectsEnabled, effectsCreationBurst]);
+    const mode: EffectMode = {
+      comet: effectComet,
+      sonar: effectSonar,
+      sweep: effectSweep,
+      electric: effectElectric,
+      fiber: effectFiber,
+      led: effectLed,
+    };
+    // If the user has the master row on but unticked every per-style
+    // option, fall back to comet so the add still produces a visible
+    // burst — silence is worse than redundancy here.
+    if (!Object.values(mode).some(Boolean)) mode.comet = true;
+    setHighlightTarget(personId, mode);
+  }, [effectsEnabled, effectsCreationBurst, effectComet, effectSonar, effectSweep, effectElectric, effectFiber, effectLed, setHighlightTarget]);
   /** Preview-only trigger declared LATER in the file (after the
    *  visibleGraph useMemo) — assigned via useRef so we can call it
    *  from this scope without referencing visibleGraph here, which
@@ -330,6 +364,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const previewCreationHighlight = useCallback(() => {
     previewCreationHighlightRef.current();
   }, []);
+  /** Per-preview style override. The play buttons next to each
+   *  effect-style row stash a single-style mode object here before
+   *  triggering, so the preview only shows that one effect even when
+   *  the user has multiple styles persisted on. Cleared back to null
+   *  by the highlight pipeline once the preview consumes it. */
+  const previewModeOverrideRef = useRef<{ [k: string]: boolean } | null>(null);
   /** Date editor target — { personId, x, y } where x/y are screen
    *  coords for the popup. Null = editor closed. */
   const [dateEditor, setDateEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
@@ -947,11 +987,28 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       if (first) target = first.personId;
     }
     if (target == null) return;
+    // Mode for THIS preview: prefer the per-style override stashed by
+    // a Play button (single-style sample), fall back to the union of
+    // all enabled persisted styles, fall back to comet only when the
+    // user has somehow disabled every style.
+    let mode: EffectMode | null = previewModeOverrideRef.current;
+    previewModeOverrideRef.current = null;
+    if (!mode) {
+      mode = {
+        comet: effectComet,
+        sonar: effectSonar,
+        sweep: effectSweep,
+        electric: effectElectric,
+        fiber: effectFiber,
+        led: effectLed,
+      };
+      if (!Object.values(mode).some(Boolean)) mode = { comet: true };
+    }
     // setHighlightTarget bumps a per-call nonce internally, so the
     // child PathwayHighlight's key changes on every preview click and
     // remounts even when the same target is chosen back-to-back. No
     // timeout dance needed.
-    setHighlightTarget(target);
+    setHighlightTarget(target, mode);
   };
 
   // Number of people in the graph who are filtered OUT specifically
@@ -2172,52 +2229,77 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   />
                   <span className="flex-1">Enable visual effects</span>
                 </label>
-                {/* Per-effect rows — toggle area + a small Play button
-                    for previewing the effect on the current tree
-                    without having to actually add a new person. The
-                    play button bypasses both the master and per-effect
-                    toggles via previewCreationHighlight, so disabled
-                    effects can still be previewed before opting in.
-                    Inline-button styling matches the existing toolbar
-                    icon affordances (undo/redo): text-primary on icon,
-                    hover:bg-primary/10 to differentiate from the row's
-                    bg-accent hover. */}
-                <div
-                  className={`flex items-stretch gap-1 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent' : 'text-muted-foreground/60'}`}
+                {/* Master "Pathway burst on add" toggle — gates whether
+                    any of the per-style effects below fire on a real
+                    add. The per-style rows below pick which visual
+                    treatment(s) to layer on the path. */}
+                <label
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent cursor-pointer' : 'text-muted-foreground/60 cursor-not-allowed'}`}
                 >
-                  <label
-                    className={`flex-1 flex items-center gap-2 px-2 py-1.5 ${effectsEnabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                  <input
+                    type="checkbox"
+                    checked={effectsCreationBurst}
+                    disabled={!effectsEnabled}
+                    onChange={e => persistEffectsCreationBurst(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  <span className="flex-1">Pathway burst on add</span>
+                </label>
+                <p className="text-[10px] text-muted-foreground px-2 pb-1">
+                  Pick any combination — they layer
+                </p>
+                {/* Per-style sub-rows — toggle for each visual layer
+                    plus a Play button to preview JUST that layer (the
+                    play button overrides the toggle for the duration
+                    of the preview, so even a disabled style can be
+                    sampled before opting in). */}
+                {([
+                  { key: 'comet',    label: 'Comet',          hint: 'bright head + halo',     state: effectComet,    set: setEffectComet,    storageKey: 'pdr-trees-effect-comet' },
+                  { key: 'sonar',    label: 'Sonar ping',     hint: 'expanding rings',        state: effectSonar,    set: setEffectSonar,    storageKey: 'pdr-trees-effect-sonar' },
+                  { key: 'sweep',    label: 'Gradient sweep', hint: 'soft trailing stripe',   state: effectSweep,    set: setEffectSweep,    storageKey: 'pdr-trees-effect-sweep' },
+                  { key: 'electric', label: 'Electric arc',   hint: 'jagged bolts',           state: effectElectric, set: setEffectElectric, storageKey: 'pdr-trees-effect-electric' },
+                  { key: 'fiber',    label: 'Fibre-optic',    hint: 'flowing dashes',         state: effectFiber,    set: setEffectFiber,    storageKey: 'pdr-trees-effect-fiber' },
+                  { key: 'led',      label: 'LED tube',       hint: 'steady neon glow',       state: effectLed,      set: setEffectLed,      storageKey: 'pdr-trees-effect-led' },
+                ] as const).map(row => (
+                  <div
+                    key={row.key}
+                    className={`flex items-stretch gap-1 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent' : 'text-muted-foreground/60'}`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={effectsCreationBurst}
-                      disabled={!effectsEnabled}
-                      onChange={e => persistEffectsCreationBurst(e.target.checked)}
-                      className="accent-primary"
-                    />
-                    <span className="flex-1">Pathway burst on add</span>
-                    <span className="text-[10px] text-muted-foreground">comet</span>
-                  </label>
-                  <IconTooltip label="Preview this effect" side="left">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Close the popover first so it doesn't sit on
-                        // top of the comet path the user is trying to
-                        // preview. 220 ms gives Radix's close animation
-                        // a frame or two to dismiss before the comet
-                        // starts riding the canvas.
-                        setTreesSettingsOpen(false);
-                        setTimeout(() => previewCreationHighlight(), 220);
-                      }}
-                      className="px-2 rounded text-primary hover:bg-primary/10 transition-colors"
-                      aria-label="Preview pathway burst on add"
+                    <label
+                      className={`flex-1 flex items-center gap-2 pl-4 pr-2 py-1.5 ${effectsEnabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
                     >
-                      <Play className="w-3 h-3" fill="currentColor" />
-                    </button>
-                  </IconTooltip>
-                </div>
+                      <input
+                        type="checkbox"
+                        checked={row.state}
+                        disabled={!effectsEnabled}
+                        onChange={e => persistEffectStyle(row.storageKey, row.set, e.target.checked)}
+                        className="accent-primary"
+                      />
+                      <span className="flex-1">{row.label}</span>
+                      <span className="text-[10px] text-muted-foreground">{row.hint}</span>
+                    </label>
+                    <IconTooltip label={`Preview ${row.label}`} side="left">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Close popover first so it doesn't sit over
+                          // the canvas the preview is animating on.
+                          setTreesSettingsOpen(false);
+                          // Force this single style on for the preview
+                          // by stashing it in a ref the highlight ref
+                          // reads at fire-time.
+                          previewModeOverrideRef.current = { [row.key]: true };
+                          setTimeout(() => previewCreationHighlight(), 220);
+                        }}
+                        className="px-2 rounded text-primary hover:bg-primary/10 transition-colors"
+                        aria-label={`Preview ${row.label}`}
+                      >
+                        <Play className="w-3 h-3" fill="currentColor" />
+                      </button>
+                    </IconTooltip>
+                  </div>
+                ))}
               </PopoverContent>
             </Popover>
             <IconTooltip label="Change the focus person" side="bottom">
@@ -2346,6 +2428,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             layout={layout}
             highlightTargetId={highlightTarget?.id ?? null}
             highlightNonce={highlightTarget?.nonce ?? 0}
+            highlightMode={highlightTarget?.mode ?? {}}
             onHighlightComplete={() => setHighlightTarget(null)}
             onRefocus={handleRefocus}
             onSetRelationship={(personId) => { setRelationshipEditorInitialTo(null); setRelationshipEditorFor(personId); }}

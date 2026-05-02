@@ -1,67 +1,67 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, useState } from 'react';
 import type { TreeLayout, LaidOutNode } from '@/lib/trees-layout';
 
 /**
- * PathwayHighlight — animated comet trail showing the relationship path
- * from the focus person to a target person, with a card-perimeter "lap"
- * animation when the comet arrives.
+ * PathwayHighlight — animated effects showing the relationship path
+ * from the focus person to a target person. Supports multiple effect
+ * modes that can be combined; each mode is a self-contained layer
+ * driven by requestAnimationFrame + React state (NOT SVG SMIL —
+ * Terry's first version using <animateMotion> wasn't firing reliably
+ * in the Electron build, RAF is the dependable alternative).
  *
- * Design (negotiated with Terry, /chat 2026-05-02):
- *   - Comet rides ALONG the connection lines, not diagonally across them,
- *     so it reads as "live data flowing through the tree's wiring".
- *   - Orthogonal Manhattan path between each pair of consecutive nodes,
- *     concatenated into one continuous path so the comet doesn't tele-
- *     port between segments.
- *   - Lavender (#ad9eff = --primary) by default — same brand colour
- *     used for bloodline lines so the highlight reads as part of the
- *     tree's existing colour vocabulary, just brighter and moving.
- *   - On arrival: stroke-dashoffset traces around the target card's
- *     perimeter once, then a soft glow fades over ~1.2 s.
+ * Modes:
+ *   'comet' — bright lavender ball travels along the path with a
+ *             trailing glow halo, then traces a lap around the target
+ *             card's perimeter and fades out.
+ *   'sonar' — an expanding ring pulses outward from focus, then from
+ *             each subsequent waypoint as the wavefront passes
+ *             through, then a final ring at the target. Reads as
+ *             "ping → ping → ping → arrival ring".
  *
- * Important React gotchas baked in here:
- *   - Parent passes key={targetId} on the component so each new target
- *     is a full remount; SVG <animate> only fires on mount.
- *   - useEffect for the onComplete timer fires ONCE per mount via a
- *     mounted-ref, so re-renders during the animation don't kill the
- *     timer (or worse, stop it firing and freeze highlightTarget).
+ * Both share the same BFS path-finding + per-segment timing.
  */
 
-const COMET_RADIUS = 11;          // bumped up — Terry was missing the effect
-const TRAIL_RADIUS = 17;          // bumped halo
 const COMET_COLOUR = '#ad9eff';
 const COMET_GLOW = 'rgba(173, 158, 255, 0.55)';
-const PATH_TRAIL_OPACITY = 0.45;  // visible path the comet rides along
 
-/** Travel time per segment in the path. Bumped from 0.45 s to 0.85 s
- *  per segment so even a 1-hop path runs for ~0.85 s instead of half
- *  a second of comet — Terry's first test couldn't see anything at
- *  the shorter timing, blink and you miss it. */
+/** Travel time per segment in the path. ~0.85 s × hop count gives a
+ *  6-hop path (great-uncle's grandchild → focus) about 5 s — long
+ *  enough to read as a journey, short enough not to feel sluggish. */
 const SECONDS_PER_SEGMENT = 0.85;
 
-/** Card-lap arrival animation. The lap traces a rounded rectangle
- *  matching the card's border once, then the whole highlight fades. */
 const CARD_LAP_DURATION_MS = 1100;
 const CARD_FADE_DURATION_MS = 700;
 
 interface Props {
   layout: TreeLayout;
-  /** PersonId of the target the comet flies TO. */
+  /** PersonId of the target the effect runs TO. Required. */
   targetId: number | null;
   /** Card width / height in world coordinates — used to draw the
-   *  arrival lap around the target's border. Same constants the canvas
-   *  PersonNode uses. */
+   *  arrival lap around the target's border. */
   cardW: number;
   cardH: number;
-  /** Total animation lifetime before parent should clear targetId.
-   *  Computed = travel time + lap time + fade margin. Exposed as a
-   *  callback so the parent can `setTimeout` once and not duplicate
-   *  the timing math here. */
+  /** Which effect modes are active. Multiple modes can run together;
+   *  each draws its own layer. Defaulted to comet-only. */
+  mode?: {
+    comet?: boolean;
+    sonar?: boolean;
+    /** Bright gradient slice that travels along the path — like the
+     *  comet but rendered as a wider, softer stripe of light. */
+    sweep?: boolean;
+    /** Lightning-style jagged bursts around the moving head; reads as
+     *  electricity arcing through the connection. */
+    electric?: boolean;
+    /** Animated dashes flowing along the path — like data pulsing
+     *  through fibre-optic cable. */
+    fiber?: boolean;
+    /** Thick steady glow on the entire path while the comet travels —
+     *  reads as the wires being lit-up neon-style. */
+    led?: boolean;
+  };
+  /** Total animation lifetime before parent should clear targetId. */
   onComplete?: () => void;
 }
 
-/** BFS the visible edges in `layout` to find the shortest path of
- *  personIds from `fromId` to `toId`. Returns null when no path
- *  exists in the visible graph. */
 function findShortestPath(
   layout: TreeLayout,
   fromId: number,
@@ -100,31 +100,75 @@ function findShortestPath(
   return path;
 }
 
-/** Build an SVG path-d string that walks orthogonally from each node
- *  to the next ALONG where the canvas would draw connection lines:
- *    - same-y pair (siblings, spouses): horizontal segment
- *    - different-y pair (parent/child): vertical → horizontal → vertical
- *      Z-shape using midY between the two rows
- *  Concatenated as a single continuous M ... L ... L ... path so the
- *  comet rides smoothly without teleporting between segments. */
-function buildOrthogonalPath(nodes: LaidOutNode[]): string {
-  if (nodes.length === 0) return '';
-  const first = nodes[0];
-  let d = `M ${first.x} ${first.y}`;
+/** Build an array of (x,y) waypoints for the comet to traverse. We
+ *  insert intermediate Manhattan corners so the comet's diagonal hops
+ *  between named cards still trace orthogonal Z-shapes that follow the
+ *  canvas's connection-line geometry. */
+function buildWaypoints(nodes: LaidOutNode[]): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  if (nodes.length === 0) return out;
+  out.push({ x: nodes[0].x, y: nodes[0].y });
   for (let i = 1; i < nodes.length; i++) {
     const a = nodes[i - 1];
     const b = nodes[i];
     if (a.y === b.y) {
-      // Horizontal hop — sibling / spouse / same-row in-law.
-      d += ` L ${b.x} ${b.y}`;
+      // Horizontal hop — single straight segment, no corners.
+      out.push({ x: b.x, y: b.y });
     } else {
-      // Vertical hop — parent ↔ child. Trace the canvas's Z shape:
-      // straight down from A, across at midY, straight down to B.
+      // Vertical hop — Z shape: down to midY, across to b.x, then
+      // down to b. Adds two intermediate corners.
       const midY = (a.y + b.y) / 2;
-      d += ` L ${a.x} ${midY} L ${b.x} ${midY} L ${b.x} ${b.y}`;
+      out.push({ x: a.x, y: midY });
+      out.push({ x: b.x, y: midY });
+      out.push({ x: b.x, y: b.y });
     }
   }
+  return out;
+}
+
+/** Build the same path as a single SVG `d` string so we can render
+ *  the static "rail" the comet rides on. */
+function buildPathD(waypoints: { x: number; y: number }[]): string {
+  if (waypoints.length === 0) return '';
+  const first = waypoints[0];
+  let d = `M ${first.x} ${first.y}`;
+  for (let i = 1; i < waypoints.length; i++) {
+    d += ` L ${waypoints[i].x} ${waypoints[i].y}`;
+  }
   return d;
+}
+
+/** Compute (x, y) on a piecewise-linear path at progress t in [0, 1].
+ *  Path length is the sum of segment lengths; we walk the path until
+ *  we accumulate t × totalLength. */
+function positionAlong(
+  waypoints: { x: number; y: number }[],
+  t: number,
+): { x: number; y: number } {
+  if (waypoints.length === 0) return { x: 0, y: 0 };
+  if (waypoints.length === 1) return waypoints[0];
+  const lengths: number[] = [];
+  let total = 0;
+  for (let i = 1; i < waypoints.length; i++) {
+    const dx = waypoints[i].x - waypoints[i - 1].x;
+    const dy = waypoints[i].y - waypoints[i - 1].y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    lengths.push(len);
+    total += len;
+  }
+  if (total === 0) return waypoints[0];
+  let dist = Math.max(0, Math.min(1, t)) * total;
+  for (let i = 0; i < lengths.length; i++) {
+    if (dist <= lengths[i]) {
+      const f = lengths[i] === 0 ? 0 : dist / lengths[i];
+      return {
+        x: waypoints[i].x + f * (waypoints[i + 1].x - waypoints[i].x),
+        y: waypoints[i].y + f * (waypoints[i + 1].y - waypoints[i].y),
+      };
+    }
+    dist -= lengths[i];
+  }
+  return waypoints[waypoints.length - 1];
 }
 
 export function PathwayHighlight({
@@ -132,12 +176,11 @@ export function PathwayHighlight({
   targetId,
   cardW,
   cardH,
+  mode = { comet: true },
   onComplete,
 }: Props) {
   const focusId = layout.focusPersonId;
-  // Re-compute the path whenever target changes. Memo'd against layout
-  // identity so rapid re-renders during the animation don't re-walk
-  // the BFS for every viewport pan / zoom tick.
+
   const pathInfo = useMemo(() => {
     if (targetId == null) return null;
     if (targetId === focusId) return null;
@@ -150,185 +193,249 @@ export function PathwayHighlight({
       .map(id => placedById.get(id))
       .filter((n): n is LaidOutNode => n != null);
     if (nodes.length < 2) return null;
+    const waypoints = buildWaypoints(nodes);
     return {
       ids,
       nodes,
-      pathD: buildOrthogonalPath(nodes),
+      waypoints,
+      pathD: buildPathD(waypoints),
       target: nodes[nodes.length - 1],
       travelDurationMs: (nodes.length - 1) * SECONDS_PER_SEGMENT * 1000,
     };
   }, [layout, focusId, targetId]);
 
-  // Fire onComplete exactly once per mount. timerSetRef ensures the
-  // setTimeout is only created on first effect run; subsequent re-
-  // renders of the same instance (caused by viewport pan / zoom /
-  // unrelated state churn) leave the timer alone instead of cancel-
-  // ling and bailing out, which was Terry's "no effects" symptom on
-  // the first version of this hook.
-  const timerSetRef = useRef(false);
+  // RAF-driven progress. Updated 60 times a second so the React tree
+  // re-renders the comet's position. Cheap because PathwayHighlight is
+  // a small leaf component — most of the parent canvas isn't touched.
+  const [progress, setProgress] = useState(0);
+  const startRef = useRef(0);
+
   useEffect(() => {
-    if (!pathInfo || !onComplete) return;
-    if (timerSetRef.current) return;
-    timerSetRef.current = true;
-    const total =
-      pathInfo.travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS;
-    const t = setTimeout(() => onComplete(), total + 80); // 80 ms cushion
-    return () => clearTimeout(t);
-    // pathInfo / onComplete identity changes on every parent render;
-    // the ref guard makes that harmless.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!pathInfo) return;
+    startRef.current = performance.now();
+    setProgress(0);
+    const totalMs = pathInfo.travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS;
+    let raf = 0;
+    const tick = (now: number) => {
+      const elapsed = now - startRef.current;
+      const t = Math.min(1, elapsed / totalMs);
+      setProgress(t);
+      if (t < 1) {
+        raf = requestAnimationFrame(tick);
+      } else if (onComplete) {
+        // Tiny cushion so the final frame paints before we ask the
+        // parent to unmount us.
+        setTimeout(() => onComplete(), 80);
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [pathInfo, onComplete]);
 
   if (!pathInfo) return null;
-  const { pathD, target, travelDurationMs } = pathInfo;
-  const travelDurationS = travelDurationMs / 1000;
-  const totalDurationS =
-    (travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS) / 1000;
-  // Card-perimeter rect — drawn from the target's centre out to the
-  // card edges. Same +/-half-W/H math the canvas uses for PersonNode
-  // hit zones, plus a small outward offset so the lap sits proud of
-  // the card border instead of overlapping it.
+  const { pathD, waypoints, target, travelDurationMs } = pathInfo;
+  const totalMs = travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS;
+  const elapsedMs = progress * totalMs;
+  // Sub-progress within each phase for compositing the lap + fade.
+  const travelT = Math.min(1, elapsedMs / travelDurationMs);
+  const lapT = Math.max(0, Math.min(1, (elapsedMs - travelDurationMs) / CARD_LAP_DURATION_MS));
+  const fadeT = Math.max(0, Math.min(1, (elapsedMs - travelDurationMs - CARD_LAP_DURATION_MS) / CARD_FADE_DURATION_MS));
+  // Path-trail opacity: fades in fast, holds during travel + lap,
+  // fades out together with the lap halo at the end.
+  const trailOpacity = (() => {
+    if (elapsedMs < 80) return (elapsedMs / 80) * 0.45;
+    if (fadeT > 0) return 0.45 * (1 - fadeT);
+    return 0.45;
+  })();
+  // Comet head: travels along the path during the travel phase, hides
+  // afterwards.
+  const cometPos = positionAlong(waypoints, travelT);
+  const cometOpacity = travelT >= 1 ? 0 : (travelT < 0.05 ? travelT / 0.05 : (travelT > 0.95 ? (1 - travelT) / 0.05 : 1));
+  // Sonar ring radii — emitted at each waypoint as the comet passes.
+  // Each ring expands from 18 to 80 over 600 ms then fades.
+  const sonarRings = (() => {
+    if (!mode.sonar) return [];
+    const rings: { x: number; y: number; r: number; opacity: number }[] = [];
+    if (waypoints.length < 2) return rings;
+    // Total path length and per-waypoint distance markers.
+    let total = 0;
+    const cum = [0];
+    for (let i = 1; i < waypoints.length; i++) {
+      const dx = waypoints[i].x - waypoints[i - 1].x;
+      const dy = waypoints[i].y - waypoints[i - 1].y;
+      total += Math.sqrt(dx * dx + dy * dy);
+      cum.push(total);
+    }
+    const RING_LIFE_MS = 700;
+    for (let i = 0; i < waypoints.length; i++) {
+      const arrivalT = total === 0 ? 0 : cum[i] / total;
+      const arrivalMs = arrivalT * travelDurationMs;
+      const age = elapsedMs - arrivalMs;
+      if (age < 0 || age > RING_LIFE_MS) continue;
+      const f = age / RING_LIFE_MS;
+      rings.push({
+        x: waypoints[i].x,
+        y: waypoints[i].y,
+        r: 18 + f * 62,
+        opacity: 1 - f,
+      });
+    }
+    return rings;
+  })();
+  // Card-perimeter lap geometry.
   const lapInset = 4;
   const lapX = target.x - cardW / 2 - lapInset;
   const lapY = target.y - cardH / 2 - lapInset;
   const lapW = cardW + lapInset * 2;
   const lapH = cardH + lapInset * 2;
-  // Stroke-dashoffset trick: dashArray equal to perimeter, dashOffset
-  // animated from perimeter→0 traces the rectangle once. SVG <animate>
-  // handles begin time so we can chain it directly after the comet
-  // arrives without a useEffect / setTimeout.
-  const lapPerimeter = 2 * (lapW + lapH) + 16; // generous overshoot for rounded corners
-  // Fraction of the total animation lifetime when the comet finishes
-  // travelling. Used to schedule the path-glow fade so it stays
-  // visible during the card lap instead of vanishing the moment the
-  // comet hits the target.
-  const travelFraction = travelDurationMs / (travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS);
-  const lapEndFraction = (travelDurationMs + CARD_LAP_DURATION_MS) / (travelDurationMs + CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS);
+  const lapPerimeter = 2 * (lapW + lapH) + 16;
+  // Lap is drawn via stroke-dashoffset shrinking from full perimeter
+  // to 0 over the lap phase, then fades out with the halo.
+  const lapDashOffset = lapPerimeter * (1 - lapT);
+  const lapOpacity = lapT > 0 ? (1 - fadeT) : 0;
+  // Halo around the target card during and after the lap.
+  const haloOpacity = lapT > 0 ? 0.85 * (1 - fadeT) : 0;
+
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {/* Backing-trail along the entire path — drawn first so the
-          comet rides on top of it. Stays visible during the comet's
-          travel AND during the card lap, then fades out together
-          with the lap glow. */}
+      {/* Static path trail — the rail the comet rides along. */}
       <path
         d={pathD}
         fill="none"
         stroke={COMET_COLOUR}
         strokeWidth={4}
-        strokeOpacity={0}
+        strokeOpacity={trailOpacity}
         strokeLinecap="round"
         strokeLinejoin="round"
-      >
-        <animate
-          attributeName="stroke-opacity"
-          values={`0;${PATH_TRAIL_OPACITY};${PATH_TRAIL_OPACITY};${PATH_TRAIL_OPACITY};0`}
-          keyTimes={`0;0.05;${travelFraction};${lapEndFraction};1`}
-          dur={`${totalDurationS}s`}
-          repeatCount="1"
-          fill="freeze"
+      />
+      {/* LED neon tube — thick steady glow on the whole path while the
+          travel + lap is in progress. Underlay drawn first so anything
+          else paints on top. Fades in/out together with the trail. */}
+      {mode.led && (
+        <path
+          d={pathD}
+          fill="none"
+          stroke={COMET_GLOW}
+          strokeWidth={14}
+          strokeOpacity={trailOpacity * 1.6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
-      </path>
-      {/* Comet halo — the wider, softer glow that gives the LED-tube
-          feel without an SVG <filter>. Rides one step behind the
-          bright head (same animateMotion path; native renderer puts
-          the head's circle on top because it's drawn later). */}
-      <circle r={TRAIL_RADIUS} fill={COMET_GLOW} opacity={0}>
-        <animate
-          attributeName="opacity"
-          values="0;0.95;0.95;0"
-          keyTimes="0;0.05;0.95;1"
-          dur={`${travelDurationS}s`}
-          repeatCount="1"
-          fill="freeze"
+      )}
+      {/* Fibre-optic flow — animated dashes flowing along the path.
+          Driven by progress so the dashes appear to "travel"
+          continuously while the effect is on screen. Dash pattern
+          (8 12) gives discrete pulses spaced ~20 px apart. */}
+      {mode.fiber && (
+        <path
+          d={pathD}
+          fill="none"
+          stroke={COMET_COLOUR}
+          strokeWidth={3}
+          strokeOpacity={trailOpacity * 1.6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray="8 12"
+          strokeDashoffset={-progress * 600}
         />
-        <animateMotion
-          dur={`${travelDurationS}s`}
-          repeatCount="1"
-          path={pathD}
-          fill="freeze"
-          rotate="auto"
+      )}
+      {/* Sonar rings — only rendered when the sonar mode is on. */}
+      {mode.sonar && sonarRings.map((r, i) => (
+        <circle
+          key={`sonar-${i}`}
+          cx={r.x}
+          cy={r.y}
+          r={r.r}
+          fill="none"
+          stroke={COMET_COLOUR}
+          strokeWidth={3}
+          opacity={r.opacity}
         />
-      </circle>
-      {/* Comet head — the bright moving point. */}
-      <circle r={COMET_RADIUS} fill={COMET_COLOUR} opacity={0}>
-        <animate
-          attributeName="opacity"
-          values="0;1;1;0"
-          keyTimes="0;0.05;0.95;1"
-          dur={`${travelDurationS}s`}
-          repeatCount="1"
-          fill="freeze"
-        />
-        <animateMotion
-          dur={`${travelDurationS}s`}
-          repeatCount="1"
-          path={pathD}
-          fill="freeze"
-          rotate="auto"
-        />
-      </circle>
-      {/* Card-perimeter lap — fires when the comet finishes. Uses an
-          SVG <animate> with begin = travel time so timing is owned by
-          SVG itself, no setTimeout race conditions. */}
-      <rect
-        x={lapX}
-        y={lapY}
-        width={lapW}
-        height={lapH}
-        rx={14}
-        ry={14}
-        fill="none"
-        stroke={COMET_COLOUR}
-        strokeWidth={5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeDasharray={lapPerimeter}
-        strokeDashoffset={lapPerimeter}
-        opacity={0}
-      >
-        <animate
-          attributeName="opacity"
-          values="0;1;1;0"
-          keyTimes="0;0.01;0.7;1"
-          begin={`${travelDurationS}s`}
-          dur={`${(CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS) / 1000}s`}
-          repeatCount="1"
-          fill="freeze"
-        />
-        <animate
-          attributeName="stroke-dashoffset"
-          values={`${lapPerimeter};0`}
-          begin={`${travelDurationS}s`}
-          dur={`${CARD_LAP_DURATION_MS / 1000}s`}
-          repeatCount="1"
-          fill="freeze"
-        />
-      </rect>
-      {/* Soft halo glow around the target card during and after the
-          lap — fades out together with the lap stroke. Same lavender
-          glow tone the comet trail uses, just at lower opacity. */}
-      <rect
-        x={lapX - 3}
-        y={lapY - 3}
-        width={lapW + 6}
-        height={lapH + 6}
-        rx={16}
-        ry={16}
-        fill="none"
-        stroke={COMET_GLOW}
-        strokeWidth={11}
-        opacity={0}
-      >
-        <animate
-          attributeName="opacity"
-          values="0;0.85;0"
-          keyTimes="0;0.4;1"
-          begin={`${travelDurationS}s`}
-          dur={`${(CARD_LAP_DURATION_MS + CARD_FADE_DURATION_MS) / 1000}s`}
-          repeatCount="1"
-          fill="freeze"
-        />
-      </rect>
+      ))}
+      {/* Gradient sweep — wide soft stripe trailing the travelling
+          head. Three concentric circles with decreasing opacity and
+          increasing radius give a gradient-blur read distinct from
+          the comet's tighter halo. */}
+      {mode.sweep && travelT < 1 && (
+        <>
+          <circle cx={cometPos.x} cy={cometPos.y} r={28} fill={COMET_COLOUR} opacity={cometOpacity * 0.18} />
+          <circle cx={cometPos.x} cy={cometPos.y} r={20} fill={COMET_COLOUR} opacity={cometOpacity * 0.32} />
+          <circle cx={cometPos.x} cy={cometPos.y} r={13} fill={COMET_COLOUR} opacity={cometOpacity * 0.55} />
+        </>
+      )}
+      {/* Electric arc — three jagged lightning-style bolts emanating
+          from the moving head. Per-frame jitter from progress gives
+          each render a slightly different shape (the visual hallmark
+          of arcing electricity). Same brand lavender as the rest. */}
+      {mode.electric && travelT < 1 && (
+        <g opacity={cometOpacity}>
+          {[0, 1, 2].map(i => {
+            const seed = (progress * 1000 + i * 37) % 1;
+            const angle = (i * 2.094) + seed * 0.7;
+            const len = 18 + seed * 12;
+            const sx = cometPos.x;
+            const sy = cometPos.y;
+            const ex = sx + Math.cos(angle) * len;
+            const ey = sy + Math.sin(angle) * len;
+            const midX = (sx + ex) / 2 + (seed - 0.5) * 8;
+            const midY = (sy + ey) / 2 + (seed - 0.5) * 8;
+            return (
+              <path
+                key={`bolt-${i}`}
+                d={`M ${sx} ${sy} L ${midX} ${midY} L ${ex} ${ey}`}
+                stroke={COMET_COLOUR}
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.85}
+              />
+            );
+          })}
+        </g>
+      )}
+      {/* Comet halo + head — only rendered when the comet mode is on. */}
+      {mode.comet && (
+        <>
+          <circle cx={cometPos.x} cy={cometPos.y} r={17} fill={COMET_GLOW} opacity={cometOpacity * 0.95} />
+          <circle cx={cometPos.x} cy={cometPos.y} r={11} fill={COMET_COLOUR} opacity={cometOpacity} />
+        </>
+      )}
+      {/* Card-perimeter lap — fires when travel completes. */}
+      {lapT > 0 && (
+        <>
+          {/* Halo glow around the target card. */}
+          <rect
+            x={lapX - 3}
+            y={lapY - 3}
+            width={lapW + 6}
+            height={lapH + 6}
+            rx={16}
+            ry={16}
+            fill="none"
+            stroke={COMET_GLOW}
+            strokeWidth={11}
+            opacity={haloOpacity}
+          />
+          {/* Lap stroke tracing the card border. */}
+          <rect
+            x={lapX}
+            y={lapY}
+            width={lapW}
+            height={lapH}
+            rx={14}
+            ry={14}
+            fill="none"
+            stroke={COMET_COLOUR}
+            strokeWidth={5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={lapPerimeter}
+            strokeDashoffset={lapDashOffset}
+            opacity={lapOpacity}
+          />
+        </>
+      )}
     </g>
   );
 }
