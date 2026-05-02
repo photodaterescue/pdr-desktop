@@ -51,6 +51,17 @@ interface Props {
    *  to build its path geometry, which lets the comet sail across
    *  canvas → panel boundaries seamlessly. */
   positionByPersonId?: Map<number, { x: number; y: number }>;
+  /** For each person rendered INSIDE an open panel, the world-coords
+   *  of (a) the chevron stud beneath their panel's head card and
+   *  (b) the panel's anchor point on the panel border. PathwayHighlight
+   *  injects these as virtual waypoints when the path crosses from a
+   *  canvas card INTO a panel descendant, so the comet rides the
+   *  chevron tether geometry rather than cutting a diagonal across
+   *  the panel chrome. */
+  panelTransitionByDescendantId?: Map<number, {
+    chevronX: number; chevronY: number;
+    anchorX: number; anchorY: number;
+  }>;
   /** Which effect modes are active. Multiple modes can run together;
    *  each draws its own layer. Defaulted to comet-only. */
   mode?: {
@@ -114,20 +125,73 @@ function findShortestPath(
 /** Build an array of (x,y) waypoints for the comet to traverse. We
  *  insert intermediate Manhattan corners so the comet's diagonal hops
  *  between named cards still trace orthogonal Z-shapes that follow the
- *  canvas's connection-line geometry. */
-function buildWaypoints(nodes: LaidOutNode[]): { x: number; y: number }[] {
+ *  canvas's connection-line geometry. When a node id is in
+ *  `transitions`, we also inject the chevron + panel-anchor waypoints
+ *  before / after that node so the comet rides the chevron tether
+ *  geometry on its way INTO or OUT OF an open panel — rather than
+ *  cutting a diagonal across the panel chrome. */
+function buildWaypoints(
+  nodes: LaidOutNode[],
+  transitions?: Map<number, { chevronX: number; chevronY: number; anchorX: number; anchorY: number }>,
+): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
   if (nodes.length === 0) return out;
   out.push({ x: nodes[0].x, y: nodes[0].y });
+  const inPanel = (id: number) => transitions?.has(id) ?? false;
   for (let i = 1; i < nodes.length; i++) {
     const a = nodes[i - 1];
     const b = nodes[i];
+    const aInPanel = inPanel(a.personId);
+    const bInPanel = inPanel(b.personId);
+    // Crossing INTO a panel — insert chevron + anchor between the
+    // canvas card and the first panel card so the comet follows the
+    // tether path the user can see drawn on the canvas.
+    if (!aInPanel && bInPanel) {
+      const t = transitions!.get(b.personId)!;
+      // Drop down from canvas card a → chevron stud (Z if the chevron
+      // sits at a different x).
+      if (a.x !== t.chevronX) {
+        const midY = (a.y + t.chevronY) / 2;
+        out.push({ x: a.x, y: midY });
+        out.push({ x: t.chevronX, y: midY });
+      }
+      out.push({ x: t.chevronX, y: t.chevronY });
+      // Chevron → panel anchor (curve in real world, straight here).
+      out.push({ x: t.anchorX, y: t.anchorY });
+      // Anchor → first panel card (Z if needed).
+      if (t.anchorX !== b.x) {
+        const midY = (t.anchorY + b.y) / 2;
+        out.push({ x: t.anchorX, y: midY });
+        out.push({ x: b.x, y: midY });
+      }
+      out.push({ x: b.x, y: b.y });
+      continue;
+    }
+    // Crossing OUT OF a panel back to canvas — symmetric: target's
+    // panel anchor + chevron between the panel card and the canvas
+    // card.
+    if (aInPanel && !bInPanel) {
+      const t = transitions!.get(a.personId)!;
+      if (a.x !== t.anchorX) {
+        const midY = (a.y + t.anchorY) / 2;
+        out.push({ x: a.x, y: midY });
+        out.push({ x: t.anchorX, y: midY });
+      }
+      out.push({ x: t.anchorX, y: t.anchorY });
+      out.push({ x: t.chevronX, y: t.chevronY });
+      if (t.chevronX !== b.x) {
+        const midY = (t.chevronY + b.y) / 2;
+        out.push({ x: t.chevronX, y: midY });
+        out.push({ x: b.x, y: midY });
+      }
+      out.push({ x: b.x, y: b.y });
+      continue;
+    }
+    // Same-context (both canvas, both same panel): the existing
+    // Manhattan rule. Same-Y → horizontal; different-Y → Z shape.
     if (a.y === b.y) {
-      // Horizontal hop — single straight segment, no corners.
       out.push({ x: b.x, y: b.y });
     } else {
-      // Vertical hop — Z shape: down to midY, across to b.x, then
-      // down to b. Adds two intermediate corners.
       const midY = (a.y + b.y) / 2;
       out.push({ x: a.x, y: midY });
       out.push({ x: b.x, y: midY });
@@ -188,6 +252,7 @@ export function PathwayHighlight({
   cardW,
   cardH,
   positionByPersonId,
+  panelTransitionByDescendantId,
   mode = { comet: true },
   onComplete,
 }: Props) {
@@ -221,7 +286,7 @@ export function PathwayHighlight({
       })
       .filter((n): n is LaidOutNode => n != null);
     if (nodes.length < 2) return null;
-    const waypoints = buildWaypoints(nodes);
+    const waypoints = buildWaypoints(nodes, panelTransitionByDescendantId);
     return {
       ids,
       nodes,
@@ -230,7 +295,7 @@ export function PathwayHighlight({
       target: nodes[nodes.length - 1],
       travelDurationMs: (nodes.length - 1) * SECONDS_PER_SEGMENT * 1000,
     };
-  }, [layout, focusId, targetId, positionByPersonId]);
+  }, [layout, focusId, targetId, positionByPersonId, panelTransitionByDescendantId]);
 
   // RAF-driven progress. Updated 60 times a second so the React tree
   // re-renders the comet's position. Cheap because PathwayHighlight is

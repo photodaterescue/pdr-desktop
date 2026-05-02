@@ -2623,13 +2623,30 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               // Override: in-panel nodes use the panel card's screen
               // position translated back into world coords. Inverse of
               // the world-transform: world = (screen - viewport.t) / scale.
+              const panelTransitionByDescendantId = new Map<number, {
+                chevronX: number; chevronY: number;
+                anchorX: number; anchorY: number;
+              }>();
               for (const l of layouts) {
+                // Chevron + panel-anchor world coords (screen→world via
+                // the same inverse transform). Recorded ONCE per panel
+                // and reused for every miniPlacement so the comet path
+                // gets the same chevron+anchor waypoints whichever in-
+                // panel descendant is the BFS target.
+                const chevronWorldX = (l.chevronScreenX - viewport.tx) / scaleSafe;
+                const chevronWorldY = (l.chevronScreenY - viewport.ty) / scaleSafe;
+                const anchorWorldX = (l.panelAnchorX - viewport.tx) / scaleSafe;
+                const anchorWorldY = (l.panelAnchorY - viewport.ty) / scaleSafe;
                 for (const p of l.miniPlacements) {
                   const screenX = l.panelLeft + p.cx * scaleSafe;
                   const screenY = l.panelTop + p.cy * scaleSafe;
                   const worldX = (screenX - viewport.tx) / scaleSafe;
                   const worldY = (screenY - viewport.ty) / scaleSafe;
                   worldPositionByPersonId.set(p.personId, { x: worldX, y: worldY });
+                  panelTransitionByDescendantId.set(p.personId, {
+                    chevronX: chevronWorldX, chevronY: chevronWorldY,
+                    anchorX: anchorWorldX, anchorY: anchorWorldY,
+                  });
                 }
               }
               return (
@@ -2645,6 +2662,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                       cardW={CARD_W}
                       cardH={CARD_H}
                       positionByPersonId={worldPositionByPersonId}
+                      panelTransitionByDescendantId={panelTransitionByDescendantId}
                       mode={highlightMode}
                       onComplete={onHighlightComplete}
                     />
