@@ -1018,6 +1018,17 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           if (seen.has(p)) continue;
           seen.add(p);
           if (bloodlineSet.has(p)) continue;
+          // Virtual ghost placeholders (negative IDs from
+          // augmentWithGhostParents) are NOT real ancestry — they're
+          // empty parent slots painted above people with <2 stored
+          // parents. We must skip them here so a person with no real
+          // DB parents (Dan in Terry's screenshot) doesn't end up
+          // with a non-empty extended-ancestor set, which would
+          // wrongly surface a "Parents" branch in the corner badge
+          // and a chevron above their canvas card. Real
+          // placeholder_persons (positive IDs, isPlaceholder=true)
+          // ARE real DB rows the user created, so they still count.
+          if (p < 0) continue;
           extended.add(p);
           stack.push(p);
         }
@@ -2508,18 +2519,30 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       scaled by viewport.scale (the SVG's outer
                       width / contentWidth ratio). */}
                   {l.miniPlacements.map(p => {
-                    // Only surface "Parents" when the DB actually has
-                    // stored parents that are currently filtered out
-                    // — totalParentCount is the real-edge count, so
-                    // a person with no parents on file (Dan in
-                    // Terry's screenshot) lands at 0 > 0 = false and
-                    // gets no badge entry. The chevron-style
-                    // extendedAncestorsByPerson.has check counted
-                    // virtual-ghost augmenter placeholders too,
-                    // which made the badge promise expansions that
-                    // didn't exist.
+                    // Match the canvas chevron condition exactly so a
+                    // panel-card and its canvas equivalent agree on
+                    // whether a "Parents" branch is available.
+                    //
+                    //  • extendedAncestorsByPerson.has — the person is
+                    //    a non-bloodline in-law whose real ancestry is
+                    //    currently hidden by the default-collapse
+                    //    rule. Their parent_of edges are in the layout
+                    //    (so visibleParentCount looks complete) but
+                    //    the parents themselves are filtered out of
+                    //    rendering, so the only way to surface them is
+                    //    via this set. Now that virtual ghost
+                    //    placeholders are excluded from
+                    //    extendedAncestorsByPerson, this no longer
+                    //    fires falsely for a person with no real DB
+                    //    parents.
+                    //
+                    //  • totalParentCount > visibleParentCount — the
+                    //    person is bloodline (or otherwise rendered)
+                    //    but the DB has more parents than appear in
+                    //    the current Steps window.
                     const hasParentsToShow =
-                      p.node.totalParentCount > (visibleParentChildCounts.parentCount.get(p.personId) ?? 0);
+                      extendedAncestorsByPerson.has(p.personId)
+                      || p.node.totalParentCount > (visibleParentChildCounts.parentCount.get(p.personId) ?? 0);
                     const hasCousinsToShow = sideBranchDescendantsByHead.has(p.personId);
                     if (!hasParentsToShow && !hasCousinsToShow) return null;
                     // Card top-right corner in panel-local viewBox
