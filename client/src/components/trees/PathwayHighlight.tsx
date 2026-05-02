@@ -233,45 +233,31 @@ function buildWaypoints(
     // both siblings then DOWN; spouse_of runs horizontal at avatar
     // level between the cards' inside edges.
     const rel = findRelation(a.personId, b.personId);
-    if (rel === 'parent_a' || rel === 'parent_b') {
-      // parent_of edge — match the canvas's exact orthogonal-path
-      // geometry from EdgeLine: M ax ay L ax midY L bx midY L bx by.
-      // CARD-CENTRE to CARD-CENTRE, midY = (ay+by)/2 — no edge
-      // offsets. The comet now overlays the existing rendered line
-      // pixel-for-pixel.
+    // Single uniform rule — matches the canvas's parent_of orthogonal
+    // path geometry verbatim:
+    //   M ax ay L ax midY L bx midY L bx by  (centre-to-centre Z)
+    // for cards on different rows, and a horizontal segment for
+    // cards on the same row. NO custom bracket / avatar-level
+    // primitives; the comet rides the same line shape the canvas
+    // paints. Terry's feedback: "you're just ignoring these lines
+    // and making them all up for yourself" — this reverts to the
+    // single-rule approach that matched the canvas before the
+    // edge-typed branches were bolted on.
+    if (a.y === b.y) {
+      out.push({ x: b.x, y: b.y });
+    } else {
       const midY = (a.y + b.y) / 2;
       out.push({ x: a.x, y: midY });
       out.push({ x: b.x, y: midY });
       out.push({ x: b.x, y: b.y });
-    } else if (rel === 'sibling') {
-      // Sibling bracket — climb UP from a's centre to the bracket Y
-      // (above both siblings, below their parents), traverse across,
-      // and DOWN to b's centre. Approximates FamilyGroup's bracketY
-      // when we don't have the parents in scope to compute it
-      // exactly.
-      const bracketY = Math.min(a.y, b.y) - SIBLING_BRACKET_LIFT;
-      out.push({ x: a.x, y: bracketY });
-      out.push({ x: b.x, y: bracketY });
-      out.push({ x: b.x, y: b.y });
-    } else if (rel === 'spouse') {
-      // Partnership bar at avatar level — runs along the avatar-row
-      // y between the two partner cards (canvas EdgeLine's spouse_of
-      // path uses (ay+by)/2 + AVATAR_CY).
-      const avatarY = (a.y + b.y) / 2 + AVATAR_CY_OFFSET;
-      out.push({ x: a.x, y: avatarY });
-      out.push({ x: b.x, y: avatarY });
-      out.push({ x: b.x, y: b.y });
-    } else {
-      // Fallback — treat as a generic Z.
-      if (a.y === b.y) {
-        out.push({ x: b.x, y: b.y });
-      } else {
-        const midY = (a.y + b.y) / 2;
-        out.push({ x: a.x, y: midY });
-        out.push({ x: b.x, y: midY });
-        out.push({ x: b.x, y: b.y });
-      }
     }
+    // Suppress unused-variable warnings for the rel-classifier we're
+    // now skipping. The classifier is left in the file because it'll
+    // be useful when we eventually wire the comet to a canvas-exact
+    // sibling-bracket renderer (parent's marriage-bar midpoint →
+    // bracketY → siblings' drops). For now uniform Z is what Terry
+    // confirmed was close.
+    void rel;
   }
   return out;
 }
