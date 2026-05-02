@@ -732,6 +732,8 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     // moved rightward — leaving Gladys stranded on the wrong side
     // of Derek instead of glued to Nan's right.
     const findKidHavingSibling = (pid: number): { key: string; desired: number } | null => {
+      // Method A — shared parent (parent_of upward, then downward to a
+      // sibling who has placed kids).
       const grandparentIds = new Set<number>();
       for (const e of graph.edges) {
         if (e.type !== 'parent_of') continue;
@@ -743,6 +745,24 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         if (!grandparentIds.has(e.aId)) continue;
         if (e.bId === pid) continue;
         const sibKids = childrenByParent.get(e.bId) ?? [];
+        if (sibKids.length === 0) continue;
+        const xs = sibKids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
+        if (xs.length === 0) continue;
+        const desired = xs.reduce((a, b) => a + b, 0) / xs.length;
+        return { key: [...sibKids].sort((a, b) => a - b).join(','), desired };
+      }
+      // Method B — direct sibling_of edges. Same reason as the matching
+      // fallback in findSiblings above: when the shared parent has been
+      // stripped from layoutGraph, parent_of upward returns nothing, so
+      // we have to consult the synthesised sibling_of edges to keep
+      // kid-less Gladys riding along with kid-having Sylvia.
+      for (const e of graph.edges) {
+        if (e.type !== 'sibling_of') continue;
+        let other: number | null = null;
+        if (e.aId === pid) other = e.bId;
+        else if (e.bId === pid) other = e.aId;
+        if (other == null) continue;
+        const sibKids = childrenByParent.get(other) ?? [];
         if (sibKids.length === 0) continue;
         const xs = sibKids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
         if (xs.length === 0) continue;
@@ -991,19 +1011,39 @@ function orderParentGeneration(
     // don't handle that gracefully, but excluding pair-mates is the
     // sane default).
     const findSiblings = (parentId: number): number[] => {
+      const sibs = new Set<number>();
+      // Method A — shared grandparents (parent_of upward, then downward).
+      // Standard sibling derivation when both parents exist on the tree.
       const grandparentIds = new Set<number>();
       for (const e of graph.edges) {
         if (e.type !== 'parent_of') continue;
         if (e.bId !== parentId) continue;
         grandparentIds.add(e.aId);
       }
-      const sibs = new Set<number>();
       for (const e of graph.edges) {
         if (e.type !== 'parent_of') continue;
         if (!grandparentIds.has(e.aId)) continue;
         if (e.bId === parentId) continue;
         if (pairMembers.has(e.bId)) continue;
         if (idSet.has(e.bId)) sibs.add(e.bId);
+      }
+      // Method B — direct sibling_of edges (stored OR derived). Critical
+      // for the case where the shared parent IS in the DB but has been
+      // stripped from layoutGraph (e.g. an unnamed placeholder grandmother
+      // glueing two named sisters together): method A finds no
+      // grandparents, so without this fallback Gladys would lose her
+      // Sylvia-adjacent slot. The server synthesises a derived
+      // sibling_of edge for any pair sharing a parent (placeholder
+      // included), so this hits exactly the topology we need.
+      for (const e of graph.edges) {
+        if (e.type !== 'sibling_of') continue;
+        let other: number | null = null;
+        if (e.aId === parentId) other = e.bId;
+        else if (e.bId === parentId) other = e.aId;
+        if (other == null) continue;
+        if (pairMembers.has(other)) continue;
+        if (!idSet.has(other)) continue;
+        sibs.add(other);
       }
       return [...sibs];
     };
