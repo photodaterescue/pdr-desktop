@@ -911,21 +911,42 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     generationsEnabled ? Math.max(ancestorsDepth, descendantsDepth) : 0,
     1, // never 0 — layout needs breathing room even in focus-only view
   );
-  // Ghost parent placeholders REMOVED globally per Terry's feedback —
-  // empty parent slots painted above named cards (with their dotted
-  // half-rectangles and stub lines reaching nowhere) were creating
-  // random-looking visual debris around branches whose parents simply
-  // haven't been added yet. Now every named person with <2 stored
-  // parents shows nothing above them; the +parent quick-add chip on
-  // each card is the single way to introduce a new parent. The chevron
-  // logic in TreesCanvas already handles "DB has more parents than
-  // visible" via totalParentCount > visibleParentCount, so bloodline
-  // truncation past Steps still surfaces correctly without the ghosts.
-  // augmentWithVirtualGhosts is kept exported in trees-layout.ts in
-  // case the design decision reverses; the call site is the only
-  // place ghosts entered the layout, so bypassing it here removes
-  // them everywhere.
-  const layoutGraph = visibleGraph;
+  // ALL parent placeholders REMOVED globally per Terry's feedback —
+  // both virtual ghosts (negative IDs from the now-disabled augmenter)
+  // AND real placeholder_person rows (positive IDs, isPlaceholder=true)
+  // get stripped before the layout runs. The real placeholders are
+  // auto-created when the user marks two people as siblings — they
+  // exist in the DB purely so the sibling link can derive from a
+  // shared-parent relationship — and surfacing them as empty cards
+  // with dotted brackets above the grandparent row is exactly the
+  // visual debris Terry asked to remove.
+  //
+  // Sibling brackets between people who shared a placeholder parent
+  // still render: the server synthesises derived sibling_of edges
+  // for any pair of children sharing a parent (placeholder included),
+  // and TreesCanvas already draws those derived edges as a fallback
+  // when the shared parent isn't in nodeById. The sibling visual
+  // therefore degrades from a parent-anchored bracket to a direct
+  // sibling line — same information, no debris.
+  //
+  // Server side: totalParentCount / totalChildCount queries also
+  // exclude placeholders (see search-database.ts) so the chevron
+  // condition (totalParentCount > visibleParentCount) doesn't fire
+  // above someone whose only "missing" parents were placeholders.
+  const layoutGraph = (() => {
+    if (!visibleGraph) return null;
+    const placeholderIds = new Set<number>();
+    for (const n of visibleGraph.nodes) {
+      if (n.isPlaceholder) placeholderIds.add(n.personId);
+    }
+    return {
+      ...visibleGraph,
+      nodes: visibleGraph.nodes.filter(n => !n.isPlaceholder),
+      edges: visibleGraph.edges.filter(
+        e => !placeholderIds.has(e.aId) && !placeholderIds.has(e.bId),
+      ),
+    };
+  })();
   const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops) : null;
 
   const handleRefocus = useCallback((personId: number) => {

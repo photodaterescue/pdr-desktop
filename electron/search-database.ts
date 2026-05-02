@@ -4386,12 +4386,20 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   // above people whose real parents live beyond Steps, and to hide
   // the +parent chip on anyone who already has two parents in the
   // DB (even if only one is currently visible).
+  // Placeholder parents are excluded from this count — those rows are
+  // auto-created when the user marks two people as siblings (so the
+  // sibling link can derive from a shared-parent relationship), not
+  // because the user actually entered a parent. Counting them here
+  // would falsely fire the "expand ancestry" chevron above someone
+  // whose only "missing" parents are these placeholders, which is
+  // exactly the visual debris Terry asked us to remove.
   const totalParentCountRows = db.prepare(`
     SELECT r.person_b_id AS child_id, COUNT(*) AS cnt
     FROM relationships r
     JOIN persons a ON a.id = r.person_a_id
     WHERE r.type = 'parent_of' AND r.person_b_id IN (${placeholders})
       AND a.discarded_at IS NULL
+      AND COALESCE(a.is_placeholder, 0) = 0
     GROUP BY r.person_b_id
   `).all(...ids) as { child_id: number; cnt: number }[];
   const totalParentCountByPerson = new Map<number, number>();
@@ -4401,13 +4409,15 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   // count above but inverted. Trees uses this to know whether a
   // person has descendants beyond what the current Generations
   // setting reveals, so the renderer can paint a v chevron beneath
-  // them inviting the user to expand downward.
+  // them inviting the user to expand downward. Placeholder children
+  // are excluded for the same reason as the parent count above.
   const totalChildCountRows = db.prepare(`
     SELECT r.person_a_id AS parent_id, COUNT(*) AS cnt
     FROM relationships r
     JOIN persons b ON b.id = r.person_b_id
     WHERE r.type = 'parent_of' AND r.person_a_id IN (${placeholders})
       AND b.discarded_at IS NULL
+      AND COALESCE(b.is_placeholder, 0) = 0
     GROUP BY r.person_a_id
   `).all(...ids) as { parent_id: number; cnt: number }[];
   const totalChildCountByPerson = new Map<number, number>();
