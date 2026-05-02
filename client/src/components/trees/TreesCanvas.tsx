@@ -2406,6 +2406,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                         renderedX: p.cx,
                         renderedY: p.cy,
                       };
+                      // Same affordances the canvas card has — Terry
+                      // explicitly asked for + chips and right-click
+                      // context menu inside panels too. The
+                      // chevrons (^ and v) re-enable as well so a
+                      // panel-card with hideable cousins / extended
+                      // ancestors can spawn its own panel-from-panel
+                      // (step 11 of TREES_PANEL_DESIGN.md). Action
+                      // handlers route to the same canvas handlers
+                      // so the behaviour is identical.
+                      const hasHideableDescendantsInPanel = sideBranchDescendantsByHead.has(p.personId);
+                      const hasOutOfScopeAncestorsInPanel =
+                        extendedAncestorsByPerson.has(p.personId)
+                        || p.node.totalParentCount > (visibleParentChildCounts.parentCount.get(p.personId) ?? 0);
                       return (
                         <PersonNode
                           key={p.personId}
@@ -2413,36 +2426,47 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                           avatar={avatars.get(p.personId)}
                           isFocus={false}
                           opacity={1}
-                          hideChips={true}
+                          hideChips={hideQuickAddChips}
                           relationshipLabel={relationshipLabels.get(p.personId)}
-                          // No-op mousedown so the event bubbles to
-                          // the panel's outer SVG and starts the
-                          // panel drag — Terry: "the user should be
-                          // able to grab the panel anywhere and
-                          // move it". Action affordances inside
-                          // PersonNode (gender badge, step badge,
-                          // chevrons) keep their OWN
-                          // e.stopPropagation() on mousedown, so
-                          // those still behave as buttons; the bare
-                          // card body falls through to drag.
+                          // No-op mousedown so empty card body
+                          // bubbles to the panel SVG drag handler,
+                          // matching how the canvas card works —
+                          // chevrons / chips / gender badge inside
+                          // PersonNode have their own
+                          // e.stopPropagation() so they keep
+                          // behaving as buttons.
                           onMouseDown={() => {}}
-                          // Reuse the canvas's double-click handler
-                          // so the same placeholder guard applies:
-                          // double-clicking a "?" card (Lindsay's
-                          // unknown grandparent, etc.) used to call
-                          // onRefocus with a placeholder personId
-                          // and the graph fetch returned empty,
-                          // leaving Terry on a blank canvas.
+                          // Same canvas double-click placeholder
+                          // guard.
                           onDoubleClick={(e) => handleNodeDoubleClick(e, p.node)}
-                          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                          onQuickAddParent={() => {}}
-                          onQuickAddPartner={() => {}}
-                          onQuickAddChild={() => {}}
-                          onQuickAddSibling={() => {}}
+                          // Right-click context menu — wired through
+                          // to the same handler the canvas uses.
+                          onContextMenu={(e) => handleNodeContextMenu(e, p.node)}
+                          // Quick-add chips — same handlers as the
+                          // canvas. Sibling-add inside a panel runs
+                          // the SiblingKindDialog; partner / child /
+                          // parent each go through finaliseQuickAdd.
+                          onQuickAddParent={() => onQuickAddParent(p.personId)}
+                          onQuickAddPartner={() => onQuickAddPartner(p.personId)}
+                          onQuickAddChild={() => onQuickAddChild(p.personId)}
+                          onQuickAddSibling={() => onQuickAddSibling(p.personId)}
                           contrast={treeContrast}
-                          canAddParent={false}
-                          hasOutOfScopeAncestors={false}
-                          hasHideableDescendants={false}
+                          canAddParent={true}
+                          hasCurrentPartner={(currentPartnerCount.get(p.personId) ?? 0) > 0}
+                          // ^ chevron above the card — same
+                          // condition the canvas card uses. Click
+                          // toggles via onExpandAncestors which
+                          // spawns a panel for that person's
+                          // family-of-origin (recursion = step 11).
+                          hasOutOfScopeAncestors={hasOutOfScopeAncestorsInPanel}
+                          // v chevron below the card — only when
+                          // the person has hideable cousins on
+                          // their own line.
+                          hasHideableDescendants={hasHideableDescendantsInPanel}
+                          onExpandAncestors={onExpandAncestors ? () => onExpandAncestors(p.personId) : undefined}
+                          onExpandDescendants={onExpandDescendants ? () => onExpandDescendants(p.personId) : undefined}
+                          ancestorsExpanded={expandedAncestorsOf?.has(p.personId) ?? false}
+                          descendantsExpanded={expandedDescendantsOf?.has(p.personId) ?? false}
                           isOnBloodline={bloodlineSet.has(p.personId)}
                           // Per-person bloodline colour (lavender =
                           // bloodline, orange = in-law). Same rule as
