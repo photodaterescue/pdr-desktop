@@ -2416,7 +2416,18 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
           const panelLeft = defaultPanelLeft + clampedWorldX * scaleSafe;
           const panelTop = defaultPanelTop + clampedWorldY * scaleSafe;
           const panelAnchorX = panelLeft + panelW / 2;
-          const panelAnchorY = direction === 'descendant' ? panelTop : panelTop + panelH;
+          // Anchor the tether 2 px INSIDE the panel border (the panel
+          // <Card> has borderWidth: 2). The in-panel tether-continuation
+          // <g> starts at the SVG's local y=0, which corresponds to the
+          // INNER edge of the border — so a tether terminating at the
+          // OUTER edge leaves a 2 px gap. Invisible at the old 2 px
+          // stroke but obvious now we've doubled connection lines, so
+          // we extend the bezier endpoint past the border to meet the
+          // in-panel scaffolding cleanly.
+          const PANEL_BORDER_WIDTH = 2;
+          const panelAnchorY = direction === 'descendant'
+            ? panelTop + PANEL_BORDER_WIDTH
+            : panelTop + panelH - PANEL_BORDER_WIDTH;
           const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
           const directionLabel = direction === 'descendant' ? 'descendants' : 'family of origin';
           const isOriginBloodline = bloodlineSet.has(personId);
