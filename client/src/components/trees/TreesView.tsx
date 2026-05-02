@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders, Play } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   getFamilyGraph,
@@ -308,6 +308,35 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     if (!effectsCreationBurst) return;
     setHighlightTarget(personId);
   }, [effectsEnabled, effectsCreationBurst]);
+  /** Preview-only trigger that BYPASSES the master + per-effect
+   *  toggles. Wired to the play buttons next to each Visual Effects
+   *  row so a user can see what an effect does before turning it on
+   *  — otherwise enabling something you've never seen would be a
+   *  blind commitment. Picks the visible person FURTHEST from focus
+   *  as the demo target so the comet runs the longest sensible path
+   *  on the current tree. Falls back to first non-focus visible
+   *  person when no hop data is available. */
+  const previewCreationHighlight = useCallback(() => {
+    if (!visibleGraph || focusPersonId == null) return;
+    let target: number | null = null;
+    let bestHops = -1;
+    for (const n of visibleGraph.nodes) {
+      if (n.personId === focusPersonId) continue;
+      const hops = n.hopsFromFocus ?? 0;
+      if (hops > bestHops) { bestHops = hops; target = n.personId; }
+    }
+    if (target == null) {
+      const first = visibleGraph.nodes.find(n => n.personId !== focusPersonId);
+      if (first) target = first.personId;
+    }
+    if (target == null) return;
+    // Force a fresh mount even if the same target is selected back-
+    // to-back (e.g. user mashes the play button) — clear first, then
+    // set on the next tick so PathwayHighlight's key={targetId}
+    // remounts.
+    setHighlightTarget(null);
+    setTimeout(() => setHighlightTarget(target), 16);
+  }, [visibleGraph, focusPersonId]);
   /** Date editor target — { personId, x, y } where x/y are screen
    *  coords for the popup. Null = editor closed. */
   const [dateEditor, setDateEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
@@ -2111,6 +2140,8 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
                   Visual Effects
                 </p>
+                {/* Master switch — no play button here; this row gates
+                    every other effect rather than running its own. */}
                 <label className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors cursor-pointer">
                   <input
                     type="checkbox"
@@ -2120,19 +2151,43 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   />
                   <span className="flex-1">Enable visual effects</span>
                 </label>
-                <label
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors cursor-pointer ${effectsEnabled ? 'text-foreground hover:bg-accent' : 'text-muted-foreground/60 cursor-not-allowed'}`}
+                {/* Per-effect rows — toggle area + a small Play button
+                    for previewing the effect on the current tree
+                    without having to actually add a new person. The
+                    play button bypasses both the master and per-effect
+                    toggles via previewCreationHighlight, so disabled
+                    effects can still be previewed before opting in.
+                    Inline-button styling matches the existing toolbar
+                    icon affordances (undo/redo): text-primary on icon,
+                    hover:bg-primary/10 to differentiate from the row's
+                    bg-accent hover. */}
+                <div
+                  className={`flex items-stretch gap-1 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent' : 'text-muted-foreground/60'}`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={effectsCreationBurst}
-                    disabled={!effectsEnabled}
-                    onChange={e => persistEffectsCreationBurst(e.target.checked)}
-                    className="accent-primary"
-                  />
-                  <span className="flex-1">Pathway burst on add</span>
-                  <span className="text-[10px] text-muted-foreground">comet</span>
-                </label>
+                  <label
+                    className={`flex-1 flex items-center gap-2 px-2 py-1.5 ${effectsEnabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={effectsCreationBurst}
+                      disabled={!effectsEnabled}
+                      onChange={e => persistEffectsCreationBurst(e.target.checked)}
+                      className="accent-primary"
+                    />
+                    <span className="flex-1">Pathway burst on add</span>
+                    <span className="text-[10px] text-muted-foreground">comet</span>
+                  </label>
+                  <IconTooltip label="Preview this effect" side="left">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); previewCreationHighlight(); }}
+                      className="px-2 rounded text-primary hover:bg-primary/10 transition-colors"
+                      aria-label="Preview pathway burst on add"
+                    >
+                      <Play className="w-3 h-3" fill="currentColor" />
+                    </button>
+                  </IconTooltip>
+                </div>
               </PopoverContent>
             </Popover>
             <IconTooltip label="Change the focus person" side="bottom">
