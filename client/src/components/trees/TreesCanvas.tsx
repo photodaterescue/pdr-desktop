@@ -3963,7 +3963,11 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, can
 
   return (
     <div
-      className="absolute z-20 bg-popover border border-border rounded-lg shadow-xl py-1 min-w-[240px]"
+      // z-50 — sits ABOVE the floating panels (z-30) so right-clicking
+      // a card inside a panel doesn't get the menu clipped behind the
+      // panel chrome. Was z-20 which won against the canvas but lost
+      // to panels.
+      className="absolute z-50 bg-popover border border-border rounded-lg shadow-xl py-1 min-w-[240px]"
       style={{ left: x, top: y }}
       onClick={e => e.stopPropagation()}
       onContextMenu={e => e.preventDefault()}
