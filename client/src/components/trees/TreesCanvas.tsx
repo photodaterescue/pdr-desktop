@@ -1419,9 +1419,14 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 parents={group.parentIds.map(id => nodeById.get(id)!).filter(Boolean)}
                 children={group.childIds.map(id => nodeById.get(id)!).filter(Boolean)}
                 parentsAreSpouses={hasStoredSpouse}
-                // Stagger the bracket Y so different families don't share
-                // the same horizontal line. Deterministic per-group offset.
-                bracketOffset={i * 8}
+                // No per-group bracket stagger — Terry's spec: every
+                // family group at the same generation shares the same
+                // sibling-bracket Y. Previously we offset by i*8 to
+                // avoid overlap, which produced the visible ladder
+                // effect Terry flagged where Alan's bracket sat
+                // higher than Sally's despite both being at the same
+                // generation row.
+                bracketOffset={0}
                 contrast={treeContrast}
                 strokeOverride={isFamilyBloodline ? '#ad9eff' : undefined}
                 onParentClick={(parentId) => {
@@ -2872,7 +2877,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                           parents={parentNodes}
                           children={childNodes}
                           parentsAreSpouses={hasStoredSpouse}
-                          bracketOffset={i * 8}
+                          // Same fix as the canvas-level FamilyGroup — no
+                          // per-group bracket stagger, so all sibling
+                          // brackets at the same generation inside this
+                          // panel share a y.
+                          bracketOffset={0}
                           contrast={treeContrast}
                           strokeOverride={l.tetherColour}
                           onParentClick={() => {}}
