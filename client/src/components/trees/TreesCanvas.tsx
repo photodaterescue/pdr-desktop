@@ -10,6 +10,8 @@ import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { GenderPickerModal, genderMarkerSymbol } from './GenderPickerModal';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import { setPersonGender as setPersonGenderApi, type PersonGender } from '@/lib/electron-bridge';
 
 interface TreesCanvasProps {
@@ -2453,20 +2455,18 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                           contrast={treeContrast}
                           canAddParent={true}
                           hasCurrentPartner={(currentPartnerCount.get(p.personId) ?? 0) > 0}
-                          // ^ chevron above the card — same
-                          // condition the canvas card uses. Click
-                          // toggles via onExpandAncestors which
-                          // spawns a panel for that person's
-                          // family-of-origin (recursion = step 11).
-                          hasOutOfScopeAncestors={hasOutOfScopeAncestorsInPanel}
-                          // v chevron below the card — only when
-                          // the person has hideable cousins on
-                          // their own line.
-                          hasHideableDescendants={hasHideableDescendantsInPanel}
-                          onExpandAncestors={onExpandAncestors ? () => onExpandAncestors(p.personId) : undefined}
-                          onExpandDescendants={onExpandDescendants ? () => onExpandDescendants(p.personId) : undefined}
-                          ancestorsExpanded={expandedAncestorsOf?.has(p.personId) ?? false}
-                          descendantsExpanded={expandedDescendantsOf?.has(p.personId) ?? false}
+                          // Inside panels we DON'T render the ^ / v
+                          // chevrons on individual cards — Terry's
+                          // concern about visual clutter, plus
+                          // chevrons only point one direction so
+                          // they don't accommodate
+                          // siblings / other-partner children
+                          // anyway. Replaced with a single
+                          // corner-badge popover (rendered as an
+                          // overlay layer on the panel) that lists
+                          // every expandable branch in one place.
+                          hasOutOfScopeAncestors={false}
+                          hasHideableDescendants={false}
                           isOnBloodline={bloodlineSet.has(p.personId)}
                           // Per-person bloodline colour (lavender =
                           // bloodline, orange = in-law). Same rule as
@@ -2478,6 +2478,90 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       );
                     })}
                   </svg>
+                  {/* Corner-badge overlays — one tiny "..." dot per
+                      panel card that has expandable family branches.
+                      Clicking opens a Popover listing every branch
+                      in one place: parents, cousins, etc. — same
+                      handlers the canvas chevrons use, just unified
+                      so we don't need chevrons sprouting in four
+                      directions per card. Positioned in HTML over
+                      the SVG using the card's panel-local coords
+                      scaled by viewport.scale (the SVG's outer
+                      width / contentWidth ratio). */}
+                  {l.miniPlacements.map(p => {
+                    const hasParentsToShow =
+                      extendedAncestorsByPerson.has(p.personId)
+                      || p.node.totalParentCount > (visibleParentChildCounts.parentCount.get(p.personId) ?? 0);
+                    const hasCousinsToShow = sideBranchDescendantsByHead.has(p.personId);
+                    if (!hasParentsToShow && !hasCousinsToShow) return null;
+                    // Card top-right corner in panel-local viewBox
+                    // coords. SVG outer height = contentHeight * scale,
+                    // so screen offset = local-coord * scale.
+                    const cardRightX = p.cx + CARD_W / 2;
+                    const cardTopY = p.cy - CARD_H / 2;
+                    const screenLeft = cardRightX * viewport.scale - 14; // 14 = badge half-width offset inward
+                    const screenTop = cardTopY * viewport.scale + 32;    // 32 = below the gender / step badges
+                    const ancestorsExpanded = expandedAncestorsOf?.has(p.personId) ?? false;
+                    const descendantsExpanded = expandedDescendantsOf?.has(p.personId) ?? false;
+                    const branchCount = (hasParentsToShow ? 1 : 0) + (hasCousinsToShow ? 1 : 0);
+                    return (
+                      <div
+                        key={`badge-${p.personId}`}
+                        className="absolute"
+                        style={{
+                          left: screenLeft,
+                          top: screenTop,
+                          // Sits above the SVG cards; below the
+                          // panel border / context menu.
+                          zIndex: 5,
+                        }}
+                      >
+                        <Popover>
+                          <IconTooltip
+                            label={`${branchCount} family branch${branchCount === 1 ? '' : 'es'} available`}
+                            side="left"
+                          >
+                            <PopoverTrigger asChild>
+                              <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="w-5 h-5 rounded-full bg-background border border-border shadow-sm hover:bg-accent flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
+                                aria-label={`${branchCount} family branch${branchCount === 1 ? '' : 'es'} for ${p.node.fullName?.trim() || p.node.name}`}
+                              >
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                                  <circle cx="2" cy="5" r="1" />
+                                  <circle cx="5" cy="5" r="1" />
+                                  <circle cx="8" cy="5" r="1" />
+                                </svg>
+                              </button>
+                            </PopoverTrigger>
+                          </IconTooltip>
+                          <PopoverContent className="w-56 p-2" align="end" side="bottom">
+                            <p className="text-[10px] font-semibold text-muted-foreground tracking-wide mb-1.5 uppercase px-2">
+                              Family branches
+                            </p>
+                            {hasParentsToShow && onExpandAncestors && (
+                              <label className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-accent transition-colors">
+                                <Checkbox
+                                  checked={ancestorsExpanded}
+                                  onCheckedChange={() => onExpandAncestors(p.personId)}
+                                />
+                                <span className="text-sm text-foreground">Parents</span>
+                              </label>
+                            )}
+                            {hasCousinsToShow && onExpandDescendants && (
+                              <label className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-accent transition-colors">
+                                <Checkbox
+                                  checked={descendantsExpanded}
+                                  onCheckedChange={() => onExpandDescendants(p.personId)}
+                                />
+                                <span className="text-sm text-foreground">Cousins on this branch</span>
+                              </label>
+                            )}
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    );
+                  })}
                 </CardContent>
                   );
                 })()}
