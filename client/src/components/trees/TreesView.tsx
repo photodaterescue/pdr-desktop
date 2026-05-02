@@ -308,35 +308,15 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     if (!effectsCreationBurst) return;
     setHighlightTarget(personId);
   }, [effectsEnabled, effectsCreationBurst]);
-  /** Preview-only trigger that BYPASSES the master + per-effect
-   *  toggles. Wired to the play buttons next to each Visual Effects
-   *  row so a user can see what an effect does before turning it on
-   *  — otherwise enabling something you've never seen would be a
-   *  blind commitment. Picks the visible person FURTHEST from focus
-   *  as the demo target so the comet runs the longest sensible path
-   *  on the current tree. Falls back to first non-focus visible
-   *  person when no hop data is available. */
+  /** Preview-only trigger declared LATER in the file (after the
+   *  visibleGraph useMemo) — assigned via useRef so we can call it
+   *  from this scope without referencing visibleGraph here, which
+   *  would TDZ on every render and blank the whole Trees view.
+   *  Set inside a useEffect just below visibleGraph's declaration. */
+  const previewCreationHighlightRef = useRef<() => void>(() => {});
   const previewCreationHighlight = useCallback(() => {
-    if (!visibleGraph || focusPersonId == null) return;
-    let target: number | null = null;
-    let bestHops = -1;
-    for (const n of visibleGraph.nodes) {
-      if (n.personId === focusPersonId) continue;
-      const hops = n.hopsFromFocus ?? 0;
-      if (hops > bestHops) { bestHops = hops; target = n.personId; }
-    }
-    if (target == null) {
-      const first = visibleGraph.nodes.find(n => n.personId !== focusPersonId);
-      if (first) target = first.personId;
-    }
-    if (target == null) return;
-    // Force a fresh mount even if the same target is selected back-
-    // to-back (e.g. user mashes the play button) — clear first, then
-    // set on the next tick so PathwayHighlight's key={targetId}
-    // remounts.
-    setHighlightTarget(null);
-    setTimeout(() => setHighlightTarget(target), 16);
-  }, [visibleGraph, focusPersonId]);
+    previewCreationHighlightRef.current();
+  }, []);
   /** Date editor target — { personId, x, y } where x/y are screen
    *  coords for the popup. Null = editor closed. */
   const [dateEditor, setDateEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
@@ -932,6 +912,36 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       edges: graph.edges.filter(e => visible.has(e.aId) && visible.has(e.bId)),
     };
   }, [graph, focusPersonId, stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, generationOffsets, pinnedPeople, savedTrees, currentTreeId]);
+
+  // ─── previewCreationHighlight (deferred ref binding) ──────────────
+  // Populates the ref declared earlier in the component (above
+  // visibleGraph) so the play button in the Trees Settings popover
+  // can fire the comet effect on the visible person furthest from
+  // focus — without TDZ-ing visibleGraph at component-top declaration
+  // time. Runs on every render so the closure always has the latest
+  // visibleGraph + focusPersonId.
+  previewCreationHighlightRef.current = () => {
+    if (!visibleGraph || focusPersonId == null) return;
+    let target: number | null = null;
+    let bestHops = -1;
+    for (const n of visibleGraph.nodes) {
+      if (n.personId === focusPersonId) continue;
+      const hops = n.hopsFromFocus ?? 0;
+      if (hops > bestHops) { bestHops = hops; target = n.personId; }
+    }
+    if (target == null) {
+      const first = visibleGraph.nodes.find(n => n.personId !== focusPersonId);
+      if (first) target = first.personId;
+    }
+    if (target == null) return;
+    // Force a fresh mount even if the same target is selected back-
+    // to-back (e.g. user mashes the play button) — clear first, then
+    // set on the next tick so PathwayHighlight's key={targetId}
+    // remounts.
+    const finalTarget = target;
+    setHighlightTarget(null);
+    setTimeout(() => setHighlightTarget(finalTarget), 16);
+  };
 
   // Number of people in the graph who are filtered OUT specifically
   // by the Steps cap (but would pass Generations) — i.e. the count
