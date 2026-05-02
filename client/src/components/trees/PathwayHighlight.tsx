@@ -233,42 +233,30 @@ function buildWaypoints(
     // both siblings then DOWN; spouse_of runs horizontal at avatar
     // level between the cards' inside edges.
     const rel = findRelation(a.personId, b.personId);
-    if (rel === 'parent_a') {
-      // a is parent of b — drop from a's bottom, across at midY, down
-      // to b's top, then settle at b's centre.
-      const aBottom = a.y + CARD_H_WORLD / 2;
-      const bTop = b.y - CARD_H_WORLD / 2;
-      const midY = (aBottom + bTop) / 2;
-      out.push({ x: a.x, y: aBottom });
+    if (rel === 'parent_a' || rel === 'parent_b') {
+      // parent_of edge — match the canvas's exact orthogonal-path
+      // geometry from EdgeLine: M ax ay L ax midY L bx midY L bx by.
+      // CARD-CENTRE to CARD-CENTRE, midY = (ay+by)/2 — no edge
+      // offsets. The comet now overlays the existing rendered line
+      // pixel-for-pixel.
+      const midY = (a.y + b.y) / 2;
       out.push({ x: a.x, y: midY });
       out.push({ x: b.x, y: midY });
-      out.push({ x: b.x, y: bTop });
-      out.push({ x: b.x, y: b.y });
-    } else if (rel === 'parent_b') {
-      // b is parent of a — go UP from a, across at midY, up to b.
-      const aTop = a.y - CARD_H_WORLD / 2;
-      const bBottom = b.y + CARD_H_WORLD / 2;
-      const midY = (aTop + bBottom) / 2;
-      out.push({ x: a.x, y: aTop });
-      out.push({ x: a.x, y: midY });
-      out.push({ x: b.x, y: midY });
-      out.push({ x: b.x, y: bBottom });
       out.push({ x: b.x, y: b.y });
     } else if (rel === 'sibling') {
-      // Sibling bracket — climb UP from a's top to the bracket Y
+      // Sibling bracket — climb UP from a's centre to the bracket Y
       // (above both siblings, below their parents), traverse across,
-      // and DOWN to b's top.
-      const aTop = a.y - CARD_H_WORLD / 2;
-      const bTop = b.y - CARD_H_WORLD / 2;
-      const bracketY = Math.min(a.y, b.y) - CARD_H_WORLD / 2 - SIBLING_BRACKET_LIFT;
-      out.push({ x: a.x, y: aTop });
+      // and DOWN to b's centre. Approximates FamilyGroup's bracketY
+      // when we don't have the parents in scope to compute it
+      // exactly.
+      const bracketY = Math.min(a.y, b.y) - SIBLING_BRACKET_LIFT;
       out.push({ x: a.x, y: bracketY });
       out.push({ x: b.x, y: bracketY });
-      out.push({ x: b.x, y: bTop });
       out.push({ x: b.x, y: b.y });
     } else if (rel === 'spouse') {
-      // Partnership bar at avatar level — runs along the inside edges
-      // of the two partner cards.
+      // Partnership bar at avatar level — runs along the avatar-row
+      // y between the two partner cards (canvas EdgeLine's spouse_of
+      // path uses (ay+by)/2 + AVATAR_CY).
       const avatarY = (a.y + b.y) / 2 + AVATAR_CY_OFFSET;
       out.push({ x: a.x, y: avatarY });
       out.push({ x: b.x, y: avatarY });

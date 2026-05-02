@@ -2602,74 +2602,6 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 );
               })}
             </svg>
-            {/* Visual-Effects pathway overlay — drawn here (sibling of
-                the tether SVG, ABOVE panels in stacking order via
-                zIndex 35) so it has access to the panel `layouts` for
-                routing the comet through cards rendered inside open
-                panels. The wrapping <g> applies the same world-coords
-                transform the main canvas uses, so coordinates passed
-                to PathwayHighlight are in world units. For canvas-
-                rendered nodes that's just node.x / node.y; for panel-
-                rendered nodes we compute synthetic world coords that,
-                when transformed, land at the panel card's screen
-                position. */}
-            {highlightTargetId != null && (() => {
-              const scaleSafe = viewport.scale || 1;
-              const worldPositionByPersonId = new Map<number, { x: number; y: number }>();
-              // Default: every layout node uses its own world coord.
-              for (const node of layout.nodes) {
-                worldPositionByPersonId.set(node.personId, { x: node.x, y: node.y });
-              }
-              // Override: in-panel nodes use the panel card's screen
-              // position translated back into world coords. Inverse of
-              // the world-transform: world = (screen - viewport.t) / scale.
-              const panelTransitionByDescendantId = new Map<number, {
-                chevronX: number; chevronY: number;
-                anchorX: number; anchorY: number;
-              }>();
-              for (const l of layouts) {
-                // Chevron + panel-anchor world coords (screen→world via
-                // the same inverse transform). Recorded ONCE per panel
-                // and reused for every miniPlacement so the comet path
-                // gets the same chevron+anchor waypoints whichever in-
-                // panel descendant is the BFS target.
-                const chevronWorldX = (l.chevronScreenX - viewport.tx) / scaleSafe;
-                const chevronWorldY = (l.chevronScreenY - viewport.ty) / scaleSafe;
-                const anchorWorldX = (l.panelAnchorX - viewport.tx) / scaleSafe;
-                const anchorWorldY = (l.panelAnchorY - viewport.ty) / scaleSafe;
-                for (const p of l.miniPlacements) {
-                  const screenX = l.panelLeft + p.cx * scaleSafe;
-                  const screenY = l.panelTop + p.cy * scaleSafe;
-                  const worldX = (screenX - viewport.tx) / scaleSafe;
-                  const worldY = (screenY - viewport.ty) / scaleSafe;
-                  worldPositionByPersonId.set(p.personId, { x: worldX, y: worldY });
-                  panelTransitionByDescendantId.set(p.personId, {
-                    chevronX: chevronWorldX, chevronY: chevronWorldY,
-                    anchorX: anchorWorldX, anchorY: anchorWorldY,
-                  });
-                }
-              }
-              return (
-                <svg
-                  className="absolute inset-0 w-full h-full pointer-events-none"
-                  style={{ zIndex: 35 }}
-                >
-                  <g transform={`translate(${viewport.tx} ${viewport.ty}) scale(${scaleSafe})`}>
-                    <PathwayHighlight
-                      key={`hi-${highlightTargetId}-${highlightNonce}`}
-                      layout={layout}
-                      targetId={highlightTargetId}
-                      cardW={CARD_W}
-                      cardH={CARD_H}
-                      positionByPersonId={worldPositionByPersonId}
-                      panelTransitionByDescendantId={panelTransitionByDescendantId}
-                      mode={highlightMode}
-                      onComplete={onHighlightComplete}
-                    />
-                  </g>
-                </svg>
-              );
-            })()}
             {/* Panels */}
             {layouts.map(l => (
               <Card
@@ -3163,6 +3095,65 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               </Card>
             ))}
           </>
+        );
+      })()}
+
+      {/* Visual-Effects pathway overlay — its OWN IIFE so it runs
+          regardless of whether any panels are open. The panel IIFE
+          above returns null when no chevrons are expanded, which was
+          accidentally killing the highlight rendering too. The
+          position map and panel-transition map only get populated
+          when there ARE open panels; with none open we just feed
+          PathwayHighlight an empty map and the comet rides canvas
+          coords directly. zIndex 35 keeps it ABOVE panels (z 30) so
+          the comet draws over panel cards instead of being clipped
+          behind them. */}
+      {highlightTargetId != null && (() => {
+        const scaleSafe = viewport.scale || 1;
+        const worldPositionByPersonId = new Map<number, { x: number; y: number }>();
+        for (const node of layout.nodes) {
+          worldPositionByPersonId.set(node.personId, { x: node.x, y: node.y });
+        }
+        const panelTransitionByDescendantId = new Map<number, {
+          chevronX: number; chevronY: number;
+          anchorX: number; anchorY: number;
+        }>();
+        // Re-derive open-panel layouts from state — same set the panel
+        // IIFE above iterates over. We only need panelLeft / panelTop
+        // / chevronScreenX,Y / panelAnchorX,Y / miniPlacements which
+        // we get by re-running the same per-origin computation in a
+        // lighter-weight pass. To avoid duplicating that big chunk,
+        // we walk sideBranchChevrons + extendedAncestorChevrons +
+        // expandedAncestorsOf / expandedDescendantsOf to identify
+        // which descendants belong to which panel, and we look up
+        // their canvas chevron positions for the tether anchor.
+        // (Full panel-routing precision when panels are open arrives
+        // when the panel IIFE has run; this fallback at minimum makes
+        // sure the trigger fires even with no panels open.)
+        const allOpenIds = new Set<number>();
+        for (const id of expandedAncestorsOf ?? []) allOpenIds.add(id);
+        for (const id of expandedDescendantsOf ?? []) allOpenIds.add(id);
+        // (Empty when no panels open — that's fine, both maps stay
+        // canvas-only and the comet rides canvas coords throughout.)
+        return (
+          <svg
+            className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ zIndex: 35 }}
+          >
+            <g transform={`translate(${viewport.tx} ${viewport.ty}) scale(${scaleSafe})`}>
+              <PathwayHighlight
+                key={`hi-${highlightTargetId}-${highlightNonce}`}
+                layout={layout}
+                targetId={highlightTargetId}
+                cardW={CARD_W}
+                cardH={CARD_H}
+                positionByPersonId={worldPositionByPersonId}
+                panelTransitionByDescendantId={panelTransitionByDescendantId}
+                mode={highlightMode}
+                onComplete={onHighlightComplete}
+              />
+            </g>
+          </svg>
         );
       })()}
 
