@@ -1413,6 +1413,33 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 return next;
               });
               setPulseSteps(true);
+              // Prompt the user to bump Steps so the new person is
+              // naturally visible (not just pinned) — keeps them
+              // aware that they're sitting beyond the current cap
+              // and offers a one-click way to extend the view.
+              // Fire-and-forget — the function returns immediately
+              // and the modal handles its own state.
+              const requiredSteps = found.hopsFromFocus;
+              const newPersonFullName = displayName(otherPersonId, otherPersonName?.trim() || 'this person');
+              promptConfirm({
+                eyebrow: 'Beyond your current view',
+                title: `${newPersonFullName} sits ${requiredSteps} steps from focus`,
+                message: `Your Steps cap is ${expandedHops}, so they're pinned visible just for this session. Increase Steps to ${requiredSteps} to see them naturally and bring along anyone else at that distance too.`,
+                confirmLabel: `Increase Steps to ${requiredSteps}`,
+                cancelLabel: 'Keep them pinned',
+              }).then(result => {
+                if (result === true) {
+                  setExpandedHops(requiredSteps);
+                  // Unpin so they're picked up by the Steps cap
+                  // naturally — pinning was just a session-scoped
+                  // safety net.
+                  setPinnedPeople(prev => {
+                    const next = new Map(prev);
+                    next.delete(otherPersonId);
+                    return next;
+                  });
+                }
+              });
             }
             // Generations overage check: re-derive the new person's
             // generation offset from the same BFS the renderer uses,
@@ -1601,6 +1628,61 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     });
     descendantPinSourcesRef.current.set(personId, new Set());
   }, [focusPersonId, expandedDescendantsOf]);
+
+  /** Steps-aware +parent gate. Before opening the +parent picker
+   *  for a person, check whether they already have parents stored
+   *  but currently hidden by the Steps cap. If so, the user almost
+   *  certainly didn't realise — prompt them to bump Steps and
+   *  reveal what's already there instead of creating a duplicate.
+   *  If they say "Add another parent anyway" we fall through to
+   *  the normal flow (covers step-parent / multi-parent cases).
+   */
+  const handleQuickAddParentWithStepsGate = useCallback(async (personId: number) => {
+    if (!graph || !visibleGraph || focusPersonId == null) {
+      setQuickAdd({ fromPersonId: personId, kind: 'parent' });
+      return;
+    }
+    const visibleIds = new Set(visibleGraph.nodes.map(n => n.personId));
+    const existingParents = graph.edges
+      .filter(e => e.type === 'parent_of' && e.bId === personId && !e.derived)
+      .map(e => e.aId);
+    const hiddenParents = existingParents.filter(pid => !visibleIds.has(pid));
+    if (hiddenParents.length === 0) {
+      setQuickAdd({ fromPersonId: personId, kind: 'parent' });
+      return;
+    }
+    // Build the prompt copy and figure out the Steps target that
+    // would reveal them. Steps target = max hopsFromFocus across
+    // hidden parents — that's the lowest Steps value at which all
+    // of them appear.
+    const personFullName = displayName(personId, 'this person');
+    const hiddenNames = hiddenParents
+      .map(p => displayName(p, '?'))
+      .filter(s => s !== '?')
+      .join(' and ');
+    const requiredSteps = Math.max(
+      ...hiddenParents.map(pid => graph.nodes.find(n => n.personId === pid)?.hopsFromFocus ?? expandedHops + 1),
+    );
+    const result = await promptConfirm({
+      eyebrow: 'Hidden on this tree',
+      title: `${personFullName} already has ${hiddenParents.length === 1 ? 'a parent' : `${hiddenParents.length} parents`} on file`,
+      message: hiddenNames
+        ? `${hiddenNames} ${hiddenParents.length === 1 ? 'is' : 'are'} hidden by your current Steps cap of ${expandedHops}. Increase Steps to ${requiredSteps} to see ${hiddenParents.length === 1 ? 'them' : 'both'} now.`
+        : `${hiddenParents.length === 1 ? 'A parent is' : `${hiddenParents.length} parents are`} hidden by your current Steps cap of ${expandedHops}. Increase Steps to ${requiredSteps} to see ${hiddenParents.length === 1 ? 'them' : 'all of them'}.`,
+      confirmLabel: `Increase Steps to ${requiredSteps}`,
+      cancelLabel: 'Add another parent anyway',
+    });
+    if (result === true) {
+      setExpandedHops(requiredSteps);
+      return;
+    }
+    if (result === false) {
+      // Step-parent / multi-parent — fall through to normal flow.
+      setQuickAdd({ fromPersonId: personId, kind: 'parent' });
+      return;
+    }
+    // Dismissed — do nothing.
+  }, [graph, visibleGraph, focusPersonId, expandedHops, displayName]);
 
   /** Hide every revealed extended-family branch in one click — the
    *  "tidy up" reset that keeps the tree from sprawling once the user
@@ -1934,7 +2016,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onEditRelationships={(personId) => setEditRelationshipsFor(personId)}
             onRemovePerson={handleRemovePerson}
             onGraphMutated={handleRelationshipCreated}
-            onQuickAddParent={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'parent' })}
+            onQuickAddParent={handleQuickAddParentWithStepsGate}
             onQuickAddPartner={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'partner' })}
             onQuickAddChild={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'child' })}
             onQuickAddSibling={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'sibling' })}
