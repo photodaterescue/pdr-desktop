@@ -841,6 +841,25 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
       if (hidden.has(e.aId) && !bloodlineSet.has(e.bId)) hidden.add(e.bId);
       if (hidden.has(e.bId) && !bloodlineSet.has(e.aId)) hidden.add(e.aId);
     }
+    // Co-parent sweep — same idea as the spouse_of sweep above, but
+    // for partners-via-shared-children rather than recorded marriages.
+    // Without this, an unmarried co-parent (or an ex whose spouse_of
+    // was never recorded) would NOT get pulled in alongside her
+    // children + partner — she'd end up as a stranded card on the
+    // dimmed main canvas while her partner and kids sit in the
+    // panel. Terry's case: Sam is the mother of two of Ian's
+    // daughters but has no spouse_of edge to him; she has to ride
+    // along with the panel just as Wendy does for whichever
+    // cousin she actually married. Walks each parent_of edge: if
+    // the CHILD is a side-branch descendant and the PARENT isn't
+    // bloodline, the parent is a non-bloodline co-parent and joins
+    // the hidden-from-canvas set.
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!hidden.has(e.bId)) continue; // only when CHILD is side-branch
+      if (bloodlineSet.has(e.aId)) continue; // never hide bloodline
+      hidden.add(e.aId);
+    }
     return hidden;
   }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet]);
 
@@ -1143,6 +1162,75 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     return Array.from(groups.values());
   }, [layout.edges, nodeById]);
 
+  /** Sibling clusters whose shared parent ISN'T currently in nodeById —
+   *  e.g. two named sisters whose only parent record was a placeholder
+   *  that the layoutGraph strip removed. The familyGroups builder above
+   *  produces nothing for them (no parent_of edge has both endpoints in
+   *  nodeById), so without a separate render path they'd lose their
+   *  sibling bracket entirely.
+   *
+   *  Built by walking sibling_of edges (stored OR derived; the server
+   *  synthesises a derived edge for any pair sharing a parent), keeping
+   *  only the edges where neither sibling is already covered by a
+   *  parent-anchored family group, then unioning them into connected
+   *  components so 4 sisters sharing the same stripped placeholder
+   *  yield ONE cluster bracket rather than 6 pair-wise lines.
+   *
+   *  Rendered separately as a horizontal bracket + child-drops with no
+   *  vertical line going UP to a parent — matches the convention Terry
+   *  asked for: "the same horizontal line that connects siblings with
+   *  named parents, you just don't have the vertical line going up". */
+  const orphanSiblingGroups = useMemo(() => {
+    // A sibling is "covered" by a family group if either of their
+    // parents IS visible — the existing FamilyGroup render already
+    // gives them a bracket. Only the truly parent-less ones get this
+    // fallback.
+    const coveredById = new Set<number>();
+    for (const g of familyGroups) {
+      // Only count families whose parent side is actually visible
+      // (mirrors the render-time `allParentsHidden` skip below).
+      const anyParentVisible = g.parentIds.some(id => nodeById.has(id));
+      if (!anyParentVisible) continue;
+      for (const cid of g.childIds) coveredById.add(cid);
+    }
+    // Build adjacency from sibling_of edges between non-covered nodes.
+    const adj = new Map<number, Set<number>>();
+    for (const e of layout.edges) {
+      if (e.type !== 'sibling_of') continue;
+      if (!nodeById.has(e.aId) || !nodeById.has(e.bId)) continue;
+      if (coveredById.has(e.aId) && coveredById.has(e.bId)) continue;
+      // Skip if both endpoints already have a visible parent — even
+      // if not in the same familyGroup, each is anchored elsewhere
+      // and bridging them with a sibling-only bracket would conflict
+      // with their own parent-anchored brackets.
+      if (coveredById.has(e.aId) || coveredById.has(e.bId)) continue;
+      if (!adj.has(e.aId)) adj.set(e.aId, new Set());
+      if (!adj.has(e.bId)) adj.set(e.bId, new Set());
+      adj.get(e.aId)!.add(e.bId);
+      adj.get(e.bId)!.add(e.aId);
+    }
+    // Connected components → one cluster per component.
+    const seen = new Set<number>();
+    const clusters: { childIds: number[] }[] = [];
+    for (const start of adj.keys()) {
+      if (seen.has(start)) continue;
+      const component: number[] = [];
+      const stack = [start];
+      seen.add(start);
+      while (stack.length) {
+        const cur = stack.pop()!;
+        component.push(cur);
+        for (const n of adj.get(cur) ?? []) {
+          if (seen.has(n)) continue;
+          seen.add(n);
+          stack.push(n);
+        }
+      }
+      if (component.length >= 2) clusters.push({ childIds: component });
+    }
+    return clusters;
+  }, [layout.edges, nodeById, familyGroups]);
+
   return (
     <div className="absolute inset-0 select-none">
       {canvasBackground && (
@@ -1259,6 +1347,79 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             );
           })}
 
+          {/* Orphan-sibling brackets — horizontal brackets connecting
+              clusters of siblings whose shared parent isn't currently in
+              the layout (typically a stripped placeholder). Same visual
+              language as the FamilyGroup sibling bracket but with NO
+              vertical drop above the bracket — there's no parent card
+              to connect to. Drawn before the per-edge fallback below
+              so the dotted derived-sibling lines can be suppressed for
+              any cluster the bracket already covers. */}
+          {orphanSiblingGroups.map((group, i) => {
+            // Skip clusters where any sibling has been collapsed-hidden
+            // by a chevron — drawing the bracket without their card
+            // present would produce a stub line ending in mid-air.
+            const visibleChildren = group.childIds
+              .map(id => nodeById.get(id))
+              .filter((n): n is typeof nodeById extends Map<infer _K, infer V> ? V : never =>
+                n != null
+                && !hiddenExtendedIds.has(n.personId)
+                && !hiddenSideBranchIds.has(n.personId),
+              );
+            if (visibleChildren.length < 2) return null;
+            const childY = visibleChildren[0].renderedY - CARD_H / 2;
+            // Bracket sits HALFWAY between the children's card-tops and
+            // the previous generation's row — same convention the
+            // FamilyGroup bracket uses (see bracketY there). With no
+            // parent row above, fall back to a fixed offset above the
+            // children that matches the canvas's row spacing.
+            const bracketY = childY - 60;
+            const xs = visibleChildren.map(c => c.renderedX).sort((a, b) => a - b);
+            const bracketStart = xs[0];
+            const bracketEnd = xs[xs.length - 1];
+            // Bloodline tint when any sibling is bloodline — mirrors the
+            // tinting rule used by FamilyGroup so canvas scaffolding
+            // stays consistent.
+            const isCluster = visibleChildren.some(c => bloodlineSet.has(c.personId));
+            const stroke = isCluster ? '#ad9eff' : (treeContrast > 0.5 ? '#1f2937' : '#64748b');
+            const strokeWidth = 1.5 + treeContrast * 1.5;
+            const haloWidth = strokeWidth + 3 + treeContrast * 3;
+            const haloOpacity = 0.35 + treeContrast * 0.5;
+            const withHalo = treeContrast > 0;
+            return (
+              <g key={`orphan-sib-${i}-${group.childIds.join('_')}`}>
+                {withHalo && (
+                  <g opacity={haloOpacity} style={{ pointerEvents: 'none' }}>
+                    <line
+                      x1={bracketStart} y1={bracketY} x2={bracketEnd} y2={bracketY}
+                      stroke="#ffffff" strokeWidth={haloWidth} strokeLinecap="round"
+                    />
+                    {visibleChildren.map(c => (
+                      <line
+                        key={`halo-orphan-${c.personId}`}
+                        x1={c.renderedX} y1={bracketY}
+                        x2={c.renderedX} y2={c.renderedY - CARD_H / 2}
+                        stroke="#ffffff" strokeWidth={haloWidth} strokeLinecap="round"
+                      />
+                    ))}
+                  </g>
+                )}
+                <line
+                  x1={bracketStart} y1={bracketY} x2={bracketEnd} y2={bracketY}
+                  stroke={stroke} strokeWidth={strokeWidth}
+                />
+                {visibleChildren.map(c => (
+                  <line
+                    key={`drop-orphan-${c.personId}`}
+                    x1={c.renderedX} y1={bracketY}
+                    x2={c.renderedX} y2={c.renderedY - CARD_H / 2}
+                    stroke={stroke} strokeWidth={strokeWidth}
+                  />
+                ))}
+              </g>
+            );
+          })}
+
           {/* Non-parent edges (spouse_of, sibling_of, associated_with) — parent_of is now rendered as family groups above. */}
           {layout.edges.map((edge, idx) => {
             if (!edge.visible) return null;
@@ -1295,6 +1456,14 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                 if (anySharedParentVisible) break;
               }
               if (anySharedParentVisible) return null;
+              // Suppress derived sibling lines that fall inside a
+              // cluster the orphan-sibling bracket already covers —
+              // otherwise we'd render BOTH the bracket and a dotted
+              // line across every pair, doubling up scaffolding.
+              const inOrphanBracket = orphanSiblingGroups.some(
+                g => g.childIds.includes(edge.aId) && g.childIds.includes(edge.bId),
+              );
+              if (inOrphanBracket) return null;
             }
             const a = nodeById.get(edge.aId);
             const b = nodeById.get(edge.bId);
@@ -1855,6 +2024,19 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
               if (e.type !== 'spouse_of') continue;
               if (contentSet.has(e.aId) && !bloodlineSet.has(e.bId)) contentSet.add(e.bId);
               if (contentSet.has(e.bId) && !bloodlineSet.has(e.aId)) contentSet.add(e.aId);
+            }
+            // Co-parent pass — mirror of the hiddenSideBranchIds
+            // sweep above. Pulls a non-bloodline parent into the
+            // panel when their child is already a panel resident
+            // and they themselves have no spouse_of edge to anchor
+            // the previous pass. Required so Sam (Ian's ex-wife,
+            // mother of Chloe + Abby, no recorded marriage) appears
+            // inside Ian's branch instead of going invisible.
+            for (const e of layout.edges) {
+              if (e.type !== 'parent_of') continue;
+              if (!contentSet.has(e.bId)) continue; // only when CHILD is in panel
+              if (bloodlineSet.has(e.aId)) continue; // bloodline parents stay outside the panel
+              contentSet.add(e.aId);
             }
           } else {
             const ext = extendedAncestorsByPerson.get(personId);
