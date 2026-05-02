@@ -282,6 +282,11 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       ? localStorage.getItem('pdr-trees-effects-creation') !== 'false'
       : true,
   );
+  /** Trees Settings popover open state — controlled so the play
+   *  button can close it before firing a preview, otherwise the
+   *  popover overlay sits on top of the comet path and the user
+   *  doesn't see the effect they just clicked Play to preview. */
+  const [treesSettingsOpen, setTreesSettingsOpen] = useState(false);
   /** Person currently being highlighted by the comet trail. Set by
    *  the create flows (finaliseQuickAdd, etc.) and the preview play
    *  button; cleared by PathwayHighlight's onComplete callback when
@@ -2103,7 +2108,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 colours. The (1) badge fires when Dates Living is on,
                 so the user can see at-a-glance that an Add-Info
                 option is active even when the popover is closed. */}
-            <Popover>
+            <Popover open={treesSettingsOpen} onOpenChange={setTreesSettingsOpen}>
               <IconTooltip label="Trees settings — Add Info, Manage Trees, People" side="bottom">
                 <PopoverTrigger asChild>
                   <button
@@ -2196,7 +2201,16 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   <IconTooltip label="Preview this effect" side="left">
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); previewCreationHighlight(); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Close the popover first so it doesn't sit on
+                        // top of the comet path the user is trying to
+                        // preview. 220 ms gives Radix's close animation
+                        // a frame or two to dismiss before the comet
+                        // starts riding the canvas.
+                        setTreesSettingsOpen(false);
+                        setTimeout(() => previewCreationHighlight(), 220);
+                      }}
                       className="px-2 rounded text-primary hover:bg-primary/10 transition-colors"
                       aria-label="Preview pathway burst on add"
                     >
