@@ -130,72 +130,159 @@ function findShortestPath(
  *  before / after that node so the comet rides the chevron tether
  *  geometry on its way INTO or OUT OF an open panel — rather than
  *  cutting a diagonal across the panel chrome. */
+/** Card height in world units — must match CARD_H in TreesCanvas.
+ *  Used so the comet path can land on/depart from a card's TOP or
+ *  BOTTOM edge (matching where canvas connection lines actually
+ *  attach) instead of cutting through the card centre. */
+const CARD_H_WORLD = 154;
+/** Row height between generations — same constant trees-layout.ts uses
+ *  in DEFAULT_OPTIONS.rowHeight. The sibling bracket lives midway
+ *  between siblings' row and their parents' row, i.e. at the bottom of
+ *  the parent gap — exactly y = sibling.y - bracketOffset where
+ *  bracketOffset = (rowHeight + cardH) * 0.5 sort of. We use a simple
+ *  approximation: bracket sits cardH * 0.55 above the sibling row
+ *  (matches the canvas FamilyGroup's bracketY computation closely
+ *  enough that the comet visually rides the same line). */
+const SIBLING_BRACKET_LIFT = 90;
+/** Vertical centre of the avatar within a card — partnership lines
+ *  draw at this y offset from card centre. */
+const AVATAR_CY_OFFSET = -22;
+
 function buildWaypoints(
   nodes: LaidOutNode[],
+  edges: { aId: number; bId: number; type: string; visible?: boolean }[],
   transitions?: Map<number, { chevronX: number; chevronY: number; anchorX: number; anchorY: number }>,
 ): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
   if (nodes.length === 0) return out;
   out.push({ x: nodes[0].x, y: nodes[0].y });
   const inPanel = (id: number) => transitions?.has(id) ?? false;
+  /** Detect the relationship between two adjacent BFS nodes so we can
+   *  retrace the canvas's actual connection geometry. */
+  const findRelation = (aId: number, bId: number): 'parent_a' | 'parent_b' | 'spouse' | 'sibling' | 'unknown' => {
+    for (const e of edges) {
+      if (e.type === 'parent_of') {
+        if (e.aId === aId && e.bId === bId) return 'parent_a'; // a is parent of b
+        if (e.aId === bId && e.bId === aId) return 'parent_b'; // b is parent of a
+      } else if (e.type === 'spouse_of') {
+        if ((e.aId === aId && e.bId === bId) || (e.aId === bId && e.bId === aId)) return 'spouse';
+      } else if (e.type === 'sibling_of') {
+        if ((e.aId === aId && e.bId === bId) || (e.aId === bId && e.bId === aId)) return 'sibling';
+      }
+    }
+    return 'unknown';
+  };
   for (let i = 1; i < nodes.length; i++) {
     const a = nodes[i - 1];
     const b = nodes[i];
     const aInPanel = inPanel(a.personId);
     const bInPanel = inPanel(b.personId);
-    // Crossing INTO a panel — insert chevron + anchor between the
-    // canvas card and the first panel card so the comet follows the
-    // tether path the user can see drawn on the canvas.
+    // Crossing INTO a panel — chevron + anchor as virtual waypoints.
     if (!aInPanel && bInPanel) {
       const t = transitions!.get(b.personId)!;
-      // Drop down from canvas card a → chevron stud (Z if the chevron
-      // sits at a different x).
+      // Canvas card a's bottom edge → chevron stud. Drop from a.bottom
+      // straight DOWN to the chevron's level, then across at the
+      // chevron's y to its column.
+      const aBottom = a.y + CARD_H_WORLD / 2;
       if (a.x !== t.chevronX) {
-        const midY = (a.y + t.chevronY) / 2;
-        out.push({ x: a.x, y: midY });
-        out.push({ x: t.chevronX, y: midY });
+        out.push({ x: a.x, y: aBottom });
+        out.push({ x: a.x, y: t.chevronY });
+        out.push({ x: t.chevronX, y: t.chevronY });
+      } else {
+        out.push({ x: t.chevronX, y: t.chevronY });
       }
-      out.push({ x: t.chevronX, y: t.chevronY });
-      // Chevron → panel anchor (curve in real world, straight here).
+      // Chevron → panel anchor. Tether is a bezier on canvas; here
+      // we approximate with a straight segment (same start/end pts).
       out.push({ x: t.anchorX, y: t.anchorY });
-      // Anchor → first panel card (Z if needed).
+      // Anchor → in-panel card (top edge).
+      const bTop = b.y - CARD_H_WORLD / 2;
       if (t.anchorX !== b.x) {
-        const midY = (t.anchorY + b.y) / 2;
-        out.push({ x: t.anchorX, y: midY });
-        out.push({ x: b.x, y: midY });
+        out.push({ x: t.anchorX, y: bTop });
+        out.push({ x: b.x, y: bTop });
+      } else {
+        out.push({ x: b.x, y: bTop });
       }
       out.push({ x: b.x, y: b.y });
       continue;
     }
-    // Crossing OUT OF a panel back to canvas — symmetric: target's
-    // panel anchor + chevron between the panel card and the canvas
-    // card.
+    // Crossing OUT OF a panel — symmetric.
     if (aInPanel && !bInPanel) {
       const t = transitions!.get(a.personId)!;
+      const aTop = a.y - CARD_H_WORLD / 2;
       if (a.x !== t.anchorX) {
-        const midY = (a.y + t.anchorY) / 2;
-        out.push({ x: a.x, y: midY });
-        out.push({ x: t.anchorX, y: midY });
+        out.push({ x: a.x, y: aTop });
+        out.push({ x: t.anchorX, y: aTop });
+      } else {
+        out.push({ x: t.anchorX, y: aTop });
       }
       out.push({ x: t.anchorX, y: t.anchorY });
       out.push({ x: t.chevronX, y: t.chevronY });
+      const bBottom = b.y + CARD_H_WORLD / 2;
       if (t.chevronX !== b.x) {
-        const midY = (t.chevronY + b.y) / 2;
-        out.push({ x: t.chevronX, y: midY });
-        out.push({ x: b.x, y: midY });
+        out.push({ x: t.chevronX, y: bBottom });
+        out.push({ x: b.x, y: bBottom });
+      } else {
+        out.push({ x: b.x, y: bBottom });
       }
       out.push({ x: b.x, y: b.y });
       continue;
     }
-    // Same-context (both canvas, both same panel): the existing
-    // Manhattan rule. Same-Y → horizontal; different-Y → Z shape.
-    if (a.y === b.y) {
-      out.push({ x: b.x, y: b.y });
-    } else {
-      const midY = (a.y + b.y) / 2;
+    // Same-context (both canvas, both same panel) — retrace the actual
+    // rendered line geometry based on edge type. parent_of takes a Z
+    // through the row gap; sibling_of goes UP to the bracket above
+    // both siblings then DOWN; spouse_of runs horizontal at avatar
+    // level between the cards' inside edges.
+    const rel = findRelation(a.personId, b.personId);
+    if (rel === 'parent_a') {
+      // a is parent of b — drop from a's bottom, across at midY, down
+      // to b's top, then settle at b's centre.
+      const aBottom = a.y + CARD_H_WORLD / 2;
+      const bTop = b.y - CARD_H_WORLD / 2;
+      const midY = (aBottom + bTop) / 2;
+      out.push({ x: a.x, y: aBottom });
       out.push({ x: a.x, y: midY });
       out.push({ x: b.x, y: midY });
+      out.push({ x: b.x, y: bTop });
       out.push({ x: b.x, y: b.y });
+    } else if (rel === 'parent_b') {
+      // b is parent of a — go UP from a, across at midY, up to b.
+      const aTop = a.y - CARD_H_WORLD / 2;
+      const bBottom = b.y + CARD_H_WORLD / 2;
+      const midY = (aTop + bBottom) / 2;
+      out.push({ x: a.x, y: aTop });
+      out.push({ x: a.x, y: midY });
+      out.push({ x: b.x, y: midY });
+      out.push({ x: b.x, y: bBottom });
+      out.push({ x: b.x, y: b.y });
+    } else if (rel === 'sibling') {
+      // Sibling bracket — climb UP from a's top to the bracket Y
+      // (above both siblings, below their parents), traverse across,
+      // and DOWN to b's top.
+      const aTop = a.y - CARD_H_WORLD / 2;
+      const bTop = b.y - CARD_H_WORLD / 2;
+      const bracketY = Math.min(a.y, b.y) - CARD_H_WORLD / 2 - SIBLING_BRACKET_LIFT;
+      out.push({ x: a.x, y: aTop });
+      out.push({ x: a.x, y: bracketY });
+      out.push({ x: b.x, y: bracketY });
+      out.push({ x: b.x, y: bTop });
+      out.push({ x: b.x, y: b.y });
+    } else if (rel === 'spouse') {
+      // Partnership bar at avatar level — runs along the inside edges
+      // of the two partner cards.
+      const avatarY = (a.y + b.y) / 2 + AVATAR_CY_OFFSET;
+      out.push({ x: a.x, y: avatarY });
+      out.push({ x: b.x, y: avatarY });
+      out.push({ x: b.x, y: b.y });
+    } else {
+      // Fallback — treat as a generic Z.
+      if (a.y === b.y) {
+        out.push({ x: b.x, y: b.y });
+      } else {
+        const midY = (a.y + b.y) / 2;
+        out.push({ x: a.x, y: midY });
+        out.push({ x: b.x, y: midY });
+        out.push({ x: b.x, y: b.y });
+      }
     }
   }
   return out;
@@ -286,7 +373,7 @@ export function PathwayHighlight({
       })
       .filter((n): n is LaidOutNode => n != null);
     if (nodes.length < 2) return null;
-    const waypoints = buildWaypoints(nodes, panelTransitionByDescendantId);
+    const waypoints = buildWaypoints(nodes, layout.edges, panelTransitionByDescendantId);
     return {
       ids,
       nodes,
