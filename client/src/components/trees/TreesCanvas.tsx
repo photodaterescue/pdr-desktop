@@ -357,6 +357,24 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
     };
   }, [viewport]);
 
+  // ─── Double-click empty canvas → recentre on focus ─────────────
+  // Terry's instinct (and a common convention in canvas-based UIs)
+  // is that double-clicking blank space recentres on the focal
+  // person at default zoom. We gate on `e.target === e.currentTarget`
+  // so dbl-clicks on cards / chevrons / panels don't trigger this.
+  const handleCanvasDoubleClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.target !== e.currentTarget) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    setViewport({
+      tx: rect.width / 2,
+      ty: rect.height / 2,
+      scale: 1,
+    });
+    setContextMenu(null);
+  }, []);
+
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (panState.current.active) {
@@ -1148,6 +1166,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             className={`w-full h-full cursor-grab active:cursor-grabbing ${canvasBackground ? '' : 'bg-[radial-gradient(circle,_rgba(167,139,250,0.06)_1px,_transparent_1px)] [background-size:24px_24px]'}`}
             onWheel={handleWheel}
             onMouseDown={handlePanStart}
+            onDoubleClick={handleCanvasDoubleClick}
             onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
           >
             <g
@@ -2489,9 +2508,18 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       scaled by viewport.scale (the SVG's outer
                       width / contentWidth ratio). */}
                   {l.miniPlacements.map(p => {
+                    // Only surface "Parents" when the DB actually has
+                    // stored parents that are currently filtered out
+                    // — totalParentCount is the real-edge count, so
+                    // a person with no parents on file (Dan in
+                    // Terry's screenshot) lands at 0 > 0 = false and
+                    // gets no badge entry. The chevron-style
+                    // extendedAncestorsByPerson.has check counted
+                    // virtual-ghost augmenter placeholders too,
+                    // which made the badge promise expansions that
+                    // didn't exist.
                     const hasParentsToShow =
-                      extendedAncestorsByPerson.has(p.personId)
-                      || p.node.totalParentCount > (visibleParentChildCounts.parentCount.get(p.personId) ?? 0);
+                      p.node.totalParentCount > (visibleParentChildCounts.parentCount.get(p.personId) ?? 0);
                     const hasCousinsToShow = sideBranchDescendantsByHead.has(p.personId);
                     if (!hasParentsToShow && !hasCousinsToShow) return null;
                     // Card top-right corner in panel-local viewBox
