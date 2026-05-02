@@ -36,10 +36,21 @@ interface Props {
   layout: TreeLayout;
   /** PersonId of the target the effect runs TO. Required. */
   targetId: number | null;
-  /** Card width / height in world coordinates — used to draw the
-   *  arrival lap around the target's border. */
+  /** Card width / height in SCREEN pixels — used to draw the arrival
+   *  lap. Caller is responsible for scaling by viewport.scale before
+   *  passing in, since this component now renders in screen coords
+   *  rather than the canvas's world-coords transform group. */
   cardW: number;
   cardH: number;
+  /** Per-person SCREEN-space position map. The parent computes this
+   *  by combining canvas-level world coords (translated through
+   *  viewport.scale + tx/ty) AND any panel-level mini-placements
+   *  (panelLeft + cx * scale, panelTop + cy * scale), so a single
+   *  lookup gives the actual on-screen position whether the person
+   *  is a canvas card or a panel card. PathwayHighlight uses these
+   *  to build its path geometry, which lets the comet sail across
+   *  canvas → panel boundaries seamlessly. */
+  positionByPersonId?: Map<number, { x: number; y: number }>;
   /** Which effect modes are active. Multiple modes can run together;
    *  each draws its own layer. Defaulted to comet-only. */
   mode?: {
@@ -176,6 +187,7 @@ export function PathwayHighlight({
   targetId,
   cardW,
   cardH,
+  positionByPersonId,
   mode = { comet: true },
   onComplete,
 }: Props) {
@@ -189,8 +201,24 @@ export function PathwayHighlight({
     const placedById = new Map<number, LaidOutNode>(
       layout.nodes.map(n => [n.personId, n]),
     );
+    // For each person on the path, prefer the screen position from
+    // positionByPersonId (which accounts for panel routing) over the
+    // raw layout coords. Without the map we fall back to layout coords
+    // — useful for tests / standalone usage but not how TreesCanvas
+    // wires us up.
     const nodes = ids
-      .map(id => placedById.get(id))
+      .map(id => {
+        const placed = placedById.get(id);
+        if (!placed) return null;
+        const screen = positionByPersonId?.get(id);
+        if (screen) {
+          // Override the layout x/y with the screen-space position so
+          // path geometry traces through where the card is actually
+          // rendered (panel or canvas).
+          return { ...placed, x: screen.x, y: screen.y };
+        }
+        return placed;
+      })
       .filter((n): n is LaidOutNode => n != null);
     if (nodes.length < 2) return null;
     const waypoints = buildWaypoints(nodes);
@@ -202,7 +230,7 @@ export function PathwayHighlight({
       target: nodes[nodes.length - 1],
       travelDurationMs: (nodes.length - 1) * SECONDS_PER_SEGMENT * 1000,
     };
-  }, [layout, focusId, targetId]);
+  }, [layout, focusId, targetId, positionByPersonId]);
 
   // RAF-driven progress. Updated 60 times a second so the React tree
   // re-renders the comet's position. Cheap because PathwayHighlight is

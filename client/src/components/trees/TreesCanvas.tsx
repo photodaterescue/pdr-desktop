@@ -1941,31 +1941,9 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               </g>
             );
           })}
-          {/* Visual-Effects pathway highlight — comet trail from focus
-              to the most recently added person, with a card-perimeter
-              lap on arrival. Rendered INSIDE the same world-coords <g>
-              transform as the cards so the comet rides at the correct
-              x/y in world space and the lap rect lines up exactly with
-              the target card. The component is null-safe when
-              highlightTargetId is null, so the cost when effects are
-              off / idle is one cheap render. */}
-          {highlightTargetId != null && (
-            <PathwayHighlight
-              // key combines target + per-call nonce so a fresh mount
-              // happens on EVERY trigger — even when the same target
-              // is highlighted back-to-back (e.g. mashing the preview
-              // play button). The RAF-driven animation in
-              // PathwayHighlight only starts on mount, so a stable
-              // key would freeze the second trigger.
-              key={`hi-${highlightTargetId}-${highlightNonce}`}
-              layout={layout}
-              targetId={highlightTargetId}
-              cardW={CARD_W}
-              cardH={CARD_H}
-              mode={highlightMode}
-              onComplete={onHighlightComplete}
-            />
-          )}
+          {/* PathwayHighlight is rendered LATER in the panel-scaffold
+              IIFE so it has access to the panel layouts and can route
+              the comet through panel-rendered cards correctly. */}
         </g>
 
         {/* Fixed overlay: zoom indicator */}
@@ -2624,6 +2602,56 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 );
               })}
             </svg>
+            {/* Visual-Effects pathway overlay — drawn here (sibling of
+                the tether SVG, ABOVE panels in stacking order via
+                zIndex 35) so it has access to the panel `layouts` for
+                routing the comet through cards rendered inside open
+                panels. The wrapping <g> applies the same world-coords
+                transform the main canvas uses, so coordinates passed
+                to PathwayHighlight are in world units. For canvas-
+                rendered nodes that's just node.x / node.y; for panel-
+                rendered nodes we compute synthetic world coords that,
+                when transformed, land at the panel card's screen
+                position. */}
+            {highlightTargetId != null && (() => {
+              const scaleSafe = viewport.scale || 1;
+              const worldPositionByPersonId = new Map<number, { x: number; y: number }>();
+              // Default: every layout node uses its own world coord.
+              for (const node of layout.nodes) {
+                worldPositionByPersonId.set(node.personId, { x: node.x, y: node.y });
+              }
+              // Override: in-panel nodes use the panel card's screen
+              // position translated back into world coords. Inverse of
+              // the world-transform: world = (screen - viewport.t) / scale.
+              for (const l of layouts) {
+                for (const p of l.miniPlacements) {
+                  const screenX = l.panelLeft + p.cx * scaleSafe;
+                  const screenY = l.panelTop + p.cy * scaleSafe;
+                  const worldX = (screenX - viewport.tx) / scaleSafe;
+                  const worldY = (screenY - viewport.ty) / scaleSafe;
+                  worldPositionByPersonId.set(p.personId, { x: worldX, y: worldY });
+                }
+              }
+              return (
+                <svg
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  style={{ zIndex: 35 }}
+                >
+                  <g transform={`translate(${viewport.tx} ${viewport.ty}) scale(${scaleSafe})`}>
+                    <PathwayHighlight
+                      key={`hi-${highlightTargetId}-${highlightNonce}`}
+                      layout={layout}
+                      targetId={highlightTargetId}
+                      cardW={CARD_W}
+                      cardH={CARD_H}
+                      positionByPersonId={worldPositionByPersonId}
+                      mode={highlightMode}
+                      onComplete={onHighlightComplete}
+                    />
+                  </g>
+                </svg>
+              );
+            })()}
             {/* Panels */}
             {layouts.map(l => (
               <Card
