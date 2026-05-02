@@ -975,12 +975,37 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // visibleGraph + focusPersonId.
   previewCreationHighlightRef.current = () => {
     if (!visibleGraph || focusPersonId == null) return;
+    // Pick the deepest visible BLOODLINE ANCESTOR by walking parent_of
+    // edges upward from focus. Bloodline ancestors are always rendered
+    // on the main canvas (never moved into a panel), so the comet has
+    // a real card to land on. Fixes the "comet flies to empty space"
+    // bug where furthest-by-hop sometimes picked a side-branch person
+    // who'd been routed into an open panel and whose canvas coords are
+    // a ghost position.
     let target: number | null = null;
-    let bestHops = -1;
-    for (const n of visibleGraph.nodes) {
-      if (n.personId === focusPersonId) continue;
-      const hops = n.hopsFromFocus ?? 0;
-      if (hops > bestHops) { bestHops = hops; target = n.personId; }
+    let bestDepth = 0;
+    const visited = new Set<number>([focusPersonId]);
+    const queue: { id: number; depth: number }[] = [{ id: focusPersonId, depth: 0 }];
+    while (queue.length) {
+      const { id, depth } = queue.shift()!;
+      if (depth > bestDepth) { bestDepth = depth; target = id; }
+      for (const e of visibleGraph.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (e.bId !== id) continue;
+        if (visited.has(e.aId)) continue;
+        visited.add(e.aId);
+        queue.push({ id: e.aId, depth: depth + 1 });
+      }
+    }
+    // Fallbacks if focus has no visible ancestors (e.g. just-created
+    // tree): try the focus's spouse, then any visible non-focus person.
+    if (target == null) {
+      for (const e of visibleGraph.edges) {
+        if (e.type === 'spouse_of' && (e.aId === focusPersonId || e.bId === focusPersonId)) {
+          target = e.aId === focusPersonId ? e.bId : e.aId;
+          break;
+        }
+      }
     }
     if (target == null) {
       const first = visibleGraph.nodes.find(n => n.personId !== focusPersonId);
