@@ -25,7 +25,7 @@ import {
   type FamilyGraph,
   type SavedTreeRecord,
 } from '@/lib/electron-bridge';
-import { computeFocusLayout, augmentWithVirtualGhosts } from '@/lib/trees-layout';
+import { computeFocusLayout } from '@/lib/trees-layout';
 import { toast } from 'sonner';
 import { TreesCanvas } from './TreesCanvas';
 import { SetRelationshipModal } from './SetRelationshipModal';
@@ -904,8 +904,6 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     return max;
   }, [graph]);
 
-  // Augment the visible graph with virtual ghost parents for every named
-  // person that has fewer than 2 stored parents (one generation only).
   // Layout depth uses the widest active filter so spacing accommodates
   // the deepest visible branch.
   const effectiveLayoutHops = Math.max(
@@ -913,20 +911,21 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     generationsEnabled ? Math.max(ancestorsDepth, descendantsDepth) : 0,
     1, // never 0 — layout needs breathing room even in focus-only view
   );
-  const layoutGraph = visibleGraph
-    ? augmentWithVirtualGhosts(
-        visibleGraph,
-        effectiveLayoutHops,
-        // Don't paint ghost parents above anyone the user has asked to
-        // collapse — the whole point of "hide ancestry" is that the line
-        // goes away, not that it's replaced by empty sockets begging to
-        // be filled in. The augmenter reads each node's TOTAL DB parent
-        // count (node.totalParentCount) so truncation detection is
-        // authoritative rather than derived from the already-filtered
-        // visible graph — see search-database.ts for the count's origin.
-        savedTrees.find(t => t.id === currentTreeId)?.hiddenAncestorPersonIds,
-      )
-    : null;
+  // Ghost parent placeholders REMOVED globally per Terry's feedback —
+  // empty parent slots painted above named cards (with their dotted
+  // half-rectangles and stub lines reaching nowhere) were creating
+  // random-looking visual debris around branches whose parents simply
+  // haven't been added yet. Now every named person with <2 stored
+  // parents shows nothing above them; the +parent quick-add chip on
+  // each card is the single way to introduce a new parent. The chevron
+  // logic in TreesCanvas already handles "DB has more parents than
+  // visible" via totalParentCount > visibleParentCount, so bloodline
+  // truncation past Steps still surfaces correctly without the ghosts.
+  // augmentWithVirtualGhosts is kept exported in trees-layout.ts in
+  // case the design decision reverses; the call site is the only
+  // place ghosts entered the layout, so bypassing it here removes
+  // them everywhere.
+  const layoutGraph = visibleGraph;
   const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops) : null;
 
   const handleRefocus = useCallback((personId: number) => {
