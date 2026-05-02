@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   getFamilyGraph,
@@ -269,7 +269,6 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [showDates, setShowDates] = useState(
     typeof window !== 'undefined' && localStorage.getItem('pdr-trees-show-dates') === 'true'
   );
-  const [addInfoOpen, setAddInfoOpen] = useState(false);
   /** Date editor target — { personId, x, y } where x/y are screen
    *  coords for the popup. Null = editor closed. */
   const [dateEditor, setDateEditor] = useState<{ personId: number; x: number; y: number } | null>(null);
@@ -1975,47 +1974,6 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               {graph.nodes.length} {graph.nodes.length === 1 ? 'person' : 'people'} · {graph.edges.filter(e => !e.derived).length} relationships
             </span>
             <div className="flex-1" />
-            {/* Add Info dropdown — per-card optional fields. For now just
-                a 'Dates alive' toggle (off by default). More options can
-                slot in here later. */}
-            <div className="relative">
-              <IconTooltip label="Show extra details inside each card (dates, etc.)" side="bottom">
-                <button
-                  onClick={() => setAddInfoOpen(v => !v)}
-                  data-pdr-variant={showDates ? 'information' : undefined}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors"
-                  style={showDates
-                    ? { backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }
-                    : undefined
-                  }
-                  aria-expanded={addInfoOpen}
-                >
-                  <Info className="w-4 h-4" />
-                  Add Info{showDates ? ' (1)' : ''}
-                </button>
-              </IconTooltip>
-              {addInfoOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setAddInfoOpen(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-1 z-20 min-w-[220px] bg-popover border border-border rounded-lg shadow-lg py-1">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold px-3 pt-2 pb-1">Show below each card</p>
-                    <label className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showDates}
-                        onChange={e => toggleShowDates(e.target.checked)}
-                        className="accent-primary"
-                      />
-                      <span className="flex-1">Dates Living</span>
-                      <span className="text-[10px] text-muted-foreground">e.g. 1948–Living</span>
-                    </label>
-                  </div>
-                </>
-              )}
-            </div>
             {/* Undo / Redo — history is persistent across sessions, so
                 you can walk changes all the way back to when the app
                 was first used. Buttons disable when the respective
@@ -2041,28 +1999,69 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 </button>
               </IconTooltip>
             </div>
-            <IconTooltip label="Rename, switch between, create, export, or remove saved trees" side="bottom">
-              <button
-                onClick={() => setManageTreesOpen(true)}
-                data-pdr-variant="information"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
-              >
-                <FolderOpen className="w-4 h-4" />
-                Manage Trees
-              </button>
-            </IconTooltip>
-            <IconTooltip label="List everyone on this tree, see photo counts, and delete mistakes" side="bottom">
-              <button
-                onClick={() => setTreePeopleOpen(true)}
-                data-pdr-variant="information"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
-              >
-                <Users className="w-4 h-4" />
-                People
-              </button>
-            </IconTooltip>
+            {/* Trees Settings — single ribbon button consolidating the
+                three "secondary" actions (Add Info, Manage Trees,
+                People) so the toolbar stops eating real estate the
+                user-facing controls (focus, snapshot status, Steps /
+                Generations) need to read clearly. Same Popover
+                primitive used elsewhere in the app; the trigger reuses
+                the existing "information" button palette
+                (#dbeafe / #3b82f6 / #1e3a8a) so it slots in next to
+                the other ribbon buttons without introducing new
+                colours. The (1) badge fires when Dates Living is on,
+                so the user can see at-a-glance that an Add-Info
+                option is active even when the popover is closed. */}
+            <Popover>
+              <IconTooltip label="Trees settings — Add Info, Manage Trees, People" side="bottom">
+                <PopoverTrigger asChild>
+                  <button
+                    data-pdr-variant="information"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                    style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+                  >
+                    <Sliders className="w-4 h-4" />
+                    Trees Settings{showDates ? ' (1)' : ''}
+                  </button>
+                </PopoverTrigger>
+              </IconTooltip>
+              <PopoverContent align="end" side="bottom" className="w-64 p-1">
+                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
+                  Tree
+                </p>
+                <button
+                  onClick={() => setManageTreesOpen(true)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors text-left"
+                >
+                  <FolderOpen className="w-4 h-4 text-primary" />
+                  <span className="flex-1">Manage Trees</span>
+                </button>
+                <button
+                  onClick={() => setTreePeopleOpen(true)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors text-left"
+                >
+                  <Users className="w-4 h-4 text-primary" />
+                  <span className="flex-1">People on this tree</span>
+                </button>
+                <div className="h-px bg-border my-1" />
+                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
+                  Add Info
+                </p>
+                <p className="text-[10px] text-muted-foreground px-2 pb-1">
+                  Show below each card
+                </p>
+                <label className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showDates}
+                    onChange={e => toggleShowDates(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  <Info className="w-4 h-4 text-primary" />
+                  <span className="flex-1">Dates Living</span>
+                  <span className="text-[10px] text-muted-foreground">1948–Living</span>
+                </label>
+              </PopoverContent>
+            </Popover>
             <IconTooltip label="Change the focus person" side="bottom">
               <button
                 onClick={() => setFocusPickerOpen(true)}
