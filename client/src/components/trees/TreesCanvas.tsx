@@ -1879,13 +1879,107 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             byGen.get(p.generation)!.push(p);
           }
           for (const g of byGen.keys()) byGen.get(g)!.sort((a, b) => a.x - b.x);
+          // sortedGens is iterated TOP-DOWN (highest generation first) so
+          // when we lay out a child row we already know where its parents
+          // sit. This is critical for the per-family centring below.
           const sortedGens = Array.from(byGen.keys()).sort((a, b) => b - a);
-          let maxRowWidth = 0;
-          for (const g of sortedGens) {
+          // ── PER-ROW LAYOUT (parent-aware) ─────────────────────────────
+          // Lay out each row in panel-local x BEFORE deciding contentWidth,
+          // because child rows can extend further left/right than their
+          // parents when families are wide. Old code centred each row
+          // independently within contentWidth, which lined up only the
+          // ROW MIDPOINTS — Chloe (only child of Ian) ended up under the
+          // panel midpoint (Wendy's column) instead of under Ian. Now:
+          //
+          //  • Top row (highest gen) — sequential placement at MINI_CARD_GAP_X.
+          //  • Lower rows — group children by their visible parent set
+          //    inside the panel, centre each group under its parents'
+          //    midpoint (in panel-local coords from the row above), then
+          //    resolve overlaps left-to-right using MINI_CARD_GAP_X
+          //    between adjacent groups. Mirrors the main canvas's
+          //    descendant-pass per-family centring (trees-layout.ts).
+          //  • Children with no visible parent in the panel (rare —
+          //    e.g. a married-in spouse whose partner is on canvas but
+          //    not in this panel) keep their canvas-relative ordering
+          //    so they don't collide unpredictably.
+          const rowXById = new Map<number, number>();
+          let leftmostX = Infinity;
+          let rightmostX = -Infinity;
+          sortedGens.forEach((g, rowIdx) => {
             const row = byGen.get(g)!;
-            const rowW = row.length * CARD_W + (row.length - 1) * MINI_CARD_GAP_X;
-            if (rowW > maxRowWidth) maxRowWidth = rowW;
-          }
+            if (rowIdx === 0) {
+              // Top row: anchored sequentially around 0; we shift
+              // everything later when we know the full bounds.
+              const rowW = row.length * CARD_W + (row.length - 1) * MINI_CARD_GAP_X;
+              const startCx = -rowW / 2 + CARD_W / 2;
+              row.forEach((node, i) => {
+                const x = startCx + i * (CARD_W + MINI_CARD_GAP_X);
+                rowXById.set(node.personId, x);
+                if (x < leftmostX) leftmostX = x;
+                if (x > rightmostX) rightmostX = x;
+              });
+              return;
+            }
+            // Lower row — per-family centring under parents.
+            type CGroup = { childIds: number[]; centre: number };
+            const groupsByKey = new Map<string, CGroup>();
+            const groupOrder: CGroup[] = [];
+            for (const c of row) {
+              const parentXs: number[] = [];
+              for (const e of layout.edges) {
+                if (e.type !== 'parent_of') continue;
+                if (e.bId !== c.personId) continue;
+                const px = rowXById.get(e.aId);
+                if (px != null) parentXs.push(px);
+              }
+              const parentIdsSorted = layout.edges
+                .filter(e => e.type === 'parent_of' && e.bId === c.personId)
+                .map(e => e.aId)
+                .filter(pid => rowXById.has(pid))
+                .sort((a, b) => a - b);
+              const key = parentIdsSorted.length > 0
+                ? parentIdsSorted.join(',')
+                : `__solo_${c.personId}`;
+              const centre = parentXs.length > 0
+                ? parentXs.reduce((a, b) => a + b, 0) / parentXs.length
+                : (rowXById.get(c.personId) ?? 0);
+              let grp = groupsByKey.get(key);
+              if (!grp) {
+                grp = { childIds: [], centre };
+                groupsByKey.set(key, grp);
+                groupOrder.push(grp);
+              }
+              grp.childIds.push(c.personId);
+            }
+            // Sort families left-to-right by desired centre. Ties broken by
+            // first child's id for stable output across renders.
+            groupOrder.sort((a, b) => a.centre - b.centre || a.childIds[0] - b.childIds[0]);
+            // Place each family centred on its desired X; if it overlaps
+            // the previous family, shift right to keep MINI_CARD_GAP_X
+            // between adjacent groups. Within a family, siblings sit at
+            // (CARD_W + MINI_CARD_GAP_X) intervals — same gap as the
+            // top row, so the panel keeps a consistent rhythm.
+            const childGap = CARD_W + MINI_CARD_GAP_X;
+            let prevRight = -Infinity;
+            for (const grp of groupOrder) {
+              const span = (grp.childIds.length - 1) * childGap;
+              let leftEdge = grp.centre - span / 2;
+              if (prevRight !== -Infinity) {
+                leftEdge = Math.max(leftEdge, prevRight + MINI_CARD_GAP_X + CARD_W);
+              }
+              grp.childIds.forEach((cid, i) => {
+                const x = leftEdge + i * childGap;
+                rowXById.set(cid, x);
+                if (x < leftmostX) leftmostX = x;
+                if (x > rightmostX) rightmostX = x;
+              });
+              prevRight = leftEdge + span;
+            }
+          });
+          // Total content span across all rows so the panel sizes itself
+          // to fit the widest row regardless of which generation it sits at.
+          const cardSpan = rightmostX - leftmostX + CARD_W;
+          const maxRowWidth = cardSpan;
           // Pre-compute the panel title here (instead of further down)
           // so we can include its approximate rendered width in
           // contentWidth — when a couple has only one child, the
@@ -1946,15 +2040,28 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
             : sortedGens.length * CARD_H
               + (sortedGens.length - 1) * MINI_ROW_GAP_Y
               + padTop + padBottom;
+          // Translate the rowXById map into final panel-local coords:
+          //  • shift x so the leftmost card sits at PANEL_PADDING from
+          //    the panel's left edge,
+          //  • centre everything horizontally inside contentWidth (the
+          //    title estimate may have made contentWidth wider than the
+          //    cards themselves, in which case we want the cards centred
+          //    rather than left-anchored).
+          // The y coord still keys off rowIdx so each generation lands
+          // on its own row.
           const miniPlacements: MiniPlacement[] = [];
+          const cardsLeftEdge = leftmostX - CARD_W / 2;
+          const cardsRightEdge = rightmostX + CARD_W / 2;
+          const cardsSpan = cardsRightEdge - cardsLeftEdge;
+          const xShift = (contentWidth - cardsSpan) / 2 - cardsLeftEdge;
           sortedGens.forEach((g, rowIdx) => {
             const row = byGen.get(g)!;
-            const rowW = row.length * CARD_W + (row.length - 1) * MINI_CARD_GAP_X;
-            const startCx = (contentWidth - rowW) / 2 + CARD_W / 2;
-            row.forEach((node, i) => {
+            row.forEach((node) => {
+              const localX = rowXById.get(node.personId);
+              if (localX == null) return;
               miniPlacements.push({
                 personId: node.personId,
-                cx: startCx + i * (CARD_W + MINI_CARD_GAP_X),
+                cx: localX + xShift,
                 cy: padTop + rowIdx * (CARD_H + MINI_ROW_GAP_Y) + CARD_H / 2,
                 node,
               });
