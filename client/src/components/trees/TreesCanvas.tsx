@@ -3163,6 +3163,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           if (parentOf) {
             const parent = parentOf.aId === aId ? a : b;
             const child = parentOf.aId === aId ? b : a;
+            // BFS may walk the pair in either direction (parent→child
+            // or child→parent). The geometry below is computed in
+            // parent→child order; we reverse at the end when aId is
+            // the child so the concatenated path stays continuous.
+            const aIsChild = (aId === child.personId);
             const fg = familyGroupForParentChild(parent.personId, child.personId);
             if (fg) {
               const bracketY = familyBracketY(fg.parentIds, fg.childIds);
@@ -3173,7 +3178,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 // parent.x at avatarY → marriageBarMidX at avatarY →
                 // marriageBarMidX at bracketY → child.x at bracketY →
                 // child.x at child.top → child.center.
-                return [
+                const seg = [
                   { x: parent.x, y: parent.y },
                   { x: parent.x, y: parentY },
                   { x: midX, y: parentY },
@@ -3182,9 +3187,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                   { x: child.x, y: child.y - CARD_H / 2 },
                   { x: child.x, y: child.y },
                 ];
+                return aIsChild ? seg.reverse() : seg;
               }
             }
-            // Standalone parent_of (no family group) — EdgeLine's Z.
+            // Standalone parent_of (no family group) — EdgeLine's Z,
+            // emitted from a → b in BFS order (the Z is symmetric).
             const midY = (a.y + b.y) / 2;
             return [
               { x: a.x, y: a.y },
