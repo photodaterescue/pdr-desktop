@@ -720,22 +720,63 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     };
     const groupsByKey = new Map<string, FamilyGroup>();
     const groupOrder: FamilyGroup[] = [];
+    // Helper: for a kid-LESS person in this gen, find a bloodline
+    // sibling (someone sharing at least one parent with them) who
+    // DOES have placed kids. If found, return that sibling's
+    // kid-set + desired centre — used so kid-less great-aunts /
+    // uncles join their bloodline pair-mate's group and travel
+    // with the pair when it shifts to align under its kids.
+    // Without this, Gladys (Nan's sister, no placed kids) had her
+    // own solo desired = her current x, and the third pass sorted
+    // her group BEFORE Nan's pair when Nan's desired (= Sally.x)
+    // moved rightward — leaving Gladys stranded on the wrong side
+    // of Derek instead of glued to Nan's right.
+    const findKidHavingSibling = (pid: number): { key: string; desired: number } | null => {
+      const grandparentIds = new Set<number>();
+      for (const e of graph.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (e.bId !== pid) continue;
+        grandparentIds.add(e.aId);
+      }
+      for (const e of graph.edges) {
+        if (e.type !== 'parent_of') continue;
+        if (!grandparentIds.has(e.aId)) continue;
+        if (e.bId === pid) continue;
+        const sibKids = childrenByParent.get(e.bId) ?? [];
+        if (sibKids.length === 0) continue;
+        const xs = sibKids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
+        if (xs.length === 0) continue;
+        const desired = xs.reduce((a, b) => a + b, 0) / xs.length;
+        return { key: [...sibKids].sort((a, b) => a - b).join(','), desired };
+      }
+      return null;
+    };
     for (const node of sorted) {
       const kids = childrenByParent.get(node.personId) ?? [];
-      const hasKids = kids.length > 0;
-      // Solo key for kid-less people — keeps each in their own slot,
-      // sorted by current x so adjacency / order from earlier passes
-      // is preserved.
-      const key = hasKids
-        ? [...kids].sort((a, b) => a - b).join(',')
-        : `__solo_${node.personId}`;
+      let key: string;
+      let desiredCentre: number;
+      let hasKids: boolean;
+      if (kids.length > 0) {
+        key = [...kids].sort((a, b) => a - b).join(',');
+        const xs = kids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
+        desiredCentre = xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : node.x;
+        hasKids = true;
+      } else {
+        // Kid-less in this gen — try joining a bloodline sibling's
+        // pair-group so we ride along when the pair shifts.
+        const sib = findKidHavingSibling(node.personId);
+        if (sib) {
+          key = sib.key;
+          desiredCentre = sib.desired;
+          hasKids = true; // group treated as kid-having for placement
+        } else {
+          key = `__solo_${node.personId}`;
+          desiredCentre = node.x;
+          hasKids = false;
+        }
+      }
       let g = groupsByKey.get(key);
       if (!g) {
-        let desiredCentre = node.x;
-        if (hasKids) {
-          const xs = kids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
-          if (xs.length > 0) desiredCentre = xs.reduce((a, b) => a + b, 0) / xs.length;
-        }
         g = { key, members: [], desired: desiredCentre, hasKids };
         groupsByKey.set(key, g);
         groupOrder.push(g);
