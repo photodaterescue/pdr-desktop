@@ -2683,7 +2683,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       return (
                         <g
                           stroke={l.tetherColour}
-                          strokeWidth={2}
+                          strokeWidth={4}
                           fill="none"
                           strokeLinecap="round"
                         >
