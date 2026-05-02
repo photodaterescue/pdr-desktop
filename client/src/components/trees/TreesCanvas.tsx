@@ -1714,7 +1714,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   x2={chevronCx}
                   y2={chevronCy - r}
                   stroke={info.headColour}
-                  strokeWidth={2}
+                  strokeWidth={4}
                   strokeLinecap="round"
                   style={{ pointerEvents: 'none' }}
                 />
@@ -1730,7 +1730,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     x2={chevronCx}
                     y2={chevronCy - r}
                     stroke={info.partnerColour}
-                    strokeWidth={2}
+                    strokeWidth={4}
                     strokeLinecap="round"
                     style={{ pointerEvents: 'none' }}
                   />
@@ -1813,7 +1813,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                   x2={chevronCx}
                   y2={chevronCy + r}
                   stroke={fill}
-                  strokeWidth={2}
+                  strokeWidth={4}
                   strokeLinecap="round"
                   style={{ pointerEvents: 'none' }}
                 />
@@ -2495,7 +2495,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     key={`tether-${l.personId}-${l.direction}`}
                     d={path}
                     stroke={l.tetherColour}
-                    strokeWidth={2}
+                    strokeWidth={4}
                     fill="none"
                     strokeLinecap="round"
                     opacity={0.9}
@@ -2656,7 +2656,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                         return (
                           <g
                             stroke={l.tetherColour}
-                            strokeWidth={2}
+                            strokeWidth={4}
                             fill="none"
                             strokeLinecap="round"
                           >
@@ -3945,7 +3945,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               x2={0}
               y2={chevronCy + r}
               stroke={fill}
-              strokeWidth={2}
+              strokeWidth={4}
               strokeLinecap="round"
               style={{ pointerEvents: 'none' }}
             />
@@ -4053,7 +4053,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               x2={0}
               y2={chevronCy - r}
               stroke={fill}
-              strokeWidth={2}
+              strokeWidth={4}
               strokeLinecap="round"
               style={{ pointerEvents: 'none' }}
             />
