@@ -21,6 +21,7 @@ import {
   redoGraphOperation,
   getGraphHistoryCounts,
   listRelationshipsForPerson,
+  mergePlaceholderIntoPerson,
   onPeopleDataChanged,
   type FamilyGraph,
   type SavedTreeRecord,
@@ -1514,6 +1515,43 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           if (selected && selected.length > 0) {
             for (const childId of selected) {
               await addRelationship({ personAId: otherPersonId, personBId: childId, type: 'parent_of' });
+            }
+            // Placeholder reabsorption — when the new partner becomes
+            // a parent of children who already share an UNNAMED
+            // placeholder co-parent (typically created by the
+            // full-sibling auto-fill: marking Abby as a full sister
+            // of Chloe spawns a shared placeholder so the sibling
+            // link can derive from a parent_of relationship), the
+            // new partner IS that placeholder. Merge it in instead
+            // of leaving each child with both the placeholder AND
+            // the named partner as separate parents — which was
+            // exactly Terry's case ("I added Sam as Ian's ex-wife
+            // and confirmed she's Chloe + Abby's mother — surely
+            // that should fill the placeholder").
+            //
+            // Rule: any placeholder that's a co-parent of EVERY
+            // child the user just confirmed is unambiguously the
+            // person they were trying to fill in. Merge transfers
+            // its parent_of edges to the new partner (deduping
+            // against any we just wrote) and deletes the placeholder
+            // row.
+            const placeholderCoparentCounts = new Map<number, number>();
+            for (const childId of selected) {
+              const childRels = await listRelationshipsForPerson(childId);
+              if (!childRels.success || !childRels.data) continue;
+              for (const r of childRels.data) {
+                if (r.type !== 'parent_of') continue;
+                if (r.person_b_id !== childId) continue;
+                const pid = r.person_a_id;
+                if (pid === otherPersonId) continue;
+                const node = graph?.nodes.find(n => n.personId === pid);
+                if (!node || !node.isPlaceholder) continue;
+                placeholderCoparentCounts.set(pid, (placeholderCoparentCounts.get(pid) ?? 0) + 1);
+              }
+            }
+            for (const [phId, count] of placeholderCoparentCounts) {
+              if (count !== selected.length) continue;
+              await mergePlaceholderIntoPerson(phId, otherPersonId);
             }
           }
         }
