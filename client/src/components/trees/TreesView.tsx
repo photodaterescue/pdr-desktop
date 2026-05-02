@@ -283,10 +283,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       : true,
   );
   /** Person currently being highlighted by the comet trail. Set by
-   *  the create flows (finaliseQuickAdd, etc.); cleared by
-   *  PathwayHighlight's onComplete callback when the animation
-   *  finishes. */
-  const [highlightTarget, setHighlightTarget] = useState<number | null>(null);
+   *  the create flows (finaliseQuickAdd, etc.) and the preview play
+   *  button; cleared by PathwayHighlight's onComplete callback when
+   *  the animation finishes. The `nonce` is bumped on every set so
+   *  PathwayHighlight's key changes even when the same person is
+   *  highlighted back-to-back — without it, React reconciles in
+   *  place and the SVG SMIL <animate> elements never re-fire on
+   *  consecutive triggers. */
+  const [highlightTarget, setHighlightTargetState] = useState<{ id: number; nonce: number } | null>(null);
+  const setHighlightTarget = useCallback((id: number | null) => {
+    if (id == null) setHighlightTargetState(null);
+    else setHighlightTargetState({ id, nonce: Date.now() });
+  }, []);
   const persistEffectsEnabled = useCallback((v: boolean) => {
     setEffectsEnabled(v);
     if (typeof window !== 'undefined') {
@@ -934,13 +942,11 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       if (first) target = first.personId;
     }
     if (target == null) return;
-    // Force a fresh mount even if the same target is selected back-
-    // to-back (e.g. user mashes the play button) — clear first, then
-    // set on the next tick so PathwayHighlight's key={targetId}
-    // remounts.
-    const finalTarget = target;
-    setHighlightTarget(null);
-    setTimeout(() => setHighlightTarget(finalTarget), 16);
+    // setHighlightTarget bumps a per-call nonce internally, so the
+    // child PathwayHighlight's key changes on every preview click and
+    // remounts even when the same target is chosen back-to-back. No
+    // timeout dance needed.
+    setHighlightTarget(target);
   };
 
   // Number of people in the graph who are filtered OUT specifically
@@ -2324,7 +2330,8 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         {layout && (
           <TreesCanvas
             layout={layout}
-            highlightTargetId={highlightTarget}
+            highlightTargetId={highlightTarget?.id ?? null}
+            highlightNonce={highlightTarget?.nonce ?? 0}
             onHighlightComplete={() => setHighlightTarget(null)}
             onRefocus={handleRefocus}
             onSetRelationship={(personId) => { setRelationshipEditorInitialTo(null); setRelationshipEditorFor(personId); }}
