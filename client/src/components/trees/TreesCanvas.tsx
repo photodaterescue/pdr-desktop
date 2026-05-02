@@ -170,6 +170,14 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
    *  `${personId}-${direction}` so each chevron's panel remembers its
    *  drag position independently within the session. */
   const [panelOffsets, setPanelOffsets] = useState<Map<string, { x: number; y: number }>>(new Map());
+  /** Per-panel horizontal scroll position. When the panel content
+   *  overflows its display width (typical when zoomed in past
+   *  MAX_PANEL_W), CardContent shows a horizontal scrollbar — and
+   *  the in-panel tether-continuation needs to know how far the SVG
+   *  has been scrolled so it can land where the chevron actually
+   *  enters the panel rather than at the SVG's local centre.
+   *  Updated by an onScroll listener attached to each CardContent. */
+  const [panelScrollLefts, setPanelScrollLefts] = useState<Map<string, number>>(new Map());
   const panelDragRef = useRef<{
     active: boolean;
     panelKey: string;
@@ -2584,7 +2592,24 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                     });
                   };
                   return (
-                    <CardContent key="content" className="flex-1 min-h-0 overflow-auto p-0 flex flex-col">
+                    <CardContent
+                      key="content"
+                      className="flex-1 min-h-0 overflow-auto p-0 flex flex-col"
+                      onScroll={(e) => {
+                        const target = e.currentTarget;
+                        const sl = target.scrollLeft;
+                        // Only commit a state update when the value actually
+                        // changes — avoids re-renders for every wheel tick
+                        // when scrollLeft hasn't moved (CardContent fires
+                        // scroll on vertical wheel too).
+                        setPanelScrollLefts(prev => {
+                          if (prev.get(l.panelKey) === sl) return prev;
+                          const next = new Map(prev);
+                          next.set(l.panelKey, sl);
+                          return next;
+                        });
+                      }}
+                    >
                   {/* Full-size canvas-card mini-tree inside the panel.
                       Reuses PersonNode at full CARD_W / CARD_H so each
                       person inside looks identical to a person on the
@@ -2655,6 +2680,33 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                       const minX = Math.min(...xs);
                       const maxX = Math.max(...xs);
                       const centerX = l.contentWidth / 2;
+                      // Dynamic entry X — where the chevron above the
+                      // panel actually lands on the panel's top/bottom
+                      // edge in SVG-local coords. The chevron is fixed
+                      // at the panel's display-CENTRE (in screen coords),
+                      // but the SVG inside CardContent may be wider than
+                      // the panel and horizontally scrolled, so the SVG-
+                      // local x corresponding to the chevron depends on:
+                      //   (visibleCentreInScreenPx + scrollLeft) / scale.
+                      // Without this calc, when zoomed in past MAX_PANEL_W
+                      // the in-panel drop landed at SVG-local centerX
+                      // while the chevron stayed at panel-centre — Terry
+                      // saw a clearly disconnected drop in the Peter &
+                      // Mary panel at 148% zoom.
+                      const scale = viewport.scale || 1;
+                      const PANEL_BORDER = 2;
+                      const visibleW = Math.max(0, l.panelW - PANEL_BORDER * 2);
+                      const scrollLeft = panelScrollLefts.get(l.panelKey) ?? 0;
+                      const entryX = (visibleW / 2 + scrollLeft) / scale;
+                      // Bezier from (entryX, top) → (centerX, bracketY)
+                      // gives a smooth S-curve when entryX !== centerX
+                      // and collapses to a vertical line when they match
+                      // (no scroll, no zoom-overflow). Same shape language
+                      // the canvas-level chevron→panel tether uses.
+                      const bezierPath = (sx: number, sy: number, ex: number, ey: number) => {
+                        const dy = ey - sy;
+                        return `M ${sx} ${sy} C ${sx} ${sy + dy * 0.4}, ${ex} ${ey - dy * 0.4}, ${ex} ${ey}`;
+                      };
                       if (l.direction === 'descendant') {
                         // Drop down from panel-top into a bracket
                         // that sits MINI_ROW_GAP_Y/2 above the head's
@@ -2671,7 +2723,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                             fill="none"
                             strokeLinecap="round"
                           >
-                            <line x1={centerX} y1={entryY} x2={centerX} y2={bracketY} />
+                            <path d={bezierPath(entryX, entryY, centerX, bracketY)} />
                             <line x1={minX} y1={bracketY} x2={maxX} y2={bracketY} />
                             {kinPlacements.map(p => (
                               <line
@@ -2698,7 +2750,7 @@ export function TreesCanvas({ layout, onRefocus, onSetRelationship, onEditRelati
                           fill="none"
                           strokeLinecap="round"
                         >
-                          <line x1={centerX} y1={entryY} x2={centerX} y2={bracketY} />
+                          <path d={bezierPath(entryX, entryY, centerX, bracketY)} />
                           <line x1={minX} y1={bracketY} x2={maxX} y2={bracketY} />
                           {kinPlacements.map(p => (
                             <line
