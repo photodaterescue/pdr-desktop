@@ -1229,7 +1229,118 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       ),
     };
   })();
-  const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops) : null;
+  // Side-branch descendant IDs — the cousins, cousins' partners and
+  // their children whose only on-screen home is a chevron-opened panel
+  // floating over the canvas. We need them OUT of the canvas-spacing
+  // math, otherwise gen 0 ends up wide enough to hold every cousin
+  // family side-by-side and the per-family-centring pass drags Alan
+  // far right of Patricia / Peter so each ancestor can sit over their
+  // own (mostly-hidden) kids — which is exactly the empty-stripe
+  // problem Terry flagged. Layout still keeps these people in
+  // `placed` (parked at x=0) so layout.edges + layout.nodes stay
+  // referentially intact for the panel BFS that re-lays them out.
+  const sideBranchHiddenIds = (() => {
+    if (!layoutGraph) return new Set<number>();
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layoutGraph.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    const focusId = layoutGraph.focusPersonId;
+    // Strict ancestors of focus (NOT including focus).
+    const strictAncestors = new Set<number>();
+    const upQ = [focusId];
+    while (upQ.length) {
+      const cur = upQ.shift()!;
+      for (const p of parentsOf.get(cur) ?? []) {
+        if (strictAncestors.has(p)) continue;
+        strictAncestors.add(p);
+        upQ.push(p);
+      }
+    }
+    // Direct line (kept on canvas): focus + direct ancestors + direct
+    // descendants + focus's siblings + their descendants. Never hidden.
+    const directLine = new Set<number>([focusId, ...strictAncestors]);
+    const downQ = [focusId];
+    while (downQ.length) {
+      const cur = downQ.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (directLine.has(c)) continue;
+        directLine.add(c);
+        downQ.push(c);
+      }
+    }
+    const focusParents = parentsOf.get(focusId) ?? [];
+    const sibQ: number[] = [];
+    for (const fp of focusParents) {
+      for (const c of childrenOf.get(fp) ?? []) {
+        if (c === focusId) continue;
+        if (directLine.has(c)) continue;
+        directLine.add(c);
+        sibQ.push(c);
+      }
+    }
+    while (sibQ.length) {
+      const cur = sibQ.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (directLine.has(c)) continue;
+        directLine.add(c);
+        sibQ.push(c);
+      }
+    }
+    // Side-branch heads = siblings of strict ancestors (children of
+    // strict ancestors' parents, excluding the ancestor and focus).
+    const heads = new Set<number>();
+    for (const a of strictAncestors) {
+      for (const p of parentsOf.get(a) ?? []) {
+        for (const c of childrenOf.get(p) ?? []) {
+          if (c === a) continue;
+          if (c === focusId) continue;
+          if (strictAncestors.has(c)) continue;
+          heads.add(c);
+        }
+      }
+    }
+    // For each head, walk DOWN collecting descendants (skipping the
+    // direct line to guard against cousin marriages / half-relations
+    // where someone reaches focus via two routes).
+    const hidden = new Set<number>();
+    for (const head of heads) {
+      const q = [head];
+      const seen = new Set<number>([head]);
+      while (q.length) {
+        const cur = q.shift()!;
+        for (const c of childrenOf.get(cur) ?? []) {
+          if (seen.has(c)) continue;
+          seen.add(c);
+          if (directLine.has(c)) continue;
+          hidden.add(c);
+          q.push(c);
+        }
+      }
+    }
+    // Sweep spouse_of edges so non-bloodline partners of any hidden
+    // descendant come along (otherwise they linger as stranded cards
+    // on the canvas while their spouse + kids are tucked into the
+    // panel).
+    const bloodline = new Set<number>(directLine);
+    for (const head of heads) bloodline.add(head);
+    // Walk down from heads to populate the rest of the bloodline so
+    // hidden side-branch descendants count as bloodline (for the
+    // spouse sweep test).
+    for (const id of hidden) bloodline.add(id);
+    for (const e of layoutGraph.edges) {
+      if (e.type !== 'spouse_of') continue;
+      if (hidden.has(e.aId) && !bloodline.has(e.bId)) hidden.add(e.bId);
+      if (hidden.has(e.bId) && !bloodline.has(e.aId)) hidden.add(e.aId);
+    }
+    return hidden;
+  })();
+  const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops, { excludeFromSpacing: sideBranchHiddenIds }) : null;
 
   const handleRefocus = useCallback((personId: number) => {
     setFocusPersonId(personId);
