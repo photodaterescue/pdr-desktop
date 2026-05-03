@@ -322,9 +322,15 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   /** Active tab inside the Trees Settings dialog. Mirrors how
    *  workspace.tsx's SettingsModal stores `settingsTab` — the active
    *  tab survives toggles within the same session but resets to
-   *  'tree' next time the dialog opens, which is what people
+   *  'manageTrees' next time the dialog opens, which is what people
    *  expect from a settings surface. */
-  const [treesSettingsTab, setTreesSettingsTab] = useState<'tree' | 'display' | 'effects'>('tree');
+  const [treesSettingsTab, setTreesSettingsTab] = useState<'manageTrees' | 'people' | 'display' | 'effects'>('manageTrees');
+  /** Drag-to-reposition for the Trees Settings dialog. Reuses the
+   *  shared useDraggableModal hook (same one ManageTreesModal,
+   *  TreePeopleListModal, and the other Trees modals use) so the
+   *  drag clamp + cursor states match the rest of Trees. The header
+   *  receives dragHandleProps; modalRef wraps the dialog card. */
+  const treesSettingsDrag = useDraggableModal();
   /** Person currently being highlighted by the comet trail. Set by
    *  the create flows (finaliseQuickAdd, etc.) and the preview play
    *  button; cleared by PathwayHighlight's onComplete callback when
@@ -2235,7 +2241,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 active even when the dialog is closed. */}
             <IconTooltip label="Trees settings — Tree, Display, Effects" side="bottom">
               <button
-                onClick={() => { setTreesSettingsTab('tree'); setTreesSettingsOpen(true); }}
+                onClick={() => { setTreesSettingsTab('manageTrees'); setTreesSettingsOpen(true); }}
                 data-pdr-variant="information"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
                 style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
@@ -2770,16 +2776,24 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
           >
             <motion.div
+              ref={treesSettingsDrag.modalRef}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full p-6"
+              className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden"
             >
-              {/* Header — icon + title centred, X close button absolutely
-                  positioned to the right. Lifted directly from PDR's
-                  SettingsModal so the two surfaces feel identical. */}
-              <div className="relative mb-5 text-center">
+              {/* Header — drag handle wraps the icon + title row so the
+                  user can grab the dialog from a generous strip rather
+                  than hunting a narrow grip. Same pattern Trees' other
+                  modals use (Manage Trees, People). The Move icon hints
+                  the strip is grabbable; X close stays absolute right
+                  for parity with PDR's SettingsModal. */}
+              <div
+                {...treesSettingsDrag.dragHandleProps}
+                className={`relative px-6 py-5 border-b border-border ${treesSettingsDrag.dragHandleProps.className}`}
+              >
+                <Move className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
                 <div className="flex items-center justify-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                     <Sliders className="w-5 h-5 text-primary" />
@@ -2788,7 +2802,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 </div>
                 <button
                   onClick={() => setTreesSettingsOpen(false)}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full transition-colors"
                   data-testid="button-close-trees-settings"
                   aria-label="Close Trees Settings"
                 >
@@ -2800,16 +2814,19 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   as workspace.tsx's SettingsModal. Active tab is
                   underlined with `border-primary` + filled with
                   `text-primary`; inactive tabs sit on `bg-muted/40`
-                  with muted-foreground text. Three tabs share the
-                  width equally via flex-1. */}
-              <div className="flex border-b border-border mb-0">
+                  with muted-foreground text. Tabs share the width
+                  equally via flex-1. Manage Trees and People are now
+                  full tabs (their bodies render inline) instead of
+                  buttons that opened separate modals — Terry called
+                  out that modals-within-modals felt wrong. */}
+              <div className="flex border-b border-border">
                 {([
-                  { value: 'tree' as const,    label: 'Tree' },
-                  { value: 'display' as const, label: 'Display' },
-                  { value: 'effects' as const, label: 'Effects' },
-                ]).map((tab, idx, arr) => {
+                  { value: 'manageTrees' as const, label: 'Manage Trees' },
+                  { value: 'people' as const,      label: 'People' },
+                  { value: 'display' as const,     label: 'Display' },
+                  { value: 'effects' as const,     label: 'Effects' },
+                ]).map((tab) => {
                   const active = treesSettingsTab === tab.value;
-                  const corners = `${idx === 0 ? 'rounded-tl-lg' : ''} ${idx === arr.length - 1 ? 'rounded-tr-lg' : ''}`;
                   return (
                     <button
                       key={tab.value}
@@ -2820,7 +2837,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                         active
                           ? 'border-primary text-primary bg-background'
                           : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30 bg-muted/40'
-                      } ${corners}`}
+                      }`}
                     >
                       {tab.label}
                     </button>
@@ -2829,43 +2846,64 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               </div>
 
               {/* Tab body — fixed-height scroll lane so the dialog
-                  stays put as the user toggles between tabs. */}
-              <div className="space-y-4 h-[55vh] overflow-y-auto pr-2 pt-5">
+                  stays put as the user toggles between tabs. The
+                  Manage Trees / People tabs embed the existing modal
+                  bodies (via the `embedded` prop) so the user gets
+                  the same list / sort / delete capabilities without
+                  a second modal opening on top. */}
+              <div className="px-6 pb-6 pt-5 h-[55vh] overflow-y-auto">
 
-                {/* ═══════════════ TREE TAB ═══════════════
-                    Cross-tree actions that don't fit neatly elsewhere
-                    in the ribbon. Each row is a labelled button that
-                    closes the dialog before opening its own modal,
-                    so the user doesn't see two modals stacked. */}
-                {treesSettingsTab === 'tree' && (
-                  <>
-                    <button
-                      onClick={() => { setTreesSettingsOpen(false); setManageTreesOpen(true); }}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-accent transition-colors text-left"
-                      data-testid="button-manage-trees"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <FolderOpen className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">Manage Trees</span>
-                        <span className="text-xs text-muted-foreground">List, rename, switch, export as PNG / PDF.</span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => { setTreesSettingsOpen(false); setTreePeopleOpen(true); }}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-accent transition-colors text-left"
-                      data-testid="button-tree-people"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <Users className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">People on this tree</span>
-                        <span className="text-xs text-muted-foreground">Everyone reachable from the focus, plus orphaned persons created in Trees.</span>
-                      </div>
-                    </button>
-                  </>
+                {/* ═══════════════ MANAGE TREES TAB ═══════════════ */}
+                {treesSettingsTab === 'manageTrees' && (
+                  <ManageTreesModal
+                    embedded
+                    currentTreeId={currentTreeId}
+                    currentFocusPersonId={focusPersonId}
+                    getTreeSvg={() => document.querySelector<SVGSVGElement>('svg[data-tree-canvas="true"]')}
+                    onSwitch={(t) => { setTreesSettingsOpen(false); switchToTree(t); }}
+                    onChanged={reloadSavedTrees}
+                    onClose={() => setTreesSettingsOpen(false)}
+                    onRequestNewTree={() => {
+                      setTreesSettingsOpen(false);
+                      setNewTreePickerOpen(true);
+                    }}
+                    onRequestBackgroundPick={(tree) => {
+                      if (!onRequestCanvasBackgroundPick) return;
+                      setTreesSettingsOpen(false);
+                      onRequestCanvasBackgroundPick({ treeId: tree.id, treeName: tree.name });
+                    }}
+                    getPersonName={(id) => {
+                      const p = allPersons.find(pp => pp.id === id);
+                      return p?.name?.trim() ? p.name : `Person #${id}`;
+                    }}
+                  />
+                )}
+
+                {/* ═══════════════ PEOPLE TAB ═══════════════ */}
+                {treesSettingsTab === 'people' && (
+                  <TreePeopleListModal
+                    embedded
+                    focusPersonId={focusPersonId}
+                    treeName={currentTree?.name ?? 'this tree'}
+                    graph={graph}
+                    allPersons={allPersons}
+                    connectedPersonIds={connectedPersonIds}
+                    excludedSuggestionIds={excludedSuggestionIdSet}
+                    stepsEnabled={stepsEnabled}
+                    steps={expandedHops}
+                    onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(12, next)))}
+                    onSetFocus={(personId) => setFocusPersonId(personId)}
+                    useGenderedLabels={currentTree?.useGenderedLabels ?? true}
+                    simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}
+                    onClose={() => setTreesSettingsOpen(false)}
+                    onPersonsChanged={async () => {
+                      await reloadPersons();
+                      if (focusPersonId != null) {
+                        const r = await getFamilyGraph(focusPersonId, fetchDepth);
+                        if (r.success && r.data) setGraph(r.data);
+                      }
+                    }}
+                  />
                 )}
 
                 {/* ═══════════════ DISPLAY TAB ═══════════════
@@ -2874,7 +2912,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                     enough to grow more "show below the card"
                     options without rework. */}
                 {treesSettingsTab === 'display' && (
-                  <>
+                  <div className="space-y-4">
                     <p className="text-xs text-muted-foreground px-1 pb-1">
                       Show below each card
                     </p>
@@ -2894,7 +2932,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                         data-testid="checkbox-dates-living"
                       />
                     </label>
-                  </>
+                  </div>
                 )}
 
                 {/* ═══════════════ EFFECTS TAB ═══════════════
@@ -2905,7 +2943,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                     rows beneath the master use a disabled state
                     when effects are off so they read as inert. */}
                 {treesSettingsTab === 'effects' && (
-                  <>
+                  <div className="space-y-4">
                     <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -3016,7 +3054,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                         ))}
                       </div>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             </motion.div>

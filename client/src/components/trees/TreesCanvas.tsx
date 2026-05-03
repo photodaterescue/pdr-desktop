@@ -2718,6 +2718,62 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               }
               grp.childIds.push(c.personId);
             }
+
+            // ── COUPLE-AWARE GROUP MERGE ──────────────────────────────
+            // A row member with NO parents in the panel (e.g. Kenny in
+            // Lindsay's panel — his parents aren't on the tree) lands in
+            // a `__solo_…` group with centre=0. That group sorts to the
+            // far left of any group anchored under in-panel parents, so
+            // the member ends up across the row from their spouse —
+            // Lindsay's row read [Kenny][Lindsay][Kerry] instead of
+            // [Lindsay][Kerry][Kenny]. The fix: if a solo member has a
+            // spouse in another group of THIS row, fold them into that
+            // group on their spouse's outer side (away from the group's
+            // other children). Lindsay+Kerry stay anchored under
+            // Keith+Gill; Kenny sits adjacent to Kerry on her outer
+            // side. Same rule the canvas uses for spouses-without-
+            // panel-parents — we just have to apply it inside the panel.
+            const soloEntries: Array<[string, CGroup]> = [];
+            for (const [k, g] of groupsByKey.entries()) {
+              if (k.startsWith('__solo_')) soloEntries.push([k, g]);
+            }
+            for (const [soloKey, soloGrp] of soloEntries) {
+              if (soloGrp.childIds.length !== 1) continue;
+              const soloId = soloGrp.childIds[0];
+              // Find a spouse of this solo member who sits in the SAME
+              // row, AND belongs to a non-solo (parent-anchored) group.
+              let spouseId: number | null = null;
+              for (const e of layout.edges) {
+                if (e.type !== 'spouse_of') continue;
+                const otherId = e.aId === soloId ? e.bId : (e.bId === soloId ? e.aId : null);
+                if (otherId == null) continue;
+                if (!row.find(n => n.personId === otherId)) continue;
+                spouseId = otherId;
+                break;
+              }
+              if (spouseId == null) continue;
+              let hostGrp: CGroup | null = null;
+              let hostKey: string | null = null;
+              for (const [hk, hg] of groupsByKey.entries()) {
+                if (hk.startsWith('__solo_')) continue;
+                if (hg.childIds.includes(spouseId)) { hostGrp = hg; hostKey = hk; break; }
+              }
+              if (!hostGrp || !hostKey) continue;
+              // Insert the solo member adjacent to their spouse, on the
+              // OUTER side (away from the host group's centre of mass).
+              // For a 2-child host like Lindsay+Kerry: Kerry sits at
+              // index 1, second half → solo member appended after her.
+              // For Lindsay+Kenny (hypothetical): Lindsay at index 0,
+              // first half → solo inserted before her.
+              const spouseIdx = hostGrp.childIds.indexOf(spouseId);
+              const half = hostGrp.childIds.length / 2;
+              const insertAt = spouseIdx >= half ? spouseIdx + 1 : spouseIdx;
+              hostGrp.childIds.splice(insertAt, 0, soloId);
+              groupsByKey.delete(soloKey);
+              const orderIdx = groupOrder.indexOf(soloGrp);
+              if (orderIdx >= 0) groupOrder.splice(orderIdx, 1);
+            }
+
             // Sort families left-to-right by desired centre. Ties broken by
             // first child's id for stable output across renders.
             groupOrder.sort((a, b) => a.centre - b.centre || a.childIds[0] - b.childIds[0]);

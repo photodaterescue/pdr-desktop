@@ -34,6 +34,13 @@ interface ManageTreesModalProps {
   /** Lookup person name by id — used to render the hidden-ancestry
    *  list under each tree. Falls back to "#id" when unknown. */
   getPersonName?: (id: number) => string;
+  /** Render WITHOUT the fixed-inset backdrop chrome (drag handle / X
+   *  close / centred overlay) so the body can mount inside another
+   *  surface — used by Trees Settings to host this modal's content
+   *  as a dedicated tab. The outer dialog provides its own close X
+   *  and drag handle, so embedding skips them here to avoid double
+   *  chrome. */
+  embedded?: boolean;
 }
 
 const MAX_TREES = 5;
@@ -45,7 +52,7 @@ const MAX_TREES = 5;
  * relationship-wiring work.
  */
 export function ManageTreesModal({
-  currentTreeId, currentFocusPersonId, getTreeSvg, onSwitch, onChanged, onClose, onRequestNewTree, onRequestBackgroundPick, getPersonName,
+  currentTreeId, currentFocusPersonId, getTreeSvg, onSwitch, onChanged, onClose, onRequestNewTree, onRequestBackgroundPick, getPersonName, embedded,
 }: ManageTreesModalProps) {
   const [trees, setTrees] = useState<SavedTreeRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -233,28 +240,38 @@ export function ManageTreesModal({
   const currentTreeName = () =>
     trees.find(t => t.id === currentTreeId)?.name ?? '';
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        ref={modalRef}
-        className="bg-background rounded-xl shadow-2xl border border-border max-w-lg w-full max-h-[85vh] overflow-auto"
-        onClick={e => e.stopPropagation()}
-      >
-        <div
-          {...dragHandleProps}
-          className={`sticky top-0 bg-background border-b border-border px-4 py-3 relative ${dragHandleProps.className}`}
-        >
-          <Move className="absolute left-3 top-3 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
-          <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
-            <X className="w-4 h-4" />
-          </button>
-          <h3 className="text-base font-semibold text-center px-10 text-foreground">Manage Trees</h3>
-          <p className="text-xs text-muted-foreground text-center mt-0.5 px-10">
-            {trees.length} of {MAX_TREES} trees
-          </p>
-        </div>
+  // Header chrome (drag handle, X close, title) is owned by the
+  // standalone modal mode. When embedded inside Trees Settings the
+  // outer dialog already has its own drag handle / X / title, so we
+  // skip this row to avoid duplicate chrome.
+  const headerChrome = !embedded ? (
+    <div
+      {...dragHandleProps}
+      className={`sticky top-0 bg-background border-b border-border px-4 py-3 relative ${dragHandleProps.className}`}
+    >
+      <Move className="absolute left-3 top-3 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
+      <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
+        <X className="w-4 h-4" />
+      </button>
+      <h3 className="text-base font-semibold text-center px-10 text-foreground">Manage Trees</h3>
+      <p className="text-xs text-muted-foreground text-center mt-0.5 px-10">
+        {trees.length} of {MAX_TREES} trees
+      </p>
+    </div>
+  ) : (
+    // Embedded: just the count, no title (parent shows "Trees Settings"
+    // in its own dialog header and the active tab tells the user what
+    // they're looking at).
+    <p className="text-xs text-muted-foreground text-center pb-2">
+      {trees.length} of {MAX_TREES} trees
+    </p>
+  );
 
-        <div className="px-4 py-4 flex flex-col gap-2">
+  // Body (the always-rendered list / history / export panel).
+  const bodyContent = (
+    <>
+      {headerChrome}
+      <div className="px-4 py-4 flex flex-col gap-2">
           {loading ? (
             <div className="text-center text-sm text-muted-foreground py-6">Loading…</div>
           ) : trees.length === 0 ? (
@@ -558,11 +575,28 @@ export function ManageTreesModal({
           </div>
         </div>
 
+      {!embedded && (
         <div className="sticky bottom-0 bg-background border-t border-border px-4 py-3 flex items-center justify-end">
           <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm hover:bg-accent text-foreground">Done</button>
         </div>
-      </div>
+      )}
+    </>
+  );
 
+  // Embedded mode: hand the body straight back to the parent surface
+  // (Trees Settings dialog) which provides backdrop, drag, and X close.
+  if (embedded) return bodyContent;
+
+  // Standalone mode: full fixed-inset overlay + draggable card.
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        ref={modalRef}
+        className="bg-background rounded-xl shadow-2xl border border-border max-w-lg w-full max-h-[85vh] overflow-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        {bodyContent}
+      </div>
     </div>
   );
 }

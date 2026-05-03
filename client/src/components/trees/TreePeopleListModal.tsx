@@ -7,7 +7,6 @@ import { promptConfirm } from './promptConfirm';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { useDraggableModal } from './useDraggableModal';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
-import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 interface PersonSummary {
   id: number;
@@ -41,6 +40,7 @@ export function TreePeopleListModal({
   onPersonsChanged,
   useGenderedLabels,
   simplifyHalfLabels,
+  embedded,
 }: {
   focusPersonId: number | null;
   treeName: string;
@@ -59,6 +59,11 @@ export function TreePeopleListModal({
   onPersonsChanged: () => void;
   useGenderedLabels?: boolean;
   simplifyHalfLabels?: boolean;
+  /** Render WITHOUT the fixed-inset backdrop chrome (header drag
+   *  handle / X close / centred overlay) so the body can mount inside
+   *  another surface. Used by Trees Settings to host this modal's
+   *  list as a dedicated tab. */
+  embedded?: boolean;
 }) {
   // Shared drag hook — clamps the drag so the header can't be pushed
   // above/below the viewport, which used to strand the modal off-
@@ -336,47 +341,61 @@ export function TreePeopleListModal({
     return allPersons.find(p => p.id === focusPersonId)?.name?.trim() || null;
   })();
 
-  return (
+  // Header chrome owned by standalone mode. When embedded inside Trees
+  // Settings, the parent dialog already shows its own X close + drag
+  // handle + "Trees Settings" title — we just need a slim summary row
+  // so the user knows which tree they're looking at.
+  const headerChrome = !embedded ? (
     <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-      onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
-      onClick={(e) => {
-        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
-        downOnBackdrop.current = false;
-      }}
+      {...dragHandleProps}
+      className={`border-b border-border px-4 py-3 relative ${dragHandleProps.className}`}
     >
-      <div
-        ref={modalRef}
-        className="bg-background rounded-xl shadow-2xl border border-border flex flex-col overflow-hidden"
-        style={{
-          width: 'min(700px, 95vw)',
-          height: 'min(680px, 85vh)',
-          minWidth: '520px',
-          minHeight: '360px',
-          resize: 'both',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div
-          {...dragHandleProps}
-          className={`border-b border-border px-4 py-3 relative ${dragHandleProps.className}`}
-        >
-          <Move className="absolute left-3 top-3 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
-          <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
-            <X className="w-4 h-4" />
-          </button>
-          <div className="flex items-center justify-center gap-2 pr-6 pl-6">
-            <Users className="w-4 h-4 text-primary shrink-0" />
-            <h3 className="text-sm text-foreground text-center leading-snug">
-              <span className="text-muted-foreground">People on </span>
-              <span className="font-bold">{treeName}</span>
-            </h3>
-          </div>
-          <p className="text-xs text-muted-foreground text-center mt-1">
-            {total} {total === 1 ? 'person' : 'people'}
-            {orphaned.length > 0 && ` · ${orphaned.length} not connected to this tree`}
-          </p>
-        </div>
+      <Move className="absolute left-3 top-3 w-3.5 h-3.5 text-muted-foreground/60" aria-hidden />
+      <button onClick={onClose} className="absolute right-3 top-3 p-1 rounded hover:bg-accent" aria-label="Close">
+        <X className="w-4 h-4" />
+      </button>
+      <div className="flex items-center justify-center gap-2 pr-6 pl-6">
+        <Users className="w-4 h-4 text-primary shrink-0" />
+        <h3 className="text-sm text-foreground text-center leading-snug">
+          <span className="text-muted-foreground">People on </span>
+          <span className="font-bold">{treeName}</span>
+        </h3>
+      </div>
+      <p className="text-xs text-muted-foreground text-center mt-1">
+        {total} {total === 1 ? 'person' : 'people'}
+        {orphaned.length > 0 && ` · ${orphaned.length} not connected to this tree`}
+      </p>
+    </div>
+  ) : (
+    <div className="px-4 py-2 border-b border-border">
+      <div className="flex items-center justify-center gap-2">
+        <Users className="w-4 h-4 text-primary shrink-0" />
+        <p className="text-xs text-foreground text-center leading-snug">
+          <span className="font-bold">{treeName}</span>
+          <span className="text-muted-foreground"> · {total} {total === 1 ? 'person' : 'people'}{orphaned.length > 0 && ` · ${orphaned.length} not connected`}</span>
+        </p>
+      </div>
+    </div>
+  );
+
+  // Bottom Close-bar is replaced in embedded mode by the parent
+  // dialog's existing X close, so we just don't render it.
+  const bottomChrome = !embedded ? (
+    <div className="border-t border-border px-4 py-2.5 flex items-center justify-between shrink-0">
+      <p className="text-[10px] text-muted-foreground leading-tight">
+        Drag the bottom-right corner to resize.
+      </p>
+      <button onClick={onClose} className="px-3 py-1.5 rounded text-sm hover:bg-accent">Close</button>
+    </div>
+  ) : null;
+
+  // Body — header + focus/steps strip + the list. Embedded mode wraps
+  // it in a flex column that fills the parent dialog's tab body so the
+  // list has somewhere to scroll. Standalone mode embeds it inside the
+  // resizeable bg-background card.
+  const bodyContent = (
+    <>
+      {headerChrome}
 
         {/* Tree controls: Focus indicator + Steps + modal-local undo.
             Focus is not changed from this strip — use the target
@@ -558,12 +577,40 @@ export function TreePeopleListModal({
           )}
         </div>
 
-        <div className="border-t border-border px-4 py-2.5 flex items-center justify-between shrink-0">
-          <p className="text-[10px] text-muted-foreground leading-tight">
-            Drag the bottom-right corner to resize.
-          </p>
-          <button onClick={onClose} className="px-3 py-1.5 rounded text-sm hover:bg-accent">Close</button>
-        </div>
+        {bottomChrome}
+      </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="flex flex-col h-full -mx-4 -mt-3">
+        {bodyContent}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) onClose();
+        downOnBackdrop.current = false;
+      }}
+    >
+      <div
+        ref={modalRef}
+        className="bg-background rounded-xl shadow-2xl border border-border flex flex-col overflow-hidden"
+        style={{
+          width: 'min(700px, 95vw)',
+          height: 'min(680px, 85vh)',
+          minWidth: '520px',
+          minHeight: '360px',
+          resize: 'both',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {bodyContent}
       </div>
     </div>
   );
