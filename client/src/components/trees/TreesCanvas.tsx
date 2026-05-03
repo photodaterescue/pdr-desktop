@@ -1175,12 +1175,19 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     const m = new Map<number, Set<number>>();
     const parentsOf = new Map<number, number[]>();
     const childrenOf = new Map<number, number[]>();
+    const spousesOf = new Map<number, number[]>();
     for (const e of layout.edges) {
-      if (e.type !== 'parent_of') continue;
-      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
-      parentsOf.get(e.bId)!.push(e.aId);
-      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
-      childrenOf.get(e.aId)!.push(e.bId);
+      if (e.type === 'parent_of') {
+        if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+        parentsOf.get(e.bId)!.push(e.aId);
+        if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+        childrenOf.get(e.aId)!.push(e.bId);
+      } else if (e.type === 'spouse_of') {
+        if (!spousesOf.has(e.aId)) spousesOf.set(e.aId, []);
+        spousesOf.get(e.aId)!.push(e.bId);
+        if (!spousesOf.has(e.bId)) spousesOf.set(e.bId, []);
+        spousesOf.get(e.bId)!.push(e.aId);
+      }
     }
     for (const node of layout.nodes) {
       if (bloodlineSet.has(node.personId)) continue;
@@ -1215,6 +1222,37 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           if (c < 0) continue;
           family.add(c);
           downStack.push(c);
+        }
+      }
+      // Step 3 — pull in non-bloodline spouses of anyone in the family
+      // set (e.g. Kerry's husband Kenny once Kerry is in Lindsay's
+      // panel). One level only — we don't recurse into the spouse's
+      // OWN family of origin (that belongs in their separate family
+      // panel). We DO recurse into spouse → their children → their
+      // children's spouses so the panel's mini-tree reads as a
+      // proper subtree, but we stop before walking up into the
+      // spouse's parents.
+      const spouseSweep = [...family];
+      while (spouseSweep.length) {
+        const cur = spouseSweep.pop()!;
+        for (const s of spousesOf.get(cur) ?? []) {
+          if (seen.has(s)) continue;
+          seen.add(s);
+          if (bloodlineSet.has(s)) continue;
+          if (s < 0) continue;
+          family.add(s);
+          // Walk DOWN from this spouse to pick up shared children
+          // and their spouses (e.g. Kenny + Kerry's children if
+          // they have any, plus those children's partners). Same
+          // closure rules as steps 2 + 3.
+          for (const c of childrenOf.get(s) ?? []) {
+            if (seen.has(c)) continue;
+            seen.add(c);
+            if (bloodlineSet.has(c)) continue;
+            if (c < 0) continue;
+            family.add(c);
+            spouseSweep.push(c);
+          }
         }
       }
       // Always record an entry — even an empty set — so the count pill
