@@ -1239,18 +1239,36 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     // family.
     const hidden = new Set<number>();
     // Hide every member of every in-law's recorded family side —
-    // ancestors AND siblings AND extended branches. Without this
-    // the broader family panel pulls Kerry (Lindsay's sister) into
-    // the panel correctly, but Kerry ALSO renders as a stranded
-    // canvas card because the canvas filter only knew about
-    // ancestors. extendedFamilyByPerson is the right set to use
-    // here — a superset of extendedAncestorsByPerson that covers
-    // siblings + cousins of the in-law's family of origin.
+    // ancestors AND siblings AND extended branches.
+    // EXCEPTION: a non-bloodline person who has a spouse_of edge to
+    // a BLOODLINE person is a "primary in-law" — they earn their own
+    // canvas slot as the bloodline person's partner (e.g. Lindsay
+    // married to Colin). They appear in OTHER in-laws' family panels
+    // (e.g. Kerry's panel includes Lindsay as her sister), but we
+    // still need to keep them rendered on canvas so the marriage
+    // line to the bloodline person stays visible. Without this guard
+    // Lindsay disappears from canvas the moment Kerry is recorded as
+    // her sister, because Kerry's family set sweeps her up. Equally
+    // applies to Karen / Dan / etc. once their siblings get added.
+    const isPrimaryInLaw = (personId: number): boolean => {
+      for (const e of layout.edges) {
+        if (e.type !== 'spouse_of') continue;
+        const other = e.aId === personId ? e.bId
+                    : e.bId === personId ? e.aId
+                    : null;
+        if (other == null) continue;
+        if (bloodlineSet.has(other)) return true;
+      }
+      return false;
+    };
     for (const [, family] of extendedFamilyByPerson) {
-      for (const id of family) hidden.add(id);
+      for (const id of family) {
+        if (isPrimaryInLaw(id)) continue;
+        hidden.add(id);
+      }
     }
     return hidden;
-  }, [extendedFamilyByPerson]);
+  }, [extendedFamilyByPerson, layout.edges, bloodlineSet]);
 
   /** Per-person extended-ancestor chevron geometry. Mirrors
    *  sideBranchChevrons but for the ^ chevron above each card.
