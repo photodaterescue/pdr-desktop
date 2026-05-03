@@ -2495,8 +2495,10 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             };
             // Walk gens bottom-up so each row's pair-anchors are
             // identified by checking the row BELOW for pathway people
-            // whose parents sit in this row.
-            const ascending = [...sortedGens].sort((a, b) => a - b);
+            // whose parents sit in this row. Local copy of byGen's
+            // keys here — we run BEFORE sortedGens is declared further
+            // down in the IIFE, so we read straight from byGen.
+            const ascending = Array.from(byGen.keys()).sort((a, b) => a - b);
             for (let gi = 1; gi < ascending.length; gi++) {
               const parentGen = ascending[gi];
               const childGen = ascending[gi - 1];
