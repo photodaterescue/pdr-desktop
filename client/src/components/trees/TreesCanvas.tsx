@@ -3241,11 +3241,33 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                         guide (Montserrat 20-ish px semibold). Sits
                         at top-LEFT for descendants, top-CENTRE for
                         ancestors — symmetric breathing room above
-                        and below thanks to TITLE_ROOM padding. */}
+                        and below.
+
+                        VERTICAL CENTRING: previously y=32 was
+                        hardcoded, which placed the text BASELINE
+                        (not its visual centre) 32 px down from the
+                        panel border. With a 20 px font that puts the
+                        glyph block roughly 12-32 px below the border,
+                        leaving a noticeably bigger gap UNDER the
+                        title than above (Terry called this out on
+                        Lindsay's panel). Now we centre the visual
+                        midline of the text on the strip's midpoint
+                        using `dominantBaseline="central"` and a
+                        dynamic y. The strip runs from y=0 (panel
+                        top border) to:
+                          • the topmost card's TOP edge for ancestor
+                            panels (y=padTop), since the cards sit
+                            directly under the title with no bracket
+                            in between;
+                          • the parent-bracket Y for descendant
+                            panels (y=padTop-bracketRoom), since the
+                            title shares its strip with the bracket
+                            that sits just above the children. */}
                     <text
                       x={l.direction === 'descendant' ? PANEL_PADDING : l.contentWidth / 2}
-                      y={32}
+                      y={(l.direction === 'descendant' ? (l.padTop - l.bracketRoom) : l.padTop) / 2}
                       textAnchor={l.direction === 'descendant' ? 'start' : 'middle'}
+                      dominantBaseline="central"
                       fontSize={20}
                       fontWeight={600}
                       fontFamily='"Montserrat", "Inter", system-ui, -apple-system, sans-serif'
