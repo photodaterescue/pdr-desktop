@@ -291,6 +291,72 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
   for (const g of allGens) if (g > 0) orderedGens.push(g); // ascending up
   for (const g of allGens.reverse()) if (g < 0) orderedGens.push(g); // descending down
 
+  // Direct-line set — focus + focus's ancestors + focus's descendants
+  // + focus's siblings + their descendants. Anyone in this set is
+  // "always visible on canvas"; anyone NOT in it (and reachable via
+  // bloodline) is a side-branch member tucked into a chevron-opened
+  // panel. Used by the third-pass ancestor recentring to distinguish
+  // "kids that pull the parent over them" (direct-line) from "kids
+  // that are panel-only and shouldn't influence canvas spacing"
+  // (side-branch). Without this distinction Patricia / Peter / Carol
+  // get pulled over their panelled subtrees, leaving Alan stranded
+  // far from his siblings on the row.
+  const directLineSet = (() => {
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of graph.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    const focusId = graph.focusPersonId;
+    const set = new Set<number>([focusId]);
+    // Ancestors of focus.
+    const upQ = [focusId];
+    while (upQ.length) {
+      const cur = upQ.shift()!;
+      for (const p of parentsOf.get(cur) ?? []) {
+        if (set.has(p)) continue;
+        set.add(p);
+        upQ.push(p);
+      }
+    }
+    // Descendants of focus.
+    const downQ = [focusId];
+    while (downQ.length) {
+      const cur = downQ.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (set.has(c)) continue;
+        set.add(c);
+        downQ.push(c);
+      }
+    }
+    // Focus's siblings + their descendants. Other children of focus's
+    // parents (excluding focus). Then walk down from each non-focus
+    // sibling.
+    const focusParents = parentsOf.get(focusId) ?? [];
+    const sibQ: number[] = [];
+    for (const fp of focusParents) {
+      for (const c of childrenOf.get(fp) ?? []) {
+        if (c === focusId) continue;
+        if (set.has(c)) continue;
+        set.add(c);
+        sibQ.push(c);
+      }
+    }
+    while (sibQ.length) {
+      const cur = sibQ.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (set.has(c)) continue;
+        set.add(c);
+        sibQ.push(c);
+      }
+    }
+    return set;
+  })();
+
   for (const gen of orderedGens) {
     const genNodes = byGen.get(gen)!;
     let ordered: FamilyGraphNode[];
@@ -717,6 +783,12 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       members: number[];
       desired: number;
       hasKids: boolean;
+      /** True when this group is a "side branch" sibling-couple
+       *  whose only kids are panelled (none on the direct line).
+       *  We post-process these AFTER the main pass to snap them
+       *  against the kid-having couple's direct-line descendant
+       *  span, with `CARD_W + nodeSpacing` of breathing room. */
+      isSideBranch: boolean;
     };
     const groupsByKey = new Map<string, FamilyGroup>();
     const groupOrder: FamilyGroup[] = [];
@@ -773,17 +845,35 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     };
     for (const node of sorted) {
       const kids = childrenByParent.get(node.personId) ?? [];
+      // Only direct-line kids contribute to desired centre. Side-branch
+      // (panelled) kids are placed somewhere by the descendant pass
+      // for layout-completeness but they don't drag their parent over
+      // a hidden subtree — that's the bug the user flagged.
+      const directLineKids = kids.filter(k => directLineSet.has(k));
       let key: string;
       let desiredCentre: number;
       let hasKids: boolean;
-      if (kids.length > 0) {
-        key = [...kids].sort((a, b) => a - b).join(',');
-        const xs = kids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
+      let isSideBranch = false;
+      if (directLineKids.length > 0) {
+        key = [...directLineKids].sort((a, b) => a - b).join(',');
+        const xs = directLineKids
+          .map(k => placed.get(k)?.x)
+          .filter((x): x is number => x != null);
         desiredCentre = xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : node.x;
         hasKids = true;
+      } else if (kids.length > 0) {
+        // Has kids, but ALL of them are panelled (side-branch). This
+        // is an aunt/uncle of focus (or great-aunt/uncle, etc.).
+        // Stays kid-less for the natural placement pass and gets
+        // snapped against the kid-having couple's direct-line
+        // descendant span by the cascade post-pass.
+        key = `__side_${node.personId}`;
+        desiredCentre = node.x;
+        hasKids = false;
+        isSideBranch = true;
       } else {
-        // Kid-less in this gen — try joining a bloodline sibling's
-        // pair-group so we ride along when the pair shifts.
+        // Truly kid-less in this gen — try joining a bloodline
+        // sibling's pair-group so we ride along when the pair shifts.
         const sib = findKidHavingSibling(node.personId);
         if (sib) {
           key = sib.key;
@@ -797,7 +887,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       }
       let g = groupsByKey.get(key);
       if (!g) {
-        g = { key, members: [], desired: desiredCentre, hasKids };
+        g = { key, members: [], desired: desiredCentre, hasKids, isSideBranch };
         groupsByKey.set(key, g);
         groupOrder.push(g);
       }
@@ -833,6 +923,132 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       if (x == null) return;
       placed.set(node.personId, { ...node, x });
     });
+
+    // ── CASCADE PASS for side-branch sibling-couples ─────────────────
+    // Now that the kid-having groups (Alan + Sally, focus's direct
+    // parents) are positioned over their direct-line descendants, the
+    // aunt/uncle couples on this row can be snapped to a fixed
+    // breathing-room offset from the kid-having descendant span:
+    //   * Inner edge of side-branch couple
+    //     = outer edge of kid-having couple's direct-line descendant
+    //       span ± (CARD_W + nodeSpacing).
+    // The bloodline sibling sits on the inner side of the couple
+    // (closer to the kid-having pair), the in-law on the outer side.
+    // Cascading outward, each next side-branch couple is the same
+    // CARD_W + nodeSpacing distance from the previous couple's outer
+    // card. Result: even rhythm of one card + one gap between every
+    // visible card on the row, regardless of how many descendants are
+    // tucked into each side-branch's panel.
+    const sideBranchGroups = groupOrder.filter(g => g.isSideBranch);
+    if (sideBranchGroups.length > 0) {
+      // Find the kid-having descendants' x range for THIS row (i.e.
+      // direct-line kids of any kid-having group in this gen).
+      const directLineKidXs: number[] = [];
+      for (const g of groupOrder) {
+        if (!g.hasKids || g.isSideBranch) continue;
+        for (const memberId of g.members) {
+          const kids = childrenByParent.get(memberId) ?? [];
+          for (const k of kids) {
+            if (!directLineSet.has(k)) continue;
+            const x = placed.get(k)?.x;
+            if (x != null) directLineKidXs.push(x);
+          }
+        }
+      }
+      // If there are no kid-having direct-line descendants on this
+      // row (rare — would only happen if focus has no siblings and
+      // the kid-having group is the focus's own row), fall back to
+      // measuring against the kid-having group's couple positions
+      // themselves. Otherwise use the direct-line descendants' span.
+      let leftAnchor: number;
+      let rightAnchor: number;
+      if (directLineKidXs.length > 0) {
+        leftAnchor = Math.min(...directLineKidXs);
+        rightAnchor = Math.max(...directLineKidXs);
+      } else {
+        // Fallback: kid-having couple's own x positions.
+        const kidHavingXs: number[] = [];
+        for (const g of groupOrder) {
+          if (!g.hasKids || g.isSideBranch) continue;
+          for (const m of g.members) {
+            const x = newX.get(m);
+            if (x != null) kidHavingXs.push(x);
+          }
+        }
+        if (kidHavingXs.length === 0) return; // nothing to anchor against
+        leftAnchor = Math.min(...kidHavingXs);
+        rightAnchor = Math.max(...kidHavingXs);
+      }
+
+      // Card-width constant (mirrors TreesCanvas's CARD_W). Hardcoded
+      // here because trees-layout.ts is render-agnostic but the
+      // user's spacing rule is expressed in terms of card units.
+      const CARD_W = 170;
+      // The promised breathing room: one card width + one nodeSpacing
+      // between adjacent visible cards on the row. Translates to
+      // an x-offset of (CARD_W + nodeSpacing) between adjacent CENTRES
+      // of the inner-edges of consecutive cards.
+      const cascadeStep = CARD_W + opts.nodeSpacing;
+
+      // Sort side-branch groups left/right of the kid-having span.
+      // A group sits on the LEFT if its current desired x is < leftAnchor,
+      // RIGHT if > rightAnchor, else "between" (rare — falls back to
+      // current x).
+      const leftSideBranches = sideBranchGroups
+        .filter(g => g.desired < leftAnchor)
+        .sort((a, b) => b.desired - a.desired); // closest to leftAnchor first
+      const rightSideBranches = sideBranchGroups
+        .filter(g => g.desired > rightAnchor)
+        .sort((a, b) => a.desired - b.desired); // closest to rightAnchor first
+
+      // Place left-side cascade: each side-branch couple's INNER card
+      // (closest to leftAnchor) sits at x = (previous outer / leftAnchor)
+      // − cascadeStep. Within the couple, members are ordered by their
+      // existing newX from the first pass (which already encodes
+      // bloodline-inside / in-law-outside — that ordering came from
+      // orderParentGeneration earlier in the layout).
+      let leftFrontier = leftAnchor;
+      for (const g of leftSideBranches) {
+        // Sort members by current placed x to preserve inner/outer order.
+        const members = g.members
+          .map(m => ({ id: m, x: newX.get(m) ?? 0 }))
+          .sort((a, b) => a.x - b.x);
+        // Inner card sits at leftFrontier - cascadeStep, outer card
+        // sits at innerCardX - spouseOffset (further out / left).
+        const innerCardX = leftFrontier - cascadeStep;
+        // The couple's RIGHTMOST member is the inner one (closest to
+        // leftAnchor).
+        const innerIdx = members.length - 1;
+        // Place rightmost member at innerCardX, then walk left.
+        for (let i = innerIdx; i >= 0; i--) {
+          const offset = (innerIdx - i) * opts.spouseOffset;
+          newX.set(members[i].id, innerCardX - offset);
+        }
+        // Advance frontier to the OUTER (leftmost) card of this couple.
+        leftFrontier = innerCardX - (innerIdx * opts.spouseOffset);
+      }
+
+      // Mirror for right side: inner card sits at x = rightAnchor + cascadeStep.
+      let rightFrontier = rightAnchor;
+      for (const g of rightSideBranches) {
+        const members = g.members
+          .map(m => ({ id: m, x: newX.get(m) ?? 0 }))
+          .sort((a, b) => a.x - b.x);
+        // Inner card is the LEFTMOST member (closest to rightAnchor).
+        const innerCardX = rightFrontier + cascadeStep;
+        for (let i = 0; i < members.length; i++) {
+          newX.set(members[i].id, innerCardX + i * opts.spouseOffset);
+        }
+        rightFrontier = innerCardX + (members.length - 1) * opts.spouseOffset;
+      }
+
+      // Re-apply the updated newX values into placed.
+      sorted.forEach((node) => {
+        const x = newX.get(node.personId);
+        if (x == null) return;
+        placed.set(node.personId, { ...node, x });
+      });
+    }
   }
 
   const laidOutNodes: LaidOutNode[] = Array.from(placed.values());
