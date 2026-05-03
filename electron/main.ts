@@ -1561,7 +1561,14 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
     }
     
     // NOTE: Do NOT clean up temp dir here — the extracted files are needed
-    // during the copy/fix phase. Cleanup happens in files:copy or on app quit.
+    // during the copy/fix phase. Cleanup happens in `files:copy` on
+    // successful completion (right before the success return), and as
+    // a safety net at app quit (`before-quit`) and at next app startup
+    // (`cleanupOrphanedTempDirs`). Without the post-copy cleanup, a user
+    // analysing + fixing 8 sequential 50 GB Google Takeouts in one
+    // session would accumulate ~400 GB of extracted payload on their
+    // C: drive — which can fill modest drives and was the disaster
+    // scenario flagged in customer crash reports.
     
     return { success: true, data: results };
   } catch (error) {
@@ -2356,6 +2363,48 @@ ipcMain.handle('files:copy', async (_event, data: {
           }
         }
       }
+    }
+
+    // ── Post-copy temp-dir cleanup ────────────────────────────────
+    // For every active temp extraction dir whose contents WERE the
+    // source of files we just copied, delete it now. This frees the
+    // per-Takeout extracted payload (~50 GB for a max-size Google
+    // Takeout) immediately on successful completion, instead of
+    // letting it accumulate until app quit.
+    //
+    // Safety:
+    //  • Only runs on a successful return path. The cancelled exit at
+    //    the start of the loop (and the catch block below) both skip
+    //    this, so the user can still retry against the still-extracted
+    //    files if a copy was interrupted or errored.
+    //  • Only deletes a temp dir if at least one file in THIS copy
+    //    operation was sourced from inside it — so a user who
+    //    analysed two zips but only fixed one keeps the other zip's
+    //    extraction intact for its own future fix run.
+    //  • cleanupTempDir() is best-effort and won't throw if a file is
+    //    locked — the existing before-quit + startup-orphan sweeps
+    //    are the safety net for the rare locked-file case.
+    try {
+      const usedTempDirs = new Set<string>();
+      for (const tempDir of activeTempDirs) {
+        const tempDirPrefix = tempDir + path.sep;
+        for (const file of files) {
+          const sp = file.sourcePath;
+          if (sp === tempDir || (typeof sp === 'string' && sp.startsWith(tempDirPrefix))) {
+            usedTempDirs.add(tempDir);
+            break;
+          }
+        }
+      }
+      for (const tempDir of usedTempDirs) {
+        console.log(`[Fix] Cleaning up extracted temp dir after successful copy: ${tempDir}`);
+        cleanupTempDir(tempDir);
+        activeTempDirs.delete(tempDir);
+      }
+    } catch (cleanupErr) {
+      // Best-effort — never block the success return on a cleanup
+      // glitch. Worst case: temp dir lingers until app quit.
+      console.warn(`[Fix] Post-copy temp-dir cleanup encountered an error (continuing):`, cleanupErr);
     }
 
     return { success: true, results, copied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, duplicatesRemoved, duplicateFiles, skippedExisting };
