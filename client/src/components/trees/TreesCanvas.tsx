@@ -2429,6 +2429,140 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             byGen.get(p.generation)!.push(p);
           }
           for (const g of byGen.keys()) byGen.get(g)!.sort((a, b) => a.x - b.x);
+          // Apply the canvas's father-left / mother-right + siblings-
+          // fan-outward rule to the panel's parent rows. The canvas's
+          // orderParentGeneration only fires for the focus's bloodline
+          // pathway; in-law panels show a DIFFERENT pathway (Lindsay's
+          // → her parents → their siblings) that the canvas doesn't
+          // touch. Rather than rebuild the rule from scratch we mirror
+          // it here, scoped to each row that contains a parent of
+          // someone in the row below: identify the pair (the row
+          // members who are parents of the lower row's bloodline-
+          // pathway people), order them by gender (male = left,
+          // female = right, unknown stays in id order), then place
+          // their siblings fan-outward — the male's siblings to his
+          // left, the female's siblings to her right.
+          //
+          // Implementation: run for the in-law direction only, walking
+          // sortedGens BOTTOM-UP so each parent row knows which of its
+          // members are pair-anchors (parents of a known panel-origin-
+          // pathway descendant). Top-most row sorts last and uses the
+          // pair-anchors found in the row immediately below it.
+          if (direction === 'ancestor') {
+            // pathwaySet for THIS panel: panel origin + their non-
+            // bloodline ancestors. Anyone in the row who's a parent of
+            // someone in pathwaySet counts as a pair-anchor.
+            const pathwaySet = new Set<number>([origin.personId]);
+            const upQueue = [origin.personId];
+            while (upQueue.length) {
+              const cur = upQueue.shift()!;
+              for (const e of layout.edges) {
+                if (e.type !== 'parent_of') continue;
+                if (e.bId !== cur) continue;
+                if (pathwaySet.has(e.aId)) continue;
+                if (bloodlineSet.has(e.aId)) continue;
+                pathwaySet.add(e.aId);
+                upQueue.push(e.aId);
+              }
+            }
+            // childrenByParent restricted to the panel's people, used
+            // for the gender-tiebreak's earliestEdgeToShared check
+            // below (matches orderParentGeneration's logic).
+            const panelIdSet = new Set(peopleInPanel.map(p => p.personId));
+            const isSibling = (a: number, b: number): boolean => {
+              for (const e of layout.edges) {
+                if (e.type === 'sibling_of') {
+                  if ((e.aId === a && e.bId === b) || (e.aId === b && e.bId === a)) return true;
+                }
+              }
+              // Also treat shared-parent as siblinghood (covers stored
+              // sibling_of derivation from parent_of pairs).
+              const aParents = new Set<number>();
+              const bParents = new Set<number>();
+              for (const e of layout.edges) {
+                if (e.type !== 'parent_of') continue;
+                if (e.bId === a) aParents.add(e.aId);
+                if (e.bId === b) bParents.add(e.aId);
+              }
+              for (const p of aParents) if (bParents.has(p)) return true;
+              return false;
+            };
+            const genderRank = (n: typeof peopleInPanel[number]): number => {
+              const g = n.gender;
+              if (g === 'male') return 0;
+              if (g === 'female') return 1;
+              return 0.5;
+            };
+            // Walk gens bottom-up so each row's pair-anchors are
+            // identified by checking the row BELOW for pathway people
+            // whose parents sit in this row.
+            const ascending = [...sortedGens].sort((a, b) => a - b);
+            for (let gi = 1; gi < ascending.length; gi++) {
+              const parentGen = ascending[gi];
+              const childGen = ascending[gi - 1];
+              const parentRow = byGen.get(parentGen);
+              const childRow = byGen.get(childGen);
+              if (!parentRow || !childRow) continue;
+              // Identify pair-anchor members of this parent row: any
+              // row member who is a parent_of someone in childRow that
+              // is on the panel pathway.
+              const pairAnchors = new Set<number>();
+              for (const child of childRow) {
+                if (!pathwaySet.has(child.personId)) continue;
+                for (const e of layout.edges) {
+                  if (e.type !== 'parent_of') continue;
+                  if (e.bId !== child.personId) continue;
+                  if (parentRow.find(p => p.personId === e.aId)) pairAnchors.add(e.aId);
+                }
+              }
+              if (pairAnchors.size === 0) continue;
+              // Order pair members by gender (male first), id tiebreak.
+              const pairMembers = parentRow
+                .filter(n => pairAnchors.has(n.personId))
+                .sort((a, b) => {
+                  const dr = genderRank(a) - genderRank(b);
+                  if (dr !== 0) return dr;
+                  return a.personId - b.personId;
+                });
+              const leftPair = pairMembers[0];
+              const rightPair = pairMembers[pairMembers.length - 1];
+              // Find siblings of each pair-anchor that are also in
+              // this parent row but NOT pair-anchors themselves.
+              const isPairAnchor = (id: number) => pairAnchors.has(id);
+              const leftSibs = parentRow
+                .filter(n => !isPairAnchor(n.personId) && isSibling(n.personId, leftPair.personId))
+                .sort((a, b) => a.personId - b.personId);
+              const rightSibs = pairMembers.length > 1
+                ? parentRow
+                    .filter(n => !isPairAnchor(n.personId) && isSibling(n.personId, rightPair.personId) && !leftSibs.includes(n))
+                    .sort((a, b) => a.personId - b.personId)
+                : [];
+              // Anyone in the row not yet placed (orphan in-laws,
+              // people unrelated to the pair) preserves their canvas
+              // x ordering at the far right so we don't reshuffle
+              // them unexpectedly.
+              const placedIds = new Set([
+                leftPair.personId,
+                ...(rightPair && rightPair !== leftPair ? [rightPair.personId] : []),
+                ...leftSibs.map(n => n.personId),
+                ...rightSibs.map(n => n.personId),
+              ]);
+              const remaining = parentRow.filter(n => !placedIds.has(n.personId));
+              const ordered = [
+                ...leftSibs,
+                leftPair,
+                ...(rightPair && rightPair !== leftPair ? [rightPair] : []),
+                ...rightSibs,
+                ...remaining,
+              ];
+              byGen.set(parentGen, ordered);
+              // Add this row's pair-anchor to pathwaySet so the row
+              // ABOVE recognises them as pathway (their own parents
+              // would then qualify as the next pair).
+              pathwaySet.add(leftPair.personId);
+              if (rightPair && rightPair !== leftPair) pathwaySet.add(rightPair.personId);
+            }
+          }
           // sortedGens is iterated TOP-DOWN (highest generation first) so
           // when we lay out a child row we already know where its parents
           // sit. This is critical for the per-family centring below.
