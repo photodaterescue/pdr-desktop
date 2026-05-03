@@ -291,6 +291,117 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
   for (const g of allGens) if (g > 0) orderedGens.push(g); // ascending up
   for (const g of allGens.reverse()) if (g < 0) orderedGens.push(g); // descending down
 
+  // ── Panel-only set (`panelledIds`) ──────────────────────────────
+  // Side-branch DESCENDANTS — cousins / their partners / their kids,
+  // i.e. everyone whose only on-screen home is a chevron-opened
+  // panel above an aunt/uncle. The third-pass uses this to filter a
+  // parent's kids down to "kids that are visible on canvas" so the
+  // parent's desired centre is dragged only by visible kids — never
+  // by panelled subtree midpoints. The aunt/uncle themselves
+  // (side-branch HEADS) are NOT in this set; they sit on canvas as
+  // siblings of focus's parents and ARE counted for centring (so
+  // Grandad + Dorothy get pulled over the midpoint of all their
+  // bloodline kids — Alan + Patricia + Peter — not just Alan).
+  const panelledIds = (() => {
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of graph.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    const focusId = graph.focusPersonId;
+    // Strict ancestors of focus (excluding focus).
+    const strictAncestors = new Set<number>();
+    {
+      const upQ = [focusId];
+      while (upQ.length) {
+        const cur = upQ.shift()!;
+        for (const p of parentsOf.get(cur) ?? []) {
+          if (strictAncestors.has(p)) continue;
+          strictAncestors.add(p);
+          upQ.push(p);
+        }
+      }
+    }
+    // Direct line that should NEVER be marked panelled — focus + its
+    // strict ancestors + focus's siblings + descendants of focus +
+    // descendants of focus's siblings (nieces / nephews etc.). Used
+    // to guard against accidentally hiding a niece who descends via
+    // two paths (cousin marriage etc.).
+    const directLine = new Set<number>([focusId, ...strictAncestors]);
+    {
+      const downQ = [focusId];
+      while (downQ.length) {
+        const cur = downQ.shift()!;
+        for (const c of childrenOf.get(cur) ?? []) {
+          if (directLine.has(c)) continue;
+          directLine.add(c);
+          downQ.push(c);
+        }
+      }
+      const focusParents = parentsOf.get(focusId) ?? [];
+      const sibQ: number[] = [];
+      for (const fp of focusParents) {
+        for (const c of childrenOf.get(fp) ?? []) {
+          if (c === focusId) continue;
+          if (directLine.has(c)) continue;
+          directLine.add(c);
+          sibQ.push(c);
+        }
+      }
+      while (sibQ.length) {
+        const cur = sibQ.shift()!;
+        for (const c of childrenOf.get(cur) ?? []) {
+          if (directLine.has(c)) continue;
+          directLine.add(c);
+          sibQ.push(c);
+        }
+      }
+    }
+    // Side-branch heads = siblings of every strict ancestor (children
+    // of strict ancestors' parents, excluding the ancestor + focus).
+    const heads = new Set<number>();
+    for (const a of strictAncestors) {
+      for (const p of parentsOf.get(a) ?? []) {
+        for (const c of childrenOf.get(p) ?? []) {
+          if (c === a) continue;
+          if (c === focusId) continue;
+          if (strictAncestors.has(c)) continue;
+          heads.add(c);
+        }
+      }
+    }
+    // Walk DOWN from each head; collect descendants that aren't in
+    // directLine (so cousin-marriage / half-relations don't get
+    // accidentally marked panelled).
+    const hidden = new Set<number>();
+    for (const head of heads) {
+      const q = [head];
+      const seen = new Set<number>([head]);
+      while (q.length) {
+        const cur = q.shift()!;
+        for (const c of childrenOf.get(cur) ?? []) {
+          if (seen.has(c)) continue;
+          seen.add(c);
+          if (directLine.has(c)) continue;
+          hidden.add(c);
+          q.push(c);
+        }
+      }
+    }
+    // Sweep spouse_of edges so non-bloodline partners of any hidden
+    // descendant come along (otherwise they linger on canvas while
+    // their spouse + kids are tucked inside the panel).
+    for (const e of graph.edges) {
+      if (e.type !== 'spouse_of') continue;
+      if (hidden.has(e.aId) && !directLine.has(e.bId) && !heads.has(e.bId)) hidden.add(e.bId);
+      if (hidden.has(e.bId) && !directLine.has(e.aId) && !heads.has(e.aId)) hidden.add(e.aId);
+    }
+    return hidden;
+  })();
   // Direct-line set — focus + focus's ancestors + focus's descendants
   // + focus's siblings + their descendants. Anyone in this set is
   // "always visible on canvas"; anyone NOT in it (and reachable via
@@ -845,11 +956,15 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     };
     for (const node of sorted) {
       const kids = childrenByParent.get(node.personId) ?? [];
-      // Only direct-line kids contribute to desired centre. Side-branch
-      // (panelled) kids are placed somewhere by the descendant pass
-      // for layout-completeness but they don't drag their parent over
-      // a hidden subtree — that's the bug the user flagged.
-      const directLineKids = kids.filter(k => directLineSet.has(k));
+      // Only CANVAS-VISIBLE kids contribute to desired centre. A kid
+      // is canvas-visible if they're NOT a panelled side-branch
+      // descendant. Side-branch HEADS (aunts/uncles like Patricia /
+      // Peter / Carol) ARE canvas-visible, so when Grandad + Dorothy
+      // get centred at gen+2 their three children Alan + Patricia +
+      // Peter all count toward the midpoint. Their panelled grand-
+      // children (cousins) are EXCLUDED so the cousin family widths
+      // don't drag the canvas spacing.
+      const directLineKids = kids.filter(k => !panelledIds.has(k));
       let key: string;
       let desiredCentre: number;
       let hasKids: boolean;
@@ -950,15 +1065,17 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     // tucked into each side-branch's panel.
     const sideBranchGroups = groupOrder.filter(g => g.isSideBranch);
     if (sideBranchGroups.length > 0) {
-      // Find the kid-having descendants' x range for THIS row (i.e.
-      // direct-line kids of any kid-having group in this gen).
+      // Find the kid-having descendants' x range for THIS row — only
+      // canvas-visible kids count, never panelled side-branch
+      // descendants. The anchor span we cascade against is the
+      // visible-on-canvas children of focus's parents.
       const directLineKidXs: number[] = [];
       for (const g of groupOrder) {
         if (!g.hasKids || g.isSideBranch) continue;
         for (const memberId of g.members) {
           const kids = childrenByParent.get(memberId) ?? [];
           for (const k of kids) {
-            if (!directLineSet.has(k)) continue;
+            if (panelledIds.has(k)) continue;
             const x = placed.get(k)?.x;
             if (x != null) directLineKidXs.push(x);
           }
@@ -993,11 +1110,10 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       // here because trees-layout.ts is render-agnostic but the
       // user's spacing rule is expressed in terms of card units.
       const CARD_W = 170;
-      // The promised breathing room: one card width + one nodeSpacing
-      // between adjacent visible cards on the row. Translates to
-      // an x-offset of (CARD_W + nodeSpacing) between adjacent CENTRES
-      // of the inner-edges of consecutive cards.
-      const cascadeStep = CARD_W + opts.nodeSpacing;
+      // Breathing room between adjacent visible cards on the row —
+      // ONE card width (Terry's tightened spacing rule, 2026-05-03;
+      // previously CARD_W + nodeSpacing felt too sideways-spread).
+      const cascadeStep = CARD_W;
 
       // Classify each side-branch group LEFT vs RIGHT by BLOODLINE
       // TIE — which kid-having member (Alan = father, Sally = mother)
@@ -1015,10 +1131,42 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       // find its bloodline member (the one that has parent_of edges
       // shared with a kid-having member) and tag it left/right
       // accordingly.
+      // Compute focus's direct bloodline ancestors so we can filter
+      // kidHavingMembers to "the canonical anchor pair" — Alan + Sally
+      // at gen=1, focus's grandparents at gen=2, etc. Without this
+      // filter, any OTHER row member who happens to have a direct-
+      // line child placed (e.g. Lindsay = sister-in-law of focus,
+      // whose kids Lilly+Daisy are direct-line because they're focus's
+      // nieces) gets treated as a kid-having anchor and lands as
+      // rightKidHavingId, breaking the bloodline-tie classification
+      // for Carol (Sally's sister) → Carol falls through to the
+      // x-distance fallback and ends up on the wrong side.
+      const focusAncestors = new Set<number>([graph.focusPersonId]);
+      {
+        const upQ = [graph.focusPersonId];
+        while (upQ.length) {
+          const cur = upQ.shift()!;
+          for (const e of graph.edges) {
+            if (e.type !== 'parent_of') continue;
+            if (e.bId !== cur) continue;
+            if (focusAncestors.has(e.aId)) continue;
+            focusAncestors.add(e.aId);
+            upQ.push(e.aId);
+          }
+        }
+      }
       const kidHavingMembers: number[] = [];
       for (const g of groupOrder) {
         if (!g.hasKids || g.isSideBranch) continue;
-        for (const m of g.members) kidHavingMembers.push(m);
+        for (const m of g.members) {
+          // Only include focus's direct bloodline ancestors as
+          // cascade anchors. Sister-in-law / brother-in-law parents
+          // who happen to have direct-line nieces/nephews on canvas
+          // are NOT focus's ancestors and shouldn't anchor the
+          // cascade.
+          if (!focusAncestors.has(m)) continue;
+          kidHavingMembers.push(m);
+        }
       }
       let leftKidHavingId: number | null = null;
       let rightKidHavingId: number | null = null;
@@ -1057,15 +1205,21 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         // member that shares a parent (or sibling_of edge) with one
         // of the kid-having members.
         let assigned = false;
+        let assignedSide: 'right' | 'left' | 'fallback' | null = null;
+        let assignedBy = -1;
         for (const m of g.members) {
           if (rightKidHavingId != null && isSiblingOf(m, rightKidHavingId)) {
             rightSideBranches.push(g);
             assigned = true;
+            assignedSide = 'right';
+            assignedBy = m;
             break;
           }
           if (leftKidHavingId != null && isSiblingOf(m, leftKidHavingId)) {
             leftSideBranches.push(g);
             assigned = true;
+            assignedSide = 'left';
+            assignedBy = m;
             break;
           }
         }
@@ -1076,10 +1230,15 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           const cx = g.desired;
           if (Math.abs(cx - leftAnchor) <= Math.abs(cx - rightAnchor)) {
             leftSideBranches.push(g);
+            assignedSide = 'fallback';
           } else {
             rightSideBranches.push(g);
+            assignedSide = 'fallback';
           }
         }
+        // assignedSide / assignedBy are kept around in case future
+        // logging needs to see how each side-branch group classified.
+        void assignedSide; void assignedBy;
       }
       // Within each side, order side-branch couples by their bloodline
       // anchor's desired x (closest to the kid-having pair first, so
