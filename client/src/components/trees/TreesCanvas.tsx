@@ -1238,11 +1238,19 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     // branch, the canvas stays focused on bloodline + immediate
     // family.
     const hidden = new Set<number>();
-    for (const [, extended] of extendedAncestorsByPerson) {
-      for (const id of extended) hidden.add(id);
+    // Hide every member of every in-law's recorded family side —
+    // ancestors AND siblings AND extended branches. Without this
+    // the broader family panel pulls Kerry (Lindsay's sister) into
+    // the panel correctly, but Kerry ALSO renders as a stranded
+    // canvas card because the canvas filter only knew about
+    // ancestors. extendedFamilyByPerson is the right set to use
+    // here — a superset of extendedAncestorsByPerson that covers
+    // siblings + cousins of the in-law's family of origin.
+    for (const [, family] of extendedFamilyByPerson) {
+      for (const id of family) hidden.add(id);
     }
     return hidden;
-  }, [extendedAncestorsByPerson]);
+  }, [extendedFamilyByPerson]);
 
   /** Per-person extended-ancestor chevron geometry. Mirrors
    *  sideBranchChevrons but for the ^ chevron above each card.
@@ -2334,6 +2342,16 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             // closes that whole subgraph.
             const ext = extendedFamilyByPerson.get(personId);
             if (ext) for (const id of ext) contentSet.add(id);
+            // ALSO include the in-law themselves so the panel shows
+            // their place in their own family of origin (e.g.
+            // Lindsay rendered alongside her sister Kerry under her
+            // parents Keith + Gill). Without this the panel reads
+            // as "her family minus her", which Terry called out as
+            // confusing — you can't see who Lindsay IS in this
+            // family. Lindsay still renders on the main canvas as
+            // Colin's partner; the panel adds a second appearance
+            // showing her in her family-of-origin context.
+            contentSet.add(personId);
           }
           const contentPeople = Array.from(contentSet)
             .map(id => ({ id, x: nodeById.get(id)?.x ?? 0 }))
