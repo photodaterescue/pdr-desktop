@@ -2301,6 +2301,16 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           padTop: number;
           padBottom: number;
           bracketRoom: number;
+          /** Y coordinate the title's visual midline should sit on so
+           *  there's equal vertical breathing room between the panel's
+           *  top border and the next horizontal feature below the
+           *  title — either a sibling bracket (when the top row has
+           *  siblings) or the parent-bracket (descendant panels) or
+           *  just the top of the topmost card row (ancestor panels
+           *  with no top-row siblings). Pre-computed at layout time
+           *  so the SVG <text> can be `dominantBaseline="central"`
+           *  with `y={titleY}`. */
+          titleY: number;
           /** Auto-computed panel size (clamped to MIN/MAX). */
           panelW: number;
           panelH: number;
@@ -2862,9 +2872,60 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           // an equal distance below the title as the title sits
           // below the panel border. Symmetric breathing room.
           const TITLE_ROOM = 40;
+          // Detect whether the ancestor panel's TOP ROW has a sibling
+          // bracket above it. Without this we'd squash the title into
+          // the bracket — Lindsay's panel has Dave/Sue/Keith in the
+          // top row with Dave (Keith's brother) bracketed above their
+          // cards. Descendants always carry a parent-bracket above the
+          // children, so they reserve TETHER_BRACKET_ROOM by default;
+          // ancestors only need the equivalent reservation when the
+          // top row actually has siblings. Without that reservation
+          // the title strip [0, padTop-bracketLift] is too small to
+          // hold a 20px text block with comfortable breathing room.
+          const ascendingForTopRow = Array.from(byGen.keys()).sort((a, b) => b - a);
+          const topGen = ascendingForTopRow[0];
+          const topRow = topGen != null ? (byGen.get(topGen) ?? []) : [];
+          let topRowHasSiblingBracket = false;
+          if (direction === 'ancestor' && topRow.length >= 2) {
+            const topRowIds = new Set(topRow.map(n => n.personId));
+            for (const e of layout.edges) {
+              if (e.type !== 'sibling_of') continue;
+              if (topRowIds.has(e.aId) && topRowIds.has(e.bId)) {
+                topRowHasSiblingBracket = true;
+                break;
+              }
+            }
+            if (!topRowHasSiblingBracket) {
+              // Shared-parent siblings (parent NOT in panel) — the
+              // orphan-sibling pass at render time would draw a bracket
+              // for these too, so reserve room for it.
+              const parentsByChild = new Map<number, Set<number>>();
+              for (const e of layout.edges) {
+                if (e.type !== 'parent_of') continue;
+                if (!topRowIds.has(e.bId)) continue;
+                if (!parentsByChild.has(e.bId)) parentsByChild.set(e.bId, new Set());
+                parentsByChild.get(e.bId)!.add(e.aId);
+              }
+              const ids = Array.from(topRowIds);
+              outer:
+              for (let i = 0; i < ids.length; i++) {
+                const aP = parentsByChild.get(ids[i]);
+                if (!aP) continue;
+                for (let j = i + 1; j < ids.length; j++) {
+                  const bP = parentsByChild.get(ids[j]);
+                  if (!bP) continue;
+                  for (const p of aP) {
+                    if (bP.has(p)) { topRowHasSiblingBracket = true; break outer; }
+                  }
+                }
+              }
+            }
+          }
           const padTop = direction === 'descendant'
             ? PANEL_PADDING + TETHER_BRACKET_ROOM + TITLE_ROOM
-            : PANEL_PADDING + TITLE_ROOM;
+            : (topRowHasSiblingBracket
+                ? PANEL_PADDING + TETHER_BRACKET_ROOM + TITLE_ROOM
+                : PANEL_PADDING + TITLE_ROOM);
           const padBottom = direction === 'ancestor' ? PANEL_PADDING + TETHER_BRACKET_ROOM : PANEL_PADDING;
           const contentHeight = sortedGens.length === 0
             ? CARD_H
@@ -2929,6 +2990,70 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             if (!placedById.has(e.aId) || !placedById.has(e.bId)) continue;
             panelSpouseEdges.push(e);
           }
+
+          // Compute titleY — the panel title's vertical midline. The
+          // title sits in a strip from the panel's top border (y=0)
+          // down to the next horizontal feature, which is whichever
+          // of these comes first:
+          //   • the parent-bracket (descendants only — Carol & Graham
+          //     panel: bracket above Ben/Karen ↔ Jenny/Dan at
+          //     y = padTop - bracketRoom).
+          //   • the in-panel sibling bracket above the topmost row
+          //     (ancestor panels where the topmost row contains
+          //     siblings — Lindsay's panel: Dave is Keith's brother,
+          //     so a bracket sits at y = padTop - SIBLING_BRACKET_LIFT
+          //     above their cards).
+          //   • the top edge of the topmost card row (when neither
+          //     bracket exists — y = padTop).
+          // Without this calc the title was anchored at hardcoded
+          // y=32 (its baseline), which placed the visual midline
+          // INSIDE Lindsay's panel's top-row sibling bracket —
+          // Terry called that out in a screenshot as a horizontal
+          // line slicing through "Lindsay's Family". Now the title
+          // is centred above whichever feature comes first, with
+          // dominantBaseline="central" anchoring its visual midline
+          // to titleY at render time.
+          const SIBLING_BRACKET_LIFT_FOR_TITLE = 30;
+          let stripBottom = padTop;  // default: top of cards
+          if (direction === 'descendant') {
+            // Descendant panels always carry a parent-bracket above
+            // the children — that's the next horizontal feature.
+            stripBottom = padTop - TETHER_BRACKET_ROOM;
+          } else {
+            // Ancestor panel: detect a top-row sibling bracket. The
+            // topmost row has the smallest cy value; check for any
+            // sibling_of edge between two members of that row, OR a
+            // panelFamilyGroup whose children sit in that row but
+            // whose parents are NOT all in the panel (so the bracket
+            // would render via the panel's orphan-sibling pass at
+            // childTop - SIBLING_BRACKET_LIFT).
+            if (miniPlacements.length > 0) {
+              const minCy = Math.min(...miniPlacements.map(p => p.cy));
+              const topRowIds = new Set(
+                miniPlacements.filter(p => p.cy === minCy).map(p => p.personId),
+              );
+              let hasTopBracket = false;
+              for (const e of layout.edges) {
+                if (e.type !== 'sibling_of') continue;
+                if (topRowIds.has(e.aId) && topRowIds.has(e.bId)) {
+                  hasTopBracket = true;
+                  break;
+                }
+              }
+              if (!hasTopBracket) {
+                for (const fg of panelFamilyGroups) {
+                  const allParentsInPanel = fg.parentIds.every(pid => placedById.has(pid));
+                  if (allParentsInPanel) continue;
+                  if (fg.childIds.some(cid => topRowIds.has(cid))) {
+                    hasTopBracket = true;
+                    break;
+                  }
+                }
+              }
+              if (hasTopBracket) stripBottom = padTop - SIBLING_BRACKET_LIFT_FOR_TITLE;
+            }
+          }
+          const titleY = stripBottom / 2;
           // Direct kin of the origin that live INSIDE the panel.
           //  descendant: parent_of edges where origin is the parent →
           //    origin's direct bloodline children. Excludes spouses
@@ -3072,6 +3197,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             directKinIds,
             contentWidth, contentHeight,
             padTop, padBottom, bracketRoom: TETHER_BRACKET_ROOM,
+            titleY,
             panelW, panelH,
             defaultPanelLeft, defaultPanelTop,
             panelLeft, panelTop,
@@ -3265,7 +3391,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                             that sits just above the children. */}
                     <text
                       x={l.direction === 'descendant' ? PANEL_PADDING : l.contentWidth / 2}
-                      y={(l.direction === 'descendant' ? (l.padTop - l.bracketRoom) : l.padTop) / 2}
+                      y={l.titleY}
                       textAnchor={l.direction === 'descendant' ? 'start' : 'middle'}
                       dominantBaseline="central"
                       fontSize={20}
