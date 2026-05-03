@@ -2549,22 +2549,80 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                     .filter(n => !isPairAnchor(n.personId) && isSibling(n.personId, rightPair.personId) && !leftSibs.includes(n))
                     .sort((a, b) => a.personId - b.personId)
                 : [];
-              // Anyone in the row not yet placed (orphan in-laws,
-              // people unrelated to the pair) preserves their canvas
-              // x ordering at the far right so we don't reshuffle
-              // them unexpectedly.
-              const placedIds = new Set([
+
+              // ── 4TH SET — spouses of pair-anchor siblings ─────────
+              // For each leftSib / rightSib in this parent row, if
+              // they have a spouse who's ALSO in this row, pair them
+              // adjacent on the OUTER side (further from the pair
+              // anchor), so couples stay together: Dave + Barbara
+              // (Lindsay's paternal uncle + his wife) sit as
+              // [Barbara, Dave, Sue, Keith, Gill] instead of
+              // Barbara falling to the far right as "remaining".
+              // Walks every parent row in the loop, so the same
+              // rule fires for great-aunts/great-uncles by marriage
+              // when grandparents are added above, and so on.
+              const spouseOfInThisRow = (id: number): number | null => {
+                for (const e of layout.edges) {
+                  if (e.type !== 'spouse_of') continue;
+                  const otherId = e.aId === id ? e.bId : (e.bId === id ? e.aId : null);
+                  if (otherId == null) continue;
+                  if (parentRow.find(p => p.personId === otherId)) return otherId;
+                }
+                return null;
+              };
+              // For each leftSib (sorted by id, closest-to-anchor
+              // last in the array), build [spouse?, sib]. Final
+              // result has spouses on the OUTER (further-left) side
+              // of their partner.
+              const leftSibSpouseIds = new Set<number>();
+              const leftPaired: typeof parentRow = [];
+              for (const sib of leftSibs) {
+                const spId = spouseOfInThisRow(sib.personId);
+                if (spId != null && !pairAnchors.has(spId) && !leftSibs.find(s => s.personId === spId) && !leftSibSpouseIds.has(spId)) {
+                  const spNode = parentRow.find(p => p.personId === spId);
+                  if (spNode) {
+                    leftPaired.push(spNode);
+                    leftSibSpouseIds.add(spId);
+                  }
+                }
+                leftPaired.push(sib);
+              }
+              // Mirror for rightSibs but spouse on the further-RIGHT
+              // (outer) side: build [sib, spouse?]. We also skip any
+              // spouse that's already been placed on the left side
+              // (corner case — same person married multiple sibs).
+              const rightSibSpouseIds = new Set<number>();
+              const rightPaired: typeof parentRow = [];
+              for (const sib of rightSibs) {
+                rightPaired.push(sib);
+                const spId = spouseOfInThisRow(sib.personId);
+                if (spId != null && !pairAnchors.has(spId) && !rightSibs.find(s => s.personId === spId) && !leftSibSpouseIds.has(spId) && !rightSibSpouseIds.has(spId)) {
+                  const spNode = parentRow.find(p => p.personId === spId);
+                  if (spNode) {
+                    rightPaired.push(spNode);
+                    rightSibSpouseIds.add(spId);
+                  }
+                }
+              }
+
+              // Anyone in the row not yet placed (truly unrelated
+              // to either pair anchor and any pair-anchor sibling
+              // — neither sib, nor sib's spouse) preserves their
+              // canvas-x ordering at the far right.
+              const placedIds = new Set<number>([
                 leftPair.personId,
                 ...(rightPair && rightPair !== leftPair ? [rightPair.personId] : []),
                 ...leftSibs.map(n => n.personId),
                 ...rightSibs.map(n => n.personId),
+                ...leftSibSpouseIds,
+                ...rightSibSpouseIds,
               ]);
               const remaining = parentRow.filter(n => !placedIds.has(n.personId));
               const ordered = [
-                ...leftSibs,
+                ...leftPaired,
                 leftPair,
                 ...(rightPair && rightPair !== leftPair ? [rightPair] : []),
-                ...rightSibs,
+                ...rightPaired,
                 ...remaining,
               ];
               byGen.set(parentGen, ordered);
