@@ -2587,9 +2587,13 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             //  • Anyone left over preserves their canvas-x order at
             //    the far edge so we don't reshuffle unrelated cards
             //    (e.g. someone the user pinned in panel-only).
-            const ascending2 = Array.from(byGen.keys()).sort((a, b) => a - b);
-            if (ascending2.length > 0) {
-              const originGen = ascending2[0];
+            // Use origin's OWN generation, not the lowest gen in the
+            // panel — descendant rows (origin's nieces / nephews via
+            // a sibling+spouse) sit BELOW origin and would otherwise
+            // be picked up here, making the pass run on the wrong
+            // row and skip Lindsay's entirely.
+            {
+              const originGen = origin.generation;
               const originRow = byGen.get(originGen);
               if (originRow && originRow.find(n => n.personId === origin.personId) && originRow.length > 1) {
                 const originNode = originRow.find(n => n.personId === origin.personId)!;
