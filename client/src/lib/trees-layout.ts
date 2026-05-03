@@ -175,26 +175,9 @@ export interface LayoutOptions {
   rowHeight?: number;
   /** Horizontal offset applied to a spouse placed beside their partner. */
   spouseOffset?: number;
-  /** Person IDs that should NOT influence canvas spacing — they still
-   *  end up in `placed` (so layout.edges + layout.nodes stay
-   *  referentially intact for panel rendering), but they're parked at
-   *  x=0 and excluded from every per-row placement / centring pass.
-   *
-   *  Used for side-branch descendants (cousins, cousins' partners,
-   *  cousins' kids — anyone who only appears inside a chevron-opened
-   *  panel and is hidden from the dimmed canvas). Without this they
-   *  bloat gen 0's effective width, which drags Alan + Sally far to
-   *  the right of Patricia + Peter so each ancestor can centre over
-   *  their own (mostly-hidden) kids — leaving the visible siblings
-   *  spread far apart with empty stripes between them. With this set,
-   *  Patricia / Peter / Carol have no placed kids contributing to
-   *  their `desired` centre, so they default to x=0 and the overlap-
-   *  avoidance pass keeps them tight against Alan + Sally.
-   */
-  excludeFromSpacing?: ReadonlySet<number>;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<LayoutOptions, 'excludeFromSpacing'>> = {
+const DEFAULT_OPTIONS: Required<LayoutOptions> = {
   // Card-style nodes are wider (~170px) than the old circles, so
   // horizontal spacing bumps to keep a readable gap between siblings
   // and to leave room for the spouse connector between partners.
@@ -271,20 +254,11 @@ export function assignGenerations(graph: FamilyGraph): Map<number, number> {
  */
 export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions = {}): TreeLayout {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const excludeSet: ReadonlySet<number> = options.excludeFromSpacing ?? new Set<number>();
   const generations = assignGenerations(graph);
 
   // Group nodes by generation.
   const byGen = new Map<number, FamilyGraphNode[]>();
   for (const n of graph.nodes) {
-    // Excluded IDs (side-branch descendants tucked into chevron-
-    // opened panels) skip every per-row pass — they bloat gen 0 if
-    // they sit there with cousins + their spouses + their kids,
-    // which then drags ancestors apart so each can centre over
-    // their own (mostly-hidden) kids. We park them at (0,0) at the
-    // end of layout so layout.nodes still contains them for the
-    // panel's BFS.
-    if (excludeSet.has(n.personId)) continue;
     const g = generations.get(n.personId) ?? 0;
     if (!byGen.has(g)) byGen.set(g, []);
     byGen.get(g)!.push(n);
@@ -858,25 +832,6 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       const x = newX.get(node.personId);
       if (x == null) return;
       placed.set(node.personId, { ...node, x });
-    });
-  }
-
-  // Park excluded nodes (side-branch descendants tucked into
-  // chevron-opened panels) at origin so they exist in `placed` for
-  // layout.nodes / layout.edges referential integrity (panels' BFS
-  // and FamilyGroup edge-resolution rely on node lookup), but their
-  // canvas-x is irrelevant — they're hidden from canvas anyway and
-  // the panel re-lays them out internally. Generation is taken from
-  // the original assignment so panel BFS can still group by gen.
-  for (const n of graph.nodes) {
-    if (!excludeSet.has(n.personId)) continue;
-    if (placed.has(n.personId)) continue;
-    const g = generations.get(n.personId) ?? 0;
-    placed.set(n.personId, {
-      ...n,
-      generation: g,
-      x: 0,
-      y: -g * opts.rowHeight,
     });
   }
 
