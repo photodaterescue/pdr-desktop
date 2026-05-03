@@ -2564,6 +2564,83 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               pathwaySet.add(leftPair.personId);
               if (rightPair && rightPair !== leftPair) pathwaySet.add(rightPair.personId);
             }
+
+            // ── ORIGIN-ROW PASS ──────────────────────────────────────
+            // The pair-anchor loop above only fires for rows that have
+            // a row BELOW them in the panel (it identifies the row's
+            // parents-of-pathway-children). The origin's own row never
+            // has children below in an ancestor-direction panel — but
+            // it still needs ordering, otherwise we just sort by
+            // canvas-x. That gave Lindsay's panel a row of
+            // [Kenny][Lindsay][Kerry] which made it look like Lindsay
+            // is the co-parent of Kerry's kids (because Kenny + Lindsay
+            // sit either side of Kerry). The fix mirrors the canvas's
+            // father-left/mother-right rule scoped to origin's row:
+            //
+            //  • Origin (Lindsay) goes at one end.
+            //  • Origin's spouse, if in the row, sits adjacent to
+            //    origin (rare — origin's spouse is usually on the
+            //    main canvas, not the panel).
+            //  • Each sibling of origin in this row sits next, with
+            //    their own spouse pinned OUTWARD (away from origin)
+            //    so couples stay together: [Lindsay][Kerry][Kenny].
+            //  • Anyone left over preserves their canvas-x order at
+            //    the far edge so we don't reshuffle unrelated cards
+            //    (e.g. someone the user pinned in panel-only).
+            const ascending2 = Array.from(byGen.keys()).sort((a, b) => a - b);
+            if (ascending2.length > 0) {
+              const originGen = ascending2[0];
+              const originRow = byGen.get(originGen);
+              if (originRow && originRow.find(n => n.personId === origin.personId) && originRow.length > 1) {
+                const originNode = originRow.find(n => n.personId === origin.personId)!;
+                const idIn = (id: number) => originRow.find(n => n.personId === id) ?? null;
+                // spouse_of partner of `personId` that ALSO sits in this row.
+                const spouseOfInRow = (id: number): number | null => {
+                  for (const e of layout.edges) {
+                    if (e.type !== 'spouse_of') continue;
+                    const otherId = e.aId === id ? e.bId : (e.bId === id ? e.aId : null);
+                    if (otherId == null) continue;
+                    if (idIn(otherId)) return otherId;
+                  }
+                  return null;
+                };
+                // Siblings of origin in this row, sorted by id for
+                // deterministic ordering when origin has multiple
+                // siblings on the canvas.
+                const sibsOfOrigin = originRow
+                  .filter(n => n.personId !== origin.personId && isSibling(n.personId, origin.personId))
+                  .sort((a, b) => a.personId - b.personId);
+
+                const placed = new Set<number>([origin.personId]);
+                const outward: typeof originRow = [];
+                // Origin's own spouse first, if they happen to be in
+                // the panel (unusual — covers panels where the in-law
+                // origin is also the bloodline-side spouse for some
+                // edge case the user has constructed).
+                const originSp = spouseOfInRow(origin.personId);
+                if (originSp != null && !placed.has(originSp)) {
+                  const spNode = idIn(originSp);
+                  if (spNode) { outward.push(spNode); placed.add(originSp); }
+                }
+                // Then each sibling, with that sibling's spouse pinned
+                // outside (further from origin) so couples stay paired.
+                for (const sib of sibsOfOrigin) {
+                  if (placed.has(sib.personId)) continue;
+                  outward.push(sib);
+                  placed.add(sib.personId);
+                  const sp = spouseOfInRow(sib.personId);
+                  if (sp != null && !placed.has(sp)) {
+                    const spNode = idIn(sp);
+                    if (spNode) { outward.push(spNode); placed.add(sp); }
+                  }
+                }
+                // Anyone unplaced (orphan in-laws not tied to origin
+                // or any sibling) appended at the far end preserving
+                // canvas-x order.
+                const remaining = originRow.filter(n => !placed.has(n.personId));
+                byGen.set(originGen, [originNode, ...outward, ...remaining]);
+              }
+            }
           }
           // sortedGens is iterated TOP-DOWN (highest generation first) so
           // when we lay out a child row we already know where its parents
