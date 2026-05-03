@@ -3220,6 +3220,105 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                         strokeOverride tints the scaffolding with the
                         panel's brand colour (lavender for bloodline,
                         orange for in-law). */}
+                    {/* Orphan-sibling brackets inside the panel —
+                        same logic the canvas's orphanSiblingGroups
+                        memo applies, scoped to the panel's own
+                        cards. Catches sibling pairs in the panel
+                        whose shared parent isn't placed inside the
+                        panel (typically because the parent is a
+                        placeholder that was stripped, or because
+                        the family is "horizontal only" with no
+                        parents recorded). Without this Keith and
+                        Dave (siblings via a stripped placeholder
+                        parent inside Lindsay's Family) wouldn't get
+                        a bracket between them — same bug Terry hit
+                        on the canvas before we shipped the canvas-
+                        level orphan brackets. */}
+                    {(() => {
+                      const placedIds = new Set(l.miniPlacements.map(p => p.personId));
+                      // Cover any sibling who's already in a panel
+                      // family group — those are anchored to a parent
+                      // and don't need an orphan bracket.
+                      const covered = new Set<number>();
+                      for (const fg of l.panelFamilyGroups) {
+                        const anyParentInPanel = fg.parentIds.some(id => placedIds.has(id));
+                        if (!anyParentInPanel) continue;
+                        for (const cid of fg.childIds) covered.add(cid);
+                      }
+                      // Build undirected adjacency from sibling_of
+                      // edges (stored or derived) between people
+                      // both in the panel.
+                      const adj = new Map<number, Set<number>>();
+                      for (const e of layout.edges) {
+                        if (e.type !== 'sibling_of') continue;
+                        if (!placedIds.has(e.aId) || !placedIds.has(e.bId)) continue;
+                        if (covered.has(e.aId) && covered.has(e.bId)) continue;
+                        if (covered.has(e.aId) || covered.has(e.bId)) continue;
+                        if (!adj.has(e.aId)) adj.set(e.aId, new Set());
+                        if (!adj.has(e.bId)) adj.set(e.bId, new Set());
+                        adj.get(e.aId)!.add(e.bId);
+                        adj.get(e.bId)!.add(e.aId);
+                      }
+                      // Connected-component clusters → one bracket each.
+                      const seen = new Set<number>();
+                      const clusters: { childIds: number[] }[] = [];
+                      for (const start of adj.keys()) {
+                        if (seen.has(start)) continue;
+                        const component: number[] = [];
+                        const stack = [start];
+                        seen.add(start);
+                        while (stack.length) {
+                          const cur = stack.pop()!;
+                          component.push(cur);
+                          for (const n of adj.get(cur) ?? []) {
+                            if (seen.has(n)) continue;
+                            seen.add(n);
+                            stack.push(n);
+                          }
+                        }
+                        if (component.length >= 2) clusters.push({ childIds: component });
+                      }
+                      if (clusters.length === 0) return null;
+                      const stroke = l.tetherColour;
+                      const strokeWidth = 4;
+                      // Same lift-above-cards approximation the canvas
+                      // orphanSiblingGroups renderer uses.
+                      const SIBLING_BRACKET_LIFT = 30;
+                      return (
+                        <g style={{ pointerEvents: 'none' }}>
+                          {clusters.map((cluster, ci) => {
+                            const placements = cluster.childIds
+                              .map(id => l.miniPlacements.find(p => p.personId === id))
+                              .filter((p): p is MiniPlacement => p != null);
+                            if (placements.length < 2) return null;
+                            const xs = placements.map(p => p.cx).sort((a, b) => a - b);
+                            const bracketStart = xs[0];
+                            const bracketEnd = xs[xs.length - 1];
+                            const childTop = placements[0].cy - CARD_H / 2;
+                            const bracketY = childTop - SIBLING_BRACKET_LIFT;
+                            return (
+                              <g key={`panel-orphan-sib-${ci}`}>
+                                <line
+                                  x1={bracketStart} y1={bracketY}
+                                  x2={bracketEnd} y2={bracketY}
+                                  stroke={stroke} strokeWidth={strokeWidth}
+                                  strokeLinecap="round"
+                                />
+                                {placements.map(p => (
+                                  <line
+                                    key={`pdrop-${p.personId}`}
+                                    x1={p.cx} y1={bracketY}
+                                    x2={p.cx} y2={childTop}
+                                    stroke={stroke} strokeWidth={strokeWidth}
+                                    strokeLinecap="round"
+                                  />
+                                ))}
+                              </g>
+                            );
+                          })}
+                        </g>
+                      );
+                    })()}
                     {l.panelFamilyGroups.map((group, i) => {
                       const parentNodes = group.parentIds
                         .map(id => l.miniPlacements.find(p => p.personId === id))

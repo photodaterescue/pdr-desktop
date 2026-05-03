@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders, Play } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   getFamilyGraph,
   getFaceCrop,
@@ -2229,158 +2230,147 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   </button>
                 </PopoverTrigger>
               </IconTooltip>
-              <PopoverContent align="end" side="bottom" className="w-64 p-1">
-                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
-                  Tree
-                </p>
-                <button
-                  onClick={() => setManageTreesOpen(true)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors text-left"
-                >
-                  <FolderOpen className="w-4 h-4 text-primary" />
-                  <span className="flex-1">Manage Trees</span>
-                </button>
-                <button
-                  onClick={() => setTreePeopleOpen(true)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors text-left"
-                >
-                  <Users className="w-4 h-4 text-primary" />
-                  <span className="flex-1">People on this tree</span>
-                </button>
-                <div className="h-px bg-border my-1" />
-                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
-                  Add Info
-                </p>
-                <p className="text-[10px] text-muted-foreground px-2 pb-1">
-                  Show below each card
-                </p>
-                <label className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showDates}
-                    onChange={e => toggleShowDates(e.target.checked)}
-                    className="accent-primary"
-                  />
-                  <Info className="w-4 h-4 text-primary" />
-                  <span className="flex-1">Dates Living</span>
-                  <span className="text-[10px] text-muted-foreground">1948–Living</span>
-                </label>
-                <div className="h-px bg-border my-1" />
-                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
-                  Visual Effects
-                </p>
-                {/* Master switch — no play button here; this row gates
-                    every other effect rather than running its own. */}
-                <label className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={effectsEnabled}
-                    onChange={e => persistEffectsEnabled(e.target.checked)}
-                    className="accent-primary"
-                  />
-                  <span className="flex-1">Enable visual effects</span>
-                </label>
-                {/* Master "Pathway burst on add" toggle — gates whether
-                    any of the per-style effects below fire on a real
-                    add. The per-style rows below pick which visual
-                    treatment(s) to layer on the path. */}
-                <label
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent cursor-pointer' : 'text-muted-foreground/60 cursor-not-allowed'}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={effectsCreationBurst}
-                    disabled={!effectsEnabled}
-                    onChange={e => persistEffectsCreationBurst(e.target.checked)}
-                    className="accent-primary"
-                  />
-                  <span className="flex-1">Pathway burst on add</span>
-                </label>
-                <p className="text-[10px] text-muted-foreground px-2 pb-1">
-                  Pick any combination — they layer
-                </p>
-                {/* Per-style sub-rows — toggle for each visual layer
-                    plus a Play button to preview JUST that layer (the
-                    play button overrides the toggle for the duration
-                    of the preview, so even a disabled style can be
-                    sampled before opting in). */}
-                {([
-                  { key: 'comet',    label: 'Comet',          hint: 'bright head + halo',     state: effectComet,    set: setEffectComet,    storageKey: 'pdr-trees-effect-comet' },
-                  { key: 'sonar',    label: 'Sonar ping',     hint: 'expanding rings',        state: effectSonar,    set: setEffectSonar,    storageKey: 'pdr-trees-effect-sonar' },
-                  { key: 'sweep',    label: 'Gradient sweep', hint: 'soft trailing stripe',   state: effectSweep,    set: setEffectSweep,    storageKey: 'pdr-trees-effect-sweep' },
-                  { key: 'electric', label: 'Electric arc',   hint: 'jagged bolts',           state: effectElectric, set: setEffectElectric, storageKey: 'pdr-trees-effect-electric' },
-                  { key: 'fiber',    label: 'Fibre-optic',    hint: 'flowing dashes',         state: effectFiber,    set: setEffectFiber,    storageKey: 'pdr-trees-effect-fiber' },
-                  { key: 'led',      label: 'LED tube',       hint: 'steady neon glow',       state: effectLed,      set: setEffectLed,      storageKey: 'pdr-trees-effect-led' },
-                ] as const).map(row => (
-                  <div
-                    key={row.key}
-                    className={`flex items-stretch gap-1 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent' : 'text-muted-foreground/60'}`}
-                  >
+              <PopoverContent align="end" side="bottom" className="w-80 p-2">
+                {/* Three tabs — same Tabs primitive used elsewhere in
+                    the app. Top tab strip (TabsList) sits above the
+                    body content; clicking a trigger swaps in the
+                    matching TabsContent below. Tab labels stay short
+                    so the strip fits the popover width without
+                    wrapping. */}
+                <Tabs defaultValue="tree" className="w-full">
+                  <TabsList className="grid grid-cols-3 w-full">
+                    <TabsTrigger value="tree">Tree</TabsTrigger>
+                    <TabsTrigger value="display">Display</TabsTrigger>
+                    <TabsTrigger value="effects">Effects</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="tree" className="mt-3 space-y-1">
+                    <button
+                      onClick={() => setManageTreesOpen(true)}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors text-left"
+                    >
+                      <FolderOpen className="w-4 h-4 text-primary" />
+                      <span className="flex-1">Manage Trees</span>
+                    </button>
+                    <button
+                      onClick={() => setTreePeopleOpen(true)}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors text-left"
+                    >
+                      <Users className="w-4 h-4 text-primary" />
+                      <span className="flex-1">People on this tree</span>
+                    </button>
+                  </TabsContent>
+
+                  <TabsContent value="display" className="mt-3">
+                    <p className="text-[10px] text-muted-foreground px-2 pb-1">
+                      Show below each card
+                    </p>
+                    <label className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showDates}
+                        onChange={e => toggleShowDates(e.target.checked)}
+                        className="accent-primary"
+                      />
+                      <Info className="w-4 h-4 text-primary" />
+                      <span className="flex-1">Dates Living</span>
+                      <span className="text-[10px] text-muted-foreground">1948–Living</span>
+                    </label>
+                  </TabsContent>
+
+                  <TabsContent value="effects" className="mt-3 space-y-1">
+                    <label className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-foreground hover:bg-accent transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={effectsEnabled}
+                        onChange={e => persistEffectsEnabled(e.target.checked)}
+                        className="accent-primary"
+                      />
+                      <span className="flex-1">Enable visual effects</span>
+                    </label>
                     <label
-                      className={`flex-1 flex items-center gap-2 pl-4 pr-2 py-1.5 ${effectsEnabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent cursor-pointer' : 'text-muted-foreground/60 cursor-not-allowed'}`}
                     >
                       <input
                         type="checkbox"
-                        checked={row.state}
+                        checked={effectsCreationBurst}
                         disabled={!effectsEnabled}
-                        onChange={e => persistEffectStyle(row.storageKey, row.set, e.target.checked)}
+                        onChange={e => persistEffectsCreationBurst(e.target.checked)}
                         className="accent-primary"
                       />
-                      <span className="flex-1">{row.label}</span>
-                      <span className="text-[10px] text-muted-foreground">{row.hint}</span>
+                      <span className="flex-1">Pathway burst on add</span>
                     </label>
-                    <IconTooltip label={`Preview ${row.label}`} side="left">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Close popover first so it doesn't sit over
-                          // the canvas the preview is animating on.
-                          setTreesSettingsOpen(false);
-                          // Force this single style on for the preview
-                          // by stashing it in a ref the highlight ref
-                          // reads at fire-time.
-                          previewModeOverrideRef.current = { [row.key]: true };
-                          setTimeout(() => previewCreationHighlight(), 220);
-                        }}
-                        className="px-2 rounded text-primary hover:bg-primary/10 transition-colors"
-                        aria-label={`Preview ${row.label}`}
+                    <p className="text-[10px] text-muted-foreground px-2 pt-1 pb-0.5">
+                      Pick any combination — they layer
+                    </p>
+                    {([
+                      { key: 'comet',    label: 'Comet',          hint: 'bright head + halo',     state: effectComet,    set: setEffectComet,    storageKey: 'pdr-trees-effect-comet' },
+                      { key: 'sonar',    label: 'Sonar ping',     hint: 'expanding rings',        state: effectSonar,    set: setEffectSonar,    storageKey: 'pdr-trees-effect-sonar' },
+                      { key: 'sweep',    label: 'Gradient sweep', hint: 'soft trailing stripe',   state: effectSweep,    set: setEffectSweep,    storageKey: 'pdr-trees-effect-sweep' },
+                      { key: 'electric', label: 'Electric arc',   hint: 'jagged bolts',           state: effectElectric, set: setEffectElectric, storageKey: 'pdr-trees-effect-electric' },
+                      { key: 'fiber',    label: 'Fibre-optic',    hint: 'flowing dashes',         state: effectFiber,    set: setEffectFiber,    storageKey: 'pdr-trees-effect-fiber' },
+                      { key: 'led',      label: 'LED tube',       hint: 'steady neon glow',       state: effectLed,      set: setEffectLed,      storageKey: 'pdr-trees-effect-led' },
+                    ] as const).map(row => (
+                      <div
+                        key={row.key}
+                        className={`flex items-stretch gap-1 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent' : 'text-muted-foreground/60'}`}
                       >
-                        <Play className="w-3 h-3" fill="currentColor" />
-                      </button>
-                    </IconTooltip>
-                  </div>
-                ))}
-                {/* Trigger-mechanism toggles — separate from the
-                    style toggles above. These control WHICH user
-                    actions can fire a pathway highlight (right-click
-                    menu, Alt-click on a card, hover-after-delay).
-                    The persisted style toggles control what the
-                    fired highlight looks like. */}
-                <div className="h-px bg-border my-1" />
-                <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pt-1.5 pb-1">
-                  Trigger on click / hover
-                </p>
-                {([
-                  { key: 'rightclick', label: 'Right-click → Show pathway', hint: 'menu item',     state: triggerOnRightClick, set: setTriggerOnRightClick, storageKey: 'pdr-trees-trigger-rightclick' },
-                  { key: 'altclick',   label: 'Alt-click a card',           hint: 'modifier-click', state: triggerOnAltClick,   set: setTriggerOnAltClick,   storageKey: 'pdr-trees-trigger-altclick' },
-                  { key: 'hover',      label: 'Hover a card (½ s)',         hint: 'ambient',        state: triggerOnHover,      set: setTriggerOnHover,      storageKey: 'pdr-trees-trigger-hover' },
-                ] as const).map(row => (
-                  <label
-                    key={row.key}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent cursor-pointer' : 'text-muted-foreground/60 cursor-not-allowed'}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={row.state}
-                      disabled={!effectsEnabled}
-                      onChange={e => persistEffectStyle(row.storageKey, row.set, e.target.checked)}
-                      className="accent-primary"
-                    />
-                    <span className="flex-1">{row.label}</span>
-                    <span className="text-[10px] text-muted-foreground">{row.hint}</span>
-                  </label>
-                ))}
+                        <label
+                          className={`flex-1 flex items-center gap-2 pl-4 pr-2 py-1.5 ${effectsEnabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={row.state}
+                            disabled={!effectsEnabled}
+                            onChange={e => persistEffectStyle(row.storageKey, row.set, e.target.checked)}
+                            className="accent-primary"
+                          />
+                          <span className="flex-1">{row.label}</span>
+                          <span className="text-[10px] text-muted-foreground">{row.hint}</span>
+                        </label>
+                        <IconTooltip label={`Preview ${row.label}`} side="left">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTreesSettingsOpen(false);
+                              previewModeOverrideRef.current = { [row.key]: true };
+                              setTimeout(() => previewCreationHighlight(), 220);
+                            }}
+                            className="px-2 rounded text-primary hover:bg-primary/10 transition-colors"
+                            aria-label={`Preview ${row.label}`}
+                          >
+                            <Play className="w-3 h-3" fill="currentColor" />
+                          </button>
+                        </IconTooltip>
+                      </div>
+                    ))}
+                    <div className="h-px bg-border my-2" />
+                    <p className="text-[10px] font-semibold text-muted-foreground tracking-wide uppercase px-2 pb-1">
+                      Trigger on click / hover
+                    </p>
+                    {([
+                      { key: 'rightclick', label: 'Right-click → Show pathway', hint: 'menu item',     state: triggerOnRightClick, set: setTriggerOnRightClick, storageKey: 'pdr-trees-trigger-rightclick' },
+                      { key: 'altclick',   label: 'Alt-click a card',           hint: 'modifier-click', state: triggerOnAltClick,   set: setTriggerOnAltClick,   storageKey: 'pdr-trees-trigger-altclick' },
+                      { key: 'hover',      label: 'Hover a card (½ s)',         hint: 'ambient',        state: triggerOnHover,      set: setTriggerOnHover,      storageKey: 'pdr-trees-trigger-hover' },
+                    ] as const).map(row => (
+                      <label
+                        key={row.key}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${effectsEnabled ? 'text-foreground hover:bg-accent cursor-pointer' : 'text-muted-foreground/60 cursor-not-allowed'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={row.state}
+                          disabled={!effectsEnabled}
+                          onChange={e => persistEffectStyle(row.storageKey, row.set, e.target.checked)}
+                          className="accent-primary"
+                        />
+                        <span className="flex-1">{row.label}</span>
+                        <span className="text-[10px] text-muted-foreground">{row.hint}</span>
+                      </label>
+                    ))}
+                  </TabsContent>
+                </Tabs>
               </PopoverContent>
             </Popover>
             <IconTooltip label="Change the focus person" side="bottom">
