@@ -990,16 +990,93 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       // of the inner-edges of consecutive cards.
       const cascadeStep = CARD_W + opts.nodeSpacing;
 
-      // Sort side-branch groups left/right of the kid-having span.
-      // A group sits on the LEFT if its current desired x is < leftAnchor,
-      // RIGHT if > rightAnchor, else "between" (rare — falls back to
-      // current x).
-      const leftSideBranches = sideBranchGroups
-        .filter(g => g.desired < leftAnchor)
-        .sort((a, b) => b.desired - a.desired); // closest to leftAnchor first
-      const rightSideBranches = sideBranchGroups
-        .filter(g => g.desired > rightAnchor)
-        .sort((a, b) => a.desired - b.desired); // closest to rightAnchor first
+      // Classify each side-branch group LEFT vs RIGHT by BLOODLINE
+      // TIE — which kid-having member (Alan = father, Sally = mother)
+      // shares parents with the side-branch group's bloodline member.
+      // Carol shares parents with Sally → right side. Patricia / Peter
+      // share parents with Alan → left side. We can't classify by the
+      // side-branch group's current x because the first pass centred
+      // it over its panelled subtree, which can be anywhere — that
+      // landed Carol in the middle of the row instead of on Sally's
+      // outer side.
+      //
+      // Find the kid-having couple's members and split them by their
+      // current x: leftMember (smaller x = father convention) vs
+      // rightMember (larger x = mother). For each side-branch group,
+      // find its bloodline member (the one that has parent_of edges
+      // shared with a kid-having member) and tag it left/right
+      // accordingly.
+      const kidHavingMembers: number[] = [];
+      for (const g of groupOrder) {
+        if (!g.hasKids || g.isSideBranch) continue;
+        for (const m of g.members) kidHavingMembers.push(m);
+      }
+      let leftKidHavingId: number | null = null;
+      let rightKidHavingId: number | null = null;
+      if (kidHavingMembers.length > 0) {
+        const sortedKH = [...kidHavingMembers].sort((a, b) => (newX.get(a) ?? 0) - (newX.get(b) ?? 0));
+        leftKidHavingId = sortedKH[0];
+        rightKidHavingId = sortedKH[sortedKH.length - 1];
+      }
+      const parentsOf = (id: number): Set<number> => {
+        const out = new Set<number>();
+        for (const e of graph.edges) {
+          if (e.type === 'parent_of' && e.bId === id) out.add(e.aId);
+        }
+        return out;
+      };
+      const sharesParent = (a: number, b: number): boolean => {
+        const aP = parentsOf(a);
+        if (aP.size === 0) return false;
+        const bP = parentsOf(b);
+        for (const p of aP) if (bP.has(p)) return true;
+        return false;
+      };
+      const sharesSibling = (a: number, b: number): boolean => {
+        for (const e of graph.edges) {
+          if (e.type !== 'sibling_of') continue;
+          if ((e.aId === a && e.bId === b) || (e.aId === b && e.bId === a)) return true;
+        }
+        return false;
+      };
+      const isSiblingOf = (a: number, b: number) => sharesParent(a, b) || sharesSibling(a, b);
+
+      const leftSideBranches: typeof sideBranchGroups = [];
+      const rightSideBranches: typeof sideBranchGroups = [];
+      for (const g of sideBranchGroups) {
+        // Find the bloodline anchor in this side-branch group: the
+        // member that shares a parent (or sibling_of edge) with one
+        // of the kid-having members.
+        let assigned = false;
+        for (const m of g.members) {
+          if (rightKidHavingId != null && isSiblingOf(m, rightKidHavingId)) {
+            rightSideBranches.push(g);
+            assigned = true;
+            break;
+          }
+          if (leftKidHavingId != null && isSiblingOf(m, leftKidHavingId)) {
+            leftSideBranches.push(g);
+            assigned = true;
+            break;
+          }
+        }
+        if (!assigned) {
+          // No bloodline tie detected (rare — disconnected branch).
+          // Fall back to the old x-based classification: whichever
+          // side they currently sit closer to.
+          const cx = g.desired;
+          if (Math.abs(cx - leftAnchor) <= Math.abs(cx - rightAnchor)) {
+            leftSideBranches.push(g);
+          } else {
+            rightSideBranches.push(g);
+          }
+        }
+      }
+      // Within each side, order side-branch couples by their bloodline
+      // anchor's desired x (closest to the kid-having pair first, so
+      // the cascade walks outward).
+      leftSideBranches.sort((a, b) => b.desired - a.desired);
+      rightSideBranches.sort((a, b) => a.desired - b.desired);
 
       // Place left-side cascade: each side-branch couple's INNER card
       // (closest to leftAnchor) sits at x = (previous outer / leftAnchor)
