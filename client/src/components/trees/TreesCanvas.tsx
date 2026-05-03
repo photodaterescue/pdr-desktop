@@ -1176,6 +1176,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     const parentsOf = new Map<number, number[]>();
     const childrenOf = new Map<number, number[]>();
     const spousesOf = new Map<number, number[]>();
+    const siblingsOf = new Map<number, number[]>();
     for (const e of layout.edges) {
       if (e.type === 'parent_of') {
         if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
@@ -1187,71 +1188,71 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         spousesOf.get(e.aId)!.push(e.bId);
         if (!spousesOf.has(e.bId)) spousesOf.set(e.bId, []);
         spousesOf.get(e.bId)!.push(e.aId);
+      } else if (e.type === 'sibling_of') {
+        // Stored OR server-derived sibling edges. Critical when the
+        // shared parent has been stripped from the layout (typical
+        // for the auto-created placeholder grandparents the full-
+        // sibling flow makes — Terry's "Keith's sister" case). Without
+        // walking these, a sibling whose only graph link is the
+        // derived sibling_of edge is invisible to the family closure.
+        if (!siblingsOf.has(e.aId)) siblingsOf.set(e.aId, []);
+        siblingsOf.get(e.aId)!.push(e.bId);
+        if (!siblingsOf.has(e.bId)) siblingsOf.set(e.bId, []);
+        siblingsOf.get(e.bId)!.push(e.aId);
       }
     }
     for (const node of layout.nodes) {
       if (bloodlineSet.has(node.personId)) continue;
       const family = new Set<number>();
       const seen = new Set<number>([node.personId]);
-      // Step 1 — climb upward, collecting non-bloodline ancestors.
-      const ancestors = new Set<number>();
-      const upStack: number[] = [node.personId];
-      while (upStack.length) {
-        const cur = upStack.pop()!;
-        for (const p of parentsOf.get(cur) ?? []) {
-          if (seen.has(p)) continue;
-          seen.add(p);
-          if (bloodlineSet.has(p)) continue;
-          if (p < 0) continue; // virtual ghost
-          family.add(p);
-          ancestors.add(p);
-          upStack.push(p);
-        }
-      }
-      // Step 2 — for each ancestor, walk DOWN to pick up their other
-      // descendants (siblings of the in-law, plus cousins, niblings,
-      // etc.). Skip the in-law themselves and skip anyone bloodline.
-      const downStack = [...ancestors];
-      while (downStack.length) {
-        const cur = downStack.pop()!;
-        for (const c of childrenOf.get(cur) ?? []) {
-          if (c === node.personId) continue;
+      // Unified BFS over the in-law's family graph. Each visit tracks
+      // walkUp = whether we should follow parent_of edges UPWARD from
+      // this node. Origin + ancestors walk up; everyone else doesn't
+      // (otherwise we'd re-enter the ancestor chain via a sibling or
+      // chase a spouse's separate family of origin into this panel).
+      // Every node ALWAYS walks down (children), spouses (one hop),
+      // and siblings (one hop) — so siblings reached by a derived
+      // sibling_of edge whose shared parent has been stripped from
+      // the layout still get pulled into the closure. Reached nodes
+      // are filtered by non-bloodline + non-ghost; the in-law
+      // themselves is added separately at the end.
+      type Visit = { id: number; walkUp: boolean };
+      const queue: Visit[] = [{ id: node.personId, walkUp: true }];
+      while (queue.length) {
+        const { id, walkUp } = queue.shift()!;
+        if (id !== node.personId) family.add(id);
+        // DOWN — children
+        for (const c of childrenOf.get(id) ?? []) {
           if (seen.has(c)) continue;
+          if (bloodlineSet.has(c) || c < 0) { seen.add(c); continue; }
           seen.add(c);
-          if (bloodlineSet.has(c)) continue;
-          if (c < 0) continue;
-          family.add(c);
-          downStack.push(c);
+          queue.push({ id: c, walkUp: false });
         }
-      }
-      // Step 3 — pull in non-bloodline spouses of anyone in the family
-      // set (e.g. Kerry's husband Kenny once Kerry is in Lindsay's
-      // panel). One level only — we don't recurse into the spouse's
-      // OWN family of origin (that belongs in their separate family
-      // panel). We DO recurse into spouse → their children → their
-      // children's spouses so the panel's mini-tree reads as a
-      // proper subtree, but we stop before walking up into the
-      // spouse's parents.
-      const spouseSweep = [...family];
-      while (spouseSweep.length) {
-        const cur = spouseSweep.pop()!;
-        for (const s of spousesOf.get(cur) ?? []) {
-          if (seen.has(s)) continue;
-          seen.add(s);
-          if (bloodlineSet.has(s)) continue;
-          if (s < 0) continue;
-          family.add(s);
-          // Walk DOWN from this spouse to pick up shared children
-          // and their spouses (e.g. Kenny + Kerry's children if
-          // they have any, plus those children's partners). Same
-          // closure rules as steps 2 + 3.
-          for (const c of childrenOf.get(s) ?? []) {
-            if (seen.has(c)) continue;
-            seen.add(c);
-            if (bloodlineSet.has(c)) continue;
-            if (c < 0) continue;
-            family.add(c);
-            spouseSweep.push(c);
+        // SIDEWAYS — spouses
+        for (const sp of spousesOf.get(id) ?? []) {
+          if (seen.has(sp)) continue;
+          if (bloodlineSet.has(sp) || sp < 0) { seen.add(sp); continue; }
+          seen.add(sp);
+          queue.push({ id: sp, walkUp: false });
+        }
+        // SIDEWAYS — siblings (stored or derived). Catches the case
+        // where a sibling's shared parent is a placeholder that's
+        // been stripped from the layout — the sibling_of edge is the
+        // only graph link to them.
+        for (const sib of siblingsOf.get(id) ?? []) {
+          if (seen.has(sib)) continue;
+          if (bloodlineSet.has(sib) || sib < 0) { seen.add(sib); continue; }
+          seen.add(sib);
+          queue.push({ id: sib, walkUp: false });
+        }
+        // UP — only the origin and its direct upline. Stops chasing
+        // spouses' / siblings' separate families of origin.
+        if (walkUp) {
+          for (const p of parentsOf.get(id) ?? []) {
+            if (seen.has(p)) continue;
+            if (bloodlineSet.has(p) || p < 0) { seen.add(p); continue; }
+            seen.add(p);
+            queue.push({ id: p, walkUp: true });
           }
         }
       }
@@ -3060,32 +3061,18 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                           </g>
                         );
                       }
-                      // Ancestor — drop UP from panel-bottom into a
-                      // bracket that sits MINI_ROW_GAP_Y/2 below the
-                      // in-law's direct parents (canvas-matching).
-                      const entryY = l.contentHeight;
-                      const cardBottom = l.contentHeight - l.padBottom;
-                      const bracketY = l.contentHeight - l.padBottom + l.bracketRoom;
-                      return (
-                        <g
-                          stroke={l.tetherColour}
-                          strokeWidth={4}
-                          fill="none"
-                          strokeLinecap="round"
-                        >
-                          <path d={bezierPath(entryX, entryY, centerX, bracketY)} />
-                          <line x1={minX} y1={bracketY} x2={maxX} y2={bracketY} />
-                          {kinPlacements.map(p => (
-                            <line
-                              key={`tca-${p.personId}`}
-                              x1={p.cx}
-                              y1={bracketY}
-                              x2={p.cx}
-                              y2={cardBottom}
-                            />
-                          ))}
-                        </g>
-                      );
+                      // Ancestor (in-law) panel — Terry's spec is to
+                      // SKIP the in-panel tether-continuation bracket
+                      // entirely. The line from the canvas chevron to
+                      // the panel boundary is enough; once inside the
+                      // panel, the in-law's own card pulses (focus-
+                      // halo style, rendered below) to indicate "this
+                      // is whose family you're looking at" without
+                      // needing a connection-line gymkhana through
+                      // the panel chrome.
+                      void entryX; // keep computed value referenced for tsc
+                      void minX; void maxX; void centerX; void bezierPath;
+                      return null;
                     })()}
                     {/* Family-group brackets — same FamilyGroup
                         component the canvas uses, so panel geometry
@@ -3230,6 +3217,47 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                         />
                       );
                     })}
+                    {/* Origin-pulse halo — for in-law family panels
+                        (direction = 'ancestor'), the panel's owner
+                        (Lindsay) renders inside her own family panel
+                        and gets a pulsating focus halo so the user
+                        instantly sees whose family they're looking
+                        at. Same animation primitives as the canvas
+                        focus card (pdr-tree-focus-pulse keyframe +
+                        amber halo). Drawn AFTER the cards so it
+                        layers on top and reads as a highlight rather
+                        than a background tint. */}
+                    {l.direction === 'ancestor' && (() => {
+                      const originPlacement = l.miniPlacements.find(p => p.personId === l.personId);
+                      if (!originPlacement) return null;
+                      return (
+                        <g style={{ pointerEvents: 'none' }}>
+                          <rect
+                            className="pdr-tree-focus-pulse"
+                            x={originPlacement.cx - CARD_W / 2 - 10}
+                            y={originPlacement.cy - CARD_H / 2 - 10}
+                            width={CARD_W + 20}
+                            height={CARD_H + 20}
+                            rx={16}
+                            ry={16}
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth={2.5}
+                          />
+                          <rect
+                            x={originPlacement.cx - CARD_W / 2 - 6}
+                            y={originPlacement.cy - CARD_H / 2 - 6}
+                            width={CARD_W + 12}
+                            height={CARD_H + 12}
+                            rx={14}
+                            ry={14}
+                            fill="rgba(245, 158, 11, 0.10)"
+                            stroke="rgba(245, 158, 11, 0.55)"
+                            strokeWidth={1.5}
+                          />
+                        </g>
+                      );
+                    })()}
                   </svg>
                   {/* Corner-badge overlays REMOVED for v2 — Terry's
                       simplified affordance vocabulary is just the
