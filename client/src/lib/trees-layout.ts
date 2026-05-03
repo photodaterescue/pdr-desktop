@@ -867,7 +867,16 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         // Stays kid-less for the natural placement pass and gets
         // snapped against the kid-having couple's direct-line
         // descendant span by the cascade post-pass.
-        key = `__side_${node.personId}`;
+        //
+        // Key by the shared panelled kid-set (sorted ids) so a side-
+        // branch couple — Carol + Graham, who share the same children
+        // — collapses into ONE group. Without this, Carol and Graham
+        // each become their own __side_<id> group; the cascade then
+        // tries to place them as two separate units and only Carol
+        // (the bloodline sibling of Sally) gets classified as right-
+        // side, leaving Graham on the wrong side and the couple split
+        // across the row.
+        key = `__side_${[...kids].sort((a, b) => a - b).join(',')}`;
         desiredCentre = node.x;
         hasKids = false;
         isSideBranch = true;
