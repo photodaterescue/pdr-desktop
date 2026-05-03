@@ -3017,19 +3017,6 @@ function GenerationDropdown({ label, value, onChange }: {
   onChange: (n: number) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  // Reset draft to current value whenever the popover opens, so the
-  // input field reflects what the user is starting from.
-  useEffect(() => { if (open) setDraft(String(value)); }, [open, value]);
-
-  const applyDraft = () => {
-    const n = parseInt(draft, 10);
-    if (Number.isFinite(n) && n >= 0) {
-      onChange(n);
-      setOpen(false);
-    }
-  };
 
   // The Ancestors (A) pill sits at the right edge of the toolbar; align
   // its popover to the trigger's end so it doesn't overflow the window.
@@ -3052,11 +3039,9 @@ function GenerationDropdown({ label, value, onChange }: {
         <p className="text-[10px] font-semibold text-muted-foreground tracking-wide mb-1.5 uppercase">
           {label === 'D' ? 'Descendants' : 'Ancestors'}
         </p>
-        {/* 0-10 grid — clicking any of these SETS the value directly,
-            so it doubles as the "reduce" path (currently at 200?
-            click 5 to drop straight back to 5). */}
-        <div className="grid grid-cols-6 gap-1 mb-2">
-          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+        {/* 0-5 grid — v2 cap. Clicking any sets the value directly. */}
+        <div className="grid grid-cols-6 gap-1">
+          {[0, 1, 2, 3, 4, 5].map(n => (
             <button
               key={n}
               onClick={() => { onChange(n); setOpen(false); }}
@@ -3067,43 +3052,6 @@ function GenerationDropdown({ label, value, onChange }: {
               {n}
             </button>
           ))}
-        </div>
-        {/* Type any number — no spinner arrows (type=text + numeric
-            inputMode), Enter applies. */}
-        <div className="border-t border-border pt-2">
-          <label className="block text-[11px] text-muted-foreground mb-1">Or type any number:</label>
-          <div className="flex gap-1.5">
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={draft}
-              onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyDraft();
-                else if (e.key === 'Escape') setOpen(false);
-              }}
-              className="flex-1 px-2 py-1.5 rounded-md border border-border bg-background text-sm font-mono"
-            />
-            <button
-              onClick={applyDraft}
-              className="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              Set
-            </button>
-          </div>
-        </div>
-        {/* +10 quick action — useful when the user is at e.g. 30
-            and wants 40 without typing. Body in text-foreground so
-            it reads at full contrast; hover:bg-accent matches the
-            other rows in this popover. */}
-        <div className="border-t border-border mt-2 pt-2">
-          <button
-            onClick={() => { onChange(value + 10); setOpen(false); }}
-            className="w-full px-2 py-1.5 rounded text-xs font-medium text-foreground hover:bg-accent transition-colors text-left"
-          >
-            <span className="text-primary">+</span> Add 10 more (currently {value})
-          </button>
         </div>
       </PopoverContent>
     </Popover>
