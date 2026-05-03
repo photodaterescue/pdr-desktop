@@ -1159,6 +1159,71 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     return m;
   }, [layout.nodes, layout.edges, bloodlineSet]);
 
+  /** Per-in-law extended FAMILY set — broader than
+   *  extendedAncestorsByPerson. For each non-bloodline person we
+   *  collect:
+   *    1. all their non-bloodline ancestors (same as extendedAncestors)
+   *    2. plus the OTHER children of those ancestors (their siblings,
+   *       great-aunts/uncles, cousins, etc.) that are also non-blood-
+   *       line — i.e. the rest of their family of origin
+   *  Excludes: bloodline of focus (those belong elsewhere on canvas),
+   *  the in-law themselves, and virtual-ghost placeholders.
+   *  Drives the new "Lindsay's Family" panel content — one panel per
+   *  in-law containing their whole side, instead of separate panels
+   *  for ancestors / siblings / cousins. */
+  const extendedFamilyByPerson = useMemo(() => {
+    const m = new Map<number, Set<number>>();
+    const parentsOf = new Map<number, number[]>();
+    const childrenOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+    }
+    for (const node of layout.nodes) {
+      if (bloodlineSet.has(node.personId)) continue;
+      const family = new Set<number>();
+      const seen = new Set<number>([node.personId]);
+      // Step 1 — climb upward, collecting non-bloodline ancestors.
+      const ancestors = new Set<number>();
+      const upStack: number[] = [node.personId];
+      while (upStack.length) {
+        const cur = upStack.pop()!;
+        for (const p of parentsOf.get(cur) ?? []) {
+          if (seen.has(p)) continue;
+          seen.add(p);
+          if (bloodlineSet.has(p)) continue;
+          if (p < 0) continue; // virtual ghost
+          family.add(p);
+          ancestors.add(p);
+          upStack.push(p);
+        }
+      }
+      // Step 2 — for each ancestor, walk DOWN to pick up their other
+      // descendants (siblings of the in-law, plus cousins, niblings,
+      // etc.). Skip the in-law themselves and skip anyone bloodline.
+      const downStack = [...ancestors];
+      while (downStack.length) {
+        const cur = downStack.pop()!;
+        for (const c of childrenOf.get(cur) ?? []) {
+          if (c === node.personId) continue;
+          if (seen.has(c)) continue;
+          seen.add(c);
+          if (bloodlineSet.has(c)) continue;
+          if (c < 0) continue;
+          family.add(c);
+          downStack.push(c);
+        }
+      }
+      // Always record an entry — even an empty set — so the count pill
+      // can render "0" on in-laws who haven't had any family added yet.
+      m.set(node.personId, family);
+    }
+    return m;
+  }, [layout.nodes, layout.edges, bloodlineSet]);
+
   /** Person IDs to FILTER OUT of the rendered tree. Computed from
    *  extendedAncestorsByPerson minus anyone unhidden by an expanded
    *  chevron — ref-counted so two non-bloodline people who share an
@@ -1886,14 +1951,98 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             const chevronCy = cardTop - stemLen - r;
             const chevronCx = info.x;
             const expanded = expandedAncestorsOf?.has(info.personId) ?? false;
-            const fill = info.isOnBloodline ? '#ad9eff' : '#f59e0b';
-            const rim = info.isOnBloodline ? '#7e6df0' : '#c2740a';
+            // Non-bloodline (in-law) cards now use a COUNT PILL above
+            // the card showing the size of their recorded family
+            // tree, rather than a `^` chevron. Per Terry's spec:
+            // single panel per in-law containing their whole side,
+            // and the pill always renders (even at 0) so the visible
+            // count motivates filling more in. Bloodline ancestors
+            // keep the chevron — that affordance still expands more
+            // bloodline ancestors past Steps.
+            if (!info.isOnBloodline) {
+              const familyCount = extendedFamilyByPerson.get(info.personId)?.size ?? 0;
+              const pillW = 36;
+              const pillH = 22;
+              const pillFill = '#f59e0b';
+              const pillRim = '#c2740a';
+              const pillCx = info.x;
+              // Sit at roughly the same y as the chevron used to so
+              // the visual position above the card stays consistent
+              // (no layout shift when the affordance switches type).
+              const pillCy = cardTop - stemLen - pillH / 2;
+              const tooltipLabel = familyCount === 0
+                ? 'No family recorded yet — click to add'
+                : expanded
+                  ? `Hide ${familyCount} family member${familyCount === 1 ? '' : 's'}`
+                  : `Show ${familyCount} family member${familyCount === 1 ? '' : 's'}`;
+              return (
+                <g key={`eac-${info.personId}`}>
+                  {/* Stem line — same length / colour as the chevron
+                      it replaces, so stacking-wise the pill reads as
+                      "attached to this card's top". */}
+                  <line
+                    x1={chevronCx}
+                    y1={cardTop}
+                    x2={chevronCx}
+                    y2={pillCy + pillH / 2}
+                    stroke={pillFill}
+                    strokeWidth={4}
+                    strokeLinecap="round"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <g
+                    transform={`translate(${pillCx} ${pillCy})`}
+                    style={{ cursor: 'pointer' }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onExpandAncestors?.(info.personId); }}
+                  >
+                    <IconTooltip label={tooltipLabel} side="top">
+                      <g className={expanded ? 'pdr-tree-chevron-pulse' : undefined}>
+                        {/* Drop shadow / rim — same trick the chevron
+                            uses to read as a 3D button. */}
+                        <ellipse
+                          cx={0} cy={4}
+                          rx={pillW / 2 * 0.96} ry={pillH / 2 * 0.55}
+                          fill="rgba(0,0,0,0.22)"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        <rect
+                          x={-pillW / 2} y={-pillH / 2 + 1.5}
+                          width={pillW} height={pillH}
+                          rx={pillH / 2} ry={pillH / 2}
+                          fill={pillRim}
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        <rect
+                          x={-pillW / 2} y={-pillH / 2}
+                          width={pillW} height={pillH}
+                          rx={pillH / 2} ry={pillH / 2}
+                          fill={pillFill}
+                          opacity={familyCount === 0 ? 0.6 : 1}
+                        />
+                        <text
+                          x={0} y={1}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={13}
+                          fontWeight={700}
+                          fill="#ffffff"
+                          style={{ pointerEvents: 'none' }}
+                        >
+                          {familyCount}
+                        </text>
+                      </g>
+                    </IconTooltip>
+                  </g>
+                </g>
+              );
+            }
+            // Bloodline branch — keep the existing `^` chevron.
+            const fill = '#ad9eff';
+            const rim = '#7e6df0';
             const label = expanded
-              ? (info.isOnBloodline ? 'Hide ancestors on this line' : 'Hide Extended Family')
-              : (info.isOnBloodline ? 'Show more ancestors on this line' : 'Show Extended Family');
-            // Glyph stays as ^ regardless of expansion state —
-            // design doc §2.4 (no glyph rotation; pulse is the
-            // open-state cue).
+              ? 'Hide ancestors on this line'
+              : 'Show more ancestors on this line';
             const glyphPath = 'M -7 2 L 0 -5 L 7 2';
             return (
               <g key={`eac-${info.personId}`}>
@@ -2176,7 +2325,14 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               }
             }
           } else {
-            const ext = extendedAncestorsByPerson.get(personId);
+            // In-law family panel — Terry's broader scope. Shows the
+            // whole family of the person who married into the
+            // bloodline: ancestors + their other descendants
+            // (siblings, cousins, niblings of the in-law) — minus
+            // anyone bloodline of the focus, who lives elsewhere on
+            // the tree. Backed by extendedFamilyByPerson, which
+            // closes that whole subgraph.
+            const ext = extendedFamilyByPerson.get(personId);
             if (ext) for (const id of ext) contentSet.add(id);
           }
           const contentPeople = Array.from(contentSet)
@@ -2327,7 +2483,15 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               ? `${headFirst} & ${partnerFirst} Descendants`
               : `${headFirst} Descendants`;
           } else {
-            panelTitleEarly = `${originName} Ancestry`;
+            // First-name + 's Family — Terry's preferred wording
+            // ("Lindsay's Family") for the broader in-law panel that
+            // contains parents + siblings + extended branch, not
+            // just ancestors. Falls back to the full origin name when
+            // there's no first-name component.
+            const headFirst = firstNameOfTitle(origin);
+            panelTitleEarly = headFirst
+              ? `${headFirst}'s Family`
+              : `${originName}'s Family`;
           }
           const APPROX_TITLE_CHAR_WIDTH = 11;
           const titleWidth = panelTitleEarly.length * APPROX_TITLE_CHAR_WIDTH;
