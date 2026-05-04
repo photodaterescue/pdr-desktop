@@ -10,6 +10,7 @@ import { useZoomLevel } from "@/hooks/useZoomLevel";
 import { ZoomControls } from "@/components/ZoomControls";
 import { getSettings, isElectron } from "@/lib/electron-bridge";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
+import { HelpSupportModal } from "@/components/HelpSupportModal";
 
 const SKIP_WELCOME_KEY = 'pdr-skip-welcome';
 
@@ -50,6 +51,13 @@ export default function Home() {
   // clicked so the user sees where to go without having to read a
   // scolding chip. Reset to `false` after the animation runs once.
   const [heroPulse, setHeroPulse] = useState(false);
+
+  // Help & Support modal — opened by the floating ? button. Lives on
+  // Welcome rather than routing into /workspace?panel=help-support so
+  // the user isn't dragged through the Workspace shell (whose sidebar
+  // would otherwise expose every destination-required feature as an
+  // active escape hatch).
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const heroPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -351,7 +359,7 @@ export default function Home() {
           <div className="flex justify-end">
             <IconTooltip label="Help & Support" side="left">
               <button
-                onClick={() => navigate("/workspace?panel=help-support")}
+                onClick={() => setShowHelpModal(true)}
                 className="flex items-center justify-center w-9 h-9 rounded-full bg-background/90 backdrop-blur-sm border border-border/30 text-muted-foreground hover:text-foreground hover:bg-primary/10 shadow-md hover:shadow-lg hover:-translate-y-0.5 opacity-80 hover:opacity-100 transition-all duration-300 ease-out"
                 aria-label="Help & Support"
               >
@@ -363,6 +371,18 @@ export default function Home() {
       </motion.div>
       </div>
     </div>
+
+    {/* Help & Support modal — opened by the floating ? button. Lives
+        on Welcome (rather than routing into the Workspace's help-
+        support panel) so pre-destination users aren't dragged through
+        the Workspace shell and its sidebar. Same accordion content
+        either way — different chrome. */}
+    {showHelpModal && (
+      <HelpSupportModal
+        onClose={() => setShowHelpModal(false)}
+        onStartTour={() => { resetTourCompletion(); navigate("/workspace?tour=true"); }}
+      />
+    )}
     </>
   );
 }
