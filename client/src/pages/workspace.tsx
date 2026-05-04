@@ -731,22 +731,20 @@ const handleActivateLicense = () => {
     }
 
     // ?action=pick-destination — deep-link from the destination-first
-    // interim screen. Fires the same Library Planner → DDA → Folder
-    // Browser sequence the user would get from clicking
-    // "Select Destination" inside Workspace, but lets the interim
-    // funnel users in without duplicating the flow there.
-    //
-    // The actual trigger (handleChangeDestination) lives inside
-    // DashboardPanel, not Workspace — so we cross the boundary via a
-    // CustomEvent. Matches the existing pdr-clear-sources /
-    // open-reports-history pattern. Defer one tick so the URL strip
-    // commits before the modal mounts.
+    // interim screen. Open the Folder Browser in destination mode at
+    // Workspace level (rendered below). Skipping the in-app
+    // Library Planner → DDA preamble for this path is deliberate:
+    // the user already declared intent on the interim by clicking
+    // "Pick Library Drive", so dropping them straight into the
+    // browser is direct and matches the destination-first feel.
+    // The in-app Change Destination button still uses the full
+    // planner/DDA/browser sequence inside DashboardPanel (which
+    // mounts only once at least one source exists, so it can't help
+    // first-time users coming through Welcome).
     const actionParam = params.get("action");
     if (actionParam === 'pick-destination') {
       setLocation('/workspace');
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('pdr:open-destination-picker'));
-      }, 0);
+      setTimeout(() => { setShowDestBrowser(true); }, 0);
       return;
     }
 
@@ -1772,6 +1770,34 @@ return (
         onCancel={() => { setShowFolderBrowser(false); setFolderBrowserCallback(null); }}
         title="Add Source"
         mode="source"
+      />
+
+      {/* Destination Folder Browser — opened by the
+          ?action=pick-destination deep-link from the interim screen.
+          DashboardPanel owns its OWN destination browser (for the
+          in-app Change Destination button) but DashboardPanel only
+          mounts when at least one source exists, so it can't serve
+          first-time users coming through Welcome. This Workspace-
+          level instance covers that gap. */}
+      <FolderBrowserModal
+        isOpen={showDestBrowser}
+        onSelect={async (selectedPath) => {
+          setShowDestBrowser(false);
+          const { getDiskSpace } = await import('@/lib/electron-bridge');
+          setDestinationPath(selectedPath);
+          try {
+            const diskInfo = await getDiskSpace(selectedPath);
+            setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
+            setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+          } catch {
+            // getDiskSpace failure is non-fatal — leave the GB
+            // counters at 0 and let the in-app Change Destination
+            // flow refresh them later.
+          }
+        }}
+        onCancel={() => setShowDestBrowser(false)}
+        title="Pick Library Drive"
+        mode="folder"
       />
 
       {showReportProblem && (
@@ -2851,18 +2877,6 @@ function DashboardPanel({
     setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
     setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
   };
-
-  // Cross-component bridge for the destination-first interim screen.
-  // Workspace's URL handler can't call handleChangeDestination
-  // directly (different React function-component scope) so it
-  // dispatches this CustomEvent. We listen here and run the same
-  // Library Planner → DDA → Folder Browser sequence the user gets
-  // from clicking Select Destination inside Workspace.
-  React.useEffect(() => {
-    const onOpenPicker = () => handleChangeDestination();
-    window.addEventListener('pdr:open-destination-picker', onOpenPicker);
-    return () => window.removeEventListener('pdr:open-destination-picker', onOpenPicker);
-  }, [destinationPath]);
 
   const handleOpenDestination = async () => {
     if (destinationPath) {
