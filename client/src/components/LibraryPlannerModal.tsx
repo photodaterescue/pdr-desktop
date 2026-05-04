@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  HardDrive, Camera, Smartphone, Cloud, Monitor,
+  HardDrive, Camera, Smartphone, Cloud, Monitor, Server,
   ChevronRight, Layers, FolderHeart, AlertTriangle,
   CheckCircle2, ExternalLink, ShoppingCart,
 } from 'lucide-react';
@@ -20,13 +20,21 @@ export interface LibraryPlannerAnswers {
   multipleSourcesPlanned: 'yes' | 'no' | 'not-sure';
 }
 
+// Bucket midpoints used as the "needed GB" estimate for the rest of
+// the destination-picker flow (drive ratings, DDA, Folder Browser
+// colour-coding). Keep these tight enough that picking a bucket
+// gives the engine a meaningful number — too wide a span (the old
+// '1-5 TB' bucket used midpoint 2048, which painted a 1.7 TB drive
+// red even though it would have fit a 1.5 TB library) gives users
+// a misleading red signal on drives that are actually appropriate.
 const SIZE_PRESETS = [
   { label: 'Under 50 GB', sublabel: 'A few thousand photos', value: 50, icon: Camera },
   { label: '50–200 GB', sublabel: 'A solid collection', value: 125, icon: Smartphone },
   { label: '200–500 GB', sublabel: 'Years of photos & some video', value: 350, icon: HardDrive },
   { label: '500 GB – 1 TB', sublabel: 'A large, multi-device library', value: 750, icon: Layers },
-  { label: '1–5 TB', sublabel: 'Extensive — photos, videos, RAW files', value: 2048, icon: Monitor },
-  { label: '5 TB+', sublabel: 'Professional-scale archive', value: 5120, icon: Cloud },
+  { label: '1–2 TB', sublabel: 'Multi-device library with video', value: 1500, icon: Monitor },
+  { label: '2–4 TB', sublabel: 'Extensive — heavy on video and RAW', value: 3072, icon: Server },
+  { label: '4 TB+', sublabel: 'Professional-scale archive', value: 5120, icon: Cloud },
 ] as const;
 
 function fmtGB(gb: number): string {
