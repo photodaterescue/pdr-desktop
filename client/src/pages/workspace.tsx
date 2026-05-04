@@ -303,7 +303,10 @@ useEffect(() => {
     return [];
   });
 
-  // On mount: check rememberSources setting — if OFF, clear persisted sources
+  // On mount: check rememberSources setting — if OFF, clear persisted sources.
+  // Also rehydrate the persisted Library Drive (destinationPath) from
+  // electron-store so the user lands back into a working workspace
+  // without having to re-pick their drive every session.
   useEffect(() => {
     getSettings().then((settings) => {
       if (!settings.rememberSources) {
@@ -313,9 +316,24 @@ useEffect(() => {
         setDestinationPath(null);
         setDestinationFreeGB(0);
         setDestinationTotalGB(0);
+      } else if (settings.destinationPath) {
+        // Restore sticky destination. Free/total GB are recomputed by
+        // the destination-info effect below as soon as the path is set.
+        setDestinationPath(settings.destinationPath);
       }
     });
   }, []);
+
+  // Persist destination changes to electron-store so the choice
+  // survives app restarts. Fires on every setDestinationPath call —
+  // including the explicit `null` resets in handleRemoveSource /
+  // handleChangeSource / pdr-clear-sources — which is the desired
+  // behaviour (clearing the destination should stick too).
+  useEffect(() => {
+    setSetting('destinationPath', destinationPath).catch((err) => {
+      console.warn('[Workspace] Failed to persist destinationPath:', err);
+    });
+  }, [destinationPath]);
 
   useEffect(() => {
     // Persist sources to localStorage (survives app restarts)
@@ -686,6 +704,20 @@ const handleActivateLicense = () => {
       setActivePanel(panelParam);
       // Clear URL param after setting panel
       setLocation('/workspace');
+      return;
+    }
+
+    // ?action=pick-destination — deep-link from the destination-first
+    // interim screen. Fires the same Library Planner → DDA → Folder
+    // Browser sequence the user would get from clicking
+    // "Select Destination" inside Workspace, but lets the interim
+    // funnel users in without duplicating the flow there.
+    const actionParam = params.get("action");
+    if (actionParam === 'pick-destination') {
+      setLocation('/workspace');
+      // Defer one tick so the URL strip doesn't collide with the
+      // Library Planner / DDA mount (both read sticky settings).
+      setTimeout(() => { handleChangeDestination(); }, 0);
       return;
     }
 
@@ -1662,6 +1694,8 @@ return (
               onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
               onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
               onReportProblem={() => setShowReportProblem(true)}
+              hasDestination={!!destinationPath}
+              onBackToWelcome={() => setLocation('/')}
             />
           </div>
         )}
@@ -6617,7 +6651,17 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void }) {
+function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem, hasDestination, onBackToWelcome }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void, hasDestination?: boolean, onBackToWelcome?: () => void }) {
+  // Pre-destination, the only panel reachable is help-support (via the
+  // floating ? on Welcome). For that case, "Back to Workspace" would
+  // dump the user into a workspace whose entire chrome is gated on
+  // picking a Library Drive — feeding them back the way they came is
+  // friendlier. The non-help panels stay as-is because they're
+  // unreachable pre-destination anyway (Best Practices / Tour /
+  // Getting Started cards are all locked on Welcome).
+  const showWelcomeBack = !hasDestination && panelType === 'help-support' && !!onBackToWelcome;
+  const backLabel = showWelcomeBack ? 'Back to Welcome' : 'Back to Workspace';
+  const backHandler = showWelcomeBack ? onBackToWelcome! : onBackToWorkspace;
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   
   React.useEffect(() => {
@@ -7447,13 +7491,13 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
           <div className="w-full max-w-[940px]">
-            <Button 
-              variant="outline" 
-              onClick={onBackToWorkspace}
+            <Button
+              variant="outline"
+              onClick={backHandler}
               className="mb-6 text-muted-foreground hover:text-foreground"
               data-testid="button-back-to-workspace-top"
             >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
             </Button>
             <h2 className="text-2xl font-semibold text-foreground mb-3">Help & Support</h2>
             <p className="text-muted-foreground mb-10">Everything you need to use Photo Date Rescue confidently — without guesswork, fear, or unnecessary emails.</p>
@@ -7746,15 +7790,15 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 </div>
               </section>
             </div>
-            
+
             <div className="mt-12 pt-8 border-t border-border">
-              <Button 
-                variant="outline" 
-                onClick={onBackToWorkspace}
+              <Button
+                variant="outline"
+                onClick={backHandler}
                 className="text-muted-foreground hover:text-foreground"
                 data-testid="button-back-to-workspace-bottom"
               >
-                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
               </Button>
             </div>
           </div>

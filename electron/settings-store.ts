@@ -74,6 +74,13 @@ export interface PDRSettings {
    *  Google Takeouts. */
   bypassLargeZipPreExtract: boolean;
 
+  /** Persisted Library Drive (destination) path. Sticky across sessions
+   *  so users don't have to re-pick it on every launch — and so the
+   *  Welcome screen can keep its app cards / Tour / Best Practices
+   *  available the moment they return. null until the user picks one
+   *  for the first time, or after they explicitly clear it. */
+  destinationPath: string | null;
+
   /** Network-destination upload mode.
    *    'fast'   — stage to local temp, mirror to network with
    *               robocopy /MT:16 (5–10× faster on SMB shares).
@@ -135,6 +142,7 @@ export const optimisedDefaults: PDRSettings = {
   scannerOverrides: [],
   networkUploadMode: 'fast',
   bypassLargeZipPreExtract: false,
+  destinationPath: null,
 };
 
 const store = new Store<PDRSettings>({
@@ -172,6 +180,7 @@ export function getSettings(): PDRSettings {
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
     networkUploadMode: store.get('networkUploadMode', optimisedDefaults.networkUploadMode),
     bypassLargeZipPreExtract: store.get('bypassLargeZipPreExtract', optimisedDefaults.bypassLargeZipPreExtract),
+    destinationPath: store.get('destinationPath', optimisedDefaults.destinationPath),
   };
 }
 

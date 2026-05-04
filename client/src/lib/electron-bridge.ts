@@ -396,6 +396,8 @@ export interface PDRSettings {
   showManualReportExports: boolean;
   // Face matching
   matchThreshold: number;
+  // Persisted Library Drive (destination) path — sticky across sessions
+  destinationPath: string | null;
 }
 
 const defaultSettings: PDRSettings = {
@@ -417,6 +419,7 @@ const defaultSettings: PDRSettings = {
   autoSaveCatalogue: true,
   showManualReportExports: false,
   matchThreshold: 0.72,
+  destinationPath: null,
 };
 
 export async function getSettings(): Promise<PDRSettings> {

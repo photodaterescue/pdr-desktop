@@ -1,28 +1,35 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
-import { FolderPlus, ArrowRight, Info } from "lucide-react";
+import { HardDrive, ArrowRight, Info } from "lucide-react";
 import { Card } from "@/components/ui/custom-card";
 import { Button } from "@/components/ui/custom-button";
-import { openZipDialog, isElectron } from "@/lib/electron-bridge";
-import { useLicense } from "@/contexts/LicenseContext";
-import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
-import { LicenseModal } from "@/components/LicenseModal";
-import { FolderBrowserModal } from "@/components/FolderBrowserModal";
+import { isElectron } from "@/lib/electron-bridge";
 import { useZoomLevel } from "@/hooks/useZoomLevel";
 import { ZoomControls } from "@/components/ZoomControls";
 
+/**
+ * Destination-first interim screen.
+ *
+ * v2.0.0 flips PDR's onboarding so the very first thing a user picks
+ * is their Library Drive (the destination), not a source. The
+ * rationale is two-fold:
+ *   1. Knowing the destination up-front lets PDR target the
+ *      pre-extract path at a drive with enough headroom, instead of
+ *      defaulting to %TEMP% and risking a 50 GB Takeout filling C:.
+ *   2. It mirrors how the user thinks about the job: "I want to
+ *      build a library on this drive — what I feed in is just an
+ *      ingredient."
+ *
+ * This screen is intentionally thin — clicking the card simply routes
+ * to /workspace?action=pick-destination, which triggers Workspace's
+ * existing Library Planner → DDA → Folder Browser sequence. We don't
+ * duplicate that flow here.
+ */
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
-  const { isLicensed, isLoading } = useLicense();
-  const [showLicenseRequired, setShowLicenseRequired] = useState(false);
-  const [showLicenseModal, setShowLicenseModal] = useState(false);
-  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
-  const [pendingPath, setPendingPath] = useState<{ path: string; type: 'folder' | 'drive' | 'zip'; name: string } | null>(null);
-  // Per-surface zoom under its own key. Source-selection is a
-  // transient page, but giving it a separate key avoids polluting the
-  // Welcome / Workspace zoom values for a screen the user typically
-  // sees once.
+  // Per-surface zoom — separate key so this transient screen can't
+  // bleed its zoom level into the Workspace / Welcome surfaces.
   const zoom = useZoomLevel('pdr-source-selection-zoom');
 
   const container: Variants = {
@@ -38,72 +45,26 @@ export default function SourceSelection() {
 
   const item: Variants = {
     hidden: { opacity: 0, y: 20 },
-    show: { 
-      opacity: 1, 
-      y: 0, 
-      transition: { 
-        duration: 0.55, 
-        ease: [0.25, 0.46, 0.45, 0.94] 
-      } 
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.55,
+        ease: [0.25, 0.46, 0.45, 0.94]
+      }
     }
   };
 
-  const inferSourceType = (path: string): 'folder' | 'drive' => {
-    const isDriveRoot = /^[A-Z]:[\\/]?$/.test(path);
-    return isDriveRoot ? 'drive' : 'folder';
-  };
-
-  const proceedToWorkspace = (path: string, type: 'folder' | 'drive' | 'zip', name: string) => {
-    // Store pending source in sessionStorage for workspace to pick up
-    sessionStorage.setItem('pdr-pending-source', JSON.stringify({ path, type, name }));
-    setLocation('/workspace');
-  };
-
-  const handleAddSource = () => {
+  const handlePickDestination = () => {
     if (!isElectron()) {
       console.log('Not in Electron environment');
       return;
     }
-    setShowFolderBrowser(true);
-  };
-
-  const handleUnifiedSourceSelect = (selectedPath: string) => {
-    setShowFolderBrowser(false);
-    const ext = selectedPath.toLowerCase().split('.').pop() || '';
-    const isArchive = ext === 'zip' || ext === 'rar';
-
-    if (isArchive) {
-      const fileName = selectedPath.split(/[/\\]/).pop() || "Selected Archive";
-      if (!isLicensed) {
-        setPendingPath({ path: selectedPath, type: 'zip', name: fileName });
-        setShowLicenseRequired(true);
-        return;
-      }
-      proceedToWorkspace(selectedPath, 'zip', fileName);
-    } else {
-      const folderName = selectedPath.split(/[/\\]/).pop() || "Selected Folder";
-      const sourceType = inferSourceType(selectedPath);
-      if (!isLicensed) {
-        setPendingPath({ path: selectedPath, type: sourceType, name: folderName });
-        setShowLicenseRequired(true);
-        return;
-      }
-      proceedToWorkspace(selectedPath, sourceType, folderName);
-    }
-  };
-
-  const handleActivateLicense = () => {
-    setShowLicenseRequired(false);
-    setShowLicenseModal(true);
-  };
-
-  const handleLicenseModalClose = () => {
-    setShowLicenseModal(false);
-    // If license was activated and we have a pending path, proceed
-    if (isLicensed && pendingPath) {
-      proceedToWorkspace(pendingPath.path, pendingPath.type, pendingPath.name);
-      setPendingPath(null);
-    }
+    // Workspace's handleChangeDestination handles the full first-time
+    // sequence (Library Planner → Drive Advisor → Folder Browser).
+    // We just need to land there with the right deep-link param so it
+    // fires automatically on arrival.
+    setLocation('/workspace?action=pick-destination');
   };
 
   return (
@@ -122,7 +83,7 @@ export default function SourceSelection() {
         <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-secondary/40 rounded-full blur-3xl" />
       </div>
 
-      <motion.div 
+      <motion.div
         variants={container}
         initial="hidden"
         animate="show"
@@ -131,23 +92,28 @@ export default function SourceSelection() {
         <motion.div variants={item} className="mb-8">
           <img src="./assets/pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-16 w-auto mx-auto mb-6" />
           <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight leading-[1.1] mb-3">
-            Find Your Photos & Videos
+            Pick a Library Drive
           </h1>
           <p className="text-base text-muted-foreground max-w-2xl mx-auto font-light inline-flex items-center justify-center gap-1 flex-wrap">
-            Choose where your photos and videos are located. You can add more sources later.
-            <PerformanceNudge type="source" />
+            For a quick fix, or your forever library — choose where your organised photos and videos will live.
+            <PerformanceNudge type="destination" />
           </p>
         </motion.div>
 
         <motion.div variants={item} className="w-full max-w-md">
           <OptionCard
-            icon={<FolderPlus className="w-8 h-8 text-primary" />}
-            title="Add Source"
-            description="Select a folder, drive, or ZIP/RAR archive containing your photos and videos."
-            onClick={handleAddSource}
+            icon={<HardDrive className="w-8 h-8 text-primary" />}
+            title="Pick Library Drive"
+            description="Select an internal disk, external drive, or network folder. PDR will use it for analysis staging and as the home for your fixed library."
+            onClick={handlePickDestination}
           />
         </motion.div>
 
+        {/* Escape hatch: returning users who already have a sticky
+            destination from a previous session can skip this screen
+            entirely. We deliberately lean on Workspace's own logic
+            (it shows "Select Destination" prominently if none is set)
+            so this button isn't a footgun for first-time users. */}
         <motion.div variants={item} className="mt-10">
           <Button
             variant="secondary"
@@ -158,31 +124,6 @@ export default function SourceSelection() {
           </Button>
         </motion.div>
       </motion.div>
-
-      {/* Unified Source Browser */}
-      <FolderBrowserModal
-        isOpen={showFolderBrowser}
-        onSelect={handleUnifiedSourceSelect}
-        onCancel={() => setShowFolderBrowser(false)}
-        title="Add Source"
-        mode="source"
-      />
-
-      {/* License Required Modal */}
-      <LicenseRequiredModal
-        isOpen={showLicenseRequired}
-        onClose={() => {
-          setShowLicenseRequired(false);
-          setPendingPath(null);
-        }}
-        onActivate={handleActivateLicense}
-        feature="add sources"
-      />
-
-      {/* License Activation Modal */}
-      {showLicenseModal && (
-        <LicenseModal onClose={handleLicenseModalClose} />
-      )}
     </div>
     </>
   );
@@ -190,7 +131,7 @@ export default function SourceSelection() {
 
 function OptionCard({ icon, title, description, onClick }: { icon: React.ReactNode, title: string, description: string, onClick: () => void }) {
   return (
-    <Card 
+    <Card
       className="flex flex-col items-center text-center p-8 cursor-pointer group h-full justify-between hover:border-primary transition-colors min-h-[280px]"
       onClick={onClick}
     >
@@ -210,11 +151,11 @@ function OptionCard({ icon, title, description, onClick }: { icon: React.ReactNo
 
 function PerformanceNudge({ type }: { type: 'source' | 'destination' }) {
   const [isVisible, setIsVisible] = useState(false);
-  
-  const message = type === 'source' 
+
+  const message = type === 'source'
     ? <>For best performance, connect source drives directly via USB, USB-C, or Ethernet.<br /><br />Wi-Fi and personal cloud storage can be slow or unstable when reading large volumes of files.</>
     : <>For best performance, connect your destination directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>;
-  
+
   return (
     <div className="relative inline-flex items-center ml-1">
       <button
