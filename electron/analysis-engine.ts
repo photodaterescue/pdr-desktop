@@ -14,6 +14,7 @@ import {
 } from './date-extraction-engine.js';
 import { isScannerDevice } from './scanner-detection.js';
 import { getScannerOverride } from './settings-store.js';
+import { classifySource } from './source-classifier.js';
 import * as crypto from 'crypto';
 
 // Yield to event loop to keep UI responsive
@@ -1032,6 +1033,25 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
     });
     const totalFiles = fileList.length;
 
+    // Dedup policy for the folder path (raw folders, drives, AND
+    // pre-extracted ZIPs which arrive here as effectiveType='folder'):
+    //   • Local source — SHA-256 stream-hash for files < 500 MB,
+    //     heuristic (filename + size) for >= 500 MB. Matches the
+    //     streaming-zip path's behaviour and PDR's design baseline
+    //     ("hash everything except large files where it would tank
+    //     performance").
+    //   • Network / cloud-sync source — heuristic for everything.
+    //     Reading every photo in full over Wi-Fi during analysis
+    //     turns a single zip into hours; the user is treated as
+    //     having opted into a slower flow by picking that source.
+    // The streaming hash uses calculateFileHash (64 KB chunks) so
+    // there's no full-file buffer in memory — only a rolling crypto
+    // state. seenHashes vs seenHeuristics stay separate so a
+    // mid-run mode flip wouldn't false-positive across maps.
+    const sourceStorage = classifySource(sourcePath);
+    const useHashDedup = sourceStorage.type !== 'network' && sourceStorage.type !== 'cloud-sync';
+    diag(`◆ folder-path dedup mode: ${useHashDedup ? 'SHA-256 (<500 MB)' : 'heuristic-only'} — source=${sourceStorage.label}`);
+
 	for (let i = 0; i < fileList.length; i++) {
 	  if (analysisCancelled) {
 	    throw new Error('ANALYSIS_CANCELLED');
@@ -1051,17 +1071,38 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
 
       const result = await analyzeFileFromPath(file.path, file.filename, file.size);
       if (result) {
-        // Check for duplicate using hash (small files) or heuristic (large files)
+        // SHA-256 for local <500 MB files; heuristic for >=500 MB
+        // OR for any network/cloud source (see dedup-mode comment
+        // above). calculateFileHash streams from disk in 64 KB chunks
+        // so memory stays flat. On any hash failure (corrupt file,
+        // permission denied) we fall through to heuristic so the
+        // file still gets a dedup attempt.
         let existingFile: string | undefined;
-        let duplicateMethod: 'hash' | 'heuristic' = 'hash';
-        
-        // Use heuristic (filename + size) for analysis-phase duplicate detection
-        // Avoids reading entire files over network; definitive hash check happens at copy time
-        const heuristicKey = `${file.filename}|${file.size}`;
-        existingFile = seenHeuristics.get(heuristicKey);
-        duplicateMethod = 'heuristic';
-        if (!existingFile) {
-          seenHeuristics.set(heuristicKey, file.filename);
+        let duplicateMethod: 'hash' | 'heuristic' = 'heuristic';
+        if (useHashDedup && file.size < LARGE_FILE_THRESHOLD_BYTES) {
+          try {
+            const hash = await calculateFileHash(file.path);
+            existingFile = seenHashes.get(hash);
+            duplicateMethod = 'hash';
+            if (!existingFile) {
+              seenHashes.set(hash, file.filename);
+            }
+          } catch {
+            // Hash failed — fall back to heuristic for this file
+            const heuristicKey = `${file.filename}|${file.size}`;
+            existingFile = seenHeuristics.get(heuristicKey);
+            duplicateMethod = 'heuristic';
+            if (!existingFile) {
+              seenHeuristics.set(heuristicKey, file.filename);
+            }
+          }
+        } else {
+          const heuristicKey = `${file.filename}|${file.size}`;
+          existingFile = seenHeuristics.get(heuristicKey);
+          duplicateMethod = 'heuristic';
+          if (!existingFile) {
+            seenHeuristics.set(heuristicKey, file.filename);
+          }
         }
         
         if (existingFile) {
