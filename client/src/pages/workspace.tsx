@@ -8857,6 +8857,39 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       data-testid="checkbox-bypass-large-zip-pre-extract"
                     />
                   </label>
+
+                  {/* Reset onboarding — clears Library Planner +
+                      Drive Advisor localStorage flags, wipes the
+                      sticky destinationPath in electron-store, and
+                      hard-reloads the renderer so every component
+                      re-initialises from a clean slate. Used to
+                      retest the destination-first first-time flow
+                      from Welcome → interim → planner → DDA →
+                      browser without manually clearing localStorage
+                      via DevTools. */}
+                  <div className="flex items-center justify-between p-3 mt-2 rounded-lg border border-border">
+                    <div className="flex flex-col mr-3">
+                      <span className="text-sm font-medium text-foreground">Reset onboarding</span>
+                      <span className="text-xs text-muted-foreground">Clears the Library Drive, Library Planner answers, and Drive Advisor skip flag. Reloads the app so the destination-first flow runs from scratch. Doesn't touch sources, reports, AI data, or licence.</span>
+                    </div>
+                    <Button
+                      variant="caution"
+                      size="sm"
+                      onClick={async () => {
+                        localStorage.removeItem('pdr-library-planner-complete');
+                        localStorage.removeItem('pdr-library-planner-size');
+                        localStorage.removeItem('pdr-library-planner-multi');
+                        localStorage.removeItem('pdr-skip-dest-advisor');
+                        try {
+                          await setSetting('destinationPath' as any, null as any);
+                        } catch { /* best-effort */ }
+                        window.location.reload();
+                      }}
+                      data-testid="button-reset-onboarding"
+                    >
+                      Reset
+                    </Button>
+                  </div>
                 </div>
               )}
 

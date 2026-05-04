@@ -905,13 +905,17 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                 </div>
               ) : !currentPath ? (
                 <div className="p-4 space-y-3">
-                  {/* Saved destinations — quick-pick for previously used locations */}
+                  {/* Saved destinations — quick-pick for previously used locations.
+                      Compact single-row layout (folderName · path · GB free) so a
+                      list of 3-5 saved drives doesn't push the rest of the picker
+                      off-screen. p-2 padding + smaller icon/text vs the original
+                      tile-style row. */}
                   {enableSavedLocations && savedDestinations.length > 0 && (
                     <div>
                       <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-1 mb-2">
                         Saved Destinations
                       </div>
-                      <div className="space-y-1.5 mb-3">
+                      <div className="space-y-1 mb-3">
                         {savedDestinations.map(dest => {
                           const driveLetter = dest.substring(0, 1).toUpperCase();
                           const matchedDrive = drives.find(d => d.letter.toUpperCase().startsWith(driveLetter));
@@ -919,19 +923,15 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                           return (
                             <div
                               key={dest}
-                              className="flex items-center gap-3 p-3 rounded-xl bg-card border border-primary hover:bg-primary/10 transition-all group cursor-pointer"
+                              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-card border border-primary/40 hover:border-primary hover:bg-primary/10 transition-all group cursor-pointer"
                               onClick={() => {
                                 setSelectedPath(dest);
                                 navigateTo(dest);
                               }}
                             >
-                              <div className="p-2 rounded-lg bg-primary/10 shrink-0">
-                                <FolderOpen className="w-4 h-4 text-primary" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium text-foreground truncate">{folderName}</div>
-                                <div className="text-xs text-muted-foreground font-mono truncate">{dest}</div>
-                              </div>
+                              <FolderOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                              <span className="text-sm font-medium text-foreground truncate shrink-0">{folderName}</span>
+                              <span className="text-xs text-muted-foreground/70 font-mono truncate min-w-0 flex-1">{dest}</span>
                               {matchedDrive && (
                                 <span className="text-[10px] text-muted-foreground shrink-0">
                                   {(matchedDrive.freeBytes / (1024 * 1024 * 1024)).toFixed(0)} GB free
@@ -944,7 +944,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                                     removeFromSavedDestinations(dest);
                                     setSavedDestinations(prev => prev.filter(p => p.toLowerCase() !== dest.toLowerCase()));
                                   }}
-                                  className="p-1 opacity-0 group-hover:opacity-100 hover:bg-secondary rounded transition-all shrink-0"
+                                  className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-secondary rounded transition-all shrink-0"
                                 >
                                   <X className="w-3 h-3 text-muted-foreground" />
                                 </button>
@@ -953,11 +953,37 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                           );
                         })}
                       </div>
-                      <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-1 mb-2">
-                        All Drives
-                      </div>
                     </div>
                   )}
+
+                  {/* Drive Advisor link — promoted ABOVE the drives grid.
+                      Sitting at the bottom meant a confused user had to
+                      scroll past every drive before discovering help.
+                      Heading uses text-foreground (not text-primary) for
+                      legibility on the bg-primary/5 tint. Icon keeps
+                      text-primary because icons-on-tint are the colour
+                      pop the style guide endorses. When nudgeAdvisor
+                      flips to true (25 s on the modal with no pick) we
+                      apply the existing outline-pulse animation. */}
+                  {onOpenDriveAdvisor && (
+                    <button
+                      onClick={onOpenDriveAdvisor}
+                      className={`flex items-center gap-3 p-4 rounded-xl bg-primary/5 border-2 border-dashed border-primary/40 hover:border-primary/60 hover:bg-primary/10 transition-all text-left w-full ${nudgeAdvisor ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-background' : ''}`}
+                      style={nudgeAdvisor ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                    >
+                      <div className="p-2.5 rounded-lg bg-primary/10">
+                        <Info className="w-5 h-5 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-foreground">Not sure which drive? Open Drive Advisor</div>
+                        <div className="text-xs text-muted-foreground">Get personalised guidance on which drive is best for your library</div>
+                      </div>
+                    </button>
+                  )}
+
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-1">
+                    All Drives
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                   {drives.map(drive => {
                     const driveRating = showDriveRatings ? rateDrive(drive, plannedCollectionSizeGB) : null;
@@ -997,32 +1023,6 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                       </button>
                     );
                   })}
-                  {/* Drive Advisor link. Heading uses text-foreground
-                      (not text-primary) so it's actually legible on
-                      the bg-primary/5 tint — pale lavender on
-                      pale-lavender was reading as faint body text per
-                      the style-guide warning. The icon keeps
-                      text-primary because icons-on-tint are the
-                      colour pop the guide explicitly endorses. When
-                      nudgeAdvisor flips to true (25 s on the modal
-                      with no pick) we apply the existing
-                      outline-pulse animation so users who can't
-                      decide get a gentle attention nudge. */}
-                  {onOpenDriveAdvisor && (
-                    <button
-                      onClick={onOpenDriveAdvisor}
-                      className={`flex items-center gap-3 p-4 rounded-xl bg-primary/5 border-2 border-dashed border-primary/40 hover:border-primary/60 hover:bg-primary/10 transition-all text-left group col-span-2 ${nudgeAdvisor ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-background' : ''}`}
-                      style={nudgeAdvisor ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
-                    >
-                      <div className="p-2.5 rounded-lg bg-primary/10">
-                        <Info className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-foreground">Not sure which drive? Open Drive Advisor</div>
-                        <div className="text-xs text-muted-foreground">Get personalised guidance on which drive is best for your library</div>
-                      </div>
-                    </button>
-                  )}
                   </div>
                 </div>
               ) : (entries.length === 0 && !isCreatingFolder) ? (
