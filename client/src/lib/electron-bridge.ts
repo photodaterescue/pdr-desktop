@@ -140,6 +140,23 @@ export function removeAnalysisProgressListener(): void {
   }
 }
 
+/** Diagnostic stream from the analysis pipeline — phase markers,
+ *  memory snapshots, per-large-file timings, skip-and-continue
+ *  reasons, final summary. Renderer just console.logs the strings
+ *  so they surface in F12 alongside other front-end logging during
+ *  a 50 GB Takeout test run. */
+export function onAnalysisDiagnostic(callback: (msg: string) => void): void {
+  if (isElectron() && typeof (window as any).pdr?.onAnalysisDiagnostic === 'function') {
+    (window as any).pdr.onAnalysisDiagnostic(callback);
+  }
+}
+
+export function removeAnalysisDiagnosticListener(): void {
+  if (isElectron() && typeof (window as any).pdr?.removeAnalysisDiagnosticListener === 'function') {
+    (window as any).pdr.removeAnalysisDiagnosticListener();
+  }
+}
+
 export async function saveReport(reportData: Omit<FixReport, 'id' | 'timestamp'>): Promise<{ success: boolean; data?: FixReport; error?: string }> {
   if (isElectron()) {
     return (window as any).pdr.saveReport(reportData);

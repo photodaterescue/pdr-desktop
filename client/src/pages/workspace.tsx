@@ -70,8 +70,10 @@ import {
   openFolderDialog, 
   openZipDialog, 
   runAnalysis, 
-  onAnalysisProgress, 
+  onAnalysisProgress,
   removeAnalysisProgressListener,
+  onAnalysisDiagnostic,
+  removeAnalysisDiagnosticListener,
   getSettings,
   setSetting,
   classifyStorage,
@@ -181,6 +183,22 @@ const handleZoomOut = () => {
 const handleZoomReset = () => {
   applyZoom(100);
 };
+
+// Diagnostic stream from the analysis pipeline. The main process
+// emits [PDR-DIAG ...] phase markers, memory snapshots, per-large-
+// file timings, skip-and-continue warnings, and a final summary
+// during every analysis run. We just console.log them here so
+// they surface in F12's Console tab — particularly during a
+// release-QA run with Settings → Advanced → Bypass-pre-extract
+// turned on against a real 50 GB Google Takeout. Mounted once at
+// component-init; tear down on unmount.
+useEffect(() => {
+  onAnalysisDiagnostic((msg: string) => {
+    // eslint-disable-next-line no-console
+    console.log(msg);
+  });
+  return () => removeAnalysisDiagnosticListener();
+}, []);
 
 // Ctrl+scroll wheel zoom (like browsers and Word) — scoped to the
 // Dashboard / Workspace view only. S&D has its own tile-size cycling that
@@ -8094,6 +8112,10 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // Network upload mode: 'fast' = robocopy /MT:16 staging, 'direct'
   // = legacy fs.createReadStream loop. A/B baseline + kill switch.
   const [networkUploadMode, setNetworkUploadMode] = useState<'fast' | 'direct'>('fast');
+  // Bypass the >2 GB pre-extract path during analysis. Used to QA the
+  // streaming engine on real 50 GB Google Takeouts before deciding
+  // whether the temp-extract step can be retired entirely. Default off.
+  const [bypassLargeZipPreExtract, setBypassLargeZipPreExtract] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -8117,12 +8139,18 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setShowManualReportExports(settings.showManualReportExports);
       setOpenPeopleOnStartup((settings as any).openPeopleOnStartup ?? false);
       setNetworkUploadMode(((settings as any).networkUploadMode as 'fast' | 'direct') ?? 'fast');
+      setBypassLargeZipPreExtract(((settings as any).bypassLargeZipPreExtract as boolean) ?? false);
     });
   }, []);
 
   const handleNetworkUploadModeChange = (mode: 'fast' | 'direct') => {
     setNetworkUploadMode(mode);
     setSetting('networkUploadMode' as any, mode);
+  };
+
+  const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
+    setBypassLargeZipPreExtract(checked);
+    setSetting('bypassLargeZipPreExtract' as any, checked);
   };
 
   const handleSkipDuplicatesToggle = (checked: boolean) => {
@@ -9008,6 +9036,24 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     </IconTooltip>
                   </div>
                 </div>
+              </div>
+
+              {/* Diagnostic — internal QA toggles, mostly relevant
+                  during release testing. Default off across the board. */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">Diagnostic</label>
+                <p className="text-xs text-muted-foreground mb-3">Internal toggles used during release testing. Leave off unless explicitly directed.</p>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Bypass large-zip pre-extract</span>
+                    <span className="text-xs text-muted-foreground">Skip the temporary unpack step for zips over 2 GB and stream them through the analysis engine directly. Used to QA the streaming path on real Google Takeouts. May be slower or less stable on very large archives — leave off for production use.</span>
+                  </div>
+                  <Checkbox
+                    checked={bypassLargeZipPreExtract}
+                    onCheckedChange={(checked) => handleBypassLargeZipPreExtractToggle(!!checked)}
+                    data-testid="checkbox-bypass-large-zip-pre-extract"
+                  />
+                </label>
               </div>
 
               {/* Trees */}

@@ -28,6 +28,42 @@ export function cancelAnalysis(): void {
   analysisCancelled = true;
 }
 
+// ── Diagnostic logging ──────────────────────────────────────────────
+// Used during release-QA runs (e.g. bypass-pre-extract on a 50 GB
+// Google Takeout) to surface phase markers, periodic memory
+// snapshots, per-large-file timings, skip-and-continue reasons, and
+// a final summary. Calls go to:
+//   • console.log → main-process stdout, captured by electron-log
+//     into %APPDATA%\Photo Date Rescue\logs\main.log.
+//   • diagSink (when set) → IPC channel `analysis:diagnostic`,
+//     forwarded to the renderer's F12 console for live monitoring.
+let diagSink: ((msg: string) => void) | null = null;
+function diag(msg: string): void {
+  const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+  const line = `[PDR-DIAG ${ts}] ${msg}`;
+  // Main-process log (file + terminal in dev)
+  console.log(line);
+  // Forward to renderer if a sink is set for this analysis
+  try { diagSink?.(line); } catch {}
+}
+function memSnapshotMB(): { rss: number; heapUsed: number; heapTotal: number; external: number } {
+  const m = process.memoryUsage();
+  const toMB = (b: number) => Math.round(b / (1024 * 1024));
+  return {
+    rss: toMB(m.rss),
+    heapUsed: toMB(m.heapUsed),
+    heapTotal: toMB(m.heapTotal),
+    external: toMB(m.external),
+  };
+}
+let peakRssMB = 0;
+let peakHeapUsedMB = 0;
+function recordPeakMem(): void {
+  const m = memSnapshotMB();
+  if (m.rss > peakRssMB) peakRssMB = m.rss;
+  if (m.heapUsed > peakHeapUsedMB) peakHeapUsedMB = m.heapUsed;
+}
+
 function calculateFileHash(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
@@ -486,6 +522,9 @@ async function scanZipFile(zipPath: string): Promise<ZipScanResult> {
   const entries: ZipEntry[] = [];
   const jsonContents: Map<string, string> = new Map();
 
+  diag(`◆ scanZipFile: opening "${path.basename(zipPath)}" — reading central directory`);
+  const dirOpenStart = Date.now();
+
   // unzipper.Open.file reads the central directory only; per-file
   // contents are pulled on demand via file.buffer() or file.stream().
   const directory = await unzipper.Open.file(zipPath);
@@ -495,22 +534,34 @@ async function scanZipFile(zipPath: string): Promise<ZipScanResult> {
     fileByPath.set(f.path, f);
   }
   const totalRawEntryCount = fileByPath.size;
+  diag(`  central directory ready: ${totalRawEntryCount.toLocaleString()} entries (${Date.now() - dirOpenStart} ms)`);
 
   // Pass 1 — load JSON sidecars into a map. Kept: small payloads, and
   // O(1) lookup for pass 2 is the real speed win this engine was
   // designed around.
+  diag(`◆ Pass 1: loading JSON sidecars`);
+  const pass1Start = Date.now();
+  let jsonCount = 0;
+  let jsonBytes = 0;
   for (const [filePath, file] of fileByPath) {
     if (!filePath.toLowerCase().endsWith('.json')) continue;
     try {
       const buf = await file.buffer();
       jsonContents.set(filePath, buf.toString('utf-8'));
+      jsonCount++;
+      jsonBytes += buf.length;
     } catch (e) {
       console.error('Failed to read JSON sidecar:', filePath, e);
     }
   }
+  recordPeakMem();
+  const pass1Mem = memSnapshotMB();
+  diag(`  Pass 1 complete: ${jsonCount.toLocaleString()} JSON sidecars, ${(jsonBytes / (1024 * 1024)).toFixed(1)} MB total (${Date.now() - pass1Start} ms) — mem rss=${pass1Mem.rss} MB heapUsed=${pass1Mem.heapUsed} MB`);
 
   // Pass 2 — record METADATA only for each media entry. No buffers.
   // Buffers are pulled per-entry during analysis via loadBuffer().
+  diag(`◆ Pass 2: recording media-entry metadata (no buffers)`);
+  const pass2Start = Date.now();
   for (const [filePath, file] of fileByPath) {
     const filename = path.basename(filePath);
     const mediaType = isMediaFile(filename);
@@ -542,6 +593,9 @@ async function scanZipFile(zipPath: string): Promise<ZipScanResult> {
       googleTakeoutJson,
     });
   }
+  recordPeakMem();
+  const pass2Mem = memSnapshotMB();
+  diag(`  Pass 2 complete: ${entries.length.toLocaleString()} media entries (${Date.now() - pass2Start} ms) — mem rss=${pass2Mem.rss} MB heapUsed=${pass2Mem.heapUsed} MB`);
 
   const loadBuffer = async (entryPath: string): Promise<Buffer> => {
     const file = fileByPath.get(entryPath);
@@ -565,15 +619,33 @@ async function scanZipFile(zipPath: string): Promise<ZipScanResult> {
 }
 
 export async function analyzeSource(
-  sourcePath: string, 
+  sourcePath: string,
   sourceType: 'folder' | 'zip' | 'drive',
-  onProgress?: (progress: AnalysisProgress) => void
+  onProgress?: (progress: AnalysisProgress) => void,
+  onDiagnostic?: (msg: string) => void
 ): Promise<SourceAnalysisResult> {
   const sourceLabel = path.basename(sourcePath);
-  
+
   // Reset cancellation flag at start of new analysis
   analysisCancelled = false;
-  
+
+  // Wire up the diagnostic sink for the duration of THIS analysis.
+  // Reset on the way out so a subsequent analysis without an
+  // onDiagnostic callback doesn't accidentally inherit a stale sink.
+  diagSink = onDiagnostic ?? null;
+  peakRssMB = 0;
+  peakHeapUsedMB = 0;
+  const analysisStartedAt = Date.now();
+  const initialMem = memSnapshotMB();
+  diag(`▶ Analysis START — ${sourceType} "${sourceLabel}" (path=${sourcePath})`);
+  diag(`  initial mem: rss=${initialMem.rss} MB, heapUsed=${initialMem.heapUsed} MB / heapTotal=${initialMem.heapTotal} MB, external=${initialMem.external} MB`);
+  if (sourceType === 'zip') {
+    try {
+      const sizeMB = Math.round(fs.statSync(sourcePath).size / (1024 * 1024));
+      diag(`  zip size on disk: ${sizeMB} MB`);
+    } catch { /* best-effort */ }
+  }
+
   onProgress?.({
     current: 0,
     total: 0,
@@ -609,6 +681,12 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
     const totalFiles = zipEntries.length;
     const totalEntries = scan.totalRawEntryCount;
 
+    diag(`◆ Analysis loop START — ${totalFiles.toLocaleString()} media files to process`);
+    const loopStart = Date.now();
+    let lastMemSnapshotAt = loopStart;
+    const LARGE_FILE_TIMING_THRESHOLD = 100 * 1024 * 1024; // 100 MB
+    const MEM_SNAPSHOT_INTERVAL_MS = 2000;
+
     try {
       for (let i = 0; i < zipEntries.length; i++) {
         if (analysisCancelled) {
@@ -619,6 +697,18 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
 
         // Yield every file to keep window responsive (especially for network sources)
         await yieldToEventLoop();
+
+        // Periodic memory snapshot — every ~2 s wall-clock, regardless
+        // of how many files have been processed. Lets us spot a slow
+        // creep across the loop even when individual files are small.
+        const nowTs = Date.now();
+        if (nowTs - lastMemSnapshotAt >= MEM_SNAPSHOT_INTERVAL_MS) {
+          recordPeakMem();
+          const m = memSnapshotMB();
+          const pct = totalFiles > 0 ? Math.round(((i + 1) / totalFiles) * 100) : 0;
+          diag(`  ⌚ ${i + 1}/${totalFiles} (${pct}%) — rss=${m.rss} MB, heapUsed=${m.heapUsed} MB, peakRss=${peakRssMB} MB, peakHeap=${peakHeapUsedMB} MB`);
+          lastMemSnapshotAt = nowTs;
+        }
 
         onProgress?.({
           current: i + 1,
@@ -632,6 +722,7 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
         // scoped to the try block — it's released as soon as the
         // iteration ends, so we never hold more than one file at a
         // time in RAM.
+        const fileStart = entry.size > LARGE_FILE_TIMING_THRESHOLD ? Date.now() : 0;
         try {
           // Stream the entry's bytes in on demand. This is where the
           // memory ceiling dropped from "sum of all media" to "one
@@ -708,7 +799,17 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
           if ((err as Error)?.message === 'ANALYSIS_CANCELLED') throw err;
           const reason = (err as Error)?.message ?? String(err);
           skippedFiles.push({ filename: entry.filename, reason });
+          const sizeMB = (entry.size / (1024 * 1024)).toFixed(1);
+          diag(`  ⚠ SKIP ${entry.filename} (${sizeMB} MB) — ${reason}`);
           console.warn(`[analysis] skipping ${entry.filename}: ${reason}`);
+        }
+
+        // After the iteration completes, log per-file timing for
+        // anything over the large-file threshold so we can see if a
+        // specific file (e.g. a long phone video) stalls the loop.
+        if (fileStart > 0) {
+          const sizeMB = (entry.size / (1024 * 1024)).toFixed(1);
+          diag(`  ⏱ large file: ${entry.filename} (${sizeMB} MB) processed in ${Date.now() - fileStart} ms`);
         }
       }
     } finally {
@@ -720,6 +821,15 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
       console.warn(`[analysis] ${skippedFiles.length} file${skippedFiles.length === 1 ? '' : 's'} couldn't be processed:`, skippedFiles.slice(0, 10));
     }
     void totalEntries;
+
+    recordPeakMem();
+    const finalMem = memSnapshotMB();
+    const elapsedSec = ((Date.now() - loopStart) / 1000).toFixed(1);
+    const totalElapsedSec = ((Date.now() - analysisStartedAt) / 1000).toFixed(1);
+    diag(`◆ Analysis loop COMPLETE — ${totalFiles.toLocaleString()} processed, ${skippedFiles.length} skipped (${elapsedSec}s loop, ${totalElapsedSec}s total)`);
+    diag(`  final mem: rss=${finalMem.rss} MB, heapUsed=${finalMem.heapUsed} MB`);
+    diag(`  PEAK mem during analysis: rss=${peakRssMB} MB, heapUsed=${peakHeapUsedMB} MB`);
+    diag(`  dedup: ${seenHashes.size} unique hashes, ${seenHeuristics.size} heuristic keys, ${duplicatesRemoved} duplicates flagged`);
 
     onProgress?.({
       current: totalFiles,
@@ -804,6 +914,13 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
       phase: 'complete'
     });
   }
+
+  // Final summary line + release the diagnostic sink. If we threw
+  // earlier the sink leaks until the next analyzeSource runs, which
+  // is harmless — the next call resets diagSink at its top.
+  const totalSec = ((Date.now() - analysisStartedAt) / 1000).toFixed(1);
+  diag(`▶ Analysis END — ${analyzedFiles.length.toLocaleString()} files in result, ${duplicatesRemoved} dups, ${(totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB total payload (${totalSec}s)`);
+  diagSink = null;
 
   return {
     sourcePath,

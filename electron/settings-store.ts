@@ -64,6 +64,16 @@ export interface PDRSettings {
    *  enables the setting from the banner or explicitly dismisses it. */
   pmStartupPromptDismissed: boolean;
 
+  /** When true, the analysis pipeline bypasses the >2 GB pre-extract
+   *  path and runs every zip through the streaming `unzipper` engine
+   *  regardless of size. Used as a release-gate test before deciding
+   *  whether the pre-extract path can be retired entirely. Default off
+   *  — current production behaviour preserved. Surfaced as a toggle
+   *  in Settings → Advanced ("Bypass large-zip pre-extract") so we
+   *  can flip it without rebuilding for QA runs against real 50 GB
+   *  Google Takeouts. */
+  bypassLargeZipPreExtract: boolean;
+
   /** Network-destination upload mode.
    *    'fast'   — stage to local temp, mirror to network with
    *               robocopy /MT:16 (5–10× faster on SMB shares).
@@ -124,6 +134,7 @@ export const optimisedDefaults: PDRSettings = {
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
   networkUploadMode: 'fast',
+  bypassLargeZipPreExtract: false,
 };
 
 const store = new Store<PDRSettings>({
@@ -160,6 +171,7 @@ export function getSettings(): PDRSettings {
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
     networkUploadMode: store.get('networkUploadMode', optimisedDefaults.networkUploadMode),
+    bypassLargeZipPreExtract: store.get('bypassLargeZipPreExtract', optimisedDefaults.bypassLargeZipPreExtract),
   };
 }
 

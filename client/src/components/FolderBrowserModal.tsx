@@ -992,7 +992,16 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                   )}
                   </div>
                 </div>
-              ) : entries.length === 0 ? (
+              ) : (entries.length === 0 && !isCreatingFolder) ? (
+                // "This folder is empty" message replaces the file list
+                // ONLY when there's nothing to show AND the user isn't
+                // mid-create. Without the `&& !isCreatingFolder` guard,
+                // clicking New Folder inside an empty directory swapped
+                // setIsCreatingFolder to true but this branch still won —
+                // so the input never rendered (it lives in the populated
+                // branch below) and the button looked broken. Reproduced
+                // by Terry on D:\2. PDR Testing\ on a fresh 2 TB drive,
+                // 03/05/2026.
                 <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
                   <Folder className="w-9 h-9 text-muted-foreground/30" />
                   <span className="text-base">This folder is empty</span>

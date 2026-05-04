@@ -107,6 +107,13 @@ export interface ElectronAPI {
   }>;
   onAnalysisProgress: (callback: (progress: AnalysisProgress) => void) => void;
   removeAnalysisProgressListener: () => void;
+  /** Diagnostic message stream from the analysis pipeline.
+   *  Used by Settings → Advanced → Bypass-pre-extract test runs to
+   *  surface phase markers, memory snapshots, per-large-file timings,
+   *  skip-and-continue warnings, and the final summary in F12 console
+   *  during release QA. Each msg is a pre-formatted string. */
+  onAnalysisDiagnostic: (callback: (msg: string) => void) => void;
+  removeAnalysisDiagnosticListener: () => void;
   saveReport: (reportData: Omit<FixReport, 'id' | 'timestamp'>) => Promise<{
     success: boolean;
     data?: FixReport;

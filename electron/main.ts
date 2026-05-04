@@ -1523,10 +1523,20 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
 
       effectivePath = tempDir;
       effectiveType = 'folder';
-    } else if (sourceType === 'zip' && getZipFileSize(sourcePath) > LARGE_ZIP_THRESHOLD) {
+    } else if (
+      sourceType === 'zip' &&
+      getZipFileSize(sourcePath) > LARGE_ZIP_THRESHOLD &&
+      // Settings escape hatch: if the user has toggled "Bypass large-zip
+      // pre-extract" in Settings → Advanced, fall through to the
+      // streaming `scanZipFile` path regardless of zip size. Used during
+      // QA against real 50 GB Google Takeouts to confirm the streaming
+      // engine + skip-and-continue holds without the temp-dir step. If
+      // it does, the pre-extract path can be retired entirely.
+      !((() => { try { return getSettings().bypassLargeZipPreExtract === true; } catch { return false; } })())
+    ) {
       tempDir = generateTempDirName(sourcePath);
       activeTempDirs.add(tempDir);
-      
+
       // Notify renderer about the extraction
       mainWindow?.webContents.send('analysis:progress', {
         current: 0,
@@ -1534,7 +1544,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
         currentFile: 'This Google Takeout is large — PDR is unpacking it temporarily so it can analyse your photos safely. Originals are untouched.',
         phase: 'scanning'
       });
-      
+
       await extractLargeZip(sourcePath, tempDir, (message, current, total) => {
         mainWindow?.webContents.send('analysis:progress', {
           current: current || 0,
@@ -1543,15 +1553,26 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
           phase: 'scanning'
         });
       });
-      
+
       // Analyse the extracted folder instead of the ZIP
       effectivePath = tempDir;
       effectiveType = 'folder';
     }
     
-    const results = await analyzeSource(effectivePath, effectiveType, (progress) => {
-      mainWindow?.webContents.send('analysis:progress', progress);
-    });
+    const results = await analyzeSource(
+      effectivePath,
+      effectiveType,
+      (progress) => {
+        mainWindow?.webContents.send('analysis:progress', progress);
+      },
+      // Diagnostic sink — forwards [PDR-DIAG ...] lines to the renderer
+      // so they show up in F12 console alongside whatever else the
+      // renderer is logging. Kept off the progress channel so the
+      // progress UI's existing payload contract isn't muddied.
+      (msg) => {
+        mainWindow?.webContents.send('analysis:diagnostic', msg);
+      },
+    );
     
     // Preserve original source path in the results so copy phase knows where to find the ZIP
     if (tempDir) {

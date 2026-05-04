@@ -18,6 +18,19 @@ removeAnalysisProgressListener: () => {
   ipcRenderer.removeAllListeners('analysis:progress');
 },
 
+// Diagnostic stream — release-testing telemetry from the analysis
+// pipeline (phase markers, periodic memory snapshots, per-large-file
+// timings, skip-and-continue warnings, final summary). Renderer
+// just console.logs these so they land in F12 alongside any other
+// front-end logging during a 50 GB Takeout test run.
+onAnalysisDiagnostic: (callback: (msg: string) => void) => {
+  ipcRenderer.on('analysis:diagnostic', (_: any, msg: string) => callback(msg));
+},
+
+removeAnalysisDiagnosticListener: () => {
+  ipcRenderer.removeAllListeners('analysis:diagnostic');
+},
+
 copyFiles: (data: { files: Array<{ sourcePath: string; newFilename: string; sourceType: 'folder' | 'zip' }>; destinationPath: string; zipPaths?: Record<string, string>; photoFormat?: 'original' | 'png' | 'jpg' }) => ipcRenderer.invoke('files:copy', data),
 onCopyProgress: (callback: (progress: { current: number; total: number }) => void) => {
   ipcRenderer.on('files:copy:progress', (_event: any, progress: any) => callback(progress));
