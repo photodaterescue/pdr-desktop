@@ -303,6 +303,13 @@ useEffect(() => {
     return [];
   });
 
+  // Race-guard: the persist effect below would otherwise fire on
+  // first render with the useState initial value (null) BEFORE the
+  // rehydrate effect has read the previously-saved destination,
+  // wiping it out. We only allow writes once the rehydrate read has
+  // resolved.
+  const destinationHydratedRef = React.useRef(false);
+
   // On mount: check rememberSources setting — if OFF, clear persisted sources.
   // Also rehydrate the persisted Library Drive (destinationPath) from
   // electron-store so the user lands back into a working workspace
@@ -321,15 +328,20 @@ useEffect(() => {
         // the destination-info effect below as soon as the path is set.
         setDestinationPath(settings.destinationPath);
       }
+    }).finally(() => {
+      // Open the persist gate AFTER the rehydrate read has finished,
+      // regardless of whether it produced a value. From this point
+      // forward, every setDestinationPath change (including explicit
+      // nulls from Remove Source / Change Source) will persist.
+      destinationHydratedRef.current = true;
     });
   }, []);
 
   // Persist destination changes to electron-store so the choice
-  // survives app restarts. Fires on every setDestinationPath call —
-  // including the explicit `null` resets in handleRemoveSource /
-  // handleChangeSource / pdr-clear-sources — which is the desired
-  // behaviour (clearing the destination should stick too).
+  // survives app restarts. Gated on destinationHydratedRef so the
+  // initial-render null doesn't clobber a previously-saved value.
   useEffect(() => {
+    if (!destinationHydratedRef.current) return;
     setSetting('destinationPath', destinationPath).catch((err) => {
       console.warn('[Workspace] Failed to persist destinationPath:', err);
     });

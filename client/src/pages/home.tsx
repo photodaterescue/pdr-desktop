@@ -167,22 +167,6 @@ export default function Home() {
       canZoomIn={zoom.canZoomIn}
       canZoomOut={zoom.canZoomOut}
     />
-    {/* Discrete Help & Support entry point. Stacked above the zoom
-        pill in the same right margin so they read as one "tools"
-        cluster. Always accessible — even pre-destination — so a
-        confused first-time user can read the guides without being
-        forced through the Library Drive step first. */}
-    <div className="fixed right-5 bottom-[5.75rem] z-40">
-      <IconTooltip label="Help & Support" side="left">
-        <button
-          onClick={() => navigate("/workspace?panel=help-support")}
-          className="flex items-center justify-center w-9 h-9 rounded-full bg-background/90 backdrop-blur-sm border border-border/30 text-muted-foreground hover:text-foreground hover:bg-primary/10 shadow-md hover:shadow-lg hover:-translate-y-0.5 opacity-80 hover:opacity-100 transition-all duration-300 ease-out"
-          aria-label="Help & Support"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </button>
-      </IconTooltip>
-    </div>
     {/* Outer wrapper scrolls. Inner flex column is `min-h-full` so it
     // still vertically-centres when there's room, but once content
     // exceeds the viewport (narrow / short windows) it grows from the
@@ -319,37 +303,61 @@ export default function Home() {
           </div>
         </motion.div>
 
-        {/* Go to Workspace Link — quiet escape hatch. Disabled while
-            no destination is set so users can't bypass the Library
-            Drive step from here. */}
-		<motion.div variants={item} className="mb-4 -mt-2">
+        {/* Go to Workspace Link — quiet escape hatch. Fully disabled
+            while no destination is set so users can't bypass the
+            Library Drive step from here. We collapse it (h-0,
+            invisible) rather than removing it so the rest of the
+            page doesn't reflow as the destination loads, and so the
+            visual rhythm of the page stays the same once it lights
+            up. */}
+		<motion.div variants={item} className={`mb-4 -mt-2 ${cardsLocked ? 'pointer-events-none opacity-30' : ''}`}>
 		  <button
-			onClick={cardsLocked ? triggerHeroPulse : () => navigate("/workspace")}
-			className={`text-sm font-medium flex items-center transition-colors group ${cardsLocked ? 'text-muted-foreground/40 hover:text-muted-foreground/60' : 'text-muted-foreground hover:text-primary'}`}
+			onClick={cardsLocked ? undefined : () => navigate("/workspace")}
+			disabled={cardsLocked}
+			className={`text-sm font-medium flex items-center transition-colors group ${cardsLocked ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:text-primary'}`}
 		  >
 			Go to Workspace
 		  </button>
 		</motion.div>
 
 
-        <motion.div variants={item} className="flex flex-col items-center gap-6">
-          <div className="flex items-center space-x-2">
+        {/* Bottom row: 3-column grid so the Skip checkbox stays
+            optically centred while the Help & Support ? sits at the
+            right edge of content (under the People card, on the same
+            vertical level as the checkbox). Avoids a viewport-fixed
+            position that collides with the zoom pill. */}
+        <motion.div variants={item} className="grid w-full max-w-[1200px] grid-cols-3 items-center gap-4">
+          <div /> {/* left spacer for symmetry */}
+          <div className="flex items-center justify-center space-x-2">
             <Checkbox
               id="skip"
               checked={skipScreen}
+              disabled={cardsLocked}
               onCheckedChange={(checked) => {
+                if (cardsLocked) return;
                 const isChecked = checked === true;
                 setSkipScreen(isChecked);
                 setSkipWelcomeScreen(isChecked);
               }}
-              className="border-muted-foreground/30 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+              className="border-muted-foreground/30 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground disabled:opacity-40"
             />
             <label
               htmlFor="skip"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground"
+              className={`text-sm font-medium leading-none ${cardsLocked ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground'}`}
             >
               Skip this screen next time
             </label>
+          </div>
+          <div className="flex justify-end">
+            <IconTooltip label="Help & Support" side="left">
+              <button
+                onClick={() => navigate("/workspace?panel=help-support")}
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-background/90 backdrop-blur-sm border border-border/30 text-muted-foreground hover:text-foreground hover:bg-primary/10 shadow-md hover:shadow-lg hover:-translate-y-0.5 opacity-80 hover:opacity-100 transition-all duration-300 ease-out"
+                aria-label="Help & Support"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+            </IconTooltip>
           </div>
         </motion.div>
       </motion.div>

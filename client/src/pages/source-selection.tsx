@@ -3,7 +3,6 @@ import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
 import { HardDrive, ArrowRight, Info } from "lucide-react";
 import { Card } from "@/components/ui/custom-card";
-import { Button } from "@/components/ui/custom-button";
 import { isElectron } from "@/lib/electron-bridge";
 import { useZoomLevel } from "@/hooks/useZoomLevel";
 import { ZoomControls } from "@/components/ZoomControls";
@@ -109,20 +108,13 @@ export default function SourceSelection() {
           />
         </motion.div>
 
-        {/* Escape hatch: returning users who already have a sticky
-            destination from a previous session can skip this screen
-            entirely. We deliberately lean on Workspace's own logic
-            (it shows "Select Destination" prominently if none is set)
-            so this button isn't a footgun for first-time users. */}
-        <motion.div variants={item} className="mt-10">
-          <Button
-            variant="secondary"
-            size="lg"
-            onClick={() => setLocation('/workspace')}
-          >
-            Go to Workspace
-          </Button>
-        </motion.div>
+        {/* Escape hatch removed deliberately. The interim only renders
+            for users without a sticky destination — there's no
+            legitimate reason to skip past it, and letting them do so
+            puts them in a Workspace whose chrome is gated on a
+            Library Drive being set. Returning users skip this screen
+            entirely via the Welcome hero (which routes straight to
+            /workspace when destinationPath is set). */}
       </motion.div>
     </div>
     </>
