@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('pdr', {
   runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', tempDirOverride?: string) =>
   ipcRenderer.invoke('analysis:run', sourcePath, sourceType, tempDirOverride),
 
+  getFileSize: (filePath: string) => ipcRenderer.invoke('file:getSize', filePath),
+
   cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
 
   // Best-effort cleanup of any extracted temp dir associated with a

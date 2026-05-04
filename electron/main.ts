@@ -2039,6 +2039,21 @@ ipcMain.handle('files:copy:cancel', async () => {
   return { success: true };
 });
 
+// Lightweight file-size probe used by the renderer to decide whether
+// a soon-to-be-added source is a "large zip" before triggering
+// analysis. The source-add guard refuses a 2nd large zip in the
+// source list at this point so the user gets a clear "process this
+// one first" modal instead of silently queueing concurrent
+// extractions. fs.statSync is fine here — paths are local in every
+// realistic flow.
+ipcMain.handle('file:getSize', async (_event, filePath: string) => {
+  try {
+    return { success: true, sizeBytes: fs.statSync(filePath).size };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
 ipcMain.handle('files:copy', async (_event, data: {
   files: Array<{ 
     sourcePath: string; 

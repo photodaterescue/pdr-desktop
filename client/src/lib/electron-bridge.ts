@@ -154,6 +154,31 @@ export async function runAnalysis(
   return { success: false, error: 'Not running in Electron environment' };
 }
 
+/**
+ * Source-add-time large-zip threshold. Mirrors LARGE_ZIP_THRESHOLD in
+ * electron/main.ts (2 GiB). Files at or above this size go through
+ * the pre-extract path during analysis; the source-add guard uses
+ * the same threshold to refuse a 2nd large zip in the source list.
+ */
+export const LARGE_ZIP_THRESHOLD_BYTES = 2 * 1024 * 1024 * 1024;
+
+/**
+ * Lightweight file-size probe. Returns null if the file is missing
+ * or the bridge isn't available. Used by the source-add guard to
+ * classify a freshly-picked zip as "large" before triggering
+ * analysis.
+ */
+export async function getFileSize(filePath: string): Promise<number | null> {
+  if (!isElectron()) return null;
+  try {
+    const r = await (window as any).pdr.getFileSize(filePath);
+    if (r?.success && typeof r.sizeBytes === 'number') return r.sizeBytes;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function onAnalysisProgress(callback: (progress: AnalysisProgress) => void): void {
   if (isElectron()) {
     (window as any).pdr.onAnalysisProgress(callback);

@@ -993,6 +993,41 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
 };
   
   const handleElectronSourceSelected = async (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', skipStorageCheck: boolean = false, tempDirOverride?: string) => {
+  // One-large-zip-at-a-time SOURCE-LIST guard. Refuses to queue a
+  // second >= 2 GB zip while another is already in the source list.
+  // Sequential processing PLUS the success-path temp-cleanup hook
+  // means two large zips would normally process safely one after
+  // the other, but this conservative refusal sidesteps the edge
+  // cases (cleanup failure, app crash mid-run, user runs Fix on
+  // both before either finishes) where cumulative disk usage could
+  // explode. The IPC-level largeExtractInFlight gate in main.ts
+  // catches genuinely concurrent extracts; this catches the queue.
+  // Skipped when tempDirOverride is set — that's a smart-prompt
+  // re-fire of an analysis that already passed this check.
+  if (sourceType === 'zip' && !tempDirOverride) {
+    const { getFileSize: probeFileSize, LARGE_ZIP_THRESHOLD_BYTES: LARGE_ZIP } = await import('@/lib/electron-bridge');
+    const newSize = await probeFileSize(sourcePath);
+    if (newSize !== null && newSize >= LARGE_ZIP) {
+      // Probe each existing zip source in parallel; find the first
+      // that's also >= the threshold.
+      const probes = await Promise.all(
+        sources
+          .filter(s => s.type === 'zip' && s.path && s.path !== sourcePath)
+          .map(async s => ({ source: s, size: await probeFileSize(s.path!) })),
+      );
+      const conflicting = probes.find(p => p.size !== null && p.size >= LARGE_ZIP);
+      if (conflicting) {
+        const existingName = conflicting.source.name || (conflicting.source.path ?? '').split(/[\\/]/).pop() || 'the existing zip';
+        const newName = sourcePath.split(/[\\/]/).pop() || 'this zip';
+        toast.error(
+          `PDR processes one large zip at a time. Remove "${existingName}" from the source list before adding "${newName}".`,
+          { duration: 8000 },
+        );
+        return;
+      }
+    }
+  }
+
   // Check storage speed BEFORE scanning (for sources from interim screen)
   if (sourceType !== 'zip' && !skipStorageCheck) {
     try {
@@ -8924,16 +8959,53 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 </div>
               </div>
 
+              {/* Reset onboarding — always-visible user setting. Lets a
+                  user redo their Library Drive + Library Planner +
+                  Drive Advisor choices without uninstalling the app
+                  or hand-editing localStorage. Doesn't touch
+                  sources, reports, AI data, or licence so the user
+                  doesn't lose work. Lives outside Diagnostic so it
+                  reaches packaged production builds (the diagnostic
+                  block below is DEV-only because the bypass toggle
+                  carries crash risk on phone videos > 1 GB). */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-foreground mb-1">Reset</label>
+                <p className="text-xs text-muted-foreground mb-3">Redo onboarding choices. Doesn't affect sources, reports, AI data, or your licence.</p>
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border">
+                  <div className="flex flex-col mr-3">
+                    <span className="text-sm font-medium text-foreground">Reset onboarding</span>
+                    <span className="text-xs text-muted-foreground">Clears the Library Drive, Library Planner answers, and Drive Advisor skip flag. Reloads the app so the destination-first flow runs from scratch.</span>
+                  </div>
+                  <Button
+                    variant="caution"
+                    size="sm"
+                    onClick={async () => {
+                      localStorage.removeItem('pdr-library-planner-complete');
+                      localStorage.removeItem('pdr-library-planner-size');
+                      localStorage.removeItem('pdr-library-planner-multi');
+                      localStorage.removeItem('pdr-skip-dest-advisor');
+                      try {
+                        await setSetting('destinationPath' as any, null as any);
+                      } catch { /* best-effort */ }
+                      window.location.reload();
+                    }}
+                    data-testid="button-reset-onboarding"
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </div>
+
               {/* Diagnostic — internal QA toggles, mostly relevant
                   during release testing. The whole subsection is
                   gated behind `import.meta.env.DEV` so it never
-                  surfaces in packaged production builds — these
-                  toggles can leave the app in an unsupported state
-                  (the bypass-pre-extract path crashes on phone
-                  videos > 1 GB) and must not be reachable by end
-                  users. Vite replaces `import.meta.env.DEV` with a
-                  literal `false` at build time, so the entire
-                  subtree is dead-code-eliminated from the bundle. */}
+                  surfaces in packaged production builds — the
+                  bypass-pre-extract toggle can leave the app in an
+                  unsupported state (crashes on phone videos > 1 GB)
+                  and must not be reachable by end users. Vite
+                  replaces `import.meta.env.DEV` with a literal
+                  `false` at build time, so the entire subtree is
+                  dead-code-eliminated from the bundle. */}
               {import.meta.env.DEV && (
                 <div className="pt-4 border-t border-border">
                   <label className="block text-sm font-medium text-foreground mb-1">Diagnostic <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50 ml-2">DEV-ONLY</span></label>
@@ -8949,39 +9021,6 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       data-testid="checkbox-bypass-large-zip-pre-extract"
                     />
                   </label>
-
-                  {/* Reset onboarding — clears Library Planner +
-                      Drive Advisor localStorage flags, wipes the
-                      sticky destinationPath in electron-store, and
-                      hard-reloads the renderer so every component
-                      re-initialises from a clean slate. Used to
-                      retest the destination-first first-time flow
-                      from Welcome → interim → planner → DDA →
-                      browser without manually clearing localStorage
-                      via DevTools. */}
-                  <div className="flex items-center justify-between p-3 mt-2 rounded-lg border border-border">
-                    <div className="flex flex-col mr-3">
-                      <span className="text-sm font-medium text-foreground">Reset onboarding</span>
-                      <span className="text-xs text-muted-foreground">Clears the Library Drive, Library Planner answers, and Drive Advisor skip flag. Reloads the app so the destination-first flow runs from scratch. Doesn't touch sources, reports, AI data, or licence.</span>
-                    </div>
-                    <Button
-                      variant="caution"
-                      size="sm"
-                      onClick={async () => {
-                        localStorage.removeItem('pdr-library-planner-complete');
-                        localStorage.removeItem('pdr-library-planner-size');
-                        localStorage.removeItem('pdr-library-planner-multi');
-                        localStorage.removeItem('pdr-skip-dest-advisor');
-                        try {
-                          await setSetting('destinationPath' as any, null as any);
-                        } catch { /* best-effort */ }
-                        window.location.reload();
-                      }}
-                      data-testid="button-reset-onboarding"
-                    >
-                      Reset
-                    </Button>
-                  </div>
                 </div>
               )}
 
