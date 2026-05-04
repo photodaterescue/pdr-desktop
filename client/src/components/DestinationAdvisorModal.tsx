@@ -14,7 +14,13 @@ interface DestinationAdvisorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onContinue: () => void; // User wants to proceed to folder browser
-  currentSourceSizeGB: number;
+  /** Size of the currently-selected source in GB. Pass null when the
+   *  user is picking a destination BEFORE selecting a source (the
+   *  destination-first flow on the Welcome interim) — copy and
+   *  estimates that depend on a source size are suppressed in that
+   *  mode and the helpers fall back to the planner's collection
+   *  estimate. */
+  currentSourceSizeGB: number | null;
   plannedCollectionSizeGB?: number | null; // From Library Planner — total collection estimate
 }
 
@@ -407,8 +413,11 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                     <HardDrive className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                     <div>
                       <p className="text-[13px] font-medium">Plenty of space for growth</p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">Your current source is {currentSourceSizeGB.toFixed(1)} GB. Plan for your entire collection —
-                        a typical library grows significantly as you add more sources over time.</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {currentSourceSizeGB !== null && currentSourceSizeGB > 0 && (
+                          <>Your current source is {currentSourceSizeGB.toFixed(1)} GB. </>
+                        )}
+                        Plan for your entire collection — a typical library grows significantly as you add more sources over time.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5 p-3 rounded-lg bg-secondary/30">
@@ -504,7 +513,7 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                     </div>
 
                     {/* Summary lines */}
-                    {generateQuickSummary(drives, currentSourceSizeGB, collectionSizeGB).map((line, i) => (
+                    {generateQuickSummary(drives, currentSourceSizeGB ?? 0, collectionSizeGB).map((line, i) => (
                       <p key={i} className="text-[13px] text-muted-foreground leading-relaxed flex items-start gap-2">
                         <span className="text-primary mt-0.5 shrink-0">•</span>
                         <span>{line}</span>
@@ -676,7 +685,7 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
             {!loading && (() => {
               const nonSystemWithSpace = sortedDrives.filter(d =>
                 !d.isSystemDrive && d.type !== 'CD/DVD' &&
-                (d.freeBytes / (1024 * 1024 * 1024)) >= Math.max(currentSourceSizeGB, 10) &&
+                (d.freeBytes / (1024 * 1024 * 1024)) >= Math.max(currentSourceSizeGB ?? 0, 10) &&
                 (d.totalBytes / (1024 * 1024 * 1024)) >= 16
               );
               const systemDrive = sortedDrives.find(d => d.isSystemDrive);
