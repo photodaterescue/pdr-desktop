@@ -32,6 +32,25 @@ import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
  * navigate to /workspace and Workspace's rehydrate effect picks the
  * value back up.
  */
+/**
+ * Format library planner answers into a one-line summary for the
+ * "Library plan: …" reminder line inside FolderBrowserModal.
+ * Returns null when nothing has been answered yet (the modal then
+ * suppresses the whole reminder row).
+ */
+function formatPlannerSummary(answers: LibraryPlannerAnswers | null): string | null {
+  if (!answers) return null;
+  const sizeLabel = answers.collectionSizeGB >= 1000
+    ? `~${(answers.collectionSizeGB / 1024).toFixed(1)} TB`
+    : `~${answers.collectionSizeGB} GB`;
+  const multi = answers.multipleSourcesPlanned === 'yes'
+    ? 'multi-source'
+    : answers.multipleSourcesPlanned === 'no'
+      ? 'single source'
+      : 'unsure on sources';
+  return `${sizeLabel} · ${multi}`;
+}
+
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
   // Per-surface zoom — separate key so this transient screen can't
@@ -215,6 +234,8 @@ export default function SourceSelection() {
           title="Pick Library Drive"
           mode="folder"
           onOpenDriveAdvisor={() => { setShowDestBrowser(false); setShowDestAdvisor(true); }}
+          onOpenLibraryPlanner={() => { setShowDestBrowser(false); setShowLibraryPlanner(true); }}
+          plannerSummary={formatPlannerSummary(libraryPlannerAnswers)}
           plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
           enableSavedLocations
           showDriveRatings

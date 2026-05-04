@@ -4,7 +4,7 @@ import {
   X, HardDrive, Folder, FolderOpen, FolderPlus, ChevronRight, ChevronLeft, ChevronDown,
   Image, ArrowLeft, ArrowRight, AlertCircle, Loader2, Monitor, ZoomIn, ZoomOut, Pencil,
   FileArchive, LayoutGrid, List, Table2, CheckCircle2, AlertTriangle, Info, Zap, Wifi, ExternalLink,
-  FileText, Download, Music, Film, User
+  FileText, Download, Music, Film, User, RotateCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
@@ -72,6 +72,19 @@ interface FolderBrowserModalProps {
   plannedCollectionSizeGB?: number | null;
   enableSavedLocations?: boolean;
   showDriveRatings?: boolean;
+  /** Re-open the Library Planner from inside the picker. Surfaced as
+   *  a discrete "Re-answer" link below the Drive Advisor tile when
+   *  the user has previously answered the planner — handy when a
+   *  collection has grown and the originally-chosen "small/medium"
+   *  bucket no longer fits. The parent owns the planner modal
+   *  itself; this prop just gives the picker a way to ask it to
+   *  open. */
+  onOpenLibraryPlanner?: () => void;
+  /** A short summary of the user's current planner answers — e.g.
+   *  "~500 GB · multi-source: yes". Rendered next to the Re-answer
+   *  link so the user can sanity-check what they previously said
+   *  without re-opening the modal. Suppressed when null. */
+  plannerSummary?: string | null;
 }
 
 const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
@@ -109,7 +122,7 @@ interface TreeNode {
   hasSubfolders?: boolean;
 }
 
-export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select Folder', mode = 'folder', defaultPath, onOpenDriveAdvisor, plannedCollectionSizeGB, enableSavedLocations, showDriveRatings = false }: FolderBrowserModalProps) {
+export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select Folder', mode = 'folder', defaultPath, onOpenDriveAdvisor, plannedCollectionSizeGB, enableSavedLocations, showDriveRatings = false, onOpenLibraryPlanner, plannerSummary }: FolderBrowserModalProps) {
   const mouseDownOnBackdropRef = useRef(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [quickAccess, setQuickAccess] = useState<QuickAccessPaths | null>(null);
@@ -179,23 +192,56 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   // colour-coded ALL DRIVES grid wants two columns to read cleanly.
   const [modalSize, setModalSize] = useState({ width: 1080, height: 744 });
 
-  // Drive Advisor 25 s nudge. If the user has been staring at the
-  // modal for 25 seconds without picking, surface attention to the
+  // Drive Advisor 20 s nudge. If the user has been staring at the
+  // modal for 20 seconds without picking, surface attention to the
   // "Not sure which drive? Open Drive Advisor" button via the same
   // outline-pulse animation the destination CTA on Workspace uses.
-  // The button is at the bottom of the drives grid by design (it's
-  // a fallback, not the primary action), but a confused user
-  // shouldn't have to scroll to discover help — the nudge brings
-  // their eye to it.
+  // The button sits ABOVE the drives grid so the nudge is mostly a
+  // gentle reinforcement of an already-visible affordance.
   const [nudgeAdvisor, setNudgeAdvisor] = useState(false);
   useEffect(() => {
     if (!isOpen || !onOpenDriveAdvisor) {
       setNudgeAdvisor(false);
       return;
     }
-    const timer = setTimeout(() => setNudgeAdvisor(true), 25000);
+    const timer = setTimeout(() => setNudgeAdvisor(true), 20000);
     return () => clearTimeout(timer);
   }, [isOpen, onOpenDriveAdvisor]);
+
+  // Per-user hidden drives — letters of drives the user has chosen
+  // not to see in the picker (e.g. recovery partitions, system
+  // reserved). Persisted in localStorage so the next visit honours
+  // the same shortlist. Stored lowercase for case-insensitive
+  // comparison. `showHiddenDrives` is a transient toggle — flipping
+  // it on temporarily reveals hidden drives so the user can restore
+  // them.
+  const HIDDEN_DRIVES_KEY = 'pdr-hidden-drives';
+  const [hiddenDrives, setHiddenDrives] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(HIDDEN_DRIVES_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.map((s: string) => s.toLowerCase()) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showHiddenDrives, setShowHiddenDrives] = useState(false);
+  const isDriveHidden = (letter: string) => hiddenDrives.includes(letter.toLowerCase());
+  const hideDrive = (letter: string) => {
+    setHiddenDrives(prev => {
+      const next = Array.from(new Set([...prev, letter.toLowerCase()]));
+      try { localStorage.setItem(HIDDEN_DRIVES_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const unhideDrive = (letter: string) => {
+    setHiddenDrives(prev => {
+      const next = prev.filter(l => l !== letter.toLowerCase());
+      try { localStorage.setItem(HIDDEN_DRIVES_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
   const [isResizing, setIsResizing] = useState(false);
   const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
   const pendingDefaultPathRef = useRef<string | null>(null);
@@ -981,46 +1027,114 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                     </button>
                   )}
 
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium px-1">
-                    All Drives
+                  {/* Library Planner re-access. Shown only when the
+                      caller has both wired up `onOpenLibraryPlanner`
+                      AND has a `plannerSummary` to show — which means
+                      the user previously answered the planner. The
+                      summary acts as a reminder ("you said your
+                      collection is ~500 GB"); the Re-answer link is
+                      a discrete escape hatch for when their estimate
+                      has changed (collection grew, source list
+                      shrank, etc). Lives between the Drive Advisor
+                      tile and the All Drives grid so it's adjacent
+                      to the drive-rating context that depends on
+                      these answers. */}
+                  {onOpenLibraryPlanner && plannerSummary && (
+                    <div className="flex items-center justify-between px-1 -mt-1 text-xs">
+                      <span className="text-muted-foreground">
+                        Library plan: <span className="text-foreground font-medium">{plannerSummary}</span>
+                      </span>
+                      <button
+                        onClick={onOpenLibraryPlanner}
+                        className="text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                      >
+                        Re-answer
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-baseline justify-between px-1">
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                      All Drives
+                    </div>
+                    {hiddenDrives.length > 0 && (
+                      <button
+                        onClick={() => setShowHiddenDrives(s => !s)}
+                        className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                      >
+                        {showHiddenDrives
+                          ? `Hide ${hiddenDrives.length} hidden`
+                          : `Show ${hiddenDrives.length} hidden`}
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                  {drives.map(drive => {
+                  {drives
+                    .filter(drive => showHiddenDrives || !isDriveHidden(drive.letter))
+                    .map(drive => {
                     const driveRating = showDriveRatings ? rateDrive(drive, plannedCollectionSizeGB) : null;
+                    const hidden = isDriveHidden(drive.letter);
                     return (
-                      <button
+                      <div
                         key={drive.letter}
-                        onClick={() => navigateTo(drive.letter + '\\')}
-                        className={`flex items-center gap-3 p-4 rounded-xl bg-card border-2 transition-all text-left group ${
-                          driveRating ? ratingStyles[driveRating.rating] : 'border-border hover:border-primary/40 hover:bg-primary/5'
-                        }`}
+                        className={`relative group/tile ${hidden ? 'opacity-60' : ''}`}
                       >
-                        <div className="p-2.5 rounded-lg bg-secondary group-hover:bg-primary/10 transition-colors relative">
-                          <HardDrive className="w-5 h-5 text-primary" />
-                          {driveRating && (
-                            <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ${ratingDotStyles[driveRating.rating]}`} />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-base font-medium text-foreground truncate">
-                              {drive.label} ({drive.letter})
-                            </span>
-                            {driveRating?.badge && (
-                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ring-1 ${
-                                driveRating.rating === 'good' ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 ring-emerald-500/30' :
-                                driveRating.rating === 'warning' ? 'text-amber-700 dark:text-amber-300 bg-amber-500/15 ring-amber-500/30' :
-                                'text-rose-700 dark:text-rose-300 bg-rose-500/15 ring-rose-500/30'
-                              }`}>
-                                {driveRating.badge}
-                              </span>
+                        <button
+                          onClick={() => navigateTo(drive.letter + '\\')}
+                          className={`flex items-center gap-3 p-4 rounded-xl bg-card border-2 transition-all text-left group w-full ${
+                            driveRating ? ratingStyles[driveRating.rating] : 'border-border hover:border-primary/40 hover:bg-primary/5'
+                          }`}
+                        >
+                          <div className="p-2.5 rounded-lg bg-secondary group-hover:bg-primary/10 transition-colors relative">
+                            <HardDrive className="w-5 h-5 text-primary" />
+                            {driveRating && (
+                              <div className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ${ratingDotStyles[driveRating.rating]}`} />
                             )}
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {drive.type}{drive.freeBytes > 0 ? ` \u2022 ${formatSize(drive.freeBytes)} free of ${formatSize(drive.totalBytes)}` : ''}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-medium text-foreground truncate">
+                                {drive.label} ({drive.letter})
+                              </span>
+                              {driveRating?.badge && (
+                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ring-1 ${
+                                  driveRating.rating === 'good' ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 ring-emerald-500/30' :
+                                  driveRating.rating === 'warning' ? 'text-amber-700 dark:text-amber-300 bg-amber-500/15 ring-amber-500/30' :
+                                  'text-rose-700 dark:text-rose-300 bg-rose-500/15 ring-rose-500/30'
+                                }`}>
+                                  {driveRating.badge}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {drive.type}{drive.freeBytes > 0 ? ` \u2022 ${formatSize(drive.freeBytes)} free of ${formatSize(drive.totalBytes)}` : ''}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        {/* Hide / restore button. Sits in the
+                            top-right corner of each tile. Hidden by
+                            default (opacity-0) and revealed on hover
+                            so it doesn't compete with the drive
+                            label / rating badge. Stays opacity-100
+                            on already-hidden drives so the user has
+                            an obvious way to restore them. */}
+                        <IconTooltip label={hidden ? 'Restore drive' : 'Hide drive'} side="left">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (hidden) unhideDrive(drive.letter); else hideDrive(drive.letter);
+                            }}
+                            className={`absolute top-1.5 right-1.5 p-1 rounded hover:bg-secondary transition-opacity ${hidden ? 'opacity-100' : 'opacity-0 group-hover/tile:opacity-100 hover:opacity-100'}`}
+                            aria-label={hidden ? 'Restore drive' : 'Hide drive'}
+                          >
+                            {hidden ? (
+                              <RotateCcw className="w-3 h-3 text-muted-foreground" />
+                            ) : (
+                              <X className="w-3 h-3 text-muted-foreground" />
+                            )}
+                          </button>
+                        </IconTooltip>
+                      </div>
                     );
                   })}
                   </div>

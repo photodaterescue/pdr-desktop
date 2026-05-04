@@ -3526,6 +3526,16 @@ function DashboardPanel({
         title="Select Destination"
         mode="folder"
         onOpenDriveAdvisor={() => { setShowDestBrowser(false); setShowDestAdvisor(true); }}
+        onOpenLibraryPlanner={() => { setShowDestBrowser(false); setShowLibraryPlanner(true); }}
+        plannerSummary={libraryPlannerAnswers ? (
+          (libraryPlannerAnswers.collectionSizeGB >= 1000
+            ? `~${(libraryPlannerAnswers.collectionSizeGB / 1024).toFixed(1)} TB`
+            : `~${libraryPlannerAnswers.collectionSizeGB} GB`)
+          + ' · ' +
+          (libraryPlannerAnswers.multipleSourcesPlanned === 'yes' ? 'multi-source'
+            : libraryPlannerAnswers.multipleSourcesPlanned === 'no' ? 'single source'
+            : 'unsure on sources')
+        ) : null}
         plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
         enableSavedLocations
         showDriveRatings
