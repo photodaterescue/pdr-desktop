@@ -735,12 +735,18 @@ const handleActivateLicense = () => {
     // Browser sequence the user would get from clicking
     // "Select Destination" inside Workspace, but lets the interim
     // funnel users in without duplicating the flow there.
+    //
+    // The actual trigger (handleChangeDestination) lives inside
+    // DashboardPanel, not Workspace — so we cross the boundary via a
+    // CustomEvent. Matches the existing pdr-clear-sources /
+    // open-reports-history pattern. Defer one tick so the URL strip
+    // commits before the modal mounts.
     const actionParam = params.get("action");
     if (actionParam === 'pick-destination') {
       setLocation('/workspace');
-      // Defer one tick so the URL strip doesn't collide with the
-      // Library Planner / DDA mount (both read sticky settings).
-      setTimeout(() => { handleChangeDestination(); }, 0);
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('pdr:open-destination-picker'));
+      }, 0);
       return;
     }
 
@@ -2845,6 +2851,18 @@ function DashboardPanel({
     setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
     setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
   };
+
+  // Cross-component bridge for the destination-first interim screen.
+  // Workspace's URL handler can't call handleChangeDestination
+  // directly (different React function-component scope) so it
+  // dispatches this CustomEvent. We listen here and run the same
+  // Library Planner → DDA → Folder Browser sequence the user gets
+  // from clicking Select Destination inside Workspace.
+  React.useEffect(() => {
+    const onOpenPicker = () => handleChangeDestination();
+    window.addEventListener('pdr:open-destination-picker', onOpenPicker);
+    return () => window.removeEventListener('pdr:open-destination-picker', onOpenPicker);
+  }, [destinationPath]);
 
   const handleOpenDestination = async () => {
     if (destinationPath) {
