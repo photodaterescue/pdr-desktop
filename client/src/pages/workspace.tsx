@@ -730,20 +730,20 @@ const handleActivateLicense = () => {
       return;
     }
 
-    // ?action=pick-destination — deep-link from the destination-first
-    // interim screen. Open the Folder Browser in destination mode at
-    // Workspace level (rendered below). Skipping the in-app
-    // Library Planner → DDA preamble for this path is deliberate:
-    // the user already declared intent on the interim by clicking
-    // "Pick Library Drive", so dropping them straight into the
-    // browser is direct and matches the destination-first feel.
-    // The in-app Change Destination button still uses the full
-    // planner/DDA/browser sequence inside DashboardPanel (which
-    // mounts only once at least one source exists, so it can't help
-    // first-time users coming through Welcome).
-    const actionParam = params.get("action");
-    if (actionParam === 'pick-destination') {
-      setLocation('/workspace');
+    // Deep-link from the destination-first interim screen. Open the
+    // Folder Browser in destination mode at Workspace level (rendered
+    // below). Skipping the in-app Library Planner → DDA preamble for
+    // this path is deliberate: the user already declared intent on
+    // the interim by clicking "Pick Library Drive", so dropping them
+    // straight into the browser is direct and matches the
+    // destination-first feel.
+    //
+    // We hand off via sessionStorage rather than a URL query param
+    // because wouter's useHashLocation strips query strings during
+    // setLocation. Same pattern as pdr-pending-source above.
+    const pendingAction = sessionStorage.getItem('pdr-pending-action');
+    if (pendingAction === 'pick-destination') {
+      sessionStorage.removeItem('pdr-pending-action');
       setTimeout(() => { setShowDestBrowser(true); }, 0);
       return;
     }

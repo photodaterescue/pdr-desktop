@@ -59,11 +59,11 @@ export default function SourceSelection() {
       console.log('Not in Electron environment');
       return;
     }
-    // Workspace's handleChangeDestination handles the full first-time
-    // sequence (Library Planner → Drive Advisor → Folder Browser).
-    // We just need to land there with the right deep-link param so it
-    // fires automatically on arrival.
-    setLocation('/workspace?action=pick-destination');
+    // wouter's useHashLocation strips query params, so we can't pass
+    // ?action=pick-destination through setLocation. Use sessionStorage
+    // for the handoff instead — same pattern as pdr-pending-source.
+    sessionStorage.setItem('pdr-pending-action', 'pick-destination');
+    setLocation('/workspace');
   };
 
   return (
