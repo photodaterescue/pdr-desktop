@@ -303,49 +303,11 @@ useEffect(() => {
     return [];
   });
 
-  // Race-guard: the persist effect below would otherwise fire on
-  // first render with the useState initial value (null) BEFORE the
-  // rehydrate effect has read the previously-saved destination,
-  // wiping it out. We only allow writes once the rehydrate read has
-  // resolved.
-  const destinationHydratedRef = React.useRef(false);
-
-  // On mount: check rememberSources setting — if OFF, clear persisted sources.
-  // Also rehydrate the persisted Library Drive (destinationPath) from
-  // electron-store so the user lands back into a working workspace
-  // without having to re-pick their drive every session.
-  useEffect(() => {
-    getSettings().then((settings) => {
-      if (!settings.rememberSources) {
-        setSources([]);
-        localStorage.removeItem("pdr-sources");
-        localStorage.removeItem("pdr-source-analysis-results");
-        setDestinationPath(null);
-        setDestinationFreeGB(0);
-        setDestinationTotalGB(0);
-      } else if (settings.destinationPath) {
-        // Restore sticky destination. Free/total GB are recomputed by
-        // the destination-info effect below as soon as the path is set.
-        setDestinationPath(settings.destinationPath);
-      }
-    }).finally(() => {
-      // Open the persist gate AFTER the rehydrate read has finished,
-      // regardless of whether it produced a value. From this point
-      // forward, every setDestinationPath change (including explicit
-      // nulls from Remove Source / Change Source) will persist.
-      destinationHydratedRef.current = true;
-    });
-  }, []);
-
-  // Persist destination changes to electron-store so the choice
-  // survives app restarts. Gated on destinationHydratedRef so the
-  // initial-render null doesn't clobber a previously-saved value.
-  useEffect(() => {
-    if (!destinationHydratedRef.current) return;
-    setSetting('destinationPath', destinationPath).catch((err) => {
-      console.warn('[Workspace] Failed to persist destinationPath:', err);
-    });
-  }, [destinationPath]);
+  // (destination rehydrate + persist effects are declared AFTER the
+  // destinationPath useState below — see the corresponding block.
+  // Putting them here would put `destinationPath` in the temporal
+  // dead zone in the persist effect's dep array, breaking the
+  // workspace render entirely.)
 
   useEffect(() => {
     // Persist sources to localStorage (survives app restarts)
@@ -525,6 +487,54 @@ const handleActivateLicense = () => {
   const [destinationPath, setDestinationPath] = useState<string | null>(null);
   const [destinationFreeGB, setDestinationFreeGB] = useState<number>(0);
   const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
+
+  // Race-guard: the persist effect below would otherwise fire on
+  // first render with the useState initial value (null) BEFORE the
+  // rehydrate effect has read the previously-saved destination,
+  // wiping it out. We only allow writes once the rehydrate read has
+  // resolved.
+  // NOTE: this block MUST come after the destinationPath useState
+  // declaration above. Putting it earlier puts destinationPath in
+  // the temporal dead zone in the persist effect's dep array,
+  // breaking the entire workspace render with a TDZ ReferenceError.
+  const destinationHydratedRef = React.useRef(false);
+
+  // On mount: check rememberSources setting — if OFF, clear persisted sources.
+  // Also rehydrate the persisted Library Drive (destinationPath) from
+  // electron-store so the user lands back into a working workspace
+  // without having to re-pick their drive every session.
+  useEffect(() => {
+    getSettings().then((settings) => {
+      if (!settings.rememberSources) {
+        setSources([]);
+        localStorage.removeItem("pdr-sources");
+        localStorage.removeItem("pdr-source-analysis-results");
+        setDestinationPath(null);
+        setDestinationFreeGB(0);
+        setDestinationTotalGB(0);
+      } else if (settings.destinationPath) {
+        // Restore sticky destination. Free/total GB are recomputed by
+        // the destination-info effect below as soon as the path is set.
+        setDestinationPath(settings.destinationPath);
+      }
+    }).finally(() => {
+      // Open the persist gate AFTER the rehydrate read has finished,
+      // regardless of whether it produced a value. From this point
+      // forward, every setDestinationPath change (including explicit
+      // nulls from Remove Source / Change Source) will persist.
+      destinationHydratedRef.current = true;
+    });
+  }, []);
+
+  // Persist destination changes to electron-store so the choice
+  // survives app restarts. Gated on destinationHydratedRef so the
+  // initial-render null doesn't clobber a previously-saved value.
+  useEffect(() => {
+    if (!destinationHydratedRef.current) return;
+    setSetting('destinationPath', destinationPath).catch((err) => {
+      console.warn('[Workspace] Failed to persist destinationPath:', err);
+    });
+  }, [destinationPath]);
   const [hasCompletedFix, setHasCompletedFix] = useState(false);
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
