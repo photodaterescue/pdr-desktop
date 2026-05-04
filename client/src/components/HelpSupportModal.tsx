@@ -5,11 +5,6 @@ import { HelpSupportContent } from './HelpSupportContent';
 interface HelpSupportModalProps {
   /** Fires on backdrop click, X click, or Escape keypress. */
   onClose: () => void;
-  /** Fires when the user clicks "Start Tour" inside the content. The
-   *  modal closes itself first (parent doesn't need to manage that)
-   *  and then this handler runs — typically navigating to the
-   *  workspace tour. */
-  onStartTour: () => void;
 }
 
 /**
@@ -24,7 +19,7 @@ interface HelpSupportModalProps {
  * Backdrop / shadow / radius copy ReportProblemModal's pattern so the
  * two modals read as the same surface family.
  */
-export function HelpSupportModal({ onClose, onStartTour }: HelpSupportModalProps) {
+export function HelpSupportModal({ onClose }: HelpSupportModalProps) {
   // Close on Escape — standard modal affordance.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -33,13 +28,6 @@ export function HelpSupportModal({ onClose, onStartTour }: HelpSupportModalProps
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-
-  const handleStartTour = () => {
-    // Close before firing the navigation so we don't tear down the
-    // modal while it's still on screen during the route change.
-    onClose();
-    onStartTour();
-  };
 
   return (
     <div
@@ -72,7 +60,10 @@ export function HelpSupportModal({ onClose, onStartTour }: HelpSupportModalProps
             we keep them so the layout matches the in-Workspace panel
             beat for beat. */}
         <div className="overflow-y-auto px-6 py-6 flex-1 min-h-0">
-          <HelpSupportContent onStartTour={handleStartTour} />
+          {/* No onStartTour — the "Take a Quick Tour" accordion is
+              hidden so users can't short-cut into Workspace via the
+              tour from a Welcome where no Library Drive is set. */}
+          <HelpSupportContent />
         </div>
       </div>
     </div>

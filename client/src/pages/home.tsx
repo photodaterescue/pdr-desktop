@@ -380,7 +380,6 @@ export default function Home() {
     {showHelpModal && (
       <HelpSupportModal
         onClose={() => setShowHelpModal(false)}
-        onStartTour={() => { resetTourCompletion(); navigate("/workspace?tour=true"); }}
       />
     )}
     </>

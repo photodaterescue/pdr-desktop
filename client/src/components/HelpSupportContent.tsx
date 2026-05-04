@@ -3,8 +3,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Button } from '@/components/ui/custom-button';
 
 interface HelpSupportContentProps {
-  /** Fires when the user clicks the in-content "Start Tour" button. */
-  onStartTour: () => void;
+  /** Fires when the user clicks the in-content "Start Tour" button.
+   *  When omitted, the entire "Take a Quick Tour" accordion is
+   *  hidden — used by the Welcome modal so the user can't short-cut
+   *  past the Library Drive step into a tour-fired Workspace. */
+  onStartTour?: () => void;
   /** When provided, surfaces the in-app "Report a problem" CTA inside
    *  the When-to-Contact-Support accordion. Welcome's modal currently
    *  doesn't wire this (no log-tail context exists pre-destination),
@@ -70,26 +73,31 @@ export function HelpSupportContent({ onStartTour, onReportProblem }: HelpSupport
             </AccordionContent>
           </AccordionItem>
 
-          {/* Replay Tour */}
-          <AccordionItem value="replay-tour" className="border border-border rounded-lg px-4">
-            <AccordionTrigger className="text-foreground font-medium hover:no-underline">
-              Take a Quick Tour
-            </AccordionTrigger>
-            <AccordionContent className="pt-2 pb-4">
-              <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
-                <p>Need a refresher? Walk through the key areas of Photo Date Rescue with a guided tour. It takes less than a minute.</p>
+          {/* Replay Tour — only rendered when a real handler is wired
+              in. Welcome's modal omits this prop so users pre-
+              destination can't short-cut past the Library Drive step
+              by firing the tour, which itself routes into Workspace. */}
+          {onStartTour && (
+            <AccordionItem value="replay-tour" className="border border-border rounded-lg px-4">
+              <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                Take a Quick Tour
+              </AccordionTrigger>
+              <AccordionContent className="pt-2 pb-4">
+                <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <p>Need a refresher? Walk through the key areas of Photo Date Rescue with a guided tour. It takes less than a minute.</p>
 
-                <Button
-                  variant="information"
-                  onClick={onStartTour}
-                  className="gap-2"
-                  data-testid="button-replay-tour"
-                >
-                  <PlayCircle className="w-4 h-4" /> Start Tour
-                </Button>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
+                  <Button
+                    variant="information"
+                    onClick={onStartTour}
+                    className="gap-2"
+                    data-testid="button-replay-tour"
+                  >
+                    <PlayCircle className="w-4 h-4" /> Start Tour
+                  </Button>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          )}
 
           {/* Guides by Topic */}
           <AccordionItem value="guides-topic" className="border border-border rounded-lg px-4">
