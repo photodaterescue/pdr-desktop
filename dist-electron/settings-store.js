@@ -30,6 +30,7 @@ export const optimisedDefaults = {
     pmStartupPromptDismissed: false,
     scannerOverrides: [],
     networkUploadMode: 'fast',
+    bypassLargeZipPreExtract: false,
 };
 const store = new Store({
     name: 'pdr-settings',
@@ -64,6 +65,7 @@ export function getSettings() {
         pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
         scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
         networkUploadMode: store.get('networkUploadMode', optimisedDefaults.networkUploadMode),
+        bypassLargeZipPreExtract: store.get('bypassLargeZipPreExtract', optimisedDefaults.bypassLargeZipPreExtract),
     };
 }
 // ─── Scanner override helpers ────────────────────────────────────────────────

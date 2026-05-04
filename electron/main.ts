@@ -1492,6 +1492,50 @@ ipcMain.handle('prescan:run', async (_event, sourcePath: string, sourceType: 'fo
   cancelAnalysis();
   return { success: true };
 });
+
+// Source-removal cleanup hook. Called by the renderer when the user
+// removes a source from the source menu (or replaces one via Change
+// Source). For sources that triggered a pre-extract during analyse
+// — large zips and all RARs — this deletes the extracted temp
+// directory immediately instead of letting it linger until app
+// quit. Without this the user could remove a source they'd already
+// analysed but not fixed, and its 50 GB extraction would still sit
+// on the C: drive until next launch.
+//
+// Implementation: temp-dir names are deterministic from the source
+// path (md5 of the path + the basename), so we recompute both
+// possible names (zip-style and rar-style) and clean any that
+// match. Best-effort — never fails the IPC call even if the dir is
+// already gone.
+ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: string) => {
+  if (typeof sourcePath !== 'string' || sourcePath.length === 0) {
+    return { success: false, cleaned: 0 };
+  }
+  let cleaned = 0;
+  // Compute both candidate temp-dir names (zip and rar style).
+  // Either or both may exist depending on what kind of source it
+  // was; the inverse one will simply not match anything.
+  const candidates: string[] = [];
+  try { candidates.push(generateTempDirName(sourcePath)); } catch { /* malformed path */ }
+  try { candidates.push(generateRarTempDirName(sourcePath)); } catch { /* malformed path */ }
+  for (const td of candidates) {
+    if (activeTempDirs.has(td)) {
+      cleanupTempDir(td);
+      activeTempDirs.delete(td);
+      cleaned++;
+    } else if (fs.existsSync(td)) {
+      // Edge case: dir exists but isn't tracked (e.g. left over from
+      // a prior session that didn't clean up cleanly). Reap it
+      // anyway so the user gets the disk space back.
+      cleanupTempDir(td);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`[Source remove] Cleaned up ${cleaned} extracted temp dir${cleaned === 1 ? '' : 's'} for source: ${sourcePath}`);
+  }
+  return { success: true, cleaned };
+});
   
 ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') => {
   let tempDir: string | null = null;

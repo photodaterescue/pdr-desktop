@@ -10,6 +10,13 @@ contextBridge.exposeInMainWorld('pdr', {
 
   cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
 
+  // Best-effort cleanup of any extracted temp dir associated with a
+  // source the user is removing from the source menu. Returns
+  // { success, cleaned } where cleaned is the number of temp
+  // directories actually deleted.
+  cleanupTempDirForSource: (sourcePath: string) =>
+    ipcRenderer.invoke('analysis:cleanupTempDirForSource', sourcePath),
+
   onAnalysisProgress: (callback: (progress: any) => void) => {
   ipcRenderer.on('analysis:progress', (_: any, data: any) => callback(data));
 },

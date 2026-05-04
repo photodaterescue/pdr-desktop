@@ -434,6 +434,88 @@ async function analyzeFileFromBuffer(
   };
 }
 
+/**
+ * Metadata-only date analysis for a zip entry whose buffer we cannot
+ * safely load — typically a phone video over ~500 MB where Node's
+ * contiguous Buffer allocation becomes unreliable. Mirrors the same
+ * date-resolution waterfall as `analyzeFileFromBuffer` but skips the
+ * two buffer-dependent steps (EXIF + XMP):
+ *
+ *   1. Google Takeout JSON sidecar      → `confirmed`
+ *   2. (skipped — no buffer for EXIF)
+ *   3. (skipped — no buffer for XMP)
+ *   4. Filename pattern                  → `recovered`
+ *   5. ZIP entry modification time       → `marked`
+ *
+ * Coverage in practice: phone videos almost always have either a
+ * dated Takeout sidecar or a date-bearing filename (`VID_YYYYMMDD…`),
+ * so the missing EXIF/XMP signals rarely matter. Scanner-detection is
+ * also skipped here — videos virtually never come from scanners, and
+ * the rare >500 MB photo from a scanner is acceptable to mis-classify
+ * for the safety win of avoiding a Buffer.allocUnsafe RangeError that
+ * would crash the analysis loop.
+ */
+async function analyzeFileMetadataOnly(
+  entryPath: string,
+  filename: string,
+  sizeBytes: number,
+  entryTime: Date | null,
+  googleTakeoutJsonContent?: string,
+): Promise<FileAnalysisResult | null> {
+  const mediaType = isMediaFile(filename);
+  if (!mediaType) return null;
+
+  const extension = path.extname(filename).toLowerCase();
+  let derivedDate: Date | null = null;
+  let dateSource = '';
+  let dateConfidence: 'confirmed' | 'recovered' | 'marked' = 'marked';
+
+  if (googleTakeoutJsonContent) {
+    const takeoutData = parseGoogleTakeoutJsonContent(googleTakeoutJsonContent);
+    if (takeoutData?.timestamp) {
+      derivedDate = new Date(takeoutData.timestamp * 1000);
+      dateSource = 'Google Takeout JSON';
+      dateConfidence = 'confirmed';
+    }
+  }
+
+  if (!derivedDate) {
+    const filenameResult = extractDateFromFilename(filename);
+    if (filenameResult.timestamp) {
+      derivedDate = new Date(filenameResult.timestamp * 1000);
+      dateSource = filenameResult.source;
+      dateConfidence = 'recovered';
+    }
+  }
+
+  if (!derivedDate && entryTime) {
+    derivedDate = entryTime;
+    dateSource = 'ZIP entry modification time (fallback)';
+    dateConfidence = 'marked';
+  }
+
+  const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())
+    ? generateDateBasedFilename(
+        Math.floor(derivedDate.getTime() / 1000),
+        extension,
+        dateConfidence,
+      )
+    : null;
+
+  return {
+    path: entryPath,
+    filename,
+    extension,
+    type: mediaType,
+    sizeBytes,
+    dateConfidence,
+    dateSource: dateSource || 'No date signal available (large file, no sidecar, no filename pattern, no zip mtime)',
+    derivedDate: derivedDate && !isNaN(derivedDate.getTime()) ? derivedDate.toISOString() : null,
+    originalDate: null,
+    suggestedFilename,
+  };
+}
+
 async function scanDirectory(
   dirPath: string,
   onProgress?: (count: number) => void
@@ -600,7 +682,47 @@ async function scanZipFile(zipPath: string): Promise<ZipScanResult> {
   const loadBuffer = async (entryPath: string): Promise<Buffer> => {
     const file = fileByPath.get(entryPath);
     if (!file) throw new Error(`Zip entry not found: ${entryPath}`);
-    return await file.buffer();
+    // Implemented as our own stream-collect rather than calling
+    // unzipper's `file.buffer()` because that helper concatenates
+    // chunks inside a stream `finish` listener — when the resulting
+    // `Buffer.concat()` throws RangeError (e.g. on a multi-GB phone
+    // video that exceeds Node's contiguous Buffer allocation limit),
+    // the throw escapes synchronously from a `process.nextTick` and
+    // reaches Electron's uncaught-exception handler, popping a
+    // crash dialog despite the analysis loop wrapping its calls in
+    // a try/catch. Building the same logic ourselves with a Promise
+    // executor lets us route Buffer.concat failures into the
+    // Promise's reject path, where the awaiter's try/catch can
+    // handle it cleanly as a skip-and-continue. Reproduced on a
+    // 50 GB Google Takeout containing a 1,388 MB phone video,
+    // 04/05/2026.
+    return await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let totalSize = 0;
+      let settled = false;
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
+      try {
+        const stream = file.stream();
+        stream.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+          totalSize += chunk.length;
+        });
+        stream.on('end', () => {
+          try {
+            const result = Buffer.concat(chunks, totalSize);
+            settle(() => resolve(result));
+          } catch (concatErr) {
+            settle(() => reject(concatErr));
+          }
+        });
+        stream.on('error', (streamErr: unknown) => {
+          settle(() => reject(streamErr));
+        });
+      } catch (syncErr) {
+        // Belt-and-braces: synchronous throw from file.stream() itself.
+        settle(() => reject(syncErr));
+      }
+    });
   };
 
   // unzipper keeps the file handle open behind the scenes; calling
@@ -724,13 +846,75 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
         // time in RAM.
         const fileStart = entry.size > LARGE_FILE_TIMING_THRESHOLD ? Date.now() : 0;
         try {
+          // Per-file size guard: phone videos and large RAW frames
+          // can exceed Node's reliable contiguous Buffer allocation
+          // limit. When that happens unzipper's Buffer.concat throws
+          // RangeError from a stream `finish` listener, which the
+          // older code routed through file.buffer() → escapes the
+          // try/catch as an uncaughtException. Even with the safer
+          // stream-collect we wired into loadBuffer, allocating a
+          // 1.4 GB Buffer on a 16 GB machine is unreliable and slow.
+          // For files over LARGE_BUFFER_LOAD_THRESHOLD we skip the
+          // buffer entirely and use the metadata-only analysis path
+          // (Google JSON sidecar + filename + zip mtime). Phone
+          // videos almost always carry a dated sidecar or filename
+          // pattern, so the lost EXIF/XMP signal rarely matters in
+          // practice.
+          const LARGE_BUFFER_LOAD_THRESHOLD = 500 * 1024 * 1024; // 500 MB
+          let result: FileAnalysisResult | null;
+          if (entry.size > LARGE_BUFFER_LOAD_THRESHOLD) {
+            diag(`  ⤳ ${entry.filename} (${(entry.size / (1024 * 1024)).toFixed(0)} MB) — metadata-only path (skipping buffer load)`);
+            result = await analyzeFileMetadataOnly(
+              entry.path,
+              entry.filename,
+              entry.size,
+              entry.time,
+              entry.googleTakeoutJson,
+            );
+            if (!result) {
+              continue;
+            }
+            // Large files always use heuristic dedup downstream
+            // (matches the existing >500 MB branch in this loop) —
+            // this comment + the `dedupe-only` shape below let the
+            // existing dedup block handle the rest unchanged.
+            const heuristicKey = `${entry.filename}|${entry.size}`;
+            const existingFile = seenHeuristics.get(heuristicKey);
+            if (existingFile) {
+              duplicatesRemoved++;
+              duplicateFiles.push({ filename: entry.filename, duplicateOf: existingFile, type: result.type, duplicateMethod: 'heuristic' });
+              result.isDuplicate = true;
+              result.duplicateOf = existingFile;
+            } else {
+              seenHeuristics.set(heuristicKey, entry.filename);
+            }
+            analyzedFiles.push(result);
+            totalSizeBytes += result.sizeBytes;
+            if (result.type === 'photo') photoCount++;
+            else if (result.type === 'video') videoCount++;
+            confidenceCounts[result.dateConfidence]++;
+            if (result.derivedDate) {
+              const date = new Date(result.derivedDate);
+              if (!isNaN(date.getTime())) {
+                if (!earliestDate || date < earliestDate) earliestDate = date;
+                if (!latestDate || date > latestDate) latestDate = date;
+              }
+            }
+            // Per-file timing for files over the timing threshold
+            if (fileStart > 0) {
+              const sizeMB = (entry.size / (1024 * 1024)).toFixed(1);
+              diag(`  ⏱ large file (metadata-only): ${entry.filename} (${sizeMB} MB) processed in ${Date.now() - fileStart} ms`);
+            }
+            continue;
+          }
+
           // Stream the entry's bytes in on demand. This is where the
           // memory ceiling dropped from "sum of all media" to "one
           // file at a time" — the previous engine pre-loaded every
           // buffer during scan, which OOM'd on multi-GB Takeouts.
           const buffer = await scan.loadBuffer(entry.path);
 
-          const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, buffer, entry.time, entry.googleTakeoutJson);
+          result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, buffer, entry.time, entry.googleTakeoutJson);
           if (!result) {
             continue;
           }

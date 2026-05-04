@@ -3678,6 +3678,26 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
     WHERE r.type = 'parent_of' AND r.person_a_id = ? AND r.person_b_id <> ?
       AND b.discarded_at IS NULL
   `);
+    /** Other parents of a given child — used to treat co-parents as
+     *  1-hop neighbours of each other (same trick as the sibling
+     *  collapse above, but for partners-via-shared-children rather
+     *  than siblings-via-shared-parents). Reasoning: someone who
+     *  shares a child with `current` is functionally `current`'s
+     *  partner regardless of whether a spouse_of edge exists in the
+     *  DB. Without this step, an unmarried co-parent (or an ex whose
+     *  spouse_of was never recorded) reads as hop+2 via the child,
+     *  which falsely puts them BEYOND the Steps cap when the child
+     *  is right at the cap. Terry's case: Ian is a hop-3 cousin and
+     *  Sam is the mother of two of his daughters but has no spouse_of
+     *  edge to him; without this collapse Sam lands at hop 5, which
+     *  exceeds Steps=4 and she vanishes from the tree even though
+     *  she's clearly Ian's partner-of-record. */
+    const otherParentsStmt = db.prepare(`
+    SELECT r.person_a_id FROM relationships r
+    JOIN persons a ON a.id = r.person_a_id
+    WHERE r.type = 'parent_of' AND r.person_b_id = ? AND r.person_a_id <> ?
+      AND a.discarded_at IS NULL
+  `);
     while (queue.length > 0) {
         const current = queue.shift();
         const currentHops = visited.get(current);
@@ -3711,6 +3731,27 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
                     continue;
                 visited.set(s.person_b_id, currentHops + 1);
                 queue.push(s.person_b_id);
+            }
+        }
+        // Co-parent 1-hop collapse — symmetric to the sibling collapse
+        // above, but in the partner direction. For every parent_of row
+        // that makes `current` a parent (current is person_a), jump
+        // sideways to any OTHER parent of the same child and mark them
+        // hop+1. This treats co-parents as partner-equivalent in distance
+        // even when no spouse_of edge has been recorded between them —
+        // which matches user intuition (someone you share a child with is
+        // your partner, recorded marriage or not).
+        for (const row of rows) {
+            if (row.type !== 'parent_of')
+                continue;
+            if (row.person_a_id !== current)
+                continue; // only parent_of rows where current is parent
+            const coparents = otherParentsStmt.all(row.person_b_id, current);
+            for (const p of coparents) {
+                if (visited.has(p.person_a_id))
+                    continue;
+                visited.set(p.person_a_id, currentHops + 1);
+                queue.push(p.person_a_id);
             }
         }
     }
@@ -3773,12 +3814,20 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
     // above people whose real parents live beyond Steps, and to hide
     // the +parent chip on anyone who already has two parents in the
     // DB (even if only one is currently visible).
+    // Placeholder parents are excluded from this count — those rows are
+    // auto-created when the user marks two people as siblings (so the
+    // sibling link can derive from a shared-parent relationship), not
+    // because the user actually entered a parent. Counting them here
+    // would falsely fire the "expand ancestry" chevron above someone
+    // whose only "missing" parents are these placeholders, which is
+    // exactly the visual debris Terry asked us to remove.
     const totalParentCountRows = db.prepare(`
     SELECT r.person_b_id AS child_id, COUNT(*) AS cnt
     FROM relationships r
     JOIN persons a ON a.id = r.person_a_id
     WHERE r.type = 'parent_of' AND r.person_b_id IN (${placeholders})
       AND a.discarded_at IS NULL
+      AND COALESCE(a.is_placeholder, 0) = 0
     GROUP BY r.person_b_id
   `).all(...ids);
     const totalParentCountByPerson = new Map();
@@ -3788,13 +3837,15 @@ export function getFamilyGraph(focusPersonId, maxHops = 3) {
     // count above but inverted. Trees uses this to know whether a
     // person has descendants beyond what the current Generations
     // setting reveals, so the renderer can paint a v chevron beneath
-    // them inviting the user to expand downward.
+    // them inviting the user to expand downward. Placeholder children
+    // are excluded for the same reason as the parent count above.
     const totalChildCountRows = db.prepare(`
     SELECT r.person_a_id AS parent_id, COUNT(*) AS cnt
     FROM relationships r
     JOIN persons b ON b.id = r.person_b_id
     WHERE r.type = 'parent_of' AND r.person_a_id IN (${placeholders})
       AND b.discarded_at IS NULL
+      AND COALESCE(b.is_placeholder, 0) = 0
     GROUP BY r.person_a_id
   `).all(...ids);
     const totalChildCountByPerson = new Map();

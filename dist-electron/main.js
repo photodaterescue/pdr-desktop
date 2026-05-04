@@ -1326,6 +1326,56 @@ ipcMain.handle('analysis:cancel', async () => {
     cancelAnalysis();
     return { success: true };
 });
+// Source-removal cleanup hook. Called by the renderer when the user
+// removes a source from the source menu (or replaces one via Change
+// Source). For sources that triggered a pre-extract during analyse
+// — large zips and all RARs — this deletes the extracted temp
+// directory immediately instead of letting it linger until app
+// quit. Without this the user could remove a source they'd already
+// analysed but not fixed, and its 50 GB extraction would still sit
+// on the C: drive until next launch.
+//
+// Implementation: temp-dir names are deterministic from the source
+// path (md5 of the path + the basename), so we recompute both
+// possible names (zip-style and rar-style) and clean any that
+// match. Best-effort — never fails the IPC call even if the dir is
+// already gone.
+ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath) => {
+    if (typeof sourcePath !== 'string' || sourcePath.length === 0) {
+        return { success: false, cleaned: 0 };
+    }
+    let cleaned = 0;
+    // Compute both candidate temp-dir names (zip and rar style).
+    // Either or both may exist depending on what kind of source it
+    // was; the inverse one will simply not match anything.
+    const candidates = [];
+    try {
+        candidates.push(generateTempDirName(sourcePath));
+    }
+    catch { /* malformed path */ }
+    try {
+        candidates.push(generateRarTempDirName(sourcePath));
+    }
+    catch { /* malformed path */ }
+    for (const td of candidates) {
+        if (activeTempDirs.has(td)) {
+            cleanupTempDir(td);
+            activeTempDirs.delete(td);
+            cleaned++;
+        }
+        else if (fs.existsSync(td)) {
+            // Edge case: dir exists but isn't tracked (e.g. left over from
+            // a prior session that didn't clean up cleanly). Reap it
+            // anyway so the user gets the disk space back.
+            cleanupTempDir(td);
+            cleaned++;
+        }
+    }
+    if (cleaned > 0) {
+        console.log(`[Source remove] Cleaned up ${cleaned} extracted temp dir${cleaned === 1 ? '' : 's'} for source: ${sourcePath}`);
+    }
+    return { success: true, cleaned };
+});
 ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType) => {
     let tempDir = null;
     try {
@@ -1352,7 +1402,20 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType) => {
             effectivePath = tempDir;
             effectiveType = 'folder';
         }
-        else if (sourceType === 'zip' && getZipFileSize(sourcePath) > LARGE_ZIP_THRESHOLD) {
+        else if (sourceType === 'zip' &&
+            getZipFileSize(sourcePath) > LARGE_ZIP_THRESHOLD &&
+            // Settings escape hatch: if the user has toggled "Bypass large-zip
+            // pre-extract" in Settings → Advanced, fall through to the
+            // streaming `scanZipFile` path regardless of zip size. Used during
+            // QA against real 50 GB Google Takeouts to confirm the streaming
+            // engine + skip-and-continue holds without the temp-dir step. If
+            // it does, the pre-extract path can be retired entirely.
+            !((() => { try {
+                return getSettings().bypassLargeZipPreExtract === true;
+            }
+            catch {
+                return false;
+            } })())) {
             tempDir = generateTempDirName(sourcePath);
             activeTempDirs.add(tempDir);
             // Notify renderer about the extraction
@@ -1376,6 +1439,13 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType) => {
         }
         const results = await analyzeSource(effectivePath, effectiveType, (progress) => {
             mainWindow?.webContents.send('analysis:progress', progress);
+        }, 
+        // Diagnostic sink — forwards [PDR-DIAG ...] lines to the renderer
+        // so they show up in F12 console alongside whatever else the
+        // renderer is logging. Kept off the progress channel so the
+        // progress UI's existing payload contract isn't muddied.
+        (msg) => {
+            mainWindow?.webContents.send('analysis:diagnostic', msg);
         });
         // Preserve original source path in the results so copy phase knows where to find the ZIP
         if (tempDir) {
@@ -1384,7 +1454,14 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType) => {
             results._extractedTempDir = tempDir;
         }
         // NOTE: Do NOT clean up temp dir here — the extracted files are needed
-        // during the copy/fix phase. Cleanup happens in files:copy or on app quit.
+        // during the copy/fix phase. Cleanup happens in `files:copy` on
+        // successful completion (right before the success return), and as
+        // a safety net at app quit (`before-quit`) and at next app startup
+        // (`cleanupOrphanedTempDirs`). Without the post-copy cleanup, a user
+        // analysing + fixing 8 sequential 50 GB Google Takeouts in one
+        // session would accumulate ~400 GB of extracted payload on their
+        // C: drive — which can fill modest drives and was the disaster
+        // scenario flagged in customer crash reports.
         return { success: true, data: results };
     }
     catch (error) {
@@ -2081,6 +2158,48 @@ ipcMain.handle('files:copy', async (_event, data) => {
                     }
                 }
             }
+        }
+        // ── Post-copy temp-dir cleanup ────────────────────────────────
+        // For every active temp extraction dir whose contents WERE the
+        // source of files we just copied, delete it now. This frees the
+        // per-Takeout extracted payload (~50 GB for a max-size Google
+        // Takeout) immediately on successful completion, instead of
+        // letting it accumulate until app quit.
+        //
+        // Safety:
+        //  • Only runs on a successful return path. The cancelled exit at
+        //    the start of the loop (and the catch block below) both skip
+        //    this, so the user can still retry against the still-extracted
+        //    files if a copy was interrupted or errored.
+        //  • Only deletes a temp dir if at least one file in THIS copy
+        //    operation was sourced from inside it — so a user who
+        //    analysed two zips but only fixed one keeps the other zip's
+        //    extraction intact for its own future fix run.
+        //  • cleanupTempDir() is best-effort and won't throw if a file is
+        //    locked — the existing before-quit + startup-orphan sweeps
+        //    are the safety net for the rare locked-file case.
+        try {
+            const usedTempDirs = new Set();
+            for (const tempDir of activeTempDirs) {
+                const tempDirPrefix = tempDir + path.sep;
+                for (const file of files) {
+                    const sp = file.sourcePath;
+                    if (sp === tempDir || (typeof sp === 'string' && sp.startsWith(tempDirPrefix))) {
+                        usedTempDirs.add(tempDir);
+                        break;
+                    }
+                }
+            }
+            for (const tempDir of usedTempDirs) {
+                console.log(`[Fix] Cleaning up extracted temp dir after successful copy: ${tempDir}`);
+                cleanupTempDir(tempDir);
+                activeTempDirs.delete(tempDir);
+            }
+        }
+        catch (cleanupErr) {
+            // Best-effort — never block the success return on a cleanup
+            // glitch. Worst case: temp dir lingers until app quit.
+            console.warn(`[Fix] Post-copy temp-dir cleanup encountered an error (continuing):`, cleanupErr);
         }
         return { success: true, results, copied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, duplicatesRemoved, duplicateFiles, skippedExisting };
     }

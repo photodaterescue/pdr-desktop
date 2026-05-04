@@ -6,11 +6,27 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('pdr', {
     runAnalysis: (sourcePath, sourceType) => ipcRenderer.invoke('analysis:run', sourcePath, sourceType),
     cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
+    // Best-effort cleanup of any extracted temp dir associated with a
+    // source the user is removing from the source menu. Returns
+    // { success, cleaned } where cleaned is the number of temp
+    // directories actually deleted.
+    cleanupTempDirForSource: (sourcePath) => ipcRenderer.invoke('analysis:cleanupTempDirForSource', sourcePath),
     onAnalysisProgress: (callback) => {
         ipcRenderer.on('analysis:progress', (_, data) => callback(data));
     },
     removeAnalysisProgressListener: () => {
         ipcRenderer.removeAllListeners('analysis:progress');
+    },
+    // Diagnostic stream — release-testing telemetry from the analysis
+    // pipeline (phase markers, periodic memory snapshots, per-large-file
+    // timings, skip-and-continue warnings, final summary). Renderer
+    // just console.logs these so they land in F12 alongside any other
+    // front-end logging during a 50 GB Takeout test run.
+    onAnalysisDiagnostic: (callback) => {
+        ipcRenderer.on('analysis:diagnostic', (_, msg) => callback(msg));
+    },
+    removeAnalysisDiagnosticListener: () => {
+        ipcRenderer.removeAllListeners('analysis:diagnostic');
     },
     copyFiles: (data) => ipcRenderer.invoke('files:copy', data),
     onCopyProgress: (callback) => {

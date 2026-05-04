@@ -74,6 +74,7 @@ import {
   removeAnalysisProgressListener,
   onAnalysisDiagnostic,
   removeAnalysisDiagnosticListener,
+  cleanupTempDirForSource,
   getSettings,
   setSetting,
   classifyStorage,
@@ -813,6 +814,13 @@ const handleActivateLicense = () => {
 
     const handleRemoveSource = () => {
     if (!activeSource) return;
+    // Best-effort cleanup of any extracted temp dir associated with
+    // this source. Fires for large zips and RARs that pre-extracted
+    // during analyse — without this, removing a source leaves its
+    // ~50 GB extraction sitting on the C: drive until app quit.
+    if (activeSource.path) {
+      cleanupTempDirForSource(activeSource.path).catch(() => { /* best-effort */ });
+    }
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
     setSourceAnalysisResults(prev => {
@@ -835,6 +843,13 @@ const handleActivateLicense = () => {
 
     const handleChangeSource = () => {
     if (!activeSource) return;
+    // Best-effort cleanup of any extracted temp dir associated with
+    // this source. Same rationale as handleRemoveSource — Change Source
+    // discards the active source, so any pre-extracted ~50 GB on the
+    // temp drive should go with it.
+    if (activeSource.path) {
+      cleanupTempDirForSource(activeSource.path).catch(() => { /* best-effort */ });
+    }
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
     setSourceAnalysisResults(prev => {
@@ -9039,22 +9054,32 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               </div>
 
               {/* Diagnostic — internal QA toggles, mostly relevant
-                  during release testing. Default off across the board. */}
-              <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">Diagnostic</label>
-                <p className="text-xs text-muted-foreground mb-3">Internal toggles used during release testing. Leave off unless explicitly directed.</p>
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Bypass large-zip pre-extract</span>
-                    <span className="text-xs text-muted-foreground">Skip the temporary unpack step for zips over 2 GB and stream them through the analysis engine directly. Used to QA the streaming path on real Google Takeouts. May be slower or less stable on very large archives — leave off for production use.</span>
-                  </div>
-                  <Checkbox
-                    checked={bypassLargeZipPreExtract}
-                    onCheckedChange={(checked) => handleBypassLargeZipPreExtractToggle(!!checked)}
-                    data-testid="checkbox-bypass-large-zip-pre-extract"
-                  />
-                </label>
-              </div>
+                  during release testing. The whole subsection is
+                  gated behind `import.meta.env.DEV` so it never
+                  surfaces in packaged production builds — these
+                  toggles can leave the app in an unsupported state
+                  (the bypass-pre-extract path crashes on phone
+                  videos > 1 GB) and must not be reachable by end
+                  users. Vite replaces `import.meta.env.DEV` with a
+                  literal `false` at build time, so the entire
+                  subtree is dead-code-eliminated from the bundle. */}
+              {import.meta.env.DEV && (
+                <div className="pt-4 border-t border-border">
+                  <label className="block text-sm font-medium text-foreground mb-1">Diagnostic <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50 ml-2">DEV-ONLY</span></label>
+                  <p className="text-xs text-muted-foreground mb-3">Internal toggles used during release testing. Leave off unless explicitly directed. Hidden from packaged production builds.</p>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Bypass large-zip pre-extract</span>
+                      <span className="text-xs text-muted-foreground">Skip the temporary unpack step for zips over 2 GB and stream them through the analysis engine directly. Used to QA the streaming path on real Google Takeouts. Known to crash on phone videos &gt; 1 GB — leave off for any non-test run.</span>
+                    </div>
+                    <Checkbox
+                      checked={bypassLargeZipPreExtract}
+                      onCheckedChange={(checked) => handleBypassLargeZipPreExtractToggle(!!checked)}
+                      data-testid="checkbox-bypass-large-zip-pre-extract"
+                    />
+                  </label>
+                </div>
+              )}
 
               {/* Trees */}
               <div className="pt-4 border-t border-border">

@@ -15,6 +15,46 @@ let analysisCancelled = false;
 export function cancelAnalysis() {
     analysisCancelled = true;
 }
+// ── Diagnostic logging ──────────────────────────────────────────────
+// Used during release-QA runs (e.g. bypass-pre-extract on a 50 GB
+// Google Takeout) to surface phase markers, periodic memory
+// snapshots, per-large-file timings, skip-and-continue reasons, and
+// a final summary. Calls go to:
+//   • console.log → main-process stdout, captured by electron-log
+//     into %APPDATA%\Photo Date Rescue\logs\main.log.
+//   • diagSink (when set) → IPC channel `analysis:diagnostic`,
+//     forwarded to the renderer's F12 console for live monitoring.
+let diagSink = null;
+function diag(msg) {
+    const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+    const line = `[PDR-DIAG ${ts}] ${msg}`;
+    // Main-process log (file + terminal in dev)
+    console.log(line);
+    // Forward to renderer if a sink is set for this analysis
+    try {
+        diagSink?.(line);
+    }
+    catch { }
+}
+function memSnapshotMB() {
+    const m = process.memoryUsage();
+    const toMB = (b) => Math.round(b / (1024 * 1024));
+    return {
+        rss: toMB(m.rss),
+        heapUsed: toMB(m.heapUsed),
+        heapTotal: toMB(m.heapTotal),
+        external: toMB(m.external),
+    };
+}
+let peakRssMB = 0;
+let peakHeapUsedMB = 0;
+function recordPeakMem() {
+    const m = memSnapshotMB();
+    if (m.rss > peakRssMB)
+        peakRssMB = m.rss;
+    if (m.heapUsed > peakHeapUsedMB)
+        peakHeapUsedMB = m.heapUsed;
+}
 function calculateFileHash(filePath) {
     return new Promise((resolve, reject) => {
         const hash = crypto.createHash('sha256');
@@ -306,6 +346,72 @@ async function analyzeFileFromBuffer(entryPath, filename, sizeBytes, buffer, ent
         suggestedFilename,
     };
 }
+/**
+ * Metadata-only date analysis for a zip entry whose buffer we cannot
+ * safely load — typically a phone video over ~500 MB where Node's
+ * contiguous Buffer allocation becomes unreliable. Mirrors the same
+ * date-resolution waterfall as `analyzeFileFromBuffer` but skips the
+ * two buffer-dependent steps (EXIF + XMP):
+ *
+ *   1. Google Takeout JSON sidecar      → `confirmed`
+ *   2. (skipped — no buffer for EXIF)
+ *   3. (skipped — no buffer for XMP)
+ *   4. Filename pattern                  → `recovered`
+ *   5. ZIP entry modification time       → `marked`
+ *
+ * Coverage in practice: phone videos almost always have either a
+ * dated Takeout sidecar or a date-bearing filename (`VID_YYYYMMDD…`),
+ * so the missing EXIF/XMP signals rarely matter. Scanner-detection is
+ * also skipped here — videos virtually never come from scanners, and
+ * the rare >500 MB photo from a scanner is acceptable to mis-classify
+ * for the safety win of avoiding a Buffer.allocUnsafe RangeError that
+ * would crash the analysis loop.
+ */
+async function analyzeFileMetadataOnly(entryPath, filename, sizeBytes, entryTime, googleTakeoutJsonContent) {
+    const mediaType = isMediaFile(filename);
+    if (!mediaType)
+        return null;
+    const extension = path.extname(filename).toLowerCase();
+    let derivedDate = null;
+    let dateSource = '';
+    let dateConfidence = 'marked';
+    if (googleTakeoutJsonContent) {
+        const takeoutData = parseGoogleTakeoutJsonContent(googleTakeoutJsonContent);
+        if (takeoutData?.timestamp) {
+            derivedDate = new Date(takeoutData.timestamp * 1000);
+            dateSource = 'Google Takeout JSON';
+            dateConfidence = 'confirmed';
+        }
+    }
+    if (!derivedDate) {
+        const filenameResult = extractDateFromFilename(filename);
+        if (filenameResult.timestamp) {
+            derivedDate = new Date(filenameResult.timestamp * 1000);
+            dateSource = filenameResult.source;
+            dateConfidence = 'recovered';
+        }
+    }
+    if (!derivedDate && entryTime) {
+        derivedDate = entryTime;
+        dateSource = 'ZIP entry modification time (fallback)';
+        dateConfidence = 'marked';
+    }
+    const suggestedFilename = derivedDate && !isNaN(derivedDate.getTime())
+        ? generateDateBasedFilename(Math.floor(derivedDate.getTime() / 1000), extension, dateConfidence)
+        : null;
+    return {
+        path: entryPath,
+        filename,
+        extension,
+        type: mediaType,
+        sizeBytes,
+        dateConfidence,
+        dateSource: dateSource || 'No date signal available (large file, no sidecar, no filename pattern, no zip mtime)',
+        derivedDate: derivedDate && !isNaN(derivedDate.getTime()) ? derivedDate.toISOString() : null,
+        originalDate: null,
+        suggestedFilename,
+    };
+}
 async function scanDirectory(dirPath, onProgress) {
     const results = [];
     let fileCounter = 0;
@@ -359,6 +465,8 @@ async function scanDirectory(dirPath, onProgress) {
 async function scanZipFile(zipPath) {
     const entries = [];
     const jsonContents = new Map();
+    diag(`◆ scanZipFile: opening "${path.basename(zipPath)}" — reading central directory`);
+    const dirOpenStart = Date.now();
     // unzipper.Open.file reads the central directory only; per-file
     // contents are pulled on demand via file.buffer() or file.stream().
     const directory = await unzipper.Open.file(zipPath);
@@ -369,22 +477,34 @@ async function scanZipFile(zipPath) {
         fileByPath.set(f.path, f);
     }
     const totalRawEntryCount = fileByPath.size;
+    diag(`  central directory ready: ${totalRawEntryCount.toLocaleString()} entries (${Date.now() - dirOpenStart} ms)`);
     // Pass 1 — load JSON sidecars into a map. Kept: small payloads, and
     // O(1) lookup for pass 2 is the real speed win this engine was
     // designed around.
+    diag(`◆ Pass 1: loading JSON sidecars`);
+    const pass1Start = Date.now();
+    let jsonCount = 0;
+    let jsonBytes = 0;
     for (const [filePath, file] of fileByPath) {
         if (!filePath.toLowerCase().endsWith('.json'))
             continue;
         try {
             const buf = await file.buffer();
             jsonContents.set(filePath, buf.toString('utf-8'));
+            jsonCount++;
+            jsonBytes += buf.length;
         }
         catch (e) {
             console.error('Failed to read JSON sidecar:', filePath, e);
         }
     }
+    recordPeakMem();
+    const pass1Mem = memSnapshotMB();
+    diag(`  Pass 1 complete: ${jsonCount.toLocaleString()} JSON sidecars, ${(jsonBytes / (1024 * 1024)).toFixed(1)} MB total (${Date.now() - pass1Start} ms) — mem rss=${pass1Mem.rss} MB heapUsed=${pass1Mem.heapUsed} MB`);
     // Pass 2 — record METADATA only for each media entry. No buffers.
     // Buffers are pulled per-entry during analysis via loadBuffer().
+    diag(`◆ Pass 2: recording media-entry metadata (no buffers)`);
+    const pass2Start = Date.now();
     for (const [filePath, file] of fileByPath) {
         const filename = path.basename(filePath);
         const mediaType = isMediaFile(filename);
@@ -416,11 +536,59 @@ async function scanZipFile(zipPath) {
             googleTakeoutJson,
         });
     }
+    recordPeakMem();
+    const pass2Mem = memSnapshotMB();
+    diag(`  Pass 2 complete: ${entries.length.toLocaleString()} media entries (${Date.now() - pass2Start} ms) — mem rss=${pass2Mem.rss} MB heapUsed=${pass2Mem.heapUsed} MB`);
     const loadBuffer = async (entryPath) => {
         const file = fileByPath.get(entryPath);
         if (!file)
             throw new Error(`Zip entry not found: ${entryPath}`);
-        return await file.buffer();
+        // Implemented as our own stream-collect rather than calling
+        // unzipper's `file.buffer()` because that helper concatenates
+        // chunks inside a stream `finish` listener — when the resulting
+        // `Buffer.concat()` throws RangeError (e.g. on a multi-GB phone
+        // video that exceeds Node's contiguous Buffer allocation limit),
+        // the throw escapes synchronously from a `process.nextTick` and
+        // reaches Electron's uncaught-exception handler, popping a
+        // crash dialog despite the analysis loop wrapping its calls in
+        // a try/catch. Building the same logic ourselves with a Promise
+        // executor lets us route Buffer.concat failures into the
+        // Promise's reject path, where the awaiter's try/catch can
+        // handle it cleanly as a skip-and-continue. Reproduced on a
+        // 50 GB Google Takeout containing a 1,388 MB phone video,
+        // 04/05/2026.
+        return await new Promise((resolve, reject) => {
+            const chunks = [];
+            let totalSize = 0;
+            let settled = false;
+            const settle = (fn) => { if (!settled) {
+                settled = true;
+                fn();
+            } };
+            try {
+                const stream = file.stream();
+                stream.on('data', (chunk) => {
+                    chunks.push(chunk);
+                    totalSize += chunk.length;
+                });
+                stream.on('end', () => {
+                    try {
+                        const result = Buffer.concat(chunks, totalSize);
+                        settle(() => resolve(result));
+                    }
+                    catch (concatErr) {
+                        settle(() => reject(concatErr));
+                    }
+                });
+                stream.on('error', (streamErr) => {
+                    settle(() => reject(streamErr));
+                });
+            }
+            catch (syncErr) {
+                // Belt-and-braces: synchronous throw from file.stream() itself.
+                settle(() => reject(syncErr));
+            }
+        });
     };
     // unzipper keeps the file handle open behind the scenes; calling
     // close here lets us release it as soon as analysis finishes.
@@ -436,10 +604,27 @@ async function scanZipFile(zipPath) {
     };
     return { entries, totalRawEntryCount, loadBuffer, close };
 }
-export async function analyzeSource(sourcePath, sourceType, onProgress) {
+export async function analyzeSource(sourcePath, sourceType, onProgress, onDiagnostic) {
     const sourceLabel = path.basename(sourcePath);
     // Reset cancellation flag at start of new analysis
     analysisCancelled = false;
+    // Wire up the diagnostic sink for the duration of THIS analysis.
+    // Reset on the way out so a subsequent analysis without an
+    // onDiagnostic callback doesn't accidentally inherit a stale sink.
+    diagSink = onDiagnostic ?? null;
+    peakRssMB = 0;
+    peakHeapUsedMB = 0;
+    const analysisStartedAt = Date.now();
+    const initialMem = memSnapshotMB();
+    diag(`▶ Analysis START — ${sourceType} "${sourceLabel}" (path=${sourcePath})`);
+    diag(`  initial mem: rss=${initialMem.rss} MB, heapUsed=${initialMem.heapUsed} MB / heapTotal=${initialMem.heapTotal} MB, external=${initialMem.external} MB`);
+    if (sourceType === 'zip') {
+        try {
+            const sizeMB = Math.round(fs.statSync(sourcePath).size / (1024 * 1024));
+            diag(`  zip size on disk: ${sizeMB} MB`);
+        }
+        catch { /* best-effort */ }
+    }
     onProgress?.({
         current: 0,
         total: 0,
@@ -471,6 +656,11 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
         // advance by 1 per media file processed.
         const totalFiles = zipEntries.length;
         const totalEntries = scan.totalRawEntryCount;
+        diag(`◆ Analysis loop START — ${totalFiles.toLocaleString()} media files to process`);
+        const loopStart = Date.now();
+        let lastMemSnapshotAt = loopStart;
+        const LARGE_FILE_TIMING_THRESHOLD = 100 * 1024 * 1024; // 100 MB
+        const MEM_SNAPSHOT_INTERVAL_MS = 2000;
         try {
             for (let i = 0; i < zipEntries.length; i++) {
                 if (analysisCancelled) {
@@ -479,6 +669,17 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
                 const entry = zipEntries[i];
                 // Yield every file to keep window responsive (especially for network sources)
                 await yieldToEventLoop();
+                // Periodic memory snapshot — every ~2 s wall-clock, regardless
+                // of how many files have been processed. Lets us spot a slow
+                // creep across the loop even when individual files are small.
+                const nowTs = Date.now();
+                if (nowTs - lastMemSnapshotAt >= MEM_SNAPSHOT_INTERVAL_MS) {
+                    recordPeakMem();
+                    const m = memSnapshotMB();
+                    const pct = totalFiles > 0 ? Math.round(((i + 1) / totalFiles) * 100) : 0;
+                    diag(`  ⌚ ${i + 1}/${totalFiles} (${pct}%) — rss=${m.rss} MB, heapUsed=${m.heapUsed} MB, peakRss=${peakRssMB} MB, peakHeap=${peakHeapUsedMB} MB`);
+                    lastMemSnapshotAt = nowTs;
+                }
                 onProgress?.({
                     current: i + 1,
                     total: totalFiles,
@@ -490,13 +691,74 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
                 // scoped to the try block — it's released as soon as the
                 // iteration ends, so we never hold more than one file at a
                 // time in RAM.
+                const fileStart = entry.size > LARGE_FILE_TIMING_THRESHOLD ? Date.now() : 0;
                 try {
+                    // Per-file size guard: phone videos and large RAW frames
+                    // can exceed Node's reliable contiguous Buffer allocation
+                    // limit. When that happens unzipper's Buffer.concat throws
+                    // RangeError from a stream `finish` listener, which the
+                    // older code routed through file.buffer() → escapes the
+                    // try/catch as an uncaughtException. Even with the safer
+                    // stream-collect we wired into loadBuffer, allocating a
+                    // 1.4 GB Buffer on a 16 GB machine is unreliable and slow.
+                    // For files over LARGE_BUFFER_LOAD_THRESHOLD we skip the
+                    // buffer entirely and use the metadata-only analysis path
+                    // (Google JSON sidecar + filename + zip mtime). Phone
+                    // videos almost always carry a dated sidecar or filename
+                    // pattern, so the lost EXIF/XMP signal rarely matters in
+                    // practice.
+                    const LARGE_BUFFER_LOAD_THRESHOLD = 500 * 1024 * 1024; // 500 MB
+                    let result;
+                    if (entry.size > LARGE_BUFFER_LOAD_THRESHOLD) {
+                        diag(`  ⤳ ${entry.filename} (${(entry.size / (1024 * 1024)).toFixed(0)} MB) — metadata-only path (skipping buffer load)`);
+                        result = await analyzeFileMetadataOnly(entry.path, entry.filename, entry.size, entry.time, entry.googleTakeoutJson);
+                        if (!result) {
+                            continue;
+                        }
+                        // Large files always use heuristic dedup downstream
+                        // (matches the existing >500 MB branch in this loop) —
+                        // this comment + the `dedupe-only` shape below let the
+                        // existing dedup block handle the rest unchanged.
+                        const heuristicKey = `${entry.filename}|${entry.size}`;
+                        const existingFile = seenHeuristics.get(heuristicKey);
+                        if (existingFile) {
+                            duplicatesRemoved++;
+                            duplicateFiles.push({ filename: entry.filename, duplicateOf: existingFile, type: result.type, duplicateMethod: 'heuristic' });
+                            result.isDuplicate = true;
+                            result.duplicateOf = existingFile;
+                        }
+                        else {
+                            seenHeuristics.set(heuristicKey, entry.filename);
+                        }
+                        analyzedFiles.push(result);
+                        totalSizeBytes += result.sizeBytes;
+                        if (result.type === 'photo')
+                            photoCount++;
+                        else if (result.type === 'video')
+                            videoCount++;
+                        confidenceCounts[result.dateConfidence]++;
+                        if (result.derivedDate) {
+                            const date = new Date(result.derivedDate);
+                            if (!isNaN(date.getTime())) {
+                                if (!earliestDate || date < earliestDate)
+                                    earliestDate = date;
+                                if (!latestDate || date > latestDate)
+                                    latestDate = date;
+                            }
+                        }
+                        // Per-file timing for files over the timing threshold
+                        if (fileStart > 0) {
+                            const sizeMB = (entry.size / (1024 * 1024)).toFixed(1);
+                            diag(`  ⏱ large file (metadata-only): ${entry.filename} (${sizeMB} MB) processed in ${Date.now() - fileStart} ms`);
+                        }
+                        continue;
+                    }
                     // Stream the entry's bytes in on demand. This is where the
                     // memory ceiling dropped from "sum of all media" to "one
                     // file at a time" — the previous engine pre-loaded every
                     // buffer during scan, which OOM'd on multi-GB Takeouts.
                     const buffer = await scan.loadBuffer(entry.path);
-                    const result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, buffer, entry.time, entry.googleTakeoutJson);
+                    result = await analyzeFileFromBuffer(entry.path, entry.filename, entry.size, buffer, entry.time, entry.googleTakeoutJson);
                     if (!result) {
                         continue;
                     }
@@ -566,7 +828,16 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
                         throw err;
                     const reason = err?.message ?? String(err);
                     skippedFiles.push({ filename: entry.filename, reason });
+                    const sizeMB = (entry.size / (1024 * 1024)).toFixed(1);
+                    diag(`  ⚠ SKIP ${entry.filename} (${sizeMB} MB) — ${reason}`);
                     console.warn(`[analysis] skipping ${entry.filename}: ${reason}`);
+                }
+                // After the iteration completes, log per-file timing for
+                // anything over the large-file threshold so we can see if a
+                // specific file (e.g. a long phone video) stalls the loop.
+                if (fileStart > 0) {
+                    const sizeMB = (entry.size / (1024 * 1024)).toFixed(1);
+                    diag(`  ⏱ large file: ${entry.filename} (${sizeMB} MB) processed in ${Date.now() - fileStart} ms`);
                 }
             }
         }
@@ -578,6 +849,14 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
             console.warn(`[analysis] ${skippedFiles.length} file${skippedFiles.length === 1 ? '' : 's'} couldn't be processed:`, skippedFiles.slice(0, 10));
         }
         void totalEntries;
+        recordPeakMem();
+        const finalMem = memSnapshotMB();
+        const elapsedSec = ((Date.now() - loopStart) / 1000).toFixed(1);
+        const totalElapsedSec = ((Date.now() - analysisStartedAt) / 1000).toFixed(1);
+        diag(`◆ Analysis loop COMPLETE — ${totalFiles.toLocaleString()} processed, ${skippedFiles.length} skipped (${elapsedSec}s loop, ${totalElapsedSec}s total)`);
+        diag(`  final mem: rss=${finalMem.rss} MB, heapUsed=${finalMem.heapUsed} MB`);
+        diag(`  PEAK mem during analysis: rss=${peakRssMB} MB, heapUsed=${peakHeapUsedMB} MB`);
+        diag(`  dedup: ${seenHashes.size} unique hashes, ${seenHeuristics.size} heuristic keys, ${duplicatesRemoved} duplicates flagged`);
         onProgress?.({
             current: totalFiles,
             total: totalFiles,
@@ -654,6 +933,12 @@ export async function analyzeSource(sourcePath, sourceType, onProgress) {
             phase: 'complete'
         });
     }
+    // Final summary line + release the diagnostic sink. If we threw
+    // earlier the sink leaks until the next analyzeSource runs, which
+    // is harmless — the next call resets diagSink at its top.
+    const totalSec = ((Date.now() - analysisStartedAt) / 1000).toFixed(1);
+    diag(`▶ Analysis END — ${analyzedFiles.length.toLocaleString()} files in result, ${duplicatesRemoved} dups, ${(totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB total payload (${totalSec}s)`);
+    diagSink = null;
     return {
         sourcePath,
         sourceType,

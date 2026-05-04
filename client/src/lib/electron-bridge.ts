@@ -157,6 +157,18 @@ export function removeAnalysisDiagnosticListener(): void {
   }
 }
 
+/** Best-effort cleanup of the extracted temp dir associated with a
+ *  source (large zip / RAR). Called when the user removes a source
+ *  from the source menu so their disk doesn't carry a 50 GB
+ *  extraction it no longer needs. Safe to call even when there's
+ *  nothing to clean — returns `{ success: true, cleaned: 0 }`. */
+export async function cleanupTempDirForSource(sourcePath: string): Promise<{ success: boolean; cleaned: number }> {
+  if (isElectron() && typeof (window as any).pdr?.cleanupTempDirForSource === 'function') {
+    return await (window as any).pdr.cleanupTempDirForSource(sourcePath);
+  }
+  return { success: false, cleaned: 0 };
+}
+
 export async function saveReport(reportData: Omit<FixReport, 'id' | 'timestamp'>): Promise<{ success: boolean; data?: FixReport; error?: string }> {
   if (isElectron()) {
     return (window as any).pdr.saveReport(reportData);
