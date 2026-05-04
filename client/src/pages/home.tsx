@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/custom-card";
 import { resetTourCompletion } from "@/components/ui/tour-overlay";
 import { useZoomLevel } from "@/hooks/useZoomLevel";
 import { ZoomControls } from "@/components/ZoomControls";
-import { getSettings, isElectron } from "@/lib/electron-bridge";
+import { getSettings, isElectron, prewarmDrives } from "@/lib/electron-bridge";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { HelpSupportModal } from "@/components/HelpSupportModal";
 
@@ -80,6 +80,15 @@ export default function Home() {
       if (!cancelled) setDestinationPath(null);
     });
     return () => { cancelled = true; };
+  }, []);
+
+  // Pre-warm the drive list so by the time the user reaches the
+  // destination Folder Browser (or Add Source picker inside Workspace)
+  // the IPC round-trip is already done. Fire-and-forget; the cache
+  // lives in electron-bridge and lasts for the lifetime of the
+  // renderer.
+  useEffect(() => {
+    prewarmDrives();
   }, []);
 
   useEffect(() => {

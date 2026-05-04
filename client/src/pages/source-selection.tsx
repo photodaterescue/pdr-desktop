@@ -3,9 +3,12 @@ import { useLocation } from "wouter";
 import { motion, Variants } from "framer-motion";
 import { HardDrive, ArrowRight, Info } from "lucide-react";
 import { Card } from "@/components/ui/custom-card";
-import { isElectron } from "@/lib/electron-bridge";
+import { isElectron, setSetting, prewarmDrives } from "@/lib/electron-bridge";
 import { useZoomLevel } from "@/hooks/useZoomLevel";
 import { ZoomControls } from "@/components/ZoomControls";
+import { FolderBrowserModal } from "@/components/FolderBrowserModal";
+import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
+import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 
 /**
  * Destination-first interim screen.
@@ -20,16 +23,43 @@ import { ZoomControls } from "@/components/ZoomControls";
  *      build a library on this drive — what I feed in is just an
  *      ingredient."
  *
- * This screen is intentionally thin — clicking the card simply routes
- * to /workspace?action=pick-destination, which triggers Workspace's
- * existing Library Planner → DDA → Folder Browser sequence. We don't
- * duplicate that flow here.
+ * The full Library Planner → Destination Drive Advisor → Folder
+ * Browser sequence runs RIGHT HERE on the interim screen — not after
+ * navigating to /workspace. The Workspace shell never mounts until
+ * a destination has been picked, which means the sidebar (with all
+ * its destination-required entry points) can't act as an escape
+ * hatch. Once destination is committed to electron-store, we
+ * navigate to /workspace and Workspace's rehydrate effect picks the
+ * value back up.
  */
 export default function SourceSelection() {
   const [, setLocation] = useLocation();
   // Per-surface zoom — separate key so this transient screen can't
   // bleed its zoom level into the Workspace / Welcome surfaces.
   const zoom = useZoomLevel('pdr-source-selection-zoom');
+
+  // Modal flow state — mirrors DashboardPanel's existing pattern so
+  // returning users get the same Library Planner / DDA / Folder
+  // Browser experience whether they came through the destination-
+  // first path on Welcome or used the in-app Change Destination
+  // button after their first source.
+  const [showLibraryPlanner, setShowLibraryPlanner] = useState(false);
+  const [showDestAdvisor, setShowDestAdvisor] = useState(false);
+  const [showDestBrowser, setShowDestBrowser] = useState(false);
+  const [libraryPlannerAnswers, setLibraryPlannerAnswers] = useState<LibraryPlannerAnswers | null>(() => {
+    // Restore from localStorage if previously completed (returning
+    // user who hasn't picked a destination yet — re-asking the
+    // planner would be annoying).
+    const saved = localStorage.getItem('pdr-library-planner-size');
+    const multi = localStorage.getItem('pdr-library-planner-multi');
+    if (saved && multi) {
+      return {
+        collectionSizeGB: parseInt(saved, 10),
+        multipleSourcesPlanned: multi as 'yes' | 'no' | 'not-sure',
+      };
+    }
+    return null;
+  });
 
   const container: Variants = {
     hidden: { opacity: 0 },
@@ -59,10 +89,35 @@ export default function SourceSelection() {
       console.log('Not in Electron environment');
       return;
     }
-    // wouter's useHashLocation strips query params, so we can't pass
-    // ?action=pick-destination through setLocation. Use sessionStorage
-    // for the handoff instead — same pattern as pdr-pending-source.
-    sessionStorage.setItem('pdr-pending-action', 'pick-destination');
+    // Branching mirrors DashboardPanel's handleChangeDestination —
+    // first-time users see Library Planner first, returning users
+    // who already answered it skip ahead.
+    const plannerDone = localStorage.getItem('pdr-library-planner-complete') === 'true';
+    const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
+
+    if (!plannerDone) {
+      setShowLibraryPlanner(true);
+    } else if (!skipAdvisor) {
+      setShowDestAdvisor(true);
+    } else {
+      setShowDestBrowser(true);
+    }
+  };
+
+  // Final folder pick — persist to electron-store, then advance to
+  // Workspace. Workspace's destination-rehydrate useEffect reads the
+  // sticky setting on mount and populates its in-memory state.
+  // Awaiting the persist call before navigating prevents a race
+  // where Workspace mounts and rehydrates before the write commits.
+  const handleFinalPick = async (selectedPath: string) => {
+    setShowDestBrowser(false);
+    try {
+      await setSetting('destinationPath', selectedPath);
+    } catch {
+      // setSetting failure is non-fatal here — Workspace will still
+      // mount; the sticky-destination guarantee just won't apply on
+      // the next launch. Rare enough not to block the flow.
+    }
     setLocation('/workspace');
   };
 
@@ -105,6 +160,7 @@ export default function SourceSelection() {
             title="Pick Library Drive"
             description="Select an internal disk, external drive, or network folder. PDR will use it for analysis staging and as the home for your fixed library."
             onClick={handlePickDestination}
+            onHover={() => prewarmDrives()}
           />
         </motion.div>
 
@@ -116,16 +172,65 @@ export default function SourceSelection() {
             entirely via the Welcome hero (which routes straight to
             /workspace when destinationPath is set). */}
       </motion.div>
+
+      {/* Counter-zoom wrapper — these modals use fixed positioning
+          but live inside the zoomed page, so we counter-scale to
+          keep them at native size. Mirrors the wrapper inside
+          DashboardPanel that holds the same modal trio. */}
+      <div style={{ zoom: 100 / zoom.zoomLevel }}>
+        <LibraryPlannerModal
+          isOpen={showLibraryPlanner}
+          previousAnswers={libraryPlannerAnswers}
+          onComplete={(answers) => {
+            setLibraryPlannerAnswers(answers);
+            setShowLibraryPlanner(false);
+            const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
+            if (!skipAdvisor) {
+              setShowDestAdvisor(true);
+            } else {
+              setShowDestBrowser(true);
+            }
+          }}
+          onSkip={() => {
+            setShowLibraryPlanner(false);
+            const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
+            if (!skipAdvisor) {
+              setShowDestAdvisor(true);
+            } else {
+              setShowDestBrowser(true);
+            }
+          }}
+        />
+        <DestinationAdvisorModal
+          isOpen={showDestAdvisor}
+          onClose={() => setShowDestAdvisor(false)}
+          onContinue={() => { setShowDestAdvisor(false); setShowDestBrowser(true); }}
+          currentSourceSizeGB={null}
+          plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
+        />
+        <FolderBrowserModal
+          isOpen={showDestBrowser}
+          onSelect={handleFinalPick}
+          onCancel={() => setShowDestBrowser(false)}
+          title="Pick Library Drive"
+          mode="folder"
+          onOpenDriveAdvisor={() => { setShowDestBrowser(false); setShowDestAdvisor(true); }}
+          plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
+          enableSavedLocations
+          showDriveRatings
+        />
+      </div>
     </div>
     </>
   );
 }
 
-function OptionCard({ icon, title, description, onClick }: { icon: React.ReactNode, title: string, description: string, onClick: () => void }) {
+function OptionCard({ icon, title, description, onClick, onHover }: { icon: React.ReactNode, title: string, description: string, onClick: () => void, onHover?: () => void }) {
   return (
     <Card
       className="flex flex-col items-center text-center p-8 cursor-pointer group h-full justify-between hover:border-primary transition-colors min-h-[280px]"
       onClick={onClick}
+      onMouseEnter={onHover}
     >
       <div className="flex flex-col items-center pt-2">
         <div className="mb-5 p-4 rounded-full bg-secondary text-primary group-hover:scale-110 transition-transform duration-400 ease-[cubic-bezier(0.25,0.46,0.45,0.94)]">

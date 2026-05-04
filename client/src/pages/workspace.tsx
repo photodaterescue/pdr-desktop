@@ -505,7 +505,7 @@ const handleActivateLicense = () => {
   // electron-store so the user lands back into a working workspace
   // without having to re-pick their drive every session.
   useEffect(() => {
-    getSettings().then((settings) => {
+    getSettings().then(async (settings) => {
       if (!settings.rememberSources) {
         setSources([]);
         localStorage.removeItem("pdr-sources");
@@ -514,9 +514,23 @@ const handleActivateLicense = () => {
         setDestinationFreeGB(0);
         setDestinationTotalGB(0);
       } else if (settings.destinationPath) {
-        // Restore sticky destination. Free/total GB are recomputed by
-        // the destination-info effect below as soon as the path is set.
+        // Restore sticky destination AND its free/total GB so the
+        // workspace can render the destination chip + space-check
+        // gates without waiting for the user to interact. The
+        // interim screen persists destinationPath but not the GB
+        // counters (those would go stale across sessions anyway), so
+        // we recompute them here on rehydrate.
         setDestinationPath(settings.destinationPath);
+        try {
+          const { getDiskSpace } = await import('@/lib/electron-bridge');
+          const diskInfo = await getDiskSpace(settings.destinationPath);
+          setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
+          setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+        } catch {
+          // getDiskSpace failure is non-fatal — counters stay 0
+          // until the user clicks Change Destination, which has its
+          // own getDiskSpace call.
+        }
       }
     }).finally(() => {
       // Open the persist gate AFTER the rehydrate read has finished,
@@ -730,23 +744,12 @@ const handleActivateLicense = () => {
       return;
     }
 
-    // Deep-link from the destination-first interim screen. Open the
-    // Folder Browser in destination mode at Workspace level (rendered
-    // below). Skipping the in-app Library Planner → DDA preamble for
-    // this path is deliberate: the user already declared intent on
-    // the interim by clicking "Pick Library Drive", so dropping them
-    // straight into the browser is direct and matches the
-    // destination-first feel.
-    //
-    // We hand off via sessionStorage rather than a URL query param
-    // because wouter's useHashLocation strips query strings during
-    // setLocation. Same pattern as pdr-pending-source above.
-    const pendingAction = sessionStorage.getItem('pdr-pending-action');
-    if (pendingAction === 'pick-destination') {
-      sessionStorage.removeItem('pdr-pending-action');
-      setTimeout(() => { setShowDestBrowser(true); }, 0);
-      return;
-    }
+    // (The destination-first interim screen now runs the full
+    // Library Planner → DDA → Folder Browser sequence on its own
+    // surface, persists destinationPath via setSetting, and only
+    // navigates here once destination is committed. So Workspace
+    // doesn't need a deep-link handler for it any more — sticky
+    // rehydrate from electron-store does the rest.)
 
     // ?view=… deep-link from the Welcome screen's app cards. Lets the
     // user jump straight to S&D / Memories / Trees without going via
@@ -1770,34 +1773,6 @@ return (
         onCancel={() => { setShowFolderBrowser(false); setFolderBrowserCallback(null); }}
         title="Add Source"
         mode="source"
-      />
-
-      {/* Destination Folder Browser — opened by the
-          ?action=pick-destination deep-link from the interim screen.
-          DashboardPanel owns its OWN destination browser (for the
-          in-app Change Destination button) but DashboardPanel only
-          mounts when at least one source exists, so it can't serve
-          first-time users coming through Welcome. This Workspace-
-          level instance covers that gap. */}
-      <FolderBrowserModal
-        isOpen={showDestBrowser}
-        onSelect={async (selectedPath) => {
-          setShowDestBrowser(false);
-          const { getDiskSpace } = await import('@/lib/electron-bridge');
-          setDestinationPath(selectedPath);
-          try {
-            const diskInfo = await getDiskSpace(selectedPath);
-            setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
-            setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
-          } catch {
-            // getDiskSpace failure is non-fatal — leave the GB
-            // counters at 0 and let the in-app Change Destination
-            // flow refresh them later.
-          }
-        }}
-        onCancel={() => setShowDestBrowser(false)}
-        title="Pick Library Drive"
-        mode="folder"
       />
 
       {showReportProblem && (

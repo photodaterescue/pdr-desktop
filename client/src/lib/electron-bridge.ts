@@ -598,11 +598,46 @@ export interface DirectoryEntry {
   modifiedAt: number;
 }
 
+// Module-level drive cache. The Welcome screen calls prewarmDrives()
+// on mount so the user never has to wait for the IPC round-trip when
+// they later open a destination/source folder browser. Cache lasts
+// for the lifetime of the renderer; refreshDrives() is the explicit
+// invalidation hook for places that need a fresh enumeration (e.g.
+// after a USB plug/unplug). The cache stores the in-flight promise
+// too, so two parallel callers share a single IPC call.
+let _drivesCache: DriveInfo[] | null = null;
+let _drivesPromise: Promise<DriveInfo[]> | null = null;
+
 export async function listDrives(): Promise<DriveInfo[]> {
-  if (isElectron() && (window as any).pdr?.browser) {
-    return (window as any).pdr.browser.listDrives();
-  }
-  return [];
+  if (_drivesCache) return _drivesCache;
+  if (_drivesPromise) return _drivesPromise;
+  if (!(isElectron() && (window as any).pdr?.browser)) return [];
+  _drivesPromise = (async () => {
+    try {
+      const result: DriveInfo[] = await (window as any).pdr.browser.listDrives();
+      _drivesCache = result;
+      return result;
+    } finally {
+      _drivesPromise = null;
+    }
+  })();
+  return _drivesPromise;
+}
+
+/**
+ * Fire-and-forget warm-up. Welcome calls this so by the time the user
+ * reaches the destination interim or any folder browser, listDrives()
+ * resolves instantly from cache. Errors are silently swallowed —
+ * worst case the modal does its own fetch on open.
+ */
+export function prewarmDrives(): void {
+  listDrives().catch(() => { /* best-effort */ });
+}
+
+/** Invalidate the cache so the next listDrives() does a fresh IPC fetch. */
+export function refreshDrives(): void {
+  _drivesCache = null;
+  _drivesPromise = null;
 }
 
 export async function readDirectory(dirPath: string, fileFilter?: string): Promise<{ success: boolean; items: DirectoryEntry[]; error?: string }> {
