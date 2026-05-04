@@ -2,6 +2,17 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
+// Release-gate flag. Pass `--release` (via `npm run build:release`)
+// to set VITE_PDR_RELEASE_GATE=release, which Vite then bakes into
+// the client bundle as a literal string. The feature-flags helper
+// (client/src/lib/feature-flags.ts) reads it to greys-out Trees +
+// Edit Dates in v2.0.0. Plain `npm run build` leaves the gate
+// unset so dev iteration on those features still works.
+if (process.argv.includes('--release')) {
+  process.env.VITE_PDR_RELEASE_GATE = 'release';
+  console.log('[build] Release gate ENABLED — Trees + Edit Dates disabled in this build.');
+}
+
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
 const allowlist = [

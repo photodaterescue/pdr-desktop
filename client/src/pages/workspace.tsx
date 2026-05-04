@@ -105,6 +105,7 @@ import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/Li
 import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesView from "@/components/MemoriesView";
 import { TreesView } from "@/components/trees/TreesView";
+import { isTreesEnabled, TREES_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
@@ -757,6 +758,16 @@ const handleActivateLicense = () => {
     // BrowserWindow opened by openPeopleWindow().
     const viewParam = params.get("view") as 'dashboard' | 'search' | 'memories' | 'familytree' | null;
     if (viewParam && (viewParam === 'dashboard' || viewParam === 'search' || viewParam === 'memories' || viewParam === 'familytree')) {
+      // Release-gate: refuse navigation to Trees when the feature is
+      // disabled (v2.0.0). Falls through to dashboard so the user
+      // lands somewhere usable rather than a blank screen.
+      if (viewParam === 'familytree' && !isTreesEnabled()) {
+        toast.info(TREES_RELEASED_SHORTLY_MESSAGE);
+        setActiveView('dashboard');
+        setActivePanel(null);
+        setLocation('/workspace');
+        return;
+      }
       setActiveView(viewParam);
       setActivePanel(null);
       setLocation('/workspace');
@@ -1695,8 +1706,12 @@ return (
 
         {/* Trees view — family graph explorer (v1). Deliberately not called
             'Family Tree' because later versions will handle friend groups,
-            work colleagues, and any other relationships — not just kin. */}
-        {activeView === 'familytree' && (
+            work colleagues, and any other relationships — not just kin.
+            Gated behind isTreesEnabled() so a stale URL or restored
+            view state from before v2.0.0 release can't mount the
+            broken layout. URL handler upstream redirects familytree
+            to dashboard with a toast. */}
+        {activeView === 'familytree' && isTreesEnabled() && (
           <TreesView
             onRequestCanvasBackgroundPick={({ treeId, treeName }) => {
               setPendingBackgroundPick({ kind: 'canvas', treeId, treeName });
@@ -2220,10 +2235,12 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           isActiveView('memories'),
         )}
         {iconBtn(
-          'Trees',
+          isTreesEnabled() ? 'Trees' : `Trees — ${TREES_RELEASED_SHORTLY_MESSAGE}`,
           <Network className="w-4 h-4 opacity-70" />,
-          gateLocked('trees', () => onViewChange?.('familytree')),
-          !isLicensed,
+          isTreesEnabled()
+            ? gateLocked('trees', () => onViewChange?.('familytree'))
+            : () => toast.info(TREES_RELEASED_SHORTLY_MESSAGE),
+          !isLicensed || !isTreesEnabled(),
           isActiveView('familytree'),
         )}
         {iconBtn(
@@ -2476,12 +2493,14 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 label="Trees"
                 accent="emerald"
                 onClick={() => {
+                  if (!isTreesEnabled()) { toast.info(TREES_RELEASED_SHORTLY_MESSAGE); return; }
                   if (!isLicensed) { onFeatureLocked('trees'); return; }
                   onViewChange?.('familytree');
                 }}
                 active={activeView === 'familytree'}
                 selectable={false}
                 locked={!isLicensed}
+                disabled={!isTreesEnabled()}
               />
             </div>
           )}

@@ -11,6 +11,7 @@ import { ZoomControls } from "@/components/ZoomControls";
 import { getSettings, isElectron, prewarmDrives } from "@/lib/electron-bridge";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { HelpSupportModal } from "@/components/HelpSupportModal";
+import { isTreesEnabled, TREES_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 
 const SKIP_WELCOME_KEY = 'pdr-skip-welcome';
 
@@ -304,7 +305,8 @@ export default function Home() {
               title="Trees"
               description="See the people from your photos in family-tree form — a face for every name."
               locked={cardsLocked}
-              onClick={handleAppCard(() => navigate("/workspace?view=familytree"))}
+              releasedShortly={!isTreesEnabled()}
+              onClick={isTreesEnabled() ? handleAppCard(() => navigate("/workspace?view=familytree")) : undefined}
             />
             <ShowcaseCard
               accent="pink"
@@ -463,23 +465,26 @@ const APP_ACCENT: Record<AppAccent, { iconBg: string; iconFg: string; topBar: st
   pink:     { iconBg: '#fce7f3', iconFg: '#831843', topBar: '#ec4899', hoverBorder: '#db2777' },
 };
 
-function ShowcaseCard({ accent, icon, title, description, onClick, locked }: { accent: AppAccent; icon: React.ReactNode, title: string, description: string, onClick?: () => void, locked?: boolean }) {
+function ShowcaseCard({ accent, icon, title, description, onClick, locked, releasedShortly }: { accent: AppAccent; icon: React.ReactNode, title: string, description: string, onClick?: () => void, locked?: boolean, releasedShortly?: boolean }) {
   const a = APP_ACCENT[accent];
-  // Clickable when an onClick is provided. Subtler than the top-row
-  // CTAs (no big icon-circle treatment) so the Welcome page doesn't
-  // gain a third tier of dominant CTAs — just a quiet "Open →" hint
-  // on hover that satisfies the click expectation when users go for
-  // these cards directly. When `locked` is set, the card retains its
-  // visual identity but loses hover affordances and the "Open →" hint.
-  const interactive = !!onClick && !locked;
+  // Clickable when an onClick is provided AND the feature isn't
+  // release-gated. `locked` (no destination) and `releasedShortly`
+  // (Trees / Edit Dates held back from v2.0.0) both suppress hover
+  // affordances and the "Open →" hint, but they communicate slightly
+  // different states: `locked` = "set up the Library Drive first",
+  // `releasedShortly` = "this feature ships in a future release".
+  // The latter wins visually because it represents a fundamental
+  // unavailability, not a user-correctable state.
+  const interactive = !!onClick && !locked && !releasedShortly;
   return (
     <Card
-      className={`flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden text-left ${interactive ? 'cursor-pointer group hover:bg-white/70 hover:shadow-md' : (onClick ? 'cursor-default' : '')}`}
+      className={`flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden text-left ${interactive ? 'cursor-pointer group hover:bg-white/70 hover:shadow-md' : 'cursor-default'}`}
       style={{ borderColor: '#e5e7eb', borderTopWidth: '3px', borderTopColor: a.topBar, borderTopStyle: 'solid' }}
-      onClick={onClick}
-      role={onClick ? 'button' : undefined}
+      onClick={interactive ? onClick : undefined}
+      role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       onKeyDown={interactive ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick!(); } } : undefined}
+      aria-label={releasedShortly ? `${title} — released shortly` : undefined}
     >
       {/* Icon + title row.
           • items-start so the icon stays anchored to the FIRST line of
@@ -493,7 +498,14 @@ function ShowcaseCard({ accent, icon, title, description, onClick, locked }: { a
         <div className="p-1.5 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: a.iconBg, color: a.iconFg }}>
           {icon}
         </div>
-        <h4 className="text-sm font-semibold text-foreground text-left leading-tight pt-0.5">{title}</h4>
+        <div className="flex flex-col gap-1 min-w-0">
+          <h4 className="text-sm font-semibold text-foreground text-left leading-tight pt-0.5">{title}</h4>
+          {releasedShortly && (
+            <span className="inline-flex self-start text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30">
+              Released shortly
+            </span>
+          )}
+        </div>
       </div>
       <p className="text-xs text-muted-foreground leading-relaxed text-left">{description}</p>
       {interactive && (

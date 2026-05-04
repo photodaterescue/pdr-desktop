@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
+import { isEditDatesEnabled, EDIT_DATES_RELEASED_SHORTLY_MESSAGE } from '@/lib/feature-flags';
 import {
   Search,
   X,
@@ -3049,10 +3051,20 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {/* Date Editor button — inherits the current S&D query so the
                   dedicated window operates on exactly these photos. Enabled
                   only while there's something to edit. */}
-              <IconTooltip label="Open these photos in the Date Editor to review and correct their dates" side="bottom">
+              {/* Edit Dates button. When release-gated
+                  (isEditDatesEnabled() === false in v2.0.0 builds),
+                  the click fires a toast instead of opening the
+                  Date Editor window — which itself depends on the
+                  unfinished UX. Tooltip and visual disabled-state
+                  reflect the gate so users see why the button looks
+                  greyed. */}
+              <IconTooltip label={isEditDatesEnabled() ? "Open these photos in the Date Editor to review and correct their dates" : EDIT_DATES_RELEASED_SHORTLY_MESSAGE} side="bottom">
                 <button
-                  onClick={() => openDateEditor(query)}
-                  disabled={results.total === 0}
+                  onClick={() => {
+                    if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
+                    openDateEditor(query);
+                  }}
+                  disabled={results.total === 0 || !isEditDatesEnabled()}
                   data-pdr-variant="information"
                   className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}

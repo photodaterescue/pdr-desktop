@@ -10,6 +10,7 @@
     "dev:client": "vite dev --port 5000",
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
+    "build:release": "tsx script/build.ts --release",
     "build:electron": "tsc -p electron/tsconfig.json --outDir dist-electron && tsc -p electron/tsconfig.worker.json --outDir dist-electron && node -e \"const fs=require('fs');fs.renameSync('dist-electron/ai-worker.js','dist-electron/ai-worker.cjs');fs.mkdirSync('dist-electron/geodata',{recursive:true});fs.copyFileSync('electron/geodata/cities.json','dist-electron/geodata/cities.json')\"",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
