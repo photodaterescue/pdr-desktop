@@ -4,7 +4,7 @@
 // Preload MUST be CommonJS when run by Electron
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('pdr', {
-    runAnalysis: (sourcePath, sourceType) => ipcRenderer.invoke('analysis:run', sourcePath, sourceType),
+    runAnalysis: (sourcePath, sourceType, tempDirOverride) => ipcRenderer.invoke('analysis:run', sourcePath, sourceType, tempDirOverride),
     cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
     // Best-effort cleanup of any extracted temp dir associated with a
     // source the user is removing from the source menu. Returns

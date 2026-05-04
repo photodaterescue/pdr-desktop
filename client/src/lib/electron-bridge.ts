@@ -118,12 +118,38 @@ export async function openDestinationFolder(folderPath: string): Promise<void> {
   }
 }
 
+/**
+ * Result shape returned by runAnalysis. The success path carries the
+ * full SourceAnalysisResult; the failure path may carry a structured
+ * `code` (NO_TEMP_SPACE, LARGE_EXTRACT_IN_FLIGHT) so the caller can
+ * route to the right modal — smart-prompt picker for the first,
+ * "wait for current job" for the second.
+ */
+export interface RunAnalysisResult {
+  success: boolean;
+  data?: SourceAnalysisResult;
+  error?: string;
+  cancelled?: boolean;
+  code?: 'NO_TEMP_SPACE' | 'LARGE_EXTRACT_IN_FLIGHT';
+  details?: {
+    neededBytes?: number;
+    destinationPath?: string | null;
+    destinationLocal?: boolean;
+    destinationFreeBytes?: number | null;
+    tempFreeBytes?: number | null;
+    zipPath?: string;
+    currentZip?: string;
+    startedAt?: number;
+  };
+}
+
 export async function runAnalysis(
-  sourcePath: string, 
-  sourceType: 'folder' | 'zip' | 'drive'
-): Promise<{ success: boolean; data?: SourceAnalysisResult; error?: string }> {
+  sourcePath: string,
+  sourceType: 'folder' | 'zip' | 'drive',
+  tempDirOverride?: string,
+): Promise<RunAnalysisResult> {
   if (isElectron()) {
-    return (window as any).pdr.runAnalysis(sourcePath, sourceType);
+    return (window as any).pdr.runAnalysis(sourcePath, sourceType, tempDirOverride);
   }
   return { success: false, error: 'Not running in Electron environment' };
 }

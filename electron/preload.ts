@@ -5,8 +5,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pdr', {
-  runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive') =>
-  ipcRenderer.invoke('analysis:run', sourcePath, sourceType),
+  runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', tempDirOverride?: string) =>
+  ipcRenderer.invoke('analysis:run', sourcePath, sourceType, tempDirOverride),
 
   cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
 

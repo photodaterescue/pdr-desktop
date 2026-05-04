@@ -502,6 +502,164 @@ async function extractRar(rarPath, tempDir, onProgress) {
 }
 // --- Large ZIP auto-extraction helpers ---
 const PDR_TEMP_ROOT = path.join(app.getPath('temp'), 'PDR_Temp');
+// Synchronous disk-space probe for the volume containing `dir`. Used
+// by the pre-extract resolver to decide whether the destination drive
+// or %TEMP% has enough headroom for the extracted zip. Falls back to
+// PowerShell on Windows (the same one disk:getSpace uses) and `df`
+// on POSIX. Returns null on any failure — callers treat that as
+// "unknown, prefer the other candidate".
+function getDiskSpaceForDirSync(dir) {
+    try {
+        if (process.platform === 'win32') {
+            const driveLetter = path.parse(dir).root.replace('\\', '').replace(':', '');
+            if (!driveLetter)
+                return null;
+            try {
+                const psCmd = `powershell -NoProfile -Command "(Get-PSDrive -Name '${driveLetter}' -PSProvider FileSystem | Select-Object Free,Used,@{N='Total';E={$_.Free+$_.Used}}) | ConvertTo-Json"`;
+                const out = execSync(psCmd, { encoding: 'utf8', timeout: 10000 });
+                const info = JSON.parse(out.trim());
+                if (info && info.Free != null && info.Total != null) {
+                    return { freeBytes: Number(info.Free), totalBytes: Number(info.Total) };
+                }
+            }
+            catch { /* fall through to wmic */ }
+            try {
+                const out = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FreeSpace,Size /format:csv`, { encoding: 'utf8' });
+                const lines = out.trim().split('\n').filter(l => l.trim());
+                if (lines.length >= 2) {
+                    const parts = lines[1].split(',');
+                    const freeBytes = parseInt(parts[1], 10);
+                    const totalBytes = parseInt(parts[2], 10);
+                    if (!isNaN(freeBytes) && !isNaN(totalBytes)) {
+                        return { freeBytes, totalBytes };
+                    }
+                }
+            }
+            catch { /* fall through */ }
+            return null;
+        }
+        // POSIX
+        const out = execSync(`df -k "${dir}"`, { encoding: 'utf8' });
+        const lines = out.trim().split('\n');
+        if (lines.length >= 2) {
+            const parts = lines[1].split(/\s+/);
+            const totalKB = parseInt(parts[1], 10);
+            const availKB = parseInt(parts[3], 10);
+            if (!isNaN(availKB) && !isNaN(totalKB)) {
+                return { freeBytes: availKB * 1024, totalBytes: totalKB * 1024 };
+            }
+        }
+        return null;
+    }
+    catch {
+        return null;
+    }
+}
+// Cheap classifier — true iff `dir` lives on a local volume (not a
+// UNC path or a Windows mapped network drive). Mirrors the renderer
+// classifier's first two checks so we don't drag the whole module in
+// here. Pre-extract should never target a network drive: the I/O
+// cost of streaming a 50 GB zip's bytes back over Wi-Fi turns a
+// 30-min job into hours, AND tools like robocopy can't safely point
+// at a network temp dir.
+function isLocalDir(dir) {
+    if (!dir)
+        return false;
+    const norm = path.normalize(dir);
+    // UNC paths are network by definition.
+    if (norm.startsWith('\\\\'))
+        return false;
+    // Mapped network drive on Windows. Best-effort — any failure is
+    // treated as "not network" so we don't accidentally bounce a
+    // perfectly local pick.
+    if (process.platform === 'win32') {
+        try {
+            const driveMatch = norm.match(/^([A-Za-z]):/);
+            if (driveMatch) {
+                const out = execSync(`net use ${driveMatch[1]}: 2>nul`, { encoding: 'utf8', timeout: 3000 });
+                if (/Remote name/i.test(out) || /\\\\/.test(out))
+                    return false;
+            }
+        }
+        catch { /* not a mapped drive — local */ }
+    }
+    return true;
+}
+/**
+ * Pre-extract directory resolver.
+ *
+ * For zips above LARGE_ZIP_THRESHOLD we need somewhere to unpack the
+ * full archive. The choice matters because (a) extraction can take
+ * tens of GB of disk and (b) the picked drive becomes the source of
+ * every per-file read during the analysis loop that follows, so a
+ * slow pick blows the analysis time out. Order of preference:
+ *   1. The user's Library Drive (destinationPath) if it's local AND
+ *      has enough headroom. Same physical disk as the eventual fix
+ *      output → no cross-drive copy on completion, fastest analysis.
+ *   2. %TEMP% (PDR_TEMP_ROOT) if it has enough headroom. This is the
+ *      historic default; works fine when C: is roomy.
+ *   3. Failure case → caller surfaces a smart-prompt to the user
+ *      asking them to pick a different temp location.
+ *
+ * Required headroom = zipSize × 1.2 + 1 GB safety margin. The 1.2x
+ * accounts for the small inflation typical when an already-compressed
+ * format (JPEG/MP4) is wrapped in a zip; the 1 GB safety prevents a
+ * picker that's "just enough" from completely filling the drive and
+ * tripping every other process on the system.
+ */
+const PRE_EXTRACT_HEADROOM_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
+const PRE_EXTRACT_INFLATION = 1.2;
+function pickPreExtractDir(zipPath, destinationPath) {
+    const zipSize = getZipFileSize(zipPath);
+    const neededBytes = Math.ceil(zipSize * PRE_EXTRACT_INFLATION) + PRE_EXTRACT_HEADROOM_BYTES;
+    const destLocal = isLocalDir(destinationPath);
+    let destFree = null;
+    if (destinationPath && destLocal) {
+        const space = getDiskSpaceForDirSync(destinationPath);
+        if (space)
+            destFree = space.freeBytes;
+    }
+    // Prefer the destination drive when it qualifies.
+    if (destinationPath && destLocal && destFree != null && destFree >= neededBytes) {
+        const baseDir = path.join(destinationPath, 'PDR_Temp');
+        return {
+            ok: true,
+            baseDir,
+            tempDir: path.join(baseDir, path.basename(generateTempDirName(zipPath))),
+            chosenLabel: `destination drive (${destinationPath})`,
+            destinationFreeBytes: destFree,
+            tempFreeBytes: null,
+        };
+    }
+    // Fall back to %TEMP%.
+    const tempSpace = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
+    const tempFree = tempSpace?.freeBytes ?? null;
+    if (tempFree != null && tempFree >= neededBytes) {
+        return {
+            ok: true,
+            baseDir: PDR_TEMP_ROOT,
+            tempDir: generateTempDirName(zipPath),
+            chosenLabel: '%TEMP% (PDR_TEMP_ROOT)',
+            destinationFreeBytes: destFree,
+            tempFreeBytes: tempFree,
+        };
+    }
+    return {
+        ok: false,
+        neededBytes,
+        destinationPath,
+        destinationLocal: destLocal,
+        destinationFreeBytes: destFree,
+        tempFreeBytes: tempFree,
+    };
+}
+// One-large-zip-at-a-time guard. While a >2 GB zip is being
+// extracted to a temp dir, any other analysis:run call that would
+// also trigger pre-extract is refused at the IPC layer. Without this,
+// two concurrent 50 GB extractions can fill a 100 GB drive in
+// minutes — exactly the disk-fill catastrophe Jane reported. Cleared
+// in the IPC handler's finally block.
+let largeExtractInFlight = null;
 function cleanupOrphanedTempDirs() {
     try {
         if (fs.existsSync(PDR_TEMP_ROOT)) {
@@ -1376,9 +1534,27 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath) =>
     }
     return { success: true, cleaned };
 });
-ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType) => {
+ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOverride) => {
     let tempDir = null;
+    let claimedExtractInFlight = false;
     try {
+        // Hard one-large-zip-at-a-time gate. Two concurrent pre-extracts
+        // can flood a single drive in minutes; this refuses the second
+        // one at the IPC layer so the renderer can show a friendly
+        // "wait for the current job to finish" prompt instead of a
+        // disk-full crash. Smaller (<2 GB) zips, folders, and drives go
+        // through the streaming path and aren't gated.
+        const isLargeZip = sourceType === 'zip' && !isRarFile(sourcePath)
+            && getZipFileSize(sourcePath) > LARGE_ZIP_THRESHOLD
+            && !((() => { try {
+                return getSettings().bypassLargeZipPreExtract === true;
+            }
+            catch {
+                return false;
+            } })());
+        if (isLargeZip && largeExtractInFlight && largeExtractInFlight.zipPath !== sourcePath) {
+            throw Object.assign(new Error(`Another large zip is currently being unpacked. Wait for "${path.basename(largeExtractInFlight.zipPath)}" to finish before starting "${path.basename(sourcePath)}".`), { code: 'LARGE_EXTRACT_IN_FLIGHT', currentZip: path.basename(largeExtractInFlight.zipPath), startedAt: largeExtractInFlight.startedAt });
+        }
         let effectivePath = sourcePath;
         let effectiveType = sourceType;
         // Auto-extract RAR archives (always) or large ZIPs (>2 GB)
@@ -1402,22 +1578,51 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType) => {
             effectivePath = tempDir;
             effectiveType = 'folder';
         }
-        else if (sourceType === 'zip' &&
-            getZipFileSize(sourcePath) > LARGE_ZIP_THRESHOLD &&
-            // Settings escape hatch: if the user has toggled "Bypass large-zip
-            // pre-extract" in Settings → Advanced, fall through to the
-            // streaming `scanZipFile` path regardless of zip size. Used during
-            // QA against real 50 GB Google Takeouts to confirm the streaming
-            // engine + skip-and-continue holds without the temp-dir step. If
-            // it does, the pre-extract path can be retired entirely.
-            !((() => { try {
-                return getSettings().bypassLargeZipPreExtract === true;
+        else if (isLargeZip) {
+            // Pick a temp location BEFORE we mark the extract as in-flight,
+            // so a refusal doesn't poison the gate for the next call.
+            // tempDirOverride lets the renderer's smart-prompt modal hand
+            // back a user-picked drive after a previous attempt failed
+            // with NO_TEMP_SPACE — when supplied, we trust it and skip the
+            // resolver (which would otherwise refuse for the same reason).
+            let chosenTempDir;
+            let chosenLabel;
+            if (tempDirOverride) {
+                const baseDir = path.join(tempDirOverride, 'PDR_Temp');
+                chosenTempDir = path.join(baseDir, path.basename(generateTempDirName(sourcePath)));
+                chosenLabel = `user-picked temp dir (${tempDirOverride})`;
             }
-            catch {
-                return false;
-            } })())) {
-            tempDir = generateTempDirName(sourcePath);
+            else {
+                const settings = (() => { try {
+                    return getSettings();
+                }
+                catch {
+                    return null;
+                } })();
+                const decision = pickPreExtractDir(sourcePath, settings?.destinationPath ?? null);
+                if (!decision.ok) {
+                    // Surface a structured error so the renderer can drive a
+                    // smart-prompt modal asking the user to pick a different
+                    // temp drive. Re-invoking analysis:run with a
+                    // tempDirOverride bypasses this branch.
+                    throw Object.assign(new Error('Not enough disk space to unpack this zip safely.'), {
+                        code: 'NO_TEMP_SPACE',
+                        neededBytes: decision.neededBytes,
+                        destinationPath: decision.destinationPath,
+                        destinationLocal: decision.destinationLocal,
+                        destinationFreeBytes: decision.destinationFreeBytes,
+                        tempFreeBytes: decision.tempFreeBytes,
+                        zipPath: sourcePath,
+                    });
+                }
+                chosenTempDir = decision.tempDir;
+                chosenLabel = decision.chosenLabel;
+            }
+            tempDir = chosenTempDir;
             activeTempDirs.add(tempDir);
+            largeExtractInFlight = { zipPath: sourcePath, tempDir, startedAt: Date.now() };
+            claimedExtractInFlight = true;
+            console.log(`[Pre-extract] zip="${path.basename(sourcePath)}" → ${chosenLabel}`);
             // Notify renderer about the extraction
             mainWindow?.webContents.send('analysis:progress', {
                 current: 0,
@@ -1473,7 +1678,35 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType) => {
         if (error.message === 'ANALYSIS_CANCELLED') {
             return { success: false, cancelled: true, error: 'Analysis cancelled by user' };
         }
+        // Pass structured codes through to the renderer so it can route
+        // to the right modal (NO_TEMP_SPACE → smart-prompt picker,
+        // LARGE_EXTRACT_IN_FLIGHT → "wait for current job" modal).
+        if (error && typeof error === 'object' && error.code) {
+            return {
+                success: false,
+                error: error.message,
+                code: error.code,
+                details: {
+                    neededBytes: error.neededBytes,
+                    destinationPath: error.destinationPath,
+                    destinationLocal: error.destinationLocal,
+                    destinationFreeBytes: error.destinationFreeBytes,
+                    tempFreeBytes: error.tempFreeBytes,
+                    zipPath: error.zipPath,
+                    currentZip: error.currentZip,
+                    startedAt: error.startedAt,
+                },
+            };
+        }
         return { success: false, error: error.message };
+    }
+    finally {
+        // Release the one-large-zip gate even if extraction failed —
+        // otherwise a single failed extract permanently blocks all future
+        // pre-extracts in the session.
+        if (claimedExtractInFlight) {
+            largeExtractInFlight = null;
+        }
     }
 });
 function calculateFileHashAsync(filePath, timeoutMs = 30000) {

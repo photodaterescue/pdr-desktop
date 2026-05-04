@@ -107,6 +107,7 @@ import MemoriesView from "@/components/MemoriesView";
 import { TreesView } from "@/components/trees/TreesView";
 import { isTreesEnabled, TREES_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
+import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
@@ -563,6 +564,21 @@ const handleActivateLicense = () => {
   const [showDestBrowser, setShowDestBrowser] = useState(false);
   const [folderBrowserCallback, setFolderBrowserCallback] = useState<((path: string) => void) | null>(null);
 
+  // Smart-prompt fallback for the NO_TEMP_SPACE error from the
+  // pre-extract resolver. When neither the Library Drive nor %TEMP%
+  // has enough room, we capture the details + the source we were
+  // about to analyse so the user can pick an alternative drive and
+  // we can re-fire runAnalysis with that drive as a tempDirOverride.
+  const [tempSpacePrompt, setTempSpacePrompt] = useState<{
+    neededBytes: number;
+    destinationPath: string | null;
+    destinationLocal: boolean;
+    destinationFreeBytes: number | null;
+    tempFreeBytes: number | null;
+    zipPath: string;
+    sourceType: 'folder' | 'zip' | 'drive';
+  } | null>(null);
+
   // Auto-index: track which report IDs have already been indexed to avoid re-indexing
   const autoIndexedReportsRef = useRef<Set<string>>(new Set());
   // Whether the current fix run should be added to Search & Discovery
@@ -976,7 +992,7 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   }, 0);
 };
   
-  const handleElectronSourceSelected = async (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', skipStorageCheck: boolean = false) => {
+  const handleElectronSourceSelected = async (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', skipStorageCheck: boolean = false, tempDirOverride?: string) => {
   // Check storage speed BEFORE scanning (for sources from interim screen)
   if (sourceType !== 'zip' && !skipStorageCheck) {
     try {
@@ -1079,7 +1095,7 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
     
     let result;
     try {
-      result = await runAnalysis(sourcePath, finalType);
+      result = await runAnalysis(sourcePath, finalType, tempDirOverride);
       } catch (error) {
         removeAnalysisProgressListener();
         setIsAnalyzing(false);
@@ -1145,6 +1161,24 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
 		  await playCompletionSound();
 		  await flashTaskbar();
 		}
+      } else if (result.code === 'NO_TEMP_SPACE' && result.details && finalType === 'zip') {
+        // Pre-extract resolver couldn't find a drive with enough room.
+        // Surface the smart-prompt — user picks a different drive and
+        // we re-fire runAnalysis with that drive as a temp override.
+        setTempSpacePrompt({
+          neededBytes: result.details.neededBytes ?? 0,
+          destinationPath: result.details.destinationPath ?? null,
+          destinationLocal: result.details.destinationLocal ?? false,
+          destinationFreeBytes: result.details.destinationFreeBytes ?? null,
+          tempFreeBytes: result.details.tempFreeBytes ?? null,
+          zipPath: result.details.zipPath ?? sourcePath,
+          sourceType: finalType,
+        });
+      } else if (result.code === 'LARGE_EXTRACT_IN_FLIGHT') {
+        // Concurrent pre-extract refused at the IPC layer. Quick
+        // toast — no modal needed, the user just needs to wait for
+        // the current job to finish before trying this one again.
+        toast.error(result.error || 'Wait for the current zip to finish unpacking before starting another.');
       } else {
         toast.error(result.error || 'Failed to analyze source');
       }
@@ -1789,6 +1823,35 @@ return (
         title="Add Source"
         mode="source"
       />
+
+      {/* Smart-prompt for the NO_TEMP_SPACE pre-extract failure.
+          Captured details + the source we were about to analyse,
+          so on "Pick another drive" we can re-fire runAnalysis with
+          the user's choice as a tempDirOverride. */}
+      {tempSpacePrompt && (
+        <TempSpacePromptModal
+          neededBytes={tempSpacePrompt.neededBytes}
+          destinationPath={tempSpacePrompt.destinationPath}
+          destinationLocal={tempSpacePrompt.destinationLocal}
+          destinationFreeBytes={tempSpacePrompt.destinationFreeBytes}
+          tempFreeBytes={tempSpacePrompt.tempFreeBytes}
+          zipPath={tempSpacePrompt.zipPath}
+          onCancel={() => setTempSpacePrompt(null)}
+          onPickTempDir={() => {
+            const captured = tempSpacePrompt;
+            setTempSpacePrompt(null);
+            // Re-use the existing folder-browser callback channel
+            // — set the callback to "re-fire analysis with this
+            // path as tempDirOverride", then open the browser in
+            // folder-mode. The existing browser instance below
+            // handles the rest.
+            setFolderBrowserCallback(() => async (pickedPath: string) => {
+              await handleElectronSourceSelected(captured.zipPath, captured.sourceType, true, pickedPath);
+            });
+            setShowFolderBrowser(true);
+          }}
+        />
+      )}
 
       {showReportProblem && (
         <ReportProblemModal onClose={() => setShowReportProblem(false)} />
