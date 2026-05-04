@@ -173,7 +173,29 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const newFolderInputRef = useRef<HTMLInputElement>(null);
-  const [modalSize, setModalSize] = useState({ width: 900, height: 620 });
+  // Default modal footprint. ~20% larger than the original 900×620 so
+  // the drive list breathes — most users have 4–8 drives, but power
+  // users with internal + external + NAS easily hit 12+, and the
+  // colour-coded ALL DRIVES grid wants two columns to read cleanly.
+  const [modalSize, setModalSize] = useState({ width: 1080, height: 744 });
+
+  // Drive Advisor 25 s nudge. If the user has been staring at the
+  // modal for 25 seconds without picking, surface attention to the
+  // "Not sure which drive? Open Drive Advisor" button via the same
+  // outline-pulse animation the destination CTA on Workspace uses.
+  // The button is at the bottom of the drives grid by design (it's
+  // a fallback, not the primary action), but a confused user
+  // shouldn't have to scroll to discover help — the nudge brings
+  // their eye to it.
+  const [nudgeAdvisor, setNudgeAdvisor] = useState(false);
+  useEffect(() => {
+    if (!isOpen || !onOpenDriveAdvisor) {
+      setNudgeAdvisor(false);
+      return;
+    }
+    const timer = setTimeout(() => setNudgeAdvisor(true), 25000);
+    return () => clearTimeout(timer);
+  }, [isOpen, onOpenDriveAdvisor]);
   const [isResizing, setIsResizing] = useState(false);
   const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
   const pendingDefaultPathRef = useRef<string | null>(null);
@@ -975,17 +997,28 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                       </button>
                     );
                   })}
-                  {/* Drive Advisor link */}
+                  {/* Drive Advisor link. Heading uses text-foreground
+                      (not text-primary) so it's actually legible on
+                      the bg-primary/5 tint — pale lavender on
+                      pale-lavender was reading as faint body text per
+                      the style-guide warning. The icon keeps
+                      text-primary because icons-on-tint are the
+                      colour pop the guide explicitly endorses. When
+                      nudgeAdvisor flips to true (25 s on the modal
+                      with no pick) we apply the existing
+                      outline-pulse animation so users who can't
+                      decide get a gentle attention nudge. */}
                   {onOpenDriveAdvisor && (
                     <button
                       onClick={onOpenDriveAdvisor}
-                      className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border-2 border-dashed border-primary/30 hover:border-primary/50 hover:bg-primary/10 transition-all text-left group col-span-2"
+                      className={`flex items-center gap-3 p-4 rounded-xl bg-primary/5 border-2 border-dashed border-primary/40 hover:border-primary/60 hover:bg-primary/10 transition-all text-left group col-span-2 ${nudgeAdvisor ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-background' : ''}`}
+                      style={nudgeAdvisor ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
                     >
                       <div className="p-2.5 rounded-lg bg-primary/10">
                         <Info className="w-5 h-5 text-primary" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-primary">Not sure which drive? Open Drive Advisor</div>
+                        <div className="text-sm font-medium text-foreground">Not sure which drive? Open Drive Advisor</div>
                         <div className="text-xs text-muted-foreground">Get personalised guidance on which drive is best for your library</div>
                       </div>
                     </button>
