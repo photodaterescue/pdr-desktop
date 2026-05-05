@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Send, ExternalLink, AlertTriangle, Check, FolderOpen } from 'lucide-react';
+import { X, Send, AlertTriangle, Check, FolderOpen } from 'lucide-react';
 import { reportProblem, getLogFilePath, revealInFolder } from '@/lib/electron-bridge';
 import { Button } from '@/components/ui/custom-button';
 
@@ -64,10 +64,6 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
     }
   };
 
-  const handleRevealLog = async () => {
-    await getLogFilePath(true);
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div
@@ -88,8 +84,8 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
           {!sentOk ? (
             <>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Briefly describe what went wrong. We'll bundle your log, system info and licence state into a diagnostic ZIP —{' '}
-                <strong className="text-foreground font-semibold">just drag the ZIP into the email when your mail client opens, then send.</strong>
+                Briefly describe what went wrong, then click Send. We'll create a diagnostic ZIP for you —{' '}
+                <strong className="text-foreground font-semibold">drag it into the email when your mail client opens, then send.</strong>
               </p>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-foreground">What happened?</span>
@@ -178,25 +174,15 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
           )}
         </div>
 
-        <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-2">
-          {/* Pre-send only: lets power users open the raw log folder
-              before reporting. Hidden after Send because the success
-              state has its own "Open folder" button that targets the
-              diagnostic ZIP in Documents — clicking the log-folder
-              link post-Send would open a different folder than the
-              one we just told the user to look at, which is what
-              caused confusion in #5's first round. */}
-          {!sentOk ? (
-            <button
-              onClick={handleRevealLog}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Open log folder
-            </button>
-          ) : (
-            <span /> /* placeholder to keep the right-side buttons right-aligned */
-          )}
+        <div className="border-t border-border px-4 py-3 flex items-center justify-end gap-2">
+          {/* "Open log folder" power-user button removed entirely —
+              it taught users that the log was what they had to attach,
+              which contradicts the actual flow (the diagnostic ZIP is
+              the single artefact they ever need to send). The
+              success state has its own Open-folder Button that
+              targets the ZIP in Documents. If a power user really
+              wants the raw log path it's still in main.log inside
+              the ZIP and surfaced in About PDR. */}
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm text-foreground hover:bg-accent">
               {sentOk ? 'Done' : 'Cancel'}
