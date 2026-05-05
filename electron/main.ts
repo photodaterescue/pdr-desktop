@@ -493,10 +493,13 @@ function createWindow() {
 	  }
 	});
 
-	// Block Electron's native zoom shortcuts — our renderer handles zoom via IPC
-	// Allow F12 and Ctrl+Shift+I to open DevTools
+	// Block Electron's native zoom shortcuts — our renderer handles zoom via IPC.
+	// DevTools (F12 / Ctrl+Shift+I) is dev-only so packaged builds can't be
+	// opened up + inspected by end users. !app.isPackaged means: enabled when
+	// running via `npx electron dist-electron/main.js` (dev), disabled in the
+	// installed NSIS build that ships to customers.
 	mainWindow!.webContents.on('before-input-event', (_event, input) => {
-	  if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
+	  if (!app.isPackaged && (input.key === 'F12' || (input.control && input.shift && input.key === 'I'))) {
 	    mainWindow?.webContents.toggleDevTools();
 	    return;
 	  }
