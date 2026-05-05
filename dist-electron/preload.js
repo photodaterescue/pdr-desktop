@@ -115,6 +115,21 @@ contextBridge.exposeInMainWorld('pdr', {
     updates: {
         check: () => ipcRenderer.invoke('updates:check'),
         getVersion: () => ipcRenderer.invoke('updates:getVersion'),
+        // Auto-update lifecycle: trigger the download once the user
+        // accepts the "Update available" toast, then trigger the install
+        // (quitAndInstall) once the file is on disk.
+        download: () => ipcRenderer.invoke('updates:download'),
+        install: () => ipcRenderer.invoke('updates:install'),
+        getState: () => ipcRenderer.invoke('updates:getState'),
+        // Push-channel subscription: main process emits state-machine
+        // transitions on this channel as electron-updater fires events.
+        // Renderer keeps a single source of truth in component state and
+        // re-renders when this fires.
+        onState: (callback) => {
+            const handler = (_event, state) => callback(state);
+            ipcRenderer.on('updates:state', handler);
+            return () => ipcRenderer.removeListener('updates:state', handler);
+        },
     },
     storage: {
         classify: (sourcePath) => ipcRenderer.invoke('storage:classify', sourcePath),

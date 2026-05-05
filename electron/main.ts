@@ -126,7 +126,13 @@ import {
   clearCache as clearLicenseCache,
   getMachineFingerprint
 } from './license-manager.js';
-import { checkForUpdates } from './update-checker.js';
+import {
+  checkForUpdates,
+  initAutoUpdater,
+  downloadUpdate,
+  quitAndInstall,
+  getUpdateState,
+} from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
 import {
   initDatabase,
@@ -224,13 +230,28 @@ import {
   type RelationshipFlags,
 } from './search-database.js';
 
-// Update checking
+// Update checking — see electron/update-checker.ts for the full state
+// machine. The renderer subscribes to push events on the
+// 'updates:state' channel and can trigger lifecycle transitions
+// (download, install) via these IPC handlers.
 ipcMain.handle('updates:check', async () => {
   return await checkForUpdates();
 });
 
 ipcMain.handle('updates:getVersion', () => {
   return app.getVersion();
+});
+
+ipcMain.handle('updates:download', async () => {
+  await downloadUpdate();
+});
+
+ipcMain.handle('updates:install', () => {
+  quitAndInstall();
+});
+
+ipcMain.handle('updates:getState', () => {
+  return getUpdateState();
 });
 
 
@@ -955,6 +976,14 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
 
   createWindow();
+
+  // Wire electron-updater after the main window exists so the updater
+  // can broadcast state events to the renderer over webContents.send.
+  // initAutoUpdater is a no-op in dev (app.isPackaged === false) — the
+  // packaged NSIS build is what actually checks updates.photodaterescue.com.
+  if (mainWindow) {
+    initAutoUpdater(mainWindow);
+  }
 
   resetCriticalSettings();
   cleanupOrphanedTempDirs();

@@ -1,131 +1,161 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, X, AlertTriangle } from 'lucide-react';
+import { Download, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
-import { checkForUpdates, openExternalUrl, UpdateInfo } from '@/lib/electron-bridge';
+import {
+  subscribeUpdateState,
+  downloadUpdate,
+  installUpdateNow,
+  type UpdateState,
+} from '@/lib/electron-bridge';
 
+/**
+ * Auto-update toast — bottom-right tile that follows the
+ * electron-updater state machine in main process. See
+ * electron/update-checker.ts for the full lifecycle. Three visible
+ * states:
+ *
+ *   available     "Update available — Get it now / Later"
+ *   downloading   progress bar (no buttons)
+ *   downloaded    "Update ready — Restart now / Later"
+ *
+ * idle/checking/not-available/error all render nothing — we only
+ * surface UI when there's something the user can act on. A backend
+ * error contacting the update server is logged, not toasted, to avoid
+ * alarming users when the issue is e.g. transient network failure.
+ *
+ * "Later" sets a session-scoped dismissal — the toast stays hidden
+ * until the next state transition (e.g. download completes), at which
+ * point a new actionable state surfaces a fresh toast.
+ */
 export function UpdateNotification() {
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [state, setState] = useState<UpdateState>({ kind: 'idle' });
+  const [dismissedKind, setDismissedKind] = useState<UpdateState['kind'] | null>(null);
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const info = await checkForUpdates();
-        if (info.updateAvailable) {
-          setUpdateInfo(info);
-        }
-      } catch (error) {
-        console.error('Update check failed:', error);
-      }
-    };
-    
-    // Check after a short delay to not block app startup
-    const timer = setTimeout(check, 2000);
-    return () => clearTimeout(timer);
+    const unsubscribe = subscribeUpdateState((next) => {
+      setState(next);
+      // Clearing the dismissal whenever the state machine advances to
+      // a new actionable kind means each milestone gets one toast.
+      // (e.g. user dismisses 'available', then download finishes →
+      // they see the 'downloaded' toast even though they previously
+      // dismissed.)
+      setDismissedKind((prev) => (prev === next.kind ? prev : null));
+    });
+    return unsubscribe;
   }, []);
 
-  const handleDownload = async () => {
-    if (updateInfo?.downloadUrl) {
-      await openExternalUrl(updateInfo.downloadUrl);
-    }
-  };
+  const visible =
+    (state.kind === 'available' ||
+      state.kind === 'downloading' ||
+      state.kind === 'downloaded') &&
+    dismissedKind !== state.kind;
 
-  const handleDismiss = () => {
-    if (!updateInfo?.mandatory) {
-      setDismissed(true);
-    }
-  };
+  const onLater = () => setDismissedKind(state.kind);
 
-  if (!updateInfo || (!updateInfo.mandatory && dismissed)) {
+  const renderBody = () => {
+    if (state.kind === 'available') {
+      return (
+        <>
+          <h3 className="font-semibold text-foreground">Update available</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Version {state.version} is ready to download
+            {state.currentVersion && ` (you're on ${state.currentVersion})`}.
+          </p>
+          {state.releaseNotes && (
+            <p className="text-xs text-muted-foreground mt-1 italic line-clamp-3">
+              {state.releaseNotes}
+            </p>
+          )}
+          <div className="flex gap-2 mt-3 justify-end">
+            <Button size="sm" variant="secondary" onClick={onLater}>
+              Later
+            </Button>
+            <Button size="sm" onClick={() => void downloadUpdate()}>
+              <Download className="w-4 h-4 mr-1.5" />
+              Get update
+            </Button>
+          </div>
+        </>
+      );
+    }
+    if (state.kind === 'downloading') {
+      const pct = Math.max(0, Math.min(100, Math.round(state.percent ?? 0)));
+      return (
+        <>
+          <h3 className="font-semibold text-foreground">Downloading update</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            {pct}% — {formatBytes(state.transferred)} of {formatBytes(state.total)}
+          </p>
+          <div className="mt-3 h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+            <div
+              className="h-full bg-primary transition-[width] duration-200"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </>
+      );
+    }
+    if (state.kind === 'downloaded') {
+      return (
+        <>
+          <h3 className="font-semibold text-foreground">Update ready</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Version {state.version} will install when you restart Photo Date Rescue.
+          </p>
+          <div className="flex gap-2 mt-3 justify-end">
+            <Button size="sm" variant="secondary" onClick={onLater}>
+              Later
+            </Button>
+            <Button size="sm" onClick={() => void installUpdateNow()}>
+              <RefreshCw className="w-4 h-4 mr-1.5" />
+              Restart now
+            </Button>
+          </div>
+        </>
+      );
+    }
     return null;
-  }
+  };
 
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: 50 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 50 }}
-        className="fixed bottom-4 right-4 z-50 max-w-sm"
-      >
-        <div className={`rounded-xl shadow-2xl border p-4 ${
-          updateInfo.mandatory 
-            ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/50 dark:border-amber-800' 
-            : 'bg-background border-border'
-        }`}>
-          <div className="flex items-start gap-3">
-            <div className={`p-2 rounded-full ${
-              updateInfo.mandatory 
-                ? 'bg-amber-100 dark:bg-amber-900/50' 
-                : 'bg-primary/10'
-            }`}>
-              {updateInfo.mandatory ? (
-                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-              ) : (
+      {visible && (
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 30 }}
+          className="fixed bottom-4 right-4 z-50 max-w-sm"
+        >
+          <div className="bg-background rounded-xl shadow-2xl border border-border p-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-primary/10 shrink-0">
                 <Download className="w-5 h-5 text-primary" />
-              )}
-            </div>
-            
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <h3 className={`font-semibold ${
-                  updateInfo.mandatory 
-                    ? 'text-amber-900 dark:text-amber-200' 
-                    : 'text-foreground'
-                }`}>
-                  {updateInfo.mandatory ? 'Update Required' : 'Update Available'}
-                </h3>
-                {!updateInfo.mandatory && (
-                  <button
-                    onClick={handleDismiss}
-                    className="p-1 hover:bg-secondary rounded-full transition-colors"
-                  >
-                    <X className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                )}
               </div>
-              
-              <p className="text-sm text-muted-foreground mt-1">
-                Version {updateInfo.latestVersion} is available
-                {updateInfo.currentVersion && ` (you have ${updateInfo.currentVersion})`}
-              </p>
-              
-              {updateInfo.releaseNotes && (
-                <p className="text-xs text-muted-foreground mt-1 italic">
-                  {updateInfo.releaseNotes}
-                </p>
-              )}
-              
-              <div className="flex gap-2 mt-3">
-                <Button
-                  size="sm"
-                  onClick={handleDownload}
-                  className="flex-1"
+              <div className="flex-1 min-w-0">
+                {renderBody()}
+              </div>
+              {state.kind !== 'downloading' && (
+                <button
+                  onClick={onLater}
+                  aria-label="Dismiss"
+                  className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
                 >
-                  <Download className="w-4 h-4 mr-1" />
-                  Download
-                </Button>
-                {!updateInfo.mandatory && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleDismiss}
-                  >
-                    Later
-                  </Button>
-                )}
-              </div>
-              
-              {updateInfo.mandatory && (
-                <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
-                  This update is required to continue using Photo Date Rescue.
-                </p>
+                  <X className="w-4 h-4" />
+                </button>
               )}
             </div>
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }

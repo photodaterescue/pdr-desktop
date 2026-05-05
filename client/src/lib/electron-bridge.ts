@@ -601,6 +601,25 @@ export interface UpdateInfo {
   releaseNotes?: string;
 }
 
+// Auto-update state machine (Phase A — see electron/update-checker.ts).
+// The renderer subscribes via subscribeUpdateState() and renders one
+// piece of UI per kind. main.ts pushes state transitions over the
+// 'updates:state' IPC channel as electron-updater events fire.
+export type UpdateState =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'not-available'; currentVersion: string }
+  | { kind: 'available'; version: string; releaseNotes?: string; currentVersion: string }
+  | {
+      kind: 'downloading';
+      percent: number;
+      bytesPerSecond: number;
+      transferred: number;
+      total: number;
+    }
+  | { kind: 'downloaded'; version: string }
+  | { kind: 'error'; message: string };
+
 export async function checkForUpdates(): Promise<UpdateInfo> {
   if (isElectron() && (window as any).pdr?.updates) {
     return (window as any).pdr.updates.check();
@@ -619,6 +638,41 @@ export async function getAppVersion(): Promise<string> {
     return (window as any).pdr.updates.getVersion();
   }
   return '0.0.0';
+}
+
+export async function downloadUpdate(): Promise<void> {
+  if (isElectron() && (window as any).pdr?.updates?.download) {
+    return (window as any).pdr.updates.download();
+  }
+}
+
+export async function installUpdateNow(): Promise<void> {
+  if (isElectron() && (window as any).pdr?.updates?.install) {
+    return (window as any).pdr.updates.install();
+  }
+}
+
+export async function getUpdateState(): Promise<UpdateState> {
+  if (isElectron() && (window as any).pdr?.updates?.getState) {
+    return (window as any).pdr.updates.getState();
+  }
+  return { kind: 'idle' };
+}
+
+/**
+ * Subscribe to the auto-update state-machine push channel. Main pushes
+ * a new state every time electron-updater transitions (checking →
+ * available → downloading → downloaded → error etc.). Returns an
+ * unsubscribe fn — call it on unmount.
+ *
+ * In the browser preview (no electron) this is a no-op that returns a
+ * noop unsubscribe.
+ */
+export function subscribeUpdateState(callback: (state: UpdateState) => void): () => void {
+  if (isElectron() && (window as any).pdr?.updates?.onState) {
+    return (window as any).pdr.updates.onState(callback);
+  }
+  return () => {};
 }
 
 // Storage classification types and functions

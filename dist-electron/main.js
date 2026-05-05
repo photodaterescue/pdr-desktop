@@ -118,19 +118,31 @@ import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, ex
 import { getSettings, setSetting, setSettings, resetCriticalSettings } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import { getLicenseStatus, activateLicense, refreshLicense, deactivateLicense, getMachineFingerprint } from './license-manager.js';
-import { checkForUpdates } from './update-checker.js';
+import { checkForUpdates, initAutoUpdater, downloadUpdate, quitAndInstall, getUpdateState, } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
 import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, } from './search-database.js';
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
-// Update checking
+// Update checking — see electron/update-checker.ts for the full state
+// machine. The renderer subscribes to push events on the
+// 'updates:state' channel and can trigger lifecycle transitions
+// (download, install) via these IPC handlers.
 ipcMain.handle('updates:check', async () => {
     return await checkForUpdates();
 });
 ipcMain.handle('updates:getVersion', () => {
     return app.getVersion();
+});
+ipcMain.handle('updates:download', async () => {
+    await downloadUpdate();
+});
+ipcMain.handle('updates:install', () => {
+    quitAndInstall();
+});
+ipcMain.handle('updates:getState', () => {
+    return getUpdateState();
 });
 // Storage classification
 ipcMain.handle('storage:classify', async (_event, sourcePath) => {
@@ -796,6 +808,13 @@ app.whenReady().then(() => {
     // Remove default Electron menus — custom title bar replaces them
     Menu.setApplicationMenu(null);
     createWindow();
+    // Wire electron-updater after the main window exists so the updater
+    // can broadcast state events to the renderer over webContents.send.
+    // initAutoUpdater is a no-op in dev (app.isPackaged === false) — the
+    // packaged NSIS build is what actually checks updates.photodaterescue.com.
+    if (mainWindow) {
+        initAutoUpdater(mainWindow);
+    }
     resetCriticalSettings();
     cleanupOrphanedTempDirs();
     app.on('activate', () => {

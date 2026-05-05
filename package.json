@@ -1,6 +1,6 @@
 {
   "name": "photo-date-rescue",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "main": "dist-electron/main.js",
   "description": "Repair, normalise, and organise photo and video dates from any source.",
   "author": "Photo Date Rescue Ltd",
@@ -78,13 +78,23 @@
       "signAndEditExecutable": true,
       "signtoolOptions": {
         "certificateSha1": "184d06839b0c4168b9e1d194a3fa5d34e1324270"
-      }
+      },
+      "publisherName": [
+        "Photo Date Rescue Ltd"
+      ]
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.photodaterescue.com",
+        "channel": "latest"
+      }
+    ]
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -136,6 +146,7 @@
     "drizzle-zod": "^0.7.0",
     "electron-log": "^5.4.3",
     "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.3",
     "embla-carousel-react": "^8.6.0",
     "exif-parser": "^0.1.12",
     "exiftool-vendored": "^35.0.0",
