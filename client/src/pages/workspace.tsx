@@ -581,7 +581,9 @@ const handleActivateLicense = () => {
   const flashSourceHighlight = (sourceId: string) => {
     if (highlightClearTimerRef.current) clearTimeout(highlightClearTimerRef.current);
     setHighlightedSourceId(sourceId);
-    highlightClearTimerRef.current = setTimeout(() => setHighlightedSourceId(null), 3000);
+    // 6 s hold — twice the original 3 s. Matches the slower pulse
+    // animation cadence below (3 × 2 s cycles = 6 s of motion).
+    highlightClearTimerRef.current = setTimeout(() => setHighlightedSourceId(null), 6000);
   };
 
   // Soft-duplicate-source confirm modal. Fires when the user picks a
@@ -1431,21 +1433,30 @@ const handleFolderBrowserSourceSelected = async (selectedPath: string) => {
     if (!willBeArchive && targetName) {
       const { fingerprintFolder } = await import('@/lib/electron-bridge');
       const fingerprint = await fingerprintFolder(selectedPath);
+      console.log('[Fingerprint-check] selected:', selectedPath, '→ fingerprint:', fingerprint);
       if (fingerprint) {
         const possibleMatch = sources.find(s => {
-          if (!s.path || !s.stats) return false;
+          if (!s.path || !s.stats) {
+            console.log('[Fingerprint-check] skipping source — missing path/stats:', s.path, 'stats:', s.stats);
+            return false;
+          }
           if (lastSegment(s.path) !== targetName) return false;
           const sFiles = s.stats.totalFiles ?? 0;
           // sizeGB is the existing field on stats; convert to bytes for comparison.
           const sBytes = Math.round((s.stats.estimatedSizeGB ?? 0) * 1024 * 1024 * 1024);
+          const ratio = sBytes === 0 ? (fingerprint.totalBytes === 0 ? 0 : 1) : Math.abs(sBytes - fingerprint.totalBytes) / sBytes;
+          console.log('[Fingerprint-check] candidate:', s.path,
+            '| existing files:', sFiles, 'vs new:', fingerprint.fileCount,
+            '| existing bytes:', sBytes, 'vs new:', fingerprint.totalBytes,
+            '| ratio:', ratio.toFixed(4));
           if (sFiles !== fingerprint.fileCount) return false;
           // Allow a 1% byte tolerance — different filesystems can
           // round file sizes slightly differently (NTFS vs FAT
           // cluster sizes etc).
           if (sBytes === 0) return fingerprint.totalBytes === 0;
-          const ratio = Math.abs(sBytes - fingerprint.totalBytes) / sBytes;
           return ratio < 0.01;
         });
+        console.log('[Fingerprint-check] possibleMatch:', possibleMatch?.path ?? 'none');
         if (possibleMatch) {
           setSoftDupConfirm({
             newPath: selectedPath,
@@ -2738,7 +2749,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 <div
                   key={source.id}
                   className={isHighlighted ? 'relative rounded-lg ring-2 ring-amber-500/70 ring-offset-1 ring-offset-sidebar' : 'relative'}
-                  style={isHighlighted ? { animation: 'outline-pulse 1.2s ease-in-out 2' } : undefined}
+                  style={isHighlighted ? { animation: 'outline-pulse 2s ease-in-out 3' } : undefined}
                 >
                   <SidebarItem
                     icon={source.icon}
