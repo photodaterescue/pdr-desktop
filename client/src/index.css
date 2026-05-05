@@ -225,6 +225,17 @@
   50% { box-shadow: 0 0 0 5px rgba(169, 156, 255, 0.35); }
 }
 
+/* Amber sibling of outline-pulse. Used by the dup-source highlight
+   in the Source Menu so the "Already added" attention pulse reads
+   as a caution flag (matches the amber chip palette across the
+   rest of the app — Released-shortly badge, drive-rating warnings,
+   etc.) rather than the lavender "this is the next thing to do"
+   pulse used by the primary CTAs. */
+@keyframes outline-pulse-amber {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.35); }
+}
+
 /* ─── Chip-tier colour fallback ────────────────────────────────────────
    Last-resort attribute-selector rules with !important so the chip
    tints land regardless of Tailwind class processing, twMerge, parent

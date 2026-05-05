@@ -2050,7 +2050,7 @@ return (
             </div>
             <div className="px-5 py-5 space-y-4">
               <p className="text-sm text-foreground leading-relaxed">
-                The folder you picked has the same name, file count and total size as <strong className="text-foreground font-semibold">{softDupConfirm.existingName}</strong>, which is already in your Source Menu.
+                This folder on <strong className="text-foreground font-semibold">drive {softDupConfirm.newPath.match(/^([a-zA-Z]):/)?.[1]?.toUpperCase() ?? '?'}:</strong> matches <strong className="text-foreground font-semibold">{softDupConfirm.existingName}</strong> on <strong className="text-foreground font-semibold">drive {softDupConfirm.existingPath.match(/^([a-zA-Z]):/)?.[1]?.toUpperCase() ?? '?'}:</strong> — same name, file count and size. Likely the same content on a different drive.
               </p>
               <div className="rounded-lg bg-secondary/30 border border-border px-4 py-3 space-y-1.5 text-xs">
                 <div className="flex items-baseline justify-between gap-3">
@@ -2070,9 +2070,6 @@ return (
                   </span>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Adding it again will analyse the same content twice. PDR's hash dedup at copy time will only output one copy of each file regardless, but the extra analysis pass takes time. Cancel if these are accidental duplicates; add anyway if they're meaningfully different (e.g. a backup you want PDR to verify).
-              </p>
             </div>
             <div className="border-t border-border px-5 py-3 flex items-center justify-end gap-2">
               <Button variant="secondary" onClick={() => setSoftDupConfirm(null)}>
@@ -2749,7 +2746,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 <div
                   key={source.id}
                   className={isHighlighted ? 'relative rounded-lg ring-2 ring-amber-500/70 ring-offset-1 ring-offset-sidebar' : 'relative'}
-                  style={isHighlighted ? { animation: 'outline-pulse 2s ease-in-out 5' } : undefined}
+                  style={isHighlighted ? { animation: 'outline-pulse-amber 2s ease-in-out 5' } : undefined}
                 >
                   <SidebarItem
                     icon={source.icon}
