@@ -755,6 +755,36 @@ const activeTempDirs = new Set();
 protocol.registerSchemesAsPrivileged([
     { scheme: 'pdr-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ]);
+// Single-instance lock — only one PDR may run on a machine at a time.
+//
+// Why this matters: PDR opens a SQLite database for the Trees /
+// search index, and SQLite uses file-level locking. If two PDR
+// processes start, only the first wins the lock; the second runs in
+// degraded mode where Tree data appears missing and the most-
+// recently-added source vanishes from the source menu — a class of
+// bugs Terry has flagged repeatedly under "Tree empty / sources
+// missing." Single-instance lock prevents the second process from
+// existing in the first place: if a user double-clicks the icon
+// while PDR is already running, we focus the existing window and
+// quit the new process before any of its initialisation has run.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    // Another PDR is already running. Quit this process now — before
+    // BrowserWindow, SQLite, or any IPC handlers spin up.
+    app.quit();
+}
+else {
+    app.on('second-instance', () => {
+        // The other PDR (this one) got launched again — focus our
+        // existing main window so the user sees something happen rather
+        // than wondering why their double-click did nothing.
+        if (mainWindow) {
+            if (mainWindow.isMinimized())
+                mainWindow.restore();
+            mainWindow.focus();
+        }
+    });
+}
 app.whenReady().then(() => {
     // Surface the log file path at startup so users hitting crashes can
     // find the file without digging through %APPDATA%. Also makes it

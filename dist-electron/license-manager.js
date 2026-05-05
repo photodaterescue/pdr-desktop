@@ -84,6 +84,14 @@ export function clearCache() {
 }
 // ============ API CALLS ============
 async function validateWithLemonSqueezy(licenseKey, instanceId) {
+    // 5 s timeout via AbortController — without this, an offline launch
+    // sits on the OS-level TCP timeout (~21 s) before falling back to
+    // cached licence state. That makes PDR feel frozen on first paint
+    // for any user without internet. 5 s is short enough to feel
+    // responsive, long enough to tolerate a sluggish but reachable
+    // Lemon Squeezy.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
         const response = await fetch(`${LEMON_SQUEEZY_API}/validate`, {
             method: 'POST',
@@ -95,13 +103,24 @@ async function validateWithLemonSqueezy(licenseKey, instanceId) {
                 license_key: licenseKey,
                 instance_id: instanceId,
             }),
+            signal: controller.signal,
         });
         const data = await response.json();
         return { success: true, data };
     }
     catch (error) {
-        // Network error - likely offline
-        return { success: false, offline: true, error: 'Network unavailable' };
+        // AbortError = our 5 s timeout fired (treat as offline).
+        // Other network errors (DNS fail, connection refused, etc.) =
+        // also offline. Either way we fall through to cached licence.
+        const isTimeout = error instanceof Error && error.name === 'AbortError';
+        return {
+            success: false,
+            offline: true,
+            error: isTimeout ? 'Network timeout (5 s)' : 'Network unavailable',
+        };
+    }
+    finally {
+        clearTimeout(timeoutId);
     }
 }
 async function activateWithLemonSqueezy(licenseKey, instanceId, instanceName) {
