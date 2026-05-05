@@ -1321,6 +1321,19 @@ const handleFolderBrowserSourceSelected = async (selectedPath: string) => {
     setShowFolderBrowser(false);
     setFolderBrowserCallback(null);
 
+    // Duplicate-source gate runs FIRST — before licence / storage /
+    // archive-type branches. Otherwise a non-optimal storage classifier
+    // hit (e.g. mapped network drive) would route to NetworkScanModal
+    // before the dup check fires, and re-picking the same source
+    // silently drops the user back at the dashboard with no toast.
+    const isDuplicate = sources.some(s =>
+      s.path && s.path.toLowerCase() === selectedPath.toLowerCase()
+    );
+    if (isDuplicate) {
+      toast.error('You already have this source in your Sources Menu');
+      return;
+    }
+
     const ext = selectedPath.toLowerCase().split('.').pop() || '';
     const isArchive = ext === 'zip' || ext === 'rar';
 
@@ -2598,20 +2611,22 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 selectable={false}
                 locked={!isLicensed}
               />
-              <SidebarItem
-                icon={<Network className="w-4 h-4 opacity-70" />}
-                label="Trees"
-                accent="emerald"
-                onClick={() => {
-                  if (!isTreesEnabled()) { toast.info(TREES_RELEASED_SHORTLY_MESSAGE); return; }
-                  if (!isLicensed) { onFeatureLocked('trees'); return; }
-                  onViewChange?.('familytree');
-                }}
-                active={activeView === 'familytree'}
-                selectable={false}
-                locked={!isLicensed}
-                disabled={!isTreesEnabled()}
-              />
+              <IconTooltip label={!isTreesEnabled() ? `Trees — ${TREES_RELEASED_SHORTLY_MESSAGE}${!isLicensed ? ' (Premium feature)' : ''}` : ''} side="right">
+                <SidebarItem
+                  icon={<Network className="w-4 h-4 opacity-70" />}
+                  label="Trees"
+                  accent="emerald"
+                  onClick={() => {
+                    if (!isTreesEnabled()) { toast.info(TREES_RELEASED_SHORTLY_MESSAGE); return; }
+                    if (!isLicensed) { onFeatureLocked('trees'); return; }
+                    onViewChange?.('familytree');
+                  }}
+                  active={activeView === 'familytree'}
+                  selectable={false}
+                  locked={!isLicensed}
+                  disabled={!isTreesEnabled()}
+                />
+              </IconTooltip>
             </div>
           )}
         </div>
@@ -2643,18 +2658,20 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                   TeaserFeature doesn't have a 'date-editor' member,
                   so wiring it would touch the FeatureTeaserModal
                   copy table for v2.1. */}
-              <SidebarItem
-                icon={<Calendar className="w-4 h-4 opacity-70" />}
-                label="Date Editor"
-                accent="blue"
-                onClick={async () => {
-                  if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
-                  const { openDateEditor } = await import('@/lib/electron-bridge');
-                  await openDateEditor();
-                }}
-                selectable={false}
-                disabled={!isEditDatesEnabled()}
-              />
+              <IconTooltip label={!isEditDatesEnabled() ? `Date Editor — ${EDIT_DATES_RELEASED_SHORTLY_MESSAGE}` : ''} side="right">
+                <SidebarItem
+                  icon={<Calendar className="w-4 h-4 opacity-70" />}
+                  label="Date Editor"
+                  accent="blue"
+                  onClick={async () => {
+                    if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
+                    const { openDateEditor } = await import('@/lib/electron-bridge');
+                    await openDateEditor();
+                  }}
+                  selectable={false}
+                  disabled={!isEditDatesEnabled()}
+                />
+              </IconTooltip>
             </div>
           )}
         </div>

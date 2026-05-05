@@ -1235,10 +1235,18 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                             </tr>
                           </thead>
                           <tbody>
-                            {/* Quick Access shortcut rows — appear at the top of
-                                the Details view so shortcuts are reachable
-                                without opening the sidebar accordion. */}
-                            {quickAccess && ([
+                            {/* Quick Access shortcut rows. Originally injected at
+                                the top of every Details listing for
+                                discoverability, but seeing Desktop /
+                                Downloads / Documents above the actual
+                                contents of e.g. H:\ is confusing —
+                                they're not children of H:\. Only
+                                surface these at the "no drive opened"
+                                root view; once the user has navigated
+                                INTO a drive, the shortcuts are
+                                accessible via the left-sidebar
+                                accordion only. */}
+                            {!currentPath && quickAccess && ([
                               quickAccess.desktop && { icon: Monitor, label: 'Desktop', path: quickAccess.desktop },
                               quickAccess.downloads && { icon: Download, label: 'Downloads', path: quickAccess.downloads },
                               quickAccess.documents && { icon: FileText, label: 'Documents', path: quickAccess.documents },
