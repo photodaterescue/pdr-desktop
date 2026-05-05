@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('pdr', {
     runAnalysis: (sourcePath, sourceType, tempDirOverride) => ipcRenderer.invoke('analysis:run', sourcePath, sourceType, tempDirOverride),
     getFileSize: (filePath) => ipcRenderer.invoke('file:getSize', filePath),
+    fingerprintFolder: (dirPath) => ipcRenderer.invoke('folder:fingerprint', dirPath),
     cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
     // Best-effort cleanup of any extracted temp dir associated with a
     // source the user is removing from the source menu. Returns

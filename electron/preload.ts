@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('pdr', {
 
   getFileSize: (filePath: string) => ipcRenderer.invoke('file:getSize', filePath),
 
+  fingerprintFolder: (dirPath: string) => ipcRenderer.invoke('folder:fingerprint', dirPath),
+
   cancelAnalysis: () => ipcRenderer.invoke('analysis:cancel'),
 
   // Best-effort cleanup of any extracted temp dir associated with a

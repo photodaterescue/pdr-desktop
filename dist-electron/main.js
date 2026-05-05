@@ -1849,6 +1849,64 @@ ipcMain.handle('file:getSize', async (_event, filePath) => {
         return { success: false, error: error.message };
     }
 });
+// Fast folder fingerprint — recursive file count + summed bytes.
+// Used by the source-add gate to detect "same content on different
+// drives" duplicates: a folder with the same final name AND same
+// total bytes AND same file count as an existing source is almost
+// certainly a backup/sync copy, even if the path differs. Skips
+// EXIF / thumbnail / sidecar processing — this is just a stat
+// crawl, sub-second on most photo folders.
+//
+// Bails after 60 s to keep an accidentally-pointed-at-a-100k-folder
+// from hanging the renderer waiting for a result. The dup-warning
+// modal is non-blocking — a timeout is treated the same as "no
+// match" and the source is added normally.
+ipcMain.handle('folder:fingerprint', async (_event, dirPath) => {
+    const startedAt = Date.now();
+    const TIMEOUT_MS = 60000;
+    let fileCount = 0;
+    let totalBytes = 0;
+    let timedOut = false;
+    const walk = (dir) => {
+        if (timedOut)
+            return;
+        if (Date.now() - startedAt > TIMEOUT_MS) {
+            timedOut = true;
+            return;
+        }
+        let entries = [];
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        }
+        catch {
+            return; // unreadable dir — skip silently, the user picked it not us
+        }
+        for (const e of entries) {
+            if (timedOut)
+                return;
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) {
+                walk(full);
+            }
+            else if (e.isFile()) {
+                try {
+                    totalBytes += fs.statSync(full).size;
+                    fileCount++;
+                }
+                catch {
+                    // unreadable file — skip
+                }
+            }
+        }
+    };
+    try {
+        walk(dirPath);
+        return { success: true, fileCount, totalBytes, timedOut };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
 ipcMain.handle('files:copy', async (_event, data) => {
     const { files, destinationPath, zipPaths = {}, photoFormat = 'original' } = data;
     console.log(`[Fix] Starting copy: ${files.length} files to ${destinationPath}, format=${photoFormat}`);

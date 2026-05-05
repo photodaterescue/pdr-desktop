@@ -179,6 +179,27 @@ export async function getFileSize(filePath: string): Promise<number | null> {
   }
 }
 
+/**
+ * Fast folder fingerprint — recursive file count + summed bytes.
+ * Used by the source-add same-content-different-drives gate: when
+ * the user picks a folder whose name + size + file-count matches an
+ * existing source, we surface a "looks like a duplicate" prompt
+ * before adding. Returns null if the bridge isn't available or the
+ * scan timed out (treat as "no match" and let the add proceed).
+ */
+export async function fingerprintFolder(dirPath: string): Promise<{ fileCount: number; totalBytes: number } | null> {
+  if (!isElectron()) return null;
+  try {
+    const r = await (window as any).pdr.fingerprintFolder(dirPath);
+    if (r?.success && !r.timedOut && typeof r.fileCount === 'number' && typeof r.totalBytes === 'number') {
+      return { fileCount: r.fileCount, totalBytes: r.totalBytes };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function onAnalysisProgress(callback: (progress: AnalysisProgress) => void): void {
   if (isElectron()) {
     (window as any).pdr.onAnalysisProgress(callback);

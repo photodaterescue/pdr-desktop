@@ -570,6 +570,36 @@ const handleActivateLicense = () => {
   // it out of scope of the destination card render, which is owned
   // by DashboardPanel, not Workspace.)
 
+  // Source-already-added highlight. When the user adds a path that
+  // exactly matches an existing source, we don't toast — we briefly
+  // ring the matching row in Source Menu in amber and stick a small
+  // "Already added" badge next to its name. ID is cleared after 3 s
+  // (or on next manual highlight). Auto-cleanup via the ref so a
+  // rapid-fire double-click doesn't leave a stale ring.
+  const [highlightedSourceId, setHighlightedSourceId] = useState<string | null>(null);
+  const highlightClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashSourceHighlight = (sourceId: string) => {
+    if (highlightClearTimerRef.current) clearTimeout(highlightClearTimerRef.current);
+    setHighlightedSourceId(sourceId);
+    highlightClearTimerRef.current = setTimeout(() => setHighlightedSourceId(null), 3000);
+  };
+
+  // Soft-duplicate-source confirm modal. Fires when the user picks a
+  // folder whose path doesn't match any existing source BUT whose
+  // fingerprint (final-segment name + total bytes + file count)
+  // matches an existing source's analysis stats — almost always a
+  // backup/sync copy on a different drive. Lets the user say "yes
+  // I know, add it anyway" or cancel.
+  const [softDupConfirm, setSoftDupConfirm] = useState<{
+    newPath: string;
+    newType: 'folder' | 'zip' | 'drive';
+    newName: string;
+    newFileCount: number;
+    newTotalBytes: number;
+    existingPath: string;
+    existingName: string;
+  } | null>(null);
+
   // Smart-prompt fallback for the NO_TEMP_SPACE error from the
   // pre-extract resolver. When neither the Library Drive nor %TEMP%
   // has enough room, we capture the details + the source we were
@@ -1077,7 +1107,9 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   const sourceName = lastSegment(sourcePath);
   const sourceDrive = driveLetter(sourcePath);
 
-  const isDuplicate = sources.some(s => {
+  // Defence-in-depth match — locate the existing source so we can
+  // flash its sidebar row instead of toasting at the corner.
+  const exactMatch = sources.find(s => {
     if (!s.path) return false;
     if (normalisePath(s.path) === sourceNormalised) return true;
     return !!sourceDrive && !!sourceName
@@ -1085,17 +1117,11 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
       && lastSegment(s.path) === sourceName;
   });
 
-  console.log('[Dup-check-2] sourcePath:', sourcePath,
-    '→', sourceNormalised, 'name:', sourceName, 'drive:', sourceDrive,
-    '| existing:', sources.map(s => s.path),
-    '| isDuplicate:', isDuplicate);
-
-    if (isDuplicate) {
-  setIsScanning(false);
-  console.log('[Dup-check-2] toast.error firing');
-  toast.info('You already have this source in your Sources Menu');
-  return;
-}
+  if (exactMatch) {
+    setIsScanning(false);
+    flashSourceHighlight(exactMatch.id);
+    return;
+  }
     
     const pathParts = sourcePath.split(/[/\\]/);
     const name = pathParts[pathParts.length - 1] || "Selected Source";
@@ -1376,25 +1402,63 @@ const handleFolderBrowserSourceSelected = async (selectedPath: string) => {
     const targetName = lastSegment(selectedPath);
     const targetDrive = driveLetter(selectedPath);
 
-    const isDuplicate = sources.some(s => {
+    // Stage 1 — exact-path-match (with name-on-same-drive fallback).
+    // Locate the matching source so we can flash its sidebar row
+    // rather than just "is duplicate yes/no". User feedback lives at
+    // the existing entry, not at the corner of the screen.
+    const exactMatch = sources.find(s => {
       if (!s.path) return false;
       if (normalisePath(s.path) === targetNormalised) return true;
-      // Name fallback — only fires if both have a drive letter (so we
-      // never false-match two paths on different volumes).
       return !!targetDrive && !!targetName
         && driveLetter(s.path) === targetDrive
         && lastSegment(s.path) === targetName;
     });
 
-    console.log('[Dup-check] selected:', selectedPath,
-      '→', targetNormalised, 'name:', targetName, 'drive:', targetDrive,
-      '| existing:', sources.map(s => s.path),
-      '| isDuplicate:', isDuplicate);
-
-    if (isDuplicate) {
-      console.log('[Dup-check] toast.error firing');
-      toast.info('You already have this source in your Sources Menu');
+    if (exactMatch) {
+      flashSourceHighlight(exactMatch.id);
       return;
+    }
+
+    // Stage 2 — same-content-on-different-drive check. Only kicks in
+    // for folder/drive sources (zip fingerprint would mean reading
+    // the whole archive — defer that until v2.1 if it turns out to
+    // be needed). Fingerprint = recursive file count + total bytes.
+    // We compare against existing sources' analysis stats (already
+    // computed). If name + count + size all match, surface the
+    // soft-warning confirm modal.
+    const fpExt = selectedPath.toLowerCase().split('.').pop() || '';
+    const willBeArchive = fpExt === 'zip' || fpExt === 'rar';
+    if (!willBeArchive && targetName) {
+      const { fingerprintFolder } = await import('@/lib/electron-bridge');
+      const fingerprint = await fingerprintFolder(selectedPath);
+      if (fingerprint) {
+        const possibleMatch = sources.find(s => {
+          if (!s.path || !s.stats) return false;
+          if (lastSegment(s.path) !== targetName) return false;
+          const sFiles = s.stats.totalFiles ?? 0;
+          // sizeGB is the existing field on stats; convert to bytes for comparison.
+          const sBytes = Math.round((s.stats.estimatedSizeGB ?? 0) * 1024 * 1024 * 1024);
+          if (sFiles !== fingerprint.fileCount) return false;
+          // Allow a 1% byte tolerance — different filesystems can
+          // round file sizes slightly differently (NTFS vs FAT
+          // cluster sizes etc).
+          if (sBytes === 0) return fingerprint.totalBytes === 0;
+          const ratio = Math.abs(sBytes - fingerprint.totalBytes) / sBytes;
+          return ratio < 0.01;
+        });
+        if (possibleMatch) {
+          setSoftDupConfirm({
+            newPath: selectedPath,
+            newType: 'folder',
+            newName: targetName,
+            newFileCount: fingerprint.fileCount,
+            newTotalBytes: fingerprint.totalBytes,
+            existingPath: possibleMatch.path ?? '',
+            existingName: possibleMatch.label || lastSegment(possibleMatch.path ?? ''),
+          });
+          return;
+        }
+      }
     }
 
     const ext = selectedPath.toLowerCase().split('.').pop() || '';
@@ -1681,11 +1745,12 @@ return (
         onChange={handleZipChange}
         accept=".zip"
       />
-		<Sidebar 
-		  sources={isTourPreview ? [tourPlaceholderSource] : sources} 
-		  onSourceClick={handleSourceClick} 
+		<Sidebar
+		  sources={isTourPreview ? [tourPlaceholderSource] : sources}
+		  onSourceClick={handleSourceClick}
 		  onSelectAll={handleSelectAll}
 		  isComplete={isTourPreview ? true : isComplete}
+		  highlightedSourceId={highlightedSourceId}
 		  onAddSource={handleAddSource}
 		  onStartTour={() => { resetTourCompletion(); setShowTour(true); }}
 		  onRemoveSource={() => {
@@ -1940,6 +2005,90 @@ return (
           Captured details + the source we were about to analyse,
           so on "Pick another drive" we can re-fire runAnalysis with
           the user's choice as a tempDirOverride. */}
+      {/* Soft-duplicate confirm. Fires when the user picks a folder
+          whose path doesn't match any existing source but whose
+          fingerprint (name + size + file count) does. Lets them
+          confirm "yes I know, add it anyway" or cancel. Same modal
+          scaffolding (backdrop / radius / shadow / Button tiers)
+          as ReportProblemModal + TempSpacePromptModal. */}
+      {softDupConfirm && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setSoftDupConfirm(null)}
+        >
+          <div
+            className="bg-background rounded-xl shadow-2xl border border-border w-full max-w-lg"
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="soft-dup-title"
+          >
+            <div className="border-b border-border px-5 py-4 relative">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                <h3 id="soft-dup-title" className="text-base font-semibold text-foreground">
+                  Looks like a duplicate
+                </h3>
+              </div>
+              <button
+                onClick={() => setSoftDupConfirm(null)}
+                className="absolute right-3 top-3 p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-5 space-y-4">
+              <p className="text-sm text-foreground leading-relaxed">
+                The folder you picked has the same name, file count and total size as <strong className="text-foreground font-semibold">{softDupConfirm.existingName}</strong>, which is already in your Source Menu.
+              </p>
+              <div className="rounded-lg bg-secondary/30 border border-border px-4 py-3 space-y-1.5 text-xs">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-muted-foreground">Name</span>
+                  <span className="text-foreground font-medium truncate">{softDupConfirm.newName}</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-muted-foreground">Files</span>
+                  <span className="text-foreground font-mono">{softDupConfirm.newFileCount.toLocaleString()}</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-muted-foreground">Size</span>
+                  <span className="text-foreground font-mono">
+                    {softDupConfirm.newTotalBytes >= 1024 * 1024 * 1024
+                      ? `${(softDupConfirm.newTotalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+                      : `${(softDupConfirm.newTotalBytes / (1024 * 1024)).toFixed(1)} MB`}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Adding it again will analyse the same content twice. PDR's hash dedup at copy time will only output one copy of each file regardless, but the extra analysis pass takes time. Cancel if these are accidental duplicates; add anyway if they're meaningfully different (e.g. a backup you want PDR to verify).
+              </p>
+            </div>
+            <div className="border-t border-border px-5 py-3 flex items-center justify-end gap-2">
+              <Button variant="secondary" onClick={() => setSoftDupConfirm(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  const captured = softDupConfirm;
+                  setSoftDupConfirm(null);
+                  // Re-fire through the type-aware branch, skipping
+                  // the dup gate (already explicitly accepted).
+                  // tempDirOverride='' is a sentinel meaning "the
+                  // unified gate already ran" — handleZip /
+                  // handleFolder use that to skip their own
+                  // duplicate checks.
+                  if (captured.newType === 'folder') {
+                    await handleFolderBrowserSourceSelected(captured.newPath);
+                  }
+                }}
+              >
+                Add anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tempSpacePrompt && (
         <TempSpacePromptModal
           neededBytes={tempSpacePrompt.neededBytes}
@@ -2150,7 +2299,7 @@ return (
 
 type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, burgerPulseDisabled = false }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, burgerPulseDisabled?: boolean }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, burgerPulseDisabled = false, highlightedSourceId = null }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, burgerPulseDisabled?: boolean, highlightedSourceId?: string | null }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -2576,17 +2725,37 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             )}
           </div>
           <div className="space-y-1">
-            {sources.map((source) => (
-              <SidebarItem 
-                key={source.id} 
-                icon={source.icon} 
-                label={source.label} 
-                active={false} 
-                selected={source.selected}
-                selectable={true}
-                onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
-              />
-            ))}
+            {sources.map((source) => {
+              const isHighlighted = source.id === highlightedSourceId;
+              // When the user picks a path that exactly matches an
+              // existing source, the unified source-add gate flashes
+              // the matching row instead of toasting at the screen
+              // corner. Amber ring + "Already added" chip make the
+              // "this is what you tried to add" point at the entry
+              // itself. Auto-clears after 3 s via the parent's
+              // setTimeout in flashSourceHighlight.
+              return (
+                <div
+                  key={source.id}
+                  className={isHighlighted ? 'relative rounded-lg ring-2 ring-amber-500/70 ring-offset-1 ring-offset-sidebar' : 'relative'}
+                  style={isHighlighted ? { animation: 'outline-pulse 1.2s ease-in-out 2' } : undefined}
+                >
+                  <SidebarItem
+                    icon={source.icon}
+                    label={source.label}
+                    active={false}
+                    selected={source.selected}
+                    selectable={true}
+                    onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
+                  />
+                  {isHighlighted && (
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40 pointer-events-none">
+                      Already added
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="flex gap-2 mt-2 px-2">
             <IconTooltip
