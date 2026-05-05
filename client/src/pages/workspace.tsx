@@ -2072,10 +2072,12 @@ return (
               </div>
             </div>
             <div className="border-t border-border px-5 py-3 flex items-center justify-end gap-2">
-              <Button variant="secondary" onClick={() => setSoftDupConfirm(null)}>
-                Cancel
-              </Button>
+              {/* CTA hierarchy: the modal is recommending the user
+                  NOT add the source, so Cancel becomes the primary
+                  lavender CTA on the right and "Add anyway" is
+                  demoted to the secondary tier on the left. */}
               <Button
+                variant="secondary"
                 onClick={async () => {
                   const captured = softDupConfirm;
                   setSoftDupConfirm(null);
@@ -2091,6 +2093,9 @@ return (
                 }}
               >
                 Add anyway
+              </Button>
+              <Button onClick={() => setSoftDupConfirm(null)}>
+                Cancel
               </Button>
             </div>
           </div>
