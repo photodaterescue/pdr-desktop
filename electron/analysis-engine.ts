@@ -81,6 +81,36 @@ function calculateBufferHash(buffer: Buffer): string {
   return hash.digest('hex');
 }
 
+/**
+ * Async chunked variant of calculateBufferHash. Same SHA-256 output
+ * as the sync version but feeds the buffer into the hasher in 64 KB
+ * slices and yields to the event loop every 8 MB.
+ *
+ * Why: the sync hash blocks the main thread for ~100-300 ms on a
+ * 500 MB buffer (one round of the analysis loop's dedup check on a
+ * multi-GB phone video), making the UI stutter every time we hit a
+ * large file. The yields keep the event loop alive so progress
+ * updates + IPC events keep flowing during the hash. Memory peak
+ * unchanged — buffer is still held by the caller, we just slice it.
+ *
+ * Full disk-streaming hash for the under-500-MB zip path is a
+ * bigger refactor (the zip path doesn't materialise files on disk;
+ * it streams entries from the open zip). Deferred to v2.1.0.
+ */
+async function calculateBufferHashAsync(buffer: Buffer): Promise<string> {
+  const hash = crypto.createHash('sha256');
+  const chunkSize = 64 * 1024;
+  const yieldEvery = 8 * 1024 * 1024;
+  for (let i = 0; i < buffer.length; i += chunkSize) {
+    const end = Math.min(i + chunkSize, buffer.length);
+    hash.update(buffer.subarray(i, end));
+    if (i > 0 && i % yieldEvery === 0) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+  }
+  return hash.digest('hex');
+}
+
 // Files larger than 500MB use heuristic duplicate detection (filename + size)
 const LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024;
 // Files smaller than 5MB skip duplicate detection if hash fails (too small for reliable heuristic)
@@ -933,9 +963,12 @@ const skippedFiles: Array<{ filename: string; reason: string }> = [];
               seenHeuristics.set(heuristicKey, entry.filename);
             }
           } else {
-            // Small/medium file: try hash, fallback to heuristic if it fails
+            // Small/medium file: try hash, fallback to heuristic if it fails.
+            // Async chunked variant so the hash of a multi-hundred-MB buffer
+            // doesn't block the main thread — keeps progress events + IPC
+            // flowing during the hash. Same SHA-256 output as the sync version.
             try {
-              const hash = calculateBufferHash(buffer);
+              const hash = await calculateBufferHashAsync(buffer);
               existingFile = seenHashes.get(hash);
               if (!existingFile) {
                 seenHashes.set(hash, entry.filename);
