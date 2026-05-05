@@ -88,9 +88,8 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
           {!sentOk ? (
             <>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Briefly describe what went wrong. We'll include your system info and a
-                recent extract of the log automatically —{' '}
-                <strong className="text-foreground font-semibold">you just need to drag the log file into the email when your mail client opens.</strong>
+                Briefly describe what went wrong. We'll bundle your log, system info and licence state into a diagnostic ZIP —{' '}
+                <strong className="text-foreground font-semibold">just drag the ZIP into the email when your mail client opens, then send.</strong>
               </p>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-foreground">What happened?</span>
@@ -116,12 +115,6 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
               {error && (
                 <div className="text-xs text-red-600 bg-red-500/10 border border-red-500/30 rounded-md px-3 py-2">
                   {error}
-                </div>
-              )}
-              {logPath && (
-                <div className="text-xs text-muted-foreground pt-1 border-t border-border/60">
-                  <p>Your log file is stored at:</p>
-                  <code className="block mt-1 px-2 py-1.5 rounded bg-muted text-foreground break-all text-xs">{logPath}</code>
                 </div>
               )}
             </>
@@ -186,13 +179,24 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
         </div>
 
         <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-2">
-          <button
-            onClick={handleRevealLog}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Open log folder
-          </button>
+          {/* Pre-send only: lets power users open the raw log folder
+              before reporting. Hidden after Send because the success
+              state has its own "Open folder" button that targets the
+              diagnostic ZIP in Documents — clicking the log-folder
+              link post-Send would open a different folder than the
+              one we just told the user to look at, which is what
+              caused confusion in #5's first round. */}
+          {!sentOk ? (
+            <button
+              onClick={handleRevealLog}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Open log folder
+            </button>
+          ) : (
+            <span /> /* placeholder to keep the right-side buttons right-aligned */
+          )}
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm text-foreground hover:bg-accent">
               {sentOk ? 'Done' : 'Cancel'}
