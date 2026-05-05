@@ -1,0 +1,45 @@
+# Cloudflare Worker config — Photo Date Rescue update edge proxy.
+#
+# Deploy:
+#   cd worker && npx wrangler deploy
+#
+# First time only — authenticate wrangler with the same Cloudflare
+# account that owns the photodaterescue.com zone:
+#   npx wrangler login
+#
+# After the first deploy, attach the custom domain in the dashboard:
+#   Cloudflare -> Workers & Pages -> pdr-updates-worker
+#     -> Settings -> Triggers -> Custom Domains -> Add "updates.photodaterescue.com"
+# Cloudflare will create the DNS record automatically when you add the
+# custom domain.
+
+name = "pdr-updates-worker"
+main = "index.ts"
+
+# Pin the Workers runtime to a stable version. Bump occasionally to
+# pick up new web platform APIs; old dates keep working.
+compatibility_date = "2025-01-15"
+
+# Custom domain — Cloudflare creates the DNS record automatically
+# because the photodaterescue.com zone is on this account.
+# `custom_domain = true` distinguishes this from a generic route
+# pattern (e.g. example.com/api/*) — custom domains get their own
+# managed DNS record + automatic SSL via Universal SSL.
+routes = [
+  { pattern = "updates.photodaterescue.com", custom_domain = true }
+]
+
+# Account-level binding to the R2 bucket created in Phase B step 2.
+# The Worker reads from BUCKET; the bucket itself stays private.
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "pdr-updates"
+
+# No KV, D1, queues, or Durable Objects — this Worker is a pure
+# read-through proxy. Adding any of those would need a new section
+# here plus a binding on `Env` in index.ts.
+
+# Observability — surface request logs in `wrangler tail` and the
+# Workers analytics dashboard. Free tier includes basic metrics.
+[observability]
+enabled = true

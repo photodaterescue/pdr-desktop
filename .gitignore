@@ -6,3 +6,13 @@ vite.config.ts.*
 *.tar.gz
 release/
 .claude/worktrees/
+
+# Local secrets — Cloudflare R2 credentials, signing certs, etc.
+# Never commit these. See .env.example for the expected shape.
+.env
+.env.local
+.env.*.local
+
+# Wrangler local cache (R2 simulator state, dev cache).
+# Recreated automatically on next `wrangler dev` / `wrangler deploy`.
+.wrangler/

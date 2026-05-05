@@ -1,0 +1,18 @@
+{
+  "//": "Worker-only TypeScript config. Isolated from the electron + client tsconfigs so the WebWorker lib doesn't leak Node globals into worker code, or vice versa.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true
+  },
+  "include": ["index.ts"],
+  "exclude": ["node_modules"]
+}
