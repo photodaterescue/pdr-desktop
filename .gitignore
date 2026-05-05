@@ -5,7 +5,15 @@ server/public
 vite.config.ts.*
 *.tar.gz
 release/
+
+# Claude Code local state — per-machine settings, session locks, etc.
+# Not part of PDR source. .claude/agents and .claude/commands ARE
+# tracked (those are project-shared instructions); the rest is local.
 .claude/worktrees/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/projects/
+.claude/cache/
 
 # Local secrets — Cloudflare R2 credentials, signing certs, etc.
 # Never commit these. See .env.example for the expected shape.
