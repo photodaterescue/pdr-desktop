@@ -1849,18 +1849,30 @@ ipcMain.handle('file:getSize', async (_event, filePath) => {
         return { success: false, error: error.message };
     }
 });
-// Fast folder fingerprint — recursive file count + summed bytes.
-// Used by the source-add gate to detect "same content on different
-// drives" duplicates: a folder with the same final name AND same
-// total bytes AND same file count as an existing source is almost
-// certainly a backup/sync copy, even if the path differs. Skips
-// EXIF / thumbnail / sidecar processing — this is just a stat
-// crawl, sub-second on most photo folders.
+// Fast folder fingerprint — recursive count + summed bytes for
+// media files only. Used by the source-add gate to detect "same
+// content on different drives" duplicates. Mirrors the engine's
+// isMediaFile() logic so the count matches what analysis would
+// report — including non-media files (Thumbs.db, .DS_Store, JSON
+// sidecars, etc.) made a 12-media folder fingerprint as 13 files
+// and the cross-drive dup check missed legitimate matches.
 //
 // Bails after 60 s to keep an accidentally-pointed-at-a-100k-folder
 // from hanging the renderer waiting for a result. The dup-warning
 // modal is non-blocking — a timeout is treated the same as "no
 // match" and the source is added normally.
+const FINGERPRINT_MEDIA_EXTS = new Set([
+    // Photos — must mirror analysis-engine.ts PHOTO_EXTENSIONS
+    '.jpg', '.jpeg', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+    '.heic', '.heif', '.avif', '.jp2', '.j2k',
+    '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.pef',
+    '.sr2', '.srf', '.raf', '.3fr', '.rwl', '.x3f', '.dcr', '.kdc', '.mrw', '.erf',
+    '.ico', '.svg', '.psd',
+    // Videos — must mirror analysis-engine.ts VIDEO_EXTENSIONS
+    '.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v',
+    '.3gp', '.3g2', '.mts', '.m2ts', '.ts', '.vob',
+    '.mpg', '.mpeg', '.asf', '.divx', '.ogv', '.rm', '.rmvb', '.swf',
+]);
 ipcMain.handle('folder:fingerprint', async (_event, dirPath) => {
     const startedAt = Date.now();
     const TIMEOUT_MS = 60000;
@@ -1889,6 +1901,10 @@ ipcMain.handle('folder:fingerprint', async (_event, dirPath) => {
                 walk(full);
             }
             else if (e.isFile()) {
+                // Filter to media files only — match the engine's count.
+                const ext = path.extname(e.name).toLowerCase();
+                if (!FINGERPRINT_MEDIA_EXTS.has(ext))
+                    continue;
                 try {
                     totalBytes += fs.statSync(full).size;
                     fileCount++;

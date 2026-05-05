@@ -581,9 +581,9 @@ const handleActivateLicense = () => {
   const flashSourceHighlight = (sourceId: string) => {
     if (highlightClearTimerRef.current) clearTimeout(highlightClearTimerRef.current);
     setHighlightedSourceId(sourceId);
-    // 6 s hold — twice the original 3 s. Matches the slower pulse
-    // animation cadence below (3 × 2 s cycles = 6 s of motion).
-    highlightClearTimerRef.current = setTimeout(() => setHighlightedSourceId(null), 6000);
+    // 10 s hold — matches the 5 × 2 s pulse cycles below so the
+    // ring + badge don't disappear mid-animation.
+    highlightClearTimerRef.current = setTimeout(() => setHighlightedSourceId(null), 10000);
   };
 
   // Soft-duplicate-source confirm modal. Fires when the user picks a
@@ -2749,7 +2749,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 <div
                   key={source.id}
                   className={isHighlighted ? 'relative rounded-lg ring-2 ring-amber-500/70 ring-offset-1 ring-offset-sidebar' : 'relative'}
-                  style={isHighlighted ? { animation: 'outline-pulse 2s ease-in-out 3' } : undefined}
+                  style={isHighlighted ? { animation: 'outline-pulse 2s ease-in-out 5' } : undefined}
                 >
                   <SidebarItem
                     icon={source.icon}
