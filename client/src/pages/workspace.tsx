@@ -565,6 +565,25 @@ const handleActivateLicense = () => {
   const [showDestBrowser, setShowDestBrowser] = useState(false);
   const [folderBrowserCallback, setFolderBrowserCallback] = useState<((path: string) => void) | null>(null);
 
+  // Output destination card expansion. Default collapsed: path +
+  // free-space inline + chevron. Click chevron → expand to show
+  // progress bar, Required/Free chips, and Review library plan.
+  // Persisted across sessions so a power-user who always wants the
+  // full view doesn't have to expand on every launch. When there's
+  // a WARNING state (insufficient space) we force-expand so the
+  // user can't miss the problem.
+  const [outputCardExpanded, setOutputCardExpanded] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('pdr-output-card-expanded') === 'true';
+  });
+  const toggleOutputCard = () => {
+    setOutputCardExpanded(prev => {
+      const next = !prev;
+      try { localStorage.setItem('pdr-output-card-expanded', String(next)); } catch {}
+      return next;
+    });
+  };
+
   // Smart-prompt fallback for the NO_TEMP_SPACE error from the
   // pre-extract resolver. When neither the Library Drive nor %TEMP%
   // has enough room, we capture the details + the source we were
@@ -1059,16 +1078,35 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   // (URL handler, pendingSource sessionStorage flow). The unified
   // FolderBrowser flow has its own dup gate that fires before this
   // function runs; this second one catches the URL-deeplink and
-  // sessionStorage handoff cases. Same normalisation as the unified
-  // check.
+  // sessionStorage handoff cases. Same normalisation + name-as-
+  // fallback as the unified check.
   const normalisePath = (p: string): string =>
     p.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+  const lastSegment = (p: string): string =>
+    p.replace(/[\\/]+$/, '').split(/[\\/]/).pop()?.toLowerCase() ?? '';
+  const driveLetter = (p: string): string =>
+    p.match(/^([a-zA-Z]):/)?.[1]?.toUpperCase() ?? '';
+
   const sourceNormalised = normalisePath(sourcePath);
-  const isDuplicate = sources.some(s =>
-    s.path && normalisePath(s.path) === sourceNormalised
-  );
+  const sourceName = lastSegment(sourcePath);
+  const sourceDrive = driveLetter(sourcePath);
+
+  const isDuplicate = sources.some(s => {
+    if (!s.path) return false;
+    if (normalisePath(s.path) === sourceNormalised) return true;
+    return !!sourceDrive && !!sourceName
+      && driveLetter(s.path) === sourceDrive
+      && lastSegment(s.path) === sourceName;
+  });
+
+  console.log('[Dup-check-2] sourcePath:', sourcePath,
+    '→', sourceNormalised, 'name:', sourceName, 'drive:', sourceDrive,
+    '| existing:', sources.map(s => s.path),
+    '| isDuplicate:', isDuplicate);
+
     if (isDuplicate) {
   setIsScanning(false);
+  console.log('[Dup-check-2] toast.error firing');
   toast.error('You already have this source in your Sources Menu');
   return;
 }
@@ -1332,19 +1370,43 @@ const handleFolderBrowserSourceSelected = async (selectedPath: string) => {
     // before the dup check fires, and re-picking the same source
     // silently drops the user back at the dashboard with no toast.
     //
-    // Path comparison is normalised (trailing-separator strip + slash
-    // direction unify + lowercase) so 'M:\PDR Photos\Blackberry' vs
-    // 'M:/PDR Photos/Blackberry/' vs 'm:\pdr photos\blackberry' all
-    // match — the picker can return any of these and the existing
-    // sources can be stored in any of these depending on entry path.
+    // Two-stage match:
+    //   1. Path comparison normalised (trailing-separator strip + slash
+    //      direction unify + lowercase) so 'M:\PDR Photos\Blackberry'
+    //      vs 'M:/PDR Photos/Blackberry/' vs 'm:\pdr photos\blackberry'
+    //      all collapse to the same key.
+    //   2. Name-as-fallback: same drive letter + same final segment.
+    //      Catches encoding/whitespace edge cases where the path
+    //      strings DIFFER but the user's intent (re-adding the same
+    //      drive's same-named folder) is clear.
     const normalisePath = (p: string): string =>
       p.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+    const lastSegment = (p: string): string =>
+      p.replace(/[\\/]+$/, '').split(/[\\/]/).pop()?.toLowerCase() ?? '';
+    const driveLetter = (p: string): string =>
+      p.match(/^([a-zA-Z]):/)?.[1]?.toUpperCase() ?? '';
+
     const targetNormalised = normalisePath(selectedPath);
-    console.log('[Dup-check] selected:', selectedPath, '→', targetNormalised, '| existing:', sources.map(s => s.path));
-    const isDuplicate = sources.some(s =>
-      s.path && normalisePath(s.path) === targetNormalised
-    );
+    const targetName = lastSegment(selectedPath);
+    const targetDrive = driveLetter(selectedPath);
+
+    const isDuplicate = sources.some(s => {
+      if (!s.path) return false;
+      if (normalisePath(s.path) === targetNormalised) return true;
+      // Name fallback — only fires if both have a drive letter (so we
+      // never false-match two paths on different volumes).
+      return !!targetDrive && !!targetName
+        && driveLetter(s.path) === targetDrive
+        && lastSegment(s.path) === targetName;
+    });
+
+    console.log('[Dup-check] selected:', selectedPath,
+      '→', targetNormalised, 'name:', targetName, 'drive:', targetDrive,
+      '| existing:', sources.map(s => s.path),
+      '| isDuplicate:', isDuplicate);
+
     if (isDuplicate) {
+      console.log('[Dup-check] toast.error firing');
       toast.error('You already have this source in your Sources Menu');
       return;
     }
@@ -3417,75 +3479,117 @@ function DashboardPanel({
                 <div className="flex-1">
                   {destinationPath ? (
                     <>
-                      <div className="flex items-center gap-1 mb-1.5">
-                        <IconTooltip label={destinationPath} side="top"><p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded truncate max-w-full">{destinationPath}</p></IconTooltip>
-                        <IconTooltip label="Clear destination" side="top">
-                          <button
-                            onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
-                            className="p-1 text-muted-foreground hover:text-rose-500 transition-colors shrink-0"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </IconTooltip>
-                      </div>
-                      {/* Visual space bar */}
-                      {destinationTotalGB > 0 && (
-                        <div className="mb-2">
-                          <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden">
-                            {(() => {
-                              const usedGB = destinationTotalGB - destinationFreeGB;
-                              const usedPercent = Math.round((usedGB / destinationTotalGB) * 100);
-                              const requiredPercent = Math.min(100 - usedPercent, Math.round((stats.sizeGB / destinationTotalGB) * 100));
-                              return (
-                                <>
-                                  <div className="h-full flex">
-                                    <div className="h-full bg-muted-foreground/30 rounded-l-full" style={{ width: `${usedPercent}%` }} />
-                                    <div className={`h-full ${destinationFreeGB >= stats.sizeGB ? 'bg-primary/60' : 'bg-rose-500/60'}`} style={{ width: `${requiredPercent}%` }} />
+                      {/* Path row: stays one line in both states. The
+                          chevron toggles between the compact one-row
+                          summary (path + free-space inline) and the
+                          expanded view (progress bar + Required/Free
+                          chips + Review library plan). When there's
+                          a real problem (insufficient space), we
+                          force-expand so the user can't miss the
+                          warning regardless of the toggle setting. */}
+                      {(() => {
+                        const insufficient = destinationTotalGB > 0 && destinationFreeGB < stats.sizeGB;
+                        const showExpanded = outputCardExpanded || insufficient;
+                        const freeFmt = destinationFreeGB >= 1000
+                          ? `${(destinationFreeGB / 1000).toFixed(1)} TB`
+                          : `${destinationFreeGB.toFixed(1)} GB`;
+                        return (
+                          <>
+                            <div className="flex items-center gap-1 mb-1.5">
+                              <IconTooltip label={destinationPath} side="top">
+                                <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded truncate max-w-full">{destinationPath}</p>
+                              </IconTooltip>
+                              <IconTooltip label="Clear destination" side="top">
+                                <button
+                                  onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
+                                  className="p-1 text-muted-foreground hover:text-rose-500 transition-colors shrink-0"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </IconTooltip>
+                              {/* Compact-state inline reassurance + toggle.
+                                  Hidden in the expanded state to avoid
+                                  duplicating the chip below. */}
+                              {!showExpanded && destinationTotalGB > 0 && (
+                                <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap shrink-0">
+                                  {freeFmt} free
+                                </span>
+                              )}
+                              <IconTooltip label={showExpanded ? 'Show less' : 'Show details'} side="top">
+                                <button
+                                  onClick={toggleOutputCard}
+                                  disabled={insufficient}
+                                  className={`p-1 transition-colors shrink-0 ${insufficient ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:text-foreground'} ${showExpanded ? '' : 'ml-1'}`}
+                                  aria-label={showExpanded ? 'Show less' : 'Show details'}
+                                  aria-expanded={showExpanded}
+                                >
+                                  <ChevronDown className={`w-4 h-4 transition-transform ${showExpanded ? 'rotate-180' : ''}`} />
+                                </button>
+                              </IconTooltip>
+                            </div>
+                            {showExpanded && (
+                              <>
+                                {/* Visual space bar */}
+                                {destinationTotalGB > 0 && (
+                                  <div className="mb-2">
+                                    <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden">
+                                      {(() => {
+                                        const usedGB = destinationTotalGB - destinationFreeGB;
+                                        const usedPercent = Math.round((usedGB / destinationTotalGB) * 100);
+                                        const requiredPercent = Math.min(100 - usedPercent, Math.round((stats.sizeGB / destinationTotalGB) * 100));
+                                        return (
+                                          <div className="h-full flex">
+                                            <div className="h-full bg-muted-foreground/30 rounded-l-full" style={{ width: `${usedPercent}%` }} />
+                                            <div className={`h-full ${destinationFreeGB >= stats.sizeGB ? 'bg-primary/60' : 'bg-rose-500/60'}`} style={{ width: `${requiredPercent}%` }} />
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
+                                      <span>{(destinationTotalGB - destinationFreeGB).toFixed(1)} GB used</span>
+                                      <span>{destinationFreeGB >= 1000 ? `${(destinationFreeGB / 1000).toFixed(1)} TB` : `${destinationFreeGB.toFixed(1)} GB`} free of {destinationTotalGB >= 1000 ? `${(destinationTotalGB / 1000).toFixed(1)} TB` : `${destinationTotalGB.toFixed(0)} GB`}</span>
+                                    </div>
                                   </div>
-                                </>
-                              );
-                            })()}
-                          </div>
-                          <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
-                            <span>{(destinationTotalGB - destinationFreeGB).toFixed(1)} GB used</span>
-                            <span>{destinationFreeGB >= 1000 ? `${(destinationFreeGB / 1000).toFixed(1)} TB` : `${destinationFreeGB.toFixed(1)} GB`} free of {destinationTotalGB >= 1000 ? `${(destinationTotalGB / 1000).toFixed(1)} TB` : `${destinationTotalGB.toFixed(0)} GB`}</span>
-                          </div>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        {destinationFreeGB >= stats.sizeGB ? (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-700 dark:text-emerald-300">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 ring-1 ring-rose-500/30 text-rose-700 dark:text-rose-300">
-                            <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
-                          </div>
-                        )}
-                        {destinationFreeGB >= stats.sizeGB && stats.sizeGB > 0 && (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span className="text-xs font-medium">
-                              {(destinationFreeGB - stats.sizeGB) >= 1000
-                                ? `${((destinationFreeGB - stats.sizeGB) / 1000).toFixed(1)} TB`
-                                : `${(destinationFreeGB - stats.sizeGB).toFixed(1)} GB`
-                              } free after this fix
-                            </span>
-                          </div>
-                        )}
-                        {destinationFreeGB < stats.sizeGB && (
-                          <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
-                        )}
-                      </div>
-                      {/* Review library plan link */}
-                      <button
-                        onClick={() => setShowLibraryPlanner(true)}
-                        className="text-xs text-foreground/80 hover:text-primary transition-colors mt-2 flex items-center gap-1.5 font-medium"
-                      >
-                        <Settings className="w-3 h-3" />
-                        {libraryPlannerAnswers ? 'Review library plan' : 'Plan your library'}
-                      </button>
+                                )}
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  {destinationFreeGB >= stats.sizeGB ? (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-700 dark:text-emerald-300">
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 ring-1 ring-rose-500/30 text-rose-700 dark:text-rose-300">
+                                      <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
+                                    </div>
+                                  )}
+                                  {destinationFreeGB >= stats.sizeGB && stats.sizeGB > 0 && (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span className="text-xs font-medium">
+                                        {(destinationFreeGB - stats.sizeGB) >= 1000
+                                          ? `${((destinationFreeGB - stats.sizeGB) / 1000).toFixed(1)} TB`
+                                          : `${(destinationFreeGB - stats.sizeGB).toFixed(1)} GB`
+                                        } free after this fix
+                                      </span>
+                                    </div>
+                                  )}
+                                  {destinationFreeGB < stats.sizeGB && (
+                                    <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
+                                  )}
+                                </div>
+                                {/* Review library plan link */}
+                                <button
+                                  onClick={() => setShowLibraryPlanner(true)}
+                                  className="text-xs text-foreground/80 hover:text-primary transition-colors mt-2 flex items-center gap-1.5 font-medium"
+                                >
+                                  <Settings className="w-3 h-3" />
+                                  {libraryPlannerAnswers ? 'Review library plan' : 'Plan your library'}
+                                </button>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </>
                   ) : (
                     <>
