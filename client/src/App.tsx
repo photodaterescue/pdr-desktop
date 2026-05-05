@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LicenseProvider } from "@/contexts/LicenseContext";
 import { ToastListener } from "@/components/ToastListener";
@@ -52,6 +53,14 @@ export default function App() {
       <LicenseProvider>
         <TooltipProvider>
           <Toaster />
+          {/* Sonner-flavoured toasts. The whole app's toast.error /
+              toast.info calls go through sonner; without this mount
+              the calls fire into the void with no visible UI. The
+              shadcn Toaster above stays for any legacy useToast()
+              callers. position 'bottom-right' matches the existing
+              shadcn Toaster placement so the two queues don't fight
+              over the same screen real-estate. */}
+          <SonnerToaster position="bottom-right" richColors closeButton />
           <ToastListener />
           <UpdateNotification />
           <AppRouter />

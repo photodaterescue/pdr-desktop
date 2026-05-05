@@ -3243,7 +3243,14 @@ function DashboardPanel({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
-      <div className="flex-1 flex flex-col items-center justify-start p-8 overflow-y-auto pb-24">
+      <div className="flex-1 flex flex-col items-center justify-start p-8 overflow-y-auto">
+      {/* The previous pb-24 was added to clear a fixed-position
+          bottom action bar that doesn't actually exist any more —
+          the bottom ribbon is portalled into a shrink-0 sibling
+          below this scroll area, not overlaid on top of it. So the
+          extra 64px of bottom padding (pb-24 over p-8's pb-8) just
+          forced a scrollbar to appear when content otherwise fit
+          the viewport. Removed; p-8 applies symmetrically. */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -3430,32 +3437,41 @@ function DashboardPanel({
                     side="top"
                   >
                     {/* When destination IS already set (the standard
-                        post-Welcome-flow case), the affordance is just
-                        a quiet "I want to change my mind" link — the
-                        prominent CTA treatment was confusing once the
-                        destination-first flow made destination
-                        already-decided by the time Workspace mounts.
+                        post-Welcome-flow case), the affordance uses
+                        the style-guide's "muted text-link convention
+                        from promptConfirm" — same colour shade as the
+                        SOURCE MENU sidebar label, hover lifts to
+                        text-foreground. Quiet "I want to change my
+                        mind" affordance, not a CTA.
                         When destination is somehow null mid-session
-                        (Reset Onboarding, or the Welcome flow was
-                        bypassed), we fall back to the original
-                        primary CTA + pulse so the user has a clear
-                        path to fixing it. */}
-                    <Button
-                      variant={destinationPath ? 'link' : 'primary'}
-                      size="sm"
-                      onClick={handleChangeDestination}
-                      disabled={fixActive}
-                      className={destinationPath ? 'justify-center gap-2 px-2' : 'justify-center gap-2 shadow-md shadow-primary/20'}
-                      data-testid="button-change-destination"
-                      style={!destinationPath && !fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
-                    >
-                      <img
-                        src="./assets//pdr-destination-drive.png"
-                        className={destinationPath ? 'w-4 h-4 object-contain' : 'w-4 h-4 object-contain brightness-200'}
-                        alt="Destination"
-                      />
-                      {destinationPath ? 'Change Destination' : 'Select Destination'}
-                    </Button>
+                        (Reset Onboarding, or Welcome flow bypassed),
+                        we fall back to the original primary CTA +
+                        pulse so the user has a clear path to fixing
+                        it — that case IS a CTA. */}
+                    {destinationPath ? (
+                      <button
+                        onClick={handleChangeDestination}
+                        disabled={fixActive}
+                        className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                        data-testid="button-change-destination"
+                      >
+                        <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain opacity-70" alt="Destination" />
+                        Change Destination
+                      </button>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={handleChangeDestination}
+                        disabled={fixActive}
+                        className="justify-center gap-2 shadow-md shadow-primary/20"
+                        data-testid="button-change-destination"
+                        style={!fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                      >
+                        <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain brightness-200" alt="Destination" />
+                        Select Destination
+                      </Button>
+                    )}
                   </IconTooltip>
                   {destinationPath && (
                     <Button
