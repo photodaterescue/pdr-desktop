@@ -328,6 +328,11 @@ contextBridge.exposeInMainWorld('pdr', {
     log: (payload) => ipcRenderer.invoke('app:log', payload),
     getLogFilePath: (reveal) => ipcRenderer.invoke('app:logFilePath', { reveal }),
     reportProblem: (payload) => ipcRenderer.invoke('app:reportProblem', payload),
+    // Reveal an arbitrary file path in Explorer (highlights it inside
+    // its folder). Used by ReportProblemModal's success state to
+    // re-open the Documents folder showing the diagnostic ZIP if the
+    // user accidentally closed the folder window we opened on Send.
+    revealInFolder: (filePath) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
     dateEditor: {
         open: (seedQuery) => ipcRenderer.invoke('dateEditor:open', seedQuery),
         onThemeChange: (callback) => {

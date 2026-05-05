@@ -1157,6 +1157,19 @@ ipcMain.handle('shell:openFolder', async (_event, folderPath: string) => {
   }
 });
 
+// Reveal an arbitrary path in Explorer — used by the Report-a-Problem
+// success state to re-open the Documents folder showing the diagnostic
+// ZIP (in case the user accidentally closed the folder window we
+// opened on Send). showItemInFolder highlights the file inside the
+// folder; openPath would just open the folder generically.
+ipcMain.handle('shell:showItemInFolder', async (_event, filePath: string) => {
+  try {
+    shell.showItemInFolder(path.normalize(filePath));
+  } catch (error) {
+    console.error('Error revealing path:', error);
+  }
+});
+
 ipcMain.handle('shell:openExternal', async (_event, url: string) => {
   try {
     await shell.openExternal(url);

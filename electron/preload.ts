@@ -400,6 +400,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   getLogFilePath: (reveal?: boolean) => ipcRenderer.invoke('app:logFilePath', { reveal }),
   reportProblem: (payload: { description?: string; userEmail?: string }) =>
     ipcRenderer.invoke('app:reportProblem', payload),
+  // Reveal an arbitrary file path in Explorer (highlights it inside
+  // its folder). Used by ReportProblemModal's success state to
+  // re-open the Documents folder showing the diagnostic ZIP if the
+  // user accidentally closed the folder window we opened on Send.
+  revealInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
 
   dateEditor: {
     open: (seedQuery?: any) => ipcRenderer.invoke('dateEditor:open', seedQuery),

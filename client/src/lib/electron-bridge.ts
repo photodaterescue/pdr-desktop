@@ -26,6 +26,12 @@ export async function getLogFilePath(reveal: boolean = false): Promise<{ path: s
  *  AND reveals the log file in Explorer so the user can drag it in
  *  as an attachment. Returns the log file path so the calling UI can
  *  display it. */
+export async function revealInFolder(filePath: string): Promise<void> {
+  if (!isElectron()) return;
+  try { await (window as any).pdr?.revealInFolder?.(filePath); }
+  catch { /* best-effort */ }
+}
+
 export async function reportProblem(payload: { description: string; userEmail?: string }): Promise<{
   success: boolean;
   logFilePath?: string;

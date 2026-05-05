@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, Send, ExternalLink, AlertTriangle, Check } from 'lucide-react';
-import { reportProblem, getLogFilePath } from '@/lib/electron-bridge';
+import { X, Send, ExternalLink, AlertTriangle, Check, FolderOpen } from 'lucide-react';
+import { reportProblem, getLogFilePath, revealInFolder } from '@/lib/electron-bridge';
+import { Button } from '@/components/ui/custom-button';
 
 interface ReportProblemModalProps {
   onClose: () => void;
@@ -118,43 +119,68 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
                 </div>
               )}
               {logPath && (
-                <div className="text-[11px] text-muted-foreground pt-1 border-t border-border/60">
+                <div className="text-xs text-muted-foreground pt-1 border-t border-border/60">
                   <p>Your log file is stored at:</p>
-                  <code className="block mt-1 px-2 py-1 rounded bg-muted text-foreground break-all text-[10px]">{logPath}</code>
+                  <code className="block mt-1 px-2 py-1.5 rounded bg-muted text-foreground break-all text-xs">{logPath}</code>
                 </div>
               )}
             </>
           ) : (
-            <div className="flex flex-col items-center text-center gap-2 py-6">
+            <div className="flex flex-col items-center text-center gap-3 py-4">
               <div className="w-12 h-12 rounded-full bg-emerald-500/15 flex items-center justify-center">
                 <Check className="w-6 h-6 text-emerald-600" />
               </div>
-              <h4 className="text-sm font-semibold text-foreground">Your mail client should be opening</h4>
-              {diagnosticZipPath ? (
-                <>
-                  <p className="text-xs text-muted-foreground max-w-sm">
-                    We've also opened the folder containing your diagnostic ZIP — please drag{' '}
-                    <code className="px-1 rounded bg-muted">{diagnosticZipPath.split(/[\\/]/).pop()}</code> into
-                    the email as an attachment before sending. The ZIP bundles your log + system info + licence state.
-                  </p>
-                  <code className="mt-2 px-2 py-1 rounded bg-muted text-[10px] text-foreground break-all w-full">
-                    {diagnosticZipPath}
+              <h4 className="text-sm font-semibold text-foreground">
+                {diagnosticZipPath ? 'Email opened — please attach this file' : 'Email opened — please attach the log'}
+              </h4>
+              <p className="text-xs text-muted-foreground max-w-sm">
+                {diagnosticZipPath
+                  ? 'Drag the diagnostic ZIP from the folder we just opened into the email before sending. It bundles your log + system info + licence state.'
+                  : 'Drag main.log from the folder we just opened into the email before sending.'}
+              </p>
+
+              {/* Attention-grabbing callout for the file the user has
+                  to attach. Amber outline (matches the caution palette
+                  used elsewhere) plus the readable text-xs path so
+                  even on small displays the user can see what to
+                  drag. The Open folder button reuses the Button
+                  primitive — no freehand styling. */}
+              {(diagnosticZipPath || logPath) && (
+                <div className="w-full rounded-lg border border-amber-500/50 bg-amber-500/5 p-3 flex flex-col gap-2 text-left">
+                  <span className="text-xs font-medium text-foreground">File to attach:</span>
+                  <code className="block px-2 py-1.5 rounded bg-background border border-border text-xs text-foreground break-all">
+                    {diagnosticZipPath ?? logPath}
                   </code>
-                </>
-              ) : (
-                <>
-                  <p className="text-xs text-muted-foreground max-w-sm">
-                    We've also opened the folder containing your log file — please drag{' '}
-                    <code className="px-1 rounded bg-muted">main.log</code> into the email as
-                    an attachment before sending.
-                  </p>
-                  {logPath && (
-                    <code className="mt-2 px-2 py-1 rounded bg-muted text-[10px] text-foreground break-all w-full">
-                      {logPath}
-                    </code>
-                  )}
-                </>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const target = diagnosticZipPath ?? logPath;
+                      if (target) void revealInFolder(target);
+                    }}
+                    className="self-center"
+                  >
+                    <FolderOpen className="w-4 h-4 mr-1.5" />
+                    Open folder
+                  </Button>
+                </div>
               )}
+
+              {/* No-mail-client fallback. mailto: relies on the OS
+                  having a default mail handler — many users don't
+                  (webmail-only, no Outlook installed). The explicit
+                  support address + manual-attach instruction means
+                  the user always has a path forward even if
+                  shell.openExternal silently fails. */}
+              <p className="text-xs text-muted-foreground italic max-w-sm">
+                Mail client didn't open? Email{' '}
+                <a
+                  href="mailto:admin@photodaterescue.com"
+                  className="text-foreground font-medium underline"
+                >
+                  admin@photodaterescue.com
+                </a>{' '}
+                manually and attach the file above.
+              </p>
             </div>
           )}
         </div>
