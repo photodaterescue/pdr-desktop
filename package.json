@@ -18,7 +18,8 @@
     "worker:deploy": "wrangler deploy --config worker/wrangler.toml",
     "worker:dev": "wrangler dev --config worker/wrangler.toml",
     "worker:tail": "wrangler tail --config worker/wrangler.toml",
-    "worker:login": "wrangler login"
+    "worker:login": "wrangler login",
+    "release": "tsx script/release.ts"
   },
   "build": {
     "appId": "com.photodaterescue.app",
@@ -187,6 +188,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1042.0",
     "@cloudflare/workers-types": "^4.20260505.1",
     "@replit/vite-plugin-cartographer": "^0.4.4",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
