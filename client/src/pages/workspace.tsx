@@ -565,24 +565,10 @@ const handleActivateLicense = () => {
   const [showDestBrowser, setShowDestBrowser] = useState(false);
   const [folderBrowserCallback, setFolderBrowserCallback] = useState<((path: string) => void) | null>(null);
 
-  // Output destination card expansion. Default collapsed: path +
-  // free-space inline + chevron. Click chevron → expand to show
-  // progress bar, Required/Free chips, and Review library plan.
-  // Persisted across sessions so a power-user who always wants the
-  // full view doesn't have to expand on every launch. When there's
-  // a WARNING state (insufficient space) we force-expand so the
-  // user can't miss the problem.
-  const [outputCardExpanded, setOutputCardExpanded] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('pdr-output-card-expanded') === 'true';
-  });
-  const toggleOutputCard = () => {
-    setOutputCardExpanded(prev => {
-      const next = !prev;
-      try { localStorage.setItem('pdr-output-card-expanded', String(next)); } catch {}
-      return next;
-    });
-  };
+  // (outputCardExpanded state lives inside DashboardPanel itself —
+  // see that component for the useState. Keeping it here would put
+  // it out of scope of the destination card render, which is owned
+  // by DashboardPanel, not Workspace.)
 
   // Smart-prompt fallback for the NO_TEMP_SPACE error from the
   // pre-extract resolver. When neither the Library Drive nor %TEMP%
@@ -3046,6 +3032,23 @@ function DashboardPanel({
   const [showDestBrowser, setShowDestBrowser] = useState(false);
   const [showDestAdvisor, setShowDestAdvisor] = useState(false);
   const [showLibraryPlanner, setShowLibraryPlanner] = useState(false);
+  // Output destination card expansion. Lives here in DashboardPanel
+  // (not Workspace) because the chevron + collapse render is inside
+  // DashboardPanel — declaring it in Workspace put it out of scope
+  // and crashed the renderer with "outputCardExpanded is not
+  // defined" the moment the Dashboard tried to mount. Default
+  // collapsed; the chevron toggles + persists to localStorage.
+  const [outputCardExpanded, setOutputCardExpanded] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('pdr-output-card-expanded') === 'true';
+  });
+  const toggleOutputCard = () => {
+    setOutputCardExpanded(prev => {
+      const next = !prev;
+      try { localStorage.setItem('pdr-output-card-expanded', String(next)); } catch { /* best-effort */ }
+      return next;
+    });
+  };
   const [libraryPlannerAnswers, setLibraryPlannerAnswers] = useState<LibraryPlannerAnswers | null>(() => {
     // Restore from localStorage if previously completed
     const saved = localStorage.getItem('pdr-library-planner-size');
