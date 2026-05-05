@@ -1055,15 +1055,20 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   setScanProgress({ message: 'Preparing analysis...', percent: 0 });
   analysisStartTimeRef.current = Date.now();
 
+  // Defence-in-depth dup check for the non-unified entry paths
+  // (URL handler, pendingSource sessionStorage flow). The unified
+  // FolderBrowser flow has its own dup gate that fires before this
+  // function runs; this second one catches the URL-deeplink and
+  // sessionStorage handoff cases. Same normalisation as the unified
+  // check.
+  const normalisePath = (p: string): string =>
+    p.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+  const sourceNormalised = normalisePath(sourcePath);
   const isDuplicate = sources.some(s =>
-    s.path && s.path.toLowerCase() === sourcePath.toLowerCase()
+    s.path && normalisePath(s.path) === sourceNormalised
   );
     if (isDuplicate) {
   setIsScanning(false);
-  // Used to open Electron's native dialog.showMessageBox here. Replaced
-  // with the in-app toast so the user never breaks out of PDR's
-  // surface — the OS chrome on the dialog made it feel like an
-  // error from somewhere else, not from the app.
   toast.error('You already have this source in your Sources Menu');
   return;
 }
@@ -1326,8 +1331,18 @@ const handleFolderBrowserSourceSelected = async (selectedPath: string) => {
     // hit (e.g. mapped network drive) would route to NetworkScanModal
     // before the dup check fires, and re-picking the same source
     // silently drops the user back at the dashboard with no toast.
+    //
+    // Path comparison is normalised (trailing-separator strip + slash
+    // direction unify + lowercase) so 'M:\PDR Photos\Blackberry' vs
+    // 'M:/PDR Photos/Blackberry/' vs 'm:\pdr photos\blackberry' all
+    // match — the picker can return any of these and the existing
+    // sources can be stored in any of these depending on entry path.
+    const normalisePath = (p: string): string =>
+      p.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+    const targetNormalised = normalisePath(selectedPath);
+    console.log('[Dup-check] selected:', selectedPath, '→', targetNormalised, '| existing:', sources.map(s => s.path));
     const isDuplicate = sources.some(s =>
-      s.path && s.path.toLowerCase() === selectedPath.toLowerCase()
+      s.path && normalisePath(s.path) === targetNormalised
     );
     if (isDuplicate) {
       toast.error('You already have this source in your Sources Menu');
@@ -3349,16 +3364,31 @@ function DashboardPanel({
                     label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — changing destination mid-fix splits your output between two drives.' : (destinationPath ? 'Choose a different destination drive or folder' : 'Pick where your organised library will live')}
                     side="top"
                   >
+                    {/* When destination IS already set (the standard
+                        post-Welcome-flow case), the affordance is just
+                        a quiet "I want to change my mind" link — the
+                        prominent CTA treatment was confusing once the
+                        destination-first flow made destination
+                        already-decided by the time Workspace mounts.
+                        When destination is somehow null mid-session
+                        (Reset Onboarding, or the Welcome flow was
+                        bypassed), we fall back to the original
+                        primary CTA + pulse so the user has a clear
+                        path to fixing it. */}
                     <Button
-                      variant="primary"
+                      variant={destinationPath ? 'link' : 'primary'}
                       size="sm"
                       onClick={handleChangeDestination}
                       disabled={fixActive}
-                      className="justify-center gap-2 shadow-md shadow-primary/20"
+                      className={destinationPath ? 'justify-center gap-2 px-2' : 'justify-center gap-2 shadow-md shadow-primary/20'}
                       data-testid="button-change-destination"
                       style={!destinationPath && !fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
                     >
-                      <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain brightness-200" alt="Destination" />
+                      <img
+                        src="./assets//pdr-destination-drive.png"
+                        className={destinationPath ? 'w-4 h-4 object-contain' : 'w-4 h-4 object-contain brightness-200'}
+                        alt="Destination"
+                      />
                       {destinationPath ? 'Change Destination' : 'Select Destination'}
                     </Button>
                   </IconTooltip>
