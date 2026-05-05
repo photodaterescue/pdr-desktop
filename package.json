@@ -83,10 +83,7 @@
       "signAndEditExecutable": true,
       "signtoolOptions": {
         "certificateSha1": "184d06839b0c4168b9e1d194a3fa5d34e1324270"
-      },
-      "publisherName": [
-        "Photo Date Rescue Ltd"
-      ]
+      }
     },
     "nsis": {
       "oneClick": false,
