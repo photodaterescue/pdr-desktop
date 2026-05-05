@@ -48,7 +48,8 @@ import {
   ZoomOut,
   Search,
   Network,
-  Lock
+  Lock,
+  Calendar
 } from "lucide-react";
 import { toast } from "sonner";
 import { promptConfirm } from "@/components/trees/promptConfirm";
@@ -105,7 +106,7 @@ import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/Li
 import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesView from "@/components/MemoriesView";
 import { TreesView } from "@/components/trees/TreesView";
-import { isTreesEnabled, TREES_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
+import { isTreesEnabled, isEditDatesEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
@@ -1059,11 +1060,11 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   );
     if (isDuplicate) {
   setIsScanning(false);
-  if (window.pdr?.showMessage) {
-    await window.pdr.showMessage('Duplicate Source', 'You already have this source in your Sources Menu.');
-  } else {
-    toast.error('You already have this source in your Sources Menu');
-  }
+  // Used to open Electron's native dialog.showMessageBox here. Replaced
+  // with the in-app toast so the user never breaks out of PDR's
+  // surface — the OS chrome on the dialog made it feel like an
+  // error from somewhere else, not from the app.
+  toast.error('You already have this source in your Sources Menu');
   return;
 }
     
@@ -2350,6 +2351,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           // docked drawer). We don't track drawer state here, so no
           // active-highlight state is surfaced to the icon button.
         )}
+        {iconBtn(
+          isEditDatesEnabled() ? 'Date Editor' : `Date Editor — ${EDIT_DATES_RELEASED_SHORTLY_MESSAGE}`,
+          <Calendar className="w-4 h-4 text-blue-500" />,
+          isEditDatesEnabled()
+            ? async () => {
+                const { openDateEditor } = await import('@/lib/electron-bridge');
+                await openDateEditor();
+              }
+            : () => toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE),
+          !isEditDatesEnabled(),
+        )}
 
         {/* Flex spacer — pushes Guidance + App groups to the bottom of
             the sidebar so they're not visually bunched up against the
@@ -2621,6 +2633,27 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 }}
                 selectable={false}
                 locked={!isLicensed}
+              />
+              {/* Date Editor. v2.0.0 release-gates this via
+                  isEditDatesEnabled() — disabled visual + a toast on
+                  click instead of opening the standalone Date Editor
+                  window. Same pattern as the Trees gate above. No
+                  licence wrapper for now: the licence path is
+                  unreachable while the feature flag is off, and
+                  TeaserFeature doesn't have a 'date-editor' member,
+                  so wiring it would touch the FeatureTeaserModal
+                  copy table for v2.1. */}
+              <SidebarItem
+                icon={<Calendar className="w-4 h-4 opacity-70" />}
+                label="Date Editor"
+                accent="blue"
+                onClick={async () => {
+                  if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
+                  const { openDateEditor } = await import('@/lib/electron-bridge');
+                  await openDateEditor();
+                }}
+                selectable={false}
+                disabled={!isEditDatesEnabled()}
               />
             </div>
           )}

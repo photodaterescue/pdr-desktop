@@ -137,7 +137,12 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   const [selectedPath, setSelectedPath] = useState<string>('');
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [thumbSize, setThumbSize] = useState(64);
-  const [fileViewMode, setFileViewMode] = useState<'grid' | 'list' | 'details'>('grid');
+  // Default to Details view so users land on the spreadsheet-style
+  // layout with click-to-sort column headers — same affordance as
+  // File Explorer's "Details" mode and the most useful one for
+  // "where's that big zip" or "what's the most recent photo folder"
+  // questions. Grid (thumbnails) is one click away if needed.
+  const [fileViewMode, setFileViewMode] = useState<'grid' | 'list' | 'details'>('details');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
