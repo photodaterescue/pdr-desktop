@@ -1093,7 +1093,7 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
     if (isDuplicate) {
   setIsScanning(false);
   console.log('[Dup-check-2] toast.error firing');
-  toast.error('You already have this source in your Sources Menu');
+  toast.info('You already have this source in your Sources Menu');
   return;
 }
     
@@ -1393,7 +1393,7 @@ const handleFolderBrowserSourceSelected = async (selectedPath: string) => {
 
     if (isDuplicate) {
       console.log('[Dup-check] toast.error firing');
-      toast.error('You already have this source in your Sources Menu');
+      toast.info('You already have this source in your Sources Menu');
       return;
     }
 

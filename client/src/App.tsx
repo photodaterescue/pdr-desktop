@@ -57,10 +57,18 @@ export default function App() {
               toast.info calls go through sonner; without this mount
               the calls fire into the void with no visible UI. The
               shadcn Toaster above stays for any legacy useToast()
-              callers. position 'bottom-right' matches the existing
-              shadcn Toaster placement so the two queues don't fight
-              over the same screen real-estate. */}
-          <SonnerToaster position="bottom-right" richColors closeButton />
+              callers. Position top-center because bottom-right got
+              missed in the first review pass — it's the corner the
+              eye reaches last. expand=true bumps each toast to
+              full-width content (more legible than the default
+              compressed pill). */}
+          <SonnerToaster
+            position="top-center"
+            richColors
+            closeButton
+            expand
+            toastOptions={{ duration: 5000, style: { fontSize: '14px' } }}
+          />
           <ToastListener />
           <UpdateNotification />
           <AppRouter />
