@@ -4,6 +4,13 @@ import { reportProblem, getLogFilePath } from '@/lib/electron-bridge';
 
 interface ReportProblemModalProps {
   onClose: () => void;
+  /**
+   * Pre-fill the description box with this text. Used when the modal
+   * is opened automatically from a crash handler (e.g. the analysis
+   * IPC error path) so the user sees what we already know about
+   * the failure before they add their own context.
+   */
+  initialDescription?: string;
 }
 
 /**
@@ -19,13 +26,16 @@ interface ReportProblemModalProps {
  * The "Open log folder" link below the form gives power users a
  * direct path to the log file if they prefer to send it themselves.
  */
-export function ReportProblemModal({ onClose }: ReportProblemModalProps) {
-  const [description, setDescription] = useState('');
+export function ReportProblemModal({ onClose, initialDescription }: ReportProblemModalProps) {
+  const [description, setDescription] = useState(initialDescription ?? '');
   const [userEmail, setUserEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [sentOk, setSentOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logPath, setLogPath] = useState<string | null>(null);
+  // Captured from the reportProblem IPC response so we can show the
+  // user the exact .zip filename to drag into their email.
+  const [diagnosticZipPath, setDiagnosticZipPath] = useState<string | null>(null);
 
   // Resolve the log file path up-front so the UI can show it even
   // before the user hits Send. Useful for copy-paste and reassurance.
@@ -44,6 +54,7 @@ export function ReportProblemModal({ onClose }: ReportProblemModalProps) {
       if (r.success) {
         setSentOk(true);
         if (r.logFilePath) setLogPath(r.logFilePath);
+        if (r.diagnosticZipPath) setDiagnosticZipPath(r.diagnosticZipPath);
       } else {
         setError(r.error ?? 'Could not open your mail client. Please send a message to admin@photodaterescue.com manually.');
       }
@@ -119,15 +130,30 @@ export function ReportProblemModal({ onClose }: ReportProblemModalProps) {
                 <Check className="w-6 h-6 text-emerald-600" />
               </div>
               <h4 className="text-sm font-semibold text-foreground">Your mail client should be opening</h4>
-              <p className="text-xs text-muted-foreground max-w-sm">
-                We've also opened the folder containing your log file — please drag{' '}
-                <code className="px-1 rounded bg-muted">main.log</code> into the email as
-                an attachment before sending.
-              </p>
-              {logPath && (
-                <code className="mt-2 px-2 py-1 rounded bg-muted text-[10px] text-foreground break-all w-full">
-                  {logPath}
-                </code>
+              {diagnosticZipPath ? (
+                <>
+                  <p className="text-xs text-muted-foreground max-w-sm">
+                    We've also opened the folder containing your diagnostic ZIP — please drag{' '}
+                    <code className="px-1 rounded bg-muted">{diagnosticZipPath.split(/[\\/]/).pop()}</code> into
+                    the email as an attachment before sending. The ZIP bundles your log + system info + licence state.
+                  </p>
+                  <code className="mt-2 px-2 py-1 rounded bg-muted text-[10px] text-foreground break-all w-full">
+                    {diagnosticZipPath}
+                  </code>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground max-w-sm">
+                    We've also opened the folder containing your log file — please drag{' '}
+                    <code className="px-1 rounded bg-muted">main.log</code> into the email as
+                    an attachment before sending.
+                  </p>
+                  {logPath && (
+                    <code className="mt-2 px-2 py-1 rounded bg-muted text-[10px] text-foreground break-all w-full">
+                      {logPath}
+                    </code>
+                  )}
+                </>
               )}
             </div>
           )}

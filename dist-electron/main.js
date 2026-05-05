@@ -2851,6 +2851,66 @@ ipcMain.handle('app:reportProblem', async (_e, payload) => {
             logTail = lines.slice(-200).join('\n').slice(-1500);
         }
         catch { }
+        // Licence state — captured (without the key itself) so support
+        // can tell at a glance whether the user is licensed, in grace,
+        // offline-only, etc. without having to dig through the log.
+        let licenceSummary = '(licence state unavailable)';
+        try {
+            const status = await getLicenseStatus();
+            licenceSummary = [
+                `status: ${status.status}`,
+                `isValid: ${status.isValid}`,
+                `plan: ${status.plan ?? 'n/a'}`,
+                `canUsePremiumFeatures: ${status.canUsePremiumFeatures}`,
+                `isOfflineGrace: ${status.isOfflineGrace}`,
+                `daysUntilGraceExpires: ${status.daysUntilGraceExpires ?? 'n/a'}`,
+                `customerEmail: ${status.customerEmail ?? 'n/a'}`,
+            ].join('\n');
+        }
+        catch (licErr) {
+            licenceSummary = `(error fetching licence: ${licErr.message})`;
+        }
+        // Bundle main.log + main.old.log + system-info.txt into a single
+        // .zip in the user's Documents folder. Users can drag this one
+        // file into the email instead of fishing through %APPDATA% for
+        // the raw log — much higher chance of actually getting attached.
+        const documentsPath = app.getPath('documents');
+        const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15); // YYYYMMDDTHHMMSS
+        const zipFilename = `pdr-diagnostic-${stamp}.zip`;
+        const zipPath = path.join(documentsPath, zipFilename);
+        let zipCreated = false;
+        try {
+            const zip = new AdmZip();
+            // main.log (current rotation)
+            if (fs.existsSync(logFilePath)) {
+                zip.addLocalFile(logFilePath);
+            }
+            // main.old.log (previous rotation chunk) — present only after
+            // the log file has rolled over once.
+            const oldLogPath = logFilePath.replace(/main\.log$/i, 'main.old.log');
+            if (fs.existsSync(oldLogPath)) {
+                zip.addLocalFile(oldLogPath);
+            }
+            // System info as a sidecar text file inside the zip so support
+            // doesn't have to read the email body to see version/RAM/etc.
+            const sysinfoBody = [
+                '─── system info ───',
+                info,
+                '',
+                '─── licence state ───',
+                licenceSummary,
+                '',
+                '─── user description ───',
+                description || '(blank)',
+                userEmail ? `Return address: ${userEmail}` : '',
+            ].filter(Boolean).join('\n');
+            zip.addFile('system-info.txt', Buffer.from(sysinfoBody, 'utf8'));
+            zip.writeZip(zipPath);
+            zipCreated = true;
+        }
+        catch (zipErr) {
+            log.warn('[report] zip creation failed, falling back to log-reveal:', zipErr);
+        }
         const body = [
             description || '(user left description blank)',
             '',
@@ -2858,23 +2918,32 @@ ipcMain.handle('app:reportProblem', async (_e, payload) => {
             info,
             userEmail ? `Return address: ${userEmail}` : '',
             '',
+            '─── licence state ───',
+            licenceSummary,
+            '',
             '─── recent log (last 200 lines) ───',
             logTail || '(log file unreadable)',
             '',
-            '─── please attach the full log from the folder that just opened ───',
-            logFilePath,
+            zipCreated
+                ? `─── please attach the diagnostic ZIP from the folder that just opened ───\n${zipPath}`
+                : `─── please attach the full log from the folder that just opened ───\n${logFilePath}`,
         ].filter(Boolean).join('\n');
         const subject = 'Photo Date Rescue — support request';
         const mailto = `mailto:${supportEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        // Open default mail client AND reveal log in Explorer. Users then
-        // drag the log into the email manually — mailto can't attach.
+        // Open default mail client AND reveal the artefact (zip if we
+        // created one, raw log if not) in Explorer. Users drag the
+        // file into the email manually — mailto: can't attach.
         await shell.openExternal(mailto);
         try {
-            shell.showItemInFolder(logFilePath);
+            shell.showItemInFolder(zipCreated ? zipPath : logFilePath);
         }
         catch { }
-        log.info(`[report] opened mailto for support request (description ${description.length} chars)`);
-        return { success: true, logFilePath };
+        log.info(`[report] opened mailto for support request (description ${description.length} chars; zip=${zipCreated ? zipPath : 'none'})`);
+        return {
+            success: true,
+            logFilePath,
+            diagnosticZipPath: zipCreated ? zipPath : null,
+        };
     }
     catch (err) {
         return { success: false, error: err.message };

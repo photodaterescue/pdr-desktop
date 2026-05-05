@@ -26,7 +26,19 @@ export async function getLogFilePath(reveal: boolean = false): Promise<{ path: s
  *  AND reveals the log file in Explorer so the user can drag it in
  *  as an attachment. Returns the log file path so the calling UI can
  *  display it. */
-export async function reportProblem(payload: { description: string; userEmail?: string }): Promise<{ success: boolean; logFilePath?: string; error?: string }> {
+export async function reportProblem(payload: { description: string; userEmail?: string }): Promise<{
+  success: boolean;
+  logFilePath?: string;
+  /**
+   * Path to the diagnostic ZIP main.ts created in the user's
+   * Documents folder. Null if zip creation failed (rare — should
+   * only happen on permission errors). When present the modal
+   * tells the user to drag this single file rather than the raw
+   * main.log out of %APPDATA%.
+   */
+  diagnosticZipPath?: string | null;
+  error?: string;
+}> {
   if (!isElectron()) return { success: false, error: 'Not running in Electron' };
   try { return await (window as any).pdr?.reportProblem?.(payload); }
   catch (err) { return { success: false, error: (err as Error).message }; }

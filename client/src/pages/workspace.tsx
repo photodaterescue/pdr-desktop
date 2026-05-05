@@ -358,6 +358,13 @@ useEffect(() => {
   // separate destinations in the sidebar.
   const [activeView, setActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
   const [showReportProblem, setShowReportProblem] = useState(false);
+  // When the analysis pipeline throws an unhandled error, we open the
+  // Report-a-Problem modal automatically with a pre-filled description
+  // so the user has one click to send what we already know about the
+  // crash. Cleared when the modal closes so a normal "Help & Support
+  // → Report a problem" click gets a blank box. See the catch block
+  // around runAnalysis for how this is populated.
+  const [reportPrefill, setReportPrefill] = useState<string | null>(null);
   /** Non-null while the user is picking a background image for Trees
    *  via the S&D view. SearchRibbon reads this to show a pick-mode
    *  banner + confirm button; on confirm/cancel we switch back to the
@@ -1193,7 +1200,55 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         removeAnalysisProgressListener();
         setIsAnalyzing(false);
         setIsScanning(false);
-        toast.error('Analysis failed unexpectedly. Please try again.');
+
+        // Capture everything we know about the failure for the
+        // diagnostic bundle. Without this, Jane's symptom — "analysis
+        // drops out, no error, just routes back to workspace" — leaves
+        // us with nothing actionable. Now: the error lands in main.log
+        // (via the renderer→main forwarder) AND the user gets a one-
+        // click path to email it to support with the description
+        // pre-filled.
+        const err = error as Error;
+        const stack = err?.stack ?? '(no stack)';
+        const message = err?.message ?? String(error);
+        const prefill = [
+          `Analysis failed unexpectedly while processing:`,
+          `  ${sourcePath}`,
+          `  type: ${finalType}`,
+          ``,
+          `Error: ${message}`,
+          ``,
+          `Stack trace:`,
+          stack,
+        ].join('\n');
+
+        // Push the full error context into main.log so the diagnostic
+        // ZIP picks it up even if the user closes the toast without
+        // clicking through. Best-effort — fall through if the bridge
+        // isn't available.
+        try {
+          (window as any).pdr?.log?.({
+            level: 'error',
+            message: '[analysis] runAnalysis threw',
+            data: { sourcePath, sourceType: finalType, message, stack },
+          });
+        } catch {}
+
+        // Toast with a "Send report" action — gives the user a single
+        // click to open the Report-a-Problem modal with everything
+        // pre-filled. duration:30s so they have time to react before
+        // it auto-dismisses.
+        toast.error('Analysis failed unexpectedly', {
+          description: 'Click Send report to email a diagnostic bundle to support.',
+          duration: 30_000,
+          action: {
+            label: 'Send report',
+            onClick: () => {
+              setReportPrefill(prefill);
+              setShowReportProblem(true);
+            },
+          },
+        });
         return;
       }
     
@@ -2128,7 +2183,15 @@ return (
       )}
 
       {showReportProblem && (
-        <ReportProblemModal onClose={() => setShowReportProblem(false)} />
+        <ReportProblemModal
+          initialDescription={reportPrefill ?? undefined}
+          onClose={() => {
+            setShowReportProblem(false);
+            // Clear the prefill so the next manual "Help & Support
+            // → Report a problem" click gets a blank description.
+            setReportPrefill(null);
+          }}
+        />
       )}
 
       {showSettingsModal && (
