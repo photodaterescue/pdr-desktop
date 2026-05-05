@@ -42,7 +42,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
@@ -220,6 +220,26 @@ async function main(): Promise<void> {
 
   info('Step 2/4 — Electron TypeScript');
   await exec('npm', ['run', 'build:electron']);
+
+  // ---- clean prior release artefacts ----
+  // electron-builder doesn't auto-clean release/ between builds, which
+  // means previous-version .exes (Photo Date Rescue Setup 1.0.1.exe,
+  // intermediate app.exe / signed-exe-tmp dirs, the unpacked
+  // win-unpacked/ tree, etc.) accumulate. Wiping the whole release/
+  // dir before each build keeps things tidy + means our R2 upload
+  // can't accidentally pick up a stale artefact.
+  if (existsSync(RELEASE_DIR)) {
+    info(`Cleaning ${RELEASE_DIR}`);
+    try {
+      rmSync(RELEASE_DIR, { recursive: true, force: true });
+      success('release/ cleaned');
+    } catch (cleanErr) {
+      // Non-fatal — electron-builder will overwrite what it can.
+      // Most often this fails because Explorer has a window open on
+      // a subfolder; the build will still produce the right .exe.
+      console.warn(`  ⚠ couldn't fully clean release/: ${(cleanErr as Error).message}`);
+    }
+  }
 
   // ---- package + sign ----
   info('Step 3/4 — electron-builder NSIS package + signtool');
