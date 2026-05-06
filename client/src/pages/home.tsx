@@ -234,9 +234,9 @@ export default function Home() {
               chosen yet. */}
           <PrimaryCard
             icon={<HardDrive className="w-10 h-10 text-white" />}
-            title={hasDestination ? "Continue to your Library" : "Pick a Library Drive"}
+            title={hasDestination ? "Continue in your Workspace" : "Pick a Library Drive"}
             description={hasDestination
-              ? "Pick up where you left off — your Library Drive is ready."
+              ? "Pick up where you left off — your Library Drive is set and ready."
               : "For a quick fix, or your forever library — choose where your organised photos and videos will live."}
             ctaLabel={hasDestination ? "Open Workspace" : "Get Started"}
             onClick={handleHero}
