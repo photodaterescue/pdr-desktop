@@ -1327,6 +1327,14 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         // toast — no modal needed, the user just needs to wait for
         // the current job to finish before trying this one again.
         toast.error(result.error || 'Wait for the current zip to finish unpacking before starting another.');
+      } else if (result.code === 'EXTRACTION_CAP_REACHED') {
+        // 55 GB pre-extract cap hit — user has too many un-fixed
+        // extracted Takeouts/RARs already. Friendly explanation +
+        // what to do (run the fix to free space, then come back).
+        // Long duration so users have time to read the explanation.
+        toast.error(result.error || 'Pre-extract limit reached. Run the fix on existing sources first, then add more.', {
+          duration: 12000,
+        });
       } else {
         toast.error(result.error || 'Failed to analyze source');
       }
@@ -7343,7 +7351,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 <h3 className="text-lg font-medium text-foreground mb-4">What Photo Date Rescue Does</h3>
                 <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Photo Date Rescue restores correct dates to photos and videos by analysing trusted metadata, structured filename patterns, and fallback rules — without ever modifying your originals.</p>
-                  <p>It's designed to handle messy, real-world libraries safely and predictably, even at large scale.</p>
+                  <p>It's designed to handle messy, real-world libraries safely and predictably, even at large scale — multi-GB Google Takeouts, decades of phone backups, mixed scanner output, the lot.</p>
                 </div>
               </section>
 
@@ -7352,25 +7360,25 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 <h3 className="text-lg font-medium text-foreground mb-4">Your First Fix (5 Simple Steps)</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Pick your Library Drive</p>
+                    <p className="text-sm text-muted-foreground">PDR asks you to pick a destination drive <em>before</em> you add any Sources — the place your fixed library will live for years to come. The Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed and capacity, so you can pick confidently rather than guess.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Add a Source</p>
-                    <p className="text-sm text-muted-foreground">Choose a folder, ZIP archive, or drive that contains the photos or videos you want to fix.</p>
+                    <p className="text-sm text-muted-foreground">Click Add Source to open the Folder Browser. Pick a folder, ZIP, RAR, or drive containing the photos or videos you want to fix. You can add multiple Sources and PDR will analyse them together.</p>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Tick the Checkbox</p>
-                    <p className="text-sm text-muted-foreground">Only checked Sources are included — this is how you tell PDR exactly what to analyse.</p>
+                    <p className="text-sm text-muted-foreground">Only checked Sources are included in the run — this is how you tell PDR exactly what to process.</p>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Review the Source Analysis</p>
-                    <p className="text-sm text-muted-foreground">Check how many files are Confirmed, Recovered, or Marked before running the fix.</p>
-                  </div>
-                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                    <p className="font-medium text-foreground mb-1">Choose a Destination</p>
-                    <p className="text-sm text-muted-foreground">Select a dedicated output folder where the cleaned library will be written.</p>
+                    <p className="text-sm text-muted-foreground">Check how many files are Confirmed, Recovered, Marked, or Duplicates before running the fix. The numbers are estimates here — the authoritative figures land in the Fix Report once the run completes.</p>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Run Fix</p>
-                    <p className="text-sm text-muted-foreground">PDR analyses your Sources, applies its confidence system, and writes corrected files to the Destination.</p>
-                    <p className="text-xs text-muted-foreground mt-2">Nothing is overwritten — output is always written separately.</p>
+                    <p className="text-sm text-muted-foreground">PDR copies your files to the Library Drive with corrected dates, organised in your chosen folder structure (Year / Year-Month / Year-Month-Day), and skips identical duplicates automatically.</p>
+                    <p className="text-xs text-muted-foreground mt-2">Nothing is overwritten — output is always written separately. Your originals are never modified.</p>
                   </div>
                 </div>
               </section>

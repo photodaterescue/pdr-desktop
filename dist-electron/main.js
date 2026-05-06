@@ -757,6 +757,81 @@ function cleanupOrphanedTempDirs() {
         }
     }
 }
+/**
+ * Cap the total disk used by pre-extracted source archives across the
+ * Library Drive's PDR_Temp + the legacy %TEMP% PDR_Temp.
+ *
+ * Why: without a cap, a user who adds 8 × 50 GB Google Takeouts in
+ * one session and then closes PDR without running a fix would leave
+ * 400 GB sitting on their library drive — the "where did all my
+ * space go?" disaster scenario. The cap enforces a fix-then-add
+ * workflow most users follow naturally: extract one big Takeout,
+ * fix it (which cleans the extraction up automatically), add the
+ * next one.
+ *
+ * Sized for one full 50 GB Google Takeout chunk (the default Google
+ * Takeout split size) plus a small headroom for a second source if
+ * the user wants to stack a tiny one alongside. Users who want
+ * different behaviour can run their fix to free space.
+ *
+ * Folders + ZIPs ≤ 2 GiB don't extract (the streaming engine reads
+ * them in-place), so they don't count toward this cap.
+ */
+const EXTRACTION_CAP_BYTES = 55 * 1024 * 1024 * 1024; // 55 GiB
+/**
+ * Recursive directory size — sum bytes of every file under `dir`.
+ * Best-effort: skips entries we can't stat (permission errors, race
+ * with cleanup, etc.) so a single locked file doesn't blow up the
+ * whole sum.
+ */
+function folderSizeBytes(dir) {
+    let total = 0;
+    try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            try {
+                if (entry.isDirectory()) {
+                    total += folderSizeBytes(full);
+                }
+                else {
+                    total += fs.statSync(full).size;
+                }
+            }
+            catch { /* skip unstattable entries */ }
+        }
+    }
+    catch { /* skip unreadable dir */ }
+    return total;
+}
+/**
+ * Total disk used by pre-extracted sources right now. Walks both the
+ * current Library Drive's PDR_Temp and the legacy %TEMP% PDR_Temp so
+ * v1.0.x leftovers also count toward the cap.
+ *
+ * Called on every analysis:run for a source that will pre-extract
+ * (large ZIP / RAR), so this needs to be fast enough that adding a
+ * source doesn't hang the UI for many seconds. On SSD a 50 GB
+ * extracted Takeout (~30k files) walks in 1-2 s; on HDD up to 5-10 s.
+ * Acceptable for an add-source operation that already involves a
+ * file dialog + analysis pipeline kick-off.
+ */
+function getPendingExtractionBytes() {
+    const roots = new Set();
+    roots.add(PDR_TEMP_ROOT);
+    try {
+        const currentRoot = getCurrentPdrTempRoot();
+        if (currentRoot)
+            roots.add(currentRoot);
+    }
+    catch { /* settings unreadable — only the legacy root counts */ }
+    let total = 0;
+    for (const root of roots) {
+        if (!fs.existsSync(root))
+            continue;
+        total += folderSizeBytes(root);
+    }
+    return total;
+}
 function cleanupTempDir(tempDir) {
     // Log success + failure to main.log so post-fix cleanup behaviour
     // is visible in support diagnostics. v1.0.x silently swallowed
@@ -919,7 +994,21 @@ app.whenReady().then(() => {
         initAutoUpdater(mainWindow);
     }
     resetCriticalSettings();
-    cleanupOrphanedTempDirs();
+    // NOTE: cleanupOrphanedTempDirs() intentionally NOT called on
+    // startup — the v2.0.0 design persists pre-extracted Takeouts
+    // across sessions so users can restart PDR (or recover from a
+    // crash) without losing the 40-minute extraction. Orphan cleanup
+    // happens at the moments where it's safe + intended:
+    //   • when the user removes a source (analysis:cleanupTempDirForSource)
+    //   • when a fix completes successfully (post-copy cleanup)
+    // The startup sweep was an aggressive safety net for v1.0.x where
+    // every restart re-analysed anyway; in v2.0.0 it actively destroys
+    // user state. The 55 GB pre-extract cap (see EXTRACTION_CAP_BYTES)
+    // bounds disk usage, replacing what the sweep used to accomplish.
+    //
+    // The cleanupOrphanedTempDirs function itself stays in the file so
+    // a future "Clean up extracted temp files" Settings button can
+    // call it on user demand.
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
@@ -945,11 +1034,14 @@ app.on('before-quit', async () => {
     // Cancel any running operations to allow clean shutdown
     preScanCancelled = true;
     copyFilesCancelled = true;
-    // Clean up any active temp extraction directories
-    for (const tempDir of activeTempDirs) {
-        cleanupTempDir(tempDir);
-    }
-    activeTempDirs.clear();
+    // NOTE: activeTempDirs cleanup intentionally NOT done here —
+    // see the same reasoning as the disabled startup sweep above.
+    // v2.0.0 persists pre-extracted Takeouts across quit/relaunch
+    // so users don't lose 40-minute extractions to a graceful close.
+    // Cleanup happens on source-remove and post-fix; the 55 GB cap
+    // keeps disk usage bounded. activeTempDirs is in-memory so it
+    // resets on next launch, which is fine — the on-disk state is
+    // the source of truth for the cap calculation.
     await shutdownExiftool();
     await shutdownIndexerExiftool();
     closeDatabase();
@@ -1689,6 +1781,31 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
             } })());
         if (isLargeZip && largeExtractInFlight && largeExtractInFlight.zipPath !== sourcePath) {
             throw Object.assign(new Error(`Another large zip is currently being unpacked. Wait for "${path.basename(largeExtractInFlight.zipPath)}" to finish before starting "${path.basename(sourcePath)}".`), { code: 'LARGE_EXTRACT_IN_FLIGHT', currentZip: path.basename(largeExtractInFlight.zipPath), startedAt: largeExtractInFlight.startedAt });
+        }
+        // 55 GiB pre-extract cap — bounds the total disk PDR can consume
+        // with un-fixed extracted sources. Triggers when adding ANOTHER
+        // large ZIP or any RAR (both pre-extract paths) would push the
+        // sum past EXTRACTION_CAP_BYTES. Folders and small (< 2 GiB)
+        // ZIPs don't extract, so they bypass this gate entirely.
+        //
+        // Skipped when tempDirOverride is supplied — that's the smart-
+        // prompt fallback path where the user has already explicitly
+        // picked a different drive and accepted that it has the space.
+        const willPreExtract = (isLargeZip || (sourceType === 'zip' && isRarFile(sourcePath))) && !tempDirOverride;
+        if (willPreExtract) {
+            const pendingBytes = getPendingExtractionBytes();
+            const incomingBytes = getZipFileSize(sourcePath);
+            if (pendingBytes + incomingBytes > EXTRACTION_CAP_BYTES) {
+                const fmtGB = (n) => (n / (1024 * 1024 * 1024)).toFixed(1);
+                throw Object.assign(new Error(`PDR keeps up to ${fmtGB(EXTRACTION_CAP_BYTES)} GB of extracted source archives at once. ` +
+                    `Currently using ${fmtGB(pendingBytes)} GB; this source would add ${fmtGB(incomingBytes)} GB. ` +
+                    `Run the fix on what you've already added to free space, then come back to add more.`), {
+                    code: 'EXTRACTION_CAP_REACHED',
+                    pendingBytes,
+                    incomingBytes,
+                    capBytes: EXTRACTION_CAP_BYTES,
+                });
+            }
         }
         let effectivePath = sourcePath;
         let effectiveType = sourceType;

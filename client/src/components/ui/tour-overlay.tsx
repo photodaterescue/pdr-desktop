@@ -367,14 +367,14 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'welcome',
     title: 'Welcome to Photo Date Rescue',
-    description: 'This quick tour will show you how to safely restore dates on your photos and videos. It only takes a minute, and you can replay it anytime from Help & Support.',
+    description: 'This quick tour walks you through the workspace — the Library Drive, your Sources, the analysis flow, and the fix itself. It takes about a minute. You can replay it any time from Help & Support, and PDR keeps itself up to date in the background so you\'ll always have the latest version.',
     position: 'center'
   },
   {
     id: 'sources-panel',
     targetSelector: '[data-tour="sources-panel"]',
     title: 'Your Sources',
-    description: 'This is where your photo sources appear. Add folders, ZIP archives, or external drives. Each source can be toggled on/off with the checkbox to include or exclude it from analysis.',
+    description: 'Sources appear here once added — folders, ZIP archives, RAR archives or whole drives. Tick a Source\'s checkbox to include it in the analysis, untick to leave it out. Multiple Sources are analysed together as a single Combined Analysis.',
     position: 'right',
     highlightPadding: 12
   },
@@ -382,7 +382,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'add-source',
     targetSelector: '[data-tour="add-source"]',
     title: 'Add a Source',
-    description: 'Click here to add folders, drives, or ZIP files containing your photos. You can add multiple sources and analyze them together or separately.',
+    description: 'Click Add Source to open the Folder Browser — a custom picker that shows every drive on your machine with speed and capacity ratings, plus your Quick Access folders. Pick a folder, drive, or ZIP/RAR archive containing the photos you want to fix. You can add as many Sources as you like.',
     position: 'bottom',
     highlightPadding: 8
   },
@@ -390,7 +390,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'confidence-cards',
     targetSelector: '[data-tour="confidence-cards"]',
     title: 'Date Confidence Breakdown',
-    description: 'These cards show a preliminary indication of how dates were determined. Confirmed = embedded metadata, Recovered = filename patterns, Marked = fallback rules. Note: These are initial estimates. The final, authoritative results appear in your Fix Report after running the fix.',
+    description: 'These four cards summarise how dates were determined per Source: Confirmed (embedded EXIF / Takeout metadata), Recovered (structured filename patterns), Marked (no reliable date — fallback rules used), and Duplicates (hash-matched identical copies skipped from output). They\'re initial estimates — the authoritative figures land in your Fix Report.',
     position: 'bottom',
     highlightPadding: 12
   },
@@ -398,23 +398,23 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'combined-analysis',
     targetSelector: '[data-tour="combined-analysis"]',
     title: 'Combined Analysis',
-    description: 'This panel shows totals across all selected sources. Use the Photo/Video toggles to filter by media type. You can also add more folders or ZIP archives directly from here.',
+    description: 'Totals across every ticked Source — photos, videos, total size. The Photos / Videos toggles filter what the fix processes. You can keep adding more Sources from this card too; PDR re-analyses them and folds the new numbers in.',
     position: 'left',
     highlightPadding: 12
   },
   {
     id: 'destination',
     targetSelector: '[data-tour="destination"]',
-    title: 'Choose Destination',
-    description: 'Select where your fixed files will be saved. Make sure the storage indicator shows green — this means there\'s enough space for your files. If it shows red or orange, choose a location with more available storage.',
+    title: 'Your Library Drive',
+    description: 'This is where your fixed photos will live. PDR encourages you to pick a Library Drive before adding Sources — the Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed, capacity and connection type so you don\'t accidentally pick a slow or full drive. The colour-coded indicator confirms there\'s room for the run.',
     position: 'left',
     highlightPadding: 8
   },
   {
     id: 'apply-fixes',
     targetSelector: '[data-tour="apply-fixes"]',
-    title: 'Apply Fixes',
-    description: 'When you\'re ready, click here to start the fix process. PDR will copy your files to the destination with corrected dates. A detailed report is saved automatically.',
+    title: 'Run Fix',
+    description: 'When the analysis looks right, click Run Fix. PDR copies your files to the Library Drive with corrected dates and a tidy folder structure, skips identical duplicates automatically, and saves a permanent report. Originals are never modified — output is always written to a fresh location.',
     preferredPositions: ['top', 'left', 'right', 'bottom'],
     highlightPadding: 8
   },
@@ -422,7 +422,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'guides-panel',
     targetSelector: '[data-tour="guides-panel"]',
     title: 'Guides & Help',
-    description: 'Need guidance? The side panel has step-by-step guides, best practices, and answers to common questions. It\'s your go-to resource while working.',
+    description: 'Step-by-step walkthroughs, best practices, and answers to common questions live here. If something goes wrong, Help & Support has a one-click "Report a problem" button that bundles your log, system info and licence state into a single ZIP for our team — no hunting in %APPDATA% required.',
     preferredPositions: ['right', 'left', 'top', 'bottom'],
     highlightPadding: 12
   },
@@ -430,14 +430,14 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'reports-history',
     targetSelector: '[data-tour="reports-history"]',
     title: 'Reports History',
-    description: 'Every fix run creates a report. Access your complete history here to review past jobs, export data, or verify what was changed.',
+    description: 'Every fix run saves a permanent report — what was processed, how each date was determined, what duplicates were skipped, where the output landed. Reopen any past report from here, export to CSV or TXT, or compare runs over time. Treat reports as part of your archive.',
     preferredPositions: ['top', 'left', 'right', 'bottom'],
     highlightPadding: 8
   },
   {
     id: 'complete',
     title: 'You\'re Ready!',
-    description: 'That\'s the essentials! Start by adding a source, review the analysis, choose a destination, and apply fixes. Remember: your originals are always safe. Happy organizing!',
+    description: 'That\'s the essentials. After your first fix, explore Search & Discovery (find any photo by date, person, location, tag), Memories (a Year/Month timeline + On This Day), and People Manager (AI-detected face clusters you can name). Trees, Edit Dates and Photo Format conversion are released shortly. Your originals are always safe — happy organising.',
     position: 'center'
   }
 ];
