@@ -7357,7 +7357,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
 
               {/* Your First Fix */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Your First Fix (5 Simple Steps)</h3>
+                <h3 className="text-lg font-medium text-foreground mb-4">Your First Fix (in 5 simple steps)</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Pick your Library Drive</p>
@@ -7502,17 +7502,21 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               {/* Core Orientation Section - Always Visible */}
               <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  PDR works best when you treat your input as a set of <span className="font-medium text-foreground">Sources</span> and your output as a single <span className="font-medium text-foreground">Destination</span>. 
-                  That structure is what makes it fast, scalable, and safe — even with huge, messy libraries.
+                  PDR works best when you treat your inputs as a set of <span className="font-medium text-foreground">Sources</span> and your output as a single <span className="font-medium text-foreground">Library Drive</span> — the destination where your fixed library will live for years to come.
+                  That structure is what makes it fast, scalable, and safe even with huge, messy libraries.
                 </p>
-                <p className="text-sm text-foreground font-medium mt-3">The goal: tell PDR exactly what to include, and exactly where fixed files should go, with no surprises.</p>
+                <p className="text-sm text-foreground font-medium mt-3">The goal: pick your Library Drive once, tell PDR exactly which Sources to include, and let it do the rest.</p>
               </div>
 
               {/* Mental Model Section - Always Visible */}
               <section>
                 <h3 className="text-lg font-medium text-foreground mb-4">The Mental Model</h3>
                 <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-4 bg-secondary/50 rounded-lg text-center">
+                      <p className="font-medium text-foreground">Library Drive</p>
+                      <p className="text-xs text-muted-foreground mt-1">where the fixed library lives</p>
+                    </div>
                     <div className="p-4 bg-secondary/50 rounded-lg text-center">
                       <p className="font-medium text-foreground">Sources</p>
                       <p className="text-xs text-muted-foreground mt-1">what PDR reads</p>
@@ -7522,38 +7526,59 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       <p className="text-xs text-muted-foreground mt-1">what PDR understands</p>
                     </div>
                     <div className="p-4 bg-secondary/50 rounded-lg text-center">
-                      <p className="font-medium text-foreground">Destination</p>
+                      <p className="font-medium text-foreground">Run Fix</p>
                       <p className="text-xs text-muted-foreground mt-1">what PDR writes</p>
                     </div>
                   </div>
-                  <p>When you hit <span className="font-medium text-foreground">Run Fix</span>, you're saying: "Analyze these Sources together, apply PDR's rules and confidence system, and write the corrected result to this Destination."</p>
+                  <p>When you hit <span className="font-medium text-foreground">Run Fix</span>, you're saying: "Analyse these Sources together, apply PDR's rules and confidence system, and write the corrected result to my Library Drive."</p>
                   <p>Originals stay intact. Output is consistent. Reporting is saved. You can export and audit anytime.</p>
                 </div>
               </section>
 
-              {/* Source Types - Always Visible */}
+              {/* Picking the Library Drive - NEW for v2.0.0 */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">Picking Your Library Drive</h3>
+                <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>v2.0.0 asks you to pick your Library Drive <em>before</em> adding Sources. Two helpers make that decision easier:</p>
+                  <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Library Planner</p>
+                    <p>Sizes your collection across seven buckets (Under 50 GB, 50–200 GB, 200–500 GB, 500 GB–1 TB, 1–2 TB, 2–4 TB, 4 TB+). Used to colour-code drive recommendations against your target size, so a 1 TB drive shows green for a 200 GB library and red for a 4 TB one.</p>
+                  </div>
+                  <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Drive Advisor</p>
+                    <p>Rates each drive on speed (Fast / Medium / Slow), connection type (Local / USB / Network / Cloud), capacity, and system-drive penalty. Crowns the recommended one. Mostly stops you accidentally picking your C: drive (where Windows + temp files live) or a slow network share.</p>
+                  </div>
+                  <p>Both are optional — power users who already know which drive to use can skip them and pick directly via the Folder Browser.</p>
+                </div>
+              </section>
+
+              {/* Source Types - Updated for v2.0.0 */}
               <section>
                 <h3 className="text-lg font-medium text-foreground mb-4">Source Types at a Glance</h3>
                 <div className="space-y-3">
                   <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-1">Folders</p>
-                    <p className="text-sm text-muted-foreground">Recommended for most photo libraries. PDR scans cleanly with fewer edge cases.</p>
+                    <p className="text-sm text-muted-foreground">Recommended for most photo libraries. PDR reads files directly from disk with no extraction step — fastest startup and zero temp-disk usage.</p>
                   </div>
                   <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg">
-                    <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">ZIP Archives</p>
-                    <p className="text-sm text-muted-foreground">Ideal for exports like Google Takeout or WhatsApp backups. No extraction required.</p>
+                    <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">Small ZIP Archives (under 2 GB)</p>
+                    <p className="text-sm text-muted-foreground">Streamed in-place — no extraction required. Same speed and disk profile as a folder.</p>
                   </div>
                   <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
-                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mb-1">Drives</p>
-                    <p className="text-sm text-muted-foreground">Useful when your library spans multiple folders on one disk. Think in folders even when using drives.</p>
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mb-1">Large ZIP / RAR Archives (Google Takeouts, etc.)</p>
+                    <p className="text-sm text-muted-foreground">Pre-extracted to <span className="font-mono text-xs">PDR_Temp/</span> on your Library Drive before analysis. Necessary because the in-place streaming engine can't safely handle the multi-GB phone videos these archives often contain. The extraction is auto-cleaned when the fix completes (or when you remove the source). PDR caps total un-fixed extractions at 55 GB to prevent disk-fill — the friendly toast tells you if you've reached it.</p>
+                  </div>
+                  <div className="p-4 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-lg">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Drives</p>
+                    <p className="text-sm text-muted-foreground">Useful when your library spans multiple folders on one disk. Think in folders even when using drives — narrower scope = cleaner results.</p>
                   </div>
                 </div>
               </section>
 
-              {/* Source Analysis Cards - Always Visible */}
+              {/* Source Analysis Cards - Updated to include Duplicates */}
               <section>
                 <h3 className="text-lg font-medium text-foreground mb-4">Understanding Source Analysis Cards</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <p className="font-medium text-emerald-700 dark:text-emerald-300 text-sm">Confirmed</p>
                     <p className="text-xs text-muted-foreground mt-1">Real capture/backup metadata found. Highest trust.</p>
@@ -7566,8 +7591,12 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                     <p className="font-medium text-slate-700 dark:text-slate-300 text-sm">Marked</p>
                     <p className="text-xs text-muted-foreground mt-1">No reliable date found. Fallback rules used.</p>
                   </div>
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
+                    <p className="font-medium text-amber-700 dark:text-amber-300 text-sm">Duplicates</p>
+                    <p className="text-xs text-muted-foreground mt-1">Hash-matched identical copies. Safely skipped from output.</p>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground mt-4">If Marked is high, consider running smaller grouped jobs to isolate what's happening.</p>
+                <p className="text-sm text-muted-foreground mt-4">If Marked is high, consider running smaller grouped jobs to isolate what's happening. If Duplicates is high, you've probably stacked overlapping backups — that's normal and PDR handles it.</p>
               </section>
 
               {/* Expandable Accordion Sections */}
@@ -7838,72 +7867,108 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
             </Button>
             <h2 className="text-2xl font-semibold text-foreground mb-10">What Happens Next</h2>
-          
+
             <div className="space-y-12">
               <section>
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">1</div>
-                  <h3 className="text-lg font-medium text-foreground">Add your sources</h3>
+                  <h3 className="text-lg font-medium text-foreground">Pick your Library Drive</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Start by adding the folders, drives, or ZIP/RAR archives that contain your photos and videos.</p>
-                  <p className="font-medium text-foreground">How to add sources:</p>
+                  <p>Before adding any Sources, PDR asks you to pick a <span className="font-medium text-foreground">Library Drive</span> — the destination where your fixed library will live for the long term. Choosing this first means PDR can warn you about disk space, drive speed, and reliability <em>before</em> you wait for an analysis.</p>
+                  <p className="font-medium text-foreground">Two helpers make the choice easier:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
-                    <li>Click <span className="font-medium text-foreground">Add Source</span> to browse your drives and folders</li>
-                    <li>Select a <span className="font-medium text-foreground">folder or drive</span> to scan, or select a <span className="font-medium text-foreground">ZIP/RAR file</span> to import</li>
+                    <li><span className="font-medium text-foreground">Library Planner</span> — sizes your collection across seven buckets so the drive recommendations are tailored to your library.</li>
+                    <li><span className="font-medium text-foreground">Drive Advisor</span> — rates each available drive on speed, capacity, connection type, and system-drive penalty. Crowns the recommended one.</li>
                   </ul>
-                  <p>Each source is added one at a time, but you can keep adding as many as you like. Photo Date Rescue then analyses all selected sources together in a single, consistent run.</p>
+                  <p>Both are optional. If you already know which drive to use, click straight through to the Folder Browser and pick it directly.</p>
                 </div>
               </section>
 
               <section>
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">2</div>
-                  <h3 className="text-lg font-medium text-foreground">Review the Source Analysis</h3>
+                  <h3 className="text-lg font-medium text-foreground">Add your Sources</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Once your sources are added, analysis runs automatically — there's nothing you need to do at this stage.</p>
-                  <p>The Source Analysis shows how your files were categorised:</p>
+                  <p>Click <span className="font-medium text-foreground">Add Source</span> to open the custom Folder Browser — every drive on your machine appears with speed and capacity ratings, plus your Quick Access folders. Pick a folder, drive, or ZIP/RAR archive containing the photos you want to fix.</p>
+                  <p>You can keep adding Sources one at a time. PDR analyses them all together as a single Combined Analysis.</p>
+                  <p className="font-medium text-foreground">If your Source is a large ZIP or RAR (over 2 GB):</p>
                   <ul className="list-disc ml-5 space-y-1.5">
-                    <li><span className="font-medium text-foreground">Confirmed</span> — dates taken from embedded metadata</li>
-                    <li><span className="font-medium text-foreground">Recovered</span> — dates inferred from structured filenames</li>
-                    <li><span className="font-medium text-foreground">Marked</span> — files with no reliable date, safely handled using fallback rules</li>
+                    <li>PDR pre-extracts it to a <span className="font-mono text-xs">PDR_Temp/</span> folder on your Library Drive — necessary because the in-place streaming engine can't safely handle multi-GB videos inside zips.</li>
+                    <li>Originals are never touched. The extraction is automatically cleaned up when the fix completes (or when you remove the Source).</li>
+                    <li>PDR caps total un-fixed extractions at 55 GB to keep your Library Drive from filling up unexpectedly. If you reach the limit, run the fix on what you've added first, then add more.</li>
                   </ul>
-                  <p>You can hover over the info icon on each card to see more detail about how that category works. This is purely informational — Photo Date Rescue is already prepared to process all files safely and consistently.</p>
                 </div>
               </section>
 
               <section>
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">3</div>
-                  <h3 className="text-lg font-medium text-foreground">Confirm scope and destination</h3>
+                  <h3 className="text-lg font-medium text-foreground">Review the Source Analysis</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Before running the fix, take a moment to confirm the following — in order:</p>
-                  <ul className="list-disc ml-5 space-y-2.5">
-                    <li><span className="font-medium text-foreground">Choose a destination</span> – Select or confirm the destination where the fixed files will be written.</li>
-                    <li><span className="font-medium text-foreground">Select your sources</span> – In the left-hand list, make sure the sources you want to process are checked. You can include or exclude any source at this stage.</li>
-                    <li><span className="font-medium text-foreground">Confirm file types</span> – In Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
-                    <li><span className="font-medium text-foreground">Check available space</span> – Review the storage indicator to ensure the destination has enough capacity. The Free amount (shown in green) should exceed the Required size shown alongside it.</li>
+                  <p>Once a Source is added, analysis runs automatically — there's nothing you need to do at this stage.</p>
+                  <p>The Source Analysis shows how your files were categorised:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li><span className="font-medium text-foreground">Confirmed</span> — dates taken from embedded metadata</li>
+                    <li><span className="font-medium text-foreground">Recovered</span> — dates inferred from structured filenames</li>
+                    <li><span className="font-medium text-foreground">Marked</span> — files with no reliable date, safely handled using fallback rules</li>
+                    <li><span className="font-medium text-foreground">Duplicates</span> — hash-matched identical copies, safely skipped from output</li>
                   </ul>
-                  <p>Once these are confirmed, you're ready to run the fix.</p>
+                  <p>Hover the info icon on each card for detail. These are estimates — the authoritative figures land in the Fix Report once the run completes.</p>
                 </div>
               </section>
 
               <section>
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">4</div>
+                  <h3 className="text-lg font-medium text-foreground">Confirm scope before the fix</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Before running the fix, take a moment to confirm:</p>
+                  <ul className="list-disc ml-5 space-y-2.5">
+                    <li><span className="font-medium text-foreground">Library Drive still has room</span> — the storage indicator next to your destination shows free vs required. Free should comfortably exceed Required.</li>
+                    <li><span className="font-medium text-foreground">Sources are checked</span> — only ticked Sources go into the run. Untick anything you don't want included.</li>
+                    <li><span className="font-medium text-foreground">File types</span> — in Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
+                    <li><span className="font-medium text-foreground">Folder structure</span> — Settings → Folder structure controls how the output is organised (Year / Year-Month / Year-Month-Day).</li>
+                  </ul>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">5</div>
                   <h3 className="text-lg font-medium text-foreground">Run the fix</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>When everything looks right, click <span className="font-medium text-foreground">Run Fix</span>.</p>
                   <p>Photo Date Rescue will:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
-                    <li>Apply the correct date logic to every file</li>
-                    <li>Rename files safely and consistently</li>
-                    <li>Preserve chronological order across all sources</li>
+                    <li>Apply the correct date logic to every file based on its confidence tier</li>
+                    <li>Rename files using the recovered date in a sortable format (<span className="font-mono text-xs">YYYY-MM-DD_HH-MM-SS</span>)</li>
+                    <li>Skip identical duplicates automatically (one copy in output, the rest excluded — never deleted)</li>
+                    <li>Write the result to your Library Drive in the folder structure you chose</li>
+                    <li>Save a permanent Fix Report you can reopen, export to CSV/TXT, or audit later</li>
                   </ul>
-                  <p>When finished, you'll be able to review exactly what changed.</p>
+                  <p>Originals are never modified. The fix is non-destructive by design.</p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold shrink-0">6</div>
+                  <h3 className="text-lg font-medium text-foreground">After the fix</h3>
+                </div>
+                <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
+                  <p>Once the fix finishes, your library is ready to explore:</p>
+                  <ul className="list-disc ml-5 space-y-1.5">
+                    <li><span className="font-medium text-foreground">Fix Report</span> — the authoritative breakdown of what was processed, dates determined, and duplicates skipped. Stored permanently in Reports History.</li>
+                    <li><span className="font-medium text-foreground">Search &amp; Discovery</span> — find any photo by date, person, location, tag, camera or scanner.</li>
+                    <li><span className="font-medium text-foreground">Memories</span> — Year/Month timeline + On This Day across your library.</li>
+                    <li><span className="font-medium text-foreground">People Manager</span> — name and merge AI-detected face clusters.</li>
+                  </ul>
+                  <p>PDR also keeps itself up to date in the background, so future improvements (Trees, Edit Dates, Photo Format conversion — released shortly) will arrive without you needing to manually download anything.</p>
                 </div>
               </section>
             </div>
