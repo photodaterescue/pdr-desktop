@@ -46,9 +46,24 @@ export function isEditDatesEnabled(): boolean {
 }
 
 /**
+ * Whether photo-format conversion (PNG / JPG output) is offered in the
+ * Output card. Returns true in dev builds and any non-release
+ * production build. Returns false for the v2.0.0 release-gated build:
+ * the conversion path has a memory / responsiveness regression on
+ * large Takeouts that we couldn't pin down before ship, so the
+ * dropdown is greyed off and the fix is forced to use the
+ * originals-only path. Re-enabled in v2.1.0 once we've profiled
+ * the conversion-worker child-process path against real workloads.
+ */
+export function isFormatConversionEnabled(): boolean {
+  return RELEASE_GATE !== 'release';
+}
+
+/**
  * Standardised tooltip / message copy for gated features. Used in
  * tooltips, locked-state callouts, and toast messages so the wording
  * is consistent across surfaces.
  */
 export const TREES_RELEASED_SHORTLY_MESSAGE = 'Trees will be released shortly';
 export const EDIT_DATES_RELEASED_SHORTLY_MESSAGE = 'Edit Dates will be released shortly';
+export const FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE = 'Photo format conversion will be released shortly';

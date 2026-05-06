@@ -106,7 +106,7 @@ import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/Li
 import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesView from "@/components/MemoriesView";
 import { TreesView } from "@/components/trees/TreesView";
-import { isTreesEnabled, isEditDatesEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
+import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
@@ -3876,22 +3876,43 @@ function DashboardPanel({
                 </div>
               </Card>
 
-              {/* Right: Photo Format */}
+              {/* Right: Photo Format
+                  Gated behind isFormatConversionEnabled() in the v2.0.0 release
+                  build — the conversion path has a memory / responsiveness
+                  regression on large Takeouts that we couldn't pin down before
+                  ship, so the dropdown is greyed off and the fix uses the
+                  originals-only path. Released shortly in v2.1.0 once we've
+                  profiled the conversion-worker child-process path properly.
+                  Same UX pattern as the gated Trees / Edit Dates sidebar items. */}
               <Card className="flex flex-col p-5">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="flex-1">
-                    <Button
-                      ref={photoFormatBtnRef}
-                      variant="primary"
-                      size="sm"
-                      onClick={() => setPhotoFormatOpen(!photoFormatOpen)}
-                      className="w-full justify-center gap-2 shadow-md shadow-primary/20"
+                    <IconTooltip
+                      label={!isFormatConversionEnabled() ? FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE : ''}
+                      side="bottom"
                     >
-                      <FileImage className="w-4 h-4 brightness-200" />
-                      {photoFormat === 'original' ? 'Select Photo Format' : photoFormat === 'png' ? 'PNG Selected' : 'JPG Selected'}
-                      <ChevronDown className={`w-3.5 h-3.5 brightness-200 transition-transform duration-200 ${photoFormatOpen ? 'rotate-180' : ''}`} />
-                    </Button>
-                    {photoFormatOpen && ReactDOM.createPortal(
+                      <Button
+                        ref={photoFormatBtnRef}
+                        variant="primary"
+                        size="sm"
+                        disabled={!isFormatConversionEnabled()}
+                        onClick={() => {
+                          if (!isFormatConversionEnabled()) {
+                            toast.info(FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE);
+                            return;
+                          }
+                          setPhotoFormatOpen(!photoFormatOpen);
+                        }}
+                        className="w-full justify-center gap-2 shadow-md shadow-primary/20"
+                      >
+                        <FileImage className="w-4 h-4 brightness-200" />
+                        {!isFormatConversionEnabled()
+                          ? 'Photo Format — Released shortly'
+                          : photoFormat === 'original' ? 'Select Photo Format' : photoFormat === 'png' ? 'PNG Selected' : 'JPG Selected'}
+                        <ChevronDown className={`w-3.5 h-3.5 brightness-200 transition-transform duration-200 ${photoFormatOpen ? 'rotate-180' : ''}`} />
+                      </Button>
+                    </IconTooltip>
+                    {photoFormatOpen && isFormatConversionEnabled() && ReactDOM.createPortal(
                       <>
                         <div className="fixed inset-0 z-[9998]" onClick={() => setPhotoFormatOpen(false)} />
                         <div
@@ -7995,8 +8016,8 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   )}
                 </div>
 
-                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-1.0.1"]} className="space-y-2">
-                  
+                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-2.0.0"]} className="space-y-2">
+
                   {updateStatus === 'update-available' && latestVersion && (
                     <AccordionItem value={`ver-${latestVersion}`} className="border border-primary/30 rounded-lg px-4 bg-primary/5">
                       <AccordionTrigger className="text-foreground font-medium hover:no-underline">
@@ -8028,6 +8049,30 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       </AccordionContent>
                     </AccordionItem>
                   )}
+
+                  <AccordionItem value="ver-2.0.0" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.0</span>
+                        {appVersion === '2.0.0' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3">What's changed since v1.0.1:</p>
+                      <ul className="list-disc ml-5 space-y-2 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">A whole new look</strong> — v2.0.0 replaces v1.0.1's default Windows chrome with a custom PDR title bar, restructures the sidebar into Views / Tools / Guidance / App sections, adds independent windows for People Manager and the photo viewer, and threads a cross-window "Fix in progress" chip through every open PDR window. Buttons, modals and toasts have all been brought to a consistent design system.</li>
+                        <li><strong className="text-foreground font-medium">Polished setup flow</strong> — v1.0.1 used Windows' native folder picker and asked you to pick a destination as an afterthought. v2.0.0 introduces a destination-first flow: pick your library drive before adding sources, with a Library Planner that sizes your collection, a Drive Advisor that rates each drive on speed and capacity, and a custom Folder Browser (grid / list / details views) that replaces the native picker.</li>
+                        <li><strong className="text-foreground font-medium">New views</strong> — entirely new top-level surfaces: <strong className="text-foreground font-medium">Search &amp; Discovery</strong> (find any photo by date, person, location, tag, camera or scanner), <strong className="text-foreground font-medium">Memories</strong> (Year / Month timeline + On This Day), and <strong className="text-foreground font-medium">People Manager</strong> (AI-detected face clusters with naming and merging). Trees, Edit Dates and Photo Format conversion (PNG / JPG output) are released shortly.</li>
+                        <li><strong className="text-foreground font-medium">Automatic updates</strong> — v1.0.1 required manually downloading each new release from the website. v2.0.0 checks in the background every few hours and installs new versions with a single click. Updates are differential — typically a few MB instead of the full 80+ MB installer.</li>
+                        <li><strong className="text-foreground font-medium">Cross-drive duplicate detection</strong> — v1.0.1 only flagged duplicate folders when their paths matched exactly. v2.0.0 also catches the same folder content sitting on a different drive (e.g. a backup copy on H: when the original is on F:) and shows a soft-warning modal naming both drive letters.</li>
+                        <li><strong className="text-foreground font-medium">Disk-fill safeguards</strong> — v1.0.1 extracted large ZIPs to %TEMP% on C:, slowly filling the system drive across multi-Takeout sessions. v2.0.0 extracts to your destination drive instead, falls back to a "pick another drive" prompt when neither has room, warns before adding multiple multi-GB Takeouts in one session, and cleans up temp folders after each Takeout completes.</li>
+                        <li><strong className="text-foreground font-medium">One-click diagnostic ZIP</strong> — v1.0.1's "Report a problem" asked you to find your log file inside %APPDATA% manually. v2.0.0's Help &amp; Support &rarr; Report a problem now bundles your log, system info and licence state into a single .zip in your Documents folder ready to attach. Analysis errors that previously routed back silently now surface a "Send report" toast.</li>
+                        <li><strong className="text-foreground font-medium">More reliable</strong> — v1.0.1 could hang for ~20 s on the licence check when offline, stutter while hashing large videos, and (rarely) run two instances at once after a crash, causing "Tree empty" or "missing source" symptoms. v2.0.0 fixes all three: 5 s offline timeout, async chunked hashing that keeps the UI responsive, and a single-instance lock that prevents the duplicate-process scenario entirely.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
 
                   <AccordionItem value="ver-1.0.1" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
