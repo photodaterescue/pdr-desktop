@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["ai-worker.ts"],
+  "include": ["ai-worker.ts", "conversion-worker.ts"],
   "exclude": ["node_modules"]
 }

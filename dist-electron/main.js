@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage, utilityProcess } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -2196,26 +2196,145 @@ ipcMain.handle('files:copy', async (_event, data) => {
             }
             return sourceClassificationCache.get(sourcePath);
         };
-        // Queue for parallel PNG/JPG conversions
-        const CONVERSION_BATCH_SIZE = 6;
+        // Queue for PNG/JPG conversions. Conversions are processed in
+        // batches by a forked utilityProcess child so each batch's
+        // libvips memory pool is fully reclaimed by the OS when the
+        // child exits — the v2.0.0 inline path leaked memory across
+        // 7,000+ conversions in a single Takeout, eventually freezing
+        // the main process via OS swap-thrashing.
+        //
+        // Batch size is bigger than the inline version's 6 because the
+        // fork overhead (~100 ms per child) dominates if we fork
+        // dozens of times per Takeout. 50 amortises forking while still
+        // capping the worst-case memory growth per child to a level
+        // even small machines can handle. Sharp's internal concurrency
+        // is capped at 2 inside the child (see conversion-worker.ts),
+        // so a single child has at most 2 in-flight decode/encode
+        // buffers regardless of the batch size.
+        const CONVERSION_BATCH_SIZE = 50;
         const pendingConversions = [];
         // Track actual completed files for accurate progress
         let completedFiles = 0;
-        // Flush pending conversions in parallel batches
+        // Flush pending conversions via a freshly-forked child process.
+        // The child receives the batch, runs sharp with controlled
+        // parallelism, posts task-done messages back as each completes
+        // (so the parent advances its progress bar in real time), then
+        // exits cleanly. OS reclaims its heap + libvips pool on exit.
         const flushConversions = async () => {
             if (pendingConversions.length === 0)
                 return;
             const batch = pendingConversions.splice(0, pendingConversions.length);
-            console.log(`[Convert] Flushing batch of ${batch.length} conversions in parallel`);
-            const batchResults = await Promise.allSettled(batch.map(async (task) => {
-                const conversionPromise = task.format === 'jpg'
-                    ? sharp(task.sourceInput).jpeg({ quality: 92 }).toFile(task.convertedPath)
-                    : sharp(task.sourceInput).png({ compressionLevel: 6, effort: 1 }).toFile(task.convertedPath);
-                await Promise.race([
-                    conversionPromise,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Conversion timeout')), 60000))
-                ]);
+            console.log(`[Convert] Flushing batch of ${batch.length} conversions to a child process`);
+            // Map task input to a string path. Buffers (small in-memory
+            // zip extracts) get spilled to a temp file first; the child
+            // only deals with file paths.
+            const tmpInputs = [];
+            const childTasks = await Promise.all(batch.map(async (task, id) => {
+                let inputPath;
+                if (typeof task.sourceInput === 'string') {
+                    inputPath = task.sourceInput;
+                }
+                else {
+                    const tmpName = path.join(app.getPath('temp'), `pdr-convert-${Date.now()}-${id}-${Math.random().toString(36).slice(2, 8)}`);
+                    await fs.promises.writeFile(tmpName, task.sourceInput);
+                    tmpInputs.push(tmpName);
+                    inputPath = tmpName;
+                }
+                return {
+                    id,
+                    input: inputPath,
+                    output: task.convertedPath,
+                    format: task.format,
+                };
             }));
+            // Resolve worker path. Production: bundled in extraResources/dist-electron.
+            // Dev: alongside main.js inside dist-electron/.
+            const workerPath = app.isPackaged
+                ? path.join(process.resourcesPath, 'dist-electron/conversion-worker.cjs')
+                : path.join(__dirname, 'conversion-worker.cjs');
+            const child = utilityProcess.fork(workerPath, [], {
+                // serviceName surfaces in Task Manager so the user (and
+                // support) can see "PDR Image Conversion" rather than a
+                // generic Electron Helper.
+                serviceName: 'PDR Image Conversion',
+                stdio: 'pipe',
+            });
+            // Forward child stdout/stderr to main.log so any sharp /
+            // libvips warnings surface in support diagnostics rather
+            // than being swallowed.
+            child.stdout?.on('data', (chunk) => {
+                log.info(`[conversion-worker stdout] ${chunk.toString().trim()}`);
+            });
+            child.stderr?.on('data', (chunk) => {
+                log.warn(`[conversion-worker stderr] ${chunk.toString().trim()}`);
+            });
+            // Per-task results keyed by id, populated as the child posts
+            // 'task-done' messages. The 'batch-done' message tells us when
+            // every task has been posted (succeeded or failed).
+            const childResults = new Map();
+            let lastMemSnapshot = null;
+            await new Promise((resolve, reject) => {
+                const onMessage = (msg) => {
+                    if (!msg || typeof msg !== 'object')
+                        return;
+                    if (msg.type === 'task-done') {
+                        childResults.set(msg.id, {
+                            success: msg.success,
+                            durationMs: msg.durationMs,
+                            error: msg.error,
+                            memUsage: msg.memUsage,
+                        });
+                        lastMemSnapshot = msg.memUsage;
+                        // Advance the progress bar live as each task lands.
+                        completedFiles++;
+                        if (mainWindow) {
+                            mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+                        }
+                    }
+                    else if (msg.type === 'batch-done') {
+                        log.info(`[Convert] Batch done — ${msg.succeeded}/${msg.total} succeeded, ${msg.failed} failed${lastMemSnapshot ? `, child mem rss=${lastMemSnapshot.rssMB} MB heap=${lastMemSnapshot.heapUsedMB} MB external=${lastMemSnapshot.externalMB} MB` : ''}`);
+                        // Don't resolve here — wait for 'exit' so we know the
+                        // child has actually freed its memory before we move on.
+                    }
+                    else if (msg.type === 'fatal-error') {
+                        log.error(`[Convert] Worker fatal: ${msg.message}`);
+                    }
+                };
+                child.on('message', onMessage);
+                child.on('exit', (code) => {
+                    if (code !== 0) {
+                        log.warn(`[Convert] Worker exited with code ${code}`);
+                    }
+                    resolve();
+                });
+                child.postMessage({
+                    type: 'convert-batch',
+                    tasks: childTasks,
+                    perTaskTimeoutMs: 60000,
+                    parallelism: 2,
+                });
+            });
+            // Clean up any spilled-buffer temp files we created.
+            for (const tmp of tmpInputs) {
+                try {
+                    await fs.promises.unlink(tmp);
+                }
+                catch { /* best-effort */ }
+            }
+            // Now process the child's results in the parent: EXIF write +
+            // push to the overall results array. Same logic as the old
+            // inline path, just sourced from childResults instead of an
+            // in-process Promise.allSettled.
+            const batchResults = batch.map((_t, b) => {
+                const r = childResults.get(b);
+                if (!r) {
+                    return { status: 'rejected', reason: { message: 'Worker did not return a result for this task' } };
+                }
+                if (r.success) {
+                    return { status: 'fulfilled' };
+                }
+                return { status: 'rejected', reason: { message: r.error ?? 'Unknown conversion error' } };
+            });
             // Process results + EXIF + push to results
             for (let b = 0; b < batch.length; b++) {
                 const task = batch[b];
@@ -2263,11 +2382,10 @@ ipcMain.handle('files:copy', async (_event, data) => {
                         error: result.reason?.message || 'Conversion failed'
                     });
                 }
-                // Update progress for each completed conversion
-                completedFiles++;
-                if (mainWindow) {
-                    mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
-                }
+                // NOTE: progress is advanced in the child message handler
+                // (per 'task-done'), so no completedFiles++ here. The user
+                // sees the progress bar move in real time as each conversion
+                // lands rather than in batch-sized jumps.
             }
             await yieldToEventLoop();
         };
