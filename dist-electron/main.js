@@ -488,7 +488,9 @@ function isRarFile(filePath) {
 function generateRarTempDirName(rarPath) {
     const hash = crypto.createHash('md5').update(rarPath).digest('hex').substring(0, 8);
     const baseName = path.basename(rarPath, path.extname(rarPath));
-    return path.join(PDR_TEMP_ROOT, `${baseName}_${hash}`);
+    // Resolve relative to the *current* PDR_Temp root (destination drive
+    // when set; %TEMP% otherwise). See comment on getCurrentPdrTempRoot.
+    return path.join(getCurrentPdrTempRoot(), `${baseName}_${hash}`);
 }
 async function extractRar(rarPath, tempDir, onProgress) {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -517,6 +519,37 @@ async function extractRar(rarPath, tempDir, onProgress) {
 }
 // --- Large ZIP auto-extraction helpers ---
 const PDR_TEMP_ROOT = path.join(app.getPath('temp'), 'PDR_Temp');
+/**
+ * Compute the *current* PDR_Temp root for the active Library Drive.
+ *
+ * v1.0.x extracted ZIP/RAR sources into %TEMP%\PDR_Temp\ — fine for
+ * small archives but a disaster for multi-Takeout sessions where the
+ * 50 GB extracted payload would silently fill the user's C: drive.
+ * v2.0.0 changed extraction to use the destination drive instead
+ * (path.join(destinationPath, 'PDR_Temp')) — same code at the
+ * extraction site, but the temp-name + cleanup helpers below
+ * historically still hard-coded PDR_TEMP_ROOT (= %TEMP%). Result: a
+ * three-way bug where (1) per-source cleanup on Source-Remove looked
+ * for the temp dir in %TEMP% (always missed it on v2 builds),
+ * (2) startup orphan-sweep only looked at %TEMP% (never touched the
+ * destination's PDR_Temp), and (3) leftovers piled up across
+ * sessions until the destination drive was 50+ GB heavier than it
+ * needed to be.
+ *
+ * This helper unifies the lookup. Returns the destination's
+ * PDR_Temp when one is set; falls back to %TEMP% only when no
+ * destination has been chosen yet (first-launch / pre-onboarding).
+ */
+function getCurrentPdrTempRoot() {
+    try {
+        const dest = getSettings().destinationPath;
+        if (dest && typeof dest === 'string' && dest.length > 0) {
+            return path.join(dest, 'PDR_Temp');
+        }
+    }
+    catch { /* settings unreadable — fall through */ }
+    return PDR_TEMP_ROOT;
+}
 // Synchronous disk-space probe for the volume containing `dir`. Used
 // by the pre-extract resolver to decide whether the destination drive
 // or %TEMP% has enough headroom for the extracted zip. Falls back to
@@ -676,40 +709,75 @@ function pickPreExtractDir(zipPath, destinationPath) {
 // in the IPC handler's finally block.
 let largeExtractInFlight = null;
 function cleanupOrphanedTempDirs() {
+    // Sweep BOTH locations:
+    //   (a) the current destination drive's PDR_Temp — the v2.0.0 home for
+    //       extracted ZIP/RAR sources. Reads destinationPath from
+    //       electron-store; nothing to do if no destination has ever
+    //       been set.
+    //   (b) %TEMP%\PDR_Temp — the v1.0.x location, kept as a fallback
+    //       sweep so customers upgrading from v1 also get any leftover
+    //       %TEMP% extractions reaped.
+    // Either or both may not exist on disk; readdir failures are
+    // swallowed silently so a single missing/locked dir can't fail
+    // the whole sweep.
+    const roots = new Set();
+    roots.add(PDR_TEMP_ROOT); // legacy / fallback
     try {
-        if (fs.existsSync(PDR_TEMP_ROOT)) {
-            const entries = fs.readdirSync(PDR_TEMP_ROOT);
+        const currentRoot = getCurrentPdrTempRoot();
+        if (currentRoot)
+            roots.add(currentRoot);
+    }
+    catch { /* settings unreadable — destination root just won't be added */ }
+    for (const root of roots) {
+        try {
+            if (!fs.existsSync(root))
+                continue;
+            const entries = fs.readdirSync(root);
             for (const entry of entries) {
-                const fullPath = path.join(PDR_TEMP_ROOT, entry);
+                const fullPath = path.join(root, entry);
                 try {
                     fs.rmSync(fullPath, { recursive: true, force: true });
                 }
                 catch {
-                    // Ignore cleanup errors for locked files
+                    // Ignore cleanup errors for locked files — they get
+                    // another chance on next startup.
                 }
             }
-            // Remove root if empty
+            // Remove the now-empty root itself if we cleaned everything.
             try {
-                const remaining = fs.readdirSync(PDR_TEMP_ROOT);
+                const remaining = fs.readdirSync(root);
                 if (remaining.length === 0) {
-                    fs.rmdirSync(PDR_TEMP_ROOT);
+                    fs.rmdirSync(root);
                 }
             }
-            catch { }
+            catch { /* root no longer exists / not empty / locked — ignore */ }
         }
-    }
-    catch {
-        // Ignore cleanup errors on startup
+        catch {
+            // readdir failed — bucket missing or perms issue; skip this root.
+        }
     }
 }
 function cleanupTempDir(tempDir) {
+    // Log success + failure to main.log so post-fix cleanup behaviour
+    // is visible in support diagnostics. v1.0.x silently swallowed
+    // failures, which made it impossible to tell from a user's log
+    // whether the cleanup hook had fired (path-match worked, dir
+    // deleted) or hadn't (path-match skipped this dir entirely).
     try {
         if (fs.existsSync(tempDir)) {
             fs.rmSync(tempDir, { recursive: true, force: true });
+            log.info(`[temp-cleanup] removed ${tempDir}`);
+        }
+        else {
+            log.info(`[temp-cleanup] no-op (already gone): ${tempDir}`);
         }
     }
-    catch {
-        // Best-effort cleanup
+    catch (err) {
+        // Best-effort: a locked file (Explorer window open, antivirus
+        // scanning, etc.) shouldn't fail the user's fix or block the
+        // app from quitting. Subsequent cleanup attempts (next quit /
+        // next startup orphan-sweep) get another chance.
+        log.warn(`[temp-cleanup] failed to remove ${tempDir}:`, err);
     }
 }
 function getZipFileSize(zipPath) {
@@ -724,7 +792,9 @@ function getZipFileSize(zipPath) {
 function generateTempDirName(zipPath) {
     const hash = crypto.createHash('md5').update(zipPath).digest('hex').substring(0, 8);
     const baseName = path.basename(zipPath, '.zip');
-    return path.join(PDR_TEMP_ROOT, `${baseName}_${hash}`);
+    // Resolve relative to the *current* PDR_Temp root (destination drive
+    // when set; %TEMP% otherwise). See comment on getCurrentPdrTempRoot.
+    return path.join(getCurrentPdrTempRoot(), `${baseName}_${hash}`);
 }
 async function extractLargeZip(zipPath, tempDir, onProgress) {
     fs.mkdirSync(tempDir, { recursive: true });
