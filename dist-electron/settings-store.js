@@ -1,4 +1,6 @@
 import Store from 'electron-store';
+import { app } from 'electron';
+import * as path from 'path';
 // Optimised defaults - safe configuration for most users
 export const optimisedDefaults = {
     skipDuplicates: true,
@@ -33,9 +35,33 @@ export const optimisedDefaults = {
     bypassLargeZipPreExtract: false,
     destinationPath: null,
 };
+// Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
+// (the productName-based folder customers see in packaged builds)
+// instead of relying on Electron's runtime app-name resolution.
+//
+// Why this matters: settings-store.ts is imported from main.ts ABOVE
+// the `app.setName('Photo Date Rescue')` call (because ES-module
+// imports are hoisted and run before any code in the importing file).
+// At Store-construction time, app.getName() therefore returns
+// whatever Electron resolved as the default — which in dev mode
+// flips between "Electron" (Electron's hard fallback) and
+// "photo-date-rescue" (the lowercase npm `name` field) depending on
+// context. The Store's userData path locks in at construction, so
+// without this override the settings file lands in DIFFERENT folders
+// across launches and the user's destinationPath / scanner overrides
+// / pmOpenDays appear to "vanish" between sessions.
+//
+// app.getPath('appData') resolves to the OS-level Roaming/AppData
+// directory (Windows: %APPDATA%, macOS: ~/Library/Application
+// Support, Linux: ~/.config) — independent of app-name resolution
+// and safe to call before `app.ready`. Joining 'Photo Date Rescue'
+// gives us the same path the packaged installer uses, so dev mode
+// and production share one settings file.
+const SETTINGS_DIR = path.join(app.getPath('appData'), 'Photo Date Rescue');
 const store = new Store({
     name: 'pdr-settings',
     defaults: optimisedDefaults,
+    cwd: SETTINGS_DIR,
 });
 export function getSettings() {
     return {
