@@ -2065,7 +2065,7 @@ return (
             the main area (Memories, Family Tree). CSS zoom applies only to
             Dashboard / Workspace content so S&D is never affected. */}
         <div
-          className={`flex-1 overflow-auto relative ${(activeView === 'search' && searchResultsActive) || activeView === 'memories' || activeView === 'familytree' ? 'hidden' : ''}`}
+          className={`flex-1 overflow-auto relative ${activeView === 'search' || activeView === 'memories' || activeView === 'familytree' ? 'hidden' : ''}`}
           style={{ zoom: zoomLevel / 100 }}
         >
         {/* MainContent is now ALWAYS mounted (just visually hidden

@@ -3024,104 +3024,118 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
            workspace's "Your workspace is empty" state from MainContent
            leaks through and reads wrong in the S&D context. */}
       {!results && !hasActiveFilters && !searchText.trim() && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
-            <div className="text-center space-y-3">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/10 text-blue-500">
-                <Sparkles className="w-7 h-7" />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {/* Two-column grid layout — examples on the left, prereqs +
+              Parallel Structures on the right — uses the available
+              horizontal space and keeps the whole landing visible
+              without scrolling on typical viewports. Falls back to a
+              single column on narrow widths so the content stays
+              readable when the panel is squeezed. */}
+          <div className="max-w-6xl mx-auto px-6 py-6">
+            <div className="text-center space-y-2 mb-6">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500">
+                <Sparkles className="w-6 h-6" />
               </div>
-              <h2 className="text-2xl font-semibold text-foreground font-heading">Search &amp; Discovery</h2>
-              <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+              <h2 className="text-xl font-semibold text-foreground font-heading">Search &amp; Discovery</h2>
+              <p className="text-xs text-muted-foreground max-w-xl mx-auto leading-relaxed">
                 Pick any combination of filters above and PDR finds the matching photos in seconds — across every
                 Library Drive you've fixed. Nothing leaves your device.
               </p>
             </div>
 
-            <div className="rounded-xl border border-border bg-background/60 divide-y divide-border/60 overflow-hidden">
-              <div className="px-4 py-3 bg-secondary/40">
-                <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">A few things you can ask for</p>
-              </div>
-              <div className="px-4 py-3 flex items-start gap-3">
-                <Users className="w-4 h-4 mt-0.5 text-pink-500 shrink-0" />
-                <div className="text-sm text-foreground">
-                  <span className="font-medium">"Mum, Dad, and me"</span>
-                  <span className="text-muted-foreground"> — every photo with all three of you in the frame</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Left column — example queries */}
+              <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
+                <div className="px-3 py-2 bg-secondary/40 border-b border-border">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">A few things you can ask for</p>
+                </div>
+                <div className="divide-y divide-border/60">
+                  <div className="px-3 py-2 flex items-start gap-2">
+                    <Users className="w-3.5 h-3.5 mt-0.5 text-pink-500 shrink-0" />
+                    <div className="text-xs text-foreground leading-relaxed">
+                      <span className="font-medium">"Mum, Dad, and me"</span>
+                      <span className="text-muted-foreground"> — every photo with all three of you in the frame</span>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 flex items-start gap-2">
+                    <Users className="w-3.5 h-3.5 mt-0.5 text-pink-500 shrink-0" />
+                    <div className="text-xs text-foreground leading-relaxed">
+                      <span className="font-medium">"All my college friends"</span>
+                      <span className="text-muted-foreground"> — pick the people, get every shot any of them appears in</span>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 flex items-start gap-2">
+                    <Sparkles className="w-3.5 h-3.5 mt-0.5 text-blue-500 shrink-0" />
+                    <div className="text-xs text-foreground leading-relaxed">
+                      <span className="font-medium">"Photos taken in Thailand"</span>
+                      <span className="text-muted-foreground"> — or New York, Paris, anywhere with GPS metadata</span>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 flex items-start gap-2">
+                    <Sparkles className="w-3.5 h-3.5 mt-0.5 text-blue-500 shrink-0" />
+                    <div className="text-xs text-foreground leading-relaxed">
+                      <span className="font-medium">"Everything from my Sony A7"</span>
+                      <span className="text-muted-foreground"> — filter by camera make and model, sub-filter by lens</span>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 flex items-start gap-2">
+                    <CalendarRange className="w-3.5 h-3.5 mt-0.5" style={{ color: '#f8c15c' }} />
+                    <div className="text-xs text-foreground leading-relaxed">
+                      <span className="font-medium">"Summer 2014 to summer 2016"</span>
+                      <span className="text-muted-foreground"> — combine a date range with any other filter</span>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 flex items-start gap-2">
+                    <Tag className="w-3.5 h-3.5 mt-0.5 text-blue-500 shrink-0" />
+                    <div className="text-xs text-foreground leading-relaxed">
+                      <span className="font-medium">"Photos with dogs at the beach at sunset"</span>
+                      <span className="text-muted-foreground"> — AI tags layer on top of everything else</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="px-4 py-3 flex items-start gap-3">
-                <Users className="w-4 h-4 mt-0.5 text-pink-500 shrink-0" />
-                <div className="text-sm text-foreground">
-                  <span className="font-medium">"All my college friends"</span>
-                  <span className="text-muted-foreground"> — pick the people, get every shot any of them appears in</span>
+
+              {/* Right column — prerequisites + Parallel Structures */}
+              <div className="space-y-4">
+                <div className="rounded-xl border border-border bg-background/60 p-3 space-y-2">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">To get the most out of S&amp;D</p>
+                  <ul className="text-xs text-foreground space-y-1.5 leading-relaxed">
+                    <li className="flex items-start gap-2">
+                      <span className="text-pink-500 mt-1 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
+                      <span><span className="font-medium">Name your people in People Manager</span> — searches like "Mum + Dad" only work once you've verified faces and given them names.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-500 mt-1 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
+                      <span><span className="font-medium">Keep GPS on in your camera</span> — without location metadata, country/city searches return nothing for those photos.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#f8c15c' }} />
+                      <span><span className="font-medium">Run AI analysis</span> — the AI tags ("dogs", "beach", "sunset") are produced offline by PDR's local model. Once it's done, every word becomes a filter.</span>
+                    </li>
+                  </ul>
                 </div>
-              </div>
-              <div className="px-4 py-3 flex items-start gap-3">
-                <Sparkles className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
-                <div className="text-sm text-foreground">
-                  <span className="font-medium">"Photos taken in Thailand"</span>
-                  <span className="text-muted-foreground"> — or New York, Paris, anywhere with GPS metadata</span>
+
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <ArrowRight className="w-3.5 h-3.5 text-primary" />
+                    <p className="text-xs font-semibold text-foreground">Parallel Structures — the killer feature</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Once you've narrowed down a set — every kids' summer photo, every sunset from a particular trip,
+                    your top 200 wedding shots — PDR can spin off a separate Library containing JUST those photos, on
+                    a drive of your choice. Branch them off as a private archive, copy them to a memory stick for a
+                    relative, or keep them alongside the main library as a curated highlight reel. Originals stay
+                    safe in your main Library Drive; the parallel structure is yours to give, hide, or back up
+                    independently.
+                  </p>
                 </div>
-              </div>
-              <div className="px-4 py-3 flex items-start gap-3">
-                <Sparkles className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
-                <div className="text-sm text-foreground">
-                  <span className="font-medium">"Everything from my Sony A7"</span>
-                  <span className="text-muted-foreground"> — filter by camera make and model, sub-filter by lens</span>
-                </div>
-              </div>
-              <div className="px-4 py-3 flex items-start gap-3">
-                <CalendarRange className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" />
-                <div className="text-sm text-foreground">
-                  <span className="font-medium">"Summer 2014 to summer 2016"</span>
-                  <span className="text-muted-foreground"> — combine a date range with any other filter</span>
-                </div>
-              </div>
-              <div className="px-4 py-3 flex items-start gap-3">
-                <Tag className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
-                <div className="text-sm text-foreground">
-                  <span className="font-medium">"Photos with dogs at the beach at sunset"</span>
-                  <span className="text-muted-foreground"> — AI tags layer on top of everything else</span>
-                </div>
+
+                <p className="text-[11px] text-muted-foreground text-center">
+                  PDR doesn't auto-load the whole library — pick any filter so Edit dates and other actions only
+                  ever target the set you meant.
+                </p>
               </div>
             </div>
-
-            <div className="rounded-xl border border-border bg-background/60 p-4 space-y-2">
-              <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">To get the most out of S&amp;D</p>
-              <ul className="text-sm text-foreground space-y-1.5">
-                <li className="flex items-start gap-2">
-                  <span className="text-pink-500 mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
-                  <span><span className="font-medium">Name your people in People Manager</span> — searches like "Mum + Dad" only work once you've verified faces and given them names.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-500 mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
-                  <span><span className="font-medium">Keep GPS on in your camera</span> — without location metadata, country/city searches return nothing for those photos.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-amber-500 mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
-                  <span><span className="font-medium">Run AI analysis</span> — the AI tags ("dogs", "beach", "sunset") are produced offline by PDR's local model. Once it's done, every word becomes a filter.</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <ArrowRight className="w-4 h-4 text-primary" />
-                <p className="text-sm font-semibold text-foreground">Parallel Structures — the killer feature</p>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Once you've narrowed down a set — every photo of the kids' summers, every sunset from a particular
-                trip, your top 200 wedding shots — PDR can spin off a separate Library structure containing JUST
-                those photos, on a drive of your choice. Branch them off as a private archive, copy them to a memory
-                stick for a relative, or keep them alongside the main library as a curated highlight reel. The
-                originals stay safe in your main Library Drive; the parallel structure is yours to give, hide, or
-                back up independently.
-              </p>
-            </div>
-
-            <p className="text-center text-xs text-muted-foreground">
-              Pick any filter above to start. PDR doesn't auto-load the whole library so Edit dates and other actions
-              only ever target the set you meant.
-            </p>
           </div>
         </div>
       )}

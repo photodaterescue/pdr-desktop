@@ -832,22 +832,44 @@ export function backfillMatchSimilarity(database: Database.Database): void {
         verifiedVecs.push(v);
         verifiedMags.push(Math.sqrt(m));
       }
+      // Magnitude floor + top-K-average — same algorithm as
+      // refineFromVerified above (see that function for the long-form
+      // rationale on why max-of-verified was replaced).
+      const sortedMags = [...verifiedMags].sort((a, b) => a - b);
+      const medianMag = sortedMags.length ? sortedMags[Math.floor(sortedMags.length / 2)] : 0;
+      const magnitudeFloor = medianMag * 0.6;
+      const refVecs: Float32Array[] = [];
+      const refMags: number[] = [];
+      for (let k = 0; k < verifiedVecs.length; k++) {
+        if (verifiedMags[k] >= magnitudeFloor) {
+          refVecs.push(verifiedVecs[k]);
+          refMags.push(verifiedMags[k]);
+        }
+      }
+      const fallbackToFull = refVecs.length === 0;
+      const useVecs = fallbackToFull ? verifiedVecs : refVecs;
+      const useMags = fallbackToFull ? verifiedMags : refMags;
+      const TOP_K = Math.min(5, useVecs.length);
+
       const unfilled = unfilledStmt.all(personId) as Array<{ id: number; embedding: Buffer }>;
       for (const row of unfilled) {
         const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
         let magB = 0;
         for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
         const magBSqrt = Math.sqrt(magB);
-        let bestSim = 0;
-        for (let k = 0; k < verifiedVecs.length; k++) {
-          const va = verifiedVecs[k];
+        const sims: number[] = [];
+        for (let k = 0; k < useVecs.length; k++) {
+          const va = useVecs[k];
           let dot = 0;
           for (let i = 0; i < dim; i++) dot += va[i] * vec[i];
-          const denom = verifiedMags[k] * magBSqrt;
-          const sim = denom === 0 ? 0 : dot / denom;
-          if (sim > bestSim) bestSim = sim;
+          const denom = useMags[k] * magBSqrt;
+          sims.push(denom === 0 ? 0 : dot / denom);
         }
-        updateStmt.run(bestSim, row.id);
+        sims.sort((a, b) => b - a);
+        let topKSum = 0;
+        for (let k = 0; k < TOP_K; k++) topKSum += sims[k];
+        const topKAvg = TOP_K > 0 ? topKSum / TOP_K : 0;
+        updateStmt.run(topKAvg, row.id);
         totalFilled++;
       }
     }
@@ -2515,14 +2537,31 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
       continue;
     }
 
-    // Max-similarity matching (was: average-of-embeddings).
-    // Reason for the change: averaging baby-Terry + adult-Terry into
-    // one vector lands in a no-man's-land that matches neither well.
-    // Instead we keep ALL verified vectors, score each unnamed face
-    // against EACH verified face, and match if ANY single verified
-    // face exceeds the threshold. This is age-spread-tolerant by
-    // design and also tends to be more accurate at any single age
-    // (averaging blurs information that the comparison needs).
+    // Top-K-average matching (was: max-of-verified, was-was: average-of-embeddings).
+    // The previous max-of-verified approach was fragile: a single weak
+    // verified embedding (low magnitude — usually from a small / blurry /
+    // poorly-lit face the model couldn't characterise well) acted as a
+    // magnet for any other weak embedding from any unrelated face. The
+    // result was unrelated people (a black man, a baby, a Christmas elf)
+    // getting auto-attached to Mel because each shared a single noisy
+    // verified embedding. Diagnosis: low-magnitude vectors cluster near
+    // the origin in cosine-similarity space and score artificially high
+    // against each other regardless of who they actually depict.
+    //
+    // Top-K-average requires a candidate face to look like SEVERAL of
+    // the person's verified faces, not just one. A weak attractor in
+    // the verified set can't dominate because it's only one of K
+    // contributors to the average. K is small (5) so the algorithm is
+    // still tolerant of age spread, lighting variation, and other
+    // legitimate within-person variation — a recent Mel photo only
+    // needs to look like ~5 of her many verified photos to match.
+    //
+    // Additionally, we filter the verified set by magnitude so the
+    // worst weak-embedding outliers are excluded from the matching
+    // reference altogether — they stay verified for the record, just
+    // not eligible as match candidates. The cutoff is set as a
+    // fraction of the verified set's median magnitude so it
+    // self-calibrates per person.
     const firstVec = new Float32Array(verifiedRows[0].embedding.buffer, verifiedRows[0].embedding.byteOffset, verifiedRows[0].embedding.byteLength / 4);
     const dim = firstVec.length;
     // Pre-compute normalised vectors + magnitudes for each verified
@@ -2536,6 +2575,31 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
       verifiedVecs.push(v);
       verifiedMags.push(Math.sqrt(m));
     }
+    // Magnitude-based outlier filter: drop verified embeddings whose
+    // magnitude is below 60 % of the median. Empirically (see deep
+    // investigation in commit history) the worst attractors had
+    // magnitudes ~5-7 against a typical median of ~12, and weak
+    // embeddings in that range were responsible for the majority of
+    // bogus auto-matches in real-world data.
+    const sortedMags = [...verifiedMags].sort((a, b) => a - b);
+    const medianMag = sortedMags.length ? sortedMags[Math.floor(sortedMags.length / 2)] : 0;
+    const magnitudeFloor = medianMag * 0.6;
+    const eligibleVecs: Float32Array[] = [];
+    const eligibleMags: number[] = [];
+    for (let k = 0; k < verifiedVecs.length; k++) {
+      if (verifiedMags[k] >= magnitudeFloor) {
+        eligibleVecs.push(verifiedVecs[k]);
+        eligibleMags.push(verifiedMags[k]);
+      }
+    }
+    // Fall back to the full set if filtering removed everything (small
+    // verified sets shouldn't be left with zero candidates).
+    const refVecs = eligibleVecs.length > 0 ? eligibleVecs : verifiedVecs;
+    const refMags = eligibleVecs.length > 0 ? eligibleMags : verifiedMags;
+    // K = 5 by default, but never larger than the eligible set
+    // (otherwise top-K would just be the average of everything which
+    // over-corrects on small verified sets).
+    const TOP_K = Math.min(5, refVecs.length);
 
     // Get all unnamed faces (person_id IS NULL) with embeddings
     const unnamed = database.prepare(`
@@ -2558,19 +2622,31 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
       let magB = 0;
       for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
       const magBSqrt = Math.sqrt(magB);
+      // Skip candidate faces with weak embeddings — same magnitude
+      // floor as the verified set. A weak candidate scored against
+      // anything tends to produce false positives in the noise zone.
+      if (magBSqrt < magnitudeFloor) continue;
 
-      // Max-similarity across every verified face for this person.
-      let bestSim = 0;
-      for (let k = 0; k < verifiedVecs.length; k++) {
-        const va = verifiedVecs[k];
+      // Compute similarity against every ELIGIBLE verified face,
+      // collect into an array so we can take the top-K average.
+      const sims: number[] = [];
+      for (let k = 0; k < refVecs.length; k++) {
+        const va = refVecs[k];
         let dot = 0;
         for (let i = 0; i < dim; i++) dot += va[i] * vec[i];
-        const denom = verifiedMags[k] * magBSqrt;
-        const sim = denom === 0 ? 0 : dot / denom;
-        if (sim > bestSim) bestSim = sim;
+        const denom = refMags[k] * magBSqrt;
+        sims.push(denom === 0 ? 0 : dot / denom);
       }
-      if (bestSim >= similarityThreshold) {
-        assignStmt.run(person.id, bestSim, row.id);
+      // Top-K average — sort descending, average the K highest.
+      sims.sort((a, b) => b - a);
+      let topKSum = 0;
+      for (let k = 0; k < TOP_K; k++) topKSum += sims[k];
+      const topKAvg = topKSum / TOP_K;
+      if (topKAvg >= similarityThreshold) {
+        // Persist the top-K-average score (not the max) so the S&D
+        // Match slider's filtering reflects the same metric the
+        // matcher used to make the assignment.
+        assignStmt.run(person.id, topKAvg, row.id);
         matchedForThisPerson++;
       }
     }
