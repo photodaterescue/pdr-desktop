@@ -690,11 +690,11 @@ export const MEMORIES_TOUR_STEPS: TourStep[] = [
     highlightPadding: 8
   },
   {
-    id: 'mem-on-this-day',
-    targetSelector: '[data-tour="mem-on-this-day"]',
-    title: 'On This Day',
-    description: 'Photos from this calendar date in past years. A nice surprise on a quiet morning — open the row to flip through the same date across decades.',
-    preferredPositions: ['bottom', 'top'],
+    id: 'mem-controls',
+    targetSelector: '[data-tour="mem-controls"]',
+    title: 'Density & Library',
+    description: 'Two static controls in the header. Density toggles between Spacious (rounded tiles with gaps) and Tight (a wall of photos with no gaps). Library Selector picks which Parallel-Structure library you\'re browsing — the same chooser shown in S&D, so a switch in either view updates both. Below, an "On This Day" row appears whenever you have photos from this calendar date in past years.',
+    preferredPositions: ['bottom', 'left'],
     highlightPadding: 8
   },
   {

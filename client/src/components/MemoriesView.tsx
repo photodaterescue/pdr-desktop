@@ -255,7 +255,13 @@ export default function MemoriesView() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* `data-tour="mem-controls"` wraps both static controls so step
+            3 of the Memories tour has a guaranteed spotlight target.
+            Replaces the previous `mem-on-this-day` step which was
+            conditional on having past-year photos for today's date —
+            users with no historical photos for today saw a centered
+            tooltip and no highlight (Terry's report May 7 2026). */}
+        <div className="flex items-center gap-3" data-tour="mem-controls">
           <DensityToggle value={density} onChange={changeDensity} />
           <LibrarySelector libraries={libraries} value={libraryKey} onChange={setLibraryKey} />
         </div>

@@ -2041,7 +2041,13 @@ export default function PeopleManager() {
           left border so the eye is drawn to the right-hand CTA. The
           panel is otherwise easy to overlook on a wide screen. */}
       {globalReassignFaceId !== null && (
-        <div className={`w-[320px] shrink-0 border-l bg-background p-4 overflow-y-auto transition-colors ${
+        // `data-reassign-panel` is a sentinel the input onBlur handlers
+        // use to detect "click moved focus OUTSIDE the panel" — when the
+        // new focus target isn't a descendant, both fields clear (Terry's
+        // request: clicking outside the area should clear the field).
+        // Tabbing between the two inputs keeps focus inside the panel,
+        // so onBlur leaves the typed text alone.
+        <div data-reassign-panel className={`w-[320px] shrink-0 border-l bg-background p-4 overflow-y-auto transition-colors ${
           globalSelectedFaces.size > 0
             ? 'border-l-2 border-purple-400/70 shadow-[inset_4px_0_0_0_rgba(168,85,247,0.25)] animate-pulse-soft'
             : 'border-border'
@@ -2095,14 +2101,22 @@ export default function PeopleManager() {
                 const panelSuggestions = typed.length > 0
                   ? existingPersons.filter(p => {
                       const name = p.name.toLowerCase();
-                      // Hide suggestion if user has typed the exact full name
-                      if (name === typed) return false;
+                      const fullName = (p.full_name ?? '').toLowerCase();
                       // Filter out internal markers but INCLUDE people with 0
                       // photos — those are family members added in Trees who
                       // don't have photos yet; they must still be pickable or
                       // the user would create a duplicate when assigning faces.
                       if (name.startsWith('__')) return false;
-                      return name.includes(typed);
+                      // Match either short name OR full name as a substring.
+                      // The previous version only matched `name`, so typing
+                      // "Sylvia" failed to surface "Nan / Sylvia Mills" —
+                      // and typing "Nan" exactly was suppressed by the
+                      // `name === typed` short-circuit, so even an exact
+                      // match couldn't be confirmed from the dropdown.
+                      // Both bugs reported by Terry on May 7 2026 when he
+                      // tried to reassign 3 of Mum's faces to Nan and
+                      // neither name produced a suggestion.
+                      return name.includes(typed) || fullName.includes(typed);
                     })
                     .sort((a, b) => (b.photo_count ?? 0) - (a.photo_count ?? 0))
                     .slice(0, 8)
@@ -2119,6 +2133,21 @@ export default function PeopleManager() {
                         // name (user hasn't yet locked it in for this
                         // new candidate).
                         setFullNameUserEdited(false);
+                      }}
+                      onBlur={(e) => {
+                        // Clear typed text when focus moves OUTSIDE the
+                        // reassign panel (Terry's request). Tabbing to
+                        // the full-name input or clicking a suggestion /
+                        // action button keeps focus inside the panel and
+                        // leaves the text intact. Suggestion picks use
+                        // onMouseDown with preventDefault so the field
+                        // never blurs from those.
+                        const panel = e.currentTarget.closest('[data-reassign-panel]');
+                        if (panel && !panel.contains(e.relatedTarget as Node | null)) {
+                          setGlobalReassignName('');
+                          setPanelSuggestionIdx(-1);
+                          setGlobalReassignPersonId(null);
+                        }
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'ArrowDown' && panelSuggestions.length > 0) {
@@ -2166,10 +2195,29 @@ export default function PeopleManager() {
                             setPanelSuggestionIdx(-1);
                           })();
                         } else if (e.key === 'Escape') {
-                          setGlobalReassignFaceId(null);
-                          setGlobalReassignName(''); setGlobalReassignFullName('');
-                          setGlobalSelectedFaces(new Set());
-                          setPanelSuggestionIdx(-1);
+                          e.preventDefault();
+                          // First Esc clears the SHORT-name field if it has
+                          // text (the behaviour Terry asked for — typing was
+                          // previously only erasable via backspace). A
+                          // second Esc on an already-empty field falls
+                          // through to the original close-panel action so
+                          // we don't lose the "Esc to dismiss" muscle
+                          // memory.
+                          if (globalReassignName) {
+                            setGlobalReassignName('');
+                            setPanelSuggestionIdx(-1);
+                            // Picking a candidate locked the person; clear
+                            // that lock too so the next typed name doesn't
+                            // silently target a person the user no longer
+                            // intended.
+                            setGlobalReassignPersonId(null);
+                          } else {
+                            setGlobalReassignFaceId(null);
+                            setGlobalReassignFullName('');
+                            setGlobalSelectedFaces(new Set());
+                            setPanelSuggestionIdx(-1);
+                            setGlobalReassignPersonId(null);
+                          }
                         }
                       }}
                       placeholder={panelImplicitName ? `Verify as ${panelImplicitName}` : 'Type person name...'}
@@ -2182,10 +2230,33 @@ export default function PeopleManager() {
                     {panelSuggestions.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
                         {panelSuggestions.map((p, idx) => (
-                          <button key={p.id} onMouseDown={(e) => { e.preventDefault(); setGlobalReassignName(p.name); setPanelSuggestionIdx(-1); }}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-sm transition-colors text-left ${idx === panelSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}>
-                            <span className="truncate">{p.name}</span>
-                            <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{p.photo_count}</span>
+                          <button
+                            key={p.id}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              // Lock the candidate by id so handleReassignFace
+                              // targets THIS person, not a name-only match.
+                              // Also pre-fill full_name so the user sees the
+                              // disambiguating info they searched on (typing
+                              // "Sylvia" → picking "Nan (Sylvia Mills)" should
+                              // leave the full name in place, not blank).
+                              setGlobalReassignPersonId(p.id);
+                              setGlobalReassignName(p.name);
+                              if (p.full_name) {
+                                setGlobalReassignFullName(p.full_name);
+                                setFullNameUserEdited(false);
+                              }
+                              setPanelSuggestionIdx(-1);
+                            }}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-sm transition-colors text-left ${idx === panelSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}
+                          >
+                            <span className="truncate flex-1">
+                              <span className="text-foreground">{p.name}</span>
+                              {p.full_name && (
+                                <span className="text-muted-foreground ml-1.5">· {p.full_name}</span>
+                              )}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">{p.photo_count}</span>
                           </button>
                         ))}
                       </div>
@@ -2226,6 +2297,16 @@ export default function PeopleManager() {
               type="text"
               value={globalReassignFullName}
               onChange={(e) => { setGlobalReassignFullName(e.target.value); setFullNameUserEdited(true); }}
+              onBlur={(e) => {
+                // Same click-outside-clears semantics as the short-name
+                // field above — only clears when focus moves outside
+                // the reassign panel.
+                const panel = e.currentTarget.closest('[data-reassign-panel]');
+                if (panel && !panel.contains(e.relatedTarget as Node | null)) {
+                  setGlobalReassignFullName('');
+                  setFullNameUserEdited(false);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -2245,9 +2326,19 @@ export default function PeopleManager() {
                     setGlobalSelectedFaces(new Set());
                   })();
                 } else if (e.key === 'Escape') {
-                  setGlobalReassignFaceId(null);
-                  setGlobalReassignName(''); setGlobalReassignFullName('');
-                  setGlobalSelectedFaces(new Set());
+                  e.preventDefault();
+                  // First Esc clears the FULL-name field; second Esc on an
+                  // already-empty field closes the panel (preserves the
+                  // existing dismiss-with-Escape behaviour).
+                  if (globalReassignFullName) {
+                    setGlobalReassignFullName('');
+                    setFullNameUserEdited(true);
+                  } else {
+                    setGlobalReassignFaceId(null);
+                    setGlobalReassignName('');
+                    setGlobalSelectedFaces(new Set());
+                    setGlobalReassignPersonId(null);
+                  }
                 }
               }}
               placeholder={fullPlaceholder}
