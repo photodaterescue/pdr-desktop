@@ -1181,16 +1181,18 @@ export default function PeopleManager() {
               person; auto-matches are excluded from training, so it
               can never poison itself). */}
           {activeTab === 'named' && (
+          // External `data-tour="pm-suggest"` wrapper — Radix Tooltip's
+          // `asChild` doesn't reliably forward custom `data-*` attrs
+          // through its prop merge in all builds, so the spotlight
+          // missed the Improve button when the data-tour was on the
+          // inner <button>. Wrapping the whole TooltipProvider in a
+          // span that carries the data-tour guarantees the selector
+          // resolves to a DOM element with a non-zero rect every time.
+          <span data-tour="pm-suggest" className="inline-flex">
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  // `data-tour="pm-suggest"` is the spotlight target for
-                  // step 5 of the People Manager tour ("AI Suggestions").
-                  // Only present on the Named tab, which is also where
-                  // the tour is most useful — Improve Facial Recognition
-                  // re-runs the auto-matcher against every named person.
-                  data-tour="pm-suggest"
                   onClick={async () => {
                     if (fixActive) return;
                     setIsRefining(true);
@@ -1234,6 +1236,7 @@ export default function PeopleManager() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          </span>
           )}
 
           {/* Import from Lightroom XMP sidecars — HIDDEN for v2.
@@ -1299,7 +1302,11 @@ export default function PeopleManager() {
           </span>
         </div>
 
-        <div className="flex flex-col items-center flex-1 mx-4 max-w-[260px]">
+        {/* `data-tour="pm-match-slider"` wraps the whole Match
+            strictness control (label + slider + Loose/Strict caption)
+            so step 3 of the PM tour spotlights it as a unit. Always
+            visible in the toolbar regardless of which tab is active. */}
+        <div className="flex flex-col items-center flex-1 mx-4 max-w-[260px]" data-tour="pm-match-slider">
           <div className="flex items-center gap-2 mb-0.5 h-[14px]">
             <span className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Match</span>
             {isReclustering && (
@@ -1388,11 +1395,12 @@ export default function PeopleManager() {
       {/* Tab Bar — count pills get a coloured filled background and
           slightly bolder text so they read clearly against the muted
           tab strip behind them, including for the empty / 0 case.
-          `data-tour="pm-merge"` here because merging clusters happens
-          BETWEEN tabs — drag an Unnamed cluster onto a Named one. The
-          tab bar is the visual home of that workflow, and is always
-          rendered regardless of which tab is active. */}
-      <div className="flex border-b border-border mx-6 mb-0" data-tour="pm-merge">
+          (The `pm-merge` tour step was retired in favour of
+          `pm-match-slider` + `pm-verify` per Terry's feedback —
+          merging is still possible via drag-drop between tabs but the
+          tour now teaches Verify/Reassign instead, which is a more
+          common day-to-day action.) */}
+      <div className="flex border-b border-border mx-6 mb-0">
         <div className="flex flex-1">
           <button type="button" className={pmTabClass('named')} onClick={() => { setActiveTab('named'); setSearchFilter(''); }}>
             <span className="flex items-center justify-center gap-1.5">
@@ -1564,20 +1572,22 @@ export default function PeopleManager() {
                   /* `data-tour="pm-clusters"` is the spotlight target
                       for step 2 of the PM tour ("Face Clusters"). The
                       whole list highlights, framing the concept "every
-                      tile here is a cluster of one person". */
+                      row here is a cluster of one person". */
                   <div className="space-y-2" data-tour="pm-clusters">
                     {filteredNamed.map((cluster, idx) => (
+                      // First card carries `data-tour="pm-verify"` so
+                      // step 4 ("Verify & Reassign") spotlights one
+                      // concrete row. The wrapper is a real <div> (not
+                      // `display: contents`, which has a 0×0 bounding
+                      // rect and gave the spotlight nothing to anchor
+                      // to — Terry's "Name a cluster doesn't highlight"
+                      // bug from May 7 2026). The wrapper itself adds
+                      // no visible chrome — it inherits the grid gap
+                      // from the parent's `space-y-2`, and the
+                      // PersonCardRow inside still renders as before.
                       <div
                         key={clusterKey(cluster)}
-                        // First card carries `data-tour="pm-name"` so
-                        // step 3 ("Name a Cluster") spotlights one
-                        // concrete row instead of free-floating text.
-                        // `display: contents` is unconditional so the
-                        // wrapper is layout-transparent for every row —
-                        // the PersonCardRow root remains the actual
-                        // flex/grid item.
-                        {...(idx === 0 ? { 'data-tour': 'pm-name' } : {})}
-                        style={{ display: 'contents' }}
+                        {...(idx === 0 ? { 'data-tour': 'pm-verify' } : {})}
                       >
                       <PersonCardRow
                         rowIndex={idx}

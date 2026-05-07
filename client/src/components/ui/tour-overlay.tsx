@@ -303,7 +303,12 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete, meta }: TourOv
             />
             <div
               className="absolute inset-0 rounded-lg animate-pulse"
-              style={{ backgroundColor: accent + '1A' /* ~10% alpha */ }}
+              // 5% alpha (was 10%). Pink/magenta accents at 10% read
+              // as a visible warm tinge over neutral UI; halving the
+              // alpha keeps the pulse breath visible without colouring
+              // the highlighted content. Same value works across every
+              // tour accent (lavender, blue, gold, emerald, pink, teal).
+              style={{ backgroundColor: accent + '0D' /* ~5% alpha */ }}
             />
           </motion.div>
         )}
@@ -627,31 +632,31 @@ export const PEOPLE_MANAGER_TOUR_STEPS: TourStep[] = [
     id: 'pm-clusters',
     targetSelector: '[data-tour="pm-clusters"]',
     title: 'Face Clusters',
-    description: 'Each tile is a cluster — a group of faces PDR thinks are the same person. The number shows how many photos are in the cluster. Bigger clusters usually = the people in your photos most often.',
+    description: 'Each row is a cluster — a group of faces PDR thinks belong to the same person. The thumbnail strip shows up to a dozen sample faces; the count tells you how many photos that person appears in across your library.',
     preferredPositions: ['right', 'bottom', 'top'],
     highlightPadding: 8
   },
   {
-    id: 'pm-name',
-    targetSelector: '[data-tour="pm-name"]',
-    title: 'Name a Cluster',
-    description: 'Click a cluster to open it, then give it a name (Mum, Dad, Sarah). Once named, the person becomes searchable in Search & Discovery and shows up in Memories rows like "On This Day with Mum".',
-    preferredPositions: ['bottom', 'right', 'top'],
+    id: 'pm-match-slider',
+    targetSelector: '[data-tour="pm-match-slider"]',
+    title: 'Match Slider',
+    description: 'Loose includes more auto-matches in each row (closer to "anyone who looks vaguely like them"). Strict counts only the most-similar matches. Drag to taste — releasing the slider re-runs Improve at the new threshold so the rows update instantly.',
+    preferredPositions: ['bottom', 'left'],
     highlightPadding: 8
   },
   {
-    id: 'pm-merge',
-    targetSelector: '[data-tour="pm-merge"]',
-    title: 'Merge & Split',
-    description: 'Two clusters that are actually the same person? Merge them. One cluster that\'s mixing two people? Split it. PDR keeps a snapshot before any structural change so you can undo if you spot a mistake.',
-    preferredPositions: ['top', 'right', 'left'],
+    id: 'pm-verify',
+    targetSelector: '[data-tour="pm-verify"]',
+    title: 'Verify & Reassign',
+    description: 'Click any face thumbnail to open the action panel on the right. From there: Verify (confirms this face is who PDR thinks it is — earns the purple ring), or type a different name to reassign. Selecting multiple faces (Shift-click or drag) lets you verify/reassign a whole batch in one go.',
+    preferredPositions: ['right', 'bottom', 'top'],
     highlightPadding: 8
   },
   {
     id: 'pm-suggest',
     targetSelector: '[data-tour="pm-suggest"]',
-    title: 'AI Suggestions',
-    description: 'PDR proposes "Are these the same person?" prompts based on face similarity. Confirm or reject — each verified answer makes future suggestions sharper. Run Refine to re-check the whole library after a big naming session.',
+    title: 'Improve Facial Recognition',
+    description: 'The sparkles button re-runs the auto-matcher across every named person, using your verified faces as the reference. Each new match appears as an unverified face in that person\'s row — review and verify the good ones to make the next pass even sharper.',
     preferredPositions: ['bottom', 'top', 'right'],
     highlightPadding: 8
   },
