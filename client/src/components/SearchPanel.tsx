@@ -3654,6 +3654,23 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 const navIdx = navFiles.findIndex(f => f.id === selectedFile.id);
                 const hasPrev = navIdx > 0;
                 const hasNext = navIdx < navFiles.length - 1;
+                // Context-sensitive Details-panel "Open in Viewer":
+                //   • If the photo being previewed is itself one of the
+                //     cross-search-checked files, the button opens the
+                //     ENTIRE selection (with the previewed photo as the
+                //     viewer's start index). Label reads "Open N in
+                //     Viewer". The user is "still inside their
+                //     selection" — drilling into one of the picks they
+                //     made — so launching the whole set matches intent.
+                //   • If the previewed photo is NOT in the selection,
+                //     the user has stepped outside their selection to
+                //     look at something else. The button opens ONLY
+                //     that single photo and reads "Open in Viewer".
+                const isPreviewInSelection = selectedFilesMap.has(selectedFile.id);
+                const viewerSet = isPreviewInSelection
+                  ? Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video')
+                  : null;
+                const viewerCount = viewerSet ? viewerSet.length : 1;
                 return (
                   <>
                     <ResizableHandle withHandle />
@@ -3664,16 +3681,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         onNext={hasNext ? () => navigateFile('next') : undefined}
                         onOpenInExplorer={() => openInExplorer(selectedFile.file_path)}
                         onOpenViewer={() => {
-                          // Details-panel "Open in Viewer" — opens ONLY the
-                          // single photo whose details are showing on the
-                          // right. The toolbar "Open N in Viewer" button is
-                          // the cross-search selection one; this panel
-                          // button is for the one photo the user is looking
-                          // at, deliberately scoped to a single file.
-                          safeOpenViewer(selectedFile.file_path, selectedFile.filename);
+                          if (viewerSet && viewerSet.length > 0) {
+                            const startIdx = Math.max(0, viewerSet.findIndex(f => f.id === selectedFile.id));
+                            safeOpenViewer(viewerSet.map(f => f.file_path), viewerSet.map(f => f.filename), startIdx);
+                          } else {
+                            safeOpenViewer(selectedFile.file_path, selectedFile.filename);
+                          }
                         }}
                         fileIndex={navIdx + 1} totalFiles={navFiles.length}
-                        isShowingChecked={selectedFiles.size > 0} />
+                        isShowingChecked={isPreviewInSelection}
+                        viewerCount={viewerCount} />
                     </ResizablePanel>
                   </>
                 );
@@ -4039,8 +4056,13 @@ function VideoSpeedPicker({ rate, onChange }: { rate: number; onChange: (r: numb
 
 // ─── File Detail Panel ───────────────────────────────────────────────────────
 
-function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExplorer, onOpenViewer, fileIndex, totalFiles, isShowingChecked }: {
+function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExplorer, onOpenViewer, fileIndex, totalFiles, isShowingChecked, viewerCount }: {
   file: IndexedFile; thumbnail?: string; onClose: () => void; onPrev?: () => void; onNext?: () => void; onOpenInExplorer?: () => void; onOpenViewer?: () => void; fileIndex?: number; totalFiles?: number; isShowingChecked?: boolean;
+  /** How many photos clicking the "Open in Viewer" button will actually
+   *  open. Drives the button label: 1 → "Open in Viewer", N>1 → "Open N
+   *  in Viewer". Computed by the parent based on whether the previewed
+   *  file is itself in the cross-search selection. */
+  viewerCount?: number;
 }) {
   const [fullThumbnail, setFullThumbnail] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -4390,7 +4412,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
           <div className="flex gap-2 mb-4">
             {onOpenViewer && (file.file_type === 'photo' || file.file_type === 'video') && (
               <button onClick={onOpenViewer} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-sm hover:bg-primary/90 transition-all">
-                <Eye className="w-3.5 h-3.5" />{isShowingChecked && totalFiles && totalFiles > 1 ? `Open ${totalFiles} in Viewer` : 'Open in Viewer'}
+                <Eye className="w-3.5 h-3.5" />{viewerCount && viewerCount > 1 ? `Open ${viewerCount} in Viewer` : 'Open in Viewer'}
               </button>
             )}
             {onOpenInExplorer && <button onClick={onOpenInExplorer} data-pdr-variant="information" className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all" style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}><FolderOpen className="w-3.5 h-3.5" />Show in Folder</button>}
