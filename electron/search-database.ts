@@ -420,6 +420,13 @@ export function initDatabase(): { success: boolean; error?: string } {
       { name: 'geo_country', type: 'TEXT' },
       { name: 'geo_country_code', type: 'TEXT' },
       { name: 'geo_city', type: 'TEXT' },
+      // User-applied rotation, in degrees (0/90/180/270). Stored
+      // alongside the photo metadata so the PDR Viewer can re-apply
+      // the rotation the user picked the next time they open the
+      // same file. Independent of EXIF orientation — that's already
+      // honoured by the renderer; this is the user's manual override
+      // on top of whatever the camera wrote.
+      { name: 'user_rotation', type: 'INTEGER NOT NULL DEFAULT 0' },
     ];
     for (const col of newCols) {
       if (!colNames.has(col.name)) {
@@ -3538,6 +3545,36 @@ export function relocateRun(runId: number, newDestinationPath: string): number {
 
   console.log(`[DB] Relocated run #${runId}: ${oldPath} → ${newDestinationPath} (${updated} file paths updated)`);
   return updated;
+}
+
+/**
+ * Read the user-applied rotation (in degrees, 0/90/180/270) for a
+ * photo by file_path. Returns 0 when the file isn't in the index or
+ * has never been rotated. Cheap — single indexed lookup against the
+ * file_path UNIQUE INDEX.
+ */
+export function getUserRotation(filePath: string): number {
+  const database = getDb();
+  const row = database
+    .prepare(`SELECT user_rotation FROM indexed_files WHERE file_path = ? LIMIT 1`)
+    .get(filePath) as { user_rotation: number | null } | undefined;
+  if (!row) return 0;
+  return ((row.user_rotation ?? 0) % 360 + 360) % 360;
+}
+
+/**
+ * Persist the user-applied rotation for a photo. The viewer calls this
+ * after every rotate-button click so re-opening the same file in any
+ * surface (Memories grid, S&D thumbnail, Viewer) shows the photo the
+ * way the user last left it. Normalised to 0/90/180/270.
+ */
+export function setUserRotation(filePath: string, rotation: number): { changed: boolean } {
+  const database = getDb();
+  const normalised = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360;
+  const result = database
+    .prepare(`UPDATE indexed_files SET user_rotation = ? WHERE file_path = ?`)
+    .run(normalised, filePath);
+  return { changed: result.changes > 0 };
 }
 
 /**

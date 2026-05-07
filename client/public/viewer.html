@@ -303,6 +303,13 @@
       <button class="toolbar-btn" id="btn-100" title="Actual size (0)">100%</button>
       <button class="toolbar-btn" id="btn-zoomIn" title="Zoom in (+)">+</button>
       <button class="toolbar-btn" id="btn-zoomOut" title="Zoom out (-)">−</button>
+      <button class="toolbar-btn" id="btn-rotateLeft" title="Rotate left 90° (R)">⟲</button>
+      <button class="toolbar-btn" id="btn-rotateRight" title="Rotate right 90° (Shift+R)">⟳</button>
+      <button class="toolbar-btn" id="btn-slideshow" title="Start slideshow (Space)" hidden>▶</button>
+      <div class="speed-wrap" id="slideshow-wrap" hidden>
+        <button class="toolbar-btn" id="btn-slideshowInterval" title="Slideshow interval">5s</button>
+        <div class="speed-menu" id="slideshow-menu" style="display:none"></div>
+      </div>
       <div class="speed-wrap" id="speed-wrap" hidden>
         <button class="toolbar-btn" id="btn-speed" title="Playback speed (shift+, / shift+.)">1x</button>
         <div class="speed-menu" id="speed-menu" style="display:none"></div>
@@ -342,10 +349,16 @@
     const btn100 = document.getElementById('btn-100');
     const btnZoomIn = document.getElementById('btn-zoomIn');
     const btnZoomOut = document.getElementById('btn-zoomOut');
+    const btnRotateLeft = document.getElementById('btn-rotateLeft');
+    const btnRotateRight = document.getElementById('btn-rotateRight');
     const btnOpenExternal = document.getElementById('btn-openExternal');
     const speedWrap = document.getElementById('speed-wrap');
     const btnSpeed = document.getElementById('btn-speed');
     const speedMenu = document.getElementById('speed-menu');
+    const btnSlideshow = document.getElementById('btn-slideshow');
+    const slideshowWrap = document.getElementById('slideshow-wrap');
+    const btnSlideshowInterval = document.getElementById('btn-slideshowInterval');
+    const slideshowMenu = document.getElementById('slideshow-menu');
 
     const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
     let playbackRate = 1;
@@ -386,6 +399,12 @@
     let dragStartX = 0, dragStartY = 0;
     let panStartX = 0, panStartY = 0;
     let fitZoom = 1;
+    // User-applied rotation in degrees (0/90/180/270). Loaded from
+    // PDR's index when an image opens, persisted back on every rotate
+    // button click. Layered on top of EXIF auto-rotation (which the
+    // <img> tag already honours), so this is purely the user's manual
+    // override. Reset to 0 between media transitions and re-fetched.
+    let userRotation = 0;
     // True once the user has explicitly zoomed (wheel / +/- / 100%).
     // Resets whenever a new image is loaded. While false, any layout change
     // to the viewer container re-runs fitToWindow so the photo always ends
@@ -458,8 +477,16 @@
       btn100.hidden = !show;
       btnZoomIn.hidden = !show;
       btnZoomOut.hidden = !show;
+      btnRotateLeft.hidden = !show;
+      btnRotateRight.hidden = !show;
       zoomLabelEl.style.visibility = show ? '' : 'hidden';
       speedWrap.hidden = show;
+      // Slideshow only makes sense for images (auto-advance), and only
+      // when we have more than one file in the queue. The interval
+      // picker tracks the same visibility.
+      const slideshowable = show && files.length > 1;
+      btnSlideshow.hidden = !slideshowable;
+      slideshowWrap.hidden = !slideshowable;
     }
 
     function showUnplayable(filePath) {
@@ -512,6 +539,10 @@
       panX = 0;
       panY = 0;
       fitZoom = 1;
+      // Reset rotation; a real value is fetched from PDR's index once
+      // the image binds (see the img.onload handler below). Defaults
+      // to 0 if the file isn't indexed.
+      userRotation = 0;
       placeholder.style.display = 'none';
       placeholder.innerHTML = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>No image loaded</span>';
 
@@ -594,12 +625,21 @@
         img.src = getFileSrc(filePath);
         img.onload = () => {
           dimensionsEl.textContent = img.naturalWidth + ' \u00d7 ' + img.naturalHeight + ' px';
-          // Matches the original working behaviour (pre-video changes):
-          // one fit immediately, one on the next animation frame for cases
-          // where the image landed mid-layout pass. ResizeObserver handles
-          // any later container changes.
-          fitToWindow();
-          requestAnimationFrame(fitToWindow);
+          // Pull the saved rotation for this file BEFORE the first fit
+          // so the fit math accounts for the rotated bounding box (a
+          // 90\u00b0/270\u00b0 image's natural aspect is swapped). Falls back to
+          // 0 silently if the IPC isn't available or the file isn't
+          // in the index yet.
+          (async () => {
+            try {
+              if (window.pdr && window.pdr.viewer && window.pdr.viewer.getRotation) {
+                const r = await window.pdr.viewer.getRotation(filePath);
+                if (r && r.success) userRotation = ((r.rotation || 0) % 360 + 360) % 360;
+              }
+            } catch {}
+            fitToWindow();
+            requestAnimationFrame(fitToWindow);
+          })();
         };
         let retried = false;
         img.onerror = () => {
@@ -684,9 +724,10 @@
     // Diagnostic: confirm preload attached + prepare() available
     console.log('[viewer] window.pdr =', !!window.pdr, '| video.prepare =', !!(window.pdr && window.pdr.video && window.pdr.video.prepare), '| files =', files.length);
 
-    // Navigation
-    btnPrev.addEventListener('click', (e) => { e.stopPropagation(); loadMedia(currentIndex - 1); });
-    btnNext.addEventListener('click', (e) => { e.stopPropagation(); loadMedia(currentIndex + 1); });
+    // Navigation — manual nav stops any running slideshow so the user
+    // doesn't fight an auto-advance after taking control.
+    btnPrev.addEventListener('click', (e) => { e.stopPropagation(); stopSlideshow(); loadMedia(currentIndex - 1); });
+    btnNext.addEventListener('click', (e) => { e.stopPropagation(); stopSlideshow(); loadMedia(currentIndex + 1); });
     btnOpenExternal.addEventListener('click', () => {
       const fp = files[currentIndex];
       if (fp) openInSystemPlayer(fp);
@@ -696,8 +737,12 @@
       if (!mediaEl || isVideo) return;
       const cw = container.clientWidth;
       const ch = container.clientHeight;
-      const iw = mediaEl.naturalWidth;
-      const ih = mediaEl.naturalHeight;
+      // Effective bounding-box dims account for user rotation — at
+      // 90°/270° the natural width and height swap so the fit math
+      // has to compare the rotated rectangle against the container.
+      const swap = userRotation === 90 || userRotation === 270;
+      const iw = swap ? mediaEl.naturalHeight : mediaEl.naturalWidth;
+      const ih = swap ? mediaEl.naturalWidth : mediaEl.naturalHeight;
       if (cw <= 0 || ch <= 0 || iw <= 0 || ih <= 0) {
         console.log('[viewer] skip fit — bad dims', { cw, ch, iw, ih });
         return;
@@ -706,7 +751,7 @@
       zoom = fitZoom;
       panX = Math.max(0, (cw - iw * zoom) / 2);
       panY = Math.max(0, (ch - ih * zoom) / 2);
-      console.log('[viewer] fit', { cw, ch, iw, ih, zoom: Number(zoom.toFixed(3)), panX: Number(panX.toFixed(0)), panY: Number(panY.toFixed(0)) });
+      console.log('[viewer] fit', { cw, ch, iw, ih, zoom: Number(zoom.toFixed(3)), panX: Number(panX.toFixed(0)), panY: Number(panY.toFixed(0)), rot: userRotation });
       applyTransform();
     }
 
@@ -729,7 +774,32 @@ function zoomTo(newZoom, centreX, centreY) {
 
     function applyTransform() {
       if (!mediaEl || isVideo) return;
-      mediaEl.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + zoom + ')';
+      // Order matters: translate first, then rotate around the
+      // image's own centre, then scale. Rotating around the centre
+      // (as opposed to 0,0) keeps the visual centre of the rotated
+      // image at the same screen position, so a fit-window state
+      // stays centred after rotation. transform-origin is set to
+      // center center via inline style here so we don't disturb the
+      // existing 0 0 origin used by the static CSS rule.
+      mediaEl.style.transformOrigin = userRotation === 0 ? '0 0' : 'center center';
+      if (userRotation === 0) {
+        mediaEl.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + zoom + ')';
+      } else {
+        // For rotated images we centre the natural-size box at the
+        // computed pan offset, then rotate, then scale. Rotation
+        // around the centre means panX/panY refer to the centre of
+        // the rotated box, so we translate by half-width/height into
+        // the rectangle the fit math computed.
+        const swap = userRotation === 90 || userRotation === 270;
+        const effW = swap ? mediaEl.naturalHeight : mediaEl.naturalWidth;
+        const effH = swap ? mediaEl.naturalWidth : mediaEl.naturalHeight;
+        const cx = panX + (effW * zoom) / 2;
+        const cy = panY + (effH * zoom) / 2;
+        mediaEl.style.transform =
+          'translate(' + (cx - mediaEl.naturalWidth / 2) + 'px, ' + (cy - mediaEl.naturalHeight / 2) + 'px) ' +
+          'rotate(' + userRotation + 'deg) ' +
+          'scale(' + zoom + ')';
+      }
       zoomLabelEl.textContent = Math.round(zoom * 100) + '%';
     }
 
@@ -754,6 +824,96 @@ function zoomTo(newZoom, centreX, centreY) {
     btn100.addEventListener('click', () => { userHasZoomed = true; zoomToCenter(1); });
     btnZoomIn.addEventListener('click', () => { userHasZoomed = true; zoomToCenter(zoom * 1.25); });
     btnZoomOut.addEventListener('click', () => { userHasZoomed = true; zoomToCenter(zoom / 1.25); });
+
+    // ── Rotate ─────────────────────────────────────────────────────
+    // Each click adjusts userRotation by ±90°, persists the new value
+    // back into PDR's index keyed on file_path, then re-runs
+    // fitToWindow so the rotated photo lands centred at the right
+    // size. Persistence is best-effort — IPC failure logs a warning
+    // but the visual change still applies for this session.
+    function rotateBy(delta) {
+      if (!mediaEl || isVideo) return;
+      const filePath = files[currentIndex];
+      if (!filePath) return;
+      userRotation = ((userRotation + delta) % 360 + 360) % 360;
+      userHasZoomed = false;
+      fitToWindow();
+      try {
+        if (window.pdr && window.pdr.viewer && window.pdr.viewer.setRotation) {
+          window.pdr.viewer.setRotation(filePath, userRotation).catch((err) => {
+            console.warn('[viewer] rotation persist failed:', err && err.message);
+          });
+        }
+      } catch (err) {
+        console.warn('[viewer] rotation IPC threw:', err && err.message);
+      }
+    }
+    btnRotateLeft.addEventListener('click', () => rotateBy(-90));
+    btnRotateRight.addEventListener('click', () => rotateBy(90));
+
+    // ── Slideshow ──────────────────────────────────────────────────
+    // Auto-advance through the file list at a user-chosen interval.
+    // Stops automatically when the user takes any other action
+    // (zoom, drag, manual nav). Interval choices reuse the same
+    // dropdown styling as the video-speed picker so the toolbar
+    // stays visually consistent.
+    const SLIDESHOW_INTERVALS = [3, 5, 10, 15, 30];
+    let slideshowIntervalSec = 5;
+    let slideshowTimerId = null;
+    function isSlideshowRunning() { return slideshowTimerId != null; }
+    function renderSlideshowMenu() {
+      slideshowMenu.innerHTML = '';
+      SLIDESHOW_INTERVALS.forEach((sec) => {
+        const b = document.createElement('button');
+        b.textContent = sec + 's';
+        if (sec === slideshowIntervalSec) b.classList.add('active');
+        b.addEventListener('click', () => {
+          slideshowIntervalSec = sec;
+          btnSlideshowInterval.textContent = sec + 's';
+          slideshowMenu.style.display = 'none';
+          renderSlideshowMenu();
+          // Restart with the new interval if a slideshow is running
+          if (isSlideshowRunning()) {
+            stopSlideshow();
+            startSlideshow();
+          }
+        });
+        slideshowMenu.appendChild(b);
+      });
+    }
+    renderSlideshowMenu();
+    btnSlideshowInterval.addEventListener('click', (e) => {
+      e.stopPropagation();
+      slideshowMenu.style.display = slideshowMenu.style.display === 'none' ? 'block' : 'none';
+    });
+    document.addEventListener('click', (e) => {
+      if (!slideshowWrap.contains(e.target)) slideshowMenu.style.display = 'none';
+    });
+    function advanceSlideshow() {
+      if (!isSlideshowRunning()) return;
+      // Loop at the end so a "set it and forget it" run doesn't
+      // dead-end on the last photo. Wraps cleanly via modulo.
+      const next = (currentIndex + 1) % files.length;
+      loadMedia(next);
+    }
+    function startSlideshow() {
+      if (isSlideshowRunning()) return;
+      if (files.length <= 1) return;
+      slideshowTimerId = setInterval(advanceSlideshow, slideshowIntervalSec * 1000);
+      btnSlideshow.textContent = '❚❚';
+      btnSlideshow.title = 'Pause slideshow (Space)';
+    }
+    function stopSlideshow() {
+      if (slideshowTimerId) {
+        clearInterval(slideshowTimerId);
+        slideshowTimerId = null;
+      }
+      btnSlideshow.textContent = '▶';
+      btnSlideshow.title = 'Start slideshow (Space)';
+    }
+    btnSlideshow.addEventListener('click', () => {
+      if (isSlideshowRunning()) stopSlideshow(); else startSlideshow();
+    });
 
     // Mouse wheel zoom — images only
     container.addEventListener('wheel', (e) => {
@@ -825,6 +985,20 @@ function zoomTo(newZoom, centreX, centreY) {
         }
         return;
       }
+      // Rotate shortcuts — image only. R rotates left, Shift+R rotates right.
+      // Letter case handles both Shift+R (uppercase) and unmodified r.
+      if (!isVideo && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        rotateBy(e.shiftKey ? 90 : -90);
+        return;
+      }
+      // Space toggles the slideshow on images. Doesn't fire when the
+      // current media is a video — that branch above takes precedence.
+      if (!isVideo && (e.key === ' ' || e.code === 'Space') && files.length > 1) {
+        e.preventDefault();
+        if (isSlideshowRunning()) stopSlideshow(); else startSlideshow();
+        return;
+      }
       // YouTube-style speed nudges: Shift+, slows down, Shift+. speeds up
       if (isVideo && e.shiftKey && (e.key === '<' || e.key === ',')) {
         const i = PLAYBACK_RATES.indexOf(playbackRate);
@@ -852,8 +1026,8 @@ function zoomTo(newZoom, centreX, centreY) {
       else if (e.key === '-') { userHasZoomed = true; zoomToCenter(zoom / 1.25); }
       else if (e.key === '0') { userHasZoomed = true; zoomToCenter(1); }
       else if (e.key === 'f' || e.key === 'F') { userHasZoomed = false; fitToWindow(); }
-      else if (e.key === 'ArrowLeft' && !isVideo) loadMedia(currentIndex - 1);
-      else if (e.key === 'ArrowRight' && !isVideo) loadMedia(currentIndex + 1);
+      else if (e.key === 'ArrowLeft' && !isVideo) { stopSlideshow(); loadMedia(currentIndex - 1); }
+      else if (e.key === 'ArrowRight' && !isVideo) { stopSlideshow(); loadMedia(currentIndex + 1); }
       else if (e.key === 'Escape') window.close();
     });
 

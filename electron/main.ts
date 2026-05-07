@@ -5431,6 +5431,30 @@ ipcMain.handle('search:getFileMetaByPath', async (_event, filePath: string) => {
   }
 });
 
+// ─── Viewer rotation persistence ────────────────────────────────────────────
+// Stored in indexed_files.user_rotation as 0/90/180/270. The PDR Viewer
+// reads it on load and applies a CSS transform on top of EXIF auto-rotation,
+// then writes back here whenever the user clicks the rotate buttons. This
+// keeps "I rotated this photo so it's the right way up" sticky across
+// sessions without ever touching the original file on disk.
+ipcMain.handle('viewer:getRotation', async (_event, filePath: string) => {
+  try {
+    const { getUserRotation } = await import('./search-database.js');
+    return { success: true, rotation: getUserRotation(filePath) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message, rotation: 0 };
+  }
+});
+
+ipcMain.handle('viewer:setRotation', async (_event, filePath: string, rotation: number) => {
+  try {
+    const { setUserRotation } = await import('./search-database.js');
+    return { success: true, ...setUserRotation(filePath, rotation) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('ai:faceContext', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240) => {
   try {
     const sharp = (await import('sharp')).default;
