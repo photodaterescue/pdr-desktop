@@ -406,6 +406,36 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState<IndexedFile | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<number>>(new Set());
+  // Parallel store of the actual file objects for every checked item,
+  // keyed by file id. Persists across searches so a user can compose a
+  // "Custom selection" by ticking 3 photos in one search, switching the
+  // search, ticking 3 more, and end up with 6 files retrievable for
+  // "Open in Viewer" or "Show N selected" — even though the current
+  // search results don't include the originally-checked files.
+  const [selectedFilesMap, setSelectedFilesMap] = useState<Map<number, IndexedFile>>(new Map());
+  // When true, the grid renders the union of all checked files across
+  // all searches (Custom selection mode) instead of the current search
+  // results. The filter ribbon visually deactivates while this mode is
+  // on so the user understands the grid is no longer driven by the
+  // current filter set. Auto-exits when all selections are cleared.
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
+  // Helper that updates BOTH the id-only Set (used by hot-path
+  // membership checks) and the id→file Map (used for cross-search
+  // persistence). Every checkbox / Ctrl+click / Shift+range handler
+  // funnels through this so the two stores stay in lock-step.
+  const toggleFileSelection = useCallback((file: IndexedFile, intent?: 'add' | 'remove') => {
+    const action = intent ?? (selectedFiles.has(file.id) ? 'remove' : 'add');
+    setSelectedFiles(prev => {
+      const next = new Set(prev);
+      if (action === 'add') next.add(file.id); else next.delete(file.id);
+      return next;
+    });
+    setSelectedFilesMap(prev => {
+      const next = new Map(prev);
+      if (action === 'add') next.set(file.id, file); else next.delete(file.id);
+      return next;
+    });
+  }, [selectedFiles]);
   const [showStructureModal, setShowStructureModal] = useState(false);
   // True whenever any window has a Fix in flight. Parallel Structures
   // shares the copy engine + writes to indexed_files, so concurrent
@@ -563,14 +593,37 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   const keyboardNavRef = useRef(false);
 
-  // When files are checked, navigation cycles through checked files only
+  // When files are checked, navigation cycles through checked files only.
+  // If we're in "Show N selected" Custom-selection mode, navigation walks
+  // every checked file across all searches (drawn from the persisted
+  // file Map), not just the ones in the current search results.
   const getNavigableFiles = useCallback((): IndexedFile[] => {
+    if (showSelectedOnly && selectedFilesMap.size > 0) {
+      return Array.from(selectedFilesMap.values());
+    }
     if (!results) return [];
     if (selectedFiles.size > 0) {
       return results.files.filter(f => selectedFiles.has(f.id));
     }
     return results.files;
-  }, [results, selectedFiles]);
+  }, [results, selectedFiles, showSelectedOnly, selectedFilesMap]);
+
+  // Files to render in the grid: in Custom-selection mode this is the
+  // full union of every checked file across every search the user has
+  // composed; otherwise it's the current search results. We keep
+  // `results` untouched so toggling the mode off returns the user to
+  // exactly where they were.
+  const displayFiles: IndexedFile[] = (showSelectedOnly && selectedFilesMap.size > 0)
+    ? Array.from(selectedFilesMap.values())
+    : (results?.files ?? []);
+
+  // Auto-exit Custom-selection mode whenever the selection drains to
+  // zero (otherwise the grid would render empty with no escape hatch).
+  useEffect(() => {
+    if (showSelectedOnly && selectedFilesMap.size === 0) {
+      setShowSelectedOnly(false);
+    }
+  }, [showSelectedOnly, selectedFilesMap]);
 
   const navigateFile = useCallback((direction: 'prev' | 'next') => {
     if (!results || !selectedFile) return;
@@ -3232,18 +3285,41 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </span>
                   <button
                     onClick={() => {
-                      const selectedViewable = results.files.filter(f => selectedFiles.has(f.id) && (f.file_type === 'photo' || f.file_type === 'video'));
+                      // Use the cross-search selection Map so checked files
+                      // from previous searches still open even when the
+                      // current results don't include them.
+                      const selectedViewable = Array.from(selectedFilesMap.values())
+                        .filter(f => f.file_type === 'photo' || f.file_type === 'video');
                       if (selectedViewable.length > 0) {
-                        const filePaths = selectedViewable.map(f => f.file_path);
-                        const fileNames = selectedViewable.map(f => f.filename);
-                        safeOpenViewer(filePaths, fileNames);
+                        safeOpenViewer(
+                          selectedViewable.map(f => f.file_path),
+                          selectedViewable.map(f => f.filename),
+                        );
                       }
                     }}
                     className="text-xs font-medium text-white bg-primary hover:bg-primary/90 px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
                   >
                     <Eye className="w-3 h-3" />
-                    Open {results.files.filter(f => selectedFiles.has(f.id) && (f.file_type === 'photo' || f.file_type === 'video')).length} in Viewer
+                    Open {Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video').length} in Viewer
                   </button>
+                  {/* Custom-selection toggle — switches the grid between the
+                      current search results and the union of every checked
+                      file across all searches. The filter ribbon above
+                      visually deactivates while this is on so the user
+                      knows the grid is now driven by their selection,
+                      not by their filter. */}
+                  <IconTooltip
+                    label={showSelectedOnly ? 'Show the current search results again' : 'Show ONLY the files you have checked across all searches'}
+                    side="top"
+                  >
+                    <button
+                      onClick={() => setShowSelectedOnly(prev => !prev)}
+                      className={`text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors ${showSelectedOnly ? 'text-white bg-primary hover:bg-primary/90' : 'text-foreground bg-secondary hover:bg-secondary/70 border border-border'}`}
+                    >
+                      <CheckSquare className="w-3 h-3" />
+                      {showSelectedOnly ? 'Show all results' : `Show ${selectedFilesMap.size} selected`}
+                    </button>
+                  </IconTooltip>
                   <IconTooltip
                     label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Structures uses the same copy engine as the Fix.' : 'Mirror the selected files into a parallel folder structure'}
                     side="top"
@@ -3261,7 +3337,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     </button>
                   </IconTooltip>
                   <button
-                    onClick={() => setSelectedFiles(new Set())}
+                    onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
                     Clear
@@ -3385,7 +3461,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   onClick={() => {
                     setSelectionMode(prev => {
                       const next = !prev;
-                      if (!next) setSelectedFiles(new Set()); // clear selections when leaving selection mode
+                      // Leaving selection mode → clear BOTH stores (id Set + file Map)
+                      // and exit Custom-selection grid view if it was active.
+                      if (!next) {
+                        setSelectedFiles(new Set());
+                        setSelectedFilesMap(new Map());
+                        setShowSelectedOnly(false);
+                      }
                       return next;
                     });
                   }}
@@ -3409,8 +3491,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             </div>
           </div>
 
-          {/* Grid/List/Details + Preview */}
-          {results.files.length > 0 ? (
+          {/* Grid/List/Details + Preview — rendered whenever EITHER the
+              current search produced results OR Custom-selection mode is
+              active with at least one selected file. The grid below
+              iterates `displayFiles`, which switches between the search
+              results and the cross-search selection union depending on
+              `showSelectedOnly`. */}
+          {displayFiles.length > 0 ? (
             <ResizablePanelGroup direction="horizontal" className="flex-1">
               <ResizablePanel defaultSize={selectedFile && showPreviewPanel ? 65 : 100} minSize={40}>
                 <div
@@ -3438,21 +3525,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       className="grid gap-0"
                       style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSliderToPx(tileSizeSlider)}px, 1fr))` }}
                     >
-                      {results.files.map((file, idx) => (
+                      {displayFiles.map((file, idx) => (
                         <FileCard key={file.id} file={file} thumbnail={thumbnails[file.file_path]}
                           metaFields={tileMetaFields}
                           selectionMode={selectionMode}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.has(file.id)}
                           onCheckboxClick={() => {
-                            // Checkbox click — toggle without needing CTRL
+                            // Checkbox click — toggle without needing CTRL.
+                            // Goes through toggleFileSelection so the cross-search
+                            // selection map stays in sync with the id-only set.
                             const wasChecked = selectedFiles.has(file.id);
-                            setSelectedFiles(prev => {
-                              const next = new Set(prev);
-                              if (next.has(file.id)) next.delete(file.id); else next.add(file.id);
-                              return next;
-                            });
-                            // Show the checked file in detail panel
+                            toggleFileSelection(file);
                             if (!wasChecked) setSelectedFile(file);
                             lastClickedIndexRef.current = idx;
                           }}
@@ -3461,24 +3545,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             const multiSelectActive = selectedFiles.size > 0;
                             if ((e.ctrlKey || e.metaKey) && multiSelectActive) {
                               const wasChecked = selectedFiles.has(file.id);
-                              setSelectedFiles(prev => {
-                                const next = new Set(prev);
-                                if (next.has(file.id)) next.delete(file.id); else next.add(file.id);
-                                return next;
-                              });
+                              toggleFileSelection(file);
                               if (!wasChecked) setSelectedFile(file);
                               lastClickedIndexRef.current = idx;
                             } else if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
                               e.preventDefault();
                               const start = Math.min(lastClickedIndexRef.current, idx);
                               const end = Math.max(lastClickedIndexRef.current, idx);
-                              setSelectedFiles(prev => {
-                                const next = new Set(prev);
-                                for (let i = start; i <= end; i++) {
-                                  if (results.files[i]) next.add(results.files[i].id);
-                                }
-                                return next;
-                              });
+                              // Range selection — operates on the currently-rendered
+                              // grid (displayFiles), so range-clicking inside Custom-
+                              // selection mode adds neighbouring already-selected
+                              // entries (no-op) but inside a normal search adds
+                              // contiguous results.
+                              for (let i = start; i <= end; i++) {
+                                const f = displayFiles[i];
+                                if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
+                              }
                               setSelectedFile(file);
                             } else {
                               // Plain click — open preview panel. Do not touch multi-select.
@@ -3486,7 +3568,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               lastClickedIndexRef.current = idx;
                             }
                           }}
-                          onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(results.files.map(x => x.file_path), results.files.map(x => x.filename), idx) : undefined} />
+                          onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined} />
                       ))}
                     </div>
                   )}
@@ -3494,11 +3576,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   {/* ── List View ── */}
                   {viewMode === 'list' && (
                     <div className="space-y-0.5">
-                      {results.files.map((file, idx) => {
+                      {displayFiles.map((file, idx) => {
                         return (
                           <div key={file.id} data-file-id={file.id}
                             onClick={() => setSelectedFile(file)}
-                            onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(results.files.map(x => x.file_path), results.files.map(x => x.filename), idx) : undefined}
+                            onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined}
                             className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${selectedFile?.id === file.id ? 'bg-primary/10 border border-primary/30' : 'hover:bg-secondary/50'}`}>
                             <div className="w-10 h-10 rounded-lg bg-secondary/40 overflow-hidden shrink-0 flex items-center justify-center">
                               {thumbnails[file.file_path]
@@ -3529,12 +3611,12 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           </tr>
                         </thead>
                         <tbody>
-                          {results.files.map((file, idx) => {
+                          {displayFiles.map((file, idx) => {
                             const confidenceColor = file.confidence === 'confirmed' ? 'text-green-600' : file.confidence === 'corrected' ? 'text-primary' : file.confidence === 'recovered' ? 'text-amber-600' : 'text-red-500';
                             return (
                               <tr key={file.id} data-file-id={file.id}
                                 onClick={() => setSelectedFile(file)}
-                                onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(results.files.map(x => x.file_path), results.files.map(x => x.filename), idx) : undefined}
+                                onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined}
                                 className={`cursor-pointer transition-colors border-b border-border/50 ${selectedFile?.id === file.id ? 'bg-primary/10' : 'hover:bg-secondary/30'}`}>
                                 <td className="py-1.5 px-2">
                                   <div className="w-6 h-6 rounded bg-secondary/40 overflow-hidden flex items-center justify-center">
@@ -3572,21 +3654,6 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 const navIdx = navFiles.findIndex(f => f.id === selectedFile.id);
                 const hasPrev = navIdx > 0;
                 const hasNext = navIdx < navFiles.length - 1;
-                // "Open in Viewer" opens the FULL set of navigable
-                // results so the standalone Photo Viewer's left/right
-                // arrows cycle through everything in the current S&D
-                // result set — same UX Memories already provides. If
-                // the user has explicitly checked files, we limit the
-                // viewer to just those (their explicit pick); otherwise
-                // they get every photo/video from the result list with
-                // the currently-selected file as the starting index.
-                const checkedSubset = selectedFiles.size > 0
-                  ? navFiles.filter(f => selectedFiles.has(f.id) && (f.file_type === 'photo' || f.file_type === 'video'))
-                  : null;
-                const viewerFiles = (checkedSubset && checkedSubset.length > 0)
-                  ? checkedSubset
-                  : navFiles.filter(f => f.file_type === 'photo' || f.file_type === 'video');
-                const viewerStartIdx = Math.max(0, viewerFiles.findIndex(f => f.id === selectedFile.id));
                 return (
                   <>
                     <ResizableHandle withHandle />
@@ -3597,11 +3664,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         onNext={hasNext ? () => navigateFile('next') : undefined}
                         onOpenInExplorer={() => openInExplorer(selectedFile.file_path)}
                         onOpenViewer={() => {
-                          safeOpenViewer(
-                            viewerFiles.map(f => f.file_path),
-                            viewerFiles.map(f => f.filename),
-                            viewerStartIdx,
-                          );
+                          // Details-panel "Open in Viewer" — opens ONLY the
+                          // single photo whose details are showing on the
+                          // right. The toolbar "Open N in Viewer" button is
+                          // the cross-search selection one; this panel
+                          // button is for the one photo the user is looking
+                          // at, deliberately scoped to a single file.
+                          safeOpenViewer(selectedFile.file_path, selectedFile.filename);
                         }}
                         fileIndex={navIdx + 1} totalFiles={navFiles.length}
                         isShowingChecked={selectedFiles.size > 0} />
