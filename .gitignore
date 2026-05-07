@@ -24,3 +24,8 @@ release/
 # Wrangler local cache (R2 simulator state, dev cache).
 # Recreated automatically on next `wrangler dev` / `wrangler deploy`.
 .wrangler/
+
+# Local debugging stdout from `npx electron .` runs. Captured by the
+# launch wrapper so log output is queryable without keeping the
+# console open. Per-run, never committed.
+electron-stdout.log

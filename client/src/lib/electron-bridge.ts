@@ -2027,6 +2027,22 @@ export async function getAiFaces(fileId: number): Promise<{ success: boolean; da
   return { success: false };
 }
 
+/**
+ * Re-run face detection on a single file. Used by the per-photo
+ * "Re-detect faces" button on the S&D Details panel.
+ *   • Wipes only UNVERIFIED face rows for this file before inserting —
+ *     verified rows survive untouched.
+ *   • Auto-matches new faces against existing named persons in the
+ *     same call (no manual Improve click required).
+ *   • Returns { ok, newFaces, error? } — caller surfaces a toast.
+ */
+export async function redetectFile(fileId: number): Promise<{ ok: boolean; newFaces: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai?.redetectFile) {
+    return (window as any).pdr.ai.redetectFile(fileId);
+  }
+  return { ok: false, newFaces: 0, error: 'AI bridge not available' };
+}
+
 export async function getAiFileTags(fileId: number): Promise<{ success: boolean; data?: AiTagRecord[] }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.getTags(fileId);

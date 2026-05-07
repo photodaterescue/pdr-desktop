@@ -3854,10 +3854,31 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                     const visiblePhotoCount = new Set(visibleFaces.map(f => f.file_id)).size;
                     return <>{visiblePhotoCount} {visiblePhotoCount === 1 ? 'photo' : 'photos'}</>;
                   })()}
+                  {/* On the Named tab we split the face-box count into
+                      verified (your green-tick blessing) and to-confirm
+                      (auto-matches awaiting your tick). The previous
+                      "X/Y verified" format mixed PHOTO units (left) with
+                      FACE-BOX units (right), so users couldn't reconcile
+                      e.g. "175 photos · 45/178 verified" — same data,
+                      different things being counted. Splitting into two
+                      explicit clauses keeps the units consistent with
+                      the row's mental model: photos on the left, faces
+                      on the right. Single line, no extra height. */}
                   {currentTab === 'named' && cluster.sample_faces && (() => {
                     const verifiedCount = cluster.sample_faces.filter(f => f.verified).length;
                     const totalCount = cluster.sample_faces.length;
-                    return verifiedCount > 0 ? <span className="text-purple-500 ml-1">· {verifiedCount}/{totalCount} verified</span> : null;
+                    const toConfirmCount = totalCount - verifiedCount;
+                    if (verifiedCount === 0 && toConfirmCount === 0) return null;
+                    return (
+                      <>
+                        {verifiedCount > 0 && (
+                          <span className="text-purple-500 ml-1">· {verifiedCount} verified</span>
+                        )}
+                        {toConfirmCount > 0 && (
+                          <span className="text-muted-foreground ml-1">· {toConfirmCount} to confirm</span>
+                        )}
+                      </>
+                    );
                   })()}
                 </p>
               </>

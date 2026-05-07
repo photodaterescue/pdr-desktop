@@ -137,7 +137,7 @@ import { classifySource, checkSameDriveWarning } from './source-classifier.js';
 import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, } from './search-database.js';
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
-import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, } from './ai-manager.js';
+import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, redetectSingleFile, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
 // Update checking — see electron/update-checker.ts for the full state
 // machine. The renderer subscribes to push events on the
@@ -4552,6 +4552,23 @@ ipcMain.handle('ai:getFaces', async (_event, fileId) => {
     }
     catch (err) {
         return { success: false, error: err.message };
+    }
+});
+// Re-run face detection on a single file. Wired to the per-photo
+// "Re-detect faces" button on the S&D Details panel — useful when
+// Human.js missed a face on the first analysis pass.
+ipcMain.handle('ai:redetectFile', async (_event, fileId) => {
+    try {
+        const result = await redetectSingleFile(fileId);
+        // Invalidate the person clusters cache so PM picks up any newly
+        // auto-matched faces without a manual refresh.
+        if (result.ok && result.newFaces > 0) {
+            invalidatePersonClustersCache();
+        }
+        return result;
+    }
+    catch (err) {
+        return { ok: false, newFaces: 0, error: err.message };
     }
 });
 ipcMain.handle('ai:getTags', async (_event, fileId) => {

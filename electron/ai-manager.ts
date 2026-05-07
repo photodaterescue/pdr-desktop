@@ -381,6 +381,96 @@ export function shutdownAiWorker(): void {
   }
 }
 
+/**
+ * Re-run face detection against a single file and merge the result into
+ * face_detections. Wired to the per-photo "Re-detect faces" button on
+ * the S&D Details panel — gives the user an escape hatch when Human.js
+ * missed a face on the first analysis pass (e.g. side profile, partial
+ * occlusion, low light, glasses) without forcing them to clear all AI
+ * data and re-run the entire library.
+ *
+ * Behaviour mirrors the bulk pipeline:
+ *   • Refuses if a full analysis is already running — same worker.
+ *   • Wipes only UNVERIFIED rows for this file before inserting
+ *     (verified rows are sacred — never lose a tick).
+ *   • Re-runs refineFromVerifiedFaces on completion so any new faces
+ *     auto-match against existing named persons in the same click.
+ *
+ * Returns the new face count for the toast that the renderer will show.
+ */
+export async function redetectSingleFile(
+  fileId: number,
+): Promise<{ ok: boolean; newFaces: number; error?: string }> {
+  if (isProcessing) {
+    return { ok: false, newFaces: 0, error: 'AI analysis is already running. Wait for it to finish, then try again.' };
+  }
+  const settings = getSettings();
+  if (!settings.aiEnabled) {
+    return { ok: false, newFaces: 0, error: 'AI is currently disabled in Settings.' };
+  }
+  if (!settings.aiFaceDetection) {
+    return { ok: false, newFaces: 0, error: 'Face detection is disabled in Settings.' };
+  }
+  const file = getFileById(fileId);
+  if (!file) {
+    return { ok: false, newFaces: 0, error: 'File not found in the index.' };
+  }
+
+  // Block other AI work while this single-file pass runs. Same flag the
+  // bulk pipeline uses, so cancellation / pause semantics stay consistent
+  // and the UI gates correctly.
+  isProcessing = true;
+  try {
+    await ensureWorker(settings);
+    const result = await processFileInWorker(fileId, file.file_path);
+    if (!result) {
+      return { ok: false, newFaces: 0, error: 'Worker did not return a result. Check the AI log.' };
+    }
+
+    // Replace only unverified detections — verified rows survive.
+    clearUnverifiedFacesForFile(fileId);
+
+    let newFaces = 0;
+    if (result.faces && result.faces.length > 0) {
+      const faceRecords: FaceDetectionRecord[] = result.faces.map(f => ({
+        file_id: fileId,
+        person_id: null,
+        box_x: f.box_x,
+        box_y: f.box_y,
+        box_w: f.box_w,
+        box_h: f.box_h,
+        embedding: f.embedding ? Buffer.from(new Float32Array(f.embedding).buffer) : null,
+        confidence: f.confidence,
+        cluster_id: null,
+      }));
+      insertFaceDetections(faceRecords);
+      newFaces = result.faces.length;
+    }
+
+    markAiProcessed(fileId, 'faces', 'human-v1');
+    rebuildAiFts(fileId);
+
+    // Auto-match the freshly-detected faces against existing named
+    // persons so the user gets coloured rings + names without a second
+    // click. Threshold honours the same S&D slider the bulk run uses.
+    if (newFaces > 0) {
+      try {
+        const { refineFromVerifiedFaces } = await import('./search-database.js');
+        const threshold = settings.aiSearchMatchThreshold ?? 0.72;
+        refineFromVerifiedFaces(threshold);
+      } catch (err) {
+        console.warn('[AI] redetect: refine pass failed (faces still saved):', (err as Error).message);
+      }
+    }
+
+    return { ok: true, newFaces };
+  } catch (err) {
+    return { ok: false, newFaces: 0, error: (err as Error).message };
+  } finally {
+    isProcessing = false;
+  }
+}
+
 // ─── Worker management ──────────────────────────────────────────────────────
 
 async function ensureWorker(settings: ReturnType<typeof getSettings>): Promise<void> {

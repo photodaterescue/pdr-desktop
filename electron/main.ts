@@ -181,6 +181,7 @@ import {
   areModelsDownloaded,
   setMainWindow as setAiMainWindow,
   runFaceClustering,
+  redetectSingleFile,
 } from './ai-manager.js';
 import {
   listPersons,
@@ -4868,6 +4869,23 @@ ipcMain.handle('ai:getFaces', async (_event, fileId: number) => {
     return { success: true, data: getFacesForFile(fileId) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
+  }
+});
+
+// Re-run face detection on a single file. Wired to the per-photo
+// "Re-detect faces" button on the S&D Details panel — useful when
+// Human.js missed a face on the first analysis pass.
+ipcMain.handle('ai:redetectFile', async (_event, fileId: number) => {
+  try {
+    const result = await redetectSingleFile(fileId);
+    // Invalidate the person clusters cache so PM picks up any newly
+    // auto-matched faces without a manual refresh.
+    if (result.ok && result.newFaces > 0) {
+      invalidatePersonClustersCache();
+    }
+    return result;
+  } catch (err) {
+    return { ok: false, newFaces: 0, error: (err as Error).message };
   }
 });
 

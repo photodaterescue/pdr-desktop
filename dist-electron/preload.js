@@ -266,6 +266,7 @@ contextBridge.exposeInMainWorld('pdr', {
         visualSuggestions: (faceId) => ipcRenderer.invoke('ai:visualSuggestions', faceId),
         clusterFaceCount: (clusterId, personId) => ipcRenderer.invoke('ai:clusterFaceCount', clusterId, personId),
         getFaces: (fileId) => ipcRenderer.invoke('ai:getFaces', fileId),
+        redetectFile: (fileId) => ipcRenderer.invoke('ai:redetectFile', fileId),
         getTags: (fileId) => ipcRenderer.invoke('ai:getTags', fileId),
         tagOptions: () => ipcRenderer.invoke('ai:tagOptions'),
         clearAll: () => ipcRenderer.invoke('ai:clearAll'),
