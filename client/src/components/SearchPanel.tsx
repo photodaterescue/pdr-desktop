@@ -3698,7 +3698,12 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               })()}
             </ResizablePanelGroup>
           ) : (
-            <div className="flex-1 flex items-center justify-center p-8">
+            // Empty-state mirror of `data-tour="sd-results-grid"` so
+            // the S&D tour's "Results" step has a spotlight target
+            // even before the user has run a search. The active grid
+            // above (line ~3506) carries the same data-tour, so the
+            // tour highlights whichever variant is currently rendered.
+            <div className="flex-1 flex items-center justify-center p-8" data-tour="sd-results-grid">
               <div className="text-center max-w-sm">
                 <Search className="w-8 h-8 text-muted-foreground/70 mx-auto mb-3" />
                 <h3 className="text-base font-semibold text-foreground mb-1">No matches</h3>

@@ -285,9 +285,10 @@ export default function MemoriesView() {
 
           {/* Main scroll area */}
           <div className="flex-1 overflow-y-auto">
-            {/* On This Day row */}
+            {/* On This Day row — `data-tour="mem-on-this-day"` is the
+                spotlight target for step 3 of the Memories tour. */}
             {onThisDay.length > 0 && (
-              <section className="px-6 pt-6 pb-4">
+              <section className="px-6 pt-6 pb-4" data-tour="mem-on-this-day">
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles className="w-4 h-4 text-primary" />
                   <h2 className="text-sm font-semibold text-foreground">On {otdLabel} in previous years</h2>
@@ -297,6 +298,12 @@ export default function MemoriesView() {
                   {onThisDay.map((item, idx) => (
                     <IconTooltip key={item.id} label={`${item.filename} · ${formatHumanDate(item.derived_date)}`} side="top">
                     <button
+                      // First thumbnail carries `data-tour="mem-open"` so
+                      // step 4 of the Memories tour ("Open a Memory")
+                      // has a concrete spotlight target. Tour silently
+                      // skips the highlight when On This Day is empty —
+                      // same conditional gate as `mem-on-this-day`.
+                      {...(idx === 0 ? { 'data-tour': 'mem-open' } : {})}
                       // Pass the full strip + this item's index so the
                       // viewer's left/right arrows browse the rest of
                       // the "On this day in previous years" set.
@@ -326,8 +333,10 @@ export default function MemoriesView() {
               </section>
             )}
 
-            {/* Main timeline — year groups with month tiles */}
-            <section className="px-6 pb-10 space-y-8">
+            {/* Main timeline — year groups with month tiles.
+                `data-tour="mem-rows"` is the spotlight target for step 2
+                of the Memories tour ("Time Rows"). */}
+            <section className="px-6 pb-10 space-y-8" data-tour="mem-rows">
               {yearGroups.map(([year, monthBuckets]) => {
                 const yearPhotos = monthBuckets.reduce((s, b) => s + (b.photoCount || 0), 0);
                 const yearVideos = monthBuckets.reduce((s, b) => s + (b.videoCount || 0), 0);

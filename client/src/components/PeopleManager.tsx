@@ -1185,6 +1185,12 @@ export default function PeopleManager() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
+                  // `data-tour="pm-suggest"` is the spotlight target for
+                  // step 5 of the People Manager tour ("AI Suggestions").
+                  // Only present on the Named tab, which is also where
+                  // the tour is most useful — Improve Facial Recognition
+                  // re-runs the auto-matcher against every named person.
+                  data-tour="pm-suggest"
                   onClick={async () => {
                     if (fixActive) return;
                     setIsRefining(true);
@@ -1282,8 +1288,15 @@ export default function PeopleManager() {
           )}
 
           {/* Snapshot status badge — shared component used in PM,
-              S&D, and Trees. Click → Settings → Backup tab. */}
-          <SnapshotStatusBadge />
+              S&D, and Trees. Click → Settings → Backup tab.
+              Wrapped in a span carrying `data-tour="pm-snapshot"` so
+              step 6 of the PM tour spotlights the badge (the badge
+              itself is a styled component we don't want to add a tour
+              attr to in its own file — keeps PM-specific tour wiring
+              local to PM). */}
+          <span data-tour="pm-snapshot" className="inline-flex">
+            <SnapshotStatusBadge />
+          </span>
         </div>
 
         <div className="flex flex-col items-center flex-1 mx-4 max-w-[260px]">
@@ -1374,8 +1387,12 @@ export default function PeopleManager() {
 
       {/* Tab Bar — count pills get a coloured filled background and
           slightly bolder text so they read clearly against the muted
-          tab strip behind them, including for the empty / 0 case. */}
-      <div className="flex border-b border-border mx-6 mb-0">
+          tab strip behind them, including for the empty / 0 case.
+          `data-tour="pm-merge"` here because merging clusters happens
+          BETWEEN tabs — drag an Unnamed cluster onto a Named one. The
+          tab bar is the visual home of that workflow, and is always
+          rendered regardless of which tab is active. */}
+      <div className="flex border-b border-border mx-6 mb-0" data-tour="pm-merge">
         <div className="flex flex-1">
           <button type="button" className={pmTabClass('named')} onClick={() => { setActiveTab('named'); setSearchFilter(''); }}>
             <span className="flex items-center justify-center gap-1.5">
@@ -1544,11 +1561,27 @@ export default function PeopleManager() {
                     </p>
                   </div>
                 ) : viewMode === 'card' ? (
-                  <div className="space-y-2">
+                  /* `data-tour="pm-clusters"` is the spotlight target
+                      for step 2 of the PM tour ("Face Clusters"). The
+                      whole list highlights, framing the concept "every
+                      tile here is a cluster of one person". */
+                  <div className="space-y-2" data-tour="pm-clusters">
                     {filteredNamed.map((cluster, idx) => (
+                      <div
+                        key={clusterKey(cluster)}
+                        // First card carries `data-tour="pm-name"` so
+                        // step 3 ("Name a Cluster") spotlights one
+                        // concrete row instead of free-floating text.
+                        // `display: contents` is unconditional so the
+                        // wrapper is layout-transparent for every row —
+                        // the PersonCardRow root remains the actual
+                        // flex/grid item.
+                        {...(idx === 0 ? { 'data-tour': 'pm-name' } : {})}
+                        style={{ display: 'contents' }}
+                      >
                       <PersonCardRow
                         rowIndex={idx}
-                        key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
+                        onVisible={() => ensureClusterCrops(cluster)}
                         cluster={cluster}
                         cropUrl={faceCropsMap[clusterKey(cluster)]}
                         sampleCrops={faceCropsMap}
@@ -1614,6 +1647,7 @@ export default function PeopleManager() {
                         showMatched={showMatched}
                         showUnverifiedOnly={showUnverifiedOnly}
                       />
+                      </div>
                     ))}
                   </div>
                 ) : (

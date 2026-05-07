@@ -511,18 +511,10 @@ export const SD_TOUR_STEPS: TourStep[] = [
     highlightPadding: 8
   },
   {
-    id: 'sd-people-filter',
-    targetSelector: '[data-tour="sd-people-filter"]',
-    title: 'People Filter',
-    description: 'Click the PEOPLE button to pick people from your library. Single-column numbers = photos of just that person. Multi-column numbers = photos shared with the people you\'ve already selected.',
-    position: 'bottom',
-    highlightPadding: 8
-  },
-  {
-    id: 'sd-tags-filter',
+    id: 'sd-ai-tab',
     targetSelector: '[data-tour="sd-tags-filter"]',
-    title: 'AI Tags',
-    description: 'Browse AI-detected tags — objects, scenes, activities. Click any tag to filter your library to only photos that contain it.',
+    title: 'AI Filters',
+    description: 'Click the AI tab to filter by faces and AI-detected tags. Single-column face counts = photos of just that person; multi-column = photos shared with multiple selected people. Tag chips narrow your library to scenes, objects or activities the analyser found.',
     position: 'bottom',
     highlightPadding: 8
   },
@@ -793,16 +785,16 @@ export const REPORTS_TOUR_STEPS: TourStep[] = [
   {
     id: 'rh-detail',
     targetSelector: '[data-tour="rh-detail"]',
-    title: 'Inside a Report',
-    description: 'A report breaks down every file: the source path, the chosen date, the confidence band, and the rule that produced it. You can export the lot to CSV or TXT for your records.',
+    title: 'Row at a Glance',
+    description: 'Each row summarises one Fix run — confirmed (green), recovered (blue), marked (grey), and duplicates (amber). The numbers tell you at a glance how the run went without opening anything.',
     preferredPositions: ['top', 'left', 'right'],
     highlightPadding: 8
   },
   {
     id: 'rh-restore',
     targetSelector: '[data-tour="rh-restore"]',
-    title: 'Restore From Backup',
-    description: 'Each report links back to the backup PDR took before writing. If you ever need to roll a run back, Restore From Backup walks you through it — non-destructive, no surprises.',
+    title: 'Drill In & Restore',
+    description: 'Click Report Summary to open the full file-by-file breakdown — source paths, chosen dates, confidence bands, and the rules that produced each one. You can also Restore From Backup if you ever need to roll a run back. Non-destructive, no surprises.',
     preferredPositions: ['top', 'bottom', 'left'],
     highlightPadding: 8
   },

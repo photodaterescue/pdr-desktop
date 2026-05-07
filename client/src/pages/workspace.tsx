@@ -2910,6 +2910,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
   return (
     <div
+      // `data-tour="sd-sidebar-collapse"` mirrored on the EXPANDED
+      // sidebar return as well as the collapsed one above. The tour
+      // step asks the user to consider the sidebar's auto-collapse
+      // behaviour — the spotlight should land on whichever variant is
+      // currently rendered, not vanish when the user has pinned the
+      // sidebar open.
+      data-tour="sd-sidebar-collapse"
       className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container sidebar-animated"
       style={{ width: `${width}px` }}
     >
@@ -6742,11 +6749,19 @@ function ReportsListModal({ onClose, onViewReport }: {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            // `data-tour="rh-list"` is the spotlight target for step 2
+            // of the Reports History tour ("Past Runs"). Without this,
+            // the tour falls back to a centered tooltip with no
+            // highlight — the bug Terry caught during smoke-testing.
+            <div className="divide-y divide-border" data-tour="rh-list">
               {reports.map((report, index) => (
-                <div 
-                  key={report.id} 
+                <div
+                  key={report.id}
                   className={`p-4 hover:bg-secondary/30 transition-colors ${index === 0 ? 'bg-primary/10 border-l-4 border-l-primary ring-1 ring-primary/20' : ''}`}
+                  // First row carries `data-tour="rh-detail"` so step 3
+                  // of the tour ("Inside a Report") spotlights an actual
+                  // row instead of free-floating in the centre.
+                  {...(index === 0 ? { 'data-tour': 'rh-detail' } : {})}
                   data-testid={`report-row-${report.id}`}
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -6828,6 +6843,13 @@ function ReportsListModal({ onClose, onViewReport }: {
                         size="sm"
                         onClick={() => onViewReport(report.id)}
                         className="h-8"
+                        // First row's Report Summary button is the
+                        // spotlight target for step 4 of the tour
+                        // ("Restore From Backup"). The Restore From
+                        // Backup feature lives inside the report
+                        // summary modal, so the tour points at the
+                        // doorway rather than the feature itself.
+                        {...(index === 0 ? { 'data-tour': 'rh-restore' } : {})}
                         data-testid={`button-view-report-${report.id}`}
                       >
                         Report Summary
