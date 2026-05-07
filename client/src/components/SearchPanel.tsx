@@ -67,7 +67,9 @@ import {
   ShieldAlert,
   ChevronLeft,
   ChevronRight,
+  CalendarRange,
 } from 'lucide-react';
+import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
@@ -1566,15 +1568,23 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonGroup label="Date Range" onExpand={() => setOverflowModalGroup('dateRange')} groupId="dateRange" isFavourited={isGroupFavourited('dateRange')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex flex-col gap-0.5 flex-1 py-1">
                         <div className="flex items-center gap-1">
-                          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                            className="px-1.5 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[120px]" />
+                          <BrandedDatePicker
+                            value={dateFrom}
+                            onChange={setDateFrom}
+                            ariaLabel="From date"
+                            placeholder="From"
+                          />
                           {(dateFrom || dateTo) && (
                             <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"><X className="w-3 h-3" /></button>
                           )}
                         </div>
                         <div className="flex items-center gap-1">
-                          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                            className="px-1.5 py-1 rounded-md border border-border bg-background text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 w-[120px]" />
+                          <BrandedDatePicker
+                            value={dateTo}
+                            onChange={setDateTo}
+                            ariaLabel="To date"
+                            placeholder="To"
+                          />
                         </div>
                       </div>
                     </RibbonGroup>
@@ -2729,9 +2739,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {overflowModalGroup === 'dateRange' && (
                 <div className="flex flex-col gap-3">
                   <label className="text-sm text-foreground/70 font-medium">From</label>
-                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  <BrandedDatePicker
+                    value={dateFrom}
+                    onChange={setDateFrom}
+                    ariaLabel="From date"
+                    placeholder="dd / mm / yyyy"
+                    className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
+                  />
                   <label className="text-sm text-foreground/70 font-medium">To</label>
-                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  <BrandedDatePicker
+                    value={dateTo}
+                    onChange={setDateTo}
+                    ariaLabel="To date"
+                    placeholder="dd / mm / yyyy"
+                    className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
+                  />
                 </div>
               )}
               {(overflowModalGroup === 'camera' || overflowModalGroup === 'lens' || overflowModalGroup === 'cameraPosition' || overflowModalGroup === 'scene' || overflowModalGroup === 'exposureProgram' || overflowModalGroup === 'whiteBalance' || overflowModalGroup === 'orientation' || overflowModalGroup === 'source') && (
@@ -2986,19 +3008,119 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       )}
 
       {/* ═══ EMPTY-FILTER STATE ═══
-           The user is inside S&D but nothing is filtered. We deliberately
-           DO NOT offer a "Show entire library" escape hatch — that's a
-           foot-gun for Edit dates and other bulk actions. Users must pick
-           a real filter (Confidence, Camera, Date, etc.) so every action
-           targets a set they consciously scoped. */}
-      {searchActive && !results && !hasActiveFilters && !searchText.trim() && (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
-          <Filter className="w-10 h-10 text-muted-foreground/70" />
-          <div>
-            <h3 className="text-base font-semibold text-foreground">Pick a filter to see photos</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-md">
-              PDR doesn't load your whole library by default — pick any filter above (Confidence, Camera, Date, etc.)
-              so Edit dates and other actions only ever target the set you meant.
+           Shown whenever the user is in S&D and no search has been
+           composed yet (no text, no filters, no results). Replaces the
+           previous "Pick a filter" minimalist message with a fuller
+           landing pitch that demonstrates what Search & Discovery
+           actually unlocks — most users never realise PDR can do this
+           level of natural-language + structured search until they
+           see the examples spelled out. We deliberately DO NOT offer a
+           "Show entire library" escape hatch from this screen — that's
+           a foot-gun for Edit dates and other bulk actions. Users must
+           pick a real filter so every action targets a set they
+           consciously scoped. NOTE: condition deliberately omits
+           `searchActive` — initial entry to S&D (before any search
+           has been issued) ALSO needs this landing, otherwise the
+           workspace's "Your workspace is empty" state from MainContent
+           leaks through and reads wrong in the S&D context. */}
+      {!results && !hasActiveFilters && !searchText.trim() && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/10 text-blue-500">
+                <Sparkles className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-semibold text-foreground font-heading">Search &amp; Discovery</h2>
+              <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+                Pick any combination of filters above and PDR finds the matching photos in seconds — across every
+                Library Drive you've fixed. Nothing leaves your device.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border bg-background/60 divide-y divide-border/60 overflow-hidden">
+              <div className="px-4 py-3 bg-secondary/40">
+                <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">A few things you can ask for</p>
+              </div>
+              <div className="px-4 py-3 flex items-start gap-3">
+                <Users className="w-4 h-4 mt-0.5 text-pink-500 shrink-0" />
+                <div className="text-sm text-foreground">
+                  <span className="font-medium">"Mum, Dad, and me"</span>
+                  <span className="text-muted-foreground"> — every photo with all three of you in the frame</span>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex items-start gap-3">
+                <Users className="w-4 h-4 mt-0.5 text-pink-500 shrink-0" />
+                <div className="text-sm text-foreground">
+                  <span className="font-medium">"All my college friends"</span>
+                  <span className="text-muted-foreground"> — pick the people, get every shot any of them appears in</span>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex items-start gap-3">
+                <Sparkles className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                <div className="text-sm text-foreground">
+                  <span className="font-medium">"Photos taken in Thailand"</span>
+                  <span className="text-muted-foreground"> — or New York, Paris, anywhere with GPS metadata</span>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex items-start gap-3">
+                <Sparkles className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                <div className="text-sm text-foreground">
+                  <span className="font-medium">"Everything from my Sony A7"</span>
+                  <span className="text-muted-foreground"> — filter by camera make and model, sub-filter by lens</span>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex items-start gap-3">
+                <CalendarRange className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" />
+                <div className="text-sm text-foreground">
+                  <span className="font-medium">"Summer 2014 to summer 2016"</span>
+                  <span className="text-muted-foreground"> — combine a date range with any other filter</span>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex items-start gap-3">
+                <Tag className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                <div className="text-sm text-foreground">
+                  <span className="font-medium">"Photos with dogs at the beach at sunset"</span>
+                  <span className="text-muted-foreground"> — AI tags layer on top of everything else</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-background/60 p-4 space-y-2">
+              <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">To get the most out of S&amp;D</p>
+              <ul className="text-sm text-foreground space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-pink-500 mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
+                  <span><span className="font-medium">Name your people in People Manager</span> — searches like "Mum + Dad" only work once you've verified faces and given them names.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-500 mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
+                  <span><span className="font-medium">Keep GPS on in your camera</span> — without location metadata, country/city searches return nothing for those photos.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-500 mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0" />
+                  <span><span className="font-medium">Run AI analysis</span> — the AI tags ("dogs", "beach", "sunset") are produced offline by PDR's local model. Once it's done, every word becomes a filter.</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <ArrowRight className="w-4 h-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">Parallel Structures — the killer feature</p>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Once you've narrowed down a set — every photo of the kids' summers, every sunset from a particular
+                trip, your top 200 wedding shots — PDR can spin off a separate Library structure containing JUST
+                those photos, on a drive of your choice. Branch them off as a private archive, copy them to a memory
+                stick for a relative, or keep them alongside the main library as a curated highlight reel. The
+                originals stay safe in your main Library Drive; the parallel structure is yours to give, hide, or
+                back up independently.
+              </p>
+            </div>
+
+            <p className="text-center text-xs text-muted-foreground">
+              Pick any filter above to start. PDR doesn't auto-load the whole library so Edit dates and other actions
+              only ever target the set you meant.
             </p>
           </div>
         </div>
@@ -3951,7 +4073,16 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
   return (
     <div className="h-full overflow-y-auto bg-background">
       <div className="px-4 pb-4" style={{ paddingTop: 0, marginTop: 0 }}>
-        <div className="flex items-center justify-between py-1 mb-0 border-b border-border/30" style={{ marginTop: 0 }}>
+        {/* Header bar — sticky at the very top with a higher z-index
+            than the photo block below. Background opaque so metadata
+            sliding up under it doesn't bleed through. The photo
+            block is wrapped in the SAME sticky group below this so
+            both pieces stay pinned together (no gap appears between
+            them as the user scrolls). */}
+        <div
+          className="flex items-center justify-between py-1 mb-0 border-b border-border/30 bg-background sticky top-0 z-30"
+          style={{ marginTop: 0 }}
+        >
           <div className="flex items-center gap-1.5 min-w-0">
             <h3 className="text-sm font-semibold text-foreground mr-1">Details</h3>
             {fileIndex != null && totalFiles != null && (
@@ -3979,8 +4110,33 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             </IconTooltip>
           </div>
         </div>
-        {/* Preview image/video with face overlays and navigation arrows — sticky so it stays visible while metadata scrolls */}
-        <div className="rounded-xl overflow-hidden bg-secondary/30 mb-3 relative group sticky top-0 z-10" style={{ maxHeight: '60vh' }}>
+        {/* Sticky wrapper — full-width and OPAQUE so metadata scrolling behind it
+            doesn't show through the side gaps when the inner photo container is
+            narrower than the panel (portrait photos). The actual photo box sits
+            inside, centred, with its aspect ratio pinned to the file's
+            width/height so the rendered <img> fills it exactly with no
+            letterboxing. The face-bounding overlays then map % coords directly
+            onto the image with no maths-vs-letterbox mismatch — which is what
+            was making boxes appear oversized and offset in S&D while PM (which
+            renders crops via getFaceCrop's server-side coord math) showed them
+            correctly sized. */}
+        <div
+          className="sticky z-20 mb-3 bg-background flex items-center justify-center border-b border-border pb-2"
+          style={{ minHeight: 0, top: '32px' }}
+        >
+        <div
+          className="rounded-xl overflow-hidden bg-secondary/30 relative group"
+          style={{
+            maxHeight: '60vh',
+            aspectRatio: file.width && file.height ? `${file.width}/${file.height}` : undefined,
+            // When aspectRatio is set the height is computed from width × ratio, capped by maxHeight.
+            // For portrait photos that would otherwise overflow 60vh, also cap width so the box stays
+            // proportional rather than overflowing horizontally and re-introducing letterbox gaps.
+            maxWidth: file.width && file.height && file.height > file.width
+              ? `calc(60vh * ${file.width / file.height})`
+              : '100%',
+          }}
+        >
           {file.file_type === 'video' ? (
             videoUrl ? (
               <div className="relative">
@@ -4031,7 +4187,12 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
               </div>
             )
           ) : (fullThumbnail || thumbnail) ? (
-            <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-auto max-h-[60vh] object-contain block" />
+            // Parent now has aspect-ratio set to file.width/file.height (when known) and a maxHeight: 60vh +
+            // proportional maxWidth, so the image fills the parent exactly with no letterboxing. object-contain
+            // is kept as a defensive fallback for the case where width/height are missing on the indexed_files
+            // row — in that fallback path the parent's aspect-ratio is undefined, so the parent still sizes
+            // around the image and contain prevents distortion.
+            <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-full object-contain block" />
           ) : (
             <div className="w-full aspect-square flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
           )}
@@ -4140,6 +4301,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
               </button>
             </IconTooltip>
           )}
+        </div>
         </div>
         {(onOpenViewer || onOpenInExplorer) && (
           <div className="flex gap-2 mb-4">
