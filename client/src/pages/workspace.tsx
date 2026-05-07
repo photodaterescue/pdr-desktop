@@ -111,7 +111,8 @@ import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
-import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, hasTourBeenCompleted, resetTourCompletion } from "@/components/ui/tour-overlay";
+import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
+import type { TourMenuItem } from "@/components/TourLauncher";
 import type { SourceAnalysisResult } from "../electron";
 
 interface Source {
@@ -285,6 +286,41 @@ useEffect(() => {
   const [showSourceTypeSelector, setShowSourceTypeSelector] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ message: 'Preparing analysis...', percent: 0 });
+  // Backgroundable analysis (v2.0.0). When true, the ScanningOverlay
+  // hides and an amber pill ("Analysis · {message}") appears at the
+  // top of the Workspace as a restore handle. The underlying IPC
+  // keeps running and progress keeps updating; the user gets the
+  // dashboard back so they can browse Search & Discovery / Memories
+  // / People Manager / Reports History while waiting. Auto-resets
+  // to false when isScanning flips false (analysis complete or
+  // cancelled) so the user can't end up with a stale chip.
+  const [analysisMinimized, setAnalysisMinimized] = useState(false);
+  useEffect(() => {
+    if (!isScanning) setAnalysisMinimized(false);
+  }, [isScanning]);
+
+  // Listen for the global TitleBar "?" launcher to fire a tour. The
+  // launcher dispatches `pdr:startTour` with the chosen step list;
+  // we mirror that into local state so the existing TourOverlay
+  // mounts the right walkthrough. Listener is window-scoped so
+  // any view can be standing on Workspace and still receive it.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ steps: TourStep[]; meta?: TourMeta }>).detail;
+      if (!detail?.steps) return;
+      resetTourCompletion();
+      setActiveTourSteps(detail.steps);
+      setActiveTourMeta(detail.meta ?? null);
+      setShowTour(true);
+    };
+    window.addEventListener('pdr:startTour', handler as EventListener);
+    return () => window.removeEventListener('pdr:startTour', handler as EventListener);
+  }, []);
+
+  // (pdr:tourMenu registration moved further down — after activeView,
+  // searchResultsActive and setActivePanel are declared. Putting it
+  // here would hit the temporal dead zone on those refs at render
+  // time and crash the whole Workspace into a blank screen.)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [lastAnalysisElapsed, setLastAnalysisElapsed] = useState<number | null>(null);
   const analysisStartTimeRef = useRef<number>(0);
@@ -568,6 +604,99 @@ const handleActivateLicense = () => {
   const [searchResultsActive, setSearchResultsActive] = useState(false);
   const [requestSearchClose, setRequestSearchClose] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  // Tour steps the overlay will render. null means "use the default
+  // pick" (workspace tour, or S&D tour when search results are
+  // active). When the global TitleBar launcher fires
+  // pdr:startTour with explicit steps, we pin those instead so the
+  // user gets the tour they picked even if the active view doesn't
+  // match (e.g. clicked Memories tour while standing on Dashboard).
+  const [activeTourSteps, setActiveTourSteps] = useState<TourStep[] | null>(null);
+  // Brand metadata for the currently-running tour. null falls back
+  // to the default lavender accent in TourOverlay. Set when the
+  // user picks a tour from the launcher; cleared when the tour
+  // finishes / is dismissed.
+  const [activeTourMeta, setActiveTourMeta] = useState<TourMeta | null>(null);
+  // Register the per-view tour menu with the global TitleBar
+  // launcher. The "primary" entry is the Quick Tour for whatever
+  // view the user is currently looking at (Workspace / S&D /
+  // Memories / Trees), with the others available below the divider.
+  // Re-fires whenever the active view changes so the primary entry
+  // tracks where the user is. NOTE: this useEffect MUST come after
+  // activeView, searchResultsActive and setActivePanel are declared
+  // — earlier in the function body it hits TDZ on the deps array
+  // and crashes the whole Workspace render with a blank screen
+  // (matches the destinationHydratedRef pattern higher up in this
+  // same file).
+  useEffect(() => {
+    let primaryId: string;
+    let primaryLabel: string;
+    let primarySteps: TourStep[];
+    let primaryMeta: TourMeta;
+    if (searchResultsActive || activeView === 'search') {
+      primaryId = 'tour-sd';
+      primaryLabel = 'Quick Tour: Search & Discovery';
+      primarySteps = SD_TOUR_STEPS;
+      primaryMeta = SD_TOUR_META;
+    } else if (activeView === 'memories') {
+      primaryId = 'tour-memories';
+      primaryLabel = 'Quick Tour: Memories';
+      primarySteps = MEMORIES_TOUR_STEPS;
+      primaryMeta = MEMORIES_TOUR_META;
+    } else if (activeView === 'familytree') {
+      primaryId = 'tour-trees';
+      primaryLabel = 'Quick Tour: Family Trees';
+      primarySteps = TREES_TOUR_STEPS;
+      primaryMeta = TREES_TOUR_META;
+    } else {
+      primaryId = 'tour-workspace';
+      primaryLabel = 'Quick Tour: Workspace';
+      primarySteps = TOUR_STEPS;
+      primaryMeta = WORKSPACE_TOUR_META;
+    }
+    // Reports History tour is only useful from the Dashboard — it
+    // pops the Reports History modal and walks through it, which
+    // requires the workspace to be on the Dashboard view (not S&D /
+    // Memories / Trees) for the modal to mount in the right place.
+    // Adding it to the menu in other views was confusing for no
+    // benefit, so we conditionally include it only when the user is
+    // sitting on the Dashboard.
+    const onDashboard = activeView === 'dashboard' && !searchResultsActive;
+    const items: TourMenuItem[] = [
+      { id: primaryId, label: primaryLabel, description: 'Walkthrough for this view', primary: true, steps: primarySteps, meta: primaryMeta },
+      ...(onDashboard ? [{
+        id: 'tour-reports',
+        label: 'Quick Tour: Reports History',
+        meta: REPORTS_TOUR_META,
+        icon: <FileText className="w-4 h-4" style={{ color: REPORTS_TOUR_META.accent }} />,
+        onClick: () => {
+          // Pop the modal open first so the tour selectors have
+          // something to anchor to. The setTimeout gives the modal
+          // a frame to mount before the overlay measures it.
+          window.dispatchEvent(new CustomEvent('open-reports-history'));
+          setTimeout(() => {
+            resetTourCompletion();
+            setActiveTourSteps(REPORTS_TOUR_STEPS);
+            setActiveTourMeta(REPORTS_TOUR_META);
+            setShowTour(true);
+          }, 250);
+        },
+      } satisfies TourMenuItem] : []),
+      // Secondary entries — the icon for each one mirrors the
+      // matching sidebar item so the user gets the same visual
+      // identifier in both places. PNG assets live alongside the
+      // sidebar's references; double-slash in the path matches the
+      // existing convention in this file.
+      { id: 'open-getting-started', label: 'Getting Started', icon: <img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="" />, onClick: () => setActivePanel('getting-started') },
+      { id: 'open-best-practices', label: 'Best Practices', icon: <img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="" />, onClick: () => setActivePanel('best-practices') },
+      { id: 'open-what-next', label: 'What Happens Next', icon: <img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="" />, onClick: () => setActivePanel('what-next') },
+      { id: 'open-help', label: 'Help & Support', icon: <img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="" />, onClick: () => setActivePanel('help-support') },
+      { id: 'open-about', label: 'About PDR', icon: <Info className="w-4 h-4 opacity-60" />, onClick: () => setActivePanel('about-pdr') },
+    ];
+    window.dispatchEvent(new CustomEvent('pdr:tourMenu', { detail: { items } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('pdr:tourMenu', { detail: { items: null } }));
+    };
+  }, [activeView, searchResultsActive]);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [showDestBrowser, setShowDestBrowser] = useState(false);
   const [folderBrowserCallback, setFolderBrowserCallback] = useState<((path: string) => void) | null>(null);
@@ -1883,6 +2012,7 @@ return (
 		  searchResultsActive={searchResultsActive}
 		  onOpenPeople={handleOpenPeople}
 		  burgerPulseDisabled={burgerPulseDisabled}
+		  analysisActive={isScanning}
 		/>
       {/* Right-side content area: ribbon + panels */}
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
@@ -1982,6 +2112,7 @@ return (
             onActivateLicense={handleActivateLicense}
             zoomLevel={zoomLevel}
             setPostFixFlowActive={setPostFixFlowActive}
+            analysisActive={isScanning}
           />
         </div>
         </div>{/* close zoomable content wrapper */}
@@ -2045,7 +2176,38 @@ return (
 
       </div>
       </div>{/* close inner flex row */}
-	  {isScanning && <ScanningOverlay message={scanProgress.message} percent={scanProgress.percent} onCancel={handleCancelAnalysis} showCancelConfirm={showCancelConfirm} onConfirmCancel={handleConfirmCancelAnalysis} onDismissCancel={handleDismissCancelConfirm} />}
+	  {/* Analysis modal — full overlay when not minimised, condensed
+	      restore-chip when minimised. While minimised, the dashboard
+	      is interactive and the user can browse Search & Discovery /
+	      Memories / People Manager / Reports History (analysis-time
+	      collisions like Add Source, Run Fix, source-list mutations
+	      are gated separately — see analysisInProgress checks below). */}
+	  {isScanning && !analysisMinimized && (
+	    <ScanningOverlay
+	      message={scanProgress.message}
+	      percent={scanProgress.percent}
+	      onCancel={handleCancelAnalysis}
+	      showCancelConfirm={showCancelConfirm}
+	      onConfirmCancel={handleConfirmCancelAnalysis}
+	      onDismissCancel={handleDismissCancelConfirm}
+	      onMinimize={() => setAnalysisMinimized(true)}
+	    />
+	  )}
+	  {isScanning && analysisMinimized && (
+	    <button
+	      type="button"
+	      onClick={() => setAnalysisMinimized(false)}
+	      className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-3 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta cursor-pointer hover:bg-amber-600 transition-colors"
+	      data-testid="analysis-progress-chip"
+	      title="Click to restore the analysis view"
+	    >
+	      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+	      <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
+	        Analysing
+	        {scanProgress.percent > 0 && ` · ${scanProgress.percent}%`}
+	      </span>
+	    </button>
+	  )}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       {showLicenseModal && <LicenseModal onClose={() => setShowLicenseModal(false)} />}
@@ -2221,6 +2383,7 @@ return (
 			setBurgerPulseDisabled(disabled);
 			localStorage.setItem('pdr-burger-pulse-disabled', disabled ? 'true' : 'false');
 		  }}
+		  analysisActive={isScanning}
 		/>
       )}
 	        
@@ -2370,10 +2533,11 @@ return (
       )}
       
       <TourOverlay
-        steps={searchResultsActive ? SD_TOUR_STEPS : TOUR_STEPS}
+        steps={activeTourSteps ?? (searchResultsActive ? SD_TOUR_STEPS : TOUR_STEPS)}
+        meta={activeTourMeta ?? (searchResultsActive ? SD_TOUR_META : WORKSPACE_TOUR_META)}
         isOpen={showTour}
-        onClose={() => setShowTour(false)}
-        onComplete={() => setShowTour(false)}
+        onClose={() => { setShowTour(false); setActiveTourSteps(null); setActiveTourMeta(null); }}
+        onComplete={() => { setShowTour(false); setActiveTourSteps(null); setActiveTourMeta(null); }}
       />
     </div>
   </>
@@ -2383,7 +2547,7 @@ return (
 
 type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, burgerPulseDisabled = false, highlightedSourceId = null }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, burgerPulseDisabled?: boolean, highlightedSourceId?: string | null }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, burgerPulseDisabled = false, highlightedSourceId = null, analysisActive = false }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, burgerPulseDisabled?: boolean, highlightedSourceId?: string | null, analysisActive?: boolean }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -2394,6 +2558,19 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // could change what's queued in flight. Sourced from the
   // cross-window broadcast so any window's fix flips the gate.
   const fixActive = useFixInProgress();
+  // Analysis gate — same idea as fix gate, but for an in-flight
+  // analysis run. While the analysis modal is minimised the user
+  // can still browse Search & Discovery / Memories / People /
+  // Reports, but mutating the source list (Add/Remove/Select All/
+  // checkbox toggle) would race the analysis worker that's
+  // streaming through those very sources. Combined with fixActive
+  // into a single 'blocked' state so the disable conditions stay
+  // simple. analysisActive comes in via prop because isScanning
+  // is local Workspace state, not cross-window like fix state.
+  const sourceMutationsBlocked = fixActive || analysisActive;
+  const sourceMutationsBlockedTooltip = fixActive
+    ? FIX_BLOCKED_TOOLTIP
+    : 'Available when the current analysis completes';
 
   // Default sidebar width bumped +10% (280 → 308) so Add Source /
   // Remove don't look squashed out of the gate. User can still drag
@@ -2792,20 +2969,26 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               {sources.length > 0 ? 'Source Menu' : 'Menu'}
             </h3>
             {sources.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Checkbox 
-                  id="select-all"
-                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                  onCheckedChange={(checked) => onSelectAll(checked === true)}
-                  className="w-3.5 h-3.5 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                />
-                <label 
-                  htmlFor="select-all" 
-                  className="text-[10px] uppercase font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors"
-                >
-                  Select All
-                </label>
-              </div>
+              <IconTooltip
+                label={sourceMutationsBlocked ? sourceMutationsBlockedTooltip : 'Select all sources for the next Fix'}
+                side="top"
+              >
+                <div className={`flex items-center gap-2 ${sourceMutationsBlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <Checkbox
+                    id="select-all"
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    onCheckedChange={(checked) => onSelectAll(checked === true)}
+                    disabled={sourceMutationsBlocked}
+                    className="w-3.5 h-3.5 border-muted-foreground/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  />
+                  <label
+                    htmlFor="select-all"
+                    className="text-[10px] uppercase font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors"
+                  >
+                    Select All
+                  </label>
+                </div>
+              </IconTooltip>
             )}
           </div>
           <div className="space-y-1">
@@ -2830,6 +3013,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                     active={false}
                     selected={source.selected}
                     selectable={true}
+                    disabled={sourceMutationsBlocked}
                     onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
                   />
                   {isHighlighted && (
@@ -2843,7 +3027,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           </div>
           <div className="flex gap-2 mt-2 px-2">
             <IconTooltip
-              label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — analysing a new source mid-fix would compete with the engine.' : 'Add a folder, drive or zip as a source for PDR'}
+              label={sourceMutationsBlocked ? sourceMutationsBlockedTooltip + (fixActive ? ' — analysing a new source mid-fix would compete with the engine.' : ' — adding a new source mid-analysis would race the worker.') : 'Add a folder, drive or zip as a source for PDR'}
               side="top"
             >
               <Button
@@ -2851,23 +3035,23 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 size="sm"
                 className="flex-1 justify-center gap-2 shadow-md shadow-primary/20"
                 onClick={onAddSource}
-                disabled={fixActive}
+                disabled={sourceMutationsBlocked}
                 data-tour="add-source"
-                style={isLicensed && sources.length === 0 && !fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                style={isLicensed && sources.length === 0 && !sourceMutationsBlocked ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
               >
                 <img src="./assets//pdr-add-source.png" className="w-4 h-4 object-contain brightness-200" alt="Add Source" /> Add Source
               </Button>
             </IconTooltip>
             <PerformanceNudge type="source" onNavigateToBestPractices={onNavigateToBestPractices} />
             <IconTooltip
-              label={fixActive ? FIX_BLOCKED_TOOLTIP : 'Remove the selected source(s) from your library'}
+              label={sourceMutationsBlocked ? sourceMutationsBlockedTooltip : 'Remove the selected source(s) from your library'}
               side="top"
             >
               <Button
                 variant="information"
                 size="sm"
                 className="flex-1 justify-center gap-2"
-                disabled={!hasSelectedSources || fixActive}
+                disabled={!hasSelectedSources || sourceMutationsBlocked}
                 onClick={onRemoveSource}
               >
                 <img src="./assets//pdr-remove.png" className="w-4 h-4 object-contain" alt="Remove" /> Remove
@@ -3056,11 +3240,17 @@ function SectionHeader({ label, collapsed, onToggle }: { label: string; collapse
 // Per-app accent palette — kept in sync with the Welcome screen
 // ShowcaseCard accents in home.tsx. The sidebar item for each view
 // gets a coloured left-border in its accent so the user builds a
-// "blue = S&D, green = Trees" association across the app.
+// "blue = S&D, gold = Memories, green = Trees" association across
+// the app. The `amber` token name is preserved so call sites stay
+// stable, but the value is the brand gold from the PDR logo
+// (--color-gold in index.css). The orange-ish amber-500 looked
+// fine as a tiny 3px line but renders as saturated orange on the
+// lavender title-bar pill, so we switched everywhere to the
+// gentler logo gold for visual consistency across surfaces.
 const SIDEBAR_ACCENT: Record<string, string> = {
   lavender: '#a99cff',
   blue: '#3b82f6',
-  amber: '#f59e0b',
+  amber: '#f8c15c',
   emerald: '#10b981',
   pink: '#ec4899',
 };
@@ -3118,10 +3308,10 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
   return content;
 }
 
-function MainContent({ 
+function MainContent({
   sources,
-  activeSource, 
-  onRemove, 
+  activeSource,
+  onRemove,
   onChange,
   isComplete,
   analysisResults,
@@ -3148,7 +3338,8 @@ function MainContent({
   isLicensed,
   onActivateLicense,
   zoomLevel = 100,
-  setPostFixFlowActive
+  setPostFixFlowActive,
+  analysisActive = false
 }: {
   sources: Source[],
   activeSource: Source | null,
@@ -3179,7 +3370,8 @@ function MainContent({
   isLicensed: boolean,
   onActivateLicense: () => void,
   zoomLevel?: number,
-  setPostFixFlowActive: (value: boolean) => void
+  setPostFixFlowActive: (value: boolean) => void,
+  analysisActive?: boolean
 }) {
   // Show Empty State only if no sources exist at all
   if (sources.length === 0) {
@@ -3241,6 +3433,7 @@ function MainContent({
       addToSDRef={addToSDRef}
       zoomLevel={zoomLevel}
       setPostFixFlowActive={setPostFixFlowActive}
+      analysisActive={analysisActive}
     />
   );
 }
@@ -3249,7 +3442,7 @@ function DashboardPanel({
   sources, activeSource, onRemove, onChange, onAddFolder, onAddZip, isComplete = false, results, onViewResults, fileResults, onNavigateToBestPractices,
   destinationPath, setDestinationPath, destinationFreeGB, setDestinationFreeGB, destinationTotalGB, setDestinationTotalGB,
   hasCompletedFix, setHasCompletedFix, savedReportId, setSavedReportId, addToSDRef, zoomLevel = 100,
-  setPostFixFlowActive
+  setPostFixFlowActive, analysisActive = false
 }: {
   sources: Source[], activeSource: Source | null, onRemove: () => void, onChange: () => void, onAddFolder: () => void, onAddZip: () => void,
   isComplete?: boolean, results?: AnalysisResults, onViewResults?: () => void, fileResults?: Record<string, SourceAnalysisResult>, onNavigateToBestPractices?: () => void,
@@ -3260,7 +3453,8 @@ function DashboardPanel({
   savedReportId: string | null, setSavedReportId: (id: string | null) => void,
   addToSDRef: React.MutableRefObject<boolean>,
   zoomLevel?: number,
-  setPostFixFlowActive: (value: boolean) => void
+  setPostFixFlowActive: (value: boolean) => void,
+  analysisActive?: boolean
 }) {
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected);
@@ -3271,6 +3465,15 @@ function DashboardPanel({
   // this stays accurate even if the original Fix was started from
   // a different window or session.
   const fixActive = useFixInProgress();
+  // Run Fix is also blocked while an analysis is in flight — the
+  // fix engine reads the same analysis-results table that the
+  // analysis worker is still writing to. analysisActive flows
+  // down from the Workspace top-level (isScanning) since analysis
+  // state is local to this window, not cross-window like fix.
+  const runFixBlocked = fixActive || analysisActive;
+  const runFixBlockedTooltip = fixActive
+    ? 'One Fix at a time — wait for the current run to finish before starting another'
+    : 'Run Fix is available once the current analysis completes';
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
   const [showSDPrompt, setShowSDPrompt] = useState(false);
@@ -4030,7 +4233,7 @@ function DashboardPanel({
                  <FileText className="w-4 h-4 mr-2" /> Reports History
                </Button>
                <IconTooltip
-                 label={fixActive ? 'One Fix at a time — wait for the current run to finish before starting another' : 'Apply all pending fixes to your library'}
+                 label={runFixBlocked ? runFixBlockedTooltip : 'Apply all pending fixes to your library'}
                  side="top"
                >
                  <Button
@@ -4040,6 +4243,12 @@ function DashboardPanel({
                      // the user always knows.
                      if (fixActive) {
                        toast.error('One Fix at a time. Wait for the current run to finish.');
+                       return;
+                     }
+                     // Block while an analysis is still streaming —
+                     // the fix engine would read partial results.
+                     if (analysisActive) {
+                       toast.error('Wait for the current analysis to finish before running Fix.');
                        return;
                      }
                      const pref = localStorage.getItem('pdr-auto-add-to-sd') || 'ask';
@@ -4053,13 +4262,13 @@ function DashboardPanel({
                      }
                    }}
                    variant="primary"
-                   disabled={!destinationPath || destinationFreeGB < stats.sizeGB || fixActive}
+                   disabled={!destinationPath || destinationFreeGB < stats.sizeGB || runFixBlocked}
                    className="px-8 font-bold font-heading h-11 shadow-[0_4px_14px_0_rgba(107,90,255,0.3)] hover:shadow-[0_6px_20px_rgba(107,90,255,0.4)] transition-shadow duration-300 disabled:shadow-none"
                    data-testid="button-run-fix"
                    data-tour="apply-fixes"
                  >
                    <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" />
-                   {fixActive ? 'Fix in progress…' : 'Run Fix'}
+                   {fixActive ? 'Fix in progress…' : analysisActive ? 'Analysing…' : 'Run Fix'}
                  </Button>
                </IconTooltip>
              </div>
@@ -4564,13 +4773,23 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
   );
 }
 
-function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConfirmCancel, onDismissCancel }: { 
-  message: string; 
-  percent?: number; 
+function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConfirmCancel, onDismissCancel, onMinimize }: {
+  message: string;
+  percent?: number;
   onCancel?: () => void;
   showCancelConfirm?: boolean;
   onConfirmCancel?: () => void;
   onDismissCancel?: () => void;
+  /**
+   * "Work in background" handler. When supplied, renders a primary-
+   * tinted pill at the top of the overlay (mirrors FixProgressModal's
+   * minimise pattern) that hides this overlay until the user clicks
+   * the AnalysisStatusChip in the title bar to restore it. While
+   * minimised, the underlying analysis IPC keeps running and progress
+   * keeps updating; the user just gets the dashboard back so they
+   * can browse Search & Discovery / Memories / People Manager / etc.
+   */
+  onMinimize?: () => void;
 }) {
   const [elapsed, setElapsed] = React.useState(0);
   const startTimeRef = React.useRef(Date.now());
@@ -4613,11 +4832,31 @@ function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConf
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
     >
-      <motion.div 
+      <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-border"
+        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-border relative"
       >
+        {/* "Work in background" — pulsing amber pill copied from
+            FixProgressModal so users get the same escape-hatch
+            affordance during analysis as they do during a fix.
+            While minimised, the analysis IPC keeps running and the
+            AnalysisStatusChip in the title-bar area surfaces a
+            condensed view + restore handle. Hidden during the
+            cancel-confirm overlay (the user is mid-decision and
+            shouldn't be tempted to walk away). */}
+        {onMinimize && !showCancelConfirm && (
+          <button
+            type="button"
+            onClick={onMinimize}
+            className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-[12px] font-semibold text-white bg-amber-500 shadow-lg ring-2 ring-amber-300/60 hover:bg-amber-600 transition-colors flex items-center gap-1.5 animate-pulse-cta whitespace-nowrap"
+            data-testid="button-minimize-analysis"
+            title="Hide this view and keep working in PDR while analysis runs"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+            Work in background
+          </button>
+        )}
         <div className="mb-8">
           <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 relative">
             {showCancelConfirm ? (
@@ -8524,7 +8763,7 @@ export function setSkipWelcomeScreen(skip: boolean): void {
   }
 }
 
-function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange, burgerPulseDisabled, onBurgerPulseChange }: {
+function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange, burgerPulseDisabled, onBurgerPulseChange, analysisActive = false }: {
   initialTab?: 'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup',
   onClose: () => void,
   folderStructure: 'year' | 'year-month' | 'year-month-day',
@@ -8532,12 +8771,23 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   playSound: boolean,
   onPlaySoundChange: (value: boolean) => void,
   burgerPulseDisabled: boolean,
-  onBurgerPulseChange: (disabled: boolean) => void
+  onBurgerPulseChange: (disabled: boolean) => void,
+  analysisActive?: boolean
 }) {
   // Gate destructive engine operations (Re-cluster) when a Fix is
   // running anywhere — same broadcast-driven flag the rest of PDR
   // uses to keep mutations off the AI engine while it's busy.
   const fixActive = useFixInProgress();
+  // Settings actions that read or rewrite the same tables / settings
+  // the analysis worker is using are also gated while an analysis
+  // runs. Re-analyze AI Tags wipes + re-queues the indexer (would
+  // race the source-analysis writes), Reset to Defaults rewrites
+  // the on-disk settings the worker is mid-stream reading, and the
+  // Bypass large-zip toggle changes pre-extract policy mid-flight.
+  const settingsMutationsBlocked = fixActive || analysisActive;
+  const settingsMutationsBlockedTooltip = fixActive
+    ? FIX_BLOCKED_TOOLTIP
+    : 'Available when the current analysis completes';
   const [showWelcome, setShowWelcome] = useState(!getSkipWelcomeScreen());
   // Appearance — mirrors TitleBar's dark/light toggle so users who
   // miss the small moon/sun icon up top can find the toggle in
@@ -9686,38 +9936,44 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Re-analyze AI Tags</span>
                     <span className="text-xs text-muted-foreground">Wipe every photo's AI tags and queue them for re-tagging against the current label set. Use after tag list changes. Faces, people, and relationships are preserved.</span>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      const ok = await promptConfirm({
-                        title: 'Re-analyze AI tags?',
-                        message: 'This wipes existing AI tags and queues every photo for re-tagging against the current label set. Faces, people, and relationships are preserved. The re-analysis runs in the background and may take a while for large libraries.',
-                        confirmLabel: 'Re-analyze',
-                        cancelLabel: 'Cancel',
-                      });
-                      if (!ok) return;
-                      const r = await resetTagAnalysis();
-                      if (r.success) {
-                        await promptConfirm({
-                          title: 'Re-tagging started',
-                          message: `${r.data?.filesQueued ?? 0} photos have been queued for re-tagging. You can watch progress in the title bar at the top right — it shows "Analyzing X/Y" while the indexer works through the queue. Feel free to carry on using the app; re-tagging runs in the background.`,
-                          confirmLabel: 'Got it',
-                          hideCancel: true,
-                        });
-                      } else {
-                        await promptConfirm({
-                          title: 'Could not reset tags',
-                          message: r.error ?? 'Unknown error',
-                          confirmLabel: 'OK',
-                          hideCancel: true,
-                          danger: true,
-                        });
-                      }
-                    }}
+                  <IconTooltip
+                    label={settingsMutationsBlocked ? settingsMutationsBlockedTooltip : 'Wipe and re-queue every photo for AI tag re-analysis'}
+                    side="top"
                   >
-                    Re-analyze
-                  </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={settingsMutationsBlocked}
+                      onClick={async () => {
+                        const ok = await promptConfirm({
+                          title: 'Re-analyze AI tags?',
+                          message: 'This wipes existing AI tags and queues every photo for re-tagging against the current label set. Faces, people, and relationships are preserved. The re-analysis runs in the background and may take a while for large libraries.',
+                          confirmLabel: 'Re-analyze',
+                          cancelLabel: 'Cancel',
+                        });
+                        if (!ok) return;
+                        const r = await resetTagAnalysis();
+                        if (r.success) {
+                          await promptConfirm({
+                            title: 'Re-tagging started',
+                            message: `${r.data?.filesQueued ?? 0} photos have been queued for re-tagging. You can watch progress in the title bar at the top right — it shows "Analyzing X/Y" while the indexer works through the queue. Feel free to carry on using the app; re-tagging runs in the background.`,
+                            confirmLabel: 'Got it',
+                            hideCancel: true,
+                          });
+                        } else {
+                          await promptConfirm({
+                            title: 'Could not reset tags',
+                            message: r.error ?? 'Unknown error',
+                            confirmLabel: 'OK',
+                            hideCancel: true,
+                            danger: true,
+                          });
+                        }
+                      }}
+                    >
+                      Re-analyze
+                    </Button>
+                  </IconTooltip>
                 </div>
               </div>
             </>
@@ -10203,13 +10459,19 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           >
             Done
           </Button>
-          <button
-            onClick={handleResetToDefaults}
-            className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
-            data-testid="button-reset-defaults"
+          <IconTooltip
+            label={settingsMutationsBlocked ? settingsMutationsBlockedTooltip : 'Restore every setting on this dialog to PDR defaults'}
+            side="top"
           >
-            Reset to Optimised Defaults
-          </button>
+            <button
+              onClick={handleResetToDefaults}
+              disabled={settingsMutationsBlocked}
+              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+              data-testid="button-reset-defaults"
+            >
+              Reset to Optimised Defaults
+            </button>
+          </IconTooltip>
           <p className="text-center text-xs text-muted-foreground mt-4">
             Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
           </p>

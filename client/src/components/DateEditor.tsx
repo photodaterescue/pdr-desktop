@@ -31,6 +31,8 @@ import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
 import { FixStatusChip } from './FixStatusChip';
 import { MainAliveBanner } from './MainAliveBanner';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { TourOverlay, DATE_EDITOR_TOUR_STEPS, DATE_EDITOR_TOUR_META, resetTourCompletion, type TourStep } from '@/components/ui/tour-overlay';
+import { WindowChrome } from './WindowChrome';
 
 /**
  * Compact pill-row summary of the inherited SearchQuery — keeps the user
@@ -122,6 +124,12 @@ export default function DateEditor() {
   // indexed_files. The state propagates here via the same IPC
   // broadcast PM/SearchPanel/etc. consume.
   const fixActive = useFixInProgress();
+  // Date Editor's quick tour — opened from the inline TourLauncher
+  // in the header (top-right). Date Editor is its own Electron
+  // window so it owns its tour state independently of the main
+  // window's Workspace tour.
+  const [showTour, setShowTour] = useState(false);
+  const [tourSteps, setTourSteps] = useState<TourStep[]>(DATE_EDITOR_TOUR_STEPS);
   // Seed query from the main window — captured once on mount. If absent
   // (Tour / stand-alone open) we fall back to the Marked-only default.
   const seedQuery = useMemo(readSeedQuery, []);
@@ -289,18 +297,29 @@ export default function DateEditor() {
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
-      {/* Custom-frame spacer — 32px lavender title bar matching the
-          main PDR window. Drag region for window movement; OS-
-          rendered controls live at top-right via titleBarOverlay. */}
-      <div
-        className="shrink-0 bg-primary"
-        style={{ height: 32, WebkitAppRegion: 'drag' } as React.CSSProperties}
+      {/* Custom 32px chrome bar — drag region + right-cluster controls
+          (AI pill, FixStatusChip, TourLauncher, dark/light indicator,
+          License badge). Mirrors the main window's TitleBar so the
+          Date Editor window has the same affordances. */}
+      <WindowChrome
+        tourItems={[
+          {
+            id: 'tour-date-editor',
+            label: 'Quick Tour: Date Editor',
+            description: 'Walkthrough for this window',
+            primary: true,
+            steps: DATE_EDITOR_TOUR_STEPS,
+            meta: DATE_EDITOR_TOUR_META,
+          },
+        ]}
+        triggerAccent={DATE_EDITOR_TOUR_META.accent}
+        onStartTour={(steps) => {
+          resetTourCompletion();
+          setTourSteps(steps);
+          setShowTour(true);
+        }}
       />
       <MainAliveBanner />
-      {/* Cross-window Fix status chip — passive (no Open button)
-          because Date Editor can't restore the main window's modal.
-          Lives inside the title bar (top-1.5) for consistency. */}
-      <FixStatusChip />
       {/* ─── Header ─────────────────────────────────────────────────────── */}
       <header className="shrink-0 px-4 py-3 border-b border-border flex items-center gap-3">
         <Calendar className="w-5 h-5 text-primary" />
@@ -319,6 +338,13 @@ export default function DateEditor() {
           </IconTooltip>
         </div>
       </header>
+      <TourOverlay
+        steps={tourSteps}
+        meta={DATE_EDITOR_TOUR_META}
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+        onComplete={() => setShowTour(false)}
+      />
 
       {/* ─── Context breadcrumb ─────────────────────────────────────────────
           No more internal confidence filter — the set of photos shown here

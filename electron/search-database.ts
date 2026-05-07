@@ -2732,16 +2732,33 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
         ? (facesByPerson.get(c.person_id) ?? [])
         : (facesByCluster.get(c.cluster_id) ?? []);
 
-    // Rep = the faces[0] (highest confidence). For named persons, a
-    // user-chosen override wins IF that face is actually in the group
-    // (if the override face has since been moved to another person,
-    // the stale override is ignored).
+    // Rep selection precedence for named persons:
+    //   1. User-chosen override (`persons.representative_face_id`)
+    //      — wins outright if that face is still in the group.
+    //   2. Highest-confidence VERIFIED face — auto-pick falls back
+    //      only to faces the user has explicitly verified, so the
+    //      thumbnail is never an AI-suggested match that "looks
+    //      similar" but is actually someone else.
+    //   3. Highest-confidence face overall (current behaviour) —
+    //      last-resort fallback for freshly-named clusters where
+    //      nothing has been verified yet, so the row still has a
+    //      thumbnail rather than collapsing to a monogram.
+    //
+    // For unnamed / __unsure__ / __ignored__ clusters we keep the
+    // confidence-only pick — verification status only matters once
+    // a name has been attached, and most faces in those tabs are
+    // unverified by definition.
     let rep: typeof allClusterFaces[number] | undefined = faces[0];
     if (isNamed && !isSpecial) {
       const overrideId = repOverrides.get(c.person_id as number);
       if (overrideId != null) {
         const chosen = faces.find(f => f.face_id === overrideId);
         if (chosen) rep = chosen;
+      } else {
+        // faces is already sorted DESC by confidence, so the first
+        // verified entry is the highest-confidence verified face.
+        const verifiedRep = faces.find(f => f.verified === 1);
+        if (verifiedRep) rep = verifiedRep;
       }
     }
 

@@ -655,16 +655,30 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     return cleanup;
   }, []);
 
+  // Track the previous value of isIndexing so we can detect a true→false
+  // transition. Without this guard, the effect below fires on every cold
+  // mount of SearchPanel (where isIndexing starts false and dbReady flips
+  // true) and clears the user's "dismiss AI banner" preference every
+  // session. The intent is "re-show the banner only when an indexing run
+  // just completed" — i.e. the transition.
+  const prevIsIndexingRef = useRef(isIndexing);
   useEffect(() => {
+    const wasIndexing = prevIsIndexingRef.current;
+    prevIsIndexingRef.current = isIndexing;
     if (!isIndexing && dbReady) {
       loadFilterOptions(); loadStats(); loadAiData(); if (results) executeSearch();
-      // After indexing completes, re-show AI discovery banner if AI is still off
-      getSettings().then(s => {
-        if (!s.aiEnabled) {
-          setAiPromptDismissed(false);
-          localStorage.removeItem('pdr-ai-prompt-dismissed');
-        }
-      });
+      // Only re-surface the AI banner when isIndexing genuinely flipped
+      // from true to false (i.e. a Fix or initial index just finished).
+      // Cold mounts where wasIndexing is already false leave the user's
+      // dismissal in place.
+      if (wasIndexing) {
+        getSettings().then(s => {
+          if (!s.aiEnabled) {
+            setAiPromptDismissed(false);
+            localStorage.removeItem('pdr-ai-prompt-dismissed');
+          }
+        });
+      }
     }
   }, [isIndexing]);
 
@@ -3422,10 +3436,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 const navIdx = navFiles.findIndex(f => f.id === selectedFile.id);
                 const hasPrev = navIdx > 0;
                 const hasNext = navIdx < navFiles.length - 1;
-                // When checked files exist, "Open in Viewer" opens all checked; otherwise just current
-                const viewerFiles = selectedFiles.size > 0
-                  ? navFiles.filter(f => f.file_type === 'photo' || f.file_type === 'video')
-                  : [selectedFile];
+                // "Open in Viewer" opens the FULL set of navigable
+                // results so the standalone Photo Viewer's left/right
+                // arrows cycle through everything in the current S&D
+                // result set — same UX Memories already provides. If
+                // the user has explicitly checked files, we limit the
+                // viewer to just those (their explicit pick); otherwise
+                // they get every photo/video from the result list with
+                // the currently-selected file as the starting index.
+                const checkedSubset = selectedFiles.size > 0
+                  ? navFiles.filter(f => selectedFiles.has(f.id) && (f.file_type === 'photo' || f.file_type === 'video'))
+                  : null;
+                const viewerFiles = (checkedSubset && checkedSubset.length > 0)
+                  ? checkedSubset
+                  : navFiles.filter(f => f.file_type === 'photo' || f.file_type === 'video');
+                const viewerStartIdx = Math.max(0, viewerFiles.findIndex(f => f.id === selectedFile.id));
                 return (
                   <>
                     <ResizableHandle withHandle />
@@ -3436,11 +3461,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         onNext={hasNext ? () => navigateFile('next') : undefined}
                         onOpenInExplorer={() => openInExplorer(selectedFile.file_path)}
                         onOpenViewer={() => {
-                          if (viewerFiles.length > 1) {
-                            safeOpenViewer(viewerFiles.map(f => f.file_path), viewerFiles.map(f => f.filename));
-                          } else {
-                            safeOpenViewer(selectedFile.file_path, selectedFile.filename);
-                          }
+                          safeOpenViewer(
+                            viewerFiles.map(f => f.file_path),
+                            viewerFiles.map(f => f.filename),
+                            viewerStartIdx,
+                          );
                         }}
                         fileIndex={navIdx + 1} totalFiles={navFiles.length}
                         isShowingChecked={selectedFiles.size > 0} />

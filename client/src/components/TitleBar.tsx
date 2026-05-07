@@ -3,6 +3,8 @@ import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight } 
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { onAiProgress, pauseAi, resumeAi, cancelAi, type AiProgress } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
+import type { TourStep, TourMeta } from '@/components/ui/tour-overlay';
 
 /**
  * Custom title bar — PDR branding left, lavender right.
@@ -32,6 +34,40 @@ export function TitleBar() {
   // leaving a small static icon (no pulse) anchored on the right that
   // can be clicked to expand again.
   const [pillCollapsed, setPillCollapsed] = useState(false);
+  // Per-view tour menu — each route (Home / Source Selection /
+  // Workspace) and each Workspace view (Memories / S&D / Trees /
+  // Reports) dispatches a 'pdr:tourMenu' CustomEvent on mount or
+  // whenever its active view changes. The TitleBar stores the
+  // latest payload and renders the global "?" launcher with the
+  // right items for whatever the user is currently looking at.
+  // Events with `null` items hide the launcher (e.g. Home before
+  // the first source is added — no tours apply yet).
+  const [tourMenuItems, setTourMenuItems] = useState<TourMenuItem[] | null>(null);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ items: TourMenuItem[] | null }>).detail;
+      setTourMenuItems(detail?.items ?? null);
+    };
+    window.addEventListener('pdr:tourMenu', handler as EventListener);
+    return () => window.removeEventListener('pdr:tourMenu', handler as EventListener);
+  }, []);
+  // Starting a tour bounces back through another CustomEvent so the
+  // hosting window owns the TourOverlay state — the TitleBar never
+  // mounts the overlay itself (would clip behind the chrome). Meta
+  // (brand name + accent) rides along so the host's TourOverlay
+  // tints itself the same colour as the launcher item the user
+  // clicked.
+  const handleStartTour = (steps: TourStep[], meta?: TourMeta) => {
+    window.dispatchEvent(new CustomEvent('pdr:startTour', { detail: { steps, meta } }));
+  };
+  // Use the *primary* registered item's accent as the trigger pill
+  // colour. The primary entry is "Quick Tour for the current view",
+  // so the launcher button takes that view's brand colour and the
+  // pill follows the user across views (lavender on Workspace,
+  // blue on S&D, amber on Memories, etc.). Falls back to undefined
+  // if no primary item is registered, in which case TourLauncher
+  // uses its default styling.
+  const primaryAccent = tourMenuItems?.find(i => i.primary)?.meta?.accent;
 
   // Subscribe to AI progress once at mount. onAiProgress returns a
   // per-handler unsubscribe so other renderer components (SearchPanel)
@@ -180,6 +216,14 @@ export function TitleBar() {
               </IconTooltip>
             </span>
           )
+        )}
+        {tourMenuItems && tourMenuItems.length > 0 && (
+          <TourLauncher
+            items={tourMenuItems}
+            onStartTour={handleStartTour}
+            triggerStyle="titlebar"
+            triggerAccent={primaryAccent}
+          />
         )}
         <IconTooltip label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'} side="bottom">
           <button

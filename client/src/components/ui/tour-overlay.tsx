@@ -13,11 +13,33 @@ export interface TourStep {
   highlightPadding?: number;
 }
 
+/**
+ * Brand metadata for a tour. Each tour gets a display name (shown
+ * in the step badge — "Memories Step 1 of 5") and an accent colour
+ * (drives the highlight ring, tooltip border, step badge tint, and
+ * progress dots). Kept in sync with home.tsx ShowcaseCard accents +
+ * SIDEBAR_ACCENT in workspace.tsx so the same colour follows an app
+ * across Welcome / sidebar / tour.
+ */
+export interface TourMeta {
+  /** Short display name, e.g. "Workspace", "Memories", "Reports History" */
+  name: string;
+  /** Hex accent colour — drives all branded surfaces in the overlay */
+  accent: string;
+}
+
 interface TourOverlayProps {
   steps: TourStep[];
   isOpen: boolean;
   onClose: () => void;
   onComplete: () => void;
+  /**
+   * Optional per-tour branding. When supplied, the highlight ring,
+   * tooltip border, step badge and progress dots all tint with
+   * `accent`, and the step badge label becomes "{name} Step X of Y"
+   * instead of the generic "Step X of Y".
+   */
+  meta?: TourMeta;
 }
 
 const TOUR_COMPLETED_KEY = 'pdr-tour-completed';
@@ -39,7 +61,13 @@ export function resetTourCompletion(): void {
   }
 }
 
-export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayProps) {
+export function TourOverlay({ steps, isOpen, onClose, onComplete, meta }: TourOverlayProps) {
+  // Brand accent for this tour (or fall back to lavender so the
+  // overlay never renders without a tint). Used as inline styles
+  // because Tailwind can't generate arbitrary hex classes at
+  // runtime — accent is a value, not a class name.
+  const accent = meta?.accent ?? '#a99cff';
+  const tourName = meta?.name ?? null;
   const [currentStep, setCurrentStep] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
@@ -269,8 +297,14 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
               height: targetRect.height + padding * 2,
             }}
           >
-            <div className="absolute inset-0 rounded-lg ring-2 ring-primary ring-offset-2 ring-offset-transparent" />
-            <div className="absolute inset-0 rounded-lg animate-pulse bg-primary/10" />
+            <div
+              className="absolute inset-0 rounded-lg ring-2 ring-offset-2 ring-offset-transparent"
+              style={{ ['--tw-ring-color' as any]: accent, boxShadow: `0 0 0 2px ${accent}` }}
+            />
+            <div
+              className="absolute inset-0 rounded-lg animate-pulse"
+              style={{ backgroundColor: accent + '1A' /* ~10% alpha */ }}
+            />
           </motion.div>
         )}
 
@@ -280,11 +314,12 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ delay: 0.1 }}
-          className="absolute bg-background border border-border rounded-xl shadow-2xl p-5 w-[360px] pointer-events-auto"
+          className="absolute bg-background rounded-xl shadow-2xl p-5 w-[360px] pointer-events-auto border-2"
           style={{
             top: step.position === 'center' ? '50%' : tooltipPosition.top,
             left: step.position === 'center' ? '50%' : tooltipPosition.left,
-            transform: step.position === 'center' ? 'translate(-50%, -50%)' : 'none'
+            transform: step.position === 'center' ? 'translate(-50%, -50%)' : 'none',
+            borderColor: accent,
           }}
           data-testid="tour-tooltip"
         >
@@ -298,8 +333,11 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
 
           <div className="pr-8">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium text-foreground bg-secondary border border-border px-2 py-0.5 rounded-full">
-                Step {currentStep + 1} of {steps.length}
+              <span
+                className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+                style={{ backgroundColor: accent }}
+              >
+                {tourName ? `${tourName} — ` : ''}Step {currentStep + 1} of {steps.length}
               </span>
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">{step.title}</h3>
@@ -346,13 +384,16 @@ export function TourOverlay({ steps, isOpen, onClose, onComplete }: TourOverlayP
               <button
                 key={index}
                 onClick={() => setCurrentStep(index)}
-                className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                  index === currentStep 
-                    ? 'bg-primary w-4' 
-                    : index < currentStep 
-                      ? 'bg-primary/50' 
-                      : 'bg-border hover:bg-muted-foreground/30'
-                }`}
+                className={`h-2 rounded-full transition-all duration-200 ${
+                  index === currentStep ? 'w-4' : 'w-2'
+                } ${index > currentStep ? 'bg-border hover:bg-muted-foreground/30' : ''}`}
+                style={
+                  index === currentStep
+                    ? { backgroundColor: accent }
+                    : index < currentStep
+                      ? { backgroundColor: accent + '80' /* ~50% alpha */ }
+                      : undefined
+                }
                 data-testid={`tour-dot-${index}`}
               />
             ))}
@@ -524,3 +565,274 @@ export const SD_TOUR_STEPS: TourStep[] = [
     position: 'center'
   }
 ];
+
+/* ─── Date Editor Tour ────────────────────────────────────────────────────
+ * Shown from the Date Editor window's "?" button. Date Editor lets you
+ * fix dates PDR couldn't auto-correct — typically Marked or Recovered
+ * photos that need a human eye. Six steps, mostly centered narration
+ * with two element-anchored highlights (search + save).
+ */
+export const DATE_EDITOR_TOUR_STEPS: TourStep[] = [
+  {
+    id: 'de-welcome',
+    title: 'Welcome to Date Editor',
+    description: 'Date Editor is where you fix the dates PDR couldn\'t auto-correct — usually photos marked as Recovered or Marked that need a human eye. Originals are never touched; PDR writes corrected dates back to the indexed copy.',
+    position: 'center'
+  },
+  {
+    id: 'de-seed',
+    targetSelector: '[data-tour="de-seed"]',
+    title: 'What You\'re Editing',
+    description: 'These pills show the search filter you came in with — confidence level, camera, year range, people, etc. The list of photos below matches that filter. Use Search & Discovery to come back with a different selection any time.',
+    preferredPositions: ['bottom', 'top'],
+    highlightPadding: 8
+  },
+  {
+    id: 'de-suggestions',
+    targetSelector: '[data-tour="de-suggestions"]',
+    title: 'Suggested Dates',
+    description: 'PDR offers candidate dates inferred from neighbours, GPS, faces, sequence numbers, or the filename itself. Each one shows where it came from so you can judge it. Click a suggestion to apply, or type your own.',
+    preferredPositions: ['top', 'bottom', 'left'],
+    highlightPadding: 8
+  },
+  {
+    id: 'de-input',
+    targetSelector: '[data-tour="de-input"]',
+    title: 'Type or Paste a Date',
+    description: 'Need something custom? Type a date directly. PDR accepts most common formats (2003-04-15, 15 Apr 2003, etc.). The original date stays in EXIF unless you press Save.',
+    preferredPositions: ['top', 'bottom'],
+    highlightPadding: 8
+  },
+  {
+    id: 'de-save',
+    targetSelector: '[data-tour="de-save"]',
+    title: 'Save the Correction',
+    description: 'Save writes the new date to PDR\'s index and bumps the photo to Corrected. Originals stay untouched on disk. Undo is one click away if you change your mind.',
+    preferredPositions: ['top', 'left', 'bottom'],
+    highlightPadding: 8
+  },
+  {
+    id: 'de-complete',
+    title: 'You\'re Set',
+    description: 'Work through your list at your own pace. Any time you spot a pattern (e.g. "everything in this folder is off by a year"), Date Editor lets you bulk-apply the same correction to multiple photos. Close the window when you\'re done — your corrections sync straight back to the main library.',
+    position: 'center'
+  }
+];
+
+/* ─── People Manager Tour ─────────────────────────────────────────────────
+ * Shown from the People Manager window's "?" button. Walks the user
+ * through naming face clusters, merging, splitting, and the AI
+ * suggestion flow.
+ */
+export const PEOPLE_MANAGER_TOUR_STEPS: TourStep[] = [
+  {
+    id: 'pm-welcome',
+    title: 'Welcome to People Manager',
+    description: 'People Manager turns the faces detected across your library into named, searchable people. Everything runs on your device — no faces leave your machine.',
+    position: 'center'
+  },
+  {
+    id: 'pm-clusters',
+    targetSelector: '[data-tour="pm-clusters"]',
+    title: 'Face Clusters',
+    description: 'Each tile is a cluster — a group of faces PDR thinks are the same person. The number shows how many photos are in the cluster. Bigger clusters usually = the people in your photos most often.',
+    preferredPositions: ['right', 'bottom', 'top'],
+    highlightPadding: 8
+  },
+  {
+    id: 'pm-name',
+    targetSelector: '[data-tour="pm-name"]',
+    title: 'Name a Cluster',
+    description: 'Click a cluster to open it, then give it a name (Mum, Dad, Sarah). Once named, the person becomes searchable in Search & Discovery and shows up in Memories rows like "On This Day with Mum".',
+    preferredPositions: ['bottom', 'right', 'top'],
+    highlightPadding: 8
+  },
+  {
+    id: 'pm-merge',
+    targetSelector: '[data-tour="pm-merge"]',
+    title: 'Merge & Split',
+    description: 'Two clusters that are actually the same person? Merge them. One cluster that\'s mixing two people? Split it. PDR keeps a snapshot before any structural change so you can undo if you spot a mistake.',
+    preferredPositions: ['top', 'right', 'left'],
+    highlightPadding: 8
+  },
+  {
+    id: 'pm-suggest',
+    targetSelector: '[data-tour="pm-suggest"]',
+    title: 'AI Suggestions',
+    description: 'PDR proposes "Are these the same person?" prompts based on face similarity. Confirm or reject — each verified answer makes future suggestions sharper. Run Refine to re-check the whole library after a big naming session.',
+    preferredPositions: ['bottom', 'top', 'right'],
+    highlightPadding: 8
+  },
+  {
+    id: 'pm-snapshot',
+    targetSelector: '[data-tour="pm-snapshot"]',
+    title: 'Snapshots',
+    description: 'A snapshot captures your current naming state. Take one before any big merge or split — restoring a snapshot rolls back every cluster change since it was taken. Good practice: snapshot before each session.',
+    preferredPositions: ['bottom', 'top', 'left'],
+    highlightPadding: 8
+  },
+  {
+    id: 'pm-complete',
+    title: 'That\'s People Manager',
+    description: 'Names + photos are saved instantly to your library. Close the window when you\'re done — your work is already persisted. The more clusters you name, the better Search & Discovery, Memories, and Trees become.',
+    position: 'center'
+  }
+];
+
+/* ─── Memories Tour ───────────────────────────────────────────────────────
+ * Shown from the workspace "?" button when the Memories view is active.
+ */
+export const MEMORIES_TOUR_STEPS: TourStep[] = [
+  {
+    id: 'mem-welcome',
+    title: 'Welcome to Memories',
+    description: 'Memories is your library viewed through time — Year/Month rows, On This Day, and people-themed groupings. It\'s the closest thing to "scrolling through a photo album" inside PDR.',
+    position: 'center'
+  },
+  {
+    id: 'mem-rows',
+    targetSelector: '[data-tour="mem-rows"]',
+    title: 'Time Rows',
+    description: 'Each row is a slice of time — typically a month or a notable event. PDR groups bursts of photos automatically and shows the strongest representative thumbnail at the front.',
+    preferredPositions: ['top', 'bottom'],
+    highlightPadding: 8
+  },
+  {
+    id: 'mem-on-this-day',
+    targetSelector: '[data-tour="mem-on-this-day"]',
+    title: 'On This Day',
+    description: 'Photos from this calendar date in past years. A nice surprise on a quiet morning — open the row to flip through the same date across decades.',
+    preferredPositions: ['bottom', 'top'],
+    highlightPadding: 8
+  },
+  {
+    id: 'mem-open',
+    targetSelector: '[data-tour="mem-open"]',
+    title: 'Open a Memory',
+    description: 'Click any thumbnail to open the full-screen viewer. From there you can navigate within the memory, see the date / location / people, and jump to Search & Discovery for that day or that person.',
+    preferredPositions: ['top', 'left', 'right'],
+    highlightPadding: 8
+  },
+  {
+    id: 'mem-complete',
+    title: 'Enjoy the Trip',
+    description: 'Memories updates automatically as you fix more photos and name more people. The more your library matures, the richer Memories gets.',
+    position: 'center'
+  }
+];
+
+/* ─── Family Trees Tour ───────────────────────────────────────────────────
+ * Shown from the workspace "?" button when the Trees view is active.
+ */
+export const TREES_TOUR_STEPS: TourStep[] = [
+  {
+    id: 'tr-welcome',
+    title: 'Welcome to Family Trees',
+    description: 'Trees lets you turn the people you\'ve named into a proper family tree — parents, spouses, siblings, generations. PDR uses the tree to enrich Search & Discovery and Memories ("photos with Grandad and his grandchildren").',
+    position: 'center'
+  },
+  {
+    id: 'tr-add-person',
+    targetSelector: '[data-tour="tr-add-person"]',
+    title: 'Add or Pick People',
+    description: 'Add a person to the tree by name. PDR matches the name back to your People Manager clusters where it can — so a tree node knows which photos belong to that person.',
+    preferredPositions: ['bottom', 'right', 'top'],
+    highlightPadding: 8
+  },
+  {
+    id: 'tr-relationships',
+    targetSelector: '[data-tour="tr-relationships"]',
+    title: 'Add Relationships',
+    description: 'Connect two people as parent/child, spouses, or siblings. PDR validates the connections (no one ends up as their own grandparent) and lays the tree out automatically.',
+    preferredPositions: ['top', 'right', 'left'],
+    highlightPadding: 8
+  },
+  {
+    id: 'tr-canvas',
+    targetSelector: '[data-tour="tr-canvas"]',
+    title: 'The Canvas',
+    description: 'Drag, zoom and re-arrange. Generations stack vertically by default; couples sit side-by-side. The layout follows standard genealogy conventions but you can tweak position freely.',
+    preferredPositions: ['top', 'right', 'bottom'],
+    highlightPadding: 8
+  },
+  {
+    id: 'tr-export',
+    targetSelector: '[data-tour="tr-export"]',
+    title: 'Save & Export',
+    description: 'Trees are saved automatically. Export to PNG for printing, or to a sharable image for family group chats. PDR doesn\'t upload trees anywhere — they live with your library.',
+    preferredPositions: ['bottom', 'top', 'left'],
+    highlightPadding: 8
+  },
+  {
+    id: 'tr-complete',
+    title: 'Trees, Done',
+    description: 'A tree is the backbone of a great family library. Once people are connected, every search and every memory becomes richer. Build it up over time — there\'s no rush.',
+    position: 'center'
+  }
+];
+
+/* ─── Reports History Tour ────────────────────────────────────────────────
+ * Shown from the workspace "?" button when the Reports History modal
+ * is open (or as the default tour after a Fix completes).
+ */
+export const REPORTS_TOUR_STEPS: TourStep[] = [
+  {
+    id: 'rh-welcome',
+    title: 'Reports History',
+    description: 'Every time you Run Fix, PDR saves a permanent report — a snapshot of what was processed, how each date was decided, what duplicates were skipped, and where the output landed.',
+    position: 'center'
+  },
+  {
+    id: 'rh-list',
+    targetSelector: '[data-tour="rh-list"]',
+    title: 'Past Runs',
+    description: 'The list shows every Fix you\'ve ever run, newest first. Each row tells you when, how many files, the total size, and which Library Drive received the output. Click any row to open its full report.',
+    preferredPositions: ['right', 'bottom', 'top'],
+    highlightPadding: 8
+  },
+  {
+    id: 'rh-detail',
+    targetSelector: '[data-tour="rh-detail"]',
+    title: 'Inside a Report',
+    description: 'A report breaks down every file: the source path, the chosen date, the confidence band, and the rule that produced it. You can export the lot to CSV or TXT for your records.',
+    preferredPositions: ['top', 'left', 'right'],
+    highlightPadding: 8
+  },
+  {
+    id: 'rh-restore',
+    targetSelector: '[data-tour="rh-restore"]',
+    title: 'Restore From Backup',
+    description: 'Each report links back to the backup PDR took before writing. If you ever need to roll a run back, Restore From Backup walks you through it — non-destructive, no surprises.',
+    preferredPositions: ['top', 'bottom', 'left'],
+    highlightPadding: 8
+  },
+  {
+    id: 'rh-complete',
+    title: 'Treat Reports as Archive',
+    description: 'Reports are part of your library, not throwaway logs. Years from now they\'ll tell you exactly why a photo ended up where it did. PDR keeps every report indefinitely.',
+    position: 'center'
+  }
+];
+
+/* ─── Per-tour brand metadata ─────────────────────────────────────────────
+ * Brand name + accent for each tour. Kept in sync with home.tsx
+ * ShowcaseCard accents and SIDEBAR_ACCENT in workspace.tsx so the
+ * same colour identifies an app across Welcome, sidebar, tour
+ * launcher and tour overlay.
+ *
+ *   Workspace        — lavender    (#a99cff)  shared with the brand primary
+ *   S&D              — blue        (#3b82f6)
+ *   Memories         — amber       (#f59e0b)
+ *   Trees            — emerald     (#10b981)
+ *   People Manager   — pink        (#ec4899)
+ *   Date Editor      — brand gold  (#f8c15c)  matches --color-gold from index.css (the
+ *                                              gold tone in the PDR logo + STEP_BADGE_FILL)
+ *   Reports History  — teal        (#14b8a6)  archival / immutable record
+ */
+export const WORKSPACE_TOUR_META: TourMeta = { name: 'Workspace', accent: '#a99cff' };
+export const SD_TOUR_META: TourMeta = { name: 'Search & Discovery', accent: '#3b82f6' };
+export const MEMORIES_TOUR_META: TourMeta = { name: 'Memories', accent: '#f8c15c' };
+export const TREES_TOUR_META: TourMeta = { name: 'Family Trees', accent: '#10b981' };
+export const PEOPLE_MANAGER_TOUR_META: TourMeta = { name: 'People Manager', accent: '#ec4899' };
+export const DATE_EDITOR_TOUR_META: TourMeta = { name: 'Date Editor', accent: '#f8c15c' };
+export const REPORTS_TOUR_META: TourMeta = { name: 'Reports History', accent: '#14b8a6' };

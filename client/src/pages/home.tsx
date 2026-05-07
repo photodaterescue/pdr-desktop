@@ -457,7 +457,7 @@ type AppAccent = 'lavender' | 'blue' | 'amber' | 'emerald' | 'pink';
 const APP_ACCENT: Record<AppAccent, { iconBg: string; iconFg: string; topBar: string; hoverBorder: string }> = {
   lavender: { iconBg: '#ede9fe', iconFg: '#6d28d9', topBar: '#a99cff', hoverBorder: '#8b5cf6' },
   blue:     { iconBg: '#dbeafe', iconFg: '#1e40af', topBar: '#3b82f6', hoverBorder: '#2563eb' },
-  amber:    { iconBg: '#fde68a', iconFg: '#78350f', topBar: '#f59e0b', hoverBorder: '#d97706' },
+  amber:    { iconBg: '#fef3c7', iconFg: '#78350f', topBar: '#f8c15c', hoverBorder: '#eab14c' },
   emerald:  { iconBg: '#d1fae5', iconFg: '#065f46', topBar: '#10b981', hoverBorder: '#059669' },
   // Pink, not rose — rose-500 (#f43f5e) was reading red on the bright
   // top bar. Swapped to Tailwind v3 pink-500 (#ec4899) so it's

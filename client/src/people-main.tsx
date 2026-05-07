@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import PeopleManager from './components/PeopleManager';
+import { LicenseProvider } from './contexts/LicenseContext';
 import './index.css';
 
 // Apply dark mode if the query param says so
@@ -20,5 +21,7 @@ if ((window as any).pdr?.people?.onThemeChange) {
 }
 
 createRoot(document.getElementById('people-root')!).render(
-  <PeopleManager />
+  <LicenseProvider>
+    <PeopleManager />
+  </LicenseProvider>
 );

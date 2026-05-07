@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import DateEditor from './components/DateEditor';
+import { LicenseProvider } from './contexts/LicenseContext';
 import './index.css';
 
 // Apply dark mode from query param
@@ -16,4 +17,8 @@ if ((window as any).pdr?.dateEditor?.onThemeChange) {
   });
 }
 
-createRoot(document.getElementById('date-editor-root')!).render(<DateEditor />);
+createRoot(document.getElementById('date-editor-root')!).render(
+  <LicenseProvider>
+    <DateEditor />
+  </LicenseProvider>
+);

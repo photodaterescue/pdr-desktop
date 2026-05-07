@@ -27,6 +27,7 @@ import {
   Download,
   RefreshCw,
   Sparkle,
+  Copy,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
@@ -76,6 +77,8 @@ import {
 } from '@/lib/electron-bridge';
 import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
 import { FixStatusChip } from './FixStatusChip';
+import { TourOverlay, PEOPLE_MANAGER_TOUR_STEPS, PEOPLE_MANAGER_TOUR_META, resetTourCompletion, type TourStep } from '@/components/ui/tour-overlay';
+import { WindowChrome } from './WindowChrome';
 
 // ─── Notify main window that data changed ─────────────────────────────────
 function notifyChange() {
@@ -93,6 +96,11 @@ export default function PeopleManager() {
   // process broadcast, so PM reflects fix state even when the Fix
   // was kicked off from the main window.
   const fixActive = useFixInProgress();
+  // Quick Tour state — opened from the inline TourLauncher in the
+  // header. PM is its own Electron window so it owns its tour
+  // independently of the main window's Workspace tour.
+  const [showTour, setShowTour] = useState(false);
+  const [tourSteps, setTourSteps] = useState<TourStep[]>(PEOPLE_MANAGER_TOUR_STEPS);
   // Persisted tab + view-mode selections — reopening PM drops the
   // user back on whatever tab/view they were using last, rather than
   // always starting on Named / Card. Zero cost beyond the initial
@@ -286,6 +294,10 @@ export default function PeopleManager() {
   // ever visible, even if the user's cursor crosses overlapping
   // thumbnails before the previous tooltip's mouse-leave fires.
   const [hoveredFaceId, setHoveredFaceId] = useState<number | null>(null);
+  // Note: copy-filename state lives inside PersonCardRow (where the
+  // metadata-strip popover that uses it is rendered) — putting it
+  // here in PeopleManager would put it out of scope of the renderer
+  // and crash the whole PM window with a ReferenceError on map().
   // 20-second targeted-undo for row removal. The token returned by
   // unnamePersonAndDelete captures every face's prior verified
   // flag + the person record, so restoreUnnamedPerson rebuilds
@@ -1096,24 +1108,29 @@ export default function PeopleManager() {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
-      {/* Custom-frame spacer — matches the 32px lavender title bar
-          that Electron paints over the top of the content via
-          titleBarOverlay. Marked WebkitAppRegion:'drag' so users
-          can drag the window from the bar (consistent with main
-          PDR). The OS-rendered window controls live at the right
-          edge of this region; their hit area is automatically
-          excluded from drag by Electron. */}
-      <div
-        className="shrink-0 bg-primary"
-        style={{ height: 32, WebkitAppRegion: 'drag' } as React.CSSProperties}
+      {/* Custom 32px chrome bar — drag region + right-cluster controls
+          (AI pill, FixStatusChip, TourLauncher, dark/light indicator,
+          License badge). Mirrors the main window's TitleBar so the
+          People Manager window has the same affordances. */}
+      <WindowChrome
+        tourItems={[
+          {
+            id: 'tour-people-manager',
+            label: 'Quick Tour: People Manager',
+            description: 'Walkthrough for this window',
+            primary: true,
+            steps: PEOPLE_MANAGER_TOUR_STEPS,
+            meta: PEOPLE_MANAGER_TOUR_META,
+          },
+        ]}
+        triggerAccent={PEOPLE_MANAGER_TOUR_META.accent}
+        onStartTour={(steps) => {
+          resetTourCompletion();
+          setTourSteps(steps);
+          setShowTour(true);
+        }}
       />
       <MainAliveBanner />
-
-      {/* Cross-window Fix status chip — passive (no Open button)
-          because PM can't restore the main window's modal. Lives
-          inside the title bar (top-1.5) for consistency with the
-          main PDR window. */}
-      <FixStatusChip />
 
       {/* Header — below the title bar */}
       <div className="flex items-center justify-between px-6 pt-4 pb-3">
@@ -2502,6 +2519,13 @@ export default function PeopleManager() {
           <button onClick={() => { const z = Math.min(150, zoomLevel + 10); setZoomLevel(z); localStorage.setItem('pdr-people-zoom', String(z)); }} className="p-0.5 hover:text-foreground transition-colors">+</button>
         </div>
       </div>
+      <TourOverlay
+        steps={tourSteps}
+        meta={PEOPLE_MANAGER_TOUR_META}
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+        onComplete={() => setShowTour(false)}
+      />
     </div>
   );
 }
@@ -3344,6 +3368,23 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
   // Visual similarity suggestions — loaded when popover opens
   const [visualSugs, setVisualSugs] = useState<{ personId: number; personName: string; similarity: number }[]>([]);
   const [visualSugsLoading, setVisualSugsLoading] = useState(false);
+  // Tracks the most recently copied filename's face_id so the Copy
+  // icon flips to a check for ~1.5 s as visual confirmation. Per-row
+  // state — each PersonCardRow instance owns its own. The popover
+  // that consumes this is inside this component (the meta-strip
+  // render around line ~4030); putting the state in the parent
+  // PeopleManager would put it out of scope here and crash PM.
+  const [copiedFilenameFaceId, setCopiedFilenameFaceId] = useState<number | null>(null);
+  const handleCopyFilename = (faceId: number, filename: string | null | undefined) => {
+    if (!filename) return;
+    try {
+      navigator.clipboard.writeText(filename);
+      setCopiedFilenameFaceId(faceId);
+      setTimeout(() => setCopiedFilenameFaceId(prev => (prev === faceId ? null : prev)), 1500);
+    } catch {
+      /* clipboard API unavailable — silently no-op */
+    }
+  };
 
   useEffect(() => {
     if (reassignFaceId == null) { setVisualSugs([]); return; }
@@ -3990,9 +4031,27 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
                               const meta = contextMeta[`face_${face.face_id}`];
                               if (!meta) return null;
                               const place = [meta.geo_city, meta.geo_country].filter(Boolean).join(', ');
+                              const justCopied = copiedFilenameFaceId === face.face_id;
                               return (
                                 <div className="mt-1.5 px-1 pb-0.5 space-y-0.5 text-[10px]">
-                                  <div className="font-medium text-foreground/90 truncate">{meta.filename || '—'}</div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-medium text-foreground/90 truncate flex-1 min-w-0">{meta.filename || '—'}</span>
+                                    {meta.filename && (
+                                      <IconTooltip label={justCopied ? 'Copied' : 'Copy filename — paste into Search & Discovery to find this photo'} side="top">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); handleCopyFilename(face.face_id, meta.filename); }}
+                                          className="shrink-0 p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                          aria-label={justCopied ? 'Filename copied' : 'Copy filename'}
+                                          data-testid="pm-copy-filename"
+                                        >
+                                          {justCopied
+                                            ? <Check className="w-3 h-3" style={{ color: '#10b981' }} />
+                                            : <Copy className="w-3 h-3" />}
+                                        </button>
+                                      </IconTooltip>
+                                    )}
+                                  </div>
                                   <div className="flex items-center gap-2 text-muted-foreground">
                                     <span>{formatHoverDate(meta.derived_date)}</span>
                                     {place && <span className="truncate">· {place}</span>}

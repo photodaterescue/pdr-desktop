@@ -28,6 +28,21 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 // what support docs reference.
 app.setName('Photo Date Rescue');
 
+// Also pin `userData` explicitly. Electron resolves `app.getPath('userData')`
+// at import time using the lower-cased package.json `name` field
+// (`photo-date-rescue`), and `app.setName` above does NOT retroactively
+// migrate that path — so the search-index DB, ai-models, license,
+// thumbnails, fix-reports and Local Storage all silently end up in
+// `%APPDATA%\photo-date-rescue\` while `setName`-aware consumers
+// (logs, settings-store) write to `%APPDATA%\Photo Date Rescue\`.
+// That split-brain behaviour was the cause of the "PM shows zero
+// faces after a Fix" bug — the running app's DB path drifted away
+// from where the user's prior AI work lived. Calling `setPath` here,
+// before any module that uses `getPath('userData')` is invoked,
+// forces every consumer onto the canonical capital-S folder for
+// dev (npx electron) and packaged builds alike.
+app.setPath('userData', path.join(app.getPath('appData'), 'Photo Date Rescue'));
+
 // ───────── Persistent log file ─────────
 // Every console.log / warn / error from the main process is mirrored
 // into %APPDATA%\photo-date-rescue\logs\main.log (Windows) — with
@@ -1455,6 +1470,22 @@ ipcMain.handle('browser:listDrives', async () => {
 // Thumbnail cache directory
 const thumbCacheDir = path.join(app.getPath('userData'), 'thumb-cache');
 fs.mkdirSync(thumbCacheDir, { recursive: true });
+
+// ─── Face-crop cache directory ──────────────────────────────────────────────
+// Pre-rendered ~96 px square JPGs of every detected face, keyed by the
+// SHA-1 of (file_path + bounding-box coords + requested size). The cache
+// is what makes People Manager / Trees / S&D's face thumbnails open
+// instantly after the first time a face has been seen, and — critically
+// — keeps the user's named/verified face data visually intact even when
+// the user has deleted or moved the original photos. v1 read every
+// face's region from the original file on every render (sharp.extract +
+// resize per face), which made PM stutter on libraries with thousands
+// of faces and broke entirely once the originals were gone. The cache
+// is content-addressed so the same crop is shared across surfaces and
+// across runs; a re-detection that produces different box coords just
+// writes a new entry under a new key.
+const faceCropCacheDir = path.join(app.getPath('userData'), 'face-crops');
+fs.mkdirSync(faceCropCacheDir, { recursive: true });
 
 // ─── Video transcoding cache ────────────────────────────────────────────────
 // Chromium cannot natively play MPEG-1/2 (.mpg), most .avi/.wmv/.flv variants,
@@ -3342,6 +3373,19 @@ ipcMain.handle('report:regenerateCatalogue', async (_event, destinationPath: str
     if (!settings.autoSaveCatalogue) {
       return { success: false, error: 'Auto-catalogue is disabled' };
     }
+    // Skip silently if the destination folder no longer exists. Users
+    // delete or rename old test/Fix folders all the time, and the
+    // Reports History modal triggers this handler once per distinct
+    // destination on every open. Without this guard, missing dests
+    // each emit a renderer warning AND kick off a sharp pipeline that
+    // dispatches dozens of file-not-found requests, which together
+    // produce the `net::ERR_FAILED` storm that was making Memories
+    // and PM feel frozen for 5–8 minutes after launch. Returning a
+    // neutral { success: true, skipped: true } keeps the renderer's
+    // log clean and means valid destinations still regen normally.
+    if (!fs.existsSync(destinationPath)) {
+      return { success: true, skipped: true, reason: 'destination-missing' };
+    }
     const result = await writeCatalogue(destinationPath);
     return result;
   } catch (error) {
@@ -5183,13 +5227,31 @@ ipcMain.handle('ai:faceCropBatch', async (
   size: number = 96,
 ) => {
   try {
+    const result: Record<number, string> = {};
+    // Cache-first pass — read every request from the on-disk JPG cache.
+    // Anything that hits avoids the sharp pipeline AND survives even if
+    // the original photo has been deleted by the user.
+    const stillNeeded: typeof requests = [];
+    await Promise.all(requests.map(async (r) => {
+      const cachePath = path.join(faceCropCacheDir, faceCropCacheKey(r.file_path, r.box_x, r.box_y, r.box_w, r.box_h, size));
+      try {
+        if (fs.existsSync(cachePath)) {
+          const buf = await fs.promises.readFile(cachePath);
+          result[r.face_id] = `data:image/jpeg;base64,${buf.toString('base64')}`;
+          return;
+        }
+      } catch { /* fall through to fresh render */ }
+      stillNeeded.push(r);
+    }));
+
+    if (stillNeeded.length === 0) return { success: true, crops: result };
+
     const sharp = (await import('sharp')).default;
-    const byFile = new Map<string, typeof requests>();
-    for (const r of requests) {
+    const byFile = new Map<string, typeof stillNeeded>();
+    for (const r of stillNeeded) {
       if (!byFile.has(r.file_path)) byFile.set(r.file_path, []);
       byFile.get(r.file_path)!.push(r);
     }
-    const result: Record<number, string> = {};
     // Cap concurrency so we don't queue 50+ sharp pipelines at once
     // on a slow disk (network drive especially). 4 in flight is a
     // reasonable balance — sharp itself uses libvips threading
@@ -5233,6 +5295,13 @@ ipcMain.handle('ai:faceCropBatch', async (
                 .jpeg({ quality: 85 })
                 .toBuffer();
               result[f.face_id] = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+              // Persist to the on-disk cache so future requests for
+              // this exact crop bypass sharp altogether — and survive
+              // deletion of the original. Best-effort write.
+              const cachePath = path.join(faceCropCacheDir, faceCropCacheKey(filePath, f.box_x, f.box_y, f.box_w, f.box_h, size));
+              fs.promises.writeFile(cachePath, buffer).catch(err =>
+                console.warn('[face-crop] cache write failed:', (err as Error).message)
+              );
             } catch { /* per-face failure is non-fatal */ }
           }
         } catch { /* per-file failure is non-fatal */ }
@@ -5246,7 +5315,41 @@ ipcMain.handle('ai:faceCropBatch', async (
   }
 });
 
+/**
+ * Compute the cache filename for a face crop. Content-addressed by the
+ * tuple that uniquely identifies a crop — same face from the same photo
+ * always lands at the same cache key, regardless of which person it's
+ * currently assigned to or how many times PM has asked for it.
+ */
+function faceCropCacheKey(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number): string {
+  const h = crypto.createHash('sha1');
+  h.update(filePath); h.update('|');
+  // Quantise floats so tiny coord differences from re-detection don't
+  // miss the cache; 5 decimal places is ~sub-pixel on a 4K image.
+  h.update(boxX.toFixed(5)); h.update('|');
+  h.update(boxY.toFixed(5)); h.update('|');
+  h.update(boxW.toFixed(5)); h.update('|');
+  h.update(boxH.toFixed(5)); h.update('|');
+  h.update(String(size));
+  return h.digest('hex') + '.jpg';
+}
+
 ipcMain.handle('ai:faceCrop', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 96) => {
+  // Content-addressed cache: if we've already rendered this exact crop
+  // before, serve the JPG from disk and skip the (expensive) re-decode +
+  // sharp.extract pipeline. Also covers the "user deleted the original
+  // photo" case — once a face is in the cache, PM keeps showing the
+  // thumbnail forever, so the user's manual naming/verification work
+  // doesn't visually disappear when they tidy their library.
+  const cachePath = path.join(faceCropCacheDir, faceCropCacheKey(filePath, boxX, boxY, boxW, boxH, size));
+  try {
+    if (fs.existsSync(cachePath)) {
+      const buffer = await fs.promises.readFile(cachePath);
+      return { success: true, dataUrl: `data:image/jpeg;base64,${buffer.toString('base64')}` };
+    }
+  } catch { /* fall through to fresh render */ }
+
+  // Cache miss → render from the original file.
   try {
     const sharp = (await import('sharp')).default;
     // .rotate() applies EXIF auto-rotation. Must be present here AND when
@@ -5289,6 +5392,13 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath: string, boxX: number, box
       .resize(size, size, { fit: 'cover' })
       .jpeg({ quality: 85 })
       .toBuffer();
+
+    // Persist to the cache for next time. Best-effort — if the write
+    // fails (disk full, permission denied) we still return the freshly
+    // rendered crop so the current request succeeds.
+    fs.promises.writeFile(cachePath, buffer).catch(err =>
+      console.warn('[face-crop] cache write failed:', (err as Error).message)
+    );
 
     const dataUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`;
     return { success: true, dataUrl };
