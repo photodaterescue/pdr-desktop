@@ -225,6 +225,13 @@ export function initDatabase() {
             { name: 'geo_country', type: 'TEXT' },
             { name: 'geo_country_code', type: 'TEXT' },
             { name: 'geo_city', type: 'TEXT' },
+            // User-applied rotation, in degrees (0/90/180/270). Stored
+            // alongside the photo metadata so the PDR Viewer can re-apply
+            // the rotation the user picked the next time they open the
+            // same file. Independent of EXIF orientation — that's already
+            // honoured by the renderer; this is the user's manual override
+            // on top of whatever the camera wrote.
+            { name: 'user_rotation', type: 'INTEGER NOT NULL DEFAULT 0' },
         ];
         for (const col of newCols) {
             if (!colNames.has(col.name)) {
@@ -670,6 +677,24 @@ export function backfillMatchSimilarity(database) {
                 verifiedVecs.push(v);
                 verifiedMags.push(Math.sqrt(m));
             }
+            // Magnitude floor + top-K-average — same algorithm as
+            // refineFromVerified above (see that function for the long-form
+            // rationale on why max-of-verified was replaced).
+            const sortedMags = [...verifiedMags].sort((a, b) => a - b);
+            const medianMag = sortedMags.length ? sortedMags[Math.floor(sortedMags.length / 2)] : 0;
+            const magnitudeFloor = medianMag * 0.6;
+            const refVecs = [];
+            const refMags = [];
+            for (let k = 0; k < verifiedVecs.length; k++) {
+                if (verifiedMags[k] >= magnitudeFloor) {
+                    refVecs.push(verifiedVecs[k]);
+                    refMags.push(verifiedMags[k]);
+                }
+            }
+            const fallbackToFull = refVecs.length === 0;
+            const useVecs = fallbackToFull ? verifiedVecs : refVecs;
+            const useMags = fallbackToFull ? verifiedMags : refMags;
+            const TOP_K = Math.min(5, useVecs.length);
             const unfilled = unfilledStmt.all(personId);
             for (const row of unfilled) {
                 const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
@@ -677,18 +702,21 @@ export function backfillMatchSimilarity(database) {
                 for (let i = 0; i < dim; i++)
                     magB += vec[i] * vec[i];
                 const magBSqrt = Math.sqrt(magB);
-                let bestSim = 0;
-                for (let k = 0; k < verifiedVecs.length; k++) {
-                    const va = verifiedVecs[k];
+                const sims = [];
+                for (let k = 0; k < useVecs.length; k++) {
+                    const va = useVecs[k];
                     let dot = 0;
                     for (let i = 0; i < dim; i++)
                         dot += va[i] * vec[i];
-                    const denom = verifiedMags[k] * magBSqrt;
-                    const sim = denom === 0 ? 0 : dot / denom;
-                    if (sim > bestSim)
-                        bestSim = sim;
+                    const denom = useMags[k] * magBSqrt;
+                    sims.push(denom === 0 ? 0 : dot / denom);
                 }
-                updateStmt.run(bestSim, row.id);
+                sims.sort((a, b) => b - a);
+                let topKSum = 0;
+                for (let k = 0; k < TOP_K; k++)
+                    topKSum += sims[k];
+                const topKAvg = TOP_K > 0 ? topKSum / TOP_K : 0;
+                updateStmt.run(topKAvg, row.id);
                 totalFilled++;
             }
         }
@@ -2146,14 +2174,31 @@ export function refineFromVerifiedFaces(similarityThreshold = 0.72, personFilter
             perPerson.push({ personId: person.id, personName: person.name, verifiedCount: 0, matched: 0 });
             continue;
         }
-        // Max-similarity matching (was: average-of-embeddings).
-        // Reason for the change: averaging baby-Terry + adult-Terry into
-        // one vector lands in a no-man's-land that matches neither well.
-        // Instead we keep ALL verified vectors, score each unnamed face
-        // against EACH verified face, and match if ANY single verified
-        // face exceeds the threshold. This is age-spread-tolerant by
-        // design and also tends to be more accurate at any single age
-        // (averaging blurs information that the comparison needs).
+        // Top-K-average matching (was: max-of-verified, was-was: average-of-embeddings).
+        // The previous max-of-verified approach was fragile: a single weak
+        // verified embedding (low magnitude — usually from a small / blurry /
+        // poorly-lit face the model couldn't characterise well) acted as a
+        // magnet for any other weak embedding from any unrelated face. The
+        // result was unrelated people (a black man, a baby, a Christmas elf)
+        // getting auto-attached to Mel because each shared a single noisy
+        // verified embedding. Diagnosis: low-magnitude vectors cluster near
+        // the origin in cosine-similarity space and score artificially high
+        // against each other regardless of who they actually depict.
+        //
+        // Top-K-average requires a candidate face to look like SEVERAL of
+        // the person's verified faces, not just one. A weak attractor in
+        // the verified set can't dominate because it's only one of K
+        // contributors to the average. K is small (5) so the algorithm is
+        // still tolerant of age spread, lighting variation, and other
+        // legitimate within-person variation — a recent Mel photo only
+        // needs to look like ~5 of her many verified photos to match.
+        //
+        // Additionally, we filter the verified set by magnitude so the
+        // worst weak-embedding outliers are excluded from the matching
+        // reference altogether — they stay verified for the record, just
+        // not eligible as match candidates. The cutoff is set as a
+        // fraction of the verified set's median magnitude so it
+        // self-calibrates per person.
         const firstVec = new Float32Array(verifiedRows[0].embedding.buffer, verifiedRows[0].embedding.byteOffset, verifiedRows[0].embedding.byteLength / 4);
         const dim = firstVec.length;
         // Pre-compute normalised vectors + magnitudes for each verified
@@ -2168,11 +2213,35 @@ export function refineFromVerifiedFaces(similarityThreshold = 0.72, personFilter
             verifiedVecs.push(v);
             verifiedMags.push(Math.sqrt(m));
         }
-        // Get all unnamed faces (person_id IS NULL) with embeddings
-        const unnamed = database.prepare(`
-      SELECT id, embedding FROM face_detections
-      WHERE person_id IS NULL AND embedding IS NOT NULL
-    `).all();
+        // Magnitude-based outlier filter: drop verified embeddings whose
+        // magnitude is below 60 % of the median. Empirically (see deep
+        // investigation in commit history) the worst attractors had
+        // magnitudes ~5-7 against a typical median of ~12, and weak
+        // embeddings in that range were responsible for the majority of
+        // bogus auto-matches in real-world data.
+        const sortedMags = [...verifiedMags].sort((a, b) => a - b);
+        const medianMag = sortedMags.length ? sortedMags[Math.floor(sortedMags.length / 2)] : 0;
+        const magnitudeFloor = medianMag * 0.6;
+        const eligibleVecs = [];
+        const eligibleMags = [];
+        for (let k = 0; k < verifiedVecs.length; k++) {
+            if (verifiedMags[k] >= magnitudeFloor) {
+                eligibleVecs.push(verifiedVecs[k]);
+                eligibleMags.push(verifiedMags[k]);
+            }
+        }
+        // Fall back to the full set if filtering removed everything (small
+        // verified sets shouldn't be left with zero candidates).
+        const refVecs = eligibleVecs.length > 0 ? eligibleVecs : verifiedVecs;
+        const refMags = eligibleVecs.length > 0 ? eligibleMags : verifiedMags;
+        // K = 5 by default, but never larger than the eligible set
+        // (otherwise top-K would just be the average of everything which
+        // over-corrects on small verified sets).
+        const TOP_K = Math.min(5, refVecs.length);
+        // (The unnamed pool is fetched LATER, after the existing-auto-
+        // match re-test step, because that step may un-assign rows back
+        // into the unnamed pool. Fetching now and looping over a stale
+        // list would miss those newly-un-assigned candidates.)
         let matchedForThisPerson = 0;
         // We now store the actual similarity score on the face row so
         // the S&D Match slider can filter live at search time. That
@@ -2182,26 +2251,104 @@ export function refineFromVerifiedFaces(similarityThreshold = 0.72, personFilter
         // accurate per-face scores). Cost is bounded — typically a
         // few hundred dot products per unnamed face per named person.
         const assignStmt = database.prepare(`UPDATE face_detections SET person_id = ?, match_similarity = ? WHERE id = ?`);
-        for (const row of unnamed) {
+        const unassignStmt = database.prepare(`UPDATE face_detections SET person_id = NULL, match_similarity = NULL WHERE id = ?`);
+        // ─── Re-test existing unverified auto-matches ─────────────────────
+        // Improve Facial Recognition now ALSO retroactively cleans up
+        // bogus auto-matches that were assigned under an older / looser
+        // algorithm. We pull every unverified face currently attached to
+        // this person and re-score it with the new top-K-average +
+        // magnitude-floor algorithm. Any face that doesn't pass the
+        // current threshold is un-assigned (person_id → NULL) and made
+        // available for fresh matching against other people in the
+        // unnamed-faces loop below. Verified faces are NEVER touched;
+        // they remain the user's ground truth regardless of algorithm
+        // changes. This gives the user immediate cleanup of historical
+        // bogus matches with no new UI surface — clicking the existing
+        // Improve button does both add new and clean up old.
+        const existingAutoMatches = database.prepare(`SELECT id, embedding FROM face_detections WHERE person_id = ? AND verified = 0 AND embedding IS NOT NULL`).all(person.id);
+        let unassignedCount = 0;
+        for (const row of existingAutoMatches) {
             const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
             let magB = 0;
             for (let i = 0; i < dim; i++)
                 magB += vec[i] * vec[i];
             const magBSqrt = Math.sqrt(magB);
-            // Max-similarity across every verified face for this person.
-            let bestSim = 0;
-            for (let k = 0; k < verifiedVecs.length; k++) {
-                const va = verifiedVecs[k];
+            // Weak candidate → un-assign immediately (it shouldn't be
+            // attached to anyone under the new rules).
+            if (magBSqrt < magnitudeFloor) {
+                unassignStmt.run(row.id);
+                unassignedCount++;
+                continue;
+            }
+            const sims = [];
+            for (let k = 0; k < refVecs.length; k++) {
+                const va = refVecs[k];
                 let dot = 0;
                 for (let i = 0; i < dim; i++)
                     dot += va[i] * vec[i];
-                const denom = verifiedMags[k] * magBSqrt;
-                const sim = denom === 0 ? 0 : dot / denom;
-                if (sim > bestSim)
-                    bestSim = sim;
+                const denom = refMags[k] * magBSqrt;
+                sims.push(denom === 0 ? 0 : dot / denom);
             }
-            if (bestSim >= similarityThreshold) {
-                assignStmt.run(person.id, bestSim, row.id);
+            sims.sort((a, b) => b - a);
+            let topKSum = 0;
+            for (let k = 0; k < TOP_K; k++)
+                topKSum += sims[k];
+            const topKAvg = TOP_K > 0 ? topKSum / TOP_K : 0;
+            if (topKAvg < similarityThreshold) {
+                // No longer matches — un-assign so the candidate either
+                // attaches to a different named person below, or returns
+                // to the unnamed pool.
+                unassignStmt.run(row.id);
+                unassignedCount++;
+            }
+            else {
+                // Still matches — refresh the stored similarity score so
+                // S&D's Match slider reflects the new metric.
+                assignStmt.run(person.id, topKAvg, row.id);
+            }
+        }
+        if (unassignedCount > 0) {
+            console.log(`[AI] Improve: re-tested ${existingAutoMatches.length} existing auto-match(es) for ${person.name}, un-assigned ${unassignedCount} that no longer pass the new algorithm`);
+        }
+        // Re-fetch the unnamed pool because we may have just added rows
+        // to it via the un-assign step above.
+        const unnamedRefreshed = database.prepare(`
+      SELECT id, embedding FROM face_detections
+      WHERE person_id IS NULL AND embedding IS NOT NULL
+    `).all();
+        for (const row of unnamedRefreshed) {
+            const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+            let magB = 0;
+            for (let i = 0; i < dim; i++)
+                magB += vec[i] * vec[i];
+            const magBSqrt = Math.sqrt(magB);
+            // Skip candidate faces with weak embeddings — same magnitude
+            // floor as the verified set. A weak candidate scored against
+            // anything tends to produce false positives in the noise zone.
+            if (magBSqrt < magnitudeFloor)
+                continue;
+            // Compute similarity against every ELIGIBLE verified face,
+            // collect into an array so we can take the top-K average.
+            const sims = [];
+            for (let k = 0; k < refVecs.length; k++) {
+                const va = refVecs[k];
+                let dot = 0;
+                for (let i = 0; i < dim; i++)
+                    dot += va[i] * vec[i];
+                const denom = refMags[k] * magBSqrt;
+                sims.push(denom === 0 ? 0 : dot / denom);
+            }
+            // Top-K average — sort descending, average the K highest.
+            sims.sort((a, b) => b - a);
+            let topKSum = 0;
+            for (let k = 0; k < TOP_K; k++)
+                topKSum += sims[k];
+            const topKAvg = topKSum / TOP_K;
+            if (topKAvg >= similarityThreshold) {
+                // Persist the top-K-average score (not the max) so the S&D
+                // Match slider's filtering reflects the same metric the
+                // matcher used to make the assignment.
+                assignStmt.run(person.id, topKAvg, row.id);
                 matchedForThisPerson++;
             }
         }
@@ -2352,10 +2499,22 @@ export function getPersonClusters() {
             : isNamed
                 ? (facesByPerson.get(c.person_id) ?? [])
                 : (facesByCluster.get(c.cluster_id) ?? []);
-        // Rep = the faces[0] (highest confidence). For named persons, a
-        // user-chosen override wins IF that face is actually in the group
-        // (if the override face has since been moved to another person,
-        // the stale override is ignored).
+        // Rep selection precedence for named persons:
+        //   1. User-chosen override (`persons.representative_face_id`)
+        //      — wins outright if that face is still in the group.
+        //   2. Highest-confidence VERIFIED face — auto-pick falls back
+        //      only to faces the user has explicitly verified, so the
+        //      thumbnail is never an AI-suggested match that "looks
+        //      similar" but is actually someone else.
+        //   3. Highest-confidence face overall (current behaviour) —
+        //      last-resort fallback for freshly-named clusters where
+        //      nothing has been verified yet, so the row still has a
+        //      thumbnail rather than collapsing to a monogram.
+        //
+        // For unnamed / __unsure__ / __ignored__ clusters we keep the
+        // confidence-only pick — verification status only matters once
+        // a name has been attached, and most faces in those tabs are
+        // unverified by definition.
         let rep = faces[0];
         if (isNamed && !isSpecial) {
             const overrideId = repOverrides.get(c.person_id);
@@ -2363,6 +2522,13 @@ export function getPersonClusters() {
                 const chosen = faces.find(f => f.face_id === overrideId);
                 if (chosen)
                     rep = chosen;
+            }
+            else {
+                // faces is already sorted DESC by confidence, so the first
+                // verified entry is the highest-confidence verified face.
+                const verifiedRep = faces.find(f => f.verified === 1);
+                if (verifiedRep)
+                    rep = verifiedRep;
             }
         }
         // Samples ordering depends on cluster type:
@@ -3098,6 +3264,35 @@ export function relocateRun(runId, newDestinationPath) {
     updateTx();
     console.log(`[DB] Relocated run #${runId}: ${oldPath} → ${newDestinationPath} (${updated} file paths updated)`);
     return updated;
+}
+/**
+ * Read the user-applied rotation (in degrees, 0/90/180/270) for a
+ * photo by file_path. Returns 0 when the file isn't in the index or
+ * has never been rotated. Cheap — single indexed lookup against the
+ * file_path UNIQUE INDEX.
+ */
+export function getUserRotation(filePath) {
+    const database = getDb();
+    const row = database
+        .prepare(`SELECT user_rotation FROM indexed_files WHERE file_path = ? LIMIT 1`)
+        .get(filePath);
+    if (!row)
+        return 0;
+    return ((row.user_rotation ?? 0) % 360 + 360) % 360;
+}
+/**
+ * Persist the user-applied rotation for a photo. The viewer calls this
+ * after every rotate-button click so re-opening the same file in any
+ * surface (Memories grid, S&D thumbnail, Viewer) shows the photo the
+ * way the user last left it. Normalised to 0/90/180/270.
+ */
+export function setUserRotation(filePath, rotation) {
+    const database = getDb();
+    const normalised = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360;
+    const result = database
+        .prepare(`UPDATE indexed_files SET user_rotation = ? WHERE file_path = ?`)
+        .run(normalised, filePath);
+    return { changed: result.changes > 0 };
 }
 /**
  * Helper: build the SQL fragment + parameters for a run_id IN (...) clause

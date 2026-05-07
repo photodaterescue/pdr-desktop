@@ -232,6 +232,13 @@ contextBridge.exposeInMainWorld('pdr', {
             return () => ipcRenderer.removeListener('search:viewerIndex', listener);
         },
     },
+    /** Viewer rotation — read/write the user-applied rotation for a
+     *  given file_path. Used by the PDR Viewer to make rotation
+     *  sticky across sessions; never touches the original file. */
+    viewer: {
+        getRotation: (filePath) => ipcRenderer.invoke('viewer:getRotation', filePath),
+        setRotation: (filePath, rotation) => ipcRenderer.invoke('viewer:setRotation', filePath, rotation),
+    },
     ai: {
         start: () => ipcRenderer.invoke('ai:start'),
         cancel: () => ipcRenderer.invoke('ai:cancel'),
