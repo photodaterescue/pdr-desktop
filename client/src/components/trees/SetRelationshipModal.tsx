@@ -386,7 +386,7 @@ export function SetRelationshipModal({ fromPersonId, fromPersonName, persons, gr
               <p className="text-[10px] text-muted-foreground mt-2 italic">Current partners and ex-spouses go under Direct family → Partner (set an Until date to mark as ex).</p>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Friends & neighbours" open={openSections.friends} onToggle={() => toggle('friends')}>
+            <CollapsibleSection title="Friends & neighbors" open={openSections.friends} onToggle={() => toggle('friends')}>
               <div className="grid grid-cols-2 gap-2">
                 {(['friend', 'close_friend', 'best_friend', 'acquaintance', 'neighbour'] as DeclarativeRelationshipType[]).map(t => (
                   <TypeOption key={t} value={t} active={type === t} onClick={() => setType(t)} label={TYPE_LABELS[t]} />

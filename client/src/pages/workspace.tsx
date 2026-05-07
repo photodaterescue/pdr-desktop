@@ -3034,7 +3034,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           </div>
           <div className="flex gap-2 mt-2 px-2">
             <IconTooltip
-              label={sourceMutationsBlocked ? sourceMutationsBlockedTooltip + (fixActive ? ' — analysing a new source mid-fix would compete with the engine.' : ' — adding a new source mid-analysis would race the worker.') : 'Add a folder, drive or zip as a source for PDR'}
+              label={sourceMutationsBlocked ? sourceMutationsBlockedTooltip + (fixActive ? ' — analyzing a new source mid-fix would compete with the engine.' : ' — adding a new source mid-analysis would race the worker.') : 'Add a folder, drive or zip as a source for PDR'}
               side="top"
             >
               <Button
@@ -3753,7 +3753,7 @@ function DashboardPanel({
                 bgColor="bg-indigo-50"
                 borderColor="border-indigo-200"
                 icon={<Sparkles className="w-5 h-5" />}
-                tooltip="Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
+                tooltip="Date inferred from recognized filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
                 isActive={false}
                 onNavigateToBestPractices={onNavigateToBestPractices}
               />
@@ -3803,7 +3803,7 @@ function DashboardPanel({
                     </div>
                   )}
                   <IconTooltip
-                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — analysing a new source mid-fix would compete with the engine.' : 'Add a folder, drive or zip as a source for PDR'}
+                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — analyzing a new source mid-fix would compete with the engine.' : 'Add a folder, drive or zip as a source for PDR'}
                     side="top"
                   >
                     <Button
@@ -3896,7 +3896,7 @@ function DashboardPanel({
               <Card className="flex flex-col p-5">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <IconTooltip
-                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — changing destination mid-fix splits your output between two drives.' : (destinationPath ? 'Choose a different destination drive or folder' : 'Pick where your organised library will live')}
+                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — changing destination mid-fix splits your output between two drives.' : (destinationPath ? 'Choose a different destination drive or folder' : 'Pick where your organized library will live')}
                     side="top"
                   >
                     {/* When destination IS already set (the standard
@@ -4567,7 +4567,7 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 bgColor="bg-indigo-50"
                 borderColor="border-indigo-200"
                 icon={<Sparkles className="w-5 h-5" />}
-                tooltip="Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
+                tooltip="Date inferred from recognized filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
                 isActive={filter === "Medium"}
                 onClick={() => toggleFilter("Medium")}
               />
@@ -4935,7 +4935,7 @@ function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConf
               <div>
                 <h4 className="text-sm font-semibold text-foreground">Stop this analysis?</h4>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Any progress will be lost and you'll need to re-analyse this source. Large libraries or network sources can take time — closing other apps may help speed things up.
+                  Any progress will be lost and you'll need to re-analyze this source. Large libraries or network sources can take time — closing other apps may help speed things up.
                 </p>
                 <p className="text-xs text-muted-foreground italic mt-1.5">
                   Tip: You can open another PDR window from your Start Menu if needed.
@@ -5011,7 +5011,7 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 bgColor="bg-indigo-50"
                 borderColor="border-indigo-200"
                 icon={<Sparkles className="w-5 h-5" />}
-                tooltip="Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
+                tooltip="Date inferred from recognized filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures."
                 isActive={false}
               />
               <ConfidenceCard 
@@ -5091,7 +5091,7 @@ function CompletionState({ results, onAddAnother, onViewResults, onBackToWorkspa
             </motion.div>
             
             <h2 className="text-3xl font-semibold text-foreground mb-3">All done!</h2>
-            <p className="text-muted-foreground mb-8">Your photos and videos have been analysed and organised.</p>
+            <p className="text-muted-foreground mb-8">Your photos and videos have been analyzed and organized.</p>
             
             <Card className="p-8 mb-8">
               <div className="space-y-6">
@@ -6473,7 +6473,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                     <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mb-0.5">Your destination is now your master library</p>
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                       Moving, renaming, or deleting this folder will break Search & Discovery indexing and AI analysis.
-                      Use the same destination for all future fixes to build a single, organised library.
+                      Use the same destination for all future fixes to build a single, organized library.
                     </p>
                     {parseInt(localStorage.getItem('pdr-master-lib-seen-count') || '0', 10) >= 3 && (
                       <button
@@ -7227,7 +7227,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs text-sm">
-                  Date inferred from recognised filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures.
+                  Date inferred from recognized filename formats (such as WhatsApp, camera, or backup naming patterns) using consistent, reliable structures.
                 </TooltipContent>
               </Tooltip>
               <div className="text-2xl font-semibold text-indigo-600 dark:text-indigo-400 font-heading">{confidenceCounts.recovered.toLocaleString()}</div>
@@ -7427,7 +7427,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                     </span>
                   )}
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground italic hidden sm:inline">Auto-catalogue is active at your destination</span>
+                    <span className="text-[10px] text-muted-foreground italic hidden sm:inline">Auto-catalog is active at your destination</span>
                     <Button
                       variant="outline"
                       size="sm"
@@ -7619,7 +7619,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               <section>
                 <h3 className="text-lg font-medium text-foreground mb-4">What Photo Date Rescue Does</h3>
                 <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Photo Date Rescue restores correct dates to photos and videos by analysing trusted metadata, structured filename patterns, and fallback rules — without ever modifying your originals.</p>
+                  <p>Photo Date Rescue restores correct dates to photos and videos by analyzing trusted metadata, structured filename patterns, and fallback rules — without ever modifying your originals.</p>
                   <p>It's designed to handle messy, real-world libraries safely and predictably, even at large scale — multi-GB Google Takeouts, decades of phone backups, mixed scanner output, the lot.</p>
                 </div>
               </section>
@@ -7634,7 +7634,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Add a Source</p>
-                    <p className="text-sm text-muted-foreground">Click Add Source to open the Folder Browser. Pick a folder, ZIP, RAR, or drive containing the photos or videos you want to fix. You can add multiple Sources and PDR will analyse them together.</p>
+                    <p className="text-sm text-muted-foreground">Click Add Source to open the Folder Browser. Pick a folder, ZIP, RAR, or drive containing the photos or videos you want to fix. You can add multiple Sources and PDR will analyze them together.</p>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Tick the Checkbox</p>
@@ -7646,7 +7646,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Run Fix</p>
-                    <p className="text-sm text-muted-foreground">PDR copies your files to the Library Drive with corrected dates, organised in your chosen folder structure (Year / Year-Month / Year-Month-Day), and skips identical duplicates automatically.</p>
+                    <p className="text-sm text-muted-foreground">PDR copies your files to the Library Drive with corrected dates, organized in your chosen folder structure (Year / Year-Month / Year-Month-Day), and skips identical duplicates automatically.</p>
                     <p className="text-xs text-muted-foreground mt-2">Nothing is overwritten — output is always written separately. Your originals are never modified.</p>
                   </div>
                 </div>
@@ -7658,7 +7658,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <p className="text-sm text-foreground">A clean, organised output folder is created</p>
+                    <p className="text-sm text-foreground">A clean, organized output folder is created</p>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -7799,7 +7799,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       <p className="text-xs text-muted-foreground mt-1">what PDR writes</p>
                     </div>
                   </div>
-                  <p>When you hit <span className="font-medium text-foreground">Run Fix</span>, you're saying: "Analyse these Sources together, apply PDR's rules and confidence system, and write the corrected result to my Library Drive."</p>
+                  <p>When you hit <span className="font-medium text-foreground">Run Fix</span>, you're saying: "Analyze these Sources together, apply PDR's rules and confidence system, and write the corrected result to my Library Drive."</p>
                   <p>Originals stay intact. Output is consistent. Reporting is saved. You can export and audit anytime.</p>
                 </div>
               </section>
@@ -7811,7 +7811,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   <p>v2.0.0 asks you to pick your Library Drive <em>before</em> adding Sources. Two helpers make that decision easier:</p>
                   <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
                     <p className="font-medium text-foreground mb-1">Library Planner</p>
-                    <p>Sizes your collection across seven buckets (Under 50 GB, 50–200 GB, 200–500 GB, 500 GB–1 TB, 1–2 TB, 2–4 TB, 4 TB+). Used to colour-code drive recommendations against your target size, so a 1 TB drive shows green for a 200 GB library and red for a 4 TB one.</p>
+                    <p>Sizes your collection across seven buckets (Under 50 GB, 50–200 GB, 200–500 GB, 500 GB–1 TB, 1–2 TB, 2–4 TB, 4 TB+). Used to color-code drive recommendations against your target size, so a 1 TB drive shows green for a 200 GB library and red for a 4 TB one.</p>
                   </div>
                   <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
                     <p className="font-medium text-foreground mb-1">Drive Advisor</p>
@@ -8178,7 +8178,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Once a Source is added, analysis runs automatically — there's nothing you need to do at this stage.</p>
-                  <p>The Source Analysis shows how your files were categorised:</p>
+                  <p>The Source Analysis shows how your files were categorized:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li><span className="font-medium text-foreground">Confirmed</span> — dates taken from embedded metadata</li>
                     <li><span className="font-medium text-foreground">Recovered</span> — dates inferred from structured filenames</li>
@@ -8200,7 +8200,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                     <li><span className="font-medium text-foreground">Library Drive still has room</span> — the storage indicator next to your destination shows free vs required. Free should comfortably exceed Required.</li>
                     <li><span className="font-medium text-foreground">Sources are checked</span> — only ticked Sources go into the run. Untick anything you don't want included.</li>
                     <li><span className="font-medium text-foreground">File types</span> — in Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
-                    <li><span className="font-medium text-foreground">Folder structure</span> — Settings → Folder structure controls how the output is organised (Year / Year-Month / Year-Month-Day).</li>
+                    <li><span className="font-medium text-foreground">Folder structure</span> — Settings → Folder structure controls how the output is organized (Year / Year-Month / Year-Month-Day).</li>
                   </ul>
                 </div>
               </section>
@@ -8285,7 +8285,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 <h3 className="text-lg font-medium text-foreground mb-3">About</h3>
                 <div className="text-sm text-muted-foreground leading-relaxed space-y-3">
                   <p>Photo Date Rescue repairs, normalises, and organises photo and video dates from any source — whether that's a Google Takeout export, an iCloud download, a phone backup, or a folder of mixed files.</p>
-                  <p>Every file is analysed for date clues from metadata, filenames, and folder structure. Files are then renamed with confidence-based suffixes so you always know how each date was determined.</p>
+                  <p>Every file is analyzed for date clues from metadata, filenames, and folder structure. Files are then renamed with confidence-based suffixes so you always know how each date was determined.</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li>Removes duplicates from output automatically</li>
                     <li>Never deletes originals — copies are always made to a new location</li>
@@ -8404,11 +8404,11 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3">What's changed since v1.0.1:</p>
                       <ul className="list-disc ml-5 space-y-2 text-sm text-muted-foreground">
-                        <li><strong className="text-foreground font-medium">A whole new look</strong> — v2.0.0 replaces v1.0.1's default Windows chrome with a custom PDR title bar, restructures the sidebar into Views / Tools / Guidance / App sections, adds independent windows for People Manager and the photo viewer, and threads a cross-window "Fix in progress" chip through every open PDR window. Buttons, modals and toasts have all been brought to a consistent design system, with a brand-coloured palette (lavender / blue / gold / emerald / pink / teal) tying each app to its identity from the Welcome screen all the way through to the matching tour overlays.</li>
+                        <li><strong className="text-foreground font-medium">A whole new look</strong> — v2.0.0 replaces v1.0.1's default Windows chrome with a custom PDR title bar, restructures the sidebar into Views / Tools / Guidance / App sections, adds independent windows for People Manager and the photo viewer, and threads a cross-window "Fix in progress" chip through every open PDR window. Buttons, modals and toasts have all been brought to a consistent design system, with a brand-colored palette (lavender / blue / gold / emerald / pink / teal) tying each app to its identity from the Welcome screen all the way through to the matching tour overlays.</li>
                         <li><strong className="text-foreground font-medium">Polished setup flow</strong> — v1.0.1 used Windows' native folder picker and asked you to pick a destination as an afterthought. v2.0.0 introduces a destination-first flow: pick your library drive before adding sources, with a Library Planner that sizes your collection, a Drive Advisor that rates each drive on speed and capacity, and a custom Folder Browser (grid / list / details views) that replaces the native picker.</li>
                         <li><strong className="text-foreground font-medium">New views</strong> — entirely new top-level surfaces: <strong className="text-foreground font-medium">Search &amp; Discovery</strong> (find any photo by date, person, location, tag, camera or scanner), <strong className="text-foreground font-medium">Memories</strong> (Year / Month timeline + On This Day), and <strong className="text-foreground font-medium">People Manager</strong> (AI-detected face clusters with naming and merging). Trees, Edit Dates and Photo Format conversion (PNG / JPG output) are released shortly.</li>
-                        <li><strong className="text-foreground font-medium">Per-app Quick Tours</strong> — every PDR window now has a "?" launcher in the title bar (top-right) that opens a popover of brand-coloured walkthroughs. Workspace, Search &amp; Discovery, Memories, Trees, People Manager, Date Editor and Reports History all have their own context-aware tour, plus shortcuts to Getting Started, Best Practices, What Happens Next, Help &amp; Support and About PDR.</li>
-                        <li><strong className="text-foreground font-medium">Backgroundable analysis</strong> — long-running source analyses can now be minimised to a small amber pill at the top of the workspace. The analysis keeps running in the background while you browse Search &amp; Discovery, Memories, People Manager or Reports. Mutating actions (Add Source, Remove, Run Fix, Re-analyze AI Tags) are gated until the analysis finishes so nothing competes for the engine.</li>
+                        <li><strong className="text-foreground font-medium">Per-app Quick Tours</strong> — every PDR window now has a "?" launcher in the title bar (top-right) that opens a popover of brand-colored walkthroughs. Workspace, Search &amp; Discovery, Memories, Trees, People Manager, Date Editor and Reports History all have their own context-aware tour, plus shortcuts to Getting Started, Best Practices, What Happens Next, Help &amp; Support and About PDR.</li>
+                        <li><strong className="text-foreground font-medium">Backgroundable analysis</strong> — long-running source analyses can now be minimized to a small amber pill at the top of the workspace. The analysis keeps running in the background while you browse Search &amp; Discovery, Memories, People Manager or Reports. Mutating actions (Add Source, Remove, Run Fix, Re-analyze AI Tags) are gated until the analysis finishes so nothing competes for the engine.</li>
                         <li><strong className="text-foreground font-medium">Smarter face recognition</strong> — the auto-matcher now requires a candidate face to look like several of a person's verified faces (top-K average) instead of just one (the old MAX rule), and excludes weak / low-information embeddings from both the verified set and the candidate pool. Improve Facial Recognition retroactively cleans up auto-matches assigned under the older rules — one click drops the bogus matches AND adds new ones in the same pass.</li>
                         <li><strong className="text-foreground font-medium">Photo Viewer upgrades</strong> — the standalone Photo Viewer now does a slideshow (Space toggles, intervals 3 / 5 / 10 / 15 / 30 s, loops at the end), and rotation buttons (R / Shift+R) that persist per-photo so a photo you turned the right way up stays that way every time you open it. Originals are never modified — rotation is PDR's overlay only.</li>
                         <li><strong className="text-foreground font-medium">Cross-search selection</strong> — checks now persist across searches in Search &amp; Discovery. Tick three photos in a "Mum" search, switch to "Dad", tick three more, then click "Show 6 selected" to see the union of every checked file regardless of current filter. "Open in Viewer" opens all of them. The Details panel's "Open in Viewer" stays scoped to the single previewed photo unless that photo is itself part of the selection.</li>
@@ -8758,7 +8758,7 @@ function SkippedFilesCallout({ skippedFiles }: { skippedFiles: Array<{ filename:
             · {expanded ? 'hide details' : 'show details'}
           </span>
           <span className="block text-muted-foreground font-normal mt-0.5">
-            These files will not be copied to your destination. The rest of your source analysed normally.
+            These files will not be copied to your destination. The rest of your source analyzed normally.
           </span>
         </span>
       </button>
@@ -9564,7 +9564,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                             <label className="flex items-center justify-between p-3 rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50/50 dark:bg-emerald-950/20 cursor-pointer transition-colors">
                               <div className="flex flex-col">
                                 <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Confirmed files</span>
-                                <span className="text-xs text-muted-foreground">Normalise metadata using the trusted EXIF/Takeout date</span>
+                                <span className="text-xs text-muted-foreground">Normalize metadata using the trusted EXIF/Takeout date</span>
                               </div>
                               <Checkbox
                                 checked={exifWriteConfirmed}
@@ -9616,7 +9616,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                           <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                             <div className="flex flex-col">
                               <span className="text-sm font-medium text-foreground">Show CSV/TXT export buttons</span>
-                              <span className="text-xs text-muted-foreground">Manual exports for standalone reports (auditing, sharing). The auto-catalogue already maintains a complete record.</span>
+                              <span className="text-xs text-muted-foreground">Manual exports for standalone reports (auditing, sharing). The auto-catalog already maintains a complete record.</span>
                             </div>
                             <Checkbox
                               checked={showManualReportExports}
@@ -9634,14 +9634,14 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               {/* Catalogue (moved from Pro — fix-engine output behaviour) */}
               <div className="pt-4 border-t border-border">
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Catalogue
+                  Catalog
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
                   Automatically save a cumulative record of all fixed files to your destination.
                 </p>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Save catalogue after each fix</span>
+                    <span className="text-sm font-medium text-foreground">Save catalog after each fix</span>
                     <span className="text-xs text-muted-foreground">Write PDR_Catalogue.csv and .txt to your destination — updates dynamically</span>
                   </div>
                   <Checkbox
@@ -10223,7 +10223,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <div className="px-5 pt-5 pb-3">
                       <h3 className="text-base font-semibold text-foreground mb-1">Save snapshot</h3>
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Give this snapshot a name so you can recognise it later (optional). Examples: <em className="text-foreground/80">Before Lightroom import</em>, <em className="text-foreground/80">Pre-holiday backup</em>.
+                        Give this snapshot a name so you can recognize it later (optional). Examples: <em className="text-foreground/80">Before Lightroom import</em>, <em className="text-foreground/80">Pre-holiday backup</em>.
                       </p>
                     </div>
                     <div className="px-5 pb-3">
@@ -10506,7 +10506,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
               data-testid="button-reset-defaults"
             >
-              Reset to Optimised Defaults
+              Reset to Optimized Defaults
             </button>
           </IconTooltip>
           <p className="text-center text-xs text-muted-foreground mt-4">

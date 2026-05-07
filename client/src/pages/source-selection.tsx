@@ -168,7 +168,7 @@ export default function SourceSelection() {
             Pick a Library Drive
           </h1>
           <p className="text-base text-muted-foreground max-w-2xl mx-auto font-light inline-flex items-center justify-center gap-1 flex-wrap">
-            For a quick fix, or your forever library — choose where your organised photos and videos will live.
+            For a quick fix, or your forever library — choose where your organized photos and videos will live.
             <PerformanceNudge type="destination" />
           </p>
         </motion.div>

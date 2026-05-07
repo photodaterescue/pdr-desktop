@@ -1341,7 +1341,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 the user makes data decisions. dark-toolbar variant
                 matches S&D's purple ribbon visual language. */}
             <SnapshotStatusBadge variant="dark-toolbar" className="" size="sm" />
-            <IconTooltip label="Customise favourite filters" side="bottom">
+            <IconTooltip label="Customize favorite filters" side="bottom">
               <button onClick={() => setShowCustomise(true)} className="p-1 rounded hover:bg-white/20 text-white/70 hover:text-white transition-colors">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
               </button>
@@ -2970,7 +2970,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCustomise(false)}>
           <div className="bg-background border border-border rounded-2xl shadow-2xl p-6 w-[420px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-foreground">Customise Favourites</h3>
+              <h3 className="text-base font-semibold text-foreground">Customize Favorites</h3>
               <button onClick={() => setShowCustomise(false)} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
@@ -5782,7 +5782,7 @@ function PeopleManagerModal({ onClose, onRefresh }: { onClose: () => void; onRef
                         <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/30 dark:border-purple-800/20 mb-4">
                           <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Click a group to name it. Don't recognise someone? Use <strong>Unsure</strong> to revisit later, or <strong>Ignore</strong> to hide them permanently.
+                            Click a group to name it. Don't recognize someone? Use <strong>Unsure</strong> to revisit later, or <strong>Ignore</strong> to hide them permanently.
                           </p>
                         </div>
                         {viewMode === 'card' ? (

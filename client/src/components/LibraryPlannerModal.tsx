@@ -265,7 +265,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                 </h3>
                 <p className="text-xs text-foreground/60 mb-4 leading-relaxed">
                   For example, consolidating photos from your phone, an old laptop, a camera SD card, and
-                  a cloud backup — all into one organised library on one drive.
+                  a cloud backup — all into one organized library on one drive.
                 </p>
                 <div className="space-y-2">
                   {([

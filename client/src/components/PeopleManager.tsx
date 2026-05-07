@@ -1730,7 +1730,7 @@ export default function PeopleManager() {
                     <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/30 dark:border-purple-800/20 mb-4">
                       <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Click face thumbnails to select them, then assign to an existing person (or create a new one) using the panel on the right. Don't recognise someone? Mark <strong>Unsure</strong> to revisit later, or <strong>Ignore</strong> to hide them permanently.
+                        Click face thumbnails to select them, then assign to an existing person (or create a new one) using the panel on the right. Don't recognize someone? Mark <strong>Unsure</strong> to revisit later, or <strong>Ignore</strong> to hide them permanently.
                       </p>
                     </div>
                     {viewMode === 'card' ? (

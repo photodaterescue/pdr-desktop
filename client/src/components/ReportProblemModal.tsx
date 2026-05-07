@@ -93,7 +93,7 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
                   autoFocus
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  placeholder="E.g. The app crashed at 33% while analysing a Google Takeout zip."
+                  placeholder="E.g. The app crashed at 33% while analyzing a Google Takeout zip."
                   rows={5}
                   className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground resize-y focus:outline-none focus:ring-2 focus:ring-primary"
                 />

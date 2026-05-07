@@ -211,7 +211,7 @@ export default function Home() {
             Welcome to Photo Date Rescue
           </h1>
           <p className="text-[1.05rem] text-muted-foreground max-w-2xl mx-auto font-light">
-            A safe, calm place to restore and organise your photo memories.
+            A safe, calm place to restore and organize your photo memories.
           </p>
           <p className="text-[0.9rem] text-muted-foreground/70 max-w-2xl mx-auto font-light mt-1.5">
             Runs entirely on your own machine — no cloud, no upload, no account.
