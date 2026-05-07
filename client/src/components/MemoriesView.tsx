@@ -304,12 +304,15 @@ export default function MemoriesView() {
                   {onThisDay.map((item, idx) => (
                     <IconTooltip key={item.id} label={`${item.filename} · ${formatHumanDate(item.derived_date)}`} side="top">
                     <button
-                      // First thumbnail carries `data-tour="mem-open"` so
-                      // step 4 of the Memories tour ("Open a Memory")
-                      // has a concrete spotlight target. Tour silently
-                      // skips the highlight when On This Day is empty —
+                      // First thumbnail carries `data-tour="mem-open"`
+                      // for step 4 of the Memories tour ("Open a
+                      // Memory"). Direct attribute (not conditional
+                      // spread) — undefined values get omitted by the
+                      // DOM, same effect with one fewer prop-merge
+                      // edge case to worry about. Tour silently skips
+                      // the highlight when On This Day is empty —
                       // same conditional gate as `mem-on-this-day`.
-                      {...(idx === 0 ? { 'data-tour': 'mem-open' } : {})}
+                      data-tour={idx === 0 ? 'mem-open' : undefined}
                       // Pass the full strip + this item's index so the
                       // viewer's left/right arrows browse the rest of
                       // the "On this day in previous years" set.

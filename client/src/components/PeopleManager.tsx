@@ -1585,9 +1585,12 @@ export default function PeopleManager() {
                       // no visible chrome — it inherits the grid gap
                       // from the parent's `space-y-2`, and the
                       // PersonCardRow inside still renders as before.
+                      // Direct attribute (not conditional spread) for
+                      // resilience — same canonical pattern used for
+                      // rh-detail / mem-open.
                       <div
                         key={clusterKey(cluster)}
-                        {...(idx === 0 ? { 'data-tour': 'pm-verify' } : {})}
+                        data-tour={idx === 0 ? 'pm-verify' : undefined}
                       >
                       <PersonCardRow
                         rowIndex={idx}

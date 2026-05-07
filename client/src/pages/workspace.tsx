@@ -6759,9 +6759,17 @@ function ReportsListModal({ onClose, onViewReport }: {
                   key={report.id}
                   className={`p-4 hover:bg-secondary/30 transition-colors ${index === 0 ? 'bg-primary/10 border-l-4 border-l-primary ring-1 ring-primary/20' : ''}`}
                   // First row carries `data-tour="rh-detail"` so step 3
-                  // of the tour ("Inside a Report") spotlights an actual
-                  // row instead of free-floating in the centre.
-                  {...(index === 0 ? { 'data-tour': 'rh-detail' } : {})}
+                  // of the tour ("Row at a Glance") spotlights an actual
+                  // row instead of free-floating in the centre. Direct
+                  // attribute (not conditional spread) is more
+                  // resilient: React always renders the attribute on
+                  // the element, just with a value of `undefined`
+                  // (which the DOM omits) for non-first rows. The
+                  // earlier spread variant compiled fine but Terry
+                  // reported step 3 still landed on a centered tooltip
+                  // — switching to the canonical pattern rules out any
+                  // subtle prop-merge edge case.
+                  data-tour={index === 0 ? 'rh-detail' : undefined}
                   data-testid={`report-row-${report.id}`}
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -6845,11 +6853,11 @@ function ReportsListModal({ onClose, onViewReport }: {
                         className="h-8"
                         // First row's Report Summary button is the
                         // spotlight target for step 4 of the tour
-                        // ("Restore From Backup"). The Restore From
-                        // Backup feature lives inside the report
-                        // summary modal, so the tour points at the
-                        // doorway rather than the feature itself.
-                        {...(index === 0 ? { 'data-tour': 'rh-restore' } : {})}
+                        // ("Drill In & Restore"). Direct attribute
+                        // for the same reason as rh-detail above —
+                        // canonical React pattern is more reliable
+                        // than conditional prop spread.
+                        data-tour={index === 0 ? 'rh-restore' : undefined}
                         data-testid={`button-view-report-${report.id}`}
                       >
                         Report Summary
