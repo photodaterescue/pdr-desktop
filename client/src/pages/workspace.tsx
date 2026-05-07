@@ -383,6 +383,20 @@ useEffect(() => {
     return () => window.removeEventListener('pdr-clear-sources', handleClearSources);
   }, []);
 
+  // `pdr:goWorkspace` — fired by the Memories empty-state CTA (and
+  // potentially other onboarding surfaces) when a user lands on a
+  // view that requires data they haven't generated yet. Switches the
+  // active view back to the dashboard where Add Source / Pick
+  // Library Drive live, and dismisses any open guidance panel.
+  useEffect(() => {
+    const handleGoWorkspace = () => {
+      setActivePanel(null);
+      setActiveView('dashboard');
+    };
+    window.addEventListener('pdr:goWorkspace', handleGoWorkspace);
+    return () => window.removeEventListener('pdr:goWorkspace', handleGoWorkspace);
+  }, []);
+
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);

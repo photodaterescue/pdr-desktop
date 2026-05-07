@@ -9,8 +9,12 @@ import {
   Layers,
   X,
   Info,
+  HardDrive,
+  PlayCircle,
+  ArrowRight,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Button } from '@/components/ui/custom-button';
 import {
   getMemoriesYearMonthBuckets,
   getMemoriesOnThisDay,
@@ -268,8 +272,83 @@ export default function MemoriesView() {
       </div>
 
       {buckets.length === 0 && !loading ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground p-10">
-          Nothing to show here yet.
+        // Rich first-launch empty state. The previous "Nothing to show
+        // here yet." line read as a budget app — Terry asked for
+        // something that explains what Memories DOES, what users will
+        // see once they've run a Fix, and how to get there. Layout:
+        // (a) hero (icon + headline + 1-sentence pitch),
+        // (b) three feature mini-cards (timeline / On This Day /
+        //     slideshow), so the user knows what to expect,
+        // (c) gold-tinted storage tip referencing Drive Advisor — gold
+        //     is the Memories brand accent (#f8c15c), used here for
+        //     the tip card so the surface still feels "Memories-y"
+        //     even before a single photo lands,
+        // (d) a primary CTA dispatching `pdr:goWorkspace` — workspace
+        //     listens for that event and switches the active view back
+        //     to the dashboard (where Add Source lives).
+        <div className="flex-1 overflow-y-auto p-6 sm:p-10 flex items-start justify-center">
+          <div className="max-w-2xl w-full mx-auto">
+            {/* Hero */}
+            <div className="text-center mb-8">
+              <div className="inline-flex w-16 h-16 rounded-2xl bg-primary/10 items-center justify-center mb-4">
+                <CalendarRange className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-2xl font-semibold text-foreground mb-2">Your Memories will appear here</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto">
+                Once you've added sources and run your first Fix, every photo and video PDR has corrected will be sorted into a year-by-year timeline. Click any year to drill into the months; click a month to see a day-by-day grid.
+              </p>
+            </div>
+
+            {/* What you'll get — three feature cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+              <div className="rounded-xl border border-border bg-card p-4 flex flex-col items-center text-center gap-2">
+                <CalendarRange className="w-6 h-6 text-primary" />
+                <p className="text-xs font-semibold text-foreground">Chronological timeline</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Every fixed photo and video, sorted year-by-year and month-by-month across decades.</p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4 flex flex-col items-center text-center gap-2">
+                <Sparkles className="w-6 h-6 text-primary" />
+                <p className="text-xs font-semibold text-foreground">On This Day</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">A row of photos taken on this calendar date in past years — a nice surprise on a quiet morning.</p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4 flex flex-col items-center text-center gap-2">
+                <PlayCircle className="w-6 h-6 text-primary" />
+                <p className="text-xs font-semibold text-foreground">Slideshow viewer</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Open any day, month or year and play through it as a slideshow with persistent rotation.</p>
+              </div>
+            </div>
+
+            {/* Storage tip — gold-tinted (Memories brand accent) */}
+            <div
+              className="rounded-xl p-4 mb-6"
+              style={{
+                backgroundColor: '#fef7e6',
+                borderColor: '#f8c15c',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <HardDrive className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#b07a18' }} />
+                <div className="space-y-1.5 text-xs leading-relaxed">
+                  <p className="font-semibold text-foreground">Before you start — pick a Library Drive with plenty of room</p>
+                  <p className="text-muted-foreground">PDR copies your fixed files to your Library Drive without modifying the originals. The <strong className="text-foreground font-medium">Drive Advisor</strong> in the destination flow rates each connected drive on speed and capacity, so you can pick one with comfortable headroom for the size of library you're building.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Primary CTA → back to Workspace where Add Source lives */}
+            <div className="flex justify-center">
+              <Button
+                variant="primary"
+                onClick={() => window.dispatchEvent(new CustomEvent('pdr:goWorkspace'))}
+                className="gap-2"
+              >
+                Go to Workspace to add your first Source
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="flex-1 flex min-h-0">
