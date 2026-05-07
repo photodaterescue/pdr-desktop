@@ -2601,11 +2601,10 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
     // over-corrects on small verified sets).
     const TOP_K = Math.min(5, refVecs.length);
 
-    // Get all unnamed faces (person_id IS NULL) with embeddings
-    const unnamed = database.prepare(`
-      SELECT id, embedding FROM face_detections
-      WHERE person_id IS NULL AND embedding IS NOT NULL
-    `).all() as { id: number; embedding: Buffer }[];
+    // (The unnamed pool is fetched LATER, after the existing-auto-
+    // match re-test step, because that step may un-assign rows back
+    // into the unnamed pool. Fetching now and looping over a stale
+    // list would miss those newly-un-assigned candidates.)
 
     let matchedForThisPerson = 0;
     // We now store the actual similarity score on the face row so
@@ -2616,8 +2615,73 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
     // accurate per-face scores). Cost is bounded — typically a
     // few hundred dot products per unnamed face per named person.
     const assignStmt = database.prepare(`UPDATE face_detections SET person_id = ?, match_similarity = ? WHERE id = ?`);
+    const unassignStmt = database.prepare(`UPDATE face_detections SET person_id = NULL, match_similarity = NULL WHERE id = ?`);
 
-    for (const row of unnamed) {
+    // ─── Re-test existing unverified auto-matches ─────────────────────
+    // Improve Facial Recognition now ALSO retroactively cleans up
+    // bogus auto-matches that were assigned under an older / looser
+    // algorithm. We pull every unverified face currently attached to
+    // this person and re-score it with the new top-K-average +
+    // magnitude-floor algorithm. Any face that doesn't pass the
+    // current threshold is un-assigned (person_id → NULL) and made
+    // available for fresh matching against other people in the
+    // unnamed-faces loop below. Verified faces are NEVER touched;
+    // they remain the user's ground truth regardless of algorithm
+    // changes. This gives the user immediate cleanup of historical
+    // bogus matches with no new UI surface — clicking the existing
+    // Improve button does both add new and clean up old.
+    const existingAutoMatches = database.prepare(
+      `SELECT id, embedding FROM face_detections WHERE person_id = ? AND verified = 0 AND embedding IS NOT NULL`,
+    ).all(person.id) as Array<{ id: number; embedding: Buffer }>;
+    let unassignedCount = 0;
+    for (const row of existingAutoMatches) {
+      const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+      let magB = 0;
+      for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
+      const magBSqrt = Math.sqrt(magB);
+      // Weak candidate → un-assign immediately (it shouldn't be
+      // attached to anyone under the new rules).
+      if (magBSqrt < magnitudeFloor) {
+        unassignStmt.run(row.id);
+        unassignedCount++;
+        continue;
+      }
+      const sims: number[] = [];
+      for (let k = 0; k < refVecs.length; k++) {
+        const va = refVecs[k];
+        let dot = 0;
+        for (let i = 0; i < dim; i++) dot += va[i] * vec[i];
+        const denom = refMags[k] * magBSqrt;
+        sims.push(denom === 0 ? 0 : dot / denom);
+      }
+      sims.sort((a, b) => b - a);
+      let topKSum = 0;
+      for (let k = 0; k < TOP_K; k++) topKSum += sims[k];
+      const topKAvg = TOP_K > 0 ? topKSum / TOP_K : 0;
+      if (topKAvg < similarityThreshold) {
+        // No longer matches — un-assign so the candidate either
+        // attaches to a different named person below, or returns
+        // to the unnamed pool.
+        unassignStmt.run(row.id);
+        unassignedCount++;
+      } else {
+        // Still matches — refresh the stored similarity score so
+        // S&D's Match slider reflects the new metric.
+        assignStmt.run(person.id, topKAvg, row.id);
+      }
+    }
+    if (unassignedCount > 0) {
+      console.log(`[AI] Improve: re-tested ${existingAutoMatches.length} existing auto-match(es) for ${person.name}, un-assigned ${unassignedCount} that no longer pass the new algorithm`);
+    }
+
+    // Re-fetch the unnamed pool because we may have just added rows
+    // to it via the un-assign step above.
+    const unnamedRefreshed = database.prepare(`
+      SELECT id, embedding FROM face_detections
+      WHERE person_id IS NULL AND embedding IS NOT NULL
+    `).all() as { id: number; embedding: Buffer }[];
+
+    for (const row of unnamedRefreshed) {
       const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
       let magB = 0;
       for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
