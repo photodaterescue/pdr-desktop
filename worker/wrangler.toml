@@ -50,8 +50,8 @@ bucket_name = "pdr-updates"
 # index.ts.
 [[kv_namespaces]]
 binding = "USAGE_KV"
-id = "REPLACE_WITH_REAL_ID_AFTER_WRANGLER_CREATE"
-preview_id = "REPLACE_WITH_REAL_PREVIEW_ID_AFTER_WRANGLER_CREATE"
+id = "dc5c241bcb9f404c8c161d33fe59b2ed"
+preview_id = "db77a366fbdb43cf82d1764c6381444a"
 
 # Observability — surface request logs in `wrangler tail` and the
 # Workers analytics dashboard. Free tier includes basic metrics.
