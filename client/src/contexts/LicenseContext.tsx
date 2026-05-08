@@ -93,10 +93,65 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
   // Track if we've shown the grace period toast this session
   const [hasShownGraceToast, setHasShownGraceToast] = useState(false);
 
+  // Two-stage bootstrap. Critical UX rule: NEVER show "Checking..." in
+  // the title-bar badge on app launch. Even with a 5 s LS validate
+  // timeout, harness/network conditions can stretch the validate to
+  // multi-minute hangs (Terry hit 5+ min). The badge gating on a
+  // single isLoading flag would freeze on "Checking..." for the
+  // entire stretch, blocking visibility into actual licence state
+  // the user already has cached.
+  //
+  // Stage 1 — fast cache read (getLicenseStatus): reads license.json
+  // from disk via IPC, no network. Returns within milliseconds.
+  // Releases isLoading immediately so the badge can render the cached
+  // "Active / Offline (Xd) / Activate" state without a spinner.
+  //
+  // Stage 2 — background LS validate (refreshLicense): hits Lemon
+  // Squeezy with the AbortController-bounded fetch. May take 5 s, may
+  // take longer if the network is sluggish. Whenever it resolves, the
+  // license state updates — but the badge is NOT in a loading state
+  // during this time. The user sees a stable cached state that
+  // *might* update silently in the background.
+  //
+  // The explicit `refresh()` call (used by "Retry now" in the License
+  // modal) keeps its isLoading gate because that IS a user-driven
+  // action where the spinner is wanted.
   useEffect(() => {
-    const savedKey = getStoredLicenseKey();
-    setStoredLicenseKeyState(savedKey);
-    refresh(savedKey || undefined);
+    const bootstrap = async () => {
+      const savedKey = getStoredLicenseKey();
+      setStoredLicenseKeyState(savedKey);
+
+      // Stage 1: fast cache read so the badge renders without spinner.
+      if (isElectron()) {
+        try {
+          const cached = await getLicenseStatus();
+          setLicense(cached);
+        } catch (e) {
+          // Cache read failed; leave defaultLicenseStatus in state.
+          // The badge will show "Activate License" until stage 2
+          // completes (if there's any chance of a successful refresh).
+          console.error('License cache read failed:', e);
+        }
+      }
+      setIsLoading(false);
+
+      // Stage 2: background LS validate, no isLoading gate. If this
+      // takes 5 minutes (slow network), the badge has been showing the
+      // cached state the whole time — fine. When it finishes, the
+      // result silently updates the license state.
+      if (isElectron() && savedKey) {
+        try {
+          const result = await refreshLicense(savedKey);
+          if (result.status) {
+            setLicense(result.status);
+          }
+        } catch (e) {
+          // Validation failed — the cached state from stage 1 stays.
+          console.error('Background license validation failed:', e);
+        }
+      }
+    };
+    bootstrap();
   }, []);
 
   // Show toast notification when in grace period
