@@ -35,8 +35,17 @@
 const WORKER_BASE = 'https://updates.photodaterescue.com';
 
 /** Hard cap for the Free Trial. Mirrors what gets enforced in
- * `analysis-engine.ts` / wherever the pre-fix gate calls into. */
-export const FREE_TRIAL_FILE_LIMIT = 200;
+ * `analysis-engine.ts` / wherever the pre-fix gate calls into.
+ *
+ * 1,000 was chosen over the original 200 after pulling real numbers
+ * from Terry's library: photos average ~1.3 MB, so a 1 GB Google
+ * Takeout (the smallest size Google ships) holds 250-500 photos. A
+ * 200-file cap would exhaust mid-Takeout and kill the "breeze
+ * through Takeouts" pitch before users felt it. 1,000 covers a
+ * full 1 GB Takeout plus a folder of phone photos — enough for the
+ * "wow, this works" demo, still tight enough to nudge upgrades for
+ * the typical multi-GB library a paid tier targets. */
+export const FREE_TRIAL_FILE_LIMIT = 1_000;
 
 /** Network timeout for the Worker fetch (ms). Short on purpose —
  * the user shouldn't wait more than a couple of seconds at the
