@@ -132,6 +132,7 @@ import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, ex
 import { getSettings, setSetting, setSettings, resetCriticalSettings } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import { getLicenseStatus, activateLicense, refreshLicense, deactivateLicense, getMachineFingerprint } from './license-manager.js';
+import { getUsage as getUsageFromWorker, incrementUsage as incrementUsageOnWorker, FREE_TRIAL_FILE_LIMIT, } from './usage-tracker.js';
 import { checkForUpdates, initAutoUpdater, downloadUpdate, quitAndInstall, getUpdateState, } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
 import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, } from './search-database.js';
@@ -3139,6 +3140,33 @@ ipcMain.handle('license:deactivate', async (_event, licenseKey) => {
 });
 ipcMain.handle('license:getMachineId', async () => {
     return getMachineFingerprint();
+});
+// Free Trial usage counter — read / increment the Cloudflare-Worker-
+// backed file-fix tally for the supplied license key. Both handlers
+// catch + return tagged results rather than throwing across the IPC
+// boundary, so renderer callers can render a "couldn't reach the
+// usage server" message instead of seeing an opaque IPC rejection.
+ipcMain.handle('usage:get', async (_event, licenseKey) => {
+    try {
+        const used = await getUsageFromWorker(licenseKey);
+        return { success: true, used, limit: FREE_TRIAL_FILE_LIMIT };
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn('[usage:get] worker call failed:', message);
+        return { success: false, error: message };
+    }
+});
+ipcMain.handle('usage:increment', async (_event, licenseKey, count) => {
+    try {
+        const used = await incrementUsageOnWorker(licenseKey, count);
+        return { success: true, used, limit: FREE_TRIAL_FILE_LIMIT };
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn('[usage:increment] worker call failed:', message);
+        return { success: false, error: message };
+    }
 });
 // Lightweight liveness ping used by the child-window heartbeat so each window
 // can surface a banner when main goes dark (hang, not a clean crash — a crash

@@ -152,6 +152,21 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     deactivate: (key: string) => ipcRenderer.invoke('license:deactivate', key),
     getMachineId: () => ipcRenderer.invoke('license:getMachineId'),
   },
+
+  // Free Trial 200-file counter — read / increment the Cloudflare
+  // KV-backed tally. Renderer reads it for the workspace banner and
+  // pre-fix gate; main.ts auto-increments after each successful Fix
+  // (wired into files:copy in the next phase).
+  usage: {
+    get: (licenseKey: string) =>
+      ipcRenderer.invoke('usage:get', licenseKey) as Promise<
+        { success: true; used: number; limit: number } | { success: false; error: string }
+      >,
+    increment: (licenseKey: string, count: number) =>
+      ipcRenderer.invoke('usage:increment', licenseKey, count) as Promise<
+        { success: true; used: number; limit: number } | { success: false; error: string }
+      >,
+  },
   
   updates: {
     check: () => ipcRenderer.invoke('updates:check'),

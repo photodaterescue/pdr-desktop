@@ -609,6 +609,39 @@ export async function getMachineId(): Promise<string> {
   return 'unknown';
 }
 
+// ─── Free Trial 200-file counter ─────────────────────────────────
+//
+// Renderer-side wrappers around the Cloudflare-Worker-backed usage
+// tracker. The main process exposes two IPC handlers (`usage:get`
+// and `usage:increment`) that proxy to the Worker; here we just
+// add a thin "not in Electron" guard for the dev/web preview path.
+//
+// Both functions resolve to a tagged result. On the success path
+// the renderer gets `{ used, limit }`; on failure it gets an
+// `{ error }` string the UI can display. The tag-based shape
+// matches the rest of the bridge.
+
+export interface UsageResult {
+  success: boolean;
+  used?: number;
+  limit?: number;
+  error?: string;
+}
+
+export async function getUsage(licenseKey: string): Promise<UsageResult> {
+  if (isElectron() && (window as any).pdr?.usage) {
+    return (window as any).pdr.usage.get(licenseKey);
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
+export async function incrementUsage(licenseKey: string, count: number): Promise<UsageResult> {
+  if (isElectron() && (window as any).pdr?.usage) {
+    return (window as any).pdr.usage.increment(licenseKey, count);
+  }
+  return { success: false, error: 'Not running in Electron environment' };
+}
+
 // Update checking types and functions
 export interface UpdateInfo {
   currentVersion: string;
