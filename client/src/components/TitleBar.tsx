@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
+import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { onAiProgress, pauseAi, resumeAi, cancelAi, type AiProgress } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
@@ -233,6 +234,13 @@ export function TitleBar() {
             {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           </button>
         </IconTooltip>
+        {/* Free Trial 200-file counter — only renders when the
+            current license is on the `'free'` plan, otherwise null.
+            Sits left of LicenseStatusBadge so the user reads "trial
+            usage → license state" left-to-right. Self-contained:
+            uses useLicense() internally + listens for
+            `pdr:trialUsageUpdate` to live-refresh after each Fix. */}
+        <TrialCounterChip />
         <LicenseStatusBadge
           onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLicenseModal'))}
         />

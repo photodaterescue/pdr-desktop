@@ -6107,10 +6107,18 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       // means this is a no-op for paid tiers.
       if (license.plan === 'free' && storedLicenseKey && (result.copied ?? 0) > 0) {
         void incrementUsage(storedLicenseKey, result.copied!).then(usage => {
-          if (usage.success) {
+          if (usage.success && typeof usage.used === 'number' && typeof usage.limit === 'number') {
             console.log(`[Fix] Free Trial counter ticked: ${usage.used}/${usage.limit}`);
+            // Broadcast the new totals so the TitleBar's
+            // TrialCounterChip refreshes without a second
+            // round-trip to the Worker. Listener lives in
+            // TrialCounterChip.tsx — see the
+            // `pdr:trialUsageUpdate` handler there.
+            window.dispatchEvent(new CustomEvent('pdr:trialUsageUpdate', {
+              detail: { used: usage.used, limit: usage.limit },
+            }));
           } else {
-            console.warn(`[Fix] Free Trial counter increment failed:`, usage.error);
+            console.warn(`[Fix] Free Trial counter increment failed:`, (usage as any).error);
           }
         }).catch(err => {
           console.warn(`[Fix] Free Trial counter increment threw:`, err);
