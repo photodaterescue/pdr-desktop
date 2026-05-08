@@ -8483,7 +8483,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   )}
                 </div>
 
-                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-2.0.2"]} className="space-y-2">
+                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-2.0.3"]} className="space-y-2">
 
                   {updateStatus === 'update-available' && latestVersion && (
                     <AccordionItem value={`ver-${latestVersion}`} className="border border-primary/30 rounded-lg px-4 bg-primary/5">
@@ -8516,6 +8516,23 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       </AccordionContent>
                     </AccordionItem>
                   )}
+
+                  <AccordionItem value="ver-2.0.3" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.3</span>
+                        {appVersion === '2.0.3' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Run Fix now actually starts the Fix</strong> — clicking Run Fix on v2.0.2 silently failed for licensed users due to an internal scoping bug; the S&D prompt and progress modal never opened. Resolved.</li>
+                        <li><strong className="text-foreground font-medium">Sidebar scrolls on short windows</strong> — on smaller laptop screens the bottom sections (Settings, About PDR, Help &amp; Support) were clipped off the bottom with no scrollbar. The sidebar now scrolls naturally when its content is taller than the window.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
 
                   <AccordionItem value="ver-2.0.2" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
