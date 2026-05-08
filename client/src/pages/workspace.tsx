@@ -2936,7 +2936,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       // currently rendered, not vanish when the user has pinned the
       // sidebar open.
       data-tour="sd-sidebar-collapse"
-      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container sidebar-animated"
+      // overflow-y-auto so the sidebar scrolls when its content
+      // (Source list + Views + Tools + Guidance + APP) is taller
+      // than the viewport. Without it, smaller-screen laptops crop
+      // the bottom sections silently — the Settings / About PDR /
+      // Help & Support entries become unreachable. Mirrors the same
+      // class on the collapsed-rail variant above.
+      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container sidebar-animated overflow-y-auto"
       style={{ width: `${width}px` }}
     >
       {/* Pin / collapse controls — icons sized up from 3.5 to 4, padding
