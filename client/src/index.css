@@ -488,7 +488,7 @@ body > .window-resize-hint-tr {
   .sidebar-animated {
     transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
     will-change: width;
-    overflow: hidden;
+    overflow-x: hidden;
   }
   .sidebar-animated > * {
     animation: sidebar-fade-in 0.35s cubic-bezier(0.22, 1, 0.36, 1);
@@ -626,4 +626,12 @@ body > .window-resize-hint-tr {
     transform-box: fill-box;
     transform-origin: center center;
   }
+}
+
+/* Anchor the document chain to the viewport so workspace.tsx h-full propagates
+   correctly. Without this, html/body/#root collapse to content height, the
+   outer flex layout grows taller than the window, and the sidebar overflow-y-auto
+   never has a constrained box to scroll inside. */
+html, body, #root {
+  height: 100%;
 }

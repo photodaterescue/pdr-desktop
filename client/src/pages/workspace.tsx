@@ -1947,7 +1947,7 @@ return (
 
     {/* Main workspace layout */}
     <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
 
       <input
         type="file"
@@ -2936,12 +2936,6 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       // currently rendered, not vanish when the user has pinned the
       // sidebar open.
       data-tour="sd-sidebar-collapse"
-      // overflow-y-auto so the sidebar scrolls when its content
-      // (Source list + Views + Tools + Guidance + APP) is taller
-      // than the viewport. Without it, smaller-screen laptops crop
-      // the bottom sections silently — the Settings / About PDR /
-      // Help & Support entries become unreachable. Mirrors the same
-      // class on the collapsed-rail variant above.
       className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container sidebar-animated overflow-y-auto"
       style={{ width: `${width}px` }}
     >
@@ -2990,7 +2984,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         </div>
       </div>
 
-      <div className="flex-1 min-h-[180px] overflow-y-auto px-4 py-2 space-y-6">
+      <div className="shrink-0 min-h-[180px] overflow-y-auto px-4 py-2 space-y-6">
         {/* MENU / SOURCES SECTION — sits at the top of the sidebar directly
             below the PDR logo. Header renames to 'Source Menu' once the user
             adds sources, otherwise it reads 'Menu' to match the fact that
@@ -3093,17 +3087,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         </div>
       </div>
 
+      <div className="flex-1 overflow-y-auto min-h-0">
       {/* VIEWS + TOOLS — static section anchored just above Guidance, so
           it stays visible regardless of how many sources the user adds. The
           scrollable Sources area above it grows to fill any free space
           between Add Source and this block, giving the user a natural
-          "drop zone" of breathing room for source entries to populate.
-          shrink-0 here (and on the Guidance / APP siblings below) is what
-          actually triggers the outer sidebar's overflow-y-auto on short
-          windows: without it, the flex algorithm silently shrinks these
-          fixed-content blocks to fit the parent height, hiding their
-          children and leaving no visible scrollbar. */}
-      <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider shrink-0">
+          "drop zone" of breathing room for source entries to populate. */}
+      <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider">
         <div>
           <SectionHeader
             label="Views"
@@ -3215,7 +3205,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       {/* EDUCATION SECTION */}
-      <div className="pt-2 border-t pb-2 sidebar-divider shrink-0" data-tour="guides-panel">
+      <div className="pt-2 border-t pb-2 sidebar-divider" data-tour="guides-panel">
         <div className="px-4">
           <SectionHeader
             label="Guidance"
@@ -3238,7 +3228,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
       {/* APP SECTION - BOTTOM (Settings / About / Help) — collapsible to
           match Views / Tools / Guidance. */}
-      <div className="border-t px-4 pt-2 pb-3 sidebar-divider shrink-0">
+      <div className="border-t px-4 pt-2 pb-3 sidebar-divider">
         <SectionHeader
           label="App"
           collapsed={appCollapsed}
@@ -3251,6 +3241,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
           </div>
         )}
+      </div>
       </div>
     </div>
   );
