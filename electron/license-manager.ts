@@ -150,49 +150,62 @@ export function clearCache(): void {
 
 // ============ API CALLS ============
 
+/**
+ * Run a fetch with a hard timeout — aborts the request AND the body
+ * read if the server is sluggish. Returns the same Response object
+ * fetch would have, but throws AbortError if the timeout fires.
+ *
+ * Why a helper: validate / activate / deactivate all need the same
+ * behaviour. Without it a cooperative LS slowdown hangs the whole
+ * IPC handler — Terry hit a 5+ minute "Checking..." stall when the
+ * deactivate path (no timeout originally) sat on a stalled body
+ * read. With this helper, every external LS call is bounded.
+ *
+ * The wrapper races fetch + body parse against a single timer so a
+ * server that sends headers fast then drips the body still aborts
+ * cleanly.
+ */
+async function lsFetchJson<T = any>(url: string, body: unknown, timeoutMs: number): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return await response.json() as T;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function validateWithLemonSqueezy(licenseKey: string, instanceId: string): Promise<{
   success: boolean;
   data?: LemonSqueezyValidateResponse;
   error?: string;
   offline?: boolean;
 }> {
-  // 5 s timeout via AbortController — without this, an offline launch
-  // sits on the OS-level TCP timeout (~21 s) before falling back to
-  // cached licence state. That makes PDR feel frozen on first paint
-  // for any user without internet. 5 s is short enough to feel
-  // responsive, long enough to tolerate a sluggish but reachable
-  // Lemon Squeezy.
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-
+  // 5 s timeout — without it, an offline launch sits on the OS-level
+  // TCP timeout (~21 s) before falling back to cached licence state.
+  // That makes PDR feel frozen on first paint for any user without
+  // internet. 5 s is short enough to feel responsive, long enough
+  // to tolerate a sluggish but reachable Lemon Squeezy.
   try {
-    const response = await fetch(`${LEMON_SQUEEZY_API}/validate`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        license_key: licenseKey,
-        instance_id: instanceId,
-      }),
-      signal: controller.signal,
-    });
-
-    const data = await response.json() as LemonSqueezyValidateResponse;
+    const data = await lsFetchJson<LemonSqueezyValidateResponse>(
+      `${LEMON_SQUEEZY_API}/validate`,
+      { license_key: licenseKey, instance_id: instanceId },
+      5000,
+    );
     return { success: true, data };
   } catch (error) {
-    // AbortError = our 5 s timeout fired (treat as offline).
-    // Other network errors (DNS fail, connection refused, etc.) =
-    // also offline. Either way we fall through to cached licence.
     const isTimeout = error instanceof Error && error.name === 'AbortError';
     return {
       success: false,
       offline: true,
       error: isTimeout ? 'Network timeout (5 s)' : 'Network unavailable',
     };
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -201,34 +214,32 @@ async function activateWithLemonSqueezy(licenseKey: string, instanceId: string, 
   data?: LemonSqueezyValidateResponse;
   error?: string;
 }> {
+  // 8 s timeout — slightly longer than validate's 5 s because activation
+  // is a one-time interactive action where the user is staring at a
+  // spinner; a couple of extra seconds of patience is fine. Without
+  // any timeout this would hang on a slow LS exactly like deactivate
+  // did before.
   try {
-    const response = await fetch(`${LEMON_SQUEEZY_API}/activate`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        license_key: licenseKey,
-        instance_name: instanceName,
-      }),
-    });
-
-    const data = await response.json() as LemonSqueezyValidateResponse;
-    
-    // Activation endpoint returns 'activated', not 'valid'
+    const data = await lsFetchJson<LemonSqueezyValidateResponse>(
+      `${LEMON_SQUEEZY_API}/activate`,
+      { license_key: licenseKey, instance_name: instanceName },
+      8000,
+    );
     const isActivated = (data as any).activated === true;
-    
     if (!isActivated) {
       const errorMsg = data.error || `Activation failed: ${JSON.stringify(data).substring(0, 200)}`;
       return { success: false, error: errorMsg };
     }
-    
-    // Map 'activated' to 'valid' for consistency with validate endpoint
     data.valid = true;
     return { success: true, data };
   } catch (error) {
-    return { success: false, error: 'Network error. Please check your connection.' };
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    return {
+      success: false,
+      error: isTimeout
+        ? 'Network timeout (8 s) — please check your connection and try again.'
+        : 'Network error. Please check your connection.',
+    };
   }
 }
 
@@ -236,23 +247,25 @@ async function deactivateWithLemonSqueezy(licenseKey: string, instanceId: string
   success: boolean;
   error?: string;
 }> {
+  // 8 s timeout — same rationale as activate. Critically: BEFORE the
+  // 2.0.2 fix, deactivate had no timeout at all, so a stalled LS
+  // request would leave the modal showing "Deactivating..." forever
+  // (Terry hit a 5+ min hang). Always bound external calls.
   try {
-    const response = await fetch(`${LEMON_SQUEEZY_API}/deactivate`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        license_key: licenseKey,
-        instance_id: instanceId,
-      }),
-    });
-
-    const data = await response.json();
+    const data = await lsFetchJson<{ deactivated?: boolean }>(
+      `${LEMON_SQUEEZY_API}/deactivate`,
+      { license_key: licenseKey, instance_id: instanceId },
+      8000,
+    );
     return { success: data.deactivated === true };
   } catch (error) {
-    return { success: false, error: 'Network error' };
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    return {
+      success: false,
+      error: isTimeout
+        ? 'Network timeout (8 s) — please check your connection and try again.'
+        : 'Network error',
+    };
   }
 }
 

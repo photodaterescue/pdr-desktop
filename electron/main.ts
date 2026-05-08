@@ -64,7 +64,17 @@ app.setPath('userData', path.join(app.getPath('appData'), 'Photo Date Rescue'));
 log.transports.file.level = 'info';
 log.transports.file.maxSize = 5 * 1024 * 1024;
 log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
-log.transports.console.level = 'debug';
+// Console transport: only write to stdout when it's an attached TTY.
+// In dev launches piped through a harness/IDE, stdout can disappear
+// while Electron keeps running (Electron is windowed; doesn't follow
+// the launcher's lifecycle). Subsequent console writes throw EPIPE,
+// which cascades through electron-log's own ErrorHandler — it tries
+// to log the error via the same broken pipe and infinitely recurses.
+// In production (NSIS-launched .exe) there's no console at all so
+// the console transport is dead weight anyway. Either way the file
+// transport (under %APPDATA%\Photo Date Rescue\logs\) keeps full
+// log fidelity and is the canonical source for diagnostics.
+log.transports.console.level = process.stdout.isTTY ? 'debug' : false;
 // electron-log reads the app name at import time, so app.setName()
 // above doesn't retroactively move the file. Pin an explicit path
 // under %APPDATA%\Photo Date Rescue\logs regardless of whether we're

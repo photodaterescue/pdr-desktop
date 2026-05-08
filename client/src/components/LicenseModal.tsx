@@ -12,6 +12,17 @@ interface LicenseModalProps {
 export function LicenseModal({ onClose }: LicenseModalProps) {
   const { license, isLoading, isLicensed, activate, deactivate, refresh, storedLicenseKey } = useLicense();
   const [isRetrying, setIsRetrying] = useState(false);
+  // Per-action local flags so the button text accurately reflects
+  // what's actually in flight. Before this split, `isLoading` from
+  // the context was shared across refresh / activate / deactivate, so
+  // hitting "Retry now" made the Deactivate button read "Deactivating..."
+  // even though no deactivation was happening — confusing on its own,
+  // and indistinguishable from a real stuck deactivate. Tracked
+  // locally because the modal is the only surface that needs the
+  // distinction; the context can keep its single isLoading for cases
+  // that just want a generic "something is happening" signal.
+  const [isActivating, setIsActivating] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -22,10 +33,14 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
     }
 
     setError(null);
-    const result = await activate(licenseKey.trim());
-    
-    if (!result.success) {
-      setError(result.error || 'Activation failed');
+    setIsActivating(true);
+    try {
+      const result = await activate(licenseKey.trim());
+      if (!result.success) {
+        setError(result.error || 'Activation failed');
+      }
+    } finally {
+      setIsActivating(false);
     }
   };
 
@@ -34,9 +49,14 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
       setError('No license key found');
       return;
     }
-    const result = await deactivate(storedLicenseKey);
-    if (!result.success) {
-      setError(result.error || 'Deactivation failed');
+    setIsDeactivating(true);
+    try {
+      const result = await deactivate(storedLicenseKey);
+      if (!result.success) {
+        setError(result.error || 'Deactivation failed');
+      }
+    } finally {
+      setIsDeactivating(false);
     }
   };
 
@@ -146,11 +166,11 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
               <Button
                 variant="outline"
                 onClick={handleDeactivate}
-                disabled={isLoading}
+                disabled={isDeactivating}
                 className="text-muted-foreground"
                 data-testid="button-deactivate-license"
               >
-                {isLoading ? (
+                {isDeactivating ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Deactivating...
@@ -194,12 +214,12 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
 
             <Button
               onClick={handleActivate}
-              disabled={isLoading || !licenseKey.trim()}
+              disabled={isActivating || !licenseKey.trim()}
               className="w-full"
               size="lg"
               data-testid="button-activate-license"
             >
-              {isLoading ? (
+              {isActivating ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Activating...
