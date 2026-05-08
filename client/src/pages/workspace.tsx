@@ -100,6 +100,7 @@ import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
+import { TrialLimitModal } from "@/components/TrialLimitModal";
 import { FolderBrowserModal } from "@/components/FolderBrowserModal";
 import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
@@ -2240,6 +2241,18 @@ return (
 		  onClose={() => setTeaserFeature(null)}
 		  onActivate={handleActivateLicense}
 		/>
+		{/* Free Trial pre-fix gate — opens when the Run Fix button's
+		    click handler determined that license.plan === 'free'
+		    AND used + wouldUse > limit. State is `null` until then,
+		    so the modal stays unmounted in the common (paid /
+		    within-limit) path. */}
+		<TrialLimitModal
+		  isOpen={trialLimit !== null}
+		  onClose={() => setTrialLimit(null)}
+		  used={trialLimit?.used ?? 0}
+		  limit={trialLimit?.limit ?? 200}
+		  wouldUse={trialLimit?.wouldUse ?? 0}
+		/>
       {/* Custom Folder Browser for source selection */}
       <FolderBrowserModal
         isOpen={showFolderBrowser}
@@ -3502,6 +3515,11 @@ function DashboardPanel({
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
   const [showSDPrompt, setShowSDPrompt] = useState(false);
+  // Free Trial pre-fix gate state — populated by the Run Fix click
+  // handler when license.plan === 'free' AND the run would push the
+  // counter past the cap. The TrialLimitModal renders these props
+  // directly and the user picks Upgrade or Cancel.
+  const [trialLimit, setTrialLimit] = useState<{ used: number; limit: number; wouldUse: number } | null>(null);
   const [addToSDThisRun, setAddToSDThisRun] = useState(false);
   // Reports / PostFixReport / Clear-Sources state lives at workspace
   // top-level so the modals overlay any active view (S&D, Memories,
@@ -4262,7 +4280,7 @@ function DashboardPanel({
                  side="top"
                >
                  <Button
-                   onClick={() => {
+                   onClick={async () => {
                      // Hard-block a second concurrent Fix. The chip
                      // is visible top-right while one is running so
                      // the user always knows.
@@ -4275,6 +4293,29 @@ function DashboardPanel({
                      if (analysisActive) {
                        toast.error('Wait for the current analysis to finish before running Fix.');
                        return;
+                     }
+                     // Free Trial 200-file gate — only checked for
+                     // users whose license.plan === 'free' AND we
+                     // have a stored license key. Hits the
+                     // Cloudflare-Worker counter for the current
+                     // count, then compares against this run's
+                     // estimated file total. If the run would push
+                     // past the cap, open TrialLimitModal instead
+                     // of proceeding to FixModal. Worker fail-closed:
+                     // if the call errors out we still let the run
+                     // proceed (graceful degradation — better one
+                     // free over-run than a blocked legitimate user
+                     // because of a network blip).
+                     if (license.plan === 'free' && storedLicenseKey) {
+                       const { getUsage } = await import('@/lib/electron-bridge');
+                       const usage = await getUsage(storedLicenseKey);
+                       if (usage.success && typeof usage.used === 'number' && typeof usage.limit === 'number') {
+                         const wouldUse = stats.totalFiles ?? 0;
+                         if (usage.used + wouldUse > usage.limit) {
+                           setTrialLimit({ used: usage.used, limit: usage.limit, wouldUse });
+                           return;
+                         }
+                       }
                      }
                      const pref = localStorage.getItem('pdr-auto-add-to-sd') || 'ask';
                      if (pref === 'always') {
