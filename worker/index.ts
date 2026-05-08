@@ -9,7 +9,7 @@
  *      blockmaps to electron-updater clients running inside the
  *      packaged PDR app.
  *
- *   2. JSON API for the v2.1.0 Free Trial 200-file limit. Persists a
+ *   2. JSON API for the v2.1.0 Free Trial file-cap counter. Persists a
  *      per-license-key counter in KV so reinstalls / machine-
  *      fingerprint changes can't reset the trial. Endpoints:
  *        POST /api/usage/get        -> read current files-used
@@ -285,7 +285,7 @@ async function apiUsageGet(body: any, env: Env): Promise<Response> {
  * increments on the same license key can race and lose one increment
  * (read 50, read 50, write 51, write 51 -> 51 instead of 52). For
  * the Free Trial use case (one user, a few concurrent file fixes,
- * ceiling at 200) the worst-case impact is a user occasionally
+ * ceiling at 1,000) the worst-case impact is a user occasionally
  * fixing one extra file beyond their cap — strictly user-favourable,
  * so KISS over the complexity of moving to D1 / Durable Objects.
  */

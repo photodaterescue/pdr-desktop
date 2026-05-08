@@ -112,7 +112,7 @@ contextBridge.exposeInMainWorld('pdr', {
         deactivate: (key) => ipcRenderer.invoke('license:deactivate', key),
         getMachineId: () => ipcRenderer.invoke('license:getMachineId'),
     },
-    // Free Trial 200-file counter — read / increment the Cloudflare
+    // Free Trial file counter — read / increment the Cloudflare
     // KV-backed tally. Renderer reads it for the workspace banner and
     // pre-fix gate; main.ts auto-increments after each successful Fix
     // (wired into files:copy in the next phase).

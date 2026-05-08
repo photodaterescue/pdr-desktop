@@ -609,7 +609,7 @@ export async function getMachineId(): Promise<string> {
   return 'unknown';
 }
 
-// ─── Free Trial 200-file counter ─────────────────────────────────
+// ─── Free Trial file counter ─────────────────────────────────────
 //
 // Renderer-side wrappers around the Cloudflare-Worker-backed usage
 // tracker. The main process exposes two IPC handlers (`usage:get`

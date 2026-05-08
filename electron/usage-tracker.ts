@@ -10,7 +10,7 @@
  *
  * Storage is keyed server-side by SHA-256 of the trimmed/upper-cased
  * license key, so the raw key never lands in KV. A KV record per
- * customer holds `{ used: number }`. The hard cap (200 for the Free
+ * customer holds `{ used: number }`. The hard cap (1,000 for the Free
  * Trial variant) is enforced in this module / the calling code, not
  * in the Worker — the Worker just stores whatever count it's told.
  *
@@ -20,7 +20,7 @@
  * The price of that simplicity is that a sufficiently-motivated user
  * could MITM the increment to under-report. For the v2.1.0 first cut
  * we accept that — the population of "people who reverse-engineer a
- * desktop app to cheat a 200-file trial" is essentially zero.
+ * desktop app to cheat a 1,000-file trial" is essentially zero.
  *
  * Network failures: all functions reject with a thrown Error rather
  * than returning a tagged result, so the caller can decide whether

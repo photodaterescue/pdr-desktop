@@ -16,7 +16,7 @@ interface TrialLimitModalProps {
 }
 
 /**
- * Free Trial 200-file gate.
+ * Free Trial file-cap gate.
  *
  * Two variants of the same modal, picked by the relationship between
  * `used`, `wouldUse`, and `limit`:

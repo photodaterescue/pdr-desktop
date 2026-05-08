@@ -5,7 +5,7 @@ import { useLicense } from '@/contexts/LicenseContext';
 import { getUsage, type UsageResult } from '@/lib/electron-bridge';
 
 /**
- * Free Trial 200-file counter chip — lives in the TitleBar's right
+ * Free Trial file-counter chip — lives in the TitleBar's right
  * cluster next to LicenseStatusBadge. Renders nothing for paid /
  * unlicensed plans.
  *
@@ -97,7 +97,7 @@ export function TrialCounterChip() {
   } else if (pct >= 70) {
     palette = 'bg-amber-50 text-amber-700 border-amber-200/60 hover:bg-amber-100 hover:text-amber-800';
     icon = <AlertCircle className="w-3 h-3" />;
-    tooltipText = `Free Trial — ${remaining} files left of your 200-file allowance. Click to upgrade.`;
+    tooltipText = `Free Trial — ${remaining} files left of your ${limit}-file allowance. Click to upgrade.`;
   }
 
   return (

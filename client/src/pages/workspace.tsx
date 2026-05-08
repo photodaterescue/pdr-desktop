@@ -464,7 +464,7 @@ useEffect(() => {
 const [showLicenseRequired, setShowLicenseRequired] = useState(false);
 const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
 // `license` (the full LicenseStatus) + `storedLicenseKey` are needed
-// alongside `isLicensed` so the Free Trial 200-file counter knows
+// alongside `isLicensed` so the Free Trial file counter knows
 // whether to tick after each Fix run, and which key to send to the
 // Cloudflare-Worker-backed counter at /api/usage/increment.
 const { isLicensed, license, storedLicenseKey } = useLicense();
@@ -2240,18 +2240,6 @@ return (
 		  feature={teaserFeature}
 		  onClose={() => setTeaserFeature(null)}
 		  onActivate={handleActivateLicense}
-		/>
-		{/* Free Trial pre-fix gate — opens when the Run Fix button's
-		    click handler determined that license.plan === 'free'
-		    AND used + wouldUse > limit. State is `null` until then,
-		    so the modal stays unmounted in the common (paid /
-		    within-limit) path. */}
-		<TrialLimitModal
-		  isOpen={trialLimit !== null}
-		  onClose={() => setTrialLimit(null)}
-		  used={trialLimit?.used ?? 0}
-		  limit={trialLimit?.limit ?? 200}
-		  wouldUse={trialLimit?.wouldUse ?? 0}
 		/>
       {/* Custom Folder Browser for source selection */}
       <FolderBrowserModal
@@ -4294,7 +4282,7 @@ function DashboardPanel({
                        toast.error('Wait for the current analysis to finish before running Fix.');
                        return;
                      }
-                     // Free Trial 200-file gate — only checked for
+                     // Free Trial file-cap gate — only checked for
                      // users whose license.plan === 'free' AND we
                      // have a stored license key. Hits the
                      // Cloudflare-Worker counter for the current
@@ -4408,6 +4396,20 @@ function DashboardPanel({
         plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
         enableSavedLocations
         showDriveRatings
+      />
+      {/* Free Trial pre-fix gate — opens when the Run Fix click
+          handler determined that license.plan === 'free' AND
+          used + wouldUse > limit. State is `null` until then, so
+          the modal stays unmounted in the common (paid /
+          within-limit) path. Lives in DashboardPanel (not the
+          Workspace top-level) because the state is local to this
+          component — same scoping rule as outputCardExpanded. */}
+      <TrialLimitModal
+        isOpen={trialLimit !== null}
+        onClose={() => setTrialLimit(null)}
+        used={trialLimit?.used ?? 0}
+        limit={trialLimit?.limit ?? 1000}
+        wouldUse={trialLimit?.wouldUse ?? 0}
       />
       {/* Pre-fix S&D prompt — shown when user clicks Run Fix and preference is 'ask' */}
       {showSDPrompt && (
@@ -6137,7 +6139,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       
       console.log(`[Fix] Copy result:`, { success: result.success, copied: result.copied, failed: result.failed, duplicatesRemoved: result.duplicatesRemoved, skippedExisting: result.skippedExisting, resultsCount: result.results?.length });
 
-      // Free Trial 200-file counter — tick the Cloudflare-Worker-
+      // Free Trial file counter — tick the Cloudflare-Worker-
       // backed tally by however many files this run actually fixed.
       // Fire-and-forget: a slow worker call shouldn't delay the
       // user seeing the completion screen, and a network failure

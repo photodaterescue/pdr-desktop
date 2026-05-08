@@ -15,7 +15,7 @@ export interface LicenseCache {
   lsInstanceId?: string;  // Lemon Squeezy instance ID for API calls
   status: 'active' | 'inactive' | 'expired' | 'invalid';
   // 'free' = the v2.1.0 Free Trial variant — issued by LS at $0,
-  // gates premium features OFF and is subject to the 200-file
+  // gates premium features OFF and is subject to the 1,000-file
   // counter enforced by the Cloudflare Worker.
   plan: 'monthly' | 'yearly' | 'lifetime' | 'free' | null;
   validatedAt: number;
@@ -316,7 +316,7 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
   // If cached status is active and within grace period, allow use.
   // Free Trial licenses are valid (the user signed up, has a real LS
   // license key) but DON'T unlock premium features — Trees, Date
-  // Editor, Photo Format conversion stay gated. The 200-file cap
+  // Editor, Photo Format conversion stay gated. The 1,000-file cap
   // they're subject to is enforced separately by the Worker counter.
   if (cache.status === 'active' && isWithinGrace) {
     return {

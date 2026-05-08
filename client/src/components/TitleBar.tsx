@@ -234,7 +234,7 @@ export function TitleBar() {
             {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           </button>
         </IconTooltip>
-        {/* Free Trial 200-file counter — only renders when the
+        {/* Free Trial file counter — only renders when the
             current license is on the `'free'` plan, otherwise null.
             Sits left of LicenseStatusBadge so the user reads "trial
             usage → license state" left-to-right. Self-contained:
