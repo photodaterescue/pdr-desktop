@@ -3097,8 +3097,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           it stays visible regardless of how many sources the user adds. The
           scrollable Sources area above it grows to fill any free space
           between Add Source and this block, giving the user a natural
-          "drop zone" of breathing room for source entries to populate. */}
-      <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider">
+          "drop zone" of breathing room for source entries to populate.
+          shrink-0 here (and on the Guidance / APP siblings below) is what
+          actually triggers the outer sidebar's overflow-y-auto on short
+          windows: without it, the flex algorithm silently shrinks these
+          fixed-content blocks to fit the parent height, hiding their
+          children and leaving no visible scrollbar. */}
+      <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider shrink-0">
         <div>
           <SectionHeader
             label="Views"
@@ -3210,7 +3215,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       </div>
 
       {/* EDUCATION SECTION */}
-      <div className="pt-2 border-t pb-2 sidebar-divider" data-tour="guides-panel">
+      <div className="pt-2 border-t pb-2 sidebar-divider shrink-0" data-tour="guides-panel">
         <div className="px-4">
           <SectionHeader
             label="Guidance"
@@ -3233,7 +3238,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
 
       {/* APP SECTION - BOTTOM (Settings / About / Help) — collapsible to
           match Views / Tools / Guidance. */}
-      <div className="border-t px-4 pt-2 pb-3 sidebar-divider">
+      <div className="border-t px-4 pt-2 pb-3 sidebar-divider shrink-0">
         <SectionHeader
           label="App"
           collapsed={appCollapsed}
