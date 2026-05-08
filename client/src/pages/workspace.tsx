@@ -3087,13 +3087,13 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
       {/* VIEWS + TOOLS — static section anchored just above Guidance, so
           it stays visible regardless of how many sources the user adds. The
           scrollable Sources area above it grows to fill any free space
           between Add Source and this block, giving the user a natural
           "drop zone" of breathing room for source entries to populate. */}
-      <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider">
+      <div className="pt-2 border-t pb-2 px-4 space-y-4 sidebar-divider mt-auto">
         <div>
           <SectionHeader
             label="Views"
