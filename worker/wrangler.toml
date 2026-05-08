@@ -35,9 +35,23 @@ routes = [
 binding = "BUCKET"
 bucket_name = "pdr-updates"
 
-# No KV, D1, queues, or Durable Objects — this Worker is a pure
-# read-through proxy. Adding any of those would need a new section
-# here plus a binding on `Env` in index.ts.
+# KV namespace for the v2.1.0 Free Trial file counter. Stores one
+# `{ used: number }` JSON record per license-key hash so the 200-file
+# limit survives reinstalls and machine fingerprint changes — the only
+# way to "reset" is for the user to upgrade to a paid tier (which
+# issues a new license key and a fresh KV row).
+#
+# Create the namespace once with:
+#   cd worker
+#   npx wrangler kv namespace create USAGE_KV
+#   npx wrangler kv namespace create USAGE_KV --preview
+# Wrangler will print two IDs — paste them into `id` / `preview_id`
+# below. The binding name USAGE_KV matches the `Env` interface in
+# index.ts.
+[[kv_namespaces]]
+binding = "USAGE_KV"
+id = "REPLACE_WITH_REAL_ID_AFTER_WRANGLER_CREATE"
+preview_id = "REPLACE_WITH_REAL_PREVIEW_ID_AFTER_WRANGLER_CREATE"
 
 # Observability — surface request logs in `wrangler tail` and the
 # Workers analytics dashboard. Free tier includes basic metrics.

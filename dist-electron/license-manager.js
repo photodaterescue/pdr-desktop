@@ -43,6 +43,12 @@ function detectPlanFromVariant(variantName) {
         return 'yearly';
     if (lower.includes('monthly'))
         return 'monthly';
+    // Free Trial variant on LS — name "Photo Date Rescue – Free Trial".
+    // We match on "free" or "trial" so a future rename (e.g. "Free
+    // tier" / "Free starter") still resolves to the same plan id and
+    // doesn't silently fall through to `null` and lock the user out.
+    if (lower.includes('free') || lower.includes('trial'))
+        return 'free';
     return null;
 }
 // ============ CACHE OPERATIONS ============
@@ -221,13 +227,17 @@ export async function getLicenseStatus() {
             customerEmail: cache.customerEmail,
         };
     }
-    // If cached status is active and within grace period, allow use
+    // If cached status is active and within grace period, allow use.
+    // Free Trial licenses are valid (the user signed up, has a real LS
+    // license key) but DON'T unlock premium features — Trees, Date
+    // Editor, Photo Format conversion stay gated. The 200-file cap
+    // they're subject to is enforced separately by the Worker counter.
     if (cache.status === 'active' && isWithinGrace) {
         return {
             isValid: true,
             status: 'active',
             plan: cache.plan,
-            canUsePremiumFeatures: true,
+            canUsePremiumFeatures: cache.plan !== 'free',
             isOfflineGrace: timeSinceValidation > 60000, // More than 1 minute since validation = likely offline
             daysUntilGraceExpires: daysUntilGraceExpires,
             customerEmail: cache.customerEmail,
