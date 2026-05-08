@@ -91,6 +91,85 @@ log.transports.file.resolvePathFn = (vars) => path.join(
 // to touch the call sites.
 Object.assign(console, log.functions);
 
+// ───────── One-time license cache migration ─────────
+// Pre-f85827a builds (every PDR before v2.0.0) resolved userData via
+// the lowercase package.json `name`, landing under %APPDATA%\Electron
+// in dev launches and other split-brain paths. license.json followed,
+// so users upgrading from those builds saw an empty cache at the new
+// canonical path → were prompted to re-Activate → consumed a fresh
+// LS instance slot. With LS's 3-slot per-license default, three such
+// upgrades exhausted the user's slots.
+//
+// Runs after Object.assign (so audit log lines actually reach
+// main.log) but BEFORE license-manager.ts is imported below — its
+// loadCache reads the canonical path, so we need the file in place
+// first. If the canonical path has no license.json but a legacy path
+// does, copy across and delete the legacy original. Best-effort:
+// failures are logged but never thrown — a missing migration just
+// leaves the user at the cached state they'd otherwise hit anyway
+// (Activate prompt).
+(function migrateLegacyLicenseCache() {
+  // Two known legacy paths from pre-f85827a builds:
+  //   1. %APPDATA%\Electron\license.json
+  //      Dev launches (`npx electron .`) before app.setName/setPath
+  //      took effect — Electron's default app name was used.
+  //   2. %APPDATA%\photo-date-rescue\license.json
+  //      Installed builds where setName fired but setPath did not,
+  //      so userData defaulted to package.json's lowercase `name`.
+  const canonical = path.join(app.getPath('appData'), 'Photo Date Rescue', 'license.json');
+  const legacyPaths = [
+    path.join(app.getPath('appData'), 'Electron', 'license.json'),
+    path.join(app.getPath('appData'), 'photo-date-rescue', 'license.json'),
+  ];
+
+  try {
+    if (fs.existsSync(canonical)) {
+      // Canonical wins. Sweep any stale legacy copies so a future
+      // canonical wipe (corruption, manual delete) can't accidentally
+      // resurrect a stale lsInstanceId pointing at a dead LS slot.
+      for (const legacy of legacyPaths) {
+        if (fs.existsSync(legacy)) {
+          try {
+            fs.unlinkSync(legacy);
+            console.log(`[license-migration] cleaned up stale ${legacy}`);
+          } catch (cleanupErr) {
+            console.error(`[license-migration] cleanup of ${legacy} failed:`, cleanupErr);
+          }
+        }
+      }
+      return;
+    }
+
+    // Canonical missing — try to migrate from a legacy path. First
+    // match wins; the other (if also present) gets cleaned up after.
+    const legacy = legacyPaths.find(p => fs.existsSync(p));
+    if (!legacy) return; // nothing to migrate
+
+    // Ensure canonical directory exists (first launch may not have created it yet).
+    fs.mkdirSync(path.dirname(canonical), { recursive: true });
+    fs.copyFileSync(legacy, canonical);
+    fs.unlinkSync(legacy);
+    console.log(`[license-migration] copied ${legacy} → ${canonical} and deleted source`);
+
+    // Also clean up the OTHER legacy path if it's still sitting around,
+    // so we don't leave a footprint that could re-migrate next launch.
+    for (const other of legacyPaths) {
+      if (other !== legacy && fs.existsSync(other)) {
+        try {
+          fs.unlinkSync(other);
+          console.log(`[license-migration] cleaned up additional stale ${other}`);
+        } catch (cleanupErr) {
+          console.error(`[license-migration] cleanup of ${other} failed:`, cleanupErr);
+        }
+      }
+    }
+  } catch (err) {
+    // Don't throw — at worst the user sees an Activate prompt, which
+    // is exactly what they would have seen without this migration.
+    console.error('[license-migration] failed:', err);
+  }
+})();
+
 // Catch every uncaughtException + unhandledRejection in the main
 // process, write it to the log file via electron-log, but DON'T
 // surface a "JavaScript error in main process" modal to the user.

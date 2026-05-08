@@ -8494,6 +8494,8 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                     <AccordionContent className="pt-2 pb-4">
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">Fixed a first-launch crash</strong> — some users on v2.0.1 saw a blank workspace immediately after adding their first folder source. Caused by an internal scoping bug in the Free Trial pre-fix gate; resolved.</li>
+                        <li><strong className="text-foreground font-medium">License carries over from earlier installs</strong> — users upgrading from older builds were sometimes prompted to re-enter their license key, which consumed an extra device slot on Lemon Squeezy each time. Photo Date Rescue now migrates the license cache from the legacy install paths automatically on first launch of v2.0.2.</li>
+                        <li><strong className="text-foreground font-medium">License modal more responsive</strong> — Activate / Deactivate calls now have a hard 8-second network timeout (previously could hang indefinitely), and the title-bar badge no longer freezes on "Checking..." during slow license validation; cached license state shows immediately at launch.</li>
                         <li><strong className="text-foreground font-medium">Free Trial counter copy</strong> — the warning chip in the title bar now correctly reflects your current allowance instead of an outdated number when you cross 70% usage.</li>
                       </ul>
                     </AccordionContent>
