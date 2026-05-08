@@ -3488,6 +3488,23 @@ function DashboardPanel({
   setPostFixFlowActive: (value: boolean) => void,
   analysisActive?: boolean
 }) {
+  // useLicense IS valid inside DashboardPanel even though it's
+  // declared at module top-level alongside Workspace — the
+  // LicenseProvider wraps the entire app tree, so any function
+  // component rendered under <LicenseProvider> can call this hook.
+  // CRITICAL: the Run Fix click handler below reads `license.plan`
+  // and `storedLicenseKey` directly. Those names are also declared
+  // in the outer Workspace function, but DashboardPanel is its own
+  // top-level component — JavaScript closures don't reach across
+  // sibling function declarations. Without this hook the handler
+  // throws `ReferenceError: license is not defined` on EVERY click,
+  // silently aborting the Fix flow before the S&D prompt or
+  // FixProgressModal ever opens. This was the "Run Fix doesn't
+  // start" bug Terry reported on v2.0.2 — the third instance of
+  // this exact scope mistake (after copiedFilenameFaceId,
+  // CalendarRange, and trialLimit). Mirrors the same hook call
+  // added to FixProgressModal for the post-copy increment path.
+  const { license, storedLicenseKey } = useLicense();
   // Use selected sources for aggregation
   const selectedSources = sources.filter(s => s.selected);
   const hasSelection = selectedSources.length > 0;
@@ -5865,6 +5882,18 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   includeVideos: boolean,
   photoFormat: 'original' | 'png' | 'jpg'
 }) {
+  // useLicense IS valid inside FixProgressModal even though the
+  // component is declared at module top-level alongside DashboardPanel
+  // — the LicenseProvider wraps the entire app tree, so any function
+  // component rendered under <LicenseProvider> can call this hook.
+  // Required here because the post-copy increment-after-fix path
+  // (line ~6157) needs license.plan + storedLicenseKey to decide
+  // whether to tick the Free Trial counter; without this hook the
+  // names were being read from an out-of-scope closure that didn't
+  // exist at runtime — a guaranteed ReferenceError on every Free Trial
+  // user's first successful Fix run, and a TypeScript-strict miss
+  // because Vite's esbuild build skips type-checking.
+  const { license, storedLicenseKey } = useLicense();
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [processed, setProcessed] = useState(0);
