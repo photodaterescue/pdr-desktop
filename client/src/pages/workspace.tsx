@@ -8448,7 +8448,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                   )}
                 </div>
 
-                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-2.0.0"]} className="space-y-2">
+                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-2.0.2"]} className="space-y-2">
 
                   {updateStatus === 'update-available' && latestVersion && (
                     <AccordionItem value={`ver-${latestVersion}`} className="border border-primary/30 rounded-lg px-4 bg-primary/5">
@@ -8481,6 +8481,39 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       </AccordionContent>
                     </AccordionItem>
                   )}
+
+                  <AccordionItem value="ver-2.0.2" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.2</span>
+                        {appVersion === '2.0.2' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Fixed a first-launch crash</strong> — some users on v2.0.1 saw a blank workspace immediately after adding their first folder source. Caused by an internal scoping bug in the Free Trial pre-fix gate; resolved.</li>
+                        <li><strong className="text-foreground font-medium">Free Trial counter copy</strong> — the warning chip in the title bar now correctly reflects your current allowance instead of an outdated number when you cross 70% usage.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="ver-2.0.1" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.1</span>
+                        {appVersion === '2.0.1' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Free Trial cap raised to 1,000 files</strong> — enough to comfortably cover a typical 1 GB Google Takeout plus a folder of phone photos, so trial users can feel the full Fix flow before deciding.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
 
                   <AccordionItem value="ver-2.0.0" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
