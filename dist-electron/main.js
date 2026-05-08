@@ -71,6 +71,25 @@ log.transports.file.resolvePathFn = (vars) => path.join(app.getPath('appData'), 
 // console.log/warn/error in the codebase is captured without having
 // to touch the call sites.
 Object.assign(console, log.functions);
+// Catch every uncaughtException + unhandledRejection in the main
+// process, write it to the log file via electron-log, but DON'T
+// surface a "JavaScript error in main process" modal to the user.
+//
+// The trigger that prompted this: in dev (`npx electron .`), if the
+// parent shell that captured stdout is killed while Electron keeps
+// running (which it does — Electron is a windowed process, not a
+// child of the launcher shell), every subsequent console.log →
+// log.transports.console → process.stdout.write throws EPIPE: broken
+// pipe. Without a global handler that becomes an unhandled exception,
+// which Electron's default behaviour shows as a blocking JS-error
+// dialog. Production .exe installs have no parent shell so EPIPE
+// doesn't fire there — but defending against unhandled exceptions
+// across the board is better than a per-symptom fix.
+//
+// `showDialog: false` is the critical piece — without it, electron-log
+// honours its default of popping a dialog before writing to file.
+// We want silent → log file → user keeps working.
+log.errorHandler.startCatching({ showDialog: false });
 // ffmpeg-static is a CommonJS module; createRequire lets us require it from ESM.
 const esmRequire = createRequire(import.meta.url);
 let ffmpegPath = null;
