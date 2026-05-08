@@ -462,7 +462,11 @@ useEffect(() => {
 
 const [showLicenseRequired, setShowLicenseRequired] = useState(false);
 const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
-const { isLicensed } = useLicense();
+// `license` (the full LicenseStatus) + `storedLicenseKey` are needed
+// alongside `isLicensed` so the Free Trial 200-file counter knows
+// whether to tick after each Fix run, and which key to send to the
+// Cloudflare-Worker-backed counter at /api/usage/increment.
+const { isLicensed, license, storedLicenseKey } = useLicense();
 
 const handleLicenseRequired = () => {
   setShowLicenseRequired(true);
@@ -5962,7 +5966,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     copyStartedRef.current = true;
 
     const copyFilesAsync = async () => {
-      const { copyFiles, onCopyProgress, onCopyPhase, onCopyMirrorProgress, isElectron, setFixInProgress } = await import('@/lib/electron-bridge');
+      const { copyFiles, onCopyProgress, onCopyPhase, onCopyMirrorProgress, isElectron, setFixInProgress, incrementUsage } = await import('@/lib/electron-bridge');
 
       // Notify main process that a fix is in progress (protects against accidental close)
       await setFixInProgress(true);
@@ -6091,6 +6095,27 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       });
       
       console.log(`[Fix] Copy result:`, { success: result.success, copied: result.copied, failed: result.failed, duplicatesRemoved: result.duplicatesRemoved, skippedExisting: result.skippedExisting, resultsCount: result.results?.length });
+
+      // Free Trial 200-file counter — tick the Cloudflare-Worker-
+      // backed tally by however many files this run actually fixed.
+      // Fire-and-forget: a slow worker call shouldn't delay the
+      // user seeing the completion screen, and a network failure
+      // shouldn't fail the whole Fix (the user already paid the
+      // disk-write cost). Worst case: counter under-reports by one
+      // run and the user gets one extra "free" run before hitting
+      // the cap — strictly user-favourable. License plan check
+      // means this is a no-op for paid tiers.
+      if (license.plan === 'free' && storedLicenseKey && (result.copied ?? 0) > 0) {
+        void incrementUsage(storedLicenseKey, result.copied!).then(usage => {
+          if (usage.success) {
+            console.log(`[Fix] Free Trial counter ticked: ${usage.used}/${usage.limit}`);
+          } else {
+            console.warn(`[Fix] Free Trial counter increment failed:`, usage.error);
+          }
+        }).catch(err => {
+          console.warn(`[Fix] Free Trial counter increment threw:`, err);
+        });
+      }
 
       setProgress(100);
       setProcessed(totalFiles);
