@@ -281,6 +281,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       return apiLicenseLifetimeUpsellCheckout(body, env);
     case '/api/license/cancel-subscription':
       return apiLicenseCancelSubscription(body, env);
+    case '/api/license/resume-subscription':
+      return apiLicenseResumeSubscription(body, env);
     default:
       return jsonError('Not found', 404);
   }
@@ -516,16 +518,19 @@ async function apiLicenseApplyRetention(body: any, env: Env): Promise<Response> 
 }
 
 /**
- * Returns the customer's current plan tier + retention history so the
- * RetentionModal can show the right menu of offers without baking
- * those rules into the renderer. Plan tiers are server-defined so the
- * mapping stays in one place.
+ * Returns the customer's current plan tier, retention history, and
+ * subscription cancellation state so the RetentionModal can show the
+ * right UI without baking those rules into the renderer. Plan tiers
+ * and the cancelled-detection live server-side so the mapping is in
+ * one place.
  *
  * Body: { key: string }
  * Returns: {
  *   currentPlan: 'monthly-full' | 'monthly-retention' | 'yearly-full' |
  *                'yearly-retention' | 'lifetime' | 'trial' | 'unknown',
  *   hasUsedRetention: boolean,
+ *   isCancelled: boolean,            // true if sub is cancelled-but-not-expired
+ *   cancelExpiresAt: string | null,  // ISO timestamp; only meaningful if isCancelled
  * }
  */
 async function apiLicenseRetentionStatus(body: any, env: Env): Promise<Response> {
@@ -535,7 +540,12 @@ async function apiLicenseRetentionStatus(body: any, env: Env): Promise<Response>
   }
 
   if (!env.LS_API_KEY) {
-    return json({ currentPlan: 'unknown', hasUsedRetention: false });
+    return json({
+      currentPlan: 'unknown',
+      hasUsedRetention: false,
+      isCancelled: false,
+      cancelExpiresAt: null,
+    });
   }
 
   try {
@@ -546,8 +556,12 @@ async function apiLicenseRetentionStatus(body: any, env: Env): Promise<Response>
 
     const variantId = String(validate.variantId ?? '');
     let currentPlan: string;
+    let subscription: any = null;
 
-    // Direct variant-ID matches first — fastest path.
+    // Direct variant-ID matches first — fastest path. We still fetch
+    // the subscription afterwards if we need cancelled-state, since
+    // that lives only on the subscription resource, not on the
+    // license validate response.
     if (variantId === LS_VARIANT_MONTHLY_RETENTION) {
       currentPlan = 'monthly-retention';
     } else if (variantId === LS_VARIANT_YEARLY_RETENTION) {
@@ -563,8 +577,9 @@ async function apiLicenseRetentionStatus(body: any, env: Env): Promise<Response>
       if (!subId) {
         currentPlan = 'unknown';
       } else {
-        const sub = await lsGetSubscription(subId, env);
-        const variantName = String(sub.data?.attributes?.variant_name ?? '').toLowerCase();
+        const subRes = await lsGetSubscription(subId, env);
+        subscription = subRes.data;
+        const variantName = String(subscription?.attributes?.variant_name ?? '').toLowerCase();
         if (variantName.includes('yearly')) {
           currentPlan = 'yearly-full';
         } else if (variantName.includes('monthly')) {
@@ -577,12 +592,87 @@ async function apiLicenseRetentionStatus(body: any, env: Env): Promise<Response>
       }
     }
 
+    // For the variant-ID-matched cases we haven't fetched the sub yet;
+    // do it now so we can read cancelled state. Lifetime customers
+    // have no subscription so skip that case.
+    if (!subscription && currentPlan !== 'lifetime' && currentPlan !== 'unknown' && validate.orderId) {
+      const subId = await lsFindSubscription(validate.orderId, env);
+      if (subId) {
+        const subRes = await lsGetSubscription(subId, env);
+        subscription = subRes.data;
+      }
+    }
+
+    const isCancelled = !!subscription?.attributes?.cancelled;
+    const cancelExpiresAt = isCancelled
+      ? (subscription?.attributes?.ends_at ?? null)
+      : null;
+
     const kvKey = await retentionKvKey(key);
     const hasUsedRetention = !!(await env.USAGE_KV.get(kvKey));
 
-    return json({ currentPlan, hasUsedRetention });
+    return json({ currentPlan, hasUsedRetention, isCancelled, cancelExpiresAt });
   } catch (e: any) {
     return jsonError(`retention-status failed: ${e?.message ?? 'unknown'}`, 502);
+  }
+}
+
+/**
+ * Resume a cancelled-but-not-yet-expired subscription. LS supports this
+ * via PATCH /v1/subscriptions/{id} with `cancelled: false` — billing
+ * picks up at the next renewal date, no re-checkout, card on file
+ * carries over. Only works while the subscription is still active
+ * (i.e. before `ends_at`); after expiry the customer needs a fresh
+ * checkout.
+ *
+ * Body: { key: string }
+ * Returns: { ok: true }
+ */
+async function apiLicenseResumeSubscription(body: any, env: Env): Promise<Response> {
+  const key: string | undefined = body?.key;
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    return jsonError('Missing or invalid `key`', 400);
+  }
+
+  if (!env.LS_API_KEY) {
+    return json({ ok: true });
+  }
+
+  try {
+    const validate = await lsValidateLicense(key);
+    if (!validate.ok || !validate.orderId) {
+      return jsonError(validate.error ?? 'License validation failed', 502);
+    }
+
+    const subId = await lsFindSubscription(validate.orderId, env);
+    if (!subId) {
+      return jsonError('No subscription found for this license', 404);
+    }
+
+    const patchBody = {
+      data: {
+        type: 'subscriptions',
+        id: subId,
+        attributes: { cancelled: false },
+      },
+    };
+
+    const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${subId}`, {
+      method: 'PATCH',
+      headers: {
+        'Accept': 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json',
+        'Authorization': `Bearer ${env.LS_API_KEY}`,
+      },
+      body: JSON.stringify(patchBody),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      return jsonError(`LS resume error: ${errText.slice(0, 200)}`, 502);
+    }
+    return json({ ok: true });
+  } catch (e: any) {
+    return jsonError(`LS resume failed: ${e?.message ?? 'unknown error'}`, 502);
   }
 }
 

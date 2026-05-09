@@ -1,35 +1,76 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, AlertTriangle, CheckCircle2, Loader2, Heart } from 'lucide-react';
+import {
+  X,
+  Sparkles,
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Gift,
+  Info,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLicense } from '@/contexts/LicenseContext';
 
 // ─────────────────────────────────────────────────────────────────────
-// RetentionModal — multi-option cancel-flow.
+// RetentionModal — multi-option cancel flow + cancelled-state handling.
 //
-// Opens from LicenseModal's "Cancel subscription" link. Fetches the
-// customer's current plan tier + retention history from the Worker on
-// mount so the menu of offers reflects exactly what's available given
-// where they are in the subscription lifecycle. The renderer never
-// reasons about "is this the first cancel?" or "are they on the
-// retention discount yet?" — the Worker computes that and returns a
-// simple `currentPlan` string the renderer maps to a fixed offer set.
+// Opens from LicenseModal's "Cancel subscription" link. On mount fetches
+// the customer's plan tier, retention history, AND cancellation state
+// from the Worker so the modal shows the right thing in three exclusive
+// cases:
 //
-// Offer ladder by current plan:
+//   1. Already cancelled (cancel-at-period-end) — show the "you've
+//      cancelled, expires X, want to resume?" view instead of the
+//      retention ladder. Their card on file carries over if they resume.
+//
+//   2. Active subscription — show the offer ladder appropriate to
+//      their plan tier. Primary card lavender-bordered as the
+//      recommended path; secondary alternates underneath.
+//
+//   3. No actionable plan (lifetime / trial / unknown) — show a
+//      generic info state. LicenseModal usually gates these out so
+//      this is defensive only.
+//
+// Visual palette: the menu state uses an AMBER accent (header gradient,
+// primary card border, "Best for you" eyebrow, Sparkles icon) instead
+// of the lavender that wraps the rest of the app. This makes the
+// retention experience visually announce itself as a special-offer
+// moment rather than just-another-modal. Verify-key keeps its rose
+// "danger" palette, success keeps emerald, and the cancelled-state
+// view uses a calm slate palette so it reads as informational rather
+// than alarming.
+//
+// Offer ladder by current plan (active subscriptions only):
 //   monthly-full + first cancel  → 50% × 3 months (primary), Yearly $54, Lifetime $139
 //   monthly-full + already used  → keep Monthly $19 (primary), Yearly $54, Lifetime $139
 //   monthly-retention            → Yearly $54 (primary), Lifetime $139
-//   yearly-full                  → $25 off forever ($54/yr) (primary), Lifetime $139
+//   yearly-full                  → $25 off forever (primary), Lifetime $139
 //   yearly-retention             → Lifetime $139 only
 //
-// All state-changing actions (monthly-discount, switch-to-yearly, cancel)
-// gate behind a license-key re-entry to defend against accidental clicks
-// by anyone with access to the device. Lifetime upsell skips the gate
-// because card-entry is the real barrier.
+// All state-changing actions (monthly-discount, switch-to-yearly,
+// cancel, resume) gate behind a license-key re-entry to defend
+// against accidental clicks by anyone with access to the device.
+// Lifetime upsell skips the gate because card-entry on the LS
+// checkout is the real barrier.
 // ─────────────────────────────────────────────────────────────────────
 
-type Step = 'loading' | 'menu' | 'verify-key' | 'processing' | 'success' | 'error';
-type PendingAction = 'monthly-discount' | 'switch-to-yearly' | 'cancel' | null;
+type Step =
+  | 'loading'
+  | 'menu'
+  | 'cancelled'
+  | 'verify-key'
+  | 'processing'
+  | 'success'
+  | 'error';
+
+type PendingAction =
+  | 'monthly-discount'
+  | 'switch-to-yearly'
+  | 'cancel'
+  | 'resume'
+  | null;
+
 type OfferId =
   | 'monthly-discount'
   | 'switch-to-yearly'
@@ -50,6 +91,19 @@ interface OfferOption {
 }
 
 const WORKER_BASE = 'https://updates.photodaterescue.com';
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 function getOffersForPlan(currentPlan: string, hasUsedRetention: boolean): OfferOption[] {
   if (currentPlan === 'monthly-full' && !hasUsedRetention) {
@@ -148,6 +202,8 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
   const [step, setStep] = useState<Step>('loading');
   const [currentPlan, setCurrentPlan] = useState<string>('unknown');
   const [hasUsedRetention, setHasUsedRetention] = useState<boolean>(false);
+  const [isCancelled, setIsCancelled] = useState<boolean>(false);
+  const [cancelExpiresAt, setCancelExpiresAt] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [keyInput, setKeyInput] = useState('');
   const [keyError, setKeyError] = useState<string | null>(null);
@@ -187,8 +243,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
     }
   };
 
-  // Fetch retention status whenever the modal opens. Re-fetches if the
-  // license key changes mid-session (rare, but defensive).
+  // Fetch retention status whenever the modal opens.
   useEffect(() => {
     if (!isOpen) return;
     if (!storedLicenseKey) {
@@ -208,9 +263,18 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
         setStep('error');
         return;
       }
-      setCurrentPlan(result.data?.currentPlan ?? 'unknown');
-      setHasUsedRetention(!!result.data?.hasUsedRetention);
-      setStep('menu');
+      const plan = result.data?.currentPlan ?? 'unknown';
+      const used = !!result.data?.hasUsedRetention;
+      const cancelledFlag = !!result.data?.isCancelled;
+      const expiresAt = result.data?.cancelExpiresAt ?? null;
+      setCurrentPlan(plan);
+      setHasUsedRetention(used);
+      setIsCancelled(cancelledFlag);
+      setCancelExpiresAt(expiresAt);
+      // Cancelled-but-not-expired sub → the resume view, never the
+      // offer ladder. The customer has already chosen to leave; offering
+      // them the ladder again would feel pushy.
+      setStep(cancelledFlag ? 'cancelled' : 'menu');
     })();
     return () => {
       cancelled = true;
@@ -221,17 +285,13 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
 
   const handlePickOption = (id: OfferId) => {
     if (id === 'stay-as-is') {
-      // No state change — just close the modal.
       handleClose();
       return;
     }
     if (id === 'lifetime-upsell') {
-      // Skip the verify-key gate; card-entry on the LS checkout is the
-      // real barrier. Just open the checkout in the system browser.
       handleLifetimeUpsell();
       return;
     }
-    // monthly-discount / switch-to-yearly / cancel — verify key first.
     setPendingAction(id as PendingAction);
     setKeyError(null);
     setKeyInput('');
@@ -245,9 +305,16 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
     setStep('verify-key');
   };
 
+  const handlePickResume = () => {
+    setPendingAction('resume');
+    setKeyError(null);
+    setKeyInput('');
+    setStep('verify-key');
+  };
+
   const handleLifetimeUpsell = async () => {
     if (!storedLicenseKey) return;
-    setPendingAction(null); // not a state-changing action; keep success-screen logic clean
+    setPendingAction(null);
     setStep('processing');
     setErrorMsg(null);
     const result = await callWorker('/api/license/lifetime-upsell-checkout', {
@@ -296,6 +363,23 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
       return;
     }
 
+    if (pendingAction === 'resume') {
+      const result = await callWorker('/api/license/resume-subscription', {
+        key: storedLicenseKey,
+      });
+      if (!result.ok) {
+        setErrorMsg(result.error ?? 'Could not resume — please try again.');
+        setStep('error');
+        return;
+      }
+      setSuccessHeading('Subscription resumed');
+      setSuccessMsg(
+        'Your subscription is active again. Billing will continue on your normal renewal date — your card on file stays as-is.',
+      );
+      setStep('success');
+      return;
+    }
+
     // monthly-discount or switch-to-yearly
     const result = await callWorker('/api/license/apply-retention', {
       key: storedLicenseKey,
@@ -307,8 +391,6 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
       return;
     }
     if (result.data?.alreadyUsed) {
-      // Server says the customer's already used this. Bounce them to
-      // the lifetime upsell as a sensible fallback rather than erroring.
       handleLifetimeUpsell();
       return;
     }
@@ -332,17 +414,25 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
   const verifyHeading =
     pendingAction === 'cancel'
       ? 'Confirm cancellation'
-      : pendingAction === 'monthly-discount'
-        ? 'Confirm discount'
-        : 'Confirm switch';
+      : pendingAction === 'resume'
+        ? 'Confirm resume'
+        : pendingAction === 'monthly-discount'
+          ? 'Confirm discount'
+          : 'Confirm switch';
   const verifySubcopy =
     pendingAction === 'cancel'
       ? 'Enter your license key to confirm. This protects against accidental cancels by anyone with access to this device.'
-      : pendingAction === 'monthly-discount'
-        ? 'Enter your license key to confirm switching to the discounted Monthly Retention plan ($9/mo × 3 months).'
-        : 'Enter your license key to confirm switching to Yearly Retention ($54/yr forever).';
+      : pendingAction === 'resume'
+        ? 'Enter your license key to confirm reactivating your subscription.'
+        : pendingAction === 'monthly-discount'
+          ? 'Enter your license key to confirm switching to the discounted Monthly Retention plan ($9/mo × 3 months).'
+          : 'Enter your license key to confirm switching to Yearly Retention ($54/yr forever).';
   const verifyButtonLabel =
-    pendingAction === 'cancel' ? 'Cancel my subscription' : 'Confirm';
+    pendingAction === 'cancel'
+      ? 'Cancel my subscription'
+      : pendingAction === 'resume'
+        ? 'Resume my subscription'
+        : 'Confirm';
 
   // ── Render functions ─────────────────────────────────────────────────
 
@@ -353,9 +443,11 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
     </div>
   );
 
+  // Menu state — AMBER palette so the retention offer reads as a
+  // special-offer moment rather than just-another-lavender-modal.
   const renderMenu = () => (
     <>
-      <div className="relative bg-gradient-to-br from-primary/15 via-primary/5 to-transparent px-6 pt-8 pb-6">
+      <div className="relative bg-gradient-to-br from-amber-100 via-amber-50 to-transparent px-6 pt-8 pb-6 dark:from-amber-950/40 dark:via-amber-950/20">
         <button
           onClick={handleClose}
           className="absolute top-4 right-4 p-2 hover:bg-secondary/50 rounded-full transition-colors"
@@ -368,14 +460,17 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
             initial={{ scale: 0, rotate: -20 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
-            className="w-16 h-16 bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl flex items-center justify-center mb-4 border border-primary/20 shadow-lg shadow-primary/10"
+            className="w-16 h-16 bg-gradient-to-br from-amber-200 to-amber-50 rounded-2xl flex items-center justify-center mb-4 border border-amber-300/60 shadow-lg shadow-amber-500/10 dark:from-amber-700 dark:to-amber-900"
           >
-            <Heart className="w-8 h-8 text-primary" />
+            <Gift className="w-8 h-8 text-amber-600 dark:text-amber-400" />
           </motion.div>
+          <p className="text-[10px] font-semibold tracking-[0.18em] uppercase text-amber-700 dark:text-amber-400 mb-2">
+            A thank-you for staying
+          </p>
           <h2 className="text-xl font-semibold text-foreground mb-2">Before you go…</h2>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
-            We'd hate to see you leave. Pick whichever option works best for you — your card on
-            file carries over, no re-entry needed.
+            Pick whichever option works best for you — your card on file carries over, no
+            re-entry needed.
           </p>
         </div>
       </div>
@@ -393,21 +488,25 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
               className={
                 'w-full rounded-xl border p-5 text-left transition-all hover:shadow-md ' +
                 (offer.primary
-                  ? 'border-primary/40 bg-primary/5 hover:border-primary/60 shadow-sm shadow-primary/10'
-                  : 'border-border bg-secondary/20 hover:border-primary/30 hover:bg-primary/[0.02]')
+                  ? 'border-amber-300/60 bg-gradient-to-br from-amber-50/60 via-amber-50/30 to-transparent hover:border-amber-400/70 shadow-sm shadow-amber-500/10 dark:from-amber-950/30 dark:via-amber-950/10 dark:border-amber-700/50'
+                  : 'border-border bg-secondary/20 hover:border-amber-300/40 hover:bg-amber-50/20 dark:hover:bg-amber-950/10')
               }
             >
               <p
                 className={
                   'text-xs font-semibold uppercase tracking-wider mb-2 ' +
-                  (offer.primary ? 'text-primary' : 'text-muted-foreground')
+                  (offer.primary
+                    ? 'text-amber-700 dark:text-amber-400'
+                    : 'text-muted-foreground')
                 }
               >
                 {offer.primary ? 'Best for you' : 'Or'}
               </p>
               <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug flex items-center gap-2">
                 {offer.label}
-                {offer.primary && <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />}
+                {offer.primary && (
+                  <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                )}
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">{offer.description}</p>
             </button>
@@ -427,6 +526,64 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
         <p className="text-xs text-muted-foreground/70 text-center leading-relaxed pt-2">
           Reports History and Memories stay accessible regardless of subscription status.
         </p>
+      </div>
+    </>
+  );
+
+  // Cancelled state — calm slate palette signals "informational, not
+  // alarming." The customer already cancelled; we're just acknowledging
+  // it and offering an easy resume path before their access ends.
+  const renderCancelled = () => (
+    <>
+      <div className="relative bg-gradient-to-br from-secondary/60 via-secondary/25 to-transparent px-6 pt-8 pb-6">
+        <button
+          onClick={handleClose}
+          className="absolute top-4 right-4 p-2 hover:bg-secondary/50 rounded-full transition-colors"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4 text-muted-foreground" />
+        </button>
+        <div className="flex flex-col items-center text-center">
+          <motion.div
+            initial={{ scale: 0, rotate: -20 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+            className="w-16 h-16 bg-gradient-to-br from-secondary to-secondary/40 rounded-2xl flex items-center justify-center mb-4 border border-border shadow-lg"
+          >
+            <Info className="w-8 h-8 text-muted-foreground" />
+          </motion.div>
+          <h2 className="text-xl font-semibold text-foreground mb-2">Subscription cancelled</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
+            Your Photo Date Rescue subscription was cancelled and will end on{' '}
+            <span className="font-medium text-foreground">{formatDate(cancelExpiresAt)}</span>.
+            You'll keep full access until then.
+          </p>
+        </div>
+      </div>
+      <div className="px-6 pb-6 pt-2 space-y-3">
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-5">
+          <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-2">
+            Changed your mind?
+          </p>
+          <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug">
+            Resume your subscription
+          </h3>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Your card on file stays as-is. Billing continues on your normal renewal date — no
+            re-checkout, no card re-entry.
+          </p>
+        </div>
+        <Button
+          onClick={handlePickResume}
+          className="w-full h-12 text-base font-medium"
+          data-testid="button-retention-resume"
+        >
+          <Sparkles className="w-4 h-4 mr-2" />
+          Resume subscription
+        </Button>
+        <Button onClick={handleClose} variant="secondary" className="w-full">
+          Close
+        </Button>
       </div>
     </>
   );
@@ -451,9 +608,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
             <AlertTriangle className="w-8 h-8 text-rose-600 dark:text-rose-400" />
           </motion.div>
           <h2 className="text-xl font-semibold text-foreground mb-2">{verifyHeading}</h2>
-          <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
-            {verifySubcopy}
-          </p>
+          <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">{verifySubcopy}</p>
         </div>
       </div>
       <div className="px-6 pb-6 pt-2 space-y-4">
@@ -490,7 +645,11 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
         >
           {verifyButtonLabel}
         </Button>
-        <Button onClick={() => setStep('menu')} variant="secondary" className="w-full">
+        <Button
+          onClick={() => setStep(isCancelled ? 'cancelled' : 'menu')}
+          variant="secondary"
+          className="w-full"
+        >
           Go back
         </Button>
       </div>
@@ -508,7 +667,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
   );
 
   const renderSuccess = () => {
-    const isUpsell = pendingAction === null && successHeading === 'Heading to checkout…';
+    const isUpsell = successHeading === 'Heading to checkout…';
     const isPositive = pendingAction !== 'cancel';
     return (
       <>
@@ -547,9 +706,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
               />
             </motion.div>
             <h2 className="text-xl font-semibold text-foreground mb-2">{successHeading}</h2>
-            <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
-              {successMsg}
-            </p>
+            <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">{successMsg}</p>
           </div>
         </div>
         <div className="px-6 pb-6 pt-2">
@@ -585,7 +742,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
         <Button
           onClick={() => {
             setErrorMsg(null);
-            setStep('menu');
+            setStep(isCancelled ? 'cancelled' : 'menu');
           }}
           className="w-full h-12 text-base font-medium"
         >
@@ -617,6 +774,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
         >
           {step === 'loading' && renderLoading()}
           {step === 'menu' && renderMenu()}
+          {step === 'cancelled' && renderCancelled()}
           {step === 'verify-key' && renderVerifyKey()}
           {step === 'processing' && renderProcessing()}
           {step === 'success' && renderSuccess()}
