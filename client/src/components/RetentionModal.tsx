@@ -104,93 +104,55 @@ function formatDate(iso: string | null): string {
   }
 }
 
+// Single source of truth for each offer's copy. Label format is
+// "[X% off] — [Plan] at [price] [duration]" so every card in the
+// ladder reads in the same voice; the discount percentage leads
+// because that's the number most people scan for. Bodies are
+// short and parallel (duration/cadence + one practical fact).
+const OFFER_MONTHLY_DISCOUNT: Omit<OfferOption, 'primary'> = {
+  id: 'monthly-discount',
+  label: '50% off — Monthly at $9/mo for 3 months',
+  description: 'Reverts to $19/mo automatically after 3 months. Card on file stays as-is.',
+};
+const OFFER_SWITCH_TO_YEARLY: Omit<OfferOption, 'primary'> = {
+  id: 'switch-to-yearly',
+  label: '32% off — Yearly at $54/yr forever',
+  description: 'Applies to every renewal, forever. Card on file stays as-is.',
+};
+const OFFER_LIFETIME_UPSELL: Omit<OfferOption, 'primary'> = {
+  id: 'lifetime-upsell',
+  label: '30% off — Lifetime at $139 one-time',
+  description: 'Single payment, never another bill.',
+};
+const OFFER_STAY_AS_IS: Omit<OfferOption, 'primary'> = {
+  id: 'stay-as-is',
+  label: 'Keep Monthly at $19/mo',
+  description: 'No changes — your current plan continues.',
+};
+
 function getOffersForPlan(currentPlan: string, hasUsedRetention: boolean): OfferOption[] {
   if (currentPlan === 'monthly-full' && !hasUsedRetention) {
     return [
-      {
-        id: 'monthly-discount',
-        label: 'Stay on Monthly — $9/mo for 3 months',
-        description:
-          'Save 50% × 3 months ($30 total). Reverts to $19/mo automatically afterwards. Your card on file stays as-is.',
-        primary: true,
-      },
-      {
-        id: 'switch-to-yearly',
-        label: 'Switch to Yearly — $54/yr forever',
-        description:
-          'Save $174/yr vs full Monthly. The discount applies to every renewal, forever, for as long as you stay subscribed.',
-      },
-      {
-        id: 'lifetime-upsell',
-        label: 'Buy Lifetime — $139 one-time',
-        description:
-          '30% off Lifetime. One payment, no more bills. About 7 months of Monthly pays this off outright.',
-      },
+      { ...OFFER_MONTHLY_DISCOUNT, primary: true },
+      OFFER_SWITCH_TO_YEARLY,
+      OFFER_LIFETIME_UPSELL,
     ];
   }
   if (currentPlan === 'monthly-full' && hasUsedRetention) {
     return [
-      {
-        id: 'stay-as-is',
-        label: 'Keep Monthly at $19/mo',
-        description: 'Continue your current plan with no changes — your card on file stays as-is.',
-        primary: true,
-      },
-      {
-        id: 'switch-to-yearly',
-        label: 'Switch to Yearly — $54/yr forever',
-        description:
-          'Save $174/yr vs Monthly. The discount applies to every renewal, forever.',
-      },
-      {
-        id: 'lifetime-upsell',
-        label: 'Buy Lifetime — $139 one-time',
-        description: '30% off Lifetime. One payment, never pay again.',
-      },
+      { ...OFFER_STAY_AS_IS, primary: true },
+      OFFER_SWITCH_TO_YEARLY,
+      OFFER_LIFETIME_UPSELL,
     ];
   }
   if (currentPlan === 'monthly-retention') {
-    return [
-      {
-        id: 'switch-to-yearly',
-        label: 'Switch to Yearly — $54/yr forever',
-        description:
-          'Save $174/yr vs full Monthly. The discount applies to every renewal, forever.',
-        primary: true,
-      },
-      {
-        id: 'lifetime-upsell',
-        label: 'Buy Lifetime — $139 one-time',
-        description: '30% off Lifetime. One payment, never pay again.',
-      },
-    ];
+    return [{ ...OFFER_SWITCH_TO_YEARLY, primary: true }, OFFER_LIFETIME_UPSELL];
   }
   if (currentPlan === 'yearly-full') {
-    return [
-      {
-        id: 'switch-to-yearly',
-        label: 'Save $25/yr forever — switch to $54/yr',
-        description:
-          'The discount applies to every future renewal, forever, for as long as you stay subscribed.',
-        primary: true,
-      },
-      {
-        id: 'lifetime-upsell',
-        label: 'Buy Lifetime — $139 one-time',
-        description: '30% off Lifetime. One payment, never pay again.',
-      },
-    ];
+    return [{ ...OFFER_SWITCH_TO_YEARLY, primary: true }, OFFER_LIFETIME_UPSELL];
   }
   if (currentPlan === 'yearly-retention') {
-    return [
-      {
-        id: 'lifetime-upsell',
-        label: 'Buy Lifetime — $139 one-time',
-        description:
-          '30% off Lifetime. About 2.5 years of Yearly pays this off outright. One payment, never pay again.',
-        primary: true,
-      },
-    ];
+    return [{ ...OFFER_LIFETIME_UPSELL, primary: true }];
   }
   // lifetime / trial / unknown — no offers; modal shouldn't have been opened.
   return [];
