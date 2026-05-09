@@ -509,6 +509,18 @@ async function apiLicenseApplyRetention(body: any, env: Env): Promise<Response> 
     return jsonError(patch.error ?? 'Could not switch subscription variant', 502);
   }
 
+  // Variant changes invalidate the old license key on LS's side and
+  // trigger issuance of a new one (when "Generate license keys" is on
+  // for the new variant). Find the new active key so the renderer can
+  // swap its stored key + re-activate the device. If null, either no
+  // new key was issued or the lookup failed — renderer falls back to
+  // its existing key (which is likely now invalid; the user will see
+  // an activation error and can recover via the License modal).
+  const newLicenseKey = await lsFindActiveLicenseKey(validate.orderId, env);
+  const keyChanged = !!(
+    newLicenseKey && newLicenseKey.trim().toUpperCase() !== key.trim().toUpperCase()
+  );
+
   // Write retention KV record. For monthly-discount, include the
   // expiry timestamp + original variant ID so the daily cron can
   // PATCH them back to their original variant after 90 days. For
@@ -526,7 +538,11 @@ async function apiLicenseApplyRetention(body: any, env: Env): Promise<Response> 
   }
   await env.USAGE_KV.put(kvKey, JSON.stringify(record));
 
-  return json({ ok: true, alreadyUsed: false });
+  return json({
+    ok: true,
+    alreadyUsed: false,
+    newLicenseKey: keyChanged ? newLicenseKey : undefined,
+  });
 }
 
 /**
@@ -953,6 +969,44 @@ async function lsValidateLicense(licenseKey: string): Promise<LsValidateResult> 
  * Returns null on any failure so callers can decide whether to error
  * out or no-op (e.g. lifetime licenses have no sub at all).
  */
+/**
+ * Find the most recently-issued ACTIVE license key for a given order.
+ * LS issues a new license key on subscription variant changes (when
+ * "Generate license keys" is enabled on the new variant) and marks
+ * the previous one as expired. This helper finds the new one so the
+ * renderer can swap its stored key + re-activate the device.
+ *
+ * Returns null on any failure or if no active key exists. Callers
+ * should treat null as "no swap needed" rather than fatal.
+ */
+async function lsFindActiveLicenseKey(orderId: number, env: Env): Promise<string | null> {
+  if (!env.LS_API_KEY) return null;
+  try {
+    const res = await fetch(
+      `https://api.lemonsqueezy.com/v1/license-keys?filter[order_id]=${orderId}`,
+      {
+        headers: {
+          'Accept': 'application/vnd.api+json',
+          'Authorization': `Bearer ${env.LS_API_KEY}`,
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const keys: any[] = data?.data ?? [];
+    const active = keys
+      .filter((k) => k?.attributes?.status === 'active')
+      .sort(
+        (a, b) =>
+          new Date(b.attributes?.created_at ?? 0).getTime() -
+          new Date(a.attributes?.created_at ?? 0).getTime(),
+      );
+    return active[0]?.attributes?.key ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function lsFindSubscription(orderId: number, env: Env): Promise<string | null> {
   if (!env.LS_API_KEY) return null;
   try {

@@ -159,7 +159,7 @@ function getOffersForPlan(currentPlan: string, hasUsedRetention: boolean): Offer
 }
 
 export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
-  const { storedLicenseKey } = useLicense();
+  const { storedLicenseKey, setStoredLicenseKey, activate } = useLicense();
   const [step, setStep] = useState<Step>('loading');
   const [currentPlan, setCurrentPlan] = useState<string>('unknown');
   const [hasUsedRetention, setHasUsedRetention] = useState<boolean>(false);
@@ -354,6 +354,24 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
     if (result.data?.alreadyUsed) {
       handleLifetimeUpsell();
       return;
+    }
+    // LS issues a fresh license key on variant change. Swap the stored
+    // key + re-activate the device so the local cache stays in sync —
+    // otherwise the next validate against the now-expired old key marks
+    // PDR as expired even though the subscription is genuinely active.
+    if (result.data?.newLicenseKey) {
+      const newKey: string = result.data.newLicenseKey;
+      setStoredLicenseKey(newKey);
+      const actResult = await activate(newKey);
+      if (!actResult.success) {
+        setErrorMsg(
+          actResult.error
+            ? `The plan switch worked but activating the new license failed: ${actResult.error}. Open the License modal and re-enter your key to recover.`
+            : 'The plan switch worked but activating the new license failed. Open the License modal and re-enter your key to recover.',
+        );
+        setStep('error');
+        return;
+      }
     }
     if (pendingAction === 'monthly-discount') {
       setSuccessHeading('Discount applied!');
