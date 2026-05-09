@@ -521,6 +521,12 @@ async function apiLicenseApplyRetention(body: any, env: Env): Promise<Response> 
     newLicenseKey && newLicenseKey.trim().toUpperCase() !== key.trim().toUpperCase()
   );
 
+  // Fetch the updated subscription so the renderer can show the actual
+  // next-billing date in the success copy ("charged on 3 February 2027")
+  // instead of a vague "next renewal date."
+  const subAfter = await lsGetSubscription(subId, env);
+  const nextBillingAt: string | null = subAfter.data?.attributes?.renews_at ?? null;
+
   // Write retention KV record. For monthly-discount, include the
   // expiry timestamp + original variant ID so the daily cron can
   // PATCH them back to their original variant after 90 days. For
@@ -542,6 +548,7 @@ async function apiLicenseApplyRetention(body: any, env: Env): Promise<Response> 
     ok: true,
     alreadyUsed: false,
     newLicenseKey: keyChanged ? newLicenseKey : undefined,
+    nextBillingAt,
   });
 }
 

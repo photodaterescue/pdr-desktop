@@ -373,15 +373,22 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
         return;
       }
     }
+    const nextBillingDate = result.data?.nextBillingAt
+      ? formatDate(result.data.nextBillingAt)
+      : null;
     if (pendingAction === 'monthly-discount') {
       setSuccessHeading('Discount applied!');
       setSuccessMsg(
-        'Your next bill will be $9/mo for the next 3 months, then automatically returns to $19/mo. Your card on file stays as-is — nothing else for you to do.',
+        nextBillingDate
+          ? `Your next bill will be $9 on ${nextBillingDate}, and $9/mo for 3 months total. After that, automatically back to $19/mo. Card on file stays as-is.`
+          : 'Your next bill will be $9/mo for the next 3 months, then automatically returns to $19/mo. Card on file stays as-is.',
       );
     } else {
       setSuccessHeading('Switched to Yearly');
       setSuccessMsg(
-        'You\'re now on Yearly at $54/yr. Your card on file will be charged on your next renewal date — no more monthly bills.',
+        nextBillingDate
+          ? `You're now on Yearly at $54/yr. Your card will be charged $54 on ${nextBillingDate} — no more monthly bills.`
+          : 'You\'re now on Yearly at $54/yr. Your card on file will be charged on your next renewal date — no more monthly bills.',
       );
     }
     setStep('success');
