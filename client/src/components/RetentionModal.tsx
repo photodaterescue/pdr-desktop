@@ -579,7 +579,15 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
               data-testid="button-retention-resume-as-is"
               className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
             >
-              Just resume my current plan — no changes
+              {currentPlan === 'monthly-full'
+                ? 'Just resume Monthly at $19/mo — no discount'
+                : currentPlan === 'monthly-retention'
+                  ? 'Just resume at $9/mo — current discount continues'
+                  : currentPlan === 'yearly-full'
+                    ? 'Just resume Yearly at $79/yr — no discount'
+                    : currentPlan === 'yearly-retention'
+                      ? 'Just resume Yearly at $54/yr — current discount continues'
+                      : 'Just resume my current plan — no changes'}
             </button>
           </div>
           <p className="text-xs text-muted-foreground/70 text-center leading-relaxed pt-2">
