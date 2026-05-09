@@ -492,7 +492,19 @@ async function apiLicenseApplyRetention(body: any, env: Env): Promise<Response> 
       ? LS_VARIANT_MONTHLY_RETENTION
       : LS_VARIANT_YEARLY_RETENTION;
 
-  const patch = await lsPatchSubscription(subId, targetVariantId, env);
+  // `cancelled: false` is included so the same flow works when the
+  // customer is currently cancelled — accepting an offer reactivates
+  // the subscription AND switches the variant in a single PATCH.
+  const patch = await lsPatchSubscription(
+    subId,
+    {
+      variant_id: Number(targetVariantId),
+      disable_prorations: true,
+      invoice_immediately: false,
+      cancelled: false,
+    },
+    env,
+  );
   if (!patch.ok) {
     return jsonError(patch.error ?? 'Could not switch subscription variant', 502);
   }
@@ -1006,7 +1018,7 @@ async function lsGetSubscription(
  */
 async function lsPatchSubscription(
   subId: string,
-  variantId: string,
+  attributes: Record<string, unknown>,
   env: Env,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!env.LS_API_KEY) return { ok: false, error: 'LS_API_KEY not configured' };
@@ -1015,11 +1027,7 @@ async function lsPatchSubscription(
       data: {
         type: 'subscriptions',
         id: subId,
-        attributes: {
-          variant_id: Number(variantId),
-          disable_prorations: true,
-          invoice_immediately: false,
-        },
+        attributes,
       },
     };
     const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${subId}`, {
@@ -1078,7 +1086,15 @@ async function runRetentionRevertCron(env: Env): Promise<void> {
         const originalVariantId = record.originalVariantId;
         if (!subId || !originalVariantId) continue;
 
-        const patch = await lsPatchSubscription(subId, originalVariantId, env);
+        const patch = await lsPatchSubscription(
+          subId,
+          {
+            variant_id: Number(originalVariantId),
+            disable_prorations: true,
+            invoice_immediately: false,
+          },
+          env,
+        );
         if (patch.ok) {
           record.revertedAt = now;
           // Keep expiresAt for audit but it's no longer the trigger.

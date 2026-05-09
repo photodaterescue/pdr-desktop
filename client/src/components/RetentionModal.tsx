@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Loader2,
   Gift,
-  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLicense } from '@/contexts/LicenseContext';
@@ -530,63 +529,104 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
     </>
   );
 
-  // Cancelled state — calm slate palette signals "informational, not
-  // alarming." The customer already cancelled; we're just acknowledging
-  // it and offering an easy resume path before their access ends.
-  const renderCancelled = () => (
-    <>
-      <div className="relative bg-gradient-to-br from-secondary/60 via-secondary/25 to-transparent px-6 pt-8 pb-6">
-        <button
-          onClick={handleClose}
-          className="absolute top-4 right-4 p-2 hover:bg-secondary/50 rounded-full transition-colors"
-          aria-label="Close"
-        >
-          <X className="w-4 h-4 text-muted-foreground" />
-        </button>
-        <div className="flex flex-col items-center text-center">
-          <motion.div
-            initial={{ scale: 0, rotate: -20 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
-            className="w-16 h-16 bg-gradient-to-br from-secondary to-secondary/40 rounded-2xl flex items-center justify-center mb-4 border border-border shadow-lg"
+  // Cancelled state — same amber palette as the active offer ladder so
+  // the comeback pitch feels like a celebration rather than an
+  // afterthought. We show the same offer cards (with 'stay-as-is'
+  // filtered out — they have to resume to stay) and demote the plain
+  // "resume current plan" path to a quiet text-link at the bottom.
+  // Accepting any offer-card path triggers a single PATCH that switches
+  // variant AND un-cancels in one round-trip; the "just resume" link
+  // is the no-change resume path.
+  const renderCancelled = () => {
+    let cancelledOffers = offers.filter((o) => o.id !== 'stay-as-is');
+    if (cancelledOffers.length > 0 && !cancelledOffers.some((o) => o.primary)) {
+      cancelledOffers = cancelledOffers.map((o, i) =>
+        i === 0 ? { ...o, primary: true } : o,
+      );
+    }
+    return (
+      <>
+        <div className="relative bg-gradient-to-br from-amber-100 via-amber-50 to-transparent px-6 pt-8 pb-6 dark:from-amber-950/40 dark:via-amber-950/20">
+          <button
+            onClick={handleClose}
+            className="absolute top-4 right-4 p-2 hover:bg-secondary/50 rounded-full transition-colors"
+            aria-label="Close"
           >
-            <Info className="w-8 h-8 text-muted-foreground" />
-          </motion.div>
-          <h2 className="text-xl font-semibold text-foreground mb-2">Subscription cancelled</h2>
-          <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
-            Your Photo Date Rescue subscription was cancelled and will end on{' '}
-            <span className="font-medium text-foreground">{formatDate(cancelExpiresAt)}</span>.
-            You'll keep full access until then.
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <div className="flex flex-col items-center text-center">
+            <motion.div
+              initial={{ scale: 0, rotate: -20 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+              className="w-16 h-16 bg-gradient-to-br from-amber-200 to-amber-50 rounded-2xl flex items-center justify-center mb-4 border border-amber-300/60 shadow-lg shadow-amber-500/10 dark:from-amber-700 dark:to-amber-900"
+            >
+              <Gift className="w-8 h-8 text-amber-600 dark:text-amber-400" />
+            </motion.div>
+            <p className="text-[10px] font-semibold tracking-[0.18em] uppercase text-amber-700 dark:text-amber-400 mb-2">
+              Access ends {formatDate(cancelExpiresAt)}
+            </p>
+            <h2 className="text-xl font-semibold text-foreground mb-2">Reconsidering?</h2>
+            <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">
+              You'll keep full access until then. Here's how to come back — your card on file
+              carries over, no re-checkout needed.
+            </p>
+          </div>
+        </div>
+        <div className="px-6 pb-6 pt-2 space-y-3">
+          {cancelledOffers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No offers available for your plan.
+            </p>
+          ) : (
+            cancelledOffers.map((offer) => (
+              <button
+                key={offer.id}
+                onClick={() => handlePickOption(offer.id)}
+                data-testid={`button-retention-cancelled-${offer.id}`}
+                className={
+                  'w-full rounded-xl border p-5 text-left transition-all hover:shadow-md ' +
+                  (offer.primary
+                    ? 'border-amber-300/60 bg-gradient-to-br from-amber-50/60 via-amber-50/30 to-transparent hover:border-amber-400/70 shadow-sm shadow-amber-500/10 dark:from-amber-950/30 dark:via-amber-950/10 dark:border-amber-700/50'
+                    : 'border-border bg-secondary/20 hover:border-amber-300/40 hover:bg-amber-50/20 dark:hover:bg-amber-950/10')
+                }
+              >
+                <p
+                  className={
+                    'text-xs font-semibold uppercase tracking-wider mb-2 ' +
+                    (offer.primary
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : 'text-muted-foreground')
+                  }
+                >
+                  {offer.primary ? 'Best for you' : 'Or'}
+                </p>
+                <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug flex items-center gap-2">
+                  {offer.label}
+                  {offer.primary && (
+                    <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                  )}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{offer.description}</p>
+              </button>
+            ))
+          )}
+          <div className="pt-2 text-center">
+            <button
+              onClick={handlePickResume}
+              data-testid="button-retention-resume-as-is"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+            >
+              Just resume my current plan — no changes
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground/70 text-center leading-relaxed pt-2">
+            Reports History and Memories stay accessible regardless of subscription status.
           </p>
         </div>
-      </div>
-      <div className="px-6 pb-6 pt-2 space-y-3">
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-5">
-          <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-2">
-            Changed your mind?
-          </p>
-          <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug">
-            Resume your subscription
-          </h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Your card on file stays as-is. Billing continues on your normal renewal date — no
-            re-checkout, no card re-entry.
-          </p>
-        </div>
-        <Button
-          onClick={handlePickResume}
-          className="w-full h-12 text-base font-medium"
-          data-testid="button-retention-resume"
-        >
-          <Sparkles className="w-4 h-4 mr-2" />
-          Resume subscription
-        </Button>
-        <Button onClick={handleClose} variant="secondary" className="w-full">
-          Close
-        </Button>
-      </div>
-    </>
-  );
+      </>
+    );
+  };
 
   const renderVerifyKey = () => (
     <>
