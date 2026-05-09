@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail, Calendar, RefreshCw } from 'lucide-react';
+import { X, Key, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Mail, Calendar, RefreshCw, Monitor } from "lucide-react";
 import { Button } from '@/components/ui/custom-button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLicense } from '@/contexts/LicenseContext';
+import { RetentionModal } from './RetentionModal';
+import { ManageDevicesModal } from './ManageDevicesModal';
 
 interface LicenseModalProps {
   onClose: () => void;
@@ -23,6 +25,8 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
   // that just want a generic "something is happening" signal.
   const [isActivating, setIsActivating] = useState(false);
   const [isDeactivating, setIsDeactivating] = useState(false);
+  const [showRetention, setShowRetention] = useState(false);
+  const [showManageDevices, setShowManageDevices] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -87,22 +91,20 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-6"
+        className="relative bg-background rounded-2xl shadow-2xl max-w-md w-full p-6"
       >
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Key className="w-5 h-5 text-primary" />
-            </div>
-            <h2 className="text-xl font-semibold text-foreground">License</h2>
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 hover:bg-secondary rounded-full transition-colors"
+          data-testid="button-close-license"
+        >
+          <X className="w-5 h-5 text-muted-foreground" />
+        </button>
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-4 border border-primary/20 shadow-lg shadow-primary/10">
+            <Key className="w-8 h-8 text-primary" />
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-secondary rounded-full transition-colors"
-            data-testid="button-close-license"
-          >
-            <X className="w-5 h-5 text-muted-foreground" />
-          </button>
+          <h2 className="text-xl font-semibold text-foreground">License</h2>
         </div>
 
         {isLicensed ? (
@@ -137,51 +139,49 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
             )}
             
             <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
-              <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center justify-center gap-3 mb-3">
                 <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                 <span className="font-semibold text-emerald-900 dark:text-emerald-300">License Active</span>
               </div>
               
               <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                <div className="flex items-center justify-center gap-2 text-emerald-800 dark:text-emerald-300">
                   <ShieldCheck className="w-4 h-4" />
                   <span>{getPlanLabel(license.plan)}</span>
                 </div>
                 {license.customerEmail && (
-                  <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                  <div className="flex items-center justify-center gap-2 text-emerald-800 dark:text-emerald-300">
                     <Mail className="w-4 h-4" />
                     <span>{license.customerEmail}</span>
                   </div>
                 )}
                 {license.isOfflineGrace && license.daysUntilGraceExpires !== null && (
-                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-xs mt-2">
+                  <div className="flex items-center justify-center gap-2 text-amber-700 dark:text-amber-400 text-xs mt-2">
                     <Calendar className="w-3 h-3" />
                     <span>Offline mode — {license.daysUntilGraceExpires} days until verification needed</span>
                   </div>
                 )}
               </div>
             </div>
+            <Button
+              onClick={() => setShowManageDevices(true)}
+              className="w-full h-12 text-base font-medium shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all duration-300"
+              data-testid="button-manage-devices"
+            >
+              <Monitor className="w-4 h-4 mr-2" />
+              Manage Devices
+            </Button>
 
-            <div className="text-center">
-              <Button
-                variant="outline"
-                onClick={handleDeactivate}
-                disabled={isDeactivating}
-                className="text-muted-foreground"
-                data-testid="button-deactivate-license"
-              >
-                {isDeactivating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Deactivating...
-                  </>
-                ) : (
-                  'Deactivate License'
-                )}
-              </Button>
-              <p className="text-xs text-muted-foreground mt-2">
-                Deactivate to use on a different device
-              </p>
+            <div className="flex flex-col items-center gap-1 pt-1">
+              {(license.plan === 'monthly' || license.plan === 'yearly') && (
+                <button
+                  onClick={() => setShowRetention(true)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-cancel-subscription"
+                >
+                  Cancel subscription
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -246,6 +246,8 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
             </div>
           </div>
         )}
+        <RetentionModal isOpen={showRetention} onClose={() => setShowRetention(false)} />
+        <ManageDevicesModal isOpen={showManageDevices} onClose={() => setShowManageDevices(false)} />
       </motion.div>
     </motion.div>
   );

@@ -198,6 +198,7 @@ export async function getLicenseStatus() {
             isOfflineGrace: false,
             daysUntilGraceExpires: null,
             customerEmail: null,
+            lsInstanceId: null,
         };
     }
     // Check if instance matches
@@ -210,6 +211,7 @@ export async function getLicenseStatus() {
             isOfflineGrace: false,
             daysUntilGraceExpires: null,
             customerEmail: null,
+            lsInstanceId: null,
         };
     }
     // Try online validation
@@ -232,6 +234,7 @@ export async function getLicenseStatus() {
             isOfflineGrace: false,
             daysUntilGraceExpires: null,
             customerEmail: cache.customerEmail,
+            lsInstanceId: cache.lsInstanceId ?? null,
         };
     }
     // If cached status is active and within grace period, allow use.
@@ -245,9 +248,10 @@ export async function getLicenseStatus() {
             status: 'active',
             plan: cache.plan,
             canUsePremiumFeatures: cache.plan !== 'free',
-            isOfflineGrace: timeSinceValidation > 60000, // More than 1 minute since validation = likely offline
+            isOfflineGrace: timeSinceValidation > 24 * 60 * 60 * 1000, // More than 24 hours since last successful validation = likely offline (was 60s, fired even when online and just relaunched)
             daysUntilGraceExpires: daysUntilGraceExpires,
             customerEmail: cache.customerEmail,
+            lsInstanceId: cache.lsInstanceId ?? null,
         };
     }
     // Grace period expired or status not active
@@ -260,6 +264,7 @@ export async function getLicenseStatus() {
             isOfflineGrace: false,
             daysUntilGraceExpires: null,
             customerEmail: cache.customerEmail,
+            lsInstanceId: cache.lsInstanceId ?? null,
         };
     }
     // Inactive/expired/invalid status
@@ -271,6 +276,7 @@ export async function getLicenseStatus() {
         isOfflineGrace: false,
         daysUntilGraceExpires: null,
         customerEmail: cache.customerEmail,
+        lsInstanceId: cache.lsInstanceId ?? null,
     };
 }
 export async function activateLicense(licenseKey) {

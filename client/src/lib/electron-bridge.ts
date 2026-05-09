@@ -564,6 +564,7 @@ export interface LicenseStatus {
   isOfflineGrace: boolean;
   daysUntilGraceExpires: number | null;
   customerEmail: string | null;
+  lsInstanceId: string | null;
 }
 
 export async function getLicenseStatus(): Promise<LicenseStatus> {
@@ -578,6 +579,7 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
     isOfflineGrace: false,
     daysUntilGraceExpires: null,
     customerEmail: null,
+    lsInstanceId: null,
   };
 }
 

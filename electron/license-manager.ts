@@ -31,6 +31,7 @@ export interface LicenseStatus {
   isOfflineGrace: boolean;
   daysUntilGraceExpires: number | null;
   customerEmail: string | null;
+  lsInstanceId: string | null;
 }
 
 interface LemonSqueezyValidateResponse {
@@ -285,6 +286,7 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
       isOfflineGrace: false,
       daysUntilGraceExpires: null,
       customerEmail: null,
+      lsInstanceId: null,
     };
   }
 
@@ -298,6 +300,7 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
       isOfflineGrace: false,
       daysUntilGraceExpires: null,
       customerEmail: null,
+      lsInstanceId: null,
     };
   }
 
@@ -323,6 +326,7 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
       isOfflineGrace: false,
       daysUntilGraceExpires: null,
       customerEmail: cache.customerEmail,
+      lsInstanceId: cache.lsInstanceId ?? null,
     };
   }
 
@@ -337,9 +341,10 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
       status: 'active',
       plan: cache.plan,
       canUsePremiumFeatures: cache.plan !== 'free',
-      isOfflineGrace: timeSinceValidation > 60000, // More than 1 minute since validation = likely offline
+      isOfflineGrace: timeSinceValidation > 24 * 60 * 60 * 1000, // More than 24 hours since last successful validation = likely offline (was 60s, fired even when online and just relaunched)
       daysUntilGraceExpires: daysUntilGraceExpires,
       customerEmail: cache.customerEmail,
+      lsInstanceId: cache.lsInstanceId ?? null,
     };
   }
 
@@ -353,6 +358,7 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
       isOfflineGrace: false,
       daysUntilGraceExpires: null,
       customerEmail: cache.customerEmail,
+      lsInstanceId: cache.lsInstanceId ?? null,
     };
   }
 
@@ -365,6 +371,7 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
     isOfflineGrace: false,
     daysUntilGraceExpires: null,
     customerEmail: cache.customerEmail,
+      lsInstanceId: cache.lsInstanceId ?? null,
   };
 }
 

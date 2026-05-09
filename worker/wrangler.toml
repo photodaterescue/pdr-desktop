@@ -57,3 +57,12 @@ preview_id = "db77a366fbdb43cf82d1764c6381444a"
 # Workers analytics dashboard. Free tier includes basic metrics.
 [observability]
 enabled = true
+
+# Cron triggers — daily run that reverts expired monthly-retention
+# customers back to the regular Monthly variant. Runs at 02:00 UTC
+# (chosen for low traffic). Bound to the `scheduled` export in index.ts.
+# A daily cadence is fine because expiresAt has minute-level resolution
+# but the user-visible billing cycle is monthly, so the worst-case drift
+# is ~24h before their card is charged at the new price.
+[triggers]
+crons = ["0 2 * * *"]

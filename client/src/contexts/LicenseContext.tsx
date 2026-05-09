@@ -46,6 +46,7 @@ const defaultLicenseStatus: LicenseStatus = {
   isOfflineGrace: false,
   daysUntilGraceExpires: null,
   customerEmail: null,
+  lsInstanceId: null,
 };
 
 export function LicenseProvider({ children }: { children: ReactNode }) {

@@ -41,6 +41,10 @@ export interface Env {
   // `{ used: number }`. Created via `wrangler kv namespace create
   // USAGE_KV`; ids pasted into wrangler.toml.
   USAGE_KV: KVNamespace;
+  // Lemon Squeezy admin API key — set via `wrangler secret put LS_API_KEY`.
+  // Used by the retention/cancel endpoints to apply discounts and cancel
+  // subscriptions on a customer's behalf. Never sent to the renderer.
+  LS_API_KEY?: string;
 }
 
 type GetOrHead = 'GET' | 'HEAD';
@@ -129,6 +133,15 @@ export default {
     }
 
     return new Response(object.body, { status: 200, headers });
+  },
+
+  // Daily cron handler — runs at the schedule defined in wrangler.toml.
+  // Used by the retention flow to revert monthly-discount customers back
+  // to the regular Monthly variant after their 90-day discount expires.
+  // Runs entirely server-side; the renderer never has to reason about
+  // expiry timing.
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runRetentionRevertCron(env));
   },
 };
 
@@ -256,6 +269,18 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       return apiUsageGet(body, env);
     case '/api/usage/increment':
       return apiUsageIncrement(body, env);
+    case '/api/license/list-instances':
+      return apiLicenseListInstances(body, env);
+    case '/api/license/deactivate-instance':
+      return apiLicenseDeactivateInstance(body, env);
+    case '/api/license/retention-status':
+      return apiLicenseRetentionStatus(body, env);
+    case '/api/license/apply-retention':
+      return apiLicenseApplyRetention(body, env);
+    case '/api/license/lifetime-upsell-checkout':
+      return apiLicenseLifetimeUpsellCheckout(body, env);
+    case '/api/license/cancel-subscription':
+      return apiLicenseCancelSubscription(body, env);
     default:
       return jsonError('Not found', 404);
   }
@@ -364,4 +389,619 @@ function jsonError(message: string, status: number, extra?: Record<string, strin
       ...(extra ?? {}),
     },
   });
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Retention / cancellation API — proxies LS admin operations on behalf
+// of the desktop client. The LS_API_KEY secret never reaches the
+// renderer; all admin calls live here.
+//
+// Until LS_API_KEY is set via `wrangler secret put LS_API_KEY`, these
+// endpoints stub the actual LS calls and return realistic mocked
+// responses. The renderer behaves identically — only the server-side
+// effect changes when real keys are wired.
+// ───────────────────────────────────────────────────────────────────────
+
+const RETENTION_KV_PREFIX = 'retention:';
+
+// LS variant + discount constants. The variant IDs are numeric LS IDs
+// (NOT the checkout-buy UUID slug) — copy them from each variant's ⋯
+// menu in the LS dashboard. The two retention variants are hidden in
+// the Share Product panel so the public store can't buy direct at the
+// retention price; they're only reachable via subscription PATCH.
+//
+// Discount codes are store-scoped, generated in the LS dashboard with
+// explicit "PDR retention (M/Y/L)" naming so they can't be conflated.
+// LIFETIME's discount code is the only one used at fresh-checkout time
+// (the upsell flow); the M/Y codes exist for any future direct-checkout
+// scenarios but aren't used by the in-app retention path, which uses
+// variant-switching instead.
+const LS_VARIANT_LIFETIME = '1112466';
+const LS_VARIANT_MONTHLY_RETENTION = '1625831'; // $9/mo (50% off Monthly $19)
+const LS_VARIANT_YEARLY_RETENTION = '1632365';  // $54/yr ($25 off Yearly $79)
+const LS_DISCOUNT_CODE_MONTHLY = 'E5MTU1OQ';
+const LS_DISCOUNT_CODE_YEARLY = 'KZNJC4OQ';
+const LS_DISCOUNT_CODE_LIFETIME = 'A1OTA1MA';
+
+async function retentionKvKey(licenseKey: string): Promise<string> {
+  const data = new TextEncoder().encode(licenseKey.trim().toUpperCase());
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return RETENTION_KV_PREFIX + hex;
+}
+
+/**
+ * Apply a retention action to the user's current LS subscription by
+ * PATCHing the subscription to a different variant. Two supported actions:
+ *
+ *   monthly-discount  — Switch from regular Monthly ($19) to Monthly
+ *                       Retention ($9) for 3 months, then auto-revert
+ *                       via the scheduled cron handler. Customer's
+ *                       card on file carries over; no re-checkout.
+ *
+ *   switch-to-yearly  — Switch from Monthly OR Yearly-full to Yearly
+ *                       Retention ($54/yr forever). Card carries over;
+ *                       no auto-revert (the discount is permanent).
+ *
+ * Body: { key: string; action: 'monthly-discount' | 'switch-to-yearly' }
+ * Returns: { ok: true; alreadyUsed: boolean }
+ *
+ * `alreadyUsed: true` means the customer already used their monthly
+ * retention discount; the renderer should redirect to the lifetime
+ * upsell flow rather than offering the same monthly discount twice.
+ */
+async function apiLicenseApplyRetention(body: any, env: Env): Promise<Response> {
+  const key: string | undefined = body?.key;
+  const action: string | undefined = body?.action;
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    return jsonError('Missing or invalid `key`', 400);
+  }
+  if (action !== 'monthly-discount' && action !== 'switch-to-yearly') {
+    return jsonError('`action` must be `monthly-discount` or `switch-to-yearly`', 400);
+  }
+
+  if (!env.LS_API_KEY) {
+    return jsonError('LS_API_KEY not configured', 500);
+  }
+
+  // Block double-dipping on the monthly retention discount. Checking
+  // here AND filtering server-side keeps the renderer from accidentally
+  // re-offering the same 50%×3-month deal if its state gets out of sync.
+  if (action === 'monthly-discount') {
+    const kvKey = await retentionKvKey(key);
+    if (await env.USAGE_KV.get(kvKey)) {
+      return json({ ok: true, alreadyUsed: true });
+    }
+  }
+
+  const validate = await lsValidateLicense(key);
+  if (!validate.ok || !validate.orderId) {
+    return jsonError(validate.error ?? 'License validation failed', 502);
+  }
+  const subId = await lsFindSubscription(validate.orderId, env);
+  if (!subId) {
+    return jsonError('No active subscription found for this license', 404);
+  }
+
+  const targetVariantId =
+    action === 'monthly-discount'
+      ? LS_VARIANT_MONTHLY_RETENTION
+      : LS_VARIANT_YEARLY_RETENTION;
+
+  const patch = await lsPatchSubscription(subId, targetVariantId, env);
+  if (!patch.ok) {
+    return jsonError(patch.error ?? 'Could not switch subscription variant', 502);
+  }
+
+  // Write retention KV record. For monthly-discount, include the
+  // expiry timestamp + original variant ID so the daily cron can
+  // PATCH them back to their original variant after 90 days. For
+  // switch-to-yearly there's no expiry — the discount is permanent.
+  const kvKey = await retentionKvKey(key);
+  const record: Record<string, unknown> = {
+    usedAt: Date.now(),
+    action,
+    subscriptionId: subId,
+    customerEmail: validate.customerEmail,
+  };
+  if (action === 'monthly-discount') {
+    record.originalVariantId = String(validate.variantId ?? '');
+    record.expiresAt = Date.now() + 90 * 24 * 60 * 60 * 1000; // +90 days
+  }
+  await env.USAGE_KV.put(kvKey, JSON.stringify(record));
+
+  return json({ ok: true, alreadyUsed: false });
+}
+
+/**
+ * Returns the customer's current plan tier + retention history so the
+ * RetentionModal can show the right menu of offers without baking
+ * those rules into the renderer. Plan tiers are server-defined so the
+ * mapping stays in one place.
+ *
+ * Body: { key: string }
+ * Returns: {
+ *   currentPlan: 'monthly-full' | 'monthly-retention' | 'yearly-full' |
+ *                'yearly-retention' | 'lifetime' | 'trial' | 'unknown',
+ *   hasUsedRetention: boolean,
+ * }
+ */
+async function apiLicenseRetentionStatus(body: any, env: Env): Promise<Response> {
+  const key: string | undefined = body?.key;
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    return jsonError('Missing or invalid `key`', 400);
+  }
+
+  if (!env.LS_API_KEY) {
+    return json({ currentPlan: 'unknown', hasUsedRetention: false });
+  }
+
+  try {
+    const validate = await lsValidateLicense(key);
+    if (!validate.ok) {
+      return jsonError(validate.error ?? 'License validation failed', 502);
+    }
+
+    const variantId = String(validate.variantId ?? '');
+    let currentPlan: string;
+
+    // Direct variant-ID matches first — fastest path.
+    if (variantId === LS_VARIANT_MONTHLY_RETENTION) {
+      currentPlan = 'monthly-retention';
+    } else if (variantId === LS_VARIANT_YEARLY_RETENTION) {
+      currentPlan = 'yearly-retention';
+    } else if (variantId === LS_VARIANT_LIFETIME) {
+      currentPlan = 'lifetime';
+    } else {
+      // Otherwise inspect the subscription's variant_name to figure out
+      // whether they're on the regular Monthly or Yearly variant.
+      const subId = validate.orderId
+        ? await lsFindSubscription(validate.orderId, env)
+        : null;
+      if (!subId) {
+        currentPlan = 'unknown';
+      } else {
+        const sub = await lsGetSubscription(subId, env);
+        const variantName = String(sub.data?.attributes?.variant_name ?? '').toLowerCase();
+        if (variantName.includes('yearly')) {
+          currentPlan = 'yearly-full';
+        } else if (variantName.includes('monthly')) {
+          currentPlan = 'monthly-full';
+        } else if (variantName.includes('trial')) {
+          currentPlan = 'trial';
+        } else {
+          currentPlan = 'unknown';
+        }
+      }
+    }
+
+    const kvKey = await retentionKvKey(key);
+    const hasUsedRetention = !!(await env.USAGE_KV.get(kvKey));
+
+    return json({ currentPlan, hasUsedRetention });
+  } catch (e: any) {
+    return jsonError(`retention-status failed: ${e?.message ?? 'unknown'}`, 502);
+  }
+}
+
+/**
+ * Generate a one-time LS checkout URL for the lifetime variant with a
+ * 30% discount applied. Used after a monthly customer cancels twice —
+ * convert them into a lifetime customer at $139.
+ *
+ * Body: { key: string }
+ * Returns: { ok: true; checkoutUrl: string }
+ */
+async function apiLicenseLifetimeUpsellCheckout(body: any, env: Env): Promise<Response> {
+  const key: string | undefined = body?.key;
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    return jsonError('Missing or invalid `key`', 400);
+  }
+
+  if (!env.LS_API_KEY) {
+    // Fallback if the secret isn't provisioned — send to the public
+    // pricing page so the user at least sees how to upgrade.
+    return json({ ok: true, checkoutUrl: 'https://photodaterescue.com/#pricing' });
+  }
+
+  try {
+    const validate = await lsValidateLicense(key);
+    if (!validate.ok || !validate.storeId) {
+      return jsonError(validate.error ?? 'License validation failed', 502);
+    }
+
+    // POST /v1/checkouts creates a hosted checkout link with the
+    // lifetime variant + discount + customer email pre-applied. The
+    // returned URL is single-use scoped to that variant; the user
+    // lands on a page that already knows the price ($199 - $60 = $139)
+    // and only asks for card details.
+    const checkoutBody = {
+      data: {
+        type: 'checkouts',
+        attributes: {
+          checkout_data: {
+            email: validate.customerEmail ?? '',
+            discount_code: LS_DISCOUNT_CODE_LIFETIME,
+          },
+        },
+        relationships: {
+          store: { data: { type: 'stores', id: String(validate.storeId) } },
+          variant: { data: { type: 'variants', id: LS_VARIANT_LIFETIME } },
+        },
+      },
+    };
+
+    const res = await fetch('https://api.lemonsqueezy.com/v1/checkouts', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json',
+        'Authorization': `Bearer ${env.LS_API_KEY}`,
+      },
+      body: JSON.stringify(checkoutBody),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      return jsonError(`LS checkout error: ${errText.slice(0, 200)}`, 502);
+    }
+    const data: any = await res.json();
+    const url = data?.data?.attributes?.url;
+    if (typeof url !== 'string') {
+      return jsonError('LS checkout did not return URL', 502);
+    }
+    return json({ ok: true, checkoutUrl: url });
+  } catch (e: any) {
+    return jsonError(`LS checkout failed: ${e?.message ?? 'unknown error'}`, 502);
+  }
+}
+
+/**
+ * Cancel the user's subscription on LS. The user retains access until
+ * the end of their current billing period; LS handles the timing.
+ *
+ * Body: { key: string }
+ * Returns: { ok: true }
+ */
+async function apiLicenseCancelSubscription(body: any, env: Env): Promise<Response> {
+  const key: string | undefined = body?.key;
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    return jsonError('Missing or invalid `key`', 400);
+  }
+
+  if (!env.LS_API_KEY) {
+    return json({ ok: true });
+  }
+
+  try {
+    const validate = await lsValidateLicense(key);
+    if (!validate.ok || !validate.orderId) {
+      return jsonError(validate.error ?? 'License validation failed', 502);
+    }
+
+    const subId = await lsFindSubscription(validate.orderId, env);
+    if (!subId) {
+      // Lifetime customers have no subscription to cancel; treat as a
+      // no-op success so the renderer's "Cancel" path doesn't error
+      // out for licenses that aren't subscriptions in the first place.
+      return json({ ok: true });
+    }
+
+    // DELETE /v1/subscriptions/{id} flags the sub as cancelled but
+    // keeps it active until the end of the current billing period.
+    // Customer retains access; we don't have to do anything else.
+    const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${subId}`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/vnd.api+json',
+        'Authorization': `Bearer ${env.LS_API_KEY}`,
+      },
+    });
+    if (!res.ok && res.status !== 204) {
+      const errText = await res.text();
+      return jsonError(`LS cancel error: ${errText.slice(0, 200)}`, 502);
+    }
+    return json({ ok: true });
+  } catch (e: any) {
+    return jsonError(`LS cancel failed: ${e?.message ?? 'unknown error'}`, 502);
+  }
+}
+
+async function apiLicenseListInstances(body: any, env: Env): Promise<Response> {
+  const key: string | undefined = body?.key;
+  const currentInstanceId: string | undefined = body?.currentInstanceId;
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    return jsonError('Missing or invalid `key`', 400);
+  }
+  if (!env.LS_API_KEY) {
+    return json({
+      ok: true,
+      instances: [
+        { id: 'mock-instance-1', name: 'PDR-win32-bc6510f2', createdAt: '2026-04-26T09:14:00Z', isCurrent: true },
+        { id: 'mock-instance-2', name: 'PDR-win32-aabbccdd', createdAt: '2026-03-12T14:22:00Z', isCurrent: false },
+      ],
+    });
+  }
+  try {
+    const validateRes = await fetch('https://api.lemonsqueezy.com/v1/licenses/validate', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ license_key: key.trim() }),
+    });
+    const validateData: any = await validateRes.json();
+    if (!validateData.valid || !validateData.license_key?.id) {
+      return jsonError('License key not recognised by Lemon Squeezy', 401);
+    }
+    const licenseKeyId = validateData.license_key.id;
+    const instancesRes = await fetch(
+      `https://api.lemonsqueezy.com/v1/license-key-instances?filter[license_key_id]=${licenseKeyId}`,
+      { headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${env.LS_API_KEY}` } },
+    );
+    if (!instancesRes.ok) {
+      const errText = await instancesRes.text();
+      return jsonError(`LS list-instances error: ${errText.slice(0, 200)}`, 502);
+    }
+    const instancesData: any = await instancesRes.json();
+    const instances = (instancesData.data ?? []).map((inst: any) => ({
+      id: inst.attributes?.identifier ?? inst.id,
+      name: inst.attributes?.name ?? 'Unknown device',
+      createdAt: inst.attributes?.created_at ?? null,
+      isCurrent: currentInstanceId ? ((inst.attributes?.identifier ?? inst.id) === currentInstanceId) : false,
+    }));
+    return json({ ok: true, instances });
+  } catch (e: any) {
+    return jsonError(`LS list-instances failed: ${e?.message ?? 'unknown error'}`, 502);
+  }
+}
+async function apiLicenseDeactivateInstance(body: any, env: Env): Promise<Response> {
+  const key: string | undefined = body?.key;
+  const confirmKey: string | undefined = body?.confirmKey;
+  const instanceId: string | undefined = body?.instanceId;
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    return jsonError('Missing or invalid `key`', 400);
+  }
+  if (typeof confirmKey !== 'string' || confirmKey.trim().toUpperCase() !== key.trim().toUpperCase()) {
+    return jsonError('License key confirmation does not match', 403);
+  }
+  if (typeof instanceId !== 'string' || instanceId.trim().length < 4) {
+    return jsonError('Missing or invalid `instanceId`', 400);
+  }
+  if (!env.LS_API_KEY) {
+    return json({ ok: true });
+  }
+  try {
+    const res = await fetch('https://api.lemonsqueezy.com/v1/licenses/deactivate', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ license_key: key.trim(), instance_id: instanceId.trim() }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      return jsonError(`LS deactivate error: ${errText.slice(0, 200)}`, 502);
+    }
+    const data: any = await res.json();
+    if (!data.deactivated) {
+      return jsonError('Lemon Squeezy reported instance not deactivated', 502);
+    }
+    return json({ ok: true });
+  } catch (e: any) {
+    return jsonError(`LS deactivate failed: ${e?.message ?? 'unknown error'}`, 502);
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// LS API helpers — shared by retention/cancel/upsell handlers. Centralised
+// here so the JSON:API content-types and bearer-auth boilerplate aren't
+// repeated in every handler.
+// ───────────────────────────────────────────────────────────────────────
+
+interface LsValidateResult {
+  ok: boolean;
+  licenseKeyId?: number;
+  orderId?: number;
+  storeId?: number;
+  customerId?: number;
+  customerEmail?: string;
+  variantId?: number;
+  error?: string;
+}
+
+/**
+ * Validate a license key via LS's public endpoint and return the
+ * useful identifiers from the response. Doesn't require LS_API_KEY —
+ * /v1/licenses/validate is the unauthenticated endpoint also used by
+ * activate/deactivate. We pull `meta.store_id` etc. so callers can
+ * skip a separate /v1/stores lookup when building checkouts.
+ */
+async function lsValidateLicense(licenseKey: string): Promise<LsValidateResult> {
+  try {
+    const res = await fetch('https://api.lemonsqueezy.com/v1/licenses/validate', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ license_key: licenseKey.trim() }),
+    });
+    const data: any = await res.json();
+    if (!data?.valid) {
+      return { ok: false, error: 'License key not recognised by Lemon Squeezy' };
+    }
+    return {
+      ok: true,
+      licenseKeyId: data.license_key?.id,
+      orderId: data.meta?.order_id,
+      storeId: data.meta?.store_id,
+      customerId: data.meta?.customer_id,
+      customerEmail: data.meta?.customer_email,
+      variantId: data.meta?.variant_id,
+    };
+  } catch (e: any) {
+    return { ok: false, error: `LS validate failed: ${e?.message ?? 'unknown'}` };
+  }
+}
+
+/**
+ * Look up the subscription ID for a given order. LS's /v1/subscriptions
+ * endpoint accepts a filter[order_id] query so we can skip walking
+ * orders/license-keys ourselves. Prefers an active sub if multiple
+ * results come back (cancelled subs stay listed until period end).
+ * Returns null on any failure so callers can decide whether to error
+ * out or no-op (e.g. lifetime licenses have no sub at all).
+ */
+async function lsFindSubscription(orderId: number, env: Env): Promise<string | null> {
+  if (!env.LS_API_KEY) return null;
+  try {
+    const res = await fetch(
+      `https://api.lemonsqueezy.com/v1/subscriptions?filter[order_id]=${orderId}`,
+      {
+        headers: {
+          'Accept': 'application/vnd.api+json',
+          'Authorization': `Bearer ${env.LS_API_KEY}`,
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const subs: any[] = data?.data ?? [];
+    const active = subs.find((s) => s?.attributes?.status === 'active');
+    if (active?.id) return active.id;
+    if (subs[0]?.id) return subs[0].id;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch the full subscription resource for a given subscription ID.
+ * Used by retention-status to read variant_name and decide whether
+ * the customer is on the regular Monthly or Yearly variant when the
+ * variant ID doesn't match one of our known constants.
+ */
+async function lsGetSubscription(
+  subId: string,
+  env: Env,
+): Promise<{ ok: boolean; data?: any; error?: string }> {
+  if (!env.LS_API_KEY) return { ok: false, error: 'LS_API_KEY not configured' };
+  try {
+    const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${subId}`, {
+      headers: {
+        'Accept': 'application/vnd.api+json',
+        'Authorization': `Bearer ${env.LS_API_KEY}`,
+      },
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      return { ok: false, error: `LS GET subscription error: ${errText.slice(0, 200)}` };
+    }
+    const data: any = await res.json();
+    return { ok: true, data: data.data };
+  } catch (e: any) {
+    return { ok: false, error: `LS GET subscription failed: ${e?.message ?? 'unknown'}` };
+  }
+}
+
+/**
+ * Switch an LS subscription to a different variant via PATCH. Used by
+ * the retention flow to move a customer to/from the hidden retention
+ * variants without forcing them through a fresh checkout. The card on
+ * file carries over and the customer never re-enters payment details.
+ *
+ * `disable_prorations: true` skips the partial-month credit/charge
+ * calculation — we don't want to refund the customer for the unused
+ * portion of their current billing cycle when applying a discount.
+ *
+ * `invoice_immediately: false` means the new pricing takes effect at
+ * the next regular billing date rather than triggering an immediate
+ * invoice. The customer's billing anchor stays the same.
+ */
+async function lsPatchSubscription(
+  subId: string,
+  variantId: string,
+  env: Env,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!env.LS_API_KEY) return { ok: false, error: 'LS_API_KEY not configured' };
+  try {
+    const body = {
+      data: {
+        type: 'subscriptions',
+        id: subId,
+        attributes: {
+          variant_id: Number(variantId),
+          disable_prorations: true,
+          invoice_immediately: false,
+        },
+      },
+    };
+    const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${subId}`, {
+      method: 'PATCH',
+      headers: {
+        'Accept': 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json',
+        'Authorization': `Bearer ${env.LS_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      return { ok: false, error: `LS PATCH error: ${errText.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: `LS PATCH failed: ${e?.message ?? 'unknown'}` };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Scheduled handler — runs daily via the cron trigger declared in
+// wrangler.toml. Walks the retention KV store, finds any monthly-discount
+// records whose 90-day window has expired, and PATCHes those subscriptions
+// back to their original variant so the customer goes back to paying $19.
+// The KV record stays (with `revertedAt` stamped on it) so `hasUsedRetention`
+// remains true and the same customer can't claim the discount again.
+// ───────────────────────────────────────────────────────────────────────
+
+async function runRetentionRevertCron(env: Env): Promise<void> {
+  if (!env.LS_API_KEY) return;
+
+  let cursor: string | undefined;
+  const now = Date.now();
+
+  do {
+    const list = await env.USAGE_KV.list({
+      prefix: RETENTION_KV_PREFIX,
+      cursor,
+    });
+
+    for (const item of list.keys) {
+      try {
+        const raw = await env.USAGE_KV.get(item.name);
+        if (!raw) continue;
+        const record = JSON.parse(raw);
+
+        // Only monthly-discount records have an expiresAt; switch-to-yearly
+        // is permanent and never reverts.
+        if (record.action !== 'monthly-discount') continue;
+        if (record.revertedAt) continue; // already reverted, leave alone
+        if (typeof record.expiresAt !== 'number' || record.expiresAt > now) continue;
+
+        const subId = record.subscriptionId;
+        const originalVariantId = record.originalVariantId;
+        if (!subId || !originalVariantId) continue;
+
+        const patch = await lsPatchSubscription(subId, originalVariantId, env);
+        if (patch.ok) {
+          record.revertedAt = now;
+          // Keep expiresAt for audit but it's no longer the trigger.
+          await env.USAGE_KV.put(item.name, JSON.stringify(record));
+        }
+        // On PATCH failure, leave the record alone so the next cron
+        // run picks it up again. Persistent failures will stay in KV
+        // and can be investigated via the Cloudflare dashboard.
+      } catch {
+        // Skip this record and continue with the next.
+      }
+    }
+
+    cursor = list.list_complete ? undefined : list.cursor;
+  } while (cursor);
 }
