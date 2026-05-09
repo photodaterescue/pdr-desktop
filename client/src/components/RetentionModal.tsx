@@ -472,7 +472,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
               onClick={() => handlePickOption(offer.id)}
               data-testid={`button-retention-${offer.id}`}
               className={
-                'w-full rounded-xl border p-5 text-left transition-all hover:shadow-md ' +
+                'w-full rounded-xl border p-5 text-center transition-all hover:shadow-md ' +
                 (offer.primary
                   ? 'border-amber-300/60 bg-gradient-to-br from-amber-50/60 via-amber-50/30 to-transparent hover:border-amber-400/70 shadow-sm shadow-amber-500/10 dark:from-amber-950/30 dark:via-amber-950/10 dark:border-amber-700/50'
                   : 'border-border bg-secondary/20 hover:border-amber-300/40 hover:bg-amber-50/20 dark:hover:bg-amber-950/10')
@@ -488,7 +488,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
               >
                 {offer.primary ? 'Best for you' : 'Or'}
               </p>
-              <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug flex items-center gap-2">
+              <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug flex items-center justify-center gap-2">
                 {offer.label}
                 {offer.primary && (
                   <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
@@ -572,7 +572,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
                 onClick={() => handlePickOption(offer.id)}
                 data-testid={`button-retention-cancelled-${offer.id}`}
                 className={
-                  'w-full rounded-xl border p-5 text-left transition-all hover:shadow-md ' +
+                  'w-full rounded-xl border p-5 text-center transition-all hover:shadow-md ' +
                   (offer.primary
                     ? 'border-amber-300/60 bg-gradient-to-br from-amber-50/60 via-amber-50/30 to-transparent hover:border-amber-400/70 shadow-sm shadow-amber-500/10 dark:from-amber-950/30 dark:via-amber-950/10 dark:border-amber-700/50'
                     : 'border-border bg-secondary/20 hover:border-amber-300/40 hover:bg-amber-50/20 dark:hover:bg-amber-950/10')
@@ -588,7 +588,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
                 >
                   {offer.primary ? 'Best for you' : 'Or'}
                 </p>
-                <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug flex items-center gap-2">
+                <h3 className="text-base font-semibold text-foreground mb-1.5 leading-snug flex items-center justify-center gap-2">
                   {offer.label}
                   {offer.primary && (
                     <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
