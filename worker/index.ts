@@ -750,6 +750,13 @@ async function apiLicenseLifetimeUpsellCheckout(body: any, env: Env): Promise<Re
             email: validate.customerEmail ?? '',
             discount_code: LS_DISCOUNT_CODE_LIFETIME,
           },
+          // Restrict the checkout page to ONLY the Lifetime variant —
+          // by default LS shows the full variant list (Monthly, Yearly,
+          // hidden Retention variants, etc.) which clutters the upsell
+          // moment with options the customer didn't ask for.
+          product_options: {
+            enabled_variants: [Number(LS_VARIANT_LIFETIME)],
+          },
         },
         relationships: {
           store: { data: { type: 'stores', id: String(validate.storeId) } },
