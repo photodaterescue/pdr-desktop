@@ -380,14 +380,14 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
       setSuccessHeading('Discount applied!');
       setSuccessMsg(
         nextBillingDate
-          ? `Your next bill will be $9 on ${nextBillingDate}, and $9/mo for 3 months total. After that, automatically back to $19/mo. Card on file stays as-is.`
+          ? `Your next bill will be $9 on or around ${nextBillingDate}, then $9/mo for 3 months total. After that, automatically back to $19/mo. Card on file stays as-is.`
           : 'Your next bill will be $9/mo for the next 3 months, then automatically returns to $19/mo. Card on file stays as-is.',
       );
     } else {
       setSuccessHeading('Switched to Yearly');
       setSuccessMsg(
         nextBillingDate
-          ? `You're now on Yearly at $54/yr. Your card will be charged $54 on ${nextBillingDate} — no more monthly bills.`
+          ? `You're now on Yearly at $54/yr. Your card will be charged $54 on or around ${nextBillingDate} — no more monthly bills.`
           : 'You\'re now on Yearly at $54/yr. Your card on file will be charged on your next renewal date — no more monthly bills.',
       );
     }
