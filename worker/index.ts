@@ -925,7 +925,11 @@ async function lsValidateLicense(licenseKey: string): Promise<LsValidateResult> 
     });
     const data: any = await res.json();
     if (!data?.valid) {
-      return { ok: false, error: 'License key not recognised by Lemon Squeezy' };
+      // Surface the actual LS reason so we can debug edge cases like
+      // post-PATCH sync delays, expired-during-flight subs, etc.
+      // Fall back to the generic message only if LS sent no reason.
+      const reason = data?.error ?? data?.message ?? 'no reason given';
+      return { ok: false, error: `LS rejected license: ${reason}` };
     }
     return {
       ok: true,
