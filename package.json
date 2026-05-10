@@ -1,6 +1,6 @@
 {
   "name": "photo-date-rescue",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "main": "dist-electron/main.js",
   "description": "Repair, normalise, and organise photo and video dates from any source.",
   "author": "Photo Date Rescue Ltd",

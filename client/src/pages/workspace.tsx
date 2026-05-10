@@ -2167,9 +2167,18 @@ return (
             sidebar collapse state isn't disturbed). z-20 lets it sit
             above the search ribbon and other in-flow content. */}
         {activePanel && (
-          <div className="absolute inset-0 z-20 bg-background overflow-auto">
+          <div className="absolute inset-0 z-40 bg-background overflow-auto">
             <PanelPlaceholder
               panelType={activePanel}
+              backLabel={
+                activeView === 'search'
+                  ? 'Back to Search & Discovery'
+                  : activeView === 'memories'
+                    ? 'Back to Memories'
+                    : activeView === 'familytree'
+                      ? 'Back to Trees'
+                      : 'Back to Workspace'
+              }
               onBackToWorkspace={() => setActivePanel(null)}
               onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
               onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
@@ -7673,11 +7682,17 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem }: { panelType: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void }) {
+function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void }) {
   // Pre-destination, Help & Support no longer reaches this panel — the
   // Welcome screen opens the HelpSupportModal directly instead. So
   // every code path INTO this panel is now post-destination, and
-  // "Back to Workspace" is always the right back affordance.
+  // Back-button text is `backLabel` — the parent computes "Back to
+  // Search & Discovery" / "Back to Memories" / "Back to Trees" / "Back
+  // to Workspace" based on the activeView underneath, so closing the
+  // panel returns the user to whichever app they were in (with the
+  // panel just being an overlay, the underlying view's filters and
+  // selection are preserved automatically — no extra state-restore
+  // logic needed).
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   
   React.useEffect(() => {
@@ -7730,7 +7745,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               className="mb-6 text-muted-foreground hover:text-foreground"
               data-testid="button-back-to-workspace-top"
             >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
             </Button>
             <h2 className="text-2xl font-semibold text-foreground mb-3">Getting Started</h2>
             <p className="text-muted-foreground mb-10">Everything you need to run your first clean, safe fix — in minutes.</p>
@@ -7863,7 +7878,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 className="text-muted-foreground hover:text-foreground"
                 data-testid="button-back-to-workspace-bottom"
               >
-                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
               </Button>
             </div>
           </div>
@@ -7883,7 +7898,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               className="mb-6 text-muted-foreground hover:text-foreground"
               data-testid="button-back-to-workspace-top"
             >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
             </Button>
             <h2 className="text-2xl font-semibold text-foreground mb-3">Best Practices</h2>
             <p className="text-muted-foreground mb-10">Everything you need to get clean, predictable results</p>
@@ -8234,7 +8249,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 className="text-muted-foreground hover:text-foreground"
                 data-testid="button-back-to-workspace-bottom"
               >
-                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
               </Button>
             </div>
           </div>
@@ -8254,7 +8269,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               className="mb-6 text-muted-foreground hover:text-foreground"
               data-testid="button-back-to-workspace-top"
             >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
             </Button>
             <h2 className="text-2xl font-semibold text-foreground mb-10">What Happens Next</h2>
 
@@ -8370,7 +8385,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 className="text-muted-foreground hover:text-foreground"
                 data-testid="button-back-to-workspace-bottom"
               >
-                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
               </Button>
             </div>
           </div>
@@ -8390,7 +8405,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               className="mb-6 text-muted-foreground hover:text-foreground"
               data-testid="button-back-to-workspace-top"
             >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
             </Button>
 
             <div className="flex items-center gap-4 mb-10">
@@ -8512,6 +8527,26 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                       </AccordionContent>
                     </AccordionItem>
                   )}
+
+                  <AccordionItem value="ver-2.0.4" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.4</span>
+                        {appVersion === '2.0.4' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Manage devices and subscription from inside PDR</strong> — the License modal now lets you see every device your licence is activated on, deactivate one if you've moved machines, and cancel or resume your subscription without leaving the app.</li>
+                        <li><strong className="text-foreground font-medium">Smarter cancel flow with retention offers</strong> — clicking Cancel now shows a tailored menu of better-value options (discounted price for 3 months, switch to Yearly, upgrade to Lifetime). One click applies the change with no card re-entry.</li>
+                        <li><strong className="text-foreground font-medium">RAR archives work as sources again</strong> — adding a folder containing <code>.rar</code> files would silently fail on some builds; the unpacker is now properly bundled in every build.</li>
+                        <li><strong className="text-foreground font-medium">Faster startup, longer offline grace</strong> — the licence badge no longer freezes on "Checking…" while a slow validate is in flight; cached state shows instantly and refreshes in the background. Offline grace extended from 60 seconds to 24 hours.</li>
+                        <li><strong className="text-foreground font-medium">Smarter back-button on Guidance pages</strong> — opening Getting Started, Best Practices or What Happens Next from inside Search &amp; Discovery, Memories, or Trees now shows "Back to Search &amp; Discovery" / "Back to Memories" / "Back to Trees" instead of "Back to Workspace", and returns you to that app with your filters and selection still intact. Also fixed an overlap where the guidance content could peek through behind S&amp;D's filter chrome.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
 
                   <AccordionItem value="ver-2.0.3" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
@@ -8641,7 +8676,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 className="text-muted-foreground hover:text-foreground"
                 data-testid="button-back-to-workspace-bottom"
               >
-                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
               </Button>
             </div>
           </div>
@@ -8661,7 +8696,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               className="mb-6 text-muted-foreground hover:text-foreground"
               data-testid="button-back-to-workspace-top"
             >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
             </Button>
             <HelpSupportContent
               onStartTour={onStartTour ?? (() => {})}
@@ -8675,7 +8710,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
                 className="text-muted-foreground hover:text-foreground"
                 data-testid="button-back-to-workspace-bottom"
               >
-                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
               </Button>
             </div>
           </div>
@@ -8695,7 +8730,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
             className="mb-6 text-muted-foreground hover:text-foreground"
             data-testid="button-back-to-workspace-top"
           >
-            <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+            <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
           </Button>
           <h2 className="text-2xl font-semibold text-foreground mb-10">Page Not Found</h2>
           
@@ -8710,7 +8745,7 @@ function PanelPlaceholder({ panelType, onBackToWorkspace, onNavigateToPanel, onS
               className="text-muted-foreground hover:text-foreground"
               data-testid="button-back-to-workspace-bottom"
             >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Workspace
+              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
             </Button>
           </div>
         </div>
