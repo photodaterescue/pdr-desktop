@@ -80,6 +80,42 @@ export default {
       });
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Stable download redirect — /download → current versioned exe.
+    //
+    // Reads latest.yml from R2, parses its `path:` field (which is
+    // electron-builder's authoritative current-installer filename),
+    // and 302-redirects there. Lemon Squeezy variant links point at
+    // this stable URL so new-customer downloads always get the
+    // latest installer without manual LS edits per release.
+    //
+    // Cache headers: short (60 s) so a release roll-out picks up
+    // within a minute, but the redirect itself avoids hammering
+    // R2 for the same yml on rapid-fire downloads.
+    // ─────────────────────────────────────────────────────────────
+    if (url.pathname === '/download' || url.pathname === '/download/windows') {
+      const obj = await env.BUCKET.get('latest.yml');
+      if (!obj) {
+        return text('No release manifest available', 503);
+      }
+      const yml = await obj.text();
+      // latest.yml is electron-updater's canonical format; the
+      // top-level `path:` field is the current installer filename.
+      const match = yml.match(/^path:\s*(.+)$/m);
+      if (!match) {
+        return text('Release manifest missing path field', 500);
+      }
+      const filename = match[1].trim();
+      const target = `${url.origin}/${encodeURIComponent(filename)}`;
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: target,
+          'Cache-Control': 'public, max-age=60',
+        },
+      });
+    }
+
     const key = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
 
     // Root health-check. Useful for "is the Worker deployed?" pings
