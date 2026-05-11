@@ -243,7 +243,7 @@ import { getUsage as getUsageFromWorker, incrementUsage as incrementUsageOnWorke
 import { checkForUpdates, initAutoUpdater, downloadUpdate, quitAndInstall, getUpdateState, } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
 import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, } from './search-database.js';
-import { indexFixRun, cancelIndexing, shutdownIndexerExiftool } from './search-indexer.js';
+import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, redetectSingleFile, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
@@ -3959,6 +3959,23 @@ ipcMain.handle('search:rebuildIndex', async () => {
     }
     catch (err) {
         return { success: false, error: err.message };
+    }
+});
+// Rebuild the search index from existing PDR Library Drive(s). Used when
+// the search-index DB has been reset but the customer's library still
+// holds years of fixed photos — we walk those drives and re-extract
+// metadata from EXIF + filename. Read-only with respect to the photo
+// files themselves.
+ipcMain.handle('search:rebuildFromLibraries', async (event, rootPaths) => {
+    try {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        const result = await rebuildIndexFromLibraries(rootPaths, (progress) => {
+            win?.webContents.send('search:rebuildProgress', progress);
+        });
+        return result;
+    }
+    catch (err) {
+        return { success: false, error: err.message, runIds: [], totalFiles: 0, perRoot: [] };
     }
 });
 ipcMain.handle('search:cleanup', async () => {

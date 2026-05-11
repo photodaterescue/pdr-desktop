@@ -7737,19 +7737,24 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   if (panelType === 'getting-started') {
     return (
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
-        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+        <div className="sticky top-0 z-10 bg-background border-b border-border/40">
+          <div className="flex flex-col items-center px-8 pt-8 pb-4">
+            <div className="w-full max-w-[940px]">
+              <Button
+                variant="outline"
+                onClick={onBackToWorkspace}
+                className="mb-4 text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-top"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
+              </Button>
+              <h2 className="text-2xl font-semibold text-foreground mb-1">Getting Started</h2>
+              <p className="text-muted-foreground">Everything you need to run your first clean, safe fix — in minutes.</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center px-8 pt-8 pb-20">
           <div className="w-full max-w-[940px]">
-            <Button 
-              variant="outline" 
-              onClick={onBackToWorkspace}
-              className="mb-6 text-muted-foreground hover:text-foreground"
-              data-testid="button-back-to-workspace-top"
-            >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
-            </Button>
-            <h2 className="text-2xl font-semibold text-foreground mb-3">Getting Started</h2>
-            <p className="text-muted-foreground mb-10">Everything you need to run your first clean, safe fix — in minutes.</p>
-          
             <div className="space-y-10">
               {/* What PDR Does */}
               <section>
@@ -7890,19 +7895,24 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   if (panelType === 'best-practices') {
     return (
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
-        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+        <div className="sticky top-0 z-10 bg-background border-b border-border/40">
+          <div className="flex flex-col items-center px-8 pt-8 pb-4">
+            <div className="w-full max-w-[940px]">
+              <Button
+                variant="outline"
+                onClick={onBackToWorkspace}
+                className="mb-4 text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-top"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
+              </Button>
+              <h2 className="text-2xl font-semibold text-foreground mb-1">Best Practices</h2>
+              <p className="text-muted-foreground">Everything you need to get clean, predictable results</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center px-8 pt-8 pb-20">
           <div className="w-full max-w-[940px]">
-            <Button 
-              variant="outline" 
-              onClick={onBackToWorkspace}
-              className="mb-6 text-muted-foreground hover:text-foreground"
-              data-testid="button-back-to-workspace-top"
-            >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
-            </Button>
-            <h2 className="text-2xl font-semibold text-foreground mb-3">Best Practices</h2>
-            <p className="text-muted-foreground mb-10">Everything you need to get clean, predictable results</p>
-          
             <div className="space-y-10">
               {/* Core Orientation Section - Always Visible */}
               <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
@@ -8261,18 +8271,23 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   if (panelType === 'what-next') {
     return (
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
-        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+        <div className="sticky top-0 z-10 bg-background border-b border-border/40">
+          <div className="flex flex-col items-center px-8 pt-8 pb-4">
+            <div className="w-full max-w-[940px]">
+              <Button
+                variant="outline"
+                onClick={onBackToWorkspace}
+                className="mb-4 text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-top"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
+              </Button>
+              <h2 className="text-2xl font-semibold text-foreground">What Happens Next</h2>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center px-8 pt-8 pb-20">
           <div className="w-full max-w-[940px]">
-            <Button 
-              variant="outline" 
-              onClick={onBackToWorkspace}
-              className="mb-6 text-muted-foreground hover:text-foreground"
-              data-testid="button-back-to-workspace-top"
-            >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
-            </Button>
-            <h2 className="text-2xl font-semibold text-foreground mb-10">What Happens Next</h2>
-
             <div className="space-y-12">
               <section>
                 <div className="flex items-start gap-3 mb-4">
@@ -8397,25 +8412,29 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   if (panelType === 'about-pdr') {
     return (
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
-        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
-          <div className="w-full max-w-[940px]">
-            <Button 
-              variant="outline" 
-              onClick={onBackToWorkspace}
-              className="mb-6 text-muted-foreground hover:text-foreground"
-              data-testid="button-back-to-workspace-top"
-            >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
-            </Button>
-
-            <div className="flex items-center gap-4 mb-10">
-              <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-16 w-auto object-contain" />
-              <div>
-                <h2 className="text-2xl font-semibold text-foreground">Photo Date Rescue</h2>
-                <p className="text-sm text-muted-foreground">Version {appVersion}</p>
+        <div className="sticky top-0 z-10 bg-background border-b border-border/40">
+          <div className="flex flex-col items-center px-8 pt-8 pb-4">
+            <div className="w-full max-w-[940px]">
+              <Button
+                variant="outline"
+                onClick={onBackToWorkspace}
+                className="mb-4 text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-top"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
+              </Button>
+              <div className="flex items-center gap-4">
+                <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-12 w-auto object-contain" />
+                <div>
+                  <h2 className="text-2xl font-semibold text-foreground">Photo Date Rescue</h2>
+                  <p className="text-sm text-muted-foreground">Version {appVersion}</p>
+                </div>
               </div>
             </div>
-
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center px-8 pt-8 pb-20">
+          <div className="w-full max-w-[940px]">
             <div className="space-y-8">
               <section>
                 <h3 className="text-lg font-medium text-foreground mb-3">About</h3>
@@ -8544,6 +8563,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">RAR archives work as sources again</strong> — adding a folder containing <code>.rar</code> files would silently fail on some builds; the unpacker is now properly bundled in every build.</li>
                         <li><strong className="text-foreground font-medium">Faster startup, longer offline grace</strong> — the licence badge no longer freezes on "Checking…" while a slow validate is in flight; cached state shows instantly and refreshes in the background. Offline grace extended from 60 seconds to 24 hours.</li>
                         <li><strong className="text-foreground font-medium">Smarter back-button on Guidance pages</strong> — opening Getting Started, Best Practices or What Happens Next from inside Search &amp; Discovery, Memories, or Trees now shows "Back to Search &amp; Discovery" / "Back to Memories" / "Back to Trees" instead of "Back to Workspace", and returns you to that app with your filters and selection still intact. Also fixed an overlap where the guidance content could peek through behind S&amp;D's filter chrome.</li>
+                        <li><strong className="text-foreground font-medium">Sticky page headers on Guidance and App panels</strong> — when reading long pages like Getting Started, Best Practices, What Happens Next, About PDR, or Help &amp; Support, the page title and Back button now stay pinned at the top while the content scrolls underneath. No more losing track of which page you're in once the title scrolls off-screen.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
@@ -8688,19 +8708,28 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   if (panelType === 'help-support') {
     return (
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
-        <div className="flex-1 flex flex-col items-center px-8 pt-12 pb-20">
+        <div className="sticky top-0 z-10 bg-background border-b border-border/40">
+          <div className="flex flex-col items-center px-8 pt-8 pb-4">
+            <div className="w-full max-w-[940px]">
+              <Button
+                variant="outline"
+                onClick={onBackToWorkspace}
+                className="mb-4 text-muted-foreground hover:text-foreground"
+                data-testid="button-back-to-workspace-top"
+              >
+                <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
+              </Button>
+              <h2 className="text-2xl font-semibold text-foreground mb-1">Help & Support</h2>
+              <p className="text-muted-foreground">Everything you need to use Photo Date Rescue confidently — without guesswork, fear, or unnecessary emails.</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center px-8 pt-8 pb-20">
           <div className="w-full max-w-[940px]">
-            <Button
-              variant="outline"
-              onClick={onBackToWorkspace}
-              className="mb-6 text-muted-foreground hover:text-foreground"
-              data-testid="button-back-to-workspace-top"
-            >
-              <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> {backLabel}
-            </Button>
             <HelpSupportContent
               onStartTour={onStartTour ?? (() => {})}
               onReportProblem={onReportProblem}
+              hideTitle
             />
 
             <div className="mt-12 pt-8 border-t border-border">

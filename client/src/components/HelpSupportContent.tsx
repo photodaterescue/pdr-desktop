@@ -29,11 +29,15 @@ interface HelpSupportContentProps {
  * chrome (page padding vs modal shell) and the back/close button —
  * which is the part that actually differs between the two surfaces.
  */
-export function HelpSupportContent({ onStartTour, onReportProblem }: HelpSupportContentProps) {
+export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: HelpSupportContentProps & { hideTitle?: boolean }) {
   return (
     <>
-      <h2 className="text-2xl font-semibold text-foreground mb-3">Help & Support</h2>
-      <p className="text-muted-foreground mb-10">Everything you need to use Photo Date Rescue confidently — without guesswork, fear, or unnecessary emails.</p>
+      {!hideTitle && (
+        <>
+          <h2 className="text-2xl font-semibold text-foreground mb-3">Help & Support</h2>
+          <p className="text-muted-foreground mb-10">Everything you need to use Photo Date Rescue confidently — without guesswork, fear, or unnecessary emails.</p>
+        </>
+      )}
 
       <div className="space-y-6">
         <Accordion type="multiple" defaultValue={["start-here"]} className="space-y-3">

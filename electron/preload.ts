@@ -274,6 +274,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     filterOptions: () => ipcRenderer.invoke('search:filterOptions'),
     stats: () => ipcRenderer.invoke('search:stats'),
     rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
+    rebuildFromLibraries: (rootPaths: string[]) => ipcRenderer.invoke('search:rebuildFromLibraries', rootPaths),
+    onRebuildProgress: (callback: (progress: any) => void) => {
+      const handler = (_: any, data: any) => callback(data);
+      ipcRenderer.on('search:rebuildProgress', handler);
+      return () => ipcRenderer.removeListener('search:rebuildProgress', handler);
+    },
     cleanup: () => ipcRenderer.invoke('search:cleanup'),
     relocateRun: (runId: number, newPath: string) => ipcRenderer.invoke('search:relocateRun', runId, newPath),
     getFileMetaByPath: (filePath: string) => ipcRenderer.invoke('search:getFileMetaByPath', filePath),

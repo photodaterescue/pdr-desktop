@@ -282,7 +282,7 @@ import {
   renameFavouriteFilter,
   type SearchQuery,
 } from './search-database.js';
-import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, type IndexProgress } from './search-indexer.js';
+import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, type IndexProgress, type RebuildProgress } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import {
   startAiProcessing,
@@ -4268,6 +4268,23 @@ ipcMain.handle('search:rebuildIndex', async () => {
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
+  }
+});
+
+// Rebuild the search index from existing PDR Library Drive(s). Used when
+// the search-index DB has been reset but the customer's library still
+// holds years of fixed photos — we walk those drives and re-extract
+// metadata from EXIF + filename. Read-only with respect to the photo
+// files themselves.
+ipcMain.handle('search:rebuildFromLibraries', async (event, rootPaths: string[]) => {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await rebuildIndexFromLibraries(rootPaths, (progress: RebuildProgress) => {
+      win?.webContents.send('search:rebuildProgress', progress);
+    });
+    return result;
+  } catch (err) {
+    return { success: false, error: (err as Error).message, runIds: [], totalFiles: 0, perRoot: [] };
   }
 });
 

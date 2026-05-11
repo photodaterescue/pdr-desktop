@@ -362,3 +362,189 @@ function deriveCameraPosition(lensModel, cameraModel) {
         return 'rear';
     return null;
 }
+// ─── Rebuild from existing Library Drive(s) ─────────────────────────────────
+//
+// When PDR's search-index DB has been reset (fresh install, accidental
+// deletion, version upgrade) but the customer's Library Drive still
+// holds years of fixed photos from previous Run Fix operations, this
+// tool walks those drives and rebuilds the index from each file's
+// on-disk EXIF + filename. No changes are made to the photo files
+// themselves — read-only with respect to the library; only the search
+// index DB is modified.
+//
+// Each provided root path becomes its own indexed_runs entry with a
+// synthetic report id ("library-rebuild-…") so the UI groups files
+// per library rather than treating them as one monolithic run.
+const PHOTO_EXTENSIONS = new Set([
+    '.jpg', '.jpeg', '.png', '.heic', '.heif', '.gif', '.tiff', '.tif',
+    '.bmp', '.webp', '.dng', '.raw', '.cr2', '.cr3', '.nef', '.arw', '.orf',
+]);
+const MEDIA_EXTENSIONS_FOR_REBUILD = new Set([
+    ...PHOTO_EXTENSIONS,
+    ...VIDEO_EXTENSIONS,
+]);
+/**
+ * Recursively walk `root` and return every media file found. Skips
+ * hidden / system folders (.dotdirs, $RECYCLE.BIN, System Volume
+ * Information) so we don't scan trash or NTFS metadata.
+ */
+function walkMediaFiles(root) {
+    const results = [];
+    const stack = [root];
+    while (stack.length > 0) {
+        const dir = stack.pop();
+        let entries;
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        }
+        catch {
+            continue;
+        }
+        for (const ent of entries) {
+            if (ent.name.startsWith('.') || ent.name.startsWith('$'))
+                continue;
+            if (ent.name === 'System Volume Information')
+                continue;
+            const full = path.join(dir, ent.name);
+            if (ent.isDirectory()) {
+                stack.push(full);
+            }
+            else if (ent.isFile()) {
+                const ext = path.extname(ent.name).toLowerCase();
+                if (MEDIA_EXTENSIONS_FOR_REBUILD.has(ext)) {
+                    results.push(full);
+                }
+            }
+        }
+    }
+    return results;
+}
+export async function rebuildIndexFromLibraries(rootPaths, onProgress) {
+    indexCancelled = false;
+    const perRoot = [];
+    try {
+        initGeocoder();
+        const dbResult = initDatabase();
+        if (!dbResult.success) {
+            return {
+                success: false,
+                runIds: [],
+                totalFiles: 0,
+                perRoot,
+                error: `Database init failed: ${dbResult.error}`,
+            };
+        }
+        const runIds = [];
+        let grandTotal = 0;
+        const et = getExifTool();
+        try {
+            for (let r = 0; r < rootPaths.length; r++) {
+                if (indexCancelled)
+                    break;
+                const rootPath = rootPaths[r];
+                if (!fs.existsSync(rootPath)) {
+                    perRoot.push({ root: rootPath, runId: null, fileCount: 0 });
+                    continue;
+                }
+                // Phase 1: walk
+                onProgress?.({
+                    phase: 'walking',
+                    rootIndex: r,
+                    rootCount: rootPaths.length,
+                    rootPath,
+                    current: 0,
+                    total: 0,
+                    currentFile: '',
+                });
+                const files = walkMediaFiles(rootPath);
+                const total = files.length;
+                if (total === 0) {
+                    perRoot.push({ root: rootPath, runId: null, fileCount: 0 });
+                    continue;
+                }
+                // Create one synthetic run per library so the UI can group + filter
+                // by library. Stable id keyed off rootPath so re-running the rebuild
+                // wouldn't keep accumulating duplicate runs (existing run is
+                // removed first by the caller via clearAllIndexData if desired).
+                const reportId = `library-rebuild-${path.basename(rootPath).replace(/[^A-Za-z0-9]+/g, '-')}-${Date.now()}`;
+                const sourceLabels = `Library: ${rootPath}`;
+                const runId = insertRun(reportId, rootPath, sourceLabels);
+                runIds.push(runId);
+                // Phase 2: read EXIF + build records
+                const records = [];
+                for (let i = 0; i < files.length; i++) {
+                    if (indexCancelled)
+                        break;
+                    const filePath = files[i];
+                    const filename = path.basename(filePath);
+                    onProgress?.({
+                        phase: 'reading-exif',
+                        rootIndex: r,
+                        rootCount: rootPaths.length,
+                        rootPath,
+                        current: i + 1,
+                        total,
+                        currentFile: filename,
+                    });
+                    // Synthetic FileChange — there's no Fix report for these
+                    // discovered files, so we hand buildFileRecord sensible
+                    // defaults and let its EXIF logic (scanner detection,
+                    // derived-date parsing, geocoding, etc.) do the rest.
+                    const syntheticChange = {
+                        newFilename: filename,
+                        originalFilename: '',
+                        confidence: 'confirmed',
+                        dateSource: 'embedded',
+                    };
+                    try {
+                        const record = await buildFileRecord(et, filePath, syntheticChange);
+                        records.push(record);
+                    }
+                    catch (fileErr) {
+                        console.error(`[rebuild] Failed to build record for ${filePath}:`, fileErr);
+                    }
+                    if (i % 50 === 0) {
+                        await new Promise((resolve) => setImmediate(resolve));
+                    }
+                }
+                // Phase 3: insert
+                onProgress?.({
+                    phase: 'inserting',
+                    rootIndex: r,
+                    rootCount: rootPaths.length,
+                    rootPath,
+                    current: 0,
+                    total: records.length,
+                    currentFile: '',
+                });
+                const inserted = insertFiles(runId, records);
+                updateRunFileCount(runId, inserted);
+                grandTotal += inserted;
+                perRoot.push({ root: rootPath, runId, fileCount: inserted });
+            }
+        }
+        finally {
+            // Free the ExifTool subprocess once all libraries are processed.
+            await shutdownIndexerExiftool();
+        }
+        onProgress?.({
+            phase: 'complete',
+            rootIndex: rootPaths.length,
+            rootCount: rootPaths.length,
+            rootPath: '',
+            current: grandTotal,
+            total: grandTotal,
+            currentFile: '',
+        });
+        return { success: true, runIds, totalFiles: grandTotal, perRoot };
+    }
+    catch (err) {
+        return {
+            success: false,
+            runIds: [],
+            totalFiles: 0,
+            perRoot,
+            error: err.message,
+        };
+    }
+}

@@ -208,6 +208,12 @@ contextBridge.exposeInMainWorld('pdr', {
         filterOptions: () => ipcRenderer.invoke('search:filterOptions'),
         stats: () => ipcRenderer.invoke('search:stats'),
         rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
+        rebuildFromLibraries: (rootPaths) => ipcRenderer.invoke('search:rebuildFromLibraries', rootPaths),
+        onRebuildProgress: (callback) => {
+            const handler = (_, data) => callback(data);
+            ipcRenderer.on('search:rebuildProgress', handler);
+            return () => ipcRenderer.removeListener('search:rebuildProgress', handler);
+        },
         cleanup: () => ipcRenderer.invoke('search:cleanup'),
         relocateRun: (runId, newPath) => ipcRenderer.invoke('search:relocateRun', runId, newPath),
         getFileMetaByPath: (filePath) => ipcRenderer.invoke('search:getFileMetaByPath', filePath),
