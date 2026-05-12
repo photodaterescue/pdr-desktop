@@ -331,7 +331,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     const writerLabel = isWriter ? 'You are the writer' : (status?.writerDeviceName ? `${status.writerDeviceName} is the writer` : 'Read-only');
     return (
       <>
-        {renderHeader('Your library', attached ? 'PDR keeps a hidden copy of your face / name / date data on this drive so any of your devices can reconnect instantly.' : 'Connect a drive to enable instant recovery on a new device — and (optionally) shared read-only access from your other devices.')}
+        {renderHeader('Your library', attached ? 'PDR keeps a hidden copy of your face / name / date data on this drive so any of your devices can reconnect instantly.' : 'Connect an external drive or NAS so your face / name / date data can travel between devices. Internal drives can\'t be used — they\'d go with your PC if it\'s lost or stolen.')}
         <div className="px-6 pb-6 pt-2 space-y-3">
           {attached && status?.libraryRoot && (
             <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
@@ -388,7 +388,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           <div className="grid grid-cols-1 gap-2 pt-1">
             <Button onClick={handleConnectClick} variant="primary" className="w-full h-11">
               <Plug className="w-4 h-4 mr-2" />
-              {attached ? 'Connect to a different library' : (suggestedPath && suggestedDriveInfo?.isSafeForLibrary ? 'Pick a different drive' : 'Connect to a library')}
+              {attached ? 'Connect to a different library' : (suggestedPath && suggestedDriveInfo?.isSafeForLibrary ? 'Pick a different drive' : 'Connect external drive or NAS')}
             </Button>
             {attached && !isWriter && (
               <Button onClick={handleTakeOverClick} variant="secondary" className="w-full h-11">
