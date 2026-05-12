@@ -318,8 +318,8 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           <motion.div initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.1, type: 'spring', stiffness: 200 }} className={`w-16 h-16 bg-gradient-to-br ${iconWrap} rounded-2xl flex items-center justify-center mb-4 border shadow-lg`}>
             <Icon className={`w-8 h-8 ${iconColor}`} />
           </motion.div>
-          <h2 className="text-xl font-semibold text-foreground mb-2">{title}</h2>
-          {subtitle && <p className="text-muted-foreground text-sm leading-relaxed max-w-sm">{subtitle}</p>}
+          <h2 className="text-h1 text-foreground mb-2">{title}</h2>
+          {subtitle && <p className="text-body-muted max-w-sm">{subtitle}</p>}
         </div>
       </div>
     );
@@ -337,16 +337,16 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
               <div className="flex items-center gap-2 mb-1.5">
                 <FolderOpen className="w-4 h-4 text-primary" />
-                <p className="text-sm font-semibold text-foreground truncate">{status.libraryRoot}</p>
+                <p className="text-h2 text-foreground truncate">{status.libraryRoot}</p>
               </div>
-              <p className="text-xs text-muted-foreground ml-6">{writerLabel}</p>
-              <div className="ml-6 mt-2 flex items-center gap-2 text-xs">
+              <p className="text-caption ml-6">{writerLabel}</p>
+              <div className="ml-6 mt-2 flex items-center gap-2">
                 {isWriter ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-semibold">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-label">
                     <Pencil className="w-3 h-3" /> Read &amp; write
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-semibold">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-label">
                     <Eye className="w-3 h-3" /> Read-only
                   </span>
                 )}
@@ -354,7 +354,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             </div>
           )}
           {!attached && (
-            <p className="text-sm text-muted-foreground text-center py-2">No library connected on this device yet.</p>
+            <p className="text-body-muted text-center py-2">No library connected on this device yet.</p>
           )}
 
           {/* Auto-suggest: if the user's existing Library Drive (formerly
@@ -364,9 +364,9 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           {!attached && suggestedPath && suggestedDriveInfo?.isSafeForLibrary && (
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
               <div>
-                <p className="text-sm font-semibold text-foreground">Use your existing Library Drive?</p>
-                <p className="text-xs text-muted-foreground mt-1 break-all">{suggestedPath}</p>
-                <p className="text-[11px] text-muted-foreground mt-1.5">{suggestedDriveInfo.reason}</p>
+                <p className="text-h2 text-foreground">Use your existing Library Drive?</p>
+                <p className="text-caption mt-1 break-all">{suggestedPath}</p>
+                <p className="text-caption mt-1.5">{suggestedDriveInfo.reason}</p>
               </div>
               <Button onClick={handleUseSuggestedPath} variant="primary" className="w-full h-10">
                 <Plug className="w-4 h-4 mr-2" /> Set this as my Library Drive
@@ -379,9 +379,9 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               a calm note explaining why we're not auto-suggesting it. */}
           {!attached && suggestedPath && suggestedDriveInfo && !suggestedDriveInfo.isSafeForLibrary && (
             <div className="rounded-xl border border-amber-300/40 bg-amber-50 dark:bg-amber-950/20 p-4">
-              <p className="text-sm font-semibold text-foreground mb-1">Your current Library Drive is internal</p>
-              <p className="text-xs text-muted-foreground break-all mb-1.5">{suggestedPath}</p>
-              <p className="text-[11px] text-muted-foreground">{suggestedDriveInfo.reason}</p>
+              <p className="text-h2 text-foreground mb-1">Your current Library Drive is internal</p>
+              <p className="text-caption break-all mb-1.5">{suggestedPath}</p>
+              <p className="text-caption">{suggestedDriveInfo.reason}</p>
             </div>
           )}
 
@@ -413,12 +413,12 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       {renderHeader('Existing PDR library found', 'Restore everything on this device — faces, names, dates, family trees, and your recent backup history. Your local data will be replaced; we keep a safety copy first.', 'emerald')}
       <div className="px-6 pb-6 pt-2 space-y-3">
         {pendingDetection && (
-          <div className="rounded-xl border border-border bg-background/60 p-3 text-xs text-muted-foreground space-y-1">
-            <div>Database: <span className="text-foreground font-medium">{formatBytes(pendingDetection.dbSizeBytes)}</span></div>
-            <div>Recent snapshots in library: <span className="text-foreground font-medium">{pendingDetection.snapshotCount}</span></div>
-            <div>Edit history: <span className="text-foreground font-medium">{pendingDetection.auditExists ? 'present' : 'not present'}</span></div>
+          <div className="rounded-xl border border-border bg-background/60 p-3 text-caption space-y-1">
+            <div>Database: <span className="text-foreground">{formatBytes(pendingDetection.dbSizeBytes)}</span></div>
+            <div>Recent snapshots in library: <span className="text-foreground">{pendingDetection.snapshotCount}</span></div>
+            <div>Edit history: <span className="text-foreground">{pendingDetection.auditExists ? 'present' : 'not present'}</span></div>
             {pendingDetection.lock && (
-              <div>Last writer: <span className="text-foreground font-medium">{pendingDetection.lock.writerDeviceName}</span></div>
+              <div>Last writer: <span className="text-foreground">{pendingDetection.lock.writerDeviceName}</span></div>
             )}
           </div>
         )}
@@ -447,7 +447,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       {renderHeader('Confirm with your license key', 'Enter your PDR license key to authorise this action. The same key gates every device-level change.', 'rose')}
       <div className="px-6 pb-6 pt-2 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-2">License key</label>
+          <label className="block text-label text-foreground mb-2">License key</label>
           <input
             type="text"
             value={keyInput}
@@ -460,7 +460,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           {keyError && (
             <div className="flex items-start gap-2 mt-3 p-3 bg-rose-50 dark:bg-rose-950/30 rounded-lg border border-rose-200 dark:border-rose-800">
               <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-rose-800 dark:text-rose-300">{keyError}</p>
+              <p className="text-body text-rose-800 dark:text-rose-300">{keyError}</p>
             </div>
           )}
         </div>
@@ -475,7 +475,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   const renderProcessing = () => (
     <div className="px-6 py-12 flex flex-col items-center text-center gap-4">
       <Loader2 className="w-10 h-10 text-primary animate-spin" />
-      <p className="text-base font-medium text-foreground">Working...</p>
+      <p className="text-h2 text-foreground">Working...</p>
     </div>
   );
 
@@ -510,7 +510,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   );
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
+    <div className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
