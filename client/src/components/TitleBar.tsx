@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
+import { LibraryStatusButton } from '@/components/LibraryStatusButton';
 import { onAiProgress, pauseAi, resumeAi, cancelAi, type AiProgress } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
@@ -241,6 +242,7 @@ export function TitleBar() {
             uses useLicense() internally + listens for
             `pdr:trialUsageUpdate` to live-refresh after each Fix. */}
         <TrialCounterChip />
+        <LibraryStatusButton />
         <LicenseStatusBadge
           onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLicenseModal'))}
         />
