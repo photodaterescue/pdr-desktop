@@ -124,6 +124,10 @@ contextBridge.exposeInMainWorld('pdr', {
         takeOverWriter: (opts) => ipcRenderer.invoke('library:takeOverWriter', opts),
         mirrorNow: (opts) => ipcRenderer.invoke('library:mirrorNow', opts),
         disconnect: () => ipcRenderer.invoke('library:disconnect'),
+        // Renderer-side hook: call this after any UI-triggered DB write
+        // (People Manager rename / merge, Date Editor apply, Trees save) so
+        // the background sidecar-mirror loop picks it up within ~30 seconds.
+        bumpDirty: () => ipcRenderer.invoke('library:bumpDirty'),
     },
     // Free Trial file counter — read / increment the Cloudflare
     // KV-backed tally. Renderer reads it for the workspace banner and

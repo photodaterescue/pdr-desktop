@@ -247,7 +247,7 @@ import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromL
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, redetectSingleFile, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
-import { attachAsNewLibrary, attachFromSidecar, detectSidecar, disconnectLibrary, getLibraryStatus, mirrorAllToSidecar, takeOverWriter, } from './library-sidecar.js';
+import { attachAsNewLibrary, attachFromSidecar, detectSidecar, disconnectLibrary, getLibraryStatus, markDbDirty, mirrorAllToSidecar, setBackgroundMirrorDeviceName, startBackgroundMirror, takeOverWriter, } from './library-sidecar.js';
 // Update checking — see electron/update-checker.ts for the full state
 // machine. The renderer subscribes to push events on the
 // 'updates:state' channel and can trigger lifecycle transitions
@@ -1067,6 +1067,17 @@ app.whenReady().then(() => {
         log.info(`[log] app version ${app.getVersion()} starting on ${process.platform} ${os.release()}`);
     }
     catch { }
+    // Library-portable DB: kick off the background sidecar-mirror loop
+    // and seed the device name with the OS hostname so any mirror written
+    // before the renderer has a chance to set a friendlier name still
+    // labels this device sensibly.
+    try {
+        setBackgroundMirrorDeviceName(os.hostname() || 'Unknown');
+        startBackgroundMirror();
+    }
+    catch (e) {
+        console.warn('[Startup] background mirror init failed (non-fatal):', e.message);
+    }
     // Handle pdr-file:// protocol — serves local files to the viewer window
     protocol.handle('pdr-file', (request) => {
         // New canonical form: pdr-file://local/?f=<urlencoded-path>
@@ -3638,6 +3649,7 @@ ipcMain.handle('search:indexRun', async (_event, reportId) => {
         const result = await indexFixRun(report, (progress) => {
             mainWindow?.webContents.send('search:indexProgress', progress);
         });
+        markDbDirty();
         return result;
     }
     catch (err) {
@@ -3651,6 +3663,7 @@ ipcMain.handle('search:cancelIndex', async () => {
 ipcMain.handle('search:removeRun', async (_event, runId) => {
     try {
         removeRun(runId);
+        markDbDirty();
         return { success: true };
     }
     catch (err) {
@@ -3660,6 +3673,7 @@ ipcMain.handle('search:removeRun', async (_event, runId) => {
 ipcMain.handle('search:removeRunByReport', async (_event, reportId) => {
     try {
         removeRunByReportId(reportId);
+        markDbDirty();
         return { success: true };
     }
     catch (err) {
@@ -3956,6 +3970,7 @@ ipcMain.handle('trees:removePlaceholder', async (_event, id) => {
 ipcMain.handle('search:rebuildIndex', async () => {
     try {
         clearAllIndexData();
+        markDbDirty();
         return { success: true };
     }
     catch (err) {
@@ -3973,6 +3988,7 @@ ipcMain.handle('search:rebuildFromLibraries', async (event, rootPaths) => {
         const result = await rebuildIndexFromLibraries(rootPaths, (progress) => {
             win?.webContents.send('search:rebuildProgress', progress);
         });
+        markDbDirty();
         return result;
     }
     catch (err) {
@@ -3982,6 +3998,7 @@ ipcMain.handle('search:rebuildFromLibraries', async (event, rootPaths) => {
 ipcMain.handle('search:cleanup', async () => {
     try {
         const result = runDatabaseCleanup();
+        markDbDirty();
         return { success: true, data: result };
     }
     catch (err) {
@@ -3991,6 +4008,7 @@ ipcMain.handle('search:cleanup', async () => {
 ipcMain.handle('search:relocateRun', async (_event, runId, newPath) => {
     try {
         const updated = relocateRun(runId, newPath);
+        markDbDirty();
         return { success: true, data: { filesUpdated: updated } };
     }
     catch (err) {
@@ -4009,6 +4027,7 @@ ipcMain.handle('search:favourites:list', async () => {
 ipcMain.handle('search:favourites:save', async (_event, name, query) => {
     try {
         const fav = saveFavouriteFilter(name, query);
+        markDbDirty();
         return { success: true, data: fav };
     }
     catch (err) {
@@ -4018,6 +4037,7 @@ ipcMain.handle('search:favourites:save', async (_event, name, query) => {
 ipcMain.handle('search:favourites:delete', async (_event, id) => {
     try {
         deleteFavouriteFilter(id);
+        markDbDirty();
         return { success: true };
     }
     catch (err) {
@@ -4027,6 +4047,7 @@ ipcMain.handle('search:favourites:delete', async (_event, id) => {
 ipcMain.handle('search:favourites:rename', async (_event, id, name) => {
     try {
         renameFavouriteFilter(id, name);
+        markDbDirty();
         return { success: true };
     }
     catch (err) {
@@ -4123,6 +4144,20 @@ ipcMain.handle('library:mirrorNow', async (_event, opts) => {
 ipcMain.handle('library:disconnect', async () => {
     try {
         disconnectLibrary();
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// Generic "mark the local DB dirty" hook for renderer-side writes that
+// don't pass through one of the search:* IPC handlers (e.g. People
+// Manager rename / merge, Date Editor apply, Trees save). The renderer
+// calls this after a successful write; the background mirror loop will
+// flush within ~30 seconds.
+ipcMain.handle('library:bumpDirty', async () => {
+    try {
+        markDbDirty();
         return { success: true };
     }
     catch (err) {

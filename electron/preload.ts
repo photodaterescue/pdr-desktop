@@ -169,6 +169,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     mirrorNow: (opts?: { snapshotMode?: 'none' | 'recent' | 'all' }) =>
       ipcRenderer.invoke('library:mirrorNow', opts),
     disconnect: () => ipcRenderer.invoke('library:disconnect'),
+    // Renderer-side hook: call this after any UI-triggered DB write
+    // (People Manager rename / merge, Date Editor apply, Trees save) so
+    // the background sidecar-mirror loop picks it up within ~30 seconds.
+    bumpDirty: () => ipcRenderer.invoke('library:bumpDirty'),
   },
 
   // Free Trial file counter — read / increment the Cloudflare

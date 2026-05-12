@@ -817,3 +817,63 @@ export function disconnectLibrary(): { ok: boolean } {
   writeLibraryState({ libraryRoot: null, lastAttachedAt: null });
   return { ok: true };
 }
+
+// ─── Background auto-mirror (dirty flag + interval) ──────────────────────────
+// Cheap auto-sync: write sites call markDbDirty() after any meaningful DB
+// change. A background interval ticks every BACKGROUND_MIRROR_INTERVAL_MS
+// and, if dirty + we're the writer on an attached library, runs a full
+// mirror. Debounced by design — bursts of writes collapse into one mirror.
+
+const BACKGROUND_MIRROR_INTERVAL_MS = 30_000;
+
+let dbDirty = false;
+let mirrorIntervalHandle: NodeJS.Timeout | null = null;
+let mirrorInFlight = false;
+let cachedDeviceName: string = 'Unknown';
+
+export function markDbDirty(): void {
+  dbDirty = true;
+}
+
+export function setBackgroundMirrorDeviceName(name: string): void {
+  if (name && name.trim()) cachedDeviceName = name.trim();
+}
+
+export function startBackgroundMirror(): void {
+  if (mirrorIntervalHandle) return;
+  mirrorIntervalHandle = setInterval(() => {
+    void tickBackgroundMirror();
+  }, BACKGROUND_MIRROR_INTERVAL_MS);
+}
+
+export function stopBackgroundMirror(): void {
+  if (mirrorIntervalHandle) {
+    clearInterval(mirrorIntervalHandle);
+    mirrorIntervalHandle = null;
+  }
+}
+
+async function tickBackgroundMirror(): Promise<void> {
+  if (!dbDirty) return;
+  if (mirrorInFlight) return;
+  const status = getLibraryStatus();
+  if (!status.attached || !status.libraryRoot || !status.isWriter) {
+    // No library or we're read-only — leave the flag set in case we
+    // later regain writer status and want to flush then.
+    return;
+  }
+  mirrorInFlight = true;
+  dbDirty = false; // clear before mirror; if it fails we'll re-mark
+  try {
+    const result = await mirrorAllToSidecar(status.libraryRoot, 'recent', cachedDeviceName);
+    if (!result.ok) {
+      dbDirty = true;
+      console.warn('[LibSidecar] background mirror failed:', result.error);
+    }
+  } catch (e) {
+    dbDirty = true;
+    console.warn('[LibSidecar] background mirror threw:', (e as Error).message);
+  } finally {
+    mirrorInFlight = false;
+  }
+}
