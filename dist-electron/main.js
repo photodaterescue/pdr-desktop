@@ -247,6 +247,7 @@ import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromL
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, redetectSingleFile, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
+import { attachAsNewLibrary, detectSidecar, disconnectLibrary, getLibraryStatus, mirrorAllToSidecar, takeOverWriter, } from './library-sidecar.js';
 // Update checking — see electron/update-checker.ts for the full state
 // machine. The renderer subscribes to push events on the
 // 'updates:state' channel and can trigger lifecycle transitions
@@ -4045,6 +4046,76 @@ ipcMain.handle('search:checkPathsExist', async (_event, paths) => {
         }
     }
     return { success: true, data: result };
+});
+// ═══ Library (portable DB sidecar) ════════════════════════════════════════════
+// Foundation slice for the v2.0.5 library-portable database feature. See
+// electron/library-sidecar.ts for the actual logic and the design memo
+// at memory/project_db_in_library.md for the multi-device semantics.
+// The renderer talks to these via window.pdr.library.X (preload.ts).
+ipcMain.handle('library:status', async () => {
+    try {
+        return { success: true, data: getLibraryStatus() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('library:detectSidecar', async (_event, libraryRoot) => {
+    try {
+        return { success: true, data: detectSidecar(libraryRoot) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('library:attachAsNew', async (_event, opts) => {
+    try {
+        if (!opts?.libraryRoot || !opts?.licenseKey || !opts?.deviceName) {
+            return { success: false, error: 'libraryRoot, licenseKey and deviceName are required' };
+        }
+        const result = await attachAsNewLibrary(opts);
+        return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('library:takeOverWriter', async (_event, opts) => {
+    try {
+        if (!opts?.libraryRoot || !opts?.licenseKey || !opts?.deviceName) {
+            return { success: false, error: 'libraryRoot, licenseKey and deviceName are required' };
+        }
+        const result = takeOverWriter(opts);
+        return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('library:mirrorNow', async (_event, opts) => {
+    try {
+        const status = getLibraryStatus();
+        if (!status.attached || !status.libraryRoot) {
+            return { success: false, error: 'No library attached' };
+        }
+        if (!status.isWriter) {
+            return { success: false, error: 'This device is read-only on the current library' };
+        }
+        const result = await mirrorAllToSidecar(status.libraryRoot, opts?.snapshotMode ?? 'recent');
+        return result.ok ? { success: true, data: result } : { success: false, error: result.error };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('library:disconnect', async () => {
+    try {
+        disconnectLibrary();
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
 });
 let viewerWindow = null;
 ipcMain.handle('search:openViewer', async (_event, filePaths, fileNames, startIndex) => {

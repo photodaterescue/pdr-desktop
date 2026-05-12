@@ -153,6 +153,22 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     getMachineId: () => ipcRenderer.invoke('license:getMachineId'),
   },
 
+  // Library-portable DB (v2.0.5 foundation). One hidden folder on the
+  // user's library drive mirrors the search DB + audit log + recent
+  // snapshots + a writer-lock file. Lets users reconnect instantly on a
+  // new device, with single-writer/multi-reader semantics.
+  library: {
+    status: () => ipcRenderer.invoke('library:status'),
+    detectSidecar: (libraryRoot: string) => ipcRenderer.invoke('library:detectSidecar', libraryRoot),
+    attachAsNew: (opts: { libraryRoot: string; licenseKey: string; deviceName: string; snapshotMode?: 'none' | 'recent' | 'all' }) =>
+      ipcRenderer.invoke('library:attachAsNew', opts),
+    takeOverWriter: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>
+      ipcRenderer.invoke('library:takeOverWriter', opts),
+    mirrorNow: (opts?: { snapshotMode?: 'none' | 'recent' | 'all' }) =>
+      ipcRenderer.invoke('library:mirrorNow', opts),
+    disconnect: () => ipcRenderer.invoke('library:disconnect'),
+  },
+
   // Free Trial file counter — read / increment the Cloudflare
   // KV-backed tally. Renderer reads it for the workspace banner and
   // pre-fix gate; main.ts auto-increments after each successful Fix
