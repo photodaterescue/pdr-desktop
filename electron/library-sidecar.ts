@@ -17,16 +17,23 @@ import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import crypto from 'crypto';
-import { getDb } from './search-database.js';
+import Database from 'better-sqlite3';
+import { getDb, closeDatabase } from './search-database.js';
 import { getMachineFingerprint } from './license-manager.js';
 
 const SIDECAR_DIRNAME = '.pdr';
 const SIDECAR_DB_FILENAME = 'pdr-search.db';
 const SIDECAR_LOCK_FILENAME = 'writer.lock';
+const SIDECAR_META_FILENAME = 'sidecar-meta.json';
 const SIDECAR_AUDIT_FILENAME = 'date-corrections.log.jsonl';
 const SIDECAR_BACKUPS_DIRNAME = 'backups';
 const LIBRARY_STATE_FILENAME = 'library-state.json';
 const LOCK_SCHEMA_VERSION = 1;
+
+// Bump when the DB schema changes in a way that's not backwards-compatible.
+// Stored both in the sidecar-meta.json and SQLite's user_version pragma so
+// the restore flow can refuse "future" databases written by a newer PDR.
+const PDR_DB_SCHEMA_VERSION = 1;
 
 // ─── Path helpers ────────────────────────────────────────────────────────────
 
@@ -40,6 +47,10 @@ export function getSidecarDbPath(libraryRoot: string): string {
 
 export function getSidecarLockPath(libraryRoot: string): string {
   return path.join(getSidecarDir(libraryRoot), SIDECAR_LOCK_FILENAME);
+}
+
+export function getSidecarMetaPath(libraryRoot: string): string {
+  return path.join(getSidecarDir(libraryRoot), SIDECAR_META_FILENAME);
 }
 
 export function getSidecarAuditPath(libraryRoot: string): string {
@@ -194,6 +205,121 @@ export function isThisDeviceWriter(libraryRoot: string): boolean {
   const lock = readLockFile(libraryRoot);
   if (!lock) return false;
   return lock.writerDeviceId === getMachineFingerprint();
+}
+
+// ─── Sidecar meta + schema-version + path-rebasing ───────────────────────────
+// sidecar-meta.json records the library root the sidecar was written under
+// + the DB schema version + who wrote it. Read by attachFromSidecar to
+// decide whether a path rebase is needed (library moved drive letters)
+// and whether the sidecar schema is compatible with this PDR build.
+
+export interface SidecarMeta {
+  schemaVersion: number;
+  libraryRoot: string;
+  writtenAt: string;
+  writerDeviceId: string;
+  writerDeviceName: string;
+}
+
+export function writeSidecarMeta(libraryRoot: string, deviceName: string): { ok: boolean; error?: string } {
+  const ensure = ensureSidecarDir(libraryRoot);
+  if (!ensure.ok) return ensure;
+  try {
+    const meta: SidecarMeta = {
+      schemaVersion: PDR_DB_SCHEMA_VERSION,
+      libraryRoot: path.normalize(libraryRoot),
+      writtenAt: new Date().toISOString(),
+      writerDeviceId: getMachineFingerprint(),
+      writerDeviceName: deviceName,
+    };
+    const p = getSidecarMetaPath(libraryRoot);
+    const tmp = p + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(meta, null, 2), 'utf8');
+    fs.renameSync(tmp, p);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export function readSidecarMeta(libraryRoot: string): SidecarMeta | null {
+  try {
+    const p = getSidecarMetaPath(libraryRoot);
+    if (!fs.existsSync(p)) return null;
+    const raw = fs.readFileSync(p, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.schemaVersion !== 'number' || typeof parsed.libraryRoot !== 'string') return null;
+    return parsed as SidecarMeta;
+  } catch (e) {
+    console.warn('[LibSidecar] readSidecarMeta failed:', (e as Error).message);
+    return null;
+  }
+}
+
+// Rebases absolute file paths in the DB from `oldRoot` to `newRoot`. Uses
+// exact-prefix matching (including the path separator) so "D:\Photos" doesn't
+// accidentally hit "D:\Photos2". Operates on its own short-lived DB handle —
+// caller must ensure the singleton DB is closed first.
+function rebaseFilePathsInDb(dbPath: string, oldRoot: string, newRoot: string): { ok: boolean; error?: string; rowsUpdated: number } {
+  const sep = path.sep;
+  const oldPrefix = path.normalize(oldRoot).replace(/[\\/]+$/, '') + sep;
+  const newPrefix = path.normalize(newRoot).replace(/[\\/]+$/, '') + sep;
+
+  if (oldPrefix === newPrefix) {
+    return { ok: true, rowsUpdated: 0 };
+  }
+
+  let temp: Database.Database | null = null;
+  try {
+    temp = new Database(dbPath);
+    let rowsUpdated = 0;
+
+    const tables: Array<{ table: string; col: string }> = [
+      { table: 'indexed_files', col: 'file_path' },
+      { table: 'indexed_runs', col: 'destination_path' },
+    ];
+
+    for (const t of tables) {
+      const sql = `
+        UPDATE ${t.table}
+        SET ${t.col} = ? || SUBSTR(${t.col}, LENGTH(?) + 1)
+        WHERE SUBSTR(${t.col}, 1, LENGTH(?)) = ?
+      `;
+      const info = temp.prepare(sql).run(newPrefix, oldPrefix, oldPrefix, oldPrefix);
+      rowsUpdated += info.changes ?? 0;
+    }
+
+    return { ok: true, rowsUpdated };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message, rowsUpdated: 0 };
+  } finally {
+    try { temp?.close(); } catch {}
+  }
+}
+
+// Reads a DB's user_version pragma without holding a live connection.
+// Useful for pre-attach compatibility checks on the sidecar.
+function readDbSchemaVersion(dbPath: string): number {
+  let temp: Database.Database | null = null;
+  try {
+    temp = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const result = temp.pragma('user_version', { simple: true }) as number;
+    return typeof result === 'number' ? result : 0;
+  } catch {
+    return 0;
+  } finally {
+    try { temp?.close(); } catch {}
+  }
+}
+
+function writeDbSchemaVersion(dbPath: string, version: number): void {
+  let temp: Database.Database | null = null;
+  try {
+    temp = new Database(dbPath);
+    temp.pragma(`user_version = ${version}`);
+  } finally {
+    try { temp?.close(); } catch {}
+  }
 }
 
 // ─── Sidecar DB mirror ───────────────────────────────────────────────────────
@@ -437,7 +563,11 @@ export interface MirrorAllResult {
   snapshotsSkipped?: number;
 }
 
-export async function mirrorAllToSidecar(libraryRoot: string, snapshotMode: 'none' | 'recent' | 'all' = 'recent'): Promise<MirrorAllResult> {
+export async function mirrorAllToSidecar(libraryRoot: string, snapshotMode: 'none' | 'recent' | 'all' = 'recent', deviceName?: string): Promise<MirrorAllResult> {
+  // Stamp the local DB with the current schema version so the user_version
+  // pragma rides along in the backup copy. Idempotent if already correct.
+  try { writeDbSchemaVersion(getLocalDbPath(), PDR_DB_SCHEMA_VERSION); } catch {}
+
   const dbResult = await mirrorDbToSidecar(libraryRoot);
   if (!dbResult.ok) return { ok: false, error: `DB mirror failed: ${dbResult.error}` };
 
@@ -449,6 +579,13 @@ export async function mirrorAllToSidecar(libraryRoot: string, snapshotMode: 'non
   const snapResult = mirrorSnapshotsToSidecar(libraryRoot, snapshotMode);
   if (!snapResult.ok) {
     console.warn('[LibSidecar] snapshot mirror failed (non-fatal):', snapResult.error);
+  }
+
+  // Best-effort meta write so the sidecar knows its own provenance for
+  // future restore-flow path rebasing + schema-compat checks.
+  const metaResult = writeSidecarMeta(libraryRoot, deviceName ?? 'Unknown');
+  if (!metaResult.ok) {
+    console.warn('[LibSidecar] meta write failed (non-fatal):', metaResult.error);
   }
 
   return {
@@ -491,8 +628,161 @@ export async function attachAsNewLibrary(opts: {
   if (!claim.ok) return { ok: false, error: claim.error };
 
   // Mirror current local state up to the sidecar.
-  const mirror = await mirrorAllToSidecar(opts.libraryRoot, opts.snapshotMode ?? 'recent');
+  const mirror = await mirrorAllToSidecar(opts.libraryRoot, opts.snapshotMode ?? 'recent', opts.deviceName);
   if (!mirror.ok) return { ok: false, error: mirror.error };
+
+  writeLibraryState({ libraryRoot: opts.libraryRoot, lastAttachedAt: new Date().toISOString() });
+  return { ok: true, status: getLibraryStatus() };
+}
+
+// Restore from an existing sidecar onto this device. The fundamental
+// "computer stolen / new device / corruption recovery" flow:
+//   1. User picks the library folder on the new device.
+//   2. We verify the sidecar exists and the schema version is compatible.
+//   3. We verify the license-key matches the lock (security gate — same
+//      licensee, not a stranger with the drive plugged in).
+//   4. We back up whatever local DB exists today, then copy the sidecar DB
+//      into the canonical local path.
+//   5. If the new library root differs from the one recorded in the meta
+//      (e.g. drive letter changed D: → E:), rebase the file_path columns
+//      so PDR's photos still resolve.
+//   6. Pull the audit log + recent snapshots back down so the device has
+//      full undo history and rollback safety from second one.
+//   7. Claim writer (rewrite the lock under this device's id) and update
+//      the active-library state.
+//
+// Caller MUST ensure no other DB operations are in flight (no Fix run, no
+// active edit). The UI gates this behind a confirmation that says so.
+export async function attachFromSidecar(opts: {
+  libraryRoot: string;
+  licenseKey: string;
+  deviceName: string;
+}): Promise<AttachResult> {
+  if (!fs.existsSync(opts.libraryRoot)) {
+    return { ok: false, error: `Library path does not exist: ${opts.libraryRoot}` };
+  }
+
+  const sidecarDbPath = getSidecarDbPath(opts.libraryRoot);
+  if (!fs.existsSync(sidecarDbPath)) {
+    return { ok: false, error: 'No PDR library data found at this location. Use "Set as new library" instead.' };
+  }
+
+  // Schema compatibility: refuse a sidecar written by a future PDR build.
+  const sidecarSchemaVersion = readDbSchemaVersion(sidecarDbPath);
+  if (sidecarSchemaVersion > PDR_DB_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      error: `This library was created by a newer version of PDR (schema v${sidecarSchemaVersion}, this PDR understands up to v${PDR_DB_SCHEMA_VERSION}). Please update PDR and try again.`,
+    };
+  }
+
+  // License gate: incoming key must match the existing lock's fingerprint
+  // (i.e. you must be the same customer who set this library up). Allows
+  // legitimate device switches; blocks "found a drive on the street."
+  const existingLock = readLockFile(opts.libraryRoot);
+  if (existingLock) {
+    const incomingFp = fingerprintLicenseKey(opts.licenseKey);
+    if (incomingFp !== existingLock.licenseKeyFingerprint) {
+      return { ok: false, error: 'License key does not match this library.' };
+    }
+  }
+
+  // Back up the current local DB before we overwrite it. Tucked into the
+  // existing snapshot backups folder with a distinctive prefix so it's
+  // easy to find if a user ever needs to roll back a botched restore.
+  const localDbPath = getLocalDbPath();
+  const localBackupsDir = getLocalBackupsDir();
+  try {
+    if (fs.existsSync(localDbPath)) {
+      if (!fs.existsSync(localBackupsDir)) fs.mkdirSync(localBackupsDir, { recursive: true });
+      const ts = new Date().toISOString().replace(/[:]/g, '-');
+      const backupName = `snapshot-pre-restore-${ts}.db`;
+      fs.copyFileSync(localDbPath, path.join(localBackupsDir, backupName));
+    }
+  } catch (e) {
+    console.warn('[LibSidecar] pre-restore backup failed (continuing):', (e as Error).message);
+  }
+
+  // Close the live DB connection before overwriting the file. Next call to
+  // getDb() will reopen via initDatabase() and pick up the restored file.
+  try { closeDatabase(); } catch {}
+
+  // Copy sidecar → local. Use atomic temp+rename so a half-finished copy
+  // never sits at the canonical path.
+  try {
+    if (!fs.existsSync(path.dirname(localDbPath))) {
+      fs.mkdirSync(path.dirname(localDbPath), { recursive: true });
+    }
+    const tmp = localDbPath + '.restore.tmp';
+    fs.copyFileSync(sidecarDbPath, tmp);
+    if (fs.existsSync(localDbPath)) fs.unlinkSync(localDbPath);
+    fs.renameSync(tmp, localDbPath);
+  } catch (e) {
+    return { ok: false, error: `Could not copy library DB to this device: ${(e as Error).message}` };
+  }
+
+  // Path rebasing if the library moved. Meta is best-effort — if it's
+  // missing, we skip rebasing (paths in DB are absolute; if they happen
+  // to still resolve, great; if not, the user can re-scan their library).
+  const meta = readSidecarMeta(opts.libraryRoot);
+  let pathRebaseRows = 0;
+  if (meta && meta.libraryRoot) {
+    const oldRoot = path.normalize(meta.libraryRoot);
+    const newRoot = path.normalize(opts.libraryRoot);
+    if (oldRoot !== newRoot) {
+      const rebase = rebaseFilePathsInDb(localDbPath, oldRoot, newRoot);
+      if (!rebase.ok) {
+        console.warn('[LibSidecar] path rebase failed (non-fatal):', rebase.error);
+      } else {
+        pathRebaseRows = rebase.rowsUpdated;
+        console.log(`[LibSidecar] rebased ${pathRebaseRows} path rows from ${oldRoot} → ${newRoot}`);
+      }
+    }
+  }
+
+  // Pull the audit log down too if the sidecar has one.
+  try {
+    const sidecarAudit = getSidecarAuditPath(opts.libraryRoot);
+    const localAudit = getLocalAuditPath();
+    if (fs.existsSync(sidecarAudit)) {
+      fs.mkdirSync(path.dirname(localAudit), { recursive: true });
+      const tmp = localAudit + '.restore.tmp';
+      fs.copyFileSync(sidecarAudit, tmp);
+      if (fs.existsSync(localAudit)) fs.unlinkSync(localAudit);
+      fs.renameSync(tmp, localAudit);
+    }
+  } catch (e) {
+    console.warn('[LibSidecar] audit log restore failed (non-fatal):', (e as Error).message);
+  }
+
+  // Pull recent snapshots from the sidecar into the local backups folder so
+  // the user has rollback safety from second one on the new device.
+  try {
+    const sidecarBackups = getSidecarBackupsDir(opts.libraryRoot);
+    if (fs.existsSync(sidecarBackups)) {
+      if (!fs.existsSync(localBackupsDir)) fs.mkdirSync(localBackupsDir, { recursive: true });
+      for (const name of fs.readdirSync(sidecarBackups)) {
+        if (!name.endsWith('.db')) continue;
+        const src = path.join(sidecarBackups, name);
+        const dest = path.join(localBackupsDir, name);
+        if (fs.existsSync(dest)) continue; // don't clobber locally-newer snapshots
+        try { fs.copyFileSync(src, dest); } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('[LibSidecar] snapshot restore failed (non-fatal):', (e as Error).message);
+  }
+
+  // Claim writer for this device.
+  const claim = claimWriter({
+    libraryRoot: opts.libraryRoot,
+    licenseKey: opts.licenseKey,
+    deviceName: opts.deviceName,
+  });
+  if (!claim.ok) return { ok: false, error: claim.error };
+
+  // Refresh sidecar meta now that we're the writer on the new device.
+  writeSidecarMeta(opts.libraryRoot, opts.deviceName);
 
   writeLibraryState({ libraryRoot: opts.libraryRoot, lastAttachedAt: new Date().toISOString() });
   return { ok: true, status: getLibraryStatus() };

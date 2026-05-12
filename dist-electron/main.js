@@ -247,7 +247,7 @@ import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromL
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, redetectSingleFile, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
-import { attachAsNewLibrary, detectSidecar, disconnectLibrary, getLibraryStatus, mirrorAllToSidecar, takeOverWriter, } from './library-sidecar.js';
+import { attachAsNewLibrary, attachFromSidecar, detectSidecar, disconnectLibrary, getLibraryStatus, mirrorAllToSidecar, takeOverWriter, } from './library-sidecar.js';
 // Update checking — see electron/update-checker.ts for the full state
 // machine. The renderer subscribes to push events on the
 // 'updates:state' channel and can trigger lifecycle transitions
@@ -4074,6 +4074,18 @@ ipcMain.handle('library:attachAsNew', async (_event, opts) => {
             return { success: false, error: 'libraryRoot, licenseKey and deviceName are required' };
         }
         const result = await attachAsNewLibrary(opts);
+        return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('library:attachFromSidecar', async (_event, opts) => {
+    try {
+        if (!opts?.libraryRoot || !opts?.licenseKey || !opts?.deviceName) {
+            return { success: false, error: 'libraryRoot, licenseKey and deviceName are required' };
+        }
+        const result = await attachFromSidecar(opts);
         return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
     }
     catch (err) {

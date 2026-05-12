@@ -362,6 +362,7 @@ import {
 
 import {
   attachAsNewLibrary,
+  attachFromSidecar,
   detectSidecar,
   disconnectLibrary,
   getLibraryStatus,
@@ -4393,6 +4394,18 @@ ipcMain.handle('library:attachAsNew', async (_event, opts: { libraryRoot: string
       return { success: false, error: 'libraryRoot, licenseKey and deviceName are required' };
     }
     const result = await attachAsNewLibrary(opts);
+    return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('library:attachFromSidecar', async (_event, opts: { libraryRoot: string; licenseKey: string; deviceName: string }) => {
+  try {
+    if (!opts?.libraryRoot || !opts?.licenseKey || !opts?.deviceName) {
+      return { success: false, error: 'libraryRoot, licenseKey and deviceName are required' };
+    }
+    const result = await attachFromSidecar(opts);
     return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
   } catch (err) {
     return { success: false, error: (err as Error).message };

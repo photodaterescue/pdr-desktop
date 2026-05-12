@@ -162,6 +162,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     detectSidecar: (libraryRoot: string) => ipcRenderer.invoke('library:detectSidecar', libraryRoot),
     attachAsNew: (opts: { libraryRoot: string; licenseKey: string; deviceName: string; snapshotMode?: 'none' | 'recent' | 'all' }) =>
       ipcRenderer.invoke('library:attachAsNew', opts),
+    attachFromSidecar: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>
+      ipcRenderer.invoke('library:attachFromSidecar', opts),
     takeOverWriter: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>
       ipcRenderer.invoke('library:takeOverWriter', opts),
     mirrorNow: (opts?: { snapshotMode?: 'none' | 'recent' | 'all' }) =>
