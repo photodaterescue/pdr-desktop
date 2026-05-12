@@ -116,8 +116,12 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
 
   const refreshSuggestion = async () => {
     try {
-      const settingsRes = await (window as any).pdr?.settings?.getAll();
-      const destPath = settingsRes?.success ? (settingsRes.data?.destinationPath as string | undefined) : undefined;
+      // pdr.settings.get() returns the raw settings object (NOT a
+      // { success, data } wrapper — that's only the convention for
+      // operations that can fail). destinationPath is the field that
+      // (in the user's mental model) IS their Library Drive.
+      const settings = await (window as any).pdr?.settings?.get();
+      const destPath = (settings && typeof settings.destinationPath === 'string') ? settings.destinationPath : undefined;
       if (!destPath) {
         setSuggestedPath(null);
         setSuggestedDriveInfo(null);
@@ -292,7 +296,8 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   if (!isOpen) return null;
 
   // ─── Renderers ───────────────────────────────────────────────────────────
-  const renderHeader = (title: string, subtitle?: string, palette: 'primary' | 'rose' | 'emerald' = 'primary') => {
+  const renderHeader = (title: string, subtitle?: React.ReactNode, palette: 'primary' | 'rose' | 'emerald' = 'primary', subtitleAlign: 'center' | 'left' | 'justify' = 'center') => {
+    const subtitleAlignClass = subtitleAlign === 'left' ? 'text-left' : subtitleAlign === 'justify' ? 'text-justify' : '';
     const gradient = palette === 'rose'
       ? 'from-rose-100 via-rose-50 to-transparent dark:from-rose-950/40 dark:via-rose-950/20'
       : palette === 'emerald'
@@ -319,7 +324,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             <Icon className={`w-8 h-8 ${iconColor}`} />
           </motion.div>
           <h2 className="text-h1 text-foreground mb-2">{title}</h2>
-          {subtitle && <p className="text-body-muted max-w-sm">{subtitle}</p>}
+          {subtitle && <p className={`text-body-muted max-w-sm ${subtitleAlignClass}`}>{subtitle}</p>}
         </div>
       </div>
     );
@@ -331,7 +336,18 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     const writerLabel = isWriter ? 'You are the writer' : (status?.writerDeviceName ? `${status.writerDeviceName} is the writer` : 'Read-only');
     return (
       <>
-        {renderHeader('Your library', attached ? 'PDR keeps a hidden copy of your face / name / date data on this drive so any of your devices can reconnect instantly.' : 'Connect an external drive or NAS so your face / name / date data can travel between devices. Internal drives can\'t be used — they\'d go with your PC if it\'s lost or stolen.')}
+        {attached
+          ? renderHeader('Your library', 'PDR keeps a hidden copy of your face / name / date data on this drive so any of your devices can reconnect instantly.')
+          : renderHeader(
+              'Set up your library',
+              <>
+                <span className="block mb-2"><strong className="text-foreground font-medium">First-time setup.</strong> Your library isn't connected on this device yet.</span>
+                <span className="block mb-2">Pick any external storage — USB stick, external SSD or HDD, SD card, Thunderbolt / USB-C / FireWire drive, or a NAS / network share. PDR will keep a hidden copy of your face, name, date and Trees data there, so if you switch PCs or your current one is lost, a new install can reconnect to that drive and everything comes straight back.</span>
+                <span className="block"><strong className="text-foreground font-medium">Internal drives can't be used</strong> — they'd go with your PC if it's lost or stolen.</span>
+              </>,
+              'primary',
+              'justify',
+            )}
         <div className="px-6 pb-6 pt-2 space-y-3">
           {attached && status?.libraryRoot && (
             <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
@@ -353,10 +369,6 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               </div>
             </div>
           )}
-          {!attached && (
-            <p className="text-body-muted text-center py-2">No library connected on this device yet.</p>
-          )}
-
           {/* Auto-suggest: if the user's existing Library Drive (formerly
               "destination") is set and lives on external / network storage,
               offer it as a one-click setup. Internal drives are deliberately
