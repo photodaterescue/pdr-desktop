@@ -62,9 +62,9 @@ function scoreDrive(drive: DriveInfo, plannedCollectionGB?: number): ScoredDrive
     score += 5;
     connectionType = 'Network / NAS';
     speedTier = 'slow';
-    speedLabel = 'Slow — not recommended as a destination';
-    warnings.push('Network drives are too slow for use as a destination — large jobs can take hours or days, and risk interruption from power loss, sleep mode, or connection drops');
-    warnings.push('Tip: Use a fast local drive as your destination, then back up to your NAS or cloud storage afterwards');
+    speedLabel = 'Slow — not recommended as a Library Drive';
+    warnings.push('Network drives are too slow for use as a Library Drive — large jobs can take hours or days, and risk interruption from power loss, sleep mode, or connection drops');
+    warnings.push('Tip: Use a fast local drive as your Library Drive, then back up to your NAS or cloud storage afterwards');
   } else if (drive.type === 'CD/DVD') {
     score = 0;
     speedTier = 'slow';
@@ -204,9 +204,9 @@ function generateQuickSummary(drives: ScoredDrive[], currentFixGB: number, total
         const best = canHoldFix[0];
         const freeGB = best.freeBytes / (1024 * 1024 * 1024);
         lines.push(`Your collection is ${fmtGB(targetGB)}, but ${best.letter} only has ${fmtGB(freeGB)} free. It can handle this fix, but not your full library.`);
-        lines.push(`You'll either need to free up space, split your collection across multiple runs to different destinations, or add a larger drive.`);
+        lines.push(`You'll either need to free up space, split your collection across multiple runs to different Library Drives, or add a larger drive.`);
       } else {
-        lines.push(`Your collection is ${fmtGB(targetGB)}, but none of your drives have enough free space. You'll need to free up space, add a larger drive, or split your collection across separate destinations.`);
+        lines.push(`Your collection is ${fmtGB(targetGB)}, but none of your drives have enough free space. You'll need to free up space, add a larger drive, or split your collection across separate Library Drives.`);
       }
     } else if (canHoldAll.length >= 2) {
       const top2 = canHoldAll.slice(0, 2);
@@ -254,7 +254,7 @@ function generateQuickSummary(drives: ScoredDrive[], currentFixGB: number, total
 
   // Network drives
   if (networkDrives.length > 0) {
-    lines.push(`${networkDrives.map(d => d.letter).join(', ')} ${networkDrives.length === 1 ? 'is a' : 'are'} network drive${networkDrives.length > 1 ? 's' : ''} — too slow and unreliable for processing. Use a local drive as your destination, then back up to network storage afterwards.`);
+    lines.push(`${networkDrives.map(d => d.letter).join(', ')} ${networkDrives.length === 1 ? 'is a' : 'are'} network drive${networkDrives.length > 1 ? 's' : ''} — too slow and unreliable for processing. Use a local drive as your Library Drive, then back up to network storage afterwards.`);
   }
 
   // When collection size is known and nothing local can hold it, add a clear preamble
@@ -350,8 +350,8 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                 <Shield className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold">Destination Advisor</h2>
-                <p className="text-xs text-muted-foreground">Plan your permanent library location</p>
+                <h2 className="text-lg font-semibold">Library Drive Advisor</h2>
+                <p className="text-xs text-muted-foreground">Plan your permanent Library Drive</p>
               </div>
             </div>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
@@ -370,13 +370,13 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
               <div className="flex items-start gap-3">
                 <Shield className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-foreground mb-1">Best practice: choose one destination for your library</p>
+                  <p className="text-sm font-semibold text-foreground mb-1">Best practice: choose one Library Drive for your library</p>
                   <p className="text-[13px] text-muted-foreground leading-relaxed mb-2">
-                    You can change your destination each time you run a fix, but for the best experience
+                    You can change your Library Drive each time you run a fix, but for the best experience
                     we recommend keeping all your fixes in one location.
                   </p>
                   <p className="text-[13px] text-muted-foreground leading-relaxed">
-                    Your search index, AI analysis, and reports are all tied to the destination — moving or
+                    Your search index, AI analysis, and reports are all tied to the Library Drive — moving or
                     renaming it means rebuilding that data. Keeping one permanent location protects the work
                     you put in.
                   </p>
@@ -424,17 +424,17 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                     <Lock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div>
                       <p className="text-[13px] font-medium">A permanent, stable location</p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">For best results, keep all your fixes in the same destination. This is your master library.</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">For best results, keep all your fixes in the same Library Drive. This is your master library.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-500/5 border border-amber-500/15">
                     <Wifi className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-[13px] font-medium">Avoid network drives as your destination</p>
+                      <p className="text-[13px] font-medium">Avoid network drives as your Library Drive</p>
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         NAS, personal cloud, and network drives are too slow for processing — large jobs can take hours or
                         even days, and risk failure from power loss, sleep mode, or connection drops. Use a fast local drive
-                        as your destination first, then back up to your NAS or cloud storage afterwards at your leisure.
+                        as your Library Drive first, then back up to your NAS or cloud storage afterwards at your leisure.
                       </p>
                     </div>
                   </div>
@@ -710,7 +710,7 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
                         </div>
                         <div className="flex items-start gap-2 text-xs text-muted-foreground">
                           <span className="text-primary font-bold mt-px">3.</span>
-                          <span><strong className="text-foreground">Process on a fast drive, back up to NAS</strong> — If you have a NAS or cloud storage, use a fast local or external drive as your destination first, then back up to your NAS afterwards. Network drives are too slow and unreliable for direct processing.</span>
+                          <span><strong className="text-foreground">Process on a fast drive, back up to NAS</strong> — If you have a NAS or cloud storage, use a fast local or external drive as your Library Drive first, then back up to your NAS afterwards. Network drives are too slow and unreliable for direct processing.</span>
                         </div>
                       </div>
                       <p className="text-[10px] text-muted-foreground/60 mt-3 italic">
@@ -771,7 +771,7 @@ export default function DestinationAdvisorModal({ isOpen, onClose, onContinue, c
             <div className="flex gap-2">
               <Button variant="secondary" onClick={onClose}>Cancel</Button>
               <Button variant="primary" onClick={onContinue}>
-                <ChevronRight className="w-4 h-4 mr-1" /> Choose Destination
+                <ChevronRight className="w-4 h-4 mr-1" /> Choose Library Drive
               </Button>
             </div>
           </div>

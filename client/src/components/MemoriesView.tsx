@@ -332,7 +332,7 @@ export default function MemoriesView() {
                 <HardDrive className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#b07a18' }} />
                 <div className="space-y-1.5 text-xs leading-relaxed">
                   <p className="font-semibold text-foreground">Before you start — pick a Library Drive with plenty of room</p>
-                  <p className="text-muted-foreground">PDR copies your fixed files to your Library Drive without modifying the originals. The <strong className="text-foreground font-medium">Drive Advisor</strong> in the destination flow rates each connected drive on speed and capacity, so you can pick one with comfortable headroom for the size of library you're building.</p>
+                  <p className="text-muted-foreground">PDR copies your fixed files to your Library Drive without modifying the originals. The <strong className="text-foreground font-medium">Library Drive Advisor</strong> rates each connected drive on speed and capacity, so you can pick one with comfortable headroom for the size of library you're building.</p>
                 </div>
               </div>
             </div>

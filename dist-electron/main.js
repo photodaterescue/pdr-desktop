@@ -247,7 +247,7 @@ import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromL
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, redetectSingleFile, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
-import { attachAsNewLibrary, attachFromSidecar, detectSidecar, disconnectLibrary, getLibraryStatus, markDbDirty, mirrorAllToSidecar, setBackgroundMirrorDeviceName, startBackgroundMirror, takeOverWriter, } from './library-sidecar.js';
+import { attachAsNewLibrary, attachFromSidecar, detectDriveType, detectSidecar, disconnectLibrary, getLibraryStatus, markDbDirty, mirrorAllToSidecar, setBackgroundMirrorDeviceName, startBackgroundMirror, takeOverWriter, } from './library-sidecar.js';
 // Update checking — see electron/update-checker.ts for the full state
 // machine. The renderer subscribes to push events on the
 // 'updates:state' channel and can trigger lifecycle transitions
@@ -4084,6 +4084,16 @@ ipcMain.handle('library:status', async () => {
 ipcMain.handle('library:detectSidecar', async (_event, libraryRoot) => {
     try {
         return { success: true, data: detectSidecar(libraryRoot) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('library:detectDriveType', async (_event, libraryRoot) => {
+    try {
+        if (!libraryRoot)
+            return { success: false, error: 'libraryRoot is required' };
+        return { success: true, data: detectDriveType(libraryRoot) };
     }
     catch (err) {
         return { success: false, error: err.message };

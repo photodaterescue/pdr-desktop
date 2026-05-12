@@ -134,7 +134,7 @@ export default function StaleRunsModal({ isOpen, onClose, staleRuns, onResolved 
                       <FolderEdit className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
                       <div>
                         <p className="text-xs font-medium text-foreground">Folder renamed or moved</p>
-                        <p className="text-[11px] text-muted-foreground">If you renamed or reorganised the destination, use <strong>Relocate</strong> to browse to its new location. All your search and AI data will be preserved.</p>
+                        <p className="text-[11px] text-muted-foreground">If you renamed or reorganised the Library Drive, use <strong>Relocate</strong> to browse to its new location. All your search and AI data will be preserved.</p>
                       </div>
                     </div>
 

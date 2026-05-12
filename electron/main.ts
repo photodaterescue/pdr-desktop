@@ -363,6 +363,7 @@ import {
 import {
   attachAsNewLibrary,
   attachFromSidecar,
+  detectDriveType,
   detectSidecar,
   disconnectLibrary,
   getLibraryStatus,
@@ -4407,6 +4408,15 @@ ipcMain.handle('library:status', async () => {
 ipcMain.handle('library:detectSidecar', async (_event, libraryRoot: string) => {
   try {
     return { success: true, data: detectSidecar(libraryRoot) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('library:detectDriveType', async (_event, libraryRoot: string) => {
+  try {
+    if (!libraryRoot) return { success: false, error: 'libraryRoot is required' };
+    return { success: true, data: detectDriveType(libraryRoot) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

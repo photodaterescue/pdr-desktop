@@ -119,6 +119,7 @@ contextBridge.exposeInMainWorld('pdr', {
     library: {
         status: () => ipcRenderer.invoke('library:status'),
         detectSidecar: (libraryRoot) => ipcRenderer.invoke('library:detectSidecar', libraryRoot),
+        detectDriveType: (libraryRoot) => ipcRenderer.invoke('library:detectDriveType', libraryRoot),
         attachAsNew: (opts) => ipcRenderer.invoke('library:attachAsNew', opts),
         attachFromSidecar: (opts) => ipcRenderer.invoke('library:attachFromSidecar', opts),
         takeOverWriter: (opts) => ipcRenderer.invoke('library:takeOverWriter', opts),

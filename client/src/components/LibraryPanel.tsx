@@ -52,11 +52,18 @@ interface SidecarDetection {
   snapshotCount: number;
 }
 
+interface DriveTypeInfo {
+  driveType: 'fixed' | 'removable' | 'network' | 'unknown';
+  isSafeForLibrary: boolean;
+  reason: string;
+}
+
 type Step =
   | 'status'
   | 'picker-loading'
   | 'detected-existing'
   | 'detected-empty'
+  | 'drive-unsafe'
   | 'verify-key'
   | 'processing'
   | 'success'
@@ -89,6 +96,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   const [keyError, setKeyError] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string>('');
+  // Auto-suggest: when the user already has a destination drive set and it's
+  // external/network, surface it as a one-click "use this as my Library Drive"
+  // option on the status screen instead of forcing the folder-picker dance.
+  const [suggestedPath, setSuggestedPath] = useState<string | null>(null);
+  const [suggestedDriveInfo, setSuggestedDriveInfo] = useState<DriveTypeInfo | null>(null);
+  // Stores the "this drive is internal, pick something external" reason when
+  // the user picks an unsafe folder. Drives the drive-unsafe step.
+  const [unsafeReason, setUnsafeReason] = useState<string | null>(null);
 
   const refreshStatus = async () => {
     try {
@@ -99,15 +114,38 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     }
   };
 
+  const refreshSuggestion = async () => {
+    try {
+      const settingsRes = await (window as any).pdr?.settings?.getAll();
+      const destPath = settingsRes?.success ? (settingsRes.data?.destinationPath as string | undefined) : undefined;
+      if (!destPath) {
+        setSuggestedPath(null);
+        setSuggestedDriveInfo(null);
+        return;
+      }
+      setSuggestedPath(destPath);
+      const driveRes = await (window as any).pdr?.library?.detectDriveType(destPath);
+      if (driveRes?.success) {
+        setSuggestedDriveInfo(driveRes.data as DriveTypeInfo);
+      } else {
+        setSuggestedDriveInfo(null);
+      }
+    } catch (e) {
+      console.warn('[LibraryPanel] suggestion refresh failed:', e);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       refreshStatus();
+      refreshSuggestion();
       setStep('status');
       setPendingAction(null);
       setPendingDetection(null);
       setKeyInput('');
       setKeyError(null);
       setErrorMsg(null);
+      setUnsafeReason(null);
     }
   }, [isOpen]);
 
@@ -121,11 +159,21 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     onClose();
   };
 
-  const handleConnectClick = async () => {
-    const path: string | null = await (window as any).pdr?.openFolder?.();
-    if (!path) return;
+  // Inspect a path: confirm it's a safe drive type (external / network), then
+  // detect whether a sidecar already exists there → branch to restore vs.
+  // set-as-new. Internal drives short-circuit to the drive-unsafe explainer.
+  const inspectAndRoute = async (path: string) => {
     setStep('picker-loading');
     try {
+      const driveRes = await (window as any).pdr?.library?.detectDriveType(path);
+      if (driveRes?.success) {
+        const info = driveRes.data as DriveTypeInfo;
+        if (!info.isSafeForLibrary) {
+          setUnsafeReason(info.reason);
+          setStep('drive-unsafe');
+          return;
+        }
+      }
       const res = await (window as any).pdr?.library?.detectSidecar(path);
       if (!res?.success) {
         setErrorMsg(res?.error || 'Could not inspect that folder.');
@@ -145,6 +193,17 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       setErrorMsg((e as Error).message);
       setStep('error');
     }
+  };
+
+  const handleConnectClick = async () => {
+    const path: string | null = await (window as any).pdr?.openFolder?.();
+    if (!path) return;
+    await inspectAndRoute(path);
+  };
+
+  const handleUseSuggestedPath = async () => {
+    if (!suggestedPath) return;
+    await inspectAndRoute(suggestedPath);
   };
 
   const handleTakeOverClick = () => {
@@ -298,10 +357,38 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             <p className="text-sm text-muted-foreground text-center py-2">No library connected on this device yet.</p>
           )}
 
+          {/* Auto-suggest: if the user's existing Library Drive (formerly
+              "destination") is set and lives on external / network storage,
+              offer it as a one-click setup. Internal drives are deliberately
+              not auto-suggested — they'd defeat the recovery purpose. */}
+          {!attached && suggestedPath && suggestedDriveInfo?.isSafeForLibrary && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Use your existing Library Drive?</p>
+                <p className="text-xs text-muted-foreground mt-1 break-all">{suggestedPath}</p>
+                <p className="text-[11px] text-muted-foreground mt-1.5">{suggestedDriveInfo.reason}</p>
+              </div>
+              <Button onClick={handleUseSuggestedPath} variant="primary" className="w-full h-10">
+                <Plug className="w-4 h-4 mr-2" /> Set this as my Library Drive
+              </Button>
+            </div>
+          )}
+
+          {/* If the existing Library Drive is internal — common on
+              fresh installs where someone pointed PDR at C:\Photos — show
+              a calm note explaining why we're not auto-suggesting it. */}
+          {!attached && suggestedPath && suggestedDriveInfo && !suggestedDriveInfo.isSafeForLibrary && (
+            <div className="rounded-xl border border-amber-300/40 bg-amber-50 dark:bg-amber-950/20 p-4">
+              <p className="text-sm font-semibold text-foreground mb-1">Your current Library Drive is internal</p>
+              <p className="text-xs text-muted-foreground break-all mb-1.5">{suggestedPath}</p>
+              <p className="text-[11px] text-muted-foreground">{suggestedDriveInfo.reason}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-2 pt-1">
             <Button onClick={handleConnectClick} variant="primary" className="w-full h-11">
               <Plug className="w-4 h-4 mr-2" />
-              {attached ? 'Connect to a different library' : 'Connect to a library'}
+              {attached ? 'Connect to a different library' : (suggestedPath && suggestedDriveInfo?.isSafeForLibrary ? 'Pick a different drive' : 'Connect to a library')}
             </Button>
             {attached && !isWriter && (
               <Button onClick={handleTakeOverClick} variant="secondary" className="w-full h-11">
@@ -410,6 +497,18 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     </>
   );
 
+  const renderDriveUnsafe = () => (
+    <>
+      {renderHeader('Pick a different drive', unsafeReason ?? 'This drive is not suitable for a Library Drive.', 'rose')}
+      <div className="px-6 pb-6 pt-2 space-y-3">
+        <Button onClick={handleConnectClick} variant="primary" className="w-full h-12">
+          <Plug className="w-4 h-4 mr-2" /> Pick another drive
+        </Button>
+        <Button onClick={() => setStep('status')} variant="secondary" className="w-full h-12">Cancel</Button>
+      </div>
+    </>
+  );
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
       <motion.div
@@ -422,6 +521,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         {step === 'picker-loading' && renderProcessing()}
         {step === 'detected-existing' && renderDetectedExisting()}
         {step === 'detected-empty' && renderDetectedEmpty()}
+        {step === 'drive-unsafe' && renderDriveUnsafe()}
         {step === 'verify-key' && renderVerifyKey()}
         {step === 'processing' && renderProcessing()}
         {step === 'success' && renderSuccess()}

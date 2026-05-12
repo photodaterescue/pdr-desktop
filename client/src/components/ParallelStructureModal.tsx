@@ -237,7 +237,7 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
 
                   {/* Destination picker */}
                   <div>
-                    <label className="text-sm font-medium text-foreground mb-1.5 block">Destination</label>
+                    <label className="text-sm font-medium text-foreground mb-1.5 block">Library Drive</label>
                     <div className="flex gap-2 flex-wrap">
                       <div className="flex-1 px-3 py-2 rounded-lg border border-border bg-secondary/30 text-sm text-foreground truncate min-h-[38px] flex items-center min-w-0">
                         {destination || <span className="text-muted-foreground">Choose a folder...</span>}

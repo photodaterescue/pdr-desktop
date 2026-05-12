@@ -272,7 +272,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                     {
                       value: 'yes' as const,
                       label: 'Yes — I want everything in one place',
-                      sublabel: 'Best experience. We\'ll make sure your destination has enough room for all of it.',
+                      sublabel: 'Best experience. We\'ll make sure your Library Drive has enough room for all of it.',
                     },
                     {
                       value: 'no' as const,
@@ -452,7 +452,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                 )}
 
                 {/* Drive types ranked by speed — same reference table the
-                    Destination Advisor shows. Visible whenever space is
+                    Library Drive Advisor shows. Visible whenever space is
                     short so the user can see the trade-offs at a glance. */}
                 {!analysis.hasGoodOption && (
                   <div className="p-3 rounded-xl bg-secondary/30 border border-border">
@@ -475,8 +475,8 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
                 {/* You can still continue */}
                 <p className="text-[11px] text-foreground/70 leading-relaxed">
                   {analysis.hasGoodOption
-                    ? 'You\'re in a great position. Press Continue to choose your destination.'
-                    : 'You can still continue and select a destination — this is guidance, not a blocker. But being aware now saves frustration later.'
+                    ? 'You\'re in a great position. Press Continue to choose your Library Drive.'
+                    : 'You can still continue and select a Library Drive — this is guidance, not a blocker. But being aware now saves frustration later.'
                   }
                 </p>
               </motion.div>
@@ -520,7 +520,7 @@ export default function LibraryPlannerModal({ isOpen, onComplete, onSkip, previo
               onClick={handleContinue}
               disabled={(step === 1 && selectedSize === null) || (step === 2 && multipleSources === null)}
             >
-              {step === 3 ? 'Choose Destination' : 'Next'}
+              {step === 3 ? 'Choose Library Drive' : 'Next'}
               <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>

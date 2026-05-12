@@ -352,7 +352,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     { id: 'flash', label: 'Flash' },
     { id: 'megapixels', label: 'Megapixels' },
     { id: 'fileSize', label: 'File Size' },
-    { id: 'destination', label: 'Destination' },
+    { id: 'destination', label: 'Library Drive' },
   ] as const;
 
   // ─── Ribbon tabs & categories ────────────────────────────────────────────
@@ -1083,7 +1083,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     for (const [destPath, available] of Object.entries(destinationAvailability)) {
       if (!available && paths.some(p => p.startsWith(destPath))) {
         setUnavailableFileMessage(
-          `This file's destination is not available. Please reconnect the drive or folder and try again.`
+          `This file's Library Drive is not available. Please reconnect the drive or folder and try again.`
         );
         return;
       }
@@ -1972,11 +1972,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 {visibleGroups.includes('destination') && (
                   <>
                     <RibbonSeparator />
-                    <RibbonGroup label="Destination" onExpand={() => setOverflowModalGroup('destination')} groupId="destination" isFavourited={isGroupFavourited('destination')} onToggleFavourite={toggleFavouriteGroup}>
+                    <RibbonGroup label="Library Drive" onExpand={() => setOverflowModalGroup('destination')} groupId="destination" isFavourited={isGroupFavourited('destination')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Destination" active={selectedDestination.length > 0} activeLabel={selectedDestination.length > 0 ? `${selectedDestination.length} selected` : undefined}>
+                        <FilterDropdown label="Library Drive" active={selectedDestination.length > 0} activeLabel={selectedDestination.length > 0 ? `${selectedDestination.length} selected` : undefined}>
                           {(!filterOptions?.destinations || filterOptions.destinations.length === 0) ? (
-                            <p className="text-xs text-muted-foreground italic px-3 py-2">No destinations in library</p>
+                            <p className="text-xs text-muted-foreground italic px-3 py-2">No Library Drives indexed</p>
                           ) : (
                             filterOptions.destinations.map(dest => {
                               const available = destinationAvailability[dest] !== false;

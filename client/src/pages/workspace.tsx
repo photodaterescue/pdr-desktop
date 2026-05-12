@@ -3944,11 +3944,11 @@ function DashboardPanel({
         <section className="pt-0 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
             <h2 className="text-lg font-semibold text-foreground mb-4">Output</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-tour="destination">
-              {/* Left: Destination Drive */}
+              {/* Left: Library Drive */}
               <Card className="flex flex-col p-5">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <IconTooltip
-                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — changing destination mid-fix splits your output between two drives.' : (destinationPath ? 'Choose a different destination drive or folder' : 'Pick where your organized library will live')}
+                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — changing your Library Drive mid-fix splits your output between two drives.' : (destinationPath ? 'Choose a different Library Drive or folder' : 'Pick your Library Drive — where your organized library will live')}
                     side="top"
                   >
                     {/* When destination IS already set (the standard
@@ -3970,8 +3970,8 @@ function DashboardPanel({
                         className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                         data-testid="button-change-destination"
                       >
-                        <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain opacity-70" alt="Destination" />
-                        Change Destination
+                        <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain opacity-70" alt="Library Drive" />
+                        Change Library Drive
                       </button>
                     ) : (
                       <Button
@@ -3983,8 +3983,8 @@ function DashboardPanel({
                         data-testid="button-change-destination"
                         style={!fixActive ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
                       >
-                        <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain brightness-200" alt="Destination" />
-                        Select Destination
+                        <img src="./assets//pdr-destination-drive.png" className="w-4 h-4 object-contain brightness-200" alt="Library Drive" />
+                        Select Library Drive
                       </Button>
                     )}
                   </IconTooltip>
@@ -3999,7 +3999,7 @@ function DashboardPanel({
                       <FolderOpen className="w-3.5 h-3.5" /> Open
                     </Button>
                   )}
-                  <IconTooltip label="Destination Advisor — recommendations and guidance" side="top">
+                  <IconTooltip label="Library Drive Advisor — recommendations and guidance" side="top">
                     <Button
                       variant="information"
                       size="sm"
@@ -4279,7 +4279,7 @@ function DashboardPanel({
           <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="text-sm font-medium text-muted-foreground">
                 <span className="text-foreground font-bold font-heading">{stats.totalFiles.toLocaleString()}</span> files ready to process
-                {!destinationPath && <span className="ml-2 text-amber-600 dark:text-amber-400">— Select a destination to continue</span>}
+                {!destinationPath && <span className="ml-2 text-amber-600 dark:text-amber-400">— Select a Library Drive to continue</span>}
                 {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
              <div className="flex items-center gap-4">
@@ -4408,7 +4408,7 @@ function DashboardPanel({
         isOpen={showDestBrowser}
         onSelect={handleDestBrowserSelect}
         onCancel={() => setShowDestBrowser(false)}
-        title="Select Destination"
+        title="Select Library Drive"
         mode="folder"
         onOpenDriveAdvisor={() => { setShowDestBrowser(false); setShowDestAdvisor(true); }}
         onOpenLibraryPlanner={() => { setShowDestBrowser(false); setShowLibraryPlanner(true); }}
@@ -4689,14 +4689,14 @@ function Dashboard({ sources, activeSource, onStartAnalysis, onPreviewChanges }:
                 <HardDrive className="w-6 h-6 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-medium mb-1">Destination</h3>
+                <h3 className="text-lg font-medium mb-1">Library Drive</h3>
                 <p className="text-sm text-muted-foreground mb-2">/Volumes/Photos_Backup/Restored_2024</p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">2.4 TB Free</span>
                   <span className="text-xs text-muted-foreground">Required: 4.2 GB</span>
                 </div>
               </div>
-              <Button variant="outline">Change Destination</Button>
+              <Button variant="outline">Change Library Drive</Button>
             </Card>
           </section>
 
@@ -5125,14 +5125,14 @@ function AnalysingState({ progress }: { progress: AnalysisProgress }) {
                 <HardDrive className="w-6 h-6 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-medium mb-1">Destination</h3>
+                <h3 className="text-lg font-medium mb-1">Library Drive</h3>
                 <p className="text-sm text-muted-foreground mb-2">/Volumes/Photos_Backup/Restored_2024</p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">2.4 TB Free</span>
                   <span className="text-xs text-muted-foreground">Required: 4.2 GB</span>
                 </div>
               </div>
-              <Button variant="outline">Change Destination</Button>
+              <Button variant="outline">Change Library Drive</Button>
             </Card>
           </section>
         </div>
@@ -5790,7 +5790,7 @@ function PerformanceNudge({ type, onNavigateToBestPractices }: { type: 'source' 
   const message = type === 'source'
     ? <>If your network drive or cloud storage doesn't appear when browsing, try pasting the full path directly into the file picker.<br /><br />For example: <strong>\\MyCloud\Photos\2022</strong><br /><br />This is the most reliable way to access files on a NAS, home cloud, or shared network drive.</>
     : type === 'destination'
-    ? <>For best performance, connect your destination directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>
+    ? <>For best performance, connect your Library Drive directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>
     : <>For best results, save your sources (folders and ZIPs) close to the root of your drive.<br /><br />For example, <strong>C:\Photos</strong> rather than <strong>C:\Users\Name\Documents\Backups\Old\Photos</strong>. Shorter paths help PDR read date information more reliably.</>;
 
   const showTooltip = () => {
@@ -6464,7 +6464,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               <div className="bg-muted/50 border border-border rounded-xl p-4 text-left space-y-3">
                 <h4 className="text-sm font-semibold text-foreground">Cancel Fix?</h4>
                 <p className="text-xs text-muted-foreground">
-                  Files already copied will remain at your destination, but remaining files won't be processed. These operations can take time with large sources or slow connections. Closing other apps may help.
+                  Files already copied will remain at your Library Drive, but remaining files won't be processed. These operations can take time with large sources or slow connections. Closing other apps may help.
                 </p>
                 <p className="text-xs text-muted-foreground italic">
                    Start Menu if needed.
@@ -6600,10 +6600,10 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                 <div className="flex items-start gap-2.5">
                   <Shield className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mb-0.5">Your destination is now your master library</p>
+                    <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mb-0.5">This is now your master photo library</p>
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
                       Moving, renaming, or deleting this folder will break Search & Discovery indexing and AI analysis.
-                      Use the same destination for all future fixes to build a single, organized library.
+                      Keep the same Library Drive for all future fixes to build a single, organized collection.
                     </p>
                     {parseInt(localStorage.getItem('pdr-master-lib-seen-count') || '0', 10) >= 3 && (
                       <button
@@ -7557,7 +7557,7 @@ function PostFixReportModal({ onClose, results, destinationPath: propDestination
                     </span>
                   )}
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground italic hidden sm:inline">Auto-catalog is active at your destination</span>
+                    <span className="text-[10px] text-muted-foreground italic hidden sm:inline">Auto-catalog is active at your Library Drive</span>
                     <Button
                       variant="outline"
                       size="sm"
@@ -7771,7 +7771,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 <div className="space-y-4">
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Pick your Library Drive</p>
-                    <p className="text-sm text-muted-foreground">PDR asks you to pick a destination drive <em>before</em> you add any Sources — the place your fixed library will live for years to come. The Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed and capacity, so you can pick confidently rather than guess.</p>
+                    <p className="text-sm text-muted-foreground">PDR asks you to pick a Library Drive <em>before</em> you add any Sources — the place your fixed library will live for years to come. The Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed and capacity, so you can pick confidently rather than guess.</p>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Add a Source</p>
@@ -7917,7 +7917,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
               {/* Core Orientation Section - Always Visible */}
               <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  PDR works best when you treat your inputs as a set of <span className="font-medium text-foreground">Sources</span> and your output as a single <span className="font-medium text-foreground">Library Drive</span> — the destination where your fixed library will live for years to come.
+                  PDR works best when you treat your inputs as a set of <span className="font-medium text-foreground">Sources</span> and your output as a single <span className="font-medium text-foreground">Library Drive</span> — the place where your fixed library will live for years to come.
                   That structure is what makes it fast, scalable, and safe even with huge, messy libraries.
                 </p>
                 <p className="text-sm text-foreground font-medium mt-3">The goal: pick your Library Drive once, tell PDR exactly which Sources to include, and let it do the rest.</p>
@@ -8055,8 +8055,8 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         </div>
 
                         <div>
-                          <p className="font-medium text-foreground mb-2">Destination Best Practices</p>
-                          <p className="mb-2">Pick a destination that is:</p>
+                          <p className="font-medium text-foreground mb-2">Library Drive Best Practices</p>
+                          <p className="mb-2">Pick a Library Drive that is:</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li>Empty (or dedicated to this run)</li>
                             <li>Not inside any Source</li>
@@ -8077,7 +8077,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                             </div>
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
                               <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                              <p className="text-sm">Select Destination (dedicated output folder)</p>
+                              <p className="text-sm">Select Library Drive (dedicated output folder)</p>
                             </div>
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">
                               <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
@@ -8164,7 +8164,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
                         <div>
                           <p className="font-medium text-foreground mb-2">Reports History</p>
-                          <p className="mb-2">Each report entry shows run date, number of sources, total files, confidence breakdown, and destination path. From here you can reopen any report, export it again, or compare runs over time.</p>
+                          <p className="mb-2">Each report entry shows run date, number of sources, total files, confidence breakdown, and Library Drive path. From here you can reopen any report, export it again, or compare runs over time.</p>
                         </div>
 
                         <div>
@@ -8295,7 +8295,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                   <h3 className="text-lg font-medium text-foreground">Pick your Library Drive</h3>
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>Before adding any Sources, PDR asks you to pick a <span className="font-medium text-foreground">Library Drive</span> — the destination where your fixed library will live for the long term. Choosing this first means PDR can warn you about disk space, drive speed, and reliability <em>before</em> you wait for an analysis.</p>
+                  <p>Before adding any Sources, PDR asks you to pick a <span className="font-medium text-foreground">Library Drive</span> — the place where your fixed library will live for the long term. Choosing this first means PDR can warn you about disk space, drive speed, and reliability <em>before</em> you wait for an analysis.</p>
                   <p className="font-medium text-foreground">Two helpers make the choice easier:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li><span className="font-medium text-foreground">Library Planner</span> — sizes your collection across seven buckets so the drive recommendations are tailored to your library.</li>
@@ -8348,7 +8348,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Before running the fix, take a moment to confirm:</p>
                   <ul className="list-disc ml-5 space-y-2.5">
-                    <li><span className="font-medium text-foreground">Library Drive still has room</span> — the storage indicator next to your destination shows free vs required. Free should comfortably exceed Required.</li>
+                    <li><span className="font-medium text-foreground">Library Drive still has room</span> — the storage indicator next to your Library Drive shows free vs required. Free should comfortably exceed Required.</li>
                     <li><span className="font-medium text-foreground">Sources are checked</span> — only ticked Sources go into the run. Untick anything you don't want included.</li>
                     <li><span className="font-medium text-foreground">File types</span> — in Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
                     <li><span className="font-medium text-foreground">Folder structure</span> — Settings → Folder structure controls how the output is organized (Year / Year-Month / Year-Month-Day).</li>
@@ -8644,7 +8644,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Faster People Manager</strong> — face crops are now cached on disk after first render. The first time you open PM the thumbnails populate as the AI extracts each crop; every subsequent open loads the cluster instantly. Crops also survive deletion of the original photos, so verified-face thumbnails don't disappear when you tidy your library.</li>
                         <li><strong className="text-foreground font-medium">Automatic updates</strong> — v1.0.1 required manually downloading each new release from the website. v2.0.0 checks in the background every few hours and installs new versions with a single click. Updates are differential — typically a few MB instead of the full 80+ MB installer.</li>
                         <li><strong className="text-foreground font-medium">Cross-drive duplicate detection</strong> — v1.0.1 only flagged duplicate folders when their paths matched exactly. v2.0.0 also catches the same folder content sitting on a different drive (e.g. a backup copy on H: when the original is on F:) and shows a soft-warning modal naming both drive letters.</li>
-                        <li><strong className="text-foreground font-medium">Disk-fill safeguards</strong> — v1.0.1 extracted large ZIPs to %TEMP% on C:, slowly filling the system drive across multi-Takeout sessions. v2.0.0 extracts to your destination drive instead, falls back to a "pick another drive" prompt when neither has room, caps the pre-extract pool at 55 GB to protect free space, warns before adding multiple multi-GB Takeouts in one session, and cleans up temp folders after each Takeout completes.</li>
+                        <li><strong className="text-foreground font-medium">Disk-fill safeguards</strong> — v1.0.1 extracted large ZIPs to %TEMP% on C:, slowly filling the system drive across multi-Takeout sessions. v2.0.0 extracts to your Library Drive instead, falls back to a "pick another drive" prompt when neither has room, caps the pre-extract pool at 55 GB to protect free space, warns before adding multiple multi-GB Takeouts in one session, and cleans up temp folders after each Takeout completes.</li>
                         <li><strong className="text-foreground font-medium">One-click diagnostic ZIP</strong> — v1.0.1's "Report a problem" asked you to find your log file inside %APPDATA% manually. v2.0.0's Help &amp; Support &rarr; Report a problem now bundles your log, system info and licence state into a single .zip in your Documents folder ready to attach. Analysis errors that previously routed back silently now surface a "Send report" toast.</li>
                         <li><strong className="text-foreground font-medium">More reliable</strong> — v1.0.1 could hang for ~20 s on the licence check when offline, stutter while hashing large videos, and (rarely) run two instances at once after a crash, causing "Tree empty" or "missing source" symptoms. v2.0.0 fixes all three: 5 s offline timeout, async chunked hashing that keeps the UI responsive, and a single-instance lock that prevents the duplicate-process scenario entirely. Settings, AI database and licence are now stored at a single canonical path (<code className="text-xs">%APPDATA%\Photo Date Rescue\</code>) regardless of how PDR was launched.</li>
                       </ul>
@@ -8995,7 +8995,7 @@ function SkippedFilesCallout({ skippedFiles }: { skippedFiles: Array<{ filename:
             · {expanded ? 'hide details' : 'show details'}
           </span>
           <span className="block text-muted-foreground font-normal mt-0.5">
-            These files will not be copied to your destination. The rest of your source analyzed normally.
+            These files will not be copied to your Library Drive. The rest of your source analyzed normally.
           </span>
         </span>
       </button>
@@ -9874,12 +9874,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   Catalog
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Automatically save a cumulative record of all fixed files to your destination.
+                  Automatically save a cumulative record of all fixed files to your Library Drive.
                 </p>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">Save catalog after each fix</span>
-                    <span className="text-xs text-muted-foreground">Write PDR_Catalogue.csv and .txt to your destination — updates dynamically</span>
+                    <span className="text-xs text-muted-foreground">Write PDR_Catalogue.csv and .txt to your Library Drive — updates dynamically</span>
                   </div>
                   <Checkbox
                     checked={autoSaveCatalogue}
@@ -10064,7 +10064,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 <div className="flex items-center justify-between p-3 rounded-lg border border-border">
                   <div className="flex flex-col mr-3">
                     <span className="text-sm font-medium text-foreground">Reset onboarding</span>
-                    <span className="text-xs text-muted-foreground">Clears the Library Drive, Library Planner answers, and Drive Advisor skip flag. Reloads the app so the destination-first flow runs from scratch.</span>
+                    <span className="text-xs text-muted-foreground">Clears the Library Drive, Library Planner answers, and Drive Advisor skip flag. Reloads the app so the Library Drive setup flow runs from scratch.</span>
                   </div>
                   <Button
                     variant="caution"

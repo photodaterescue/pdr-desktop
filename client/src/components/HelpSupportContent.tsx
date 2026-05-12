@@ -213,7 +213,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
               <div className="space-y-3">
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                   <p className="font-medium text-foreground text-sm mb-1">Will this overwrite or damage my original files?</p>
-                  <p className="text-sm text-muted-foreground">No. Originals are never modified. All changes are written to a new destination you choose.</p>
+                  <p className="text-sm text-muted-foreground">No. Originals are never modified. All changes are written to a new Library Drive you choose.</p>
                 </div>
 
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">

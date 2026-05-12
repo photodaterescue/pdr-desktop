@@ -160,6 +160,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   library: {
     status: () => ipcRenderer.invoke('library:status'),
     detectSidecar: (libraryRoot: string) => ipcRenderer.invoke('library:detectSidecar', libraryRoot),
+    detectDriveType: (libraryRoot: string) => ipcRenderer.invoke('library:detectDriveType', libraryRoot),
     attachAsNew: (opts: { libraryRoot: string; licenseKey: string; deviceName: string; snapshotMode?: 'none' | 'recent' | 'all' }) =>
       ipcRenderer.invoke('library:attachAsNew', opts),
     attachFromSidecar: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>

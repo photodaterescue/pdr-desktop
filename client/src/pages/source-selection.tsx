@@ -272,7 +272,7 @@ function PerformanceNudge({ type }: { type: 'source' | 'destination' }) {
 
   const message = type === 'source'
     ? <>For best performance, connect source drives directly via USB, USB-C, or Ethernet.<br /><br />Wi-Fi and personal cloud storage can be slow or unstable when reading large volumes of files.</>
-    : <>For best performance, connect your destination directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>;
+    : <>For best performance, connect your Library Drive directly.<br /><br />Copying large volumes over Wi-Fi can bottleneck performance — this is a hardware/network limitation, not a PDR issue.</>;
 
   return (
     <div className="relative inline-flex items-center ml-1">

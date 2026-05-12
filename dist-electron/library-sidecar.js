@@ -14,7 +14,7 @@
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { execFile } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { getDb, closeDatabase } from './search-database.js';
@@ -76,6 +76,94 @@ function setHidden(targetPath) {
             console.warn('[LibSidecar] attrib +H +S failed (non-fatal):', err.message, targetPath);
         }
     });
+}
+export function detectDriveType(absPath) {
+    // UNC paths (\\server\share) are always network.
+    if (absPath.startsWith('\\\\')) {
+        return {
+            driveType: 'network',
+            isSafeForLibrary: true,
+            reason: 'Network share — survives PC loss, safe for use as a Library Drive.',
+        };
+    }
+    const m = absPath.match(/^([A-Za-z]):/);
+    if (!m) {
+        return {
+            driveType: 'unknown',
+            isSafeForLibrary: false,
+            reason: 'Could not identify the drive for this path.',
+        };
+    }
+    const driveLetter = m[1].toUpperCase() + ':';
+    // Only Windows is supported for now. wmic is deprecated but still works
+    // on every Windows 10/11 build PDR ships against. If wmic ever
+    // disappears we can fall back to PowerShell Get-Volume.
+    if (process.platform !== 'win32') {
+        return {
+            driveType: 'unknown',
+            isSafeForLibrary: true,
+            reason: 'Drive-type checking is currently Windows-only — letting the choice through.',
+        };
+    }
+    try {
+        const out = execFileSync('wmic', [
+            'logicaldisk',
+            'where',
+            `DeviceID="${driveLetter}"`,
+            'get',
+            'DriveType',
+            '/value',
+        ], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+        const typeMatch = out.match(/DriveType=(\d+)/);
+        if (!typeMatch) {
+            return {
+                driveType: 'unknown',
+                isSafeForLibrary: false,
+                reason: 'Could not read drive type from the system.',
+            };
+        }
+        const code = parseInt(typeMatch[1], 10);
+        // Win32_LogicalDisk.DriveType codes:
+        //   2 = Removable (USB, SD card, external HDD/SSD)
+        //   3 = Fixed (internal HDD / SSD)
+        //   4 = Network mapped drive
+        //   5 = CD-ROM / DVD
+        //   6 = RAM disk
+        if (code === 2) {
+            return {
+                driveType: 'removable',
+                isSafeForLibrary: true,
+                reason: 'Removable / external drive — survives PC loss, safe for use as a Library Drive.',
+            };
+        }
+        if (code === 3) {
+            return {
+                driveType: 'fixed',
+                isSafeForLibrary: false,
+                reason: 'This drive is inside your PC — if your PC is lost or stolen, the Library copy would go with it. Pick an external drive or NAS instead.',
+            };
+        }
+        if (code === 4) {
+            return {
+                driveType: 'network',
+                isSafeForLibrary: true,
+                reason: 'Network drive — survives PC loss, safe for use as a Library Drive.',
+            };
+        }
+        return {
+            driveType: 'unknown',
+            isSafeForLibrary: false,
+            reason: 'CD / DVD / RAM-disk targets are not suitable for a Library Drive.',
+        };
+    }
+    catch (e) {
+        console.warn('[LibSidecar] wmic drive-type lookup failed:', e.message);
+        return {
+            driveType: 'unknown',
+            isSafeForLibrary: false,
+            reason: 'Could not check the drive type. Please try again or pick a different drive.',
+        };
+    }
 }
 function ensureSidecarDir(libraryRoot) {
     try {
