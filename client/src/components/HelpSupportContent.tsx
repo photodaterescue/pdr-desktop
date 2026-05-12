@@ -204,6 +204,169 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
             </AccordionContent>
           </AccordionItem>
 
+          {/* Glossary — quick reference for PDR-specific vocabulary that
+              shows up across the app, this Help panel, and the website.
+              Grouped by area so users can find a term either alphabetically
+              by scanning, or by knowing roughly where it belongs. */}
+          <AccordionItem value="glossary" className="border border-border rounded-lg px-4">
+            <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+              Glossary
+            </AccordionTrigger>
+            <AccordionContent className="pt-2 pb-4">
+              <div className="space-y-5 text-sm">
+                <p className="text-muted-foreground">A quick reference for the terms PDR uses. Grouped by area; scan or search.</p>
+
+                <div>
+                  <p className="font-medium text-foreground mb-2">Your Library</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Library Drive</dt>
+                      <dd className="text-muted-foreground mt-0.5">The drive your organised photos and videos live on, picked once during setup. PDR rates each connected drive on speed, capacity and reliability via the Library Drive Advisor so you can choose confidently. Internal motherboard-connected drives are usually the fastest pick.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Library Database (LDB)</dt>
+                      <dd className="text-muted-foreground mt-0.5">A hidden copy of everything PDR knows about your library — face tags, names, Trees, date corrections, search indexes — kept inside your Library Drive. Lets a new PC reconnect to your library and pick up exactly where the previous one left off.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Master library</dt>
+                      <dd className="text-muted-foreground mt-0.5">Your complete, definitive library — every photo and video PDR has fixed for you, organised year by year on your Library Drive.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Parallel structures</dt>
+                      <dd className="text-muted-foreground mt-0.5">Curated sub-libraries spun off your Master — Family-only, Friends-only, Pets-only — built from filtered queries so you don't sort by hand.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Auto-catalog</dt>
+                      <dd className="text-muted-foreground mt-0.5">An always-up-to-date CSV/TXT log of every file PDR has fixed, written to your Library Drive.</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <p className="font-medium text-foreground mb-2">Fixing photos</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Source</dt>
+                      <dd className="text-muted-foreground mt-0.5">A folder, zip, RAR archive, or drive containing photos and videos you want PDR to process. A Fix can include many Sources at once.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Fix / Run Fix</dt>
+                      <dd className="text-muted-foreground mt-0.5">A processing pass. PDR analyses every file across all your Sources, works out the right date, then copies the file to your Library Drive with the corrected date in EXIF, in the filename, and in a clean year-by-year folder.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Confirmed</dt>
+                      <dd className="text-muted-foreground mt-0.5">A date PDR is fully confident about, taken directly from EXIF or a Google Takeout sidecar.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Recovered</dt>
+                      <dd className="text-muted-foreground mt-0.5">A date PDR worked out from less-direct signals — filename patterns, folder structure, neighbouring photos, file system timestamps.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Marked</dt>
+                      <dd className="text-muted-foreground mt-0.5">A file PDR couldn't date with enough confidence. It's renamed for review so you can decide what to do with it in Date Editor.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Duplicate</dt>
+                      <dd className="text-muted-foreground mt-0.5">A file PDR has detected is identical in content to another file in the same Fix. Safely skipped — you won't get two copies of the same photo.</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <p className="font-medium text-foreground mb-2">Faces, people and Trees</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Cluster</dt>
+                      <dd className="text-muted-foreground mt-0.5">A group of faces PDR thinks belongs to the same person. Verify a cluster in People Manager to turn it into a named Person.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Verified face</dt>
+                      <dd className="text-muted-foreground mt-0.5">A face you've confirmed belongs to a specific Person. Verified faces are the ground truth PDR uses to find more photos of that person.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Person</dt>
+                      <dd className="text-muted-foreground mt-0.5">A named identity in PDR. Holds verified faces, all the photos that contain them, and their relationships to other People in Trees.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Improve Recognition</dt>
+                      <dd className="text-muted-foreground mt-0.5">A one-click action that re-runs face matching with PDR's latest algorithm and retroactively cleans up auto-matches made under older, weaker rules. Adds new matches AND drops bogus ones in a single pass.</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <p className="font-medium text-foreground mb-2">Multi-device</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Writer</dt>
+                      <dd className="text-muted-foreground mt-0.5">The device currently holding write access to your Library Database. Only one writer at a time across all your devices — prevents accidental conflicts that could damage months of tagging work.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Reader</dt>
+                      <dd className="text-muted-foreground mt-0.5">A device connected to your library in read-only mode. Can browse photos, search, view Trees — but not edit faces, names, or dates until you hand writer status to it.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Take over writing</dt>
+                      <dd className="text-muted-foreground mt-0.5">Hand the writer role from one device to another — confirmed with your license key, so only you can do it. The previous writer drops to read-only on its next access.</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <p className="font-medium text-foreground mb-2">Safety net</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Snapshot</dt>
+                      <dd className="text-muted-foreground mt-0.5">A point-in-time backup copy of your local PDR database. PDR takes them automatically — before every launch, daily, weekly, and before risky operations like Improve Recognition or row removal. Available under Settings → Backup. Manual snapshots stay until you delete them.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Snapshot vs Library Database</dt>
+                      <dd className="text-muted-foreground mt-0.5">They complement each other. Snapshots let you roll BACK IN TIME (undo last Tuesday). The Library Database lets your library TRAVEL TO ANOTHER PC. A few recent snapshots also ride along inside the Library Database, so rollback safety follows you when you switch machines.</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <p className="font-medium text-foreground mb-2">Apps and tools inside PDR</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Search &amp; Discovery (S&amp;D)</dt>
+                      <dd className="text-muted-foreground mt-0.5">PDR's full-text + faceted search engine. Find any file by year, person, place, camera, lens, focal length, aperture, file type, or any combination.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">People Manager (PM)</dt>
+                      <dd className="text-muted-foreground mt-0.5">The face and person management surface. Verify clusters, name people, merge or split, browse every photo of one person at a glance.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Date Editor</dt>
+                      <dd className="text-muted-foreground mt-0.5">Per-file manual date editing with a filmstrip view and a custom calendar. The place to handle edge cases PDR couldn't date confidently on its own.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Trees</dt>
+                      <dd className="text-muted-foreground mt-0.5">Family-tree builder. Once you verify faces to people, your tree nodes auto-attach the right photos.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Memories</dt>
+                      <dd className="text-muted-foreground mt-0.5">Timeline view of your library by extracted date — your fixed photos rediscovered, year by year.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Reports History</dt>
+                      <dd className="text-muted-foreground mt-0.5">An audit trail of every Fix run. Reopenable, exportable to CSV/TXT, comparable across runs.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Library Drive Advisor</dt>
+                      <dd className="text-muted-foreground mt-0.5">Pre-Fix wizard that rates each of your connected drives on speed, capacity and reliability so you pick the right Library Drive on the first try.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Library Planner</dt>
+                      <dd className="text-muted-foreground mt-0.5">Pre-Fix wizard that estimates how much room your collection will need across seven categories, so you don't run out of space mid-job.</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
           {/* Common Questions (FAQ) */}
           <AccordionItem value="faq" className="border border-border rounded-lg px-4">
             <AccordionTrigger className="text-foreground font-medium hover:no-underline">
