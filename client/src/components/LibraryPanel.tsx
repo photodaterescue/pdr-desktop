@@ -5,6 +5,7 @@ import {
   FolderOpen,
   AlertTriangle,
   CheckCircle2,
+  XCircle,
   Loader2,
   HardDrive,
   Pencil,
@@ -339,16 +340,29 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         {attached
           ? renderHeader('Your library', 'PDR keeps a hidden copy of your face / name / date data on this drive so any of your devices can reconnect instantly.')
           : renderHeader(
-              'Set up your library',
-              <>
-                <span className="block mb-2"><strong className="text-foreground font-medium">First-time setup.</strong> Your library isn't connected on this device yet.</span>
-                <span className="block mb-2">Pick any external storage — USB stick, external SSD or HDD, SD card, Thunderbolt / USB-C / FireWire drive, or a NAS / network share. PDR will keep a hidden copy of your face, name, date and Trees data there, so if you switch PCs or your current one is lost, a new install can reconnect to that drive and everything comes straight back.</span>
-                <span className="block"><strong className="text-foreground font-medium">Internal drives can't be used</strong> — they'd go with your PC if it's lost or stolen.</span>
-              </>,
-              'primary',
-              'justify',
+              'Set up your Library Database',
+              'Save your face tags, names, Trees, date corrections and Search & Discovery work to a separate drive — so a new PC can pick up exactly where this one left off.',
             )}
         <div className="px-6 pb-6 pt-2 space-y-3">
+          {/* Setup-only: a compact "what works as a Library Drive" panel.
+              Three rows with check / cross icons read in 2 seconds —
+              comprehensive but scannable, no wall of text. */}
+          {!attached && (
+            <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
+              <div className="flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <p className="text-body text-foreground"><span className="font-medium">External drive</span> — USB stick, SSD, HDD, SD card, Thunderbolt, USB-C, FireWire, eSATA</p>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <p className="text-body text-foreground"><span className="font-medium">NAS</span> — or any mapped network share</p>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <XCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
+                <p className="text-body text-muted-foreground"><span className="font-medium text-foreground">Internal drives</span> — they'd go with your PC if it's lost or stolen</p>
+              </div>
+            </div>
+          )}
           {attached && status?.libraryRoot && (
             <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
               <div className="flex items-center gap-2 mb-1.5">
