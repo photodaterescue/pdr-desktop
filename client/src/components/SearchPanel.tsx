@@ -1368,7 +1368,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         <AnimatePresence initial={false}>
           {ribbonExpanded && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'visible' }}>
-              <div ref={ribbonRef} className="flex items-stretch px-2 py-1 gap-0 h-[104px] bg-gradient-to-b from-background to-secondary/10 ribbon-scroll" style={{ overflowX: 'auto', overflowY: 'visible' }}>
+              <div ref={ribbonRef} className="flex items-stretch px-2 py-1 gap-0 h-[110px] bg-gradient-to-b from-background to-secondary/10 ribbon-scroll" style={{ overflowX: 'auto', overflowY: 'visible' }}>
 
                 {/* ── Favourites empty state ── */}
                 {activeTab === 'favourites' && favouriteGroups.length === 0 && (
