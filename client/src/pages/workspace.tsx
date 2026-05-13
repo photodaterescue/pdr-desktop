@@ -2476,40 +2476,37 @@ return (
         destinationPath={libraryOfflinePath}
         onClose={() => setLibraryOfflineOpen(false)}
         onChangeLibraryDrive={() => {
-          setLibraryOfflineOpen(false);
-          // The dashboard's handleChangeDestination flow lives inside
-          // DashboardPanel, which isn't mounted when the workspace is
-          // empty (no sources yet). So we open the folder picker
-          // directly at Workspace level using the existing
-          // FolderBrowserModal instance (already rendered ~line 2345)
-          // and a callback that updates the workspace-level
-          // destinationPath state. Equivalent outcome to clicking the
-          // Output card's button on the dashboard, without depending
-          // on DashboardPanel being mounted.
+          // Open the folder picker ON TOP of the offline modal — do NOT
+          // close the offline modal first. That way if the user X's
+          // out of the picker without selecting a folder, they return
+          // to the offline modal and can pick a different action
+          // (Retry, Set up new library, Connect later) instead of being
+          // dropped into a silent empty Workspace. The offline modal
+          // closes itself when the picker callback fires successfully
+          // (path picked → destination updated → offline state resolved).
           setFolderBrowserCallback(() => async (pickedPath: string) => {
             const { getDiskSpace } = await import('@/lib/electron-bridge');
             setDestinationPath(pickedPath);
             const diskInfo = await getDiskSpace(pickedPath);
             setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
             setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+            setLibraryOfflineOpen(false);
             toast.success('Library Drive updated.');
           });
           setShowFolderBrowser(true);
         }}
         onSetUpNewLibrary={() => {
-          setLibraryOfflineOpen(false);
-          // Same picker as Change Library Drive — difference is in the
-          // framing for the user (reluctant advanced new-library path
-          // vs. swap to a different existing drive), not the mechanism.
-          // Future improvement when v2.2 parallel-structures ships:
-          // this could explicitly create a new sidecar at the picked
-          // location rather than just swapping destinationPath.
+          // Same picker as Change Library Drive — different framing for
+          // the user (reluctant advanced new-library path vs. swap to a
+          // different existing drive), same mechanism. Same staying-
+          // behind-the-picker behaviour so cancel returns to the modal.
           setFolderBrowserCallback(() => async (pickedPath: string) => {
             const { getDiskSpace } = await import('@/lib/electron-bridge');
             setDestinationPath(pickedPath);
             const diskInfo = await getDiskSpace(pickedPath);
             setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
             setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+            setLibraryOfflineOpen(false);
             toast.success('New Library Drive set.');
           });
           setShowFolderBrowser(true);
