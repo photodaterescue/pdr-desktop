@@ -29,6 +29,16 @@ export function cancelAnalysis(): void {
   analysisCancelled = true;
 }
 
+// Public getter so callers OUTSIDE this module (e.g. main.ts's
+// extractLargeZip / extractRar helpers, which run BEFORE analyzeSource
+// is invoked) can also honour the cancel flag. Without this, the user
+// clicking Cancel during a large pre-extract would set the flag but
+// extraction would barrel on to completion, surfacing a misleading
+// "Source added" success state ~35 minutes later.
+export function isAnalysisCancelled(): boolean {
+  return analysisCancelled;
+}
+
 // ── Diagnostic logging ──────────────────────────────────────────────
 // Used during release-QA runs (e.g. bypass-pre-extract on a 50 GB
 // Google Takeout) to surface phase markers, periodic memory

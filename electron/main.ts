@@ -235,7 +235,7 @@ async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer
 }
 
 // Let sharp use default thread pool (number of CPU cores) for fast encoding
-import { analyzeSource, cancelAnalysis } from './analysis-engine.js';
+import { analyzeSource, cancelAnalysis, isAnalysisCancelled } from './analysis-engine.js';
 import AdmZip from 'adm-zip';
 import * as unzipper from 'unzipper';
 import crypto from 'crypto';
@@ -772,7 +772,18 @@ async function extractRar(
 
   return new Promise<void>((resolve, reject) => {
     const args = ['x', '-o+', '-y', rarPath, tempDir + path.sep];
-    const child = execFile(unrarPath, args, { maxBuffer: 50 * 1024 * 1024 }, (error, stdout, stderr) => {
+    let cancelPollTimer: NodeJS.Timeout | null = null;
+    let cancelled = false;
+
+    const child = execFile(unrarPath, args, { maxBuffer: 50 * 1024 * 1024 }, (error, _stdout, stderr) => {
+      if (cancelPollTimer) {
+        clearInterval(cancelPollTimer);
+        cancelPollTimer = null;
+      }
+      if (cancelled) {
+        reject(new Error('ANALYSIS_CANCELLED'));
+        return;
+      }
       if (error) {
         reject(new Error(`UnRAR extraction failed: ${error.message}\n${stderr}`));
       } else {
@@ -780,6 +791,20 @@ async function extractRar(
         resolve();
       }
     });
+
+    // Poll the cancel flag while UnRAR.exe runs as a single external
+    // process — there's no per-entry loop inside Node for us to
+    // intersperse a check into, so a 250 ms timer is the cheapest way
+    // to make Cancel actually stop the extraction within a quarter of
+    // a second. SIGTERM lets UnRAR.exe clean up; the callback above
+    // observes the `cancelled` flag and rejects with ANALYSIS_CANCELLED
+    // so the catch block in analysis:run reaps the partial tempDir.
+    cancelPollTimer = setInterval(() => {
+      if (isAnalysisCancelled() && !cancelled) {
+        cancelled = true;
+        try { child.kill('SIGTERM'); } catch { /* already exited */ }
+      }
+    }, 250);
 
     let lineCount = 0;
     child.stdout?.on('data', (data: string) => {
@@ -1179,19 +1204,31 @@ async function extractLargeZip(
   
   for (const file of directory.files) {
     if (file.type === 'Directory') continue;
-    
+
+    // Honour the analysis-cancel flag set by the user clicking Cancel
+    // on the extraction progress modal. Without this check the loop
+    // happily extracts all ~7,000 files of a 50 GB Takeout AFTER the
+    // user has hit Cancel — and surfaces a misleading "Source added"
+    // success modal half an hour later. Throwing ANALYSIS_CANCELLED
+    // lets the catch block in analysis:run clean up the partial
+    // tempDir and return { success: false, cancelled: true } so the
+    // renderer can drop the success path entirely.
+    if (isAnalysisCancelled()) {
+      throw new Error('ANALYSIS_CANCELLED');
+    }
+
     const outputPath = path.join(tempDir, file.path);
     const outputDir = path.dirname(outputPath);
-    
+
     fs.mkdirSync(outputDir, { recursive: true });
-    
+
     await new Promise<void>((resolve, reject) => {
       file.stream()
         .pipe(fs.createWriteStream(outputPath))
         .on('finish', resolve)
         .on('error', reject);
     });
-    
+
     extracted++;
     if (extracted % 50 === 0) {
       onProgress?.(
