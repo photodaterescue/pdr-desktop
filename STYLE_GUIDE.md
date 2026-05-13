@@ -68,6 +68,29 @@ light and dark themes. The point is to never write `text-foreground/40`
 ad-hoc again. If a piece of copy needs to be muted, it's `text-body-muted`
 or `text-caption` — never a freehand opacity.
 
+## Discouraged-option pattern — when you must offer a choice you'd rather the user didn't take
+
+Sometimes a modal has to *offer* a path that almost no user should pick (advanced fallbacks, "set up a new library instead of fixing the existing one", "skip this safety step"). The option needs to exist for the rare valid use case, but lavender text would call out to the user as a normal CTA.
+
+For these, override `Button variant="link"` to use the muted foreground colour instead of the lavender primary:
+
+```tsx
+<Button variant="link" className="text-muted-foreground hover:text-foreground px-0 h-auto">
+  Set up a new library here instead
+</Button>
+```
+
+The colour matches the surrounding body copy (so the option visually blends in, not stands out), the underline is still there on hover, and the button is still keyboard-focusable. This is the **only** sanctioned text-colour override on a `link` variant.
+
+Use this for:
+- Reluctant advanced paths in confirmation modals
+- "Soft dismiss" / "remind me later" / "do it later" options
+- Any inline link you'd rather the user didn't click but legally / functionally must offer
+
+Don't use this for:
+- Cancel buttons (those go to `variant="secondary"`)
+- Actually-useful secondary actions (those go to `variant="secondary"` or `variant="link"` without the override)
+
 ## Things to never do again
 
 - ❌ `<Button className="border-primary/30 text-primary">` — pick a tier.

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, AlertTriangle, Loader2, Plug, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 // LibraryDriveOfflineModal — calmly surfaces the case where PDR's
 // configured Library Drive isn't currently reachable on disk (drive
@@ -144,38 +145,47 @@ export function LibraryDriveOfflineModal({
             <Plug className="w-4 h-4 mr-2" /> Change Library Drive
           </Button>
 
-          {/* Advanced — reluctant new-library path. Visibly secondary
-              vocabulary, framed so users see this isn't the normal way
-              forward unless they consciously want a fresh start. The
-              tooltip carries the "most people get the best experience
-              keeping a single library" framing from the design memo. */}
+          {/* Advanced — reluctant new-library path. Uses the
+              style-guide's "discouraged-option" pattern (variant="link"
+              + text-muted-foreground override) so the option exists but
+              visually blends in with body copy rather than calling out
+              to the user as a normal CTA. Tooltip carries the "most
+              people get the best experience keeping a single library"
+              framing from the design memo, via IconTooltip (NOT the
+              native title attribute). */}
           <div className="pt-2 border-t border-border">
             <p className="text-caption uppercase tracking-wider mb-1.5">Advanced</p>
             <p className="text-caption mb-1.5">
               Want to use a different drive as your library going forward, separate from your existing one?
             </p>
-            <Button
-              onClick={onSetUpNewLibrary}
-              disabled={isRetrying}
-              variant="link"
-              className="px-0 h-auto"
-              title="Most people get the best experience keeping a single library. Photos from all your libraries stay unified in PDR's views, but each drive must be connected to open the original files."
+            <IconTooltip
+              label="Most people get the best experience keeping a single library. Photos from all your libraries stay unified in PDR's views, but each drive must be connected to open the original files."
+              side="top"
             >
-              Set up a new library here instead
-            </Button>
+              <Button
+                onClick={onSetUpNewLibrary}
+                disabled={isRetrying}
+                variant="link"
+                className="px-0 h-auto text-muted-foreground hover:text-foreground"
+              >
+                Set up a new library here instead
+              </Button>
+            </IconTooltip>
           </div>
 
           {/* Soft acknowledged dismiss — distinct from a blank X close.
               The user is making an informed deferral ("I know, later")
-              rather than just clicking past the popup. We suppress
-              re-opening on subsequent in-session triggers so the user
-              isn't pestered for the rest of the session. */}
+              rather than just clicking past the popup. Same
+              discouraged-option pattern as above — we want the option
+              available but visually de-emphasised so users who
+              should retry / change drive aren't pulled toward
+              defer-and-forget. */}
           <div className="pt-2 border-t border-border">
             <Button
               onClick={onConnectLater}
               disabled={isRetrying}
               variant="link"
-              className="w-full h-9 justify-center"
+              className="w-full h-9 justify-center text-muted-foreground hover:text-foreground"
             >
               Connect Library Drive later
             </Button>

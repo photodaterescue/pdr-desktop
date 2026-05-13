@@ -2477,22 +2477,42 @@ return (
         onClose={() => setLibraryOfflineOpen(false)}
         onChangeLibraryDrive={() => {
           setLibraryOfflineOpen(false);
-          // handleChangeDestination is defined inside DashboardPanel
-          // (different scope). Dispatching a custom event lets the
-          // DashboardPanel listen for it and open its own picker —
-          // same flow as clicking "Change Library Drive" on the
-          // Output card. No second code path to drift.
-          window.dispatchEvent(new CustomEvent('pdr:openChangeDestination'));
+          // The dashboard's handleChangeDestination flow lives inside
+          // DashboardPanel, which isn't mounted when the workspace is
+          // empty (no sources yet). So we open the folder picker
+          // directly at Workspace level using the existing
+          // FolderBrowserModal instance (already rendered ~line 2345)
+          // and a callback that updates the workspace-level
+          // destinationPath state. Equivalent outcome to clicking the
+          // Output card's button on the dashboard, without depending
+          // on DashboardPanel being mounted.
+          setFolderBrowserCallback(() => async (pickedPath: string) => {
+            const { getDiskSpace } = await import('@/lib/electron-bridge');
+            setDestinationPath(pickedPath);
+            const diskInfo = await getDiskSpace(pickedPath);
+            setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
+            setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+            toast.success('Library Drive updated.');
+          });
+          setShowFolderBrowser(true);
         }}
         onSetUpNewLibrary={() => {
           setLibraryOfflineOpen(false);
-          // Reluctant new-library path. Same underlying picker as the
-          // Change Library Drive option — the difference is in framing
-          // for the user, not in implementation. When the user picks a
-          // new drive, that becomes destinationPath; whether the new
-          // drive holds existing PDR data or is a clean slate is
-          // determined by what's actually there.
-          window.dispatchEvent(new CustomEvent('pdr:openChangeDestination'));
+          // Same picker as Change Library Drive — difference is in the
+          // framing for the user (reluctant advanced new-library path
+          // vs. swap to a different existing drive), not the mechanism.
+          // Future improvement when v2.2 parallel-structures ships:
+          // this could explicitly create a new sidecar at the picked
+          // location rather than just swapping destinationPath.
+          setFolderBrowserCallback(() => async (pickedPath: string) => {
+            const { getDiskSpace } = await import('@/lib/electron-bridge');
+            setDestinationPath(pickedPath);
+            const diskInfo = await getDiskSpace(pickedPath);
+            setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
+            setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+            toast.success('New Library Drive set.');
+          });
+          setShowFolderBrowser(true);
         }}
         onConnectLater={() => {
           setLibraryOfflineOpen(false);
@@ -3743,20 +3763,6 @@ function DashboardPanel({
       setDestinationTotalGB(4000);
     }
   };
-
-  // Open the Change-Library-Drive picker in response to a custom
-  // event fired from outside this component's scope (notably the
-  // LibraryDriveOfflineModal at workspace top level). Reuses
-  // handleChangeDestination so both paths land in the same flow —
-  // no chance for divergence between the Output card's button and
-  // the offline modal's button. Declared AFTER handleChangeDestination
-  // so the closure has a valid reference.
-  useEffect(() => {
-    const handler = () => { handleChangeDestination(); };
-    window.addEventListener('pdr:openChangeDestination', handler);
-    return () => window.removeEventListener('pdr:openChangeDestination', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleDestBrowserSelect = async (selectedPath: string) => {
     setShowDestBrowser(false);
