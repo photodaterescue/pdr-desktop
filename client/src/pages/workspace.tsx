@@ -110,6 +110,7 @@ import { TreesView } from "@/components/trees/TreesView";
 import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
+import { LibraryDriveOfflineModal } from "@/components/LibraryDriveOfflineModal";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -486,6 +487,34 @@ useEffect(() => {
 
 const [showLicenseRequired, setShowLicenseRequired] = useState(false);
 const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
+// Library-Drive-offline modal — surfaced when the persisted
+// destinationPath doesn't resolve on disk (drive unplugged, NAS
+// offline, USB asleep). Drives the calm "Library Drive isn't
+// connected" experience instead of the raw ENOENT Jane received.
+const [libraryOfflineOpen, setLibraryOfflineOpen] = useState(false);
+const [libraryOfflinePath, setLibraryOfflinePath] = useState<string | null>(null);
+
+// On Workspace mount, ask main whether the configured Library
+// Drive currently resolves on disk. If not, open the offline modal
+// proactively — before the user adds a source and hits the cryptic
+// ENOENT that confused Jane. destinationPath of null is the
+// first-run state and is NOT an error.
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const res = await (window as any).pdr?.library?.checkDestinationOnline?.();
+      if (cancelled) return;
+      if (res?.success && res.data?.destinationPath && !res.data.online) {
+        setLibraryOfflinePath(res.data.destinationPath);
+        setLibraryOfflineOpen(true);
+      }
+    } catch {
+      // Best-effort — never block Workspace mount on the precheck.
+    }
+  })();
+  return () => { cancelled = true; };
+}, []);
 // `license` (the full LicenseStatus) + `storedLicenseKey` are needed
 // alongside `isLicensed` so the Free Trial file counter knows
 // whether to tick after each Fix run, and which key to send to the
@@ -1502,6 +1531,13 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
 		  await playCompletionSound();
 		  await flashTaskbar();
 		}
+      } else if (result.code === 'DESTINATION_OFFLINE') {
+        // The Library Drive in the user's persisted settings isn't
+        // reachable on disk right now (unplugged, NAS offline, USB
+        // asleep). Replace the cryptic ENOENT Jane received with a
+        // calm modal that explains the state + offers Retry / Change.
+        setLibraryOfflinePath(result.details?.destinationPath ?? null);
+        setLibraryOfflineOpen(true);
       } else if (result.code === 'NO_TEMP_SPACE' && result.details && finalType === 'zip') {
         // Pre-extract resolver couldn't find a drive with enough room.
         // Surface the smart-prompt — user picks a different drive and
@@ -2424,6 +2460,35 @@ return (
           }}
         />
       )}
+
+      <LibraryDriveOfflineModal
+        isOpen={libraryOfflineOpen}
+        destinationPath={libraryOfflinePath}
+        onClose={() => setLibraryOfflineOpen(false)}
+        onChangeLibraryDrive={() => {
+          setLibraryOfflineOpen(false);
+          // Reuse the existing Dashboard Change-Library-Drive flow so
+          // users land in the same picker they'd use from the Output
+          // card. No separate code path; no chance the two flows
+          // drift apart.
+          handleChangeDestination();
+        }}
+        onRetry={async () => {
+          try {
+            const res = await (window as any).pdr?.library?.checkDestinationOnline?.();
+            if (res?.success) {
+              if (res.data?.destinationPath && !res.data.online) {
+                setLibraryOfflinePath(res.data.destinationPath);
+                return false;
+              }
+              return true;
+            }
+            return false;
+          } catch {
+            return false;
+          }
+        }}
+      />
 
       {showReportProblem && (
         <ReportProblemModal

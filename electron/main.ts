@@ -2160,6 +2160,36 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
   let claimedExtractInFlight = false;
 
   try {
+    // Destination-online precheck. v2.0.x bug Terry reproduced
+    // 2026-05-13: PDR remembers the Library Drive path in settings
+    // across sessions, but never verifies the drive is actually
+    // mounted before kicking off operations that write to it.
+    // Result: if the user opens PDR with their Library Drive
+    // unplugged (or with a path remembered from a previous USB
+    // that's gone), analysis:run proceeds, eventually calls
+    // fs.mkdirSync('<missing-drive>:\\...\\PDR_Temp\\...') and
+    // surfaces a cryptic 'ENOENT: no such file or directory, mkdir
+    // ...takeout-...' that confused Jane for days. Catch it here
+    // with a clean structured error code so the renderer can drive
+    // a calm modal ("Library Drive isn't connected — Retry / Change
+    // Library Drive") instead of leaking the raw ENOENT.
+    try {
+      const destinationPath = (() => { try { return getSettings()?.destinationPath ?? null; } catch { return null; } })();
+      if (destinationPath && !fs.existsSync(destinationPath)) {
+        throw Object.assign(
+          new Error(`Library Drive at ${destinationPath} isn't connected.`),
+          { code: 'DESTINATION_OFFLINE', destinationPath },
+        );
+      }
+    } catch (precheckErr: any) {
+      if (precheckErr?.code === 'DESTINATION_OFFLINE') {
+        throw precheckErr;
+      }
+      // Anything else in the precheck (settings read failure, etc.)
+      // we swallow and let the regular flow proceed — defensive
+      // belt rather than a hard gate.
+    }
+
     // Hard one-large-zip-at-a-time gate. Two concurrent pre-extracts
     // can flood a single drive in minutes; this refuses the second
     // one at the IPC layer so the renderer can show a friendly
@@ -4445,6 +4475,30 @@ ipcMain.handle('library:status', async () => {
 ipcMain.handle('library:detectSidecar', async (_event, libraryRoot: string) => {
   try {
     return { success: true, data: detectSidecar(libraryRoot) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Proactive precheck called by the renderer on Workspace mount: does
+// the user's currently-configured Library Drive resolve on disk right
+// now? If not, the renderer drives the calm "Library Drive isn't
+// connected" modal instead of waiting for the next analysis:run to
+// fail. destinationPath of null is not an error — it just means the
+// user hasn't picked a Library Drive yet (first-run state).
+ipcMain.handle('library:checkDestinationOnline', async () => {
+  try {
+    const destinationPath = (() => { try { return getSettings()?.destinationPath ?? null; } catch { return null; } })();
+    if (!destinationPath) {
+      return { success: true, data: { online: true, destinationPath: null } };
+    }
+    return {
+      success: true,
+      data: {
+        online: fs.existsSync(destinationPath),
+        destinationPath,
+      },
+    };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

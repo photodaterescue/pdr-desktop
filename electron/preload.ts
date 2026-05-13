@@ -161,6 +161,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     status: () => ipcRenderer.invoke('library:status'),
     detectSidecar: (libraryRoot: string) => ipcRenderer.invoke('library:detectSidecar', libraryRoot),
     detectDriveType: (libraryRoot: string) => ipcRenderer.invoke('library:detectDriveType', libraryRoot),
+    // Quick fs.existsSync check on the persisted destinationPath —
+    // used by the renderer on Workspace mount to surface the
+    // "Library Drive isn't connected" modal proactively, before any
+    // IPC that touches the drive fails cryptically.
+    checkDestinationOnline: () => ipcRenderer.invoke('library:checkDestinationOnline'),
     attachAsNew: (opts: { libraryRoot: string; licenseKey: string; deviceName: string; snapshotMode?: 'none' | 'recent' | 'all' }) =>
       ipcRenderer.invoke('library:attachAsNew', opts),
     attachFromSidecar: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>
