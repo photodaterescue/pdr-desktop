@@ -130,6 +130,24 @@ interface Source {
   duplicatesRemoved?: number;
 }
 
+// Fires cleanup for every source's extracted temp dir. Used by any flow
+// that clears the source list in bulk (clearSourcesAfterFix, "no remember
+// sources" startup wipe, the pending-clear branch in handleAddSource) so
+// pre-extracted temp dirs don't outlive the source list. Failures are
+// logged rather than swallowed — orphaned temp dirs silently eat disk
+// space AND trip the 55 GB pre-extract cap on the next session, so a
+// hidden failure here is the bug Terry hit when he found stale folders
+// in PDR_Temp after sources had been cleared.
+function reapTempDirsForSources(toReap: Source[]): void {
+  for (const src of toReap) {
+    if (src.path) {
+      cleanupTempDirForSource(src.path).catch((err: unknown) => {
+        console.warn('[Workspace] cleanupTempDirForSource failed for', src.path, err);
+      });
+    }
+  }
+}
+
 interface AnalysisProgress {
   current: number;
   total: number;
@@ -371,6 +389,11 @@ useEffect(() => {
   // Listen for clear sources event from post-fix prompt
   useEffect(() => {
     const handleClearSources = () => {
+      // User-initiated bulk clear → reap each source's extracted temp
+      // dir before wiping the list. Without this, orphan temp dirs
+      // pile up in PDR_Temp and silently consume the 55 GB pre-extract
+      // budget on the next session.
+      reapTempDirsForSources(sources);
       setSources([]);
       localStorage.removeItem("pdr-sources");
       localStorage.removeItem("pdr-source-analysis-results");
@@ -572,6 +595,19 @@ const handleActivateLicense = () => {
   useEffect(() => {
     getSettings().then(async (settings) => {
       if (!settings.rememberSources) {
+        // Read the previously-persisted sources from localStorage BEFORE
+        // clearing them, so we can reap any extracted temp dirs that
+        // belonged to them. Otherwise this branch (which fires on every
+        // launch when "remember sources" is off) silently leaves a
+        // growing pile of orphan temp dirs in PDR_Temp.
+        try {
+          const saved = JSON.parse(localStorage.getItem('pdr-sources') || '[]') as Source[];
+          if (Array.isArray(saved) && saved.length > 0) {
+            reapTempDirsForSources(saved);
+          }
+        } catch (err) {
+          console.warn('[Workspace] could not parse pdr-sources for temp cleanup on startup:', err);
+        }
         setSources([]);
         localStorage.removeItem("pdr-sources");
         localStorage.removeItem("pdr-source-analysis-results");
@@ -1101,7 +1137,9 @@ const handleActivateLicense = () => {
     // during analyse — without this, removing a source leaves its
     // ~50 GB extraction sitting on the C: drive until app quit.
     if (activeSource.path) {
-      cleanupTempDirForSource(activeSource.path).catch(() => { /* best-effort */ });
+      cleanupTempDirForSource(activeSource.path).catch((err: unknown) => {
+        console.warn('[Workspace] cleanupTempDirForSource failed during handleRemoveSource for', activeSource.path, err);
+      });
     }
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
@@ -1130,7 +1168,9 @@ const handleActivateLicense = () => {
     // discards the active source, so any pre-extracted ~50 GB on the
     // temp drive should go with it.
     if (activeSource.path) {
-      cleanupTempDirForSource(activeSource.path).catch(() => { /* best-effort */ });
+      cleanupTempDirForSource(activeSource.path).catch((err: unknown) => {
+        console.warn('[Workspace] cleanupTempDirForSource failed during handleChangeSource for', activeSource.path, err);
+      });
     }
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
     setSources(updatedSources);
@@ -1155,6 +1195,11 @@ const handleActivateLicense = () => {
     // If sources are pending clear from a previous fix, clear them now
     if (pendingSourceClearRef.current) {
       pendingSourceClearRef.current = false;
+      // Reap each pending-clear source's extracted temp dir before wiping
+      // the list — the user implicitly told us they're done with these
+      // when they kicked off a new fix or added a new source after one
+      // completed with clearSourcesAfterFix on.
+      reapTempDirsForSources(sources);
       setSources([]);
       localStorage.removeItem("pdr-sources");
       setSourceAnalysisResults({});
