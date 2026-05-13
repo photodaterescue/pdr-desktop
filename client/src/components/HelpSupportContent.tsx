@@ -232,8 +232,8 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                       <dd className="text-muted-foreground mt-0.5">Your complete, definitive library — every photo and video PDR has fixed for you, organised year by year on your Library Drive.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
-                      <dt className="font-medium text-foreground">Parallel structures</dt>
-                      <dd className="text-muted-foreground mt-0.5">Curated sub-libraries spun off your Master — Family-only, Friends-only, Pets-only — built from filtered queries so you don't sort by hand.</dd>
+                      <dt className="font-medium text-foreground">Parallel Libraries</dt>
+                      <dd className="text-muted-foreground mt-0.5">Curated sub-libraries spun off your Master — Family-only, Friends-only, Pets-only — built from filtered queries in Search &amp; Discovery so you don't sort by hand. Each Parallel Library lives on a drive of your choice and can be given away, hidden, or backed up independently. PDR keeps photos from every library unified in its views (S&amp;D, Memories, Trees, People Manager), but the original files live where you sent them — so each library drive needs to be connected to OPEN a full-size file, even though thumbnails stay visible offline thanks to a local cache.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Auto-catalog</dt>
@@ -397,6 +397,19 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                   <p className="font-medium text-foreground text-sm mb-1">Can I stop a Fix once it starts?</p>
                   <p className="text-sm text-muted-foreground">Yes. Partial output remains safe and usable. Completed work is still recorded in Reports History.</p>
+                </div>
+
+                <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                  <p className="font-medium text-foreground text-sm mb-1">What happens to my photos if I have libraries on more than one drive?</p>
+                  <p className="text-sm text-muted-foreground">
+                    Everything stays unified in PDR. Search &amp; Discovery, Memories, Trees and People Manager all show photos from every library you've ever fixed — regardless of which physical drive each one lives on. The clumping happens automatically when each Fix finishes; you don't need to re-scan or merge anything by hand.
+                    <br /><br />
+                    There are two things to know:
+                    <br />
+                    1. To <strong className="text-foreground font-medium">open</strong> a full-size photo (in the viewer, for example), the drive it lives on must be connected. Thumbnails stay visible offline thanks to a local cache, but the original file needs its drive plugged in.
+                    <br />
+                    2. AI face and tag analysis runs separately from the Fix. So a freshly-fixed library is immediately searchable and shows up in Memories, but face recognition catches up on the new photos a little later. Person assignments from your previous libraries still apply — the same face on a new drive ends up under the same Person you've already named.
+                  </p>
                 </div>
 
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">

@@ -287,7 +287,7 @@ export default function Home() {
               accent="blue"
               icon={<Sparkles className="w-5 h-5" />}
               title="Search & Discovery"
-              description="Find any photo by metadata, AI object tags or facial recognition — and build parallel structures to match."
+              description="Find any photo by metadata, AI object tags or facial recognition — and build Parallel Libraries to match."
               locked={cardsLocked}
               onClick={handleAppCard(() => navigate("/workspace?view=search"))}
             />

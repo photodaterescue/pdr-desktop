@@ -8110,6 +8110,17 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         </div>
 
                         <div>
+                          <p className="font-medium text-foreground mb-2">Keeping everything in one library (recommended)</p>
+                          <p className="mb-2">Most people get the best experience pointing every Fix at the <span className="font-medium text-foreground">same</span> Library Drive — all photos, faces, names and Trees in one place that travels between PCs.</p>
+                          <p className="mb-2">PDR <span className="font-medium text-foreground">does</span> support libraries on more than one drive (each Fix can target a different Library Drive), and the views inside PDR — Search &amp; Discovery, Memories, Trees, People Manager — unify everything regardless of which drive each batch went to. But there are two trade-offs worth knowing:</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>To <span className="font-medium text-foreground">open</span> a full-size photo you'll need its drive plugged in. Thumbnails stay visible offline thanks to a local cache, but the original file lives where the Fix sent it.</li>
+                            <li>More drives means more drives to keep plugged in, more "drive not connected" notices in views, and more drives to remember to back up.</li>
+                          </ul>
+                          <p className="mt-2">If you want a curated subset (a Family-only collection, a Wedding-only batch to share with a relative), the recommended way is <span className="font-medium text-foreground">Parallel Libraries</span> in Search &amp; Discovery — filter your one master library down to the photos you want, then spin them off onto any drive. Originals stay in your main Library Drive untouched.</p>
+                        </div>
+
+                        <div>
                           <p className="font-medium text-foreground mb-2">Workflow Checklist</p>
                           <div className="space-y-2">
                             <div className="flex items-center gap-3 p-2 bg-secondary/30 rounded-lg">

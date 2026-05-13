@@ -3172,14 +3172,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <ArrowRight className="w-3.5 h-3.5 text-primary" />
-                    <p className="text-xs font-semibold text-foreground">Parallel Structures — the killer feature</p>
+                    <p className="text-xs font-semibold text-foreground">Parallel Libraries — the killer feature</p>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Once you've narrowed down a set — every kids' summer photo, every sunset from a particular trip,
                     your top 200 wedding shots — PDR can spin off a separate Library containing JUST those photos, on
                     a drive of your choice. Branch them off as a private archive, copy them to a memory stick for a
                     relative, or keep them alongside the main library as a curated highlight reel. Originals stay
-                    safe in your main Library Drive; the parallel structure is yours to give, hide, or back up
+                    safe in your main Library Drive; the Parallel Library is yours to give, hide, or back up
                     independently.
                   </p>
                 </div>
@@ -3322,7 +3322,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     </button>
                   </IconTooltip>
                   <IconTooltip
-                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Structures uses the same copy engine as the Fix.' : 'Mirror the selected files into a parallel folder structure'}
+                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Libraries use the same copy engine as the Fix.' : 'Mirror the selected files into a Parallel Library'}
                     side="top"
                   >
                     <button
@@ -3334,7 +3334,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       className="text-xs font-medium text-white bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
                     >
                       <Copy className="w-3 h-3" />
-                      Create Parallel Structure
+                      Create Parallel Library
                     </button>
                   </IconTooltip>
                   <button

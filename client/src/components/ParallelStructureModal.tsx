@@ -195,7 +195,7 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold">
-                    {phase === 'complete' ? 'Structure Created' : phase === 'running' ? 'Creating Structure...' : 'Create Parallel Structure'}
+                    {phase === 'complete' ? 'Parallel Library Created' : phase === 'running' ? 'Creating Parallel Library...' : 'Create Parallel Library'}
                   </h2>
                   <p className="text-xs text-muted-foreground">
                     {files.length} file{files.length !== 1 ? 's' : ''} selected ({formatBytes(totalSize)})
@@ -227,7 +227,7 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                           <p className="text-xs text-foreground font-mono truncate" title={sourceLibraryPath}>{sourceLibraryPath}</p>
                           {sourceDriveLetter && (
                             <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
-                              Most users keep the parallel structure on the same drive ({sourceDriveLetter}) for speed — but you can pick any drive (memory stick, external HDD, NAS). Use the Drive Advisor to see which drives can fit this batch.
+                              Most users keep the Parallel Library on the same drive ({sourceDriveLetter}) for speed — but you can pick any drive (memory stick, external HDD, NAS). Use the Drive Advisor to see which drives can fit this batch.
                             </p>
                           )}
                         </div>
