@@ -31,6 +31,13 @@ interface LibraryDriveOfflineModalProps {
   destinationPath: string | null;
   onClose: () => void;
   onChangeLibraryDrive: () => void;
+  /** Reluctant advanced option — set up a brand-new library on a
+   *  different drive (effectively the same picker as Change Library
+   *  Drive, but framed for users who consciously want a fresh start). */
+  onSetUpNewLibrary: () => void;
+  /** Soft, acknowledged dismiss — user is aware they need to plug
+   *  the drive in but is choosing to defer until later this session. */
+  onConnectLater: () => void;
   /** Returns true if the drive is now reachable, false otherwise. */
   onRetry: () => Promise<boolean>;
 }
@@ -40,6 +47,8 @@ export function LibraryDriveOfflineModal({
   destinationPath,
   onClose,
   onChangeLibraryDrive,
+  onSetUpNewLibrary,
+  onConnectLater,
   onRetry,
 }: LibraryDriveOfflineModalProps) {
   const [isRetrying, setIsRetrying] = useState(false);
@@ -134,6 +143,43 @@ export function LibraryDriveOfflineModal({
           >
             <Plug className="w-4 h-4 mr-2" /> Change Library Drive
           </Button>
+
+          {/* Advanced — reluctant new-library path. Visibly secondary
+              vocabulary, framed so users see this isn't the normal way
+              forward unless they consciously want a fresh start. The
+              tooltip carries the "most people get the best experience
+              keeping a single library" framing from the design memo. */}
+          <div className="pt-2 border-t border-border">
+            <p className="text-caption uppercase tracking-wider mb-1.5">Advanced</p>
+            <p className="text-caption mb-1.5">
+              Want to use a different drive as your library going forward, separate from your existing one?
+            </p>
+            <Button
+              onClick={onSetUpNewLibrary}
+              disabled={isRetrying}
+              variant="link"
+              className="px-0 h-auto"
+              title="Most people get the best experience keeping a single library. Photos from all your libraries stay unified in PDR's views, but each drive must be connected to open the original files."
+            >
+              Set up a new library here instead
+            </Button>
+          </div>
+
+          {/* Soft acknowledged dismiss — distinct from a blank X close.
+              The user is making an informed deferral ("I know, later")
+              rather than just clicking past the popup. We suppress
+              re-opening on subsequent in-session triggers so the user
+              isn't pestered for the rest of the session. */}
+          <div className="pt-2 border-t border-border">
+            <Button
+              onClick={onConnectLater}
+              disabled={isRetrying}
+              variant="link"
+              className="w-full h-9 justify-center"
+            >
+              Connect Library Drive later
+            </Button>
+          </div>
         </div>
       </motion.div>
     </div>

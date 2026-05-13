@@ -493,13 +493,23 @@ const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
 // connected" experience instead of the raw ENOENT Jane received.
 const [libraryOfflineOpen, setLibraryOfflineOpen] = useState(false);
 const [libraryOfflinePath, setLibraryOfflinePath] = useState<string | null>(null);
+// Session-only "connect later" acknowledgement. When the user
+// explicitly defers (via the Connect Library Drive later button),
+// we stop proactively re-opening the modal for the rest of this
+// session — they know, they've chosen to come back to it. A reactive
+// open (e.g. user tries to add a source and we hit DESTINATION_OFFLINE)
+// still surfaces the modal because that's a direct user-initiated
+// action that needs the drive.
+const [libraryOfflineDeferred, setLibraryOfflineDeferred] = useState(false);
 
 // On Workspace mount, ask main whether the configured Library
 // Drive currently resolves on disk. If not, open the offline modal
 // proactively — before the user adds a source and hits the cryptic
 // ENOENT that confused Jane. destinationPath of null is the
-// first-run state and is NOT an error.
+// first-run state and is NOT an error. Skipped when the user has
+// chosen "Connect Library Drive later" earlier this session.
 useEffect(() => {
+  if (libraryOfflineDeferred) return;
   let cancelled = false;
   (async () => {
     try {
@@ -514,7 +524,7 @@ useEffect(() => {
     }
   })();
   return () => { cancelled = true; };
-}, []);
+}, [libraryOfflineDeferred]);
 // `license` (the full LicenseStatus) + `storedLicenseKey` are needed
 // alongside `isLicensed` so the Free Trial file counter knows
 // whether to tick after each Fix run, and which key to send to the
@@ -2467,11 +2477,26 @@ return (
         onClose={() => setLibraryOfflineOpen(false)}
         onChangeLibraryDrive={() => {
           setLibraryOfflineOpen(false);
-          // Reuse the existing Dashboard Change-Library-Drive flow so
-          // users land in the same picker they'd use from the Output
-          // card. No separate code path; no chance the two flows
-          // drift apart.
-          handleChangeDestination();
+          // handleChangeDestination is defined inside DashboardPanel
+          // (different scope). Dispatching a custom event lets the
+          // DashboardPanel listen for it and open its own picker —
+          // same flow as clicking "Change Library Drive" on the
+          // Output card. No second code path to drift.
+          window.dispatchEvent(new CustomEvent('pdr:openChangeDestination'));
+        }}
+        onSetUpNewLibrary={() => {
+          setLibraryOfflineOpen(false);
+          // Reluctant new-library path. Same underlying picker as the
+          // Change Library Drive option — the difference is in framing
+          // for the user, not in implementation. When the user picks a
+          // new drive, that becomes destinationPath; whether the new
+          // drive holds existing PDR data or is a clean slate is
+          // determined by what's actually there.
+          window.dispatchEvent(new CustomEvent('pdr:openChangeDestination'));
+        }}
+        onConnectLater={() => {
+          setLibraryOfflineOpen(false);
+          setLibraryOfflineDeferred(true);
         }}
         onRetry={async () => {
           try {
@@ -2481,6 +2506,9 @@ return (
                 setLibraryOfflinePath(res.data.destinationPath);
                 return false;
               }
+              // Drive's back — confirm to the user with a brief toast
+              // so they know the next step is theirs (add a source).
+              toast.success('Library Drive connected — you can add sources now.');
               return true;
             }
             return false;
@@ -3715,6 +3743,20 @@ function DashboardPanel({
       setDestinationTotalGB(4000);
     }
   };
+
+  // Open the Change-Library-Drive picker in response to a custom
+  // event fired from outside this component's scope (notably the
+  // LibraryDriveOfflineModal at workspace top level). Reuses
+  // handleChangeDestination so both paths land in the same flow —
+  // no chance for divergence between the Output card's button and
+  // the offline modal's button. Declared AFTER handleChangeDestination
+  // so the closure has a valid reference.
+  useEffect(() => {
+    const handler = () => { handleChangeDestination(); };
+    window.addEventListener('pdr:openChangeDestination', handler);
+    return () => window.removeEventListener('pdr:openChangeDestination', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDestBrowserSelect = async (selectedPath: string) => {
     setShowDestBrowser(false);
