@@ -260,6 +260,19 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // showing either face until we know which one is correct.
   const [initialDataLoaded, setInitialDataLoaded] = useState(false);
 
+  // Backup-state for the persistent "Back up DB" pill on the current
+  // Library Drive row. lastDbBackupAt is the canonical timestamp of
+  // the user's most recent Download Library DB success — null when
+  // they've never backed up. The pill renders an amber/red call to
+  // action against null and >30-day-old timestamps, a subtle green
+  // "Backed up Xd ago" otherwise. Clicking the pill opens the small
+  // explainer modal below. Backup flow is just handleExportDb +
+  // settings.set('lastDbBackupAt', new Date().toISOString()) on
+  // success — no new IPC surface area needed.
+  const [lastDbBackupAt, setLastDbBackupAt] = useState<string | null>(null);
+  const [showBackupExplainer, setShowBackupExplainer] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+
   const refreshStatus = async () => {
     try {
       const res = await (window as any).pdr?.library?.status();
@@ -369,6 +382,17 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // parallel getDriveDetails calls so the LDM rows show live state
   // without each row firing its own IPC on hover.
   const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
+  // Load the last-DB-backup timestamp from settings. Drives the
+  // persistent Back-up-DB pill state on the current Library Drive row.
+  const refreshLastDbBackupAt = async () => {
+    try {
+      const settings = await (window as any).pdr?.settings?.get?.();
+      setLastDbBackupAt(settings?.lastDbBackupAt ?? null);
+    } catch (e) {
+      console.warn('[LibraryPanel] lastDbBackupAt fetch failed:', e);
+    }
+  };
+
   const refreshSavedDestinations = async () => {
     try {
       const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
@@ -403,6 +427,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     setIsRefreshing(true);
     try {
       await Promise.all([
+        refreshLastDbBackupAt(),
         refreshStatus(),
         refreshSuggestion(),
         refreshDriveDetails(),
@@ -595,15 +620,29 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // syncResult (reusing the existing pill below the actions row).
   const handleExportDb = async () => {
     setSyncResult(null);
+    setIsBackingUp(true);
     try {
       const res = await (window as any).pdr?.library?.exportDb?.();
       if (res?.success && res.data?.path) {
         setSyncResult({ ok: true, message: `Library DB saved to ${res.data.path}` });
+        // Record the backup timestamp + clear any snooze so the
+        // pill on the drive row immediately reflects the success
+        // (state flips to "Backed up just now" / subtle green).
+        try {
+          const now = new Date().toISOString();
+          await (window as any).pdr?.settings?.set?.('lastDbBackupAt', now);
+          await (window as any).pdr?.settings?.set?.('dbBackupReminderSnoozedAt', null);
+          setLastDbBackupAt(now);
+        } catch (e) {
+          console.warn('[LibraryPanel] lastDbBackupAt write failed (non-fatal):', e);
+        }
       } else if (res?.error && res.error !== 'cancelled') {
         setSyncResult({ ok: false, message: res.error });
       }
     } catch (e) {
       setSyncResult({ ok: false, message: (e as Error).message });
+    } finally {
+      setIsBackingUp(false);
     }
   };
 
@@ -1437,10 +1476,49 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                             <Eye className="w-3 h-3" /> Read-only
                           </span>
                         )}
-                        {/* Recommended pill removed — the master-library
-                            banner above + the row's emerald tint already
-                            convey "this is the recommended drive". The
-                            pill was triple-signaling the same fact. */}
+                        {/* Persistent DB-backup pill. Only renders on the
+                            CURRENT Library Drive row — that's the only
+                            drive whose sidecar mirrors AppData, so it's
+                            the only one with a DB to back up offsite.
+                            Three visual states keyed off lastDbBackupAt:
+                              - null                    → amber "Back up DB"
+                              - older than 30 days      → amber "Backed up Xd ago"
+                              - within 30 days          → green  "Backed up Xd ago"
+                            Click opens the explainer modal which has the
+                            "Back up now" CTA (calls handleExportDb) and
+                            a "Snooze 30 days" link. Pill itself is
+                            always visible — it's the always-on surface
+                            Terry's Option 1 calls for. */}
+                        {drive.isCurrentLibraryDrive && (() => {
+                          const ms = lastDbBackupAt ? Date.now() - new Date(lastDbBackupAt).getTime() : null;
+                          const days = ms !== null ? Math.floor(ms / 86400000) : null;
+                          const isStale = days === null || days > 30;
+                          const label = days === null
+                            ? 'Back up DB'
+                            : days === 0
+                              ? 'Backed up today'
+                              : days === 1
+                                ? 'Backed up yesterday'
+                                : `Backed up ${days}d ago`;
+                          const pillClass = isStale
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 hover:bg-amber-200/80 dark:hover:bg-amber-900/60'
+                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-200/80 dark:hover:bg-emerald-900/60';
+                          const tooltip = isStale
+                            ? 'Click to learn why this matters and back up now'
+                            : 'Library DB is backed up. Click to back up again or learn more.';
+                          return (
+                            <IconTooltip label={tooltip} side="top">
+                              <button
+                                type="button"
+                                onClick={() => setShowBackupExplainer(true)}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label transition-colors cursor-pointer ${pillClass}`}
+                                data-testid="pill-db-backup"
+                              >
+                                <Download className="w-3 h-3" /> {label}
+                              </button>
+                            </IconTooltip>
+                          );
+                        })()}
                       </div>
 
                       {/* Col 4 — Files: stacked photo count + size +
@@ -1882,6 +1960,73 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // SAME z-50 as Radix tooltips (TooltipContent uses z-50 by default),
   // so tooltips inside the panel render ABOVE it on hover instead of
   // being clipped underneath — the bug we hit at zIndex 55.
+  // Backup explainer — the modal-over-modal that opens when the user
+  // clicks the persistent "Back up DB" pill on the current Library
+  // Drive row. Renders ON TOP of the LDM (does NOT replace it), so
+  // dismissing returns the user to exactly where they were. Premium
+  // pattern Terry has been asking for ("shouldn't this have been a
+  // modal over the LDM?"). Contains the full DB explainer + a Back-
+  // up-now CTA (calls handleExportDb, which now records the
+  // timestamp on success) + a Snooze link.
+  const renderBackupExplainer = () => {
+    const days = lastDbBackupAt ? Math.floor((Date.now() - new Date(lastDbBackupAt).getTime()) / 86400000) : null;
+    const stateLabel = days === null
+      ? 'You haven\'t backed up your library DB yet.'
+      : days === 0
+        ? 'Backed up earlier today.'
+        : days === 1
+          ? 'Backed up yesterday.'
+          : `Backed up ${days} days ago.`;
+    const handleSnooze = async () => {
+      try {
+        await (window as any).pdr?.settings?.set?.('dbBackupReminderSnoozedAt', new Date().toISOString());
+      } catch {}
+      setShowBackupExplainer(false);
+    };
+    return (
+      <div className="absolute inset-0 bg-black/[0.35] flex items-center justify-center p-6 z-10" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowBackupExplainer(false); }}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.15 }}
+          className="w-full max-w-md bg-background rounded-2xl shadow-2xl overflow-hidden border border-border"
+        >
+          {renderHeader('Back up your library DB', stateLabel, 'primary', 'left')}
+          <div className="px-6 pb-6 pt-2 space-y-3">
+            <div className="space-y-2.5 text-body-muted">
+              <p>
+                Your library DB is a single file holding every face, person, AI tag, date verdict, and Trees entry PDR has built up. Without it, your photos are just photos — every face, name, and tag disappears.
+              </p>
+              <p>
+                PDR mirrors the DB to your Library Drive automatically, so a separate offsite backup is the safety net for when this PC fails, is lost, or is stolen. Save the file somewhere off this PC — cloud storage, email, or another drive.
+              </p>
+            </div>
+            <Button
+              onClick={async () => { await handleExportDb(); setShowBackupExplainer(false); }}
+              variant="primary"
+              className="w-full h-12"
+              disabled={isBackingUp}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              {isBackingUp ? 'Saving...' : 'Back up now'}
+            </Button>
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleSnooze}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="link-snooze-backup"
+              >
+                Snooze 30 days
+              </button>
+              <Button onClick={() => setShowBackupExplainer(false)} variant="secondary" size="sm">Close</Button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
   return createPortal(
     <div className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
       <motion.div
@@ -1897,7 +2042,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         // made the loading state and confirmations feel oversized
         // (Terry: "this is too big" + "a lot of empty space"). The
         // modal now sizes per step.
-        className={`w-full ${step === 'status' ? 'max-w-4xl' : 'max-w-md'} max-h-[85vh] bg-background rounded-2xl shadow-2xl overflow-hidden border border-border flex flex-col`}
+        className={`relative w-full ${step === 'status' ? 'max-w-4xl' : 'max-w-md'} max-h-[85vh] bg-background rounded-2xl shadow-2xl overflow-hidden border border-border flex flex-col`}
       >
         {step === 'status' && renderStatus()}
         {step === 'set-up-confirmation' && renderSetUpConfirmation()}
@@ -1909,6 +2054,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         {step === 'processing' && renderProcessing()}
         {step === 'success' && renderSuccess()}
         {step === 'error' && renderError()}
+
+        {/* Backup explainer overlays the LDM (renderStatus) when the
+            user clicks the "Back up DB" pill. Stays inside the same
+            motion.div so the LDM is dimmed behind it; closing returns
+            the user to the LDM exactly where they were. Only mounted
+            on top of step === 'status' since that's the only step
+            where the pill is rendered. */}
+        {showBackupExplainer && step === 'status' && renderBackupExplainer()}
       </motion.div>
     </div>,
     document.body,

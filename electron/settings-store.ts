@@ -91,6 +91,23 @@ export interface PDRSettings {
    *  on "No thanks" silently shut off five different surfaces. */
   autoIndexAfterFix: boolean;
 
+  /** ISO timestamp of the most recent successful Download Library DB
+   *  (or any other offsite DB backup we surface). Drives the
+   *  persistent "Back up DB" pill on the LDM drive row + the
+   *  periodic-reminder cadence. null until the user has backed up
+   *  at least once. The pill renders as:
+   *    - amber + attention when null (never backed up)
+   *    - amber when older than 30 days
+   *    - subtle green when within 30 days
+   *  Updated by handleExportDb on success. */
+  lastDbBackupAt: string | null;
+
+  /** ISO timestamp the user dismissed the backup reminder. Reminder
+   *  re-surfaces 30 days after this. null when never snoozed.
+   *  Snoozing doesn't hide the pill (the pill is the always-visible
+   *  affordance) — it only suppresses the post-Fix banner nudge. */
+  dbBackupReminderSnoozedAt: string | null;
+
   /** Persisted Library Drive (destination) path. Sticky across sessions
    *  so users don't have to re-pick it on every launch — and so the
    *  Welcome screen can keep its app cards / Tour / Best Practices
@@ -163,6 +180,8 @@ export const optimisedDefaults: PDRSettings = {
   // Auto-index after Fix — Apple-style smart default. ON so every
   // Fix run feeds the search DB; user can opt out in Settings → S&D.
   autoIndexAfterFix: true,
+  lastDbBackupAt: null,
+  dbBackupReminderSnoozedAt: null,
 };
 
 // Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
@@ -227,6 +246,8 @@ export function getSettings(): PDRSettings {
     bypassLargeZipPreExtract: store.get('bypassLargeZipPreExtract', optimisedDefaults.bypassLargeZipPreExtract),
     destinationPath: store.get('destinationPath', optimisedDefaults.destinationPath),
     autoIndexAfterFix: store.get('autoIndexAfterFix', optimisedDefaults.autoIndexAfterFix),
+    lastDbBackupAt: store.get('lastDbBackupAt', optimisedDefaults.lastDbBackupAt),
+    dbBackupReminderSnoozedAt: store.get('dbBackupReminderSnoozedAt', optimisedDefaults.dbBackupReminderSnoozedAt),
   };
 }
 

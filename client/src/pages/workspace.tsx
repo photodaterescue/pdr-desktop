@@ -113,6 +113,7 @@ import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { LibraryDriveOfflineModal } from "@/components/LibraryDriveOfflineModal";
 import { LibraryDriveOfflineBanner } from "@/components/LibraryDriveOfflineBanner";
 import { AiOfferCard } from "@/components/AiOfferCard";
+import { DbBackupReminderCard } from "@/components/DbBackupReminderCard";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -4086,6 +4087,16 @@ function DashboardPanel({
             and stays out of the way otherwise. Shares the
             pdr-ai-prompt-dismissed flag with the existing S&D banner. */}
         <AiOfferCard surface="dashboard" />
+
+        {/* Library DB backup reminder — surfaces when the user has
+            a meaningful library (>=50 photos) AND either never backed
+            up OR last backup is >30 days old, AND they haven't
+            snoozed in the last 30 days. Complement to the persistent
+            "Back up DB" pill in the LDM: the pill is always visible
+            inside the LDM, this banner brings the same nudge to the
+            Dashboard where the user actually is. "Back up now" opens
+            the LDM (where the explainer + Back-up-now flow lives). */}
+        <DbBackupReminderCard />
 
         {/* Confidence Summary Section */}
         {hasSelection && (
