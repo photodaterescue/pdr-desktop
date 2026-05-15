@@ -8870,6 +8870,31 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.5" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.5</span>
+                        {appVersion === '2.0.5' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Library Drive Manager</strong> — a new home for every drive in your library. Click the Library pill in the top-right to see your current Library Drive, every other drive that holds indexed photos, free space at a glance, and switch between them in one place.</li>
+                        <li><strong className="text-foreground font-medium">"After Fix" settings tab</strong> — the toggles that decide what happens to your photos after a Fix (make them searchable, recognise people and content, automatically process new photos) now live in one tab. Each one's effect is explained where the decision is made, so no more guessing which toggle does what.</li>
+                        <li><strong className="text-foreground font-medium">Library DB backup reminder</strong> — your library's "memory" (faces, names, dates, Trees) lives in a single file PDR keeps for you. A new persistent indicator on your Library Drive row and a Dashboard reminder let you save a copy off this PC in one click — so a stolen or broken PC doesn't take your work with it.</li>
+                        <li><strong className="text-foreground font-medium">Smarter Library Drive switch</strong> — switching between Library Drives now safely keeps your current work as the source of truth and cleans up old drive sidecars behind the scenes. Fixed a hidden footgun where switching back to an old drive could replace your library with an out-of-date copy.</li>
+                        <li><strong className="text-foreground font-medium">Searchable Fixed photos by default</strong> — Fixed photos are now indexed automatically so they appear in Search &amp; Discovery, Memories, and Date Editor right away. The old pre-Fix prompt (one wrong click would silently disable five surfaces) is gone; opt-out lives in Settings → After Fix for the rare power user.</li>
+                        <li><strong className="text-foreground font-medium">Library Drive offline banner</strong> — when your external Library Drive is disconnected, PDR shows a calm banner with operation-specific guidance (Fix needs it, viewing photos needs it, editing dates needs it, but renaming PM persons still works) and an in-app fix path. No more cryptic ENOENT errors.</li>
+                        <li><strong className="text-foreground font-medium">Drive type at a glance in LDM</strong> — every drive row shows its interface (NVMe SSD, SATA HDD, USB SSD, etc.) so you can pick a fast drive as your Library Drive without having to benchmark anything.</li>
+                        <li><strong className="text-foreground font-medium">Concrete "Coming in v2.1" labels</strong> — locked features (Trees, Date Editor, Photo Format conversion) now say "Coming in v2.1" instead of the vague "Released shortly" so you know exactly which release to wait for.</li>
+                        <li><strong className="text-foreground font-medium">Premium Switch-Library-Drive confirmation</strong> — compact two-line confirmation showing exactly which drive you're switching to, with future Fixes going there and past Fixes staying where they are.</li>
+                        <li><strong className="text-foreground font-medium">AI recognition dependency hint</strong> — when AI recognition is on but Fixed-photo indexing is off, PDR now flags the limitation right where the decision is made — new Fixed photos won't be recognised unless indexed first.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.4" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
