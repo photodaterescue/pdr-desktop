@@ -1757,21 +1757,22 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // library here", with the photo count to prove nothing's lost.
   const renderDetectedEmpty = () => {
     const targetPath = pendingAction && 'libraryRoot' in pendingAction ? pendingAction.libraryRoot : '';
-    const showInternalAdvisory = !!unsafeReason;
     return (
       <>
         {/* Title-only header — the body has scannable bullet rows
-            instead of a prose subtitle. Terry's critique on the
-            previous prose subtitle: "you've written it like a love
-            story with paragraphs... shouldn't things be clearer to
-            see, so you can scan your eyes and know at a glance what
-            it is rather than having to commit to reading a paragraph?" */}
+            instead of a prose subtitle. */}
         {renderHeader('Switch your Library Drive?', undefined, 'primary', 'left')}
         <div className="px-6 pb-6 pt-2 space-y-3">
-          {/* Two-line at-a-glance summary. Checkmarks signal "this
-              is the deal, here's what happens" — the user takes in
-              both rows in under a second instead of parsing a
-              sentence. */}
+          {/* Two-line at-a-glance summary. The DB-backup advisory
+              that previously lived here was removed in v2.0.5 —
+              the Switch confirmation should focus on the switch
+              decision, not bolt on an unrelated maintenance reminder
+              the user has to dismiss to proceed. Per Terry's
+              "Option 1" resolution (2026-05-15), the DB-backup
+              advice gets its own permanent surface on the drive
+              row in v2.0.6 (persistent pill + expandable explainer
+              + periodic reminder), where it lives full-time rather
+              than vanishing after one confirmation. */}
           <div className="space-y-2 px-1">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-1 shrink-0" />
@@ -1786,31 +1787,6 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               </p>
             </div>
           </div>
-
-          {/* Internal-drive advisory. Terry's critique on the
-              previous treatment: "'This is an internal drive' reads
-              fucking boring... Internal drive is a status... I
-              wouldn't have thought it was a start of another
-              paragraph. If this is meant to be an instruction, then
-              make it look like an instruction." Now framed as
-              "Attention — back up your library DB" with the action
-              (which menu, where to put the backup) and the why
-              (PC breaks/gets stolen) plainly stated. Amber palette
-              + AlertTriangle icon make it visually distinct from
-              the green check rows above, so the user's eye treats
-              it as a different category of information rather than
-              another bullet point. */}
-          {showInternalAdvisory && (
-            <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Attention — back up your library DB</p>
-              </div>
-              <p className="text-body-muted ml-6">
-                Internal drives can fail with the PC. From the <span className="text-foreground font-medium">⋯ menu</span> on the drive row, download your library DB and keep a copy off this PC — cloud, email, or another drive.
-              </p>
-            </div>
-          )}
 
           <Button onClick={runPendingAction} variant="primary" className="w-full h-12">
             <Plug className="w-4 h-4 mr-2" /> Switch to this drive
