@@ -795,33 +795,73 @@ function isLocalDir(dir) {
  * every per-file read during the analysis loop that follows, so a
  * slow pick blows the analysis time out. Order of preference:
  *   1. The user's Library Drive (destinationPath) if it's local AND
- *      has enough headroom. Same physical disk as the eventual fix
- *      output → no cross-drive copy on completion, fastest analysis.
- *   2. %TEMP% (PDR_TEMP_ROOT) if it has enough headroom. This is the
- *      historic default; works fine when C: is roomy.
+ *      has enough headroom for BOTH extraction AND the post-Fix copy.
+ *      Same physical disk as the eventual fix output → no cross-drive
+ *      copy on completion, fastest analysis.
+ *   2. %TEMP% (PDR_TEMP_ROOT) if it has enough headroom for the
+ *      extraction AND the destination drive has separate headroom for
+ *      the post-Fix copy. This is the historic default; works fine
+ *      when C: is roomy.
  *   3. Failure case → caller surfaces a smart-prompt to the user
  *      asking them to pick a different temp location.
  *
- * Required headroom = zipSize × 1.2 + 1 GB safety margin. The 1.2x
- * accounts for the small inflation typical when an already-compressed
- * format (JPEG/MP4) is wrapped in a zip; the 1 GB safety prevents a
- * picker that's "just enough" from completely filling the drive and
- * tripping every other process on the system.
+ * Disk-space math (Terry's analysis 2026-05-15, customer report
+ * Elaine):
+ *   - Extraction puts the unpacked archive in `<root>/PDR_Temp/`,
+ *     consuming ≈ zipSize × 1.2 (the inflation typical when an
+ *     already-compressed format like JPEG/MP4 is wrapped in a zip).
+ *   - Fix THEN copies the same files into the year-folder structure
+ *     on the destination drive, consuming another ≈ zipSize × 1.0.
+ *   - When both live on the SAME drive (option 1), peak usage during
+ *     the Fix window is zipSize × 2.2.
+ *   - When extraction goes to %TEMP% on a different drive (option 2),
+ *     %TEMP% peaks at zipSize × 1.2; the destination drive peaks at
+ *     zipSize × 1.0 — but BOTH must have room.
+ *
+ * The previous version of this resolver (pre-2.0.6) only reserved
+ * zipSize × 1.2 + 1 GB on the destination drive. A 50 GB Takeout
+ * passed the check on a destination with 75 GB free, then the Fix
+ * copy ran out of room half-way through — the failure Elaine hit.
+ *
+ * Headroom is now drive-size-aware: max(MIN_HEADROOM, total × 5%)
+ * capped at MAX_HEADROOM. This protects small partitions from being
+ * filled to the brim AND avoids wasting massive over-allocation on
+ * very large drives.
  */
-const PRE_EXTRACT_HEADROOM_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
-const PRE_EXTRACT_INFLATION = 1.2;
+const EXTRACTION_INFLATION = 1.2; // PDR_Temp size ÷ zip size
+const POST_FIX_COPY_FACTOR = 1.0; // year-folder size ÷ zip size
+const MIN_HEADROOM_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
+const MAX_HEADROOM_BYTES = 20 * 1024 * 1024 * 1024; // 20 GB cap
+const HEADROOM_DRIVE_PCT = 0.05; // 5% of drive total
+function computeHeadroomBytes(totalBytes) {
+    if (totalBytes == null || !Number.isFinite(totalBytes) || totalBytes <= 0) {
+        return MIN_HEADROOM_BYTES;
+    }
+    const pctBased = Math.ceil(totalBytes * HEADROOM_DRIVE_PCT);
+    return Math.max(MIN_HEADROOM_BYTES, Math.min(pctBased, MAX_HEADROOM_BYTES));
+}
 function pickPreExtractDir(zipPath, destinationPath) {
     const zipSize = getZipFileSize(zipPath);
-    const neededBytes = Math.ceil(zipSize * PRE_EXTRACT_INFLATION) + PRE_EXTRACT_HEADROOM_BYTES;
+    const extractionBytes = Math.ceil(zipSize * EXTRACTION_INFLATION);
+    const copyBytes = Math.ceil(zipSize * POST_FIX_COPY_FACTOR);
+    // Fetch disk space (with totals) for both candidates up-front so the
+    // headroom math can scale per-drive.
     const destLocal = isLocalDir(destinationPath);
-    let destFree = null;
-    if (destinationPath && destLocal) {
-        const space = getDiskSpaceForDirSync(destinationPath);
-        if (space)
-            destFree = space.freeBytes;
-    }
-    // Prefer the destination drive when it qualifies.
-    if (destinationPath && destLocal && destFree != null && destFree >= neededBytes) {
+    const destSpace = (destinationPath && destLocal)
+        ? getDiskSpaceForDirSync(destinationPath)
+        : null;
+    const destFree = destSpace?.freeBytes ?? null;
+    const destTotal = destSpace?.totalBytes ?? null;
+    const tempSpace = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
+    const tempFree = tempSpace?.freeBytes ?? null;
+    const tempTotal = tempSpace?.totalBytes ?? null;
+    const destHeadroom = computeHeadroomBytes(destTotal);
+    const tempHeadroom = computeHeadroomBytes(tempTotal);
+    // ── Option 1: extract into the destination drive (same physical
+    // drive as the year-folder output). Combined need: extraction +
+    // copy + headroom. This is the path Elaine's case was missing.
+    const sameDriveNeeded = extractionBytes + copyBytes + destHeadroom;
+    if (destinationPath && destLocal && destFree != null && destFree >= sameDriveNeeded) {
         const baseDir = path.join(destinationPath, 'PDR_Temp');
         return {
             ok: true,
@@ -832,10 +872,19 @@ function pickPreExtractDir(zipPath, destinationPath) {
             tempFreeBytes: null,
         };
     }
-    // Fall back to %TEMP%.
-    const tempSpace = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
-    const tempFree = tempSpace?.freeBytes ?? null;
-    if (tempFree != null && tempFree >= neededBytes) {
+    // ── Option 2: extract into %TEMP% (system drive), copy across to
+    // the destination during the Fix. BOTH drives need to fit their
+    // respective portion. Previously the destination side was not
+    // checked at all — a roomy C: could pass the temp check while the
+    // destination ran out half-way through the copy.
+    const tempNeeded = extractionBytes + tempHeadroom;
+    const destNeededForCopy = copyBytes + destHeadroom;
+    const tempHasRoom = tempFree != null && tempFree >= tempNeeded;
+    const destHasRoom = destFree != null && destFree >= destNeededForCopy;
+    // If there's no destination at all, the "post-fix copy" check is
+    // moot — caller is in a pre-destination-pick flow.
+    const destCheckPasses = destinationPath == null || !destLocal || destHasRoom;
+    if (tempHasRoom && destCheckPasses) {
         return {
             ok: true,
             baseDir: PDR_TEMP_ROOT,
@@ -845,9 +894,14 @@ function pickPreExtractDir(zipPath, destinationPath) {
             tempFreeBytes: tempFree,
         };
     }
+    // Refusal — surface the combined "worst case" need so the smart-
+    // prompt picker shows the user a realistic number rather than the
+    // old extraction-only figure. neededBytes is the same-drive need;
+    // callers comparing against destFree see whether they're short by
+    // a little or a lot.
     return {
         ok: false,
-        neededBytes,
+        neededBytes: sameDriveNeeded,
         destinationPath,
         destinationLocal: destLocal,
         destinationFreeBytes: destFree,
