@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
@@ -25,6 +26,17 @@ import type { TourStep, TourMeta } from '@/components/ui/tour-overlay';
  *    and the title "Photo Date Rescue" moves to the horizontal center of the lavender bar
  */
 export function TitleBar() {
+  // Library pill is workspace-context. Hide it on the Welcome ("/")
+  // route — the post-LDM modals (Library Planner → DDA → folder
+  // picker) live inside DashboardPanel and aren't mounted on
+  // Welcome, so clicking through would silently dead-end. The
+  // Welcome screen is for entering the app, not configuring it.
+  // (Terry's call, 2026-05-16: "I think I want the library tab
+  // disabled in the welcome screen. This isn't the location to be
+  // using it anyhow.")
+  const location = useLocation();
+  const showLibraryPill = location.pathname !== '/';
+
   const [sidebarWidth, setSidebarWidth] = useState<number>(280);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof document === 'undefined') return false;
@@ -242,7 +254,7 @@ export function TitleBar() {
             uses useLicense() internally + listens for
             `pdr:trialUsageUpdate` to live-refresh after each Fix. */}
         <TrialCounterChip />
-        <LibraryStatusButton />
+        {showLibraryPill && <LibraryStatusButton />}
         <LicenseStatusBadge
           onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLicenseModal'))}
         />
