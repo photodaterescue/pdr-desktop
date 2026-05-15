@@ -9646,7 +9646,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     setAutoAddToSD('ask');
   };
 
-  const [settingsTab, setSettingsTab] = useState<'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
   const [folderStructureOpen, setFolderStructureOpen] = useState(false);
 
   // Backup list — fetched on demand when the user expands the Restore
@@ -9766,6 +9766,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           </button>
           <button type="button" className={tabClass('workspace')} onClick={() => setSettingsTab('workspace')} data-testid="tab-workspace">
             Workspace
+          </button>
+          <button type="button" className={tabClass('afterFix')} onClick={() => setSettingsTab('afterFix')} data-testid="tab-after-fix">
+            After Fix
           </button>
           <button type="button" className={tabClass('sd')} onClick={() => setSettingsTab('sd')} data-testid="tab-sd">
             S&amp;D
@@ -10215,18 +10218,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
             <>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">Search & Discovery</label>
-                <p className="text-xs text-muted-foreground mb-3">Control how fixed files are added to your search library and what management tools are surfaced.</p>
+                <p className="text-xs text-muted-foreground mb-3">Advanced controls for the Search &amp; Discovery surface. The everyday "make Fixed photos searchable" toggle lives in the After Fix tab.</p>
                 <div className="space-y-2">
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Auto-index Fixed files for Search &amp; Discovery</span>
-                      <span className="text-xs text-muted-foreground">When on, Fixed files become searchable in Search &amp; Discovery, viewable in Memories, and editable in Date Editor. Turn off only if you'd rather index manually later.</span>
-                    </div>
-                    <Checkbox
-                      checked={autoIndexAfterFix}
-                      onCheckedChange={(checked) => handleAutoIndexAfterFixToggle(!!checked)}
-                    />
-                  </label>
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-foreground">Show Library Manager</span>
@@ -10248,6 +10241,88 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       data-testid="checkbox-allow-index-removal"
                     />
                   </label>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              AFTER FIX TAB — the consolidated post-Fix journey.
+              Both auto-index (S&D / Memories / Date Editor) and AI
+              (Recognise people and content) live here because they're
+              a dependency chain: index is a prerequisite for AI on
+              new files. Splitting them across S&D + AI tabs hid that
+              chain and produced the "AI off + index on / AI on +
+              index off" surprises Terry called out (premium critique:
+              "two screens, four toggles, no onboarding, the
+              cause-and-effect chain is invisible until you reverse-
+              engineer it"). Power-user fine-tuning (Object & Scene
+              tag specifically, Re-analyze) still lives on the AI tab.
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'afterFix' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">After a Fix</label>
+                <p className="text-xs text-muted-foreground mb-3">Choose what PDR does with your photos once a Fix completes.</p>
+                <div className="space-y-2">
+                  {/* Toggle 1: searchable (formerly "Auto-index Fixed files for Search & Discovery") */}
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col pr-3">
+                      <span className="text-sm font-medium text-foreground">Make Fixed photos searchable</span>
+                      <span className="text-xs text-muted-foreground">Fixed photos appear in Search &amp; Discovery, Memories, and Date Editor. Turn off only if you'd rather manage indexing yourself.</span>
+                    </div>
+                    <Checkbox
+                      checked={autoIndexAfterFix}
+                      onCheckedChange={(checked) => handleAutoIndexAfterFixToggle(!!checked)}
+                    />
+                  </label>
+
+                  {/* Toggle 2: AI master (formerly "Enable AI Analysis" on the AI tab).
+                      Violet treatment signals the premium/optional tier; same
+                      palette as AiOfferCard and the AI tab so the surfaces
+                      stay visually linked. */}
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/40 dark:bg-violet-950/20 hover:border-violet-300 dark:hover:border-violet-600 cursor-pointer transition-colors">
+                    <div className="flex flex-col pr-3">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-violet-500" />
+                        <span className="text-sm font-medium text-foreground">Recognise people and content</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground ml-6">Searchable by face and by what's in the photo (sunset, beach, pet…). One-time ~300 MB download, then runs in the background — about a minute per 100 photos. Everything stays on your device.</span>
+                    </div>
+                    <Checkbox
+                      checked={aiEnabled}
+                      onCheckedChange={(checked) => handleAiEnabledToggle(!!checked)}
+                      data-testid="checkbox-ai-enabled-afterfix"
+                    />
+                  </label>
+
+                  {/* Toggle 3: auto-process sub-option, only visible when AI is on.
+                      Formerly "Auto-process new photos" on the AI tab. Indented
+                      under #2 to communicate the dependency. */}
+                  {aiEnabled && (
+                    <label className="ml-6 flex items-center justify-between p-3 rounded-lg border border-violet-100 dark:border-violet-800/40 bg-violet-50/20 dark:bg-violet-950/10 cursor-pointer transition-colors animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div className="flex flex-col pr-3">
+                        <span className="text-sm font-medium text-foreground">Recognise new Fixed photos automatically</span>
+                        <span className="text-xs text-muted-foreground">PDR works through new photos in the background after every Fix. Turn off to keep recognition on standby — you can run it manually later from Search &amp; Discovery.</span>
+                      </div>
+                      <Checkbox
+                        checked={aiAutoProcess}
+                        onCheckedChange={(checked) => handleAiAutoProcessToggle(!!checked)}
+                        data-testid="checkbox-ai-auto-process-afterfix"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {/* Privacy reassurance — shown on the same surface as the
+                    main "Recognise" toggle so users see the on-device
+                    guarantee where the decision is made, not on a
+                    different tab. Mirrors the AI tab's callout palette. */}
+                <div className="flex items-start gap-2 p-3 mt-3 rounded-lg bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
+                  <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-violet-700 dark:text-violet-300">
+                    <strong>Privacy:</strong> Photo recognition runs entirely on your device — nothing is uploaded, shared, or sent anywhere. Applies to photos only, not videos.
+                  </p>
                 </div>
               </div>
             </>
@@ -10452,61 +10527,50 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               ═══════════════════════════════════════════════════════════════ */}
           {settingsTab === 'ai' && (
             <>
-              {/* AI Photo Analysis */}
+              {/* AI tab — advanced / power-user fine-tuning only.
+                  The everyday master switch ("Recognise people and
+                  content") and the auto-process toggle moved to the
+                  After Fix tab, because the post-Fix journey is one
+                  decision the user makes in one place. The toggles
+                  here are sub-features layered on top of that master
+                  switch — Object & Scene Tagging granularly, plus
+                  the Re-analyze tags maintenance operation. */}
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  AI Photo Analysis
+                  Advanced AI controls
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Use on-device AI to detect faces and tag content in your photos. Videos are not included — AI analysis applies to photos only. All processing happens locally — nothing is ever uploaded.
+                  Fine-tune AI behaviour. The main "Recognise people and content" switch lives in the After Fix tab.
                 </p>
-                <div className="space-y-2">
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-violet-500" />
-                        <span className="text-sm font-medium text-foreground">Enable AI Analysis</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground ml-6">Unlock face recognition and object tagging in Search (photos only)</span>
-                    </div>
-                    <Checkbox
-                      checked={aiEnabled}
-                      onCheckedChange={(checked) => handleAiEnabledToggle(!!checked)}
-                      data-testid="checkbox-ai-enabled"
-                    />
-                  </label>
 
-                  {aiEnabled && (
-                    <div className="ml-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                      {/* Face Detection sub-toggle is on the People tab,
-                          alongside the rest of the face refinements
-                          (visual suggestions, refine-from-verified).
-                          Tag and run-control toggles live here. */}
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Object & Scene Tagging</span>
-                          <span className="text-xs text-muted-foreground">Auto-tag photos with content labels (sunset, beach, pet, etc.)</span>
-                        </div>
-                        <Checkbox
-                          checked={aiObjectTagging}
-                          onCheckedChange={(checked) => handleAiObjectTaggingToggle(!!checked)}
-                          data-testid="checkbox-ai-object-tagging"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Auto-process new photos</span>
-                          <span className="text-xs text-muted-foreground">Automatically analyze photos when new files are added to the library</span>
-                        </div>
-                        <Checkbox
-                          checked={aiAutoProcess}
-                          onCheckedChange={(checked) => handleAiAutoProcessToggle(!!checked)}
-                          data-testid="checkbox-ai-auto-process"
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
+                {/* When AI is off there's nothing to fine-tune — show
+                    a calm hint that points the user back to the After
+                    Fix tab rather than an empty section. */}
+                {!aiEnabled ? (
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/40 border border-border">
+                    <Sparkles className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      Photo recognition is currently off. Turn it on in the After Fix tab to access these advanced controls.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* Object & Scene Tagging — granular sub-feature of
+                        recognition. Users who want face recognition but
+                        not content tags (or vice-versa) toggle it here. */}
+                    <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
+                      <div className="flex flex-col pr-3">
+                        <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Object & Scene Tagging</span>
+                        <span className="text-xs text-muted-foreground">Tag photos by what's in them (sunset, beach, pet, etc.). Turn off to keep face recognition only.</span>
+                      </div>
+                      <Checkbox
+                        checked={aiObjectTagging}
+                        onCheckedChange={(checked) => handleAiObjectTaggingToggle(!!checked)}
+                        data-testid="checkbox-ai-object-tagging"
+                      />
+                    </label>
+                  </div>
+                )}
 
                 <div className="flex items-start gap-2 p-3 mt-3 rounded-lg bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
                   <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
