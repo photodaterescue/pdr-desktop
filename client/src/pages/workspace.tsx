@@ -4505,7 +4505,7 @@ function DashboardPanel({
                       >
                         <FileImage className="w-4 h-4 brightness-200" />
                         {!isFormatConversionEnabled()
-                          ? 'Photo Format — Released shortly'
+                          ? 'Photo Format — Coming in v2.1'
                           : photoFormat === 'original' ? 'Select Photo Format' : photoFormat === 'png' ? 'PNG Selected' : 'JPG Selected'}
                         <ChevronDown className={`w-3.5 h-3.5 brightness-200 transition-transform duration-200 ${photoFormatOpen ? 'rotate-180' : ''}`} />
                       </Button>
@@ -10295,6 +10295,26 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       data-testid="checkbox-ai-enabled-afterfix"
                     />
                   </label>
+
+                  {/* Dependency hint — recognition reads from the
+                      indexed_files table, so if "Make Fixed photos
+                      searchable" is OFF and "Recognise people and
+                      content" is ON, recognition can still work on
+                      previously-indexed photos but won't pick up new
+                      Fixed photos. Without this hint the user thinks
+                      AI is on and active, but in reality new Fixes
+                      silently skip recognition — the classic hidden-
+                      dependency surprise the consolidated tab is
+                      meant to expose. Only renders in the conflict
+                      state to avoid noise on the normal happy path. */}
+                  {aiEnabled && !autoIndexAfterFix && (
+                    <div className="ml-6 flex items-start gap-2 p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                      <p className="text-xs text-amber-800 dark:text-amber-300">
+                        Photos need to be searchable before they can be recognised. With <strong>Make Fixed photos searchable</strong> off, only photos already in your library will be recognised — new Fixed photos won't be.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Toggle 3: auto-process sub-option, only visible when AI is on.
                       Formerly "Auto-process new photos" on the AI tab. Indented

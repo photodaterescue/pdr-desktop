@@ -529,7 +529,7 @@ function ShowcaseCard({ accent, icon, title, description, onClick, locked, relea
           <h4 className="text-sm font-semibold text-foreground text-left leading-tight pt-0.5">{title}</h4>
           {releasedShortly && (
             <span className="inline-flex self-start text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30">
-              Released shortly
+              Coming in v2.1
             </span>
           )}
         </div>

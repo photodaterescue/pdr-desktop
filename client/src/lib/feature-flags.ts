@@ -63,7 +63,15 @@ export function isFormatConversionEnabled(): boolean {
  * Standardised tooltip / message copy for gated features. Used in
  * tooltips, locked-state callouts, and toast messages so the wording
  * is consistent across surfaces.
+ *
+ * Concrete version reference ("Coming in v2.1") replaced the vague
+ * "released shortly" copy in v2.0.5 — users were left guessing how
+ * long "shortly" meant, which felt evasive rather than premium.
+ * Pinning to a version number tells the user exactly which release
+ * to wait for without committing to a specific date that could slip.
+ * When the v2.1 gate is flipped these constants become unreachable
+ * code and can be removed.
  */
-export const TREES_RELEASED_SHORTLY_MESSAGE = 'Trees will be released shortly';
-export const EDIT_DATES_RELEASED_SHORTLY_MESSAGE = 'Edit Dates will be released shortly';
-export const FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE = 'Photo format conversion will be released shortly';
+export const TREES_RELEASED_SHORTLY_MESSAGE = 'Coming in v2.1';
+export const EDIT_DATES_RELEASED_SHORTLY_MESSAGE = 'Coming in v2.1';
+export const FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE = 'Coming in v2.1';
