@@ -1792,7 +1792,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                 <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Attention — back up your library DB</p>
               </div>
               <p className="text-body-muted ml-6">
-                This is an internal drive. From the <span className="text-foreground font-medium">⋯ menu</span> on the drive row, download your library DB and save it somewhere off this PC (cloud, email, another drive). Without that backup, a broken or stolen PC means re-running every face, tag, and date analysis from scratch.
+                Internal drives can fail with the PC. From the <span className="text-foreground font-medium">⋯ menu</span> on the drive row, download your library DB and keep a copy off this PC — cloud, email, or another drive.
               </p>
             </div>
           )}
