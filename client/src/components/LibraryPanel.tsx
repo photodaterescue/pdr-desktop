@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   DropdownMenu,
@@ -952,44 +953,47 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       <div className="px-6 py-5 space-y-4">
         {/* Summary line skeleton — mirrors "N photos · M GB · K drives" + last-synced subline */}
         <div className="space-y-2">
-          <div className="h-4 w-72 bg-muted rounded animate-pulse"></div>
-          <div className="h-3 w-44 bg-muted rounded animate-pulse"></div>
+          <Skeleton className="h-4 w-72" />
+          <Skeleton className="h-3 w-44" />
         </div>
         {/* Section label skeleton */}
-        <div className="h-3 w-40 bg-muted rounded animate-pulse mt-2"></div>
+        <Skeleton className="h-3 w-40 mt-2" />
         {/* Column header skeleton — same grid as the real table so
             rows fill into the same column positions when data arrives */}
         <div className="grid grid-cols-[minmax(12rem,2fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_3rem_2rem] gap-3 px-3 pb-1">
-          <div className="h-3 w-12 bg-muted rounded animate-pulse"></div>
-          <div className="h-3 w-14 bg-muted rounded animate-pulse"></div>
-          <div className="h-3 w-10 bg-muted rounded animate-pulse"></div>
-          <div className="h-3 w-16 bg-muted rounded animate-pulse"></div>
-          <div className="h-3 w-12 bg-muted rounded animate-pulse mx-auto"></div>
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-10" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-12 mx-auto" />
           <div></div>
         </div>
         {/* Three skeleton rows — same row card geometry as the real
             drive rows. Staggered widths look natural rather than
-            uniform. */}
+            uniform. Uses the shared Skeleton primitive (bg-primary/10
+            + animate-pulse) so the bars are visibly lavender-tinted
+            against the white modal — bg-muted on its own was too
+            pale on this surface and rendered as empty outlines. */}
         {[0, 1, 2].map((i) => (
           <div
             key={i}
             className="grid grid-cols-[minmax(12rem,2fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_3rem_2rem] gap-3 items-center rounded-xl border border-border p-3"
           >
             <div className="space-y-1.5">
-              <div className={`h-4 ${i === 0 ? 'w-3/4' : i === 1 ? 'w-2/3' : 'w-1/2'} bg-muted rounded animate-pulse`}></div>
-              <div className="h-3 w-16 bg-muted rounded animate-pulse"></div>
+              <Skeleton className={`h-4 ${i === 0 ? 'w-3/4' : i === 1 ? 'w-2/3' : 'w-1/2'}`} />
+              <Skeleton className="h-3 w-16" />
             </div>
-            <div className="h-5 w-20 bg-muted rounded-full animate-pulse"></div>
+            <Skeleton className="h-5 w-20 rounded-full" />
             <div className="space-y-1">
-              <div className="h-3.5 w-16 bg-muted rounded animate-pulse"></div>
-              <div className="h-3 w-12 bg-muted rounded animate-pulse"></div>
+              <Skeleton className="h-3.5 w-16" />
+              <Skeleton className="h-3 w-12" />
             </div>
             <div className="space-y-1">
-              <div className="h-3.5 w-20 bg-muted rounded animate-pulse"></div>
-              <div className="h-3 w-16 bg-muted rounded animate-pulse"></div>
+              <Skeleton className="h-3.5 w-20" />
+              <Skeleton className="h-3 w-16" />
             </div>
-            <div className="h-4 w-4 bg-muted rounded-full animate-pulse mx-auto"></div>
-            <div className="h-4 w-4 bg-muted rounded animate-pulse"></div>
+            <Skeleton className="h-4 w-4 rounded-full mx-auto" />
+            <Skeleton className="h-4 w-4" />
           </div>
         ))}
         {/* Calm subtitle anchored at the bottom — reassures without
