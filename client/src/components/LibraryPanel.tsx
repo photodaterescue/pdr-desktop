@@ -1647,36 +1647,29 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             )}
           </section>
 
-          {/* ── Library Drive actions — Sync now / Take over writing.
+          {/* ── Library Drive actions — Take over writing only.
+                "Sync now" was removed (2026-05-15) — the background
+                30-second auto-mirror runs invisibly and there's no
+                realistic flow where the user needs to force a mirror
+                manually. handleSyncNow + the syncingNow state are
+                retained as dead code in case we resurrect a labelled
+                version later; harmless either way.
                 Only meaningful when sidecar-attached; hidden otherwise
                 so the surface stays clean for the common single-device
-                case. These are cross-row actions (they affect the
-                current Library Drive's sidecar) so they sit below the
-                list rather than on the row itself, where they'd
-                visually clutter the per-row "Set as Library Drive"
-                button hierarchy. */}
-          {attached && (
+                case. */}
+          {attached && !isWriter && (
             <div className="flex flex-wrap gap-2">
-              {isWriter && (
-                <Button onClick={handleSyncNow} disabled={syncingNow} variant="secondary" className="h-9 px-3">
-                  {syncingNow ? (
-                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5 mr-2" />
-                  )}
-                  Sync now
-                </Button>
-              )}
-              {!isWriter && (
-                <Button onClick={handleTakeOverClick} variant="secondary" className="h-9 px-3">
-                  <Pencil className="w-3.5 h-3.5 mr-2" />
-                  Take over writing
-                </Button>
-              )}
+              <Button onClick={handleTakeOverClick} variant="secondary" className="h-9 px-3">
+                <Pencil className="w-3.5 h-3.5 mr-2" />
+                Take over writing
+              </Button>
             </div>
           )}
 
-          {/* Sync result — inline confirmation under the action row. */}
+          {/* syncResult is now driven only by handleExportDb's
+              success/failure path ("Library DB saved to..."), kept
+              as inline confirmation when the Download Library DB
+              kebab action runs from this surface. */}
           {syncResult && (
             <p className={`text-body-muted ${syncResult.ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
               {syncResult.message}
