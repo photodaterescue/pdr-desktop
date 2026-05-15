@@ -1741,25 +1741,25 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // New copy reframes the action accurately: "back up your existing
   // library here", with the photo count to prove nothing's lost.
   const renderDetectedEmpty = () => {
-    const photoCount = indexedDrives.reduce((s, d) => s + d.indexedFileCount, 0);
+    const targetPath = pendingAction && 'libraryRoot' in pendingAction ? pendingAction.libraryRoot : '';
     const showInternalAdvisory = !!unsafeReason;
     return (
       <>
-        {renderHeader('Set as your Library Drive?', (
+        {renderHeader('Switch your Library Drive?', (
           <>
-            PDR will keep a hidden backup of your library — {photoCount > 0 ? <><span className="text-foreground font-medium">all {photoCount.toLocaleString()} indexed photos</span> plus </> : 'your '}face tags, names, dates, and Trees — in a <span className="font-mono">.pdr</span> folder here. Your existing work stays as it is; this just adds a backup so any device can reconnect your library by attaching this drive.
+            PDR will start using <span className="font-mono text-foreground">{targetPath}</span> as your Library Drive. Your existing photos stay where they are — this just changes which drive PDR works from.
           </>
         ), 'primary', 'left')}
         <div className="px-6 pb-6 pt-2 space-y-3">
           {showInternalAdvisory && (
             <div className="rounded-lg border border-slate-200/60 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-900/40 p-3">
               <p className="text-body-muted">
-                <span className="text-foreground font-medium">This is an internal drive.</span> Fine to use as your Library Drive — it's fast and convenient. For an offsite backup of your library, use the kebab menu's <span className="text-foreground font-medium">Download Library DB</span> action periodically.
+                <span className="text-foreground font-medium">This is an internal drive.</span> Fine to use — for an offsite backup, download your library DB occasionally from the kebab menu.
               </p>
             </div>
           )}
           <Button onClick={runPendingAction} variant="primary" className="w-full h-12">
-            <Plug className="w-4 h-4 mr-2" /> Set as Library Drive
+            <Plug className="w-4 h-4 mr-2" /> Switch to this drive
           </Button>
           <Button onClick={() => setStep('status')} variant="secondary" className="w-full">Cancel</Button>
         </div>
@@ -1858,14 +1858,16 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18 }}
-        // min-h-[600px] keeps the modal at a single steady size between
-        // the loading state and the full management view, so it doesn't
-        // visibly pop / grow when data arrives. max-h-[85vh] caps it on
-        // tall content (long indexed-drive lists scroll internally).
-        // max-w-4xl (896px) gives the 6-column per-drive grid (letter ·
-        // name · status · files · capacity · select) breathing room
-        // without each cell having to truncate.
-        className="w-full max-w-4xl min-h-[600px] max-h-[85vh] bg-background rounded-2xl shadow-2xl overflow-hidden border border-border flex flex-col"
+        // Modal sizing per step. The management view needs a wide
+        // canvas for the 6-column drive table; everything else
+        // (loading state, attach confirmations, processing, error,
+        // success) is short content that should look like a compact
+        // confirmation, not a giant empty box. Earlier the modal
+        // forced min-h-[600px] + max-w-4xl across all steps, which
+        // made the loading state and confirmations feel oversized
+        // (Terry: "this is too big" + "a lot of empty space"). The
+        // modal now sizes per step.
+        className={`w-full ${step === 'status' ? 'max-w-4xl' : 'max-w-md'} max-h-[85vh] bg-background rounded-2xl shadow-2xl overflow-hidden border border-border flex flex-col`}
       >
         {step === 'status' && renderStatus()}
         {step === 'set-up-confirmation' && renderSetUpConfirmation()}
