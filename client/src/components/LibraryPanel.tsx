@@ -934,16 +934,71 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     };
   };
 
-  // Quiet skeleton while the initial data fetch is in flight. Uses the
-  // same compact management header so the modal's structural chrome
-  // doesn't pop in and out — only the body content swaps once data
-  // arrives.
+  // Premium skeleton while the initial data fetch is in flight. The
+  // earlier loading state was a small centered spinner with "Reading
+  // library status..." — Terry's feedback: "part of me wonders if it
+  // will ever load." A spinner alone communicates "I'm working" but
+  // doesn't communicate "specific data will appear right here," so
+  // the user has nothing to anchor their patience to.
+  //
+  // The skeleton mirrors the real drive table layout exactly — same
+  // summary line, same column header, same row grid — with pulsing
+  // bars in place of values. When the real data arrives, rows fill
+  // in where their placeholders sit, with no shift. The structural
+  // chrome stays put so the modal doesn't pop.
   const renderInitialLoading = () => (
     <>
       {renderManagementHeader()}
-      <div className="px-6 py-10 flex flex-col items-center text-center gap-3">
-        <Loader2 className="w-6 h-6 text-primary animate-spin" />
-        <p className="text-body-muted">Reading library status...</p>
+      <div className="px-6 py-5 space-y-4">
+        {/* Summary line skeleton — mirrors "N photos · M GB · K drives" + last-synced subline */}
+        <div className="space-y-2">
+          <div className="h-4 w-72 bg-muted rounded animate-pulse"></div>
+          <div className="h-3 w-44 bg-muted rounded animate-pulse"></div>
+        </div>
+        {/* Section label skeleton */}
+        <div className="h-3 w-40 bg-muted rounded animate-pulse mt-2"></div>
+        {/* Column header skeleton — same grid as the real table so
+            rows fill into the same column positions when data arrives */}
+        <div className="grid grid-cols-[minmax(12rem,2fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_3rem_2rem] gap-3 px-3 pb-1">
+          <div className="h-3 w-12 bg-muted rounded animate-pulse"></div>
+          <div className="h-3 w-14 bg-muted rounded animate-pulse"></div>
+          <div className="h-3 w-10 bg-muted rounded animate-pulse"></div>
+          <div className="h-3 w-16 bg-muted rounded animate-pulse"></div>
+          <div className="h-3 w-12 bg-muted rounded animate-pulse mx-auto"></div>
+          <div></div>
+        </div>
+        {/* Three skeleton rows — same row card geometry as the real
+            drive rows. Staggered widths look natural rather than
+            uniform. */}
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[minmax(12rem,2fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_3rem_2rem] gap-3 items-center rounded-xl border border-border p-3"
+          >
+            <div className="space-y-1.5">
+              <div className={`h-4 ${i === 0 ? 'w-3/4' : i === 1 ? 'w-2/3' : 'w-1/2'} bg-muted rounded animate-pulse`}></div>
+              <div className="h-3 w-16 bg-muted rounded animate-pulse"></div>
+            </div>
+            <div className="h-5 w-20 bg-muted rounded-full animate-pulse"></div>
+            <div className="space-y-1">
+              <div className="h-3.5 w-16 bg-muted rounded animate-pulse"></div>
+              <div className="h-3 w-12 bg-muted rounded animate-pulse"></div>
+            </div>
+            <div className="space-y-1">
+              <div className="h-3.5 w-20 bg-muted rounded animate-pulse"></div>
+              <div className="h-3 w-16 bg-muted rounded animate-pulse"></div>
+            </div>
+            <div className="h-4 w-4 bg-muted rounded-full animate-pulse mx-auto"></div>
+            <div className="h-4 w-4 bg-muted rounded animate-pulse"></div>
+          </div>
+        ))}
+        {/* Calm subtitle anchored at the bottom — reassures without
+            sounding apologetic. Lavender accent on the small spinner
+            keeps it visually tied to the modal's primary colour. */}
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+          <p className="text-caption text-muted-foreground">Reading your drives — this only takes a moment</p>
+        </div>
       </div>
     </>
   );
@@ -1039,8 +1094,29 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         mediaType: driveDetails?.mediaType ?? null,
       });
     }
+    // Compute the set of drive letters already covered by a registered
+    // library root (currentPath + savedDestinations). When a drive
+    // has at least one library root on it, the bare drive-letter
+    // rollup row is redundant — every file the rollup would count is
+    // already attributed to the library row. Without this filter,
+    // running a Fix that wrote files to "D:\1. Photos\PDR Library
+    // Drive" produced TWO D:\ rows: the library row plus a bare D:\
+    // row from listIndexedDrives, each showing the same 92 photos
+    // (Terry's "duplicate drive" complaint). Library-root rows are
+    // always more meaningful than letter rollups, so they win.
+    const lettersWithLibraryRoot = new Set<string>();
+    if (currentDriveLetter) lettersWithLibraryRoot.add(currentDriveLetter);
+    savedDestinations.forEach((p) => {
+      // Skip bare drive roots when collecting letters — those don't
+      // count as "registered library roots" for this purpose; they're
+      // the stale state we're trying to suppress further down.
+      if (/^[A-Za-z]:[\\/]?$/.test(p)) return;
+      const l = deriveDriveLetter(p);
+      if (l) lettersWithLibraryRoot.add(l);
+    });
+
     indexedDrives.forEach((d) => {
-      if (currentDriveLetter && d.letter === currentDriveLetter) return;
+      if (d.letter && lettersWithLibraryRoot.has(d.letter)) return;
       allDrives.push({
         key: d.path,
         isCurrentLibraryDrive: false,
@@ -1078,6 +1154,13 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     // SUBSTR(file_path,…) counts for exact attribution.
     const alreadyListedPaths = new Set(allDrives.map(d => d.path.replace(/[\\/]+$/, '').toLowerCase()));
     savedDestinations.forEach((savedPath) => {
+      // Skip bare drive roots ("D:\" / "D:") — these are leftover
+      // state from someone picking a bare drive as a destination, not
+      // a real library folder. If kept they appear as a phantom row
+      // next to any actual library root on the same drive (Terry's
+      // "D:\ duplicate" complaint). A library folder is always a
+      // specific path inside the drive, never the drive itself.
+      if (/^[A-Za-z]:[\\/]?$/.test(savedPath)) return;
       const normalised = savedPath.replace(/[\\/]+$/, '').toLowerCase();
       if (alreadyListedPaths.has(normalised)) return;
       const details = savedDestinationDetails[savedPath] ?? null;

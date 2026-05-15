@@ -10220,7 +10220,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-foreground">Auto-index Fixed files for Search &amp; Discovery</span>
-                      <span className="text-xs text-muted-foreground">When on, files added to your Library Drive after a Fix are indexed automatically so they're searchable in S&amp;D, viewable in Memories, taggable in People Manager, editable in Date Editor, and usable in Trees. Turn off only if you want to index manually later.</span>
+                      <span className="text-xs text-muted-foreground">When on, Fixed files become searchable in Search &amp; Discovery, viewable in Memories, and editable in Date Editor. Turn off only if you'd rather index manually later.</span>
                     </div>
                     <Checkbox
                       checked={autoIndexAfterFix}
