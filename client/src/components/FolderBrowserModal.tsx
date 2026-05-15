@@ -717,16 +717,35 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
 
   if (!isOpen) return null;
 
+  // Backdrop: standard PDR modal veil — bg-black/[0.25] + backdrop-blur-[2px].
+  // Matches LicenseModal, LibraryPanel, LibraryDriveOfflineModal,
+  // FeatureTeaserModal. Previously this was bg-black/[0.3] + blur-[3px],
+  // which read as a heavier veil than every other modal.
+  //
+  // z-[60] (not z-50) — the FolderBrowserModal is frequently opened ON TOP
+  // of another modal (Library Drive offline modal's Change/Set-up flows,
+  // temp-space prompt's onPickTempDir, etc.). Every other modal in PDR
+  // sits at z-50, so without this bump the picker renders behind whichever
+  // modal launched it (DOM render order decides stacking when z is equal,
+  // and JSX order varies). z-60 puts the picker unambiguously on top
+  // whenever it opens, and in standalone use (source picker, ZIP picker)
+  // nothing else competes for that layer anyway.
   return (
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/[0.3] backdrop-blur-[3px] flex items-center justify-center z-50 p-4"
+        className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center p-4"
         onMouseDown={(e) => { mouseDownOnBackdropRef.current = e.target === e.currentTarget; }}
         onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnBackdropRef.current) onCancel(); }}
-        style={isResizing ? { cursor: 'nwse-resize' } : undefined}
+        // zIndex set inline rather than via Tailwind. The arbitrary-value
+        // class z-[60] didn't make it into the compiled CSS (Tailwind v4
+        // safelist quirk), so the picker fell back to z-auto and rendered
+        // BEHIND every z-50 modal — exactly the bug Terry hit when opening
+        // the picker from the Library Drive offline modal. Inline style is
+        // foolproof and survives any class-generation surprise.
+        style={isResizing ? { zIndex: 60, cursor: 'nwse-resize' } : { zIndex: 60 }}
       >
         <motion.div
           initial={{ scale: 0.95, opacity: 0, y: 10 }}

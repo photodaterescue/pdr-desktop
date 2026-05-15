@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld('pdr', {
     setZoom: (zoom) => ipcRenderer.invoke('set-zoom', zoom),
     setTitleBarColor: (isDark) => ipcRenderer.invoke('set-title-bar-color', isDark),
     pickSource: (mode) => ipcRenderer.invoke('source:pick', mode),
-    openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+    openFolder: (defaultPath) => ipcRenderer.invoke('dialog:openFolder', defaultPath),
     openZip: () => ipcRenderer.invoke('dialog:openZip'),
     selectDestination: () => ipcRenderer.invoke('select-destination'),
     prescanDestination: (destinationPath) => ipcRenderer.invoke('destination:prescan', destinationPath),
@@ -120,6 +120,24 @@ contextBridge.exposeInMainWorld('pdr', {
         status: () => ipcRenderer.invoke('library:status'),
         detectSidecar: (libraryRoot) => ipcRenderer.invoke('library:detectSidecar', libraryRoot),
         detectDriveType: (libraryRoot) => ipcRenderer.invoke('library:detectDriveType', libraryRoot),
+        // Full premium-LDM identity block for a drive: letter, volume label,
+        // file system (NTFS/exFAT/...), drive-type label, total/free bytes,
+        // online flag, isSafeForLibrary. One IPC = one PowerShell exec so the
+        // renderer doesn't fan out N calls per drive for N fields.
+        getDriveDetails: (libraryRoot) => ipcRenderer.invoke('library:getDriveDetails', libraryRoot),
+        // The "drives in your library" list — every drive the search DB has
+        // indexed photos from, with per-drive counts, sizes, online status,
+        // volume labels. Premium LDM shows the WHOLE library shape, not just
+        // the one sidecar-host drive.
+        listIndexedDrives: () => ipcRenderer.invoke('library:listIndexedDrives'),
+        // Open a path in the OS file manager (Explorer on Windows, Finder on
+        // macOS). Used by per-drive "Open in File Explorer" entries in LDM.
+        openInExplorer: (targetPath) => ipcRenderer.invoke('library:openInExplorer', targetPath),
+        // Export the search DB to a user-chosen path — premium portability
+        // safeguard. Lets the user keep an offsite copy of their library DB
+        // (face tags, names, dates, trees) so they don't have to use an
+        // external Library Drive purely for portability.
+        exportDb: () => ipcRenderer.invoke('library:exportDb'),
         // Quick fs.existsSync check on the persisted destinationPath —
         // used by the renderer on Workspace mount to surface the
         // "Library Drive isn't connected" modal proactively, before any

@@ -47,6 +47,11 @@ export default function Home() {
   // We use a sentinel (`undefined`) for "still loading" so we don't
   // render the locked state for a split-second on returning users.
   const [destinationPath, setDestinationPath] = useState<string | null | undefined>(undefined);
+  // Online check on the persisted Library Drive — null = not yet
+  // checked, true = reachable on disk, false = offline. Drives the
+  // welcome card's copy so it stops contradicting itself ("set and
+  // ready" while the drive is unplugged) — Terry's catch.
+  const [destinationOnline, setDestinationOnline] = useState<boolean | null>(null);
 
   // One-shot pulse on the hero card. Fires when a locked card is
   // clicked so the user sees where to go without having to read a
@@ -80,6 +85,26 @@ export default function Home() {
     }).catch(() => {
       if (!cancelled) setDestinationPath(null);
     });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Check whether the persisted Library Drive is currently reachable
+  // on disk. The welcome card's copy branches on this so it doesn't
+  // tell the user "set and ready" while the drive is unplugged.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await (window as any).pdr?.library?.checkDestinationOnline?.();
+        if (cancelled) return;
+        if (res?.success && typeof res.data?.online === 'boolean') {
+          setDestinationOnline(res.data.online);
+        }
+      } catch {
+        // Best-effort — leave destinationOnline null on failure so the
+        // welcome copy falls back to the generic "set and ready" path.
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -235,9 +260,11 @@ export default function Home() {
           <PrimaryCard
             icon={<HardDrive className="w-10 h-10 text-white" />}
             title={hasDestination ? "Continue in your Workspace" : "Pick a Library Drive"}
-            description={hasDestination
-              ? "Pick up where you left off — your Library Drive is set and ready."
-              : "For a quick fix, or your forever library — choose where your organised photos and videos will live."}
+            description={!hasDestination
+              ? "For a quick fix, or your forever library — choose where your organised photos and videos will live."
+              : destinationOnline === false
+              ? "Your Library Drive is offline — you can still browse, search, tag faces, and edit dates. Reconnect it to run Fix or open fixed photos."
+              : "Pick up where you left off — your Library Drive is set and ready."}
             ctaLabel={hasDestination ? "Open Workspace" : "Get Started"}
             onClick={handleHero}
             pulse={heroPulse}

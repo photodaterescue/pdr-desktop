@@ -55,6 +55,18 @@ export function LibraryStatusButton() {
     return () => clearInterval(id);
   }, []);
 
+  // Cross-component open: other surfaces (e.g. the Library Drive offline
+  // modal's "Change Library Drive" CTA) dispatch the `pdr:openLibraryPanel`
+  // CustomEvent rather than mounting a second LibraryPanel instance. One
+  // panel, one source of truth, one place where multi-device / sidecar /
+  // license-key state lives. Matches the same dispatch pattern PDR uses
+  // for tour-menu, post-fix flow, etc.
+  useEffect(() => {
+    const handler = () => setIsOpen(true);
+    window.addEventListener('pdr:openLibraryPanel', handler as EventListener);
+    return () => window.removeEventListener('pdr:openLibraryPanel', handler as EventListener);
+  }, []);
+
   const handleClose = () => {
     setIsOpen(false);
     void refresh();

@@ -111,6 +111,7 @@ import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, TREES_RE
 import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { LibraryDriveOfflineModal } from "@/components/LibraryDriveOfflineModal";
+import { LibraryDriveOfflineBanner } from "@/components/LibraryDriveOfflineBanner";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -491,40 +492,120 @@ const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
 // destinationPath doesn't resolve on disk (drive unplugged, NAS
 // offline, USB asleep). Drives the calm "Library Drive isn't
 // connected" experience instead of the raw ENOENT Jane received.
+// REACTIVE modal — opens ONLY when the user attempts an operation
+// that genuinely requires the Library Drive (Run Fix, opening a
+// photo that lives on the Library Drive, Sync now from LDM). Library
+// Drive offline isn't an error on its own — there's plenty the user
+// CAN do without it (add sources, browse, tag faces, edit dates),
+// so blocking the entire workspace on launch was too aggressive.
+// The persistent state below drives a calm banner that ALWAYS shows
+// while the drive is offline; this modal only fires when the user
+// hits a real wall.
+//
+// reactiveModalContext stores what triggered the modal so the copy
+// can be contextual ("Fix can't run" vs "This photo lives on the
+// Library Drive" vs "Backup couldn't sync") rather than generic.
 const [libraryOfflineOpen, setLibraryOfflineOpen] = useState(false);
 const [libraryOfflinePath, setLibraryOfflinePath] = useState<string | null>(null);
+const [libraryOfflineContext, setLibraryOfflineContext] = useState<'run-fix' | 'open-file' | 'sync-now' | 'generic'>('generic');
 // Session-only "connect later" acknowledgement. When the user
 // explicitly defers (via the Connect Library Drive later button),
 // we stop proactively re-opening the modal for the rest of this
 // session — they know, they've chosen to come back to it. A reactive
-// open (e.g. user tries to add a source and we hit DESTINATION_OFFLINE)
+// open (e.g. user tries to run Fix and we hit DESTINATION_OFFLINE)
 // still surfaces the modal because that's a direct user-initiated
 // action that needs the drive.
 const [libraryOfflineDeferred, setLibraryOfflineDeferred] = useState(false);
 
+// PERSISTENT state driving the calm "Library Drive offline" banner
+// at the top of the workspace. Updated by the mount precheck +
+// re-checked any time we get DESTINATION_OFFLINE from an IPC. This
+// is the STATE the user can see at all times when the drive isn't
+// there, separate from the modal (which is for ACTIONABLE moments).
+const [libraryOfflineBanner, setLibraryOfflineBanner] = useState<{ path: string } | null>(null);
+
 // On Workspace mount, ask main whether the configured Library
-// Drive currently resolves on disk. If not, open the offline modal
-// proactively — before the user adds a source and hits the cryptic
-// ENOENT that confused Jane. destinationPath of null is the
-// first-run state and is NOT an error. Skipped when the user has
-// chosen "Connect Library Drive later" earlier this session.
+// Drive currently resolves on disk. If not, set the BANNER state —
+// no modal popup. The banner is calm and informational; the modal
+// fires only when the user attempts an action that requires the
+// drive. destinationPath of null is the first-run state and is
+// NOT an error.
+//
+// Same effect re-runs whenever LibraryPanel dispatches the
+// `pdr:libraryDriveChanged` CustomEvent (after attachAsNew /
+// attachFromSidecar succeeds), so swapping the Library Drive in
+// LDM clears the offline banner immediately without requiring a
+// workspace remount.
 useEffect(() => {
-  if (libraryOfflineDeferred) return;
   let cancelled = false;
-  (async () => {
+  const checkOnline = async () => {
     try {
       const res = await (window as any).pdr?.library?.checkDestinationOnline?.();
       if (cancelled) return;
       if (res?.success && res.data?.destinationPath && !res.data.online) {
+        setLibraryOfflineBanner({ path: res.data.destinationPath });
         setLibraryOfflinePath(res.data.destinationPath);
-        setLibraryOfflineOpen(true);
+      } else if (res?.success && res.data?.online) {
+        // Drive came back online (e.g. user re-plugged before we
+        // checked, OR the user just switched LDM to a connected
+        // drive) — clear any stale banner state.
+        setLibraryOfflineBanner(null);
       }
     } catch {
       // Best-effort — never block Workspace mount on the precheck.
     }
-  })();
-  return () => { cancelled = true; };
-}, [libraryOfflineDeferred]);
+  };
+  void checkOnline();
+  const handler = () => { void checkOnline(); };
+  window.addEventListener('pdr:libraryDriveChanged', handler as EventListener);
+  return () => {
+    cancelled = true;
+    window.removeEventListener('pdr:libraryDriveChanged', handler as EventListener);
+  };
+}, []);
+
+// Library Drive Manager → "Select Library Drive" picker bridge. The
+// LDM lives in its own portal and doesn't have the FolderBrowserModal
+// mounted; it dispatches `pdr:pickLibraryDriveFolder` with an optional
+// default path, the workspace opens the picker in
+// destination-picker mode (Saved Destinations + Drive ratings on),
+// and on select it dispatches `pdr:libraryDriveFolderPicked` back so
+// LDM can run inspectAndRoute on the chosen folder.
+useEffect(() => {
+  const handler = (evt: Event) => {
+    const detail = (evt as CustomEvent<{ defaultPath?: string }>).detail ?? {};
+    setFolderBrowserOpts({
+      title: 'Select Library Drive',
+      mode: 'folder',
+      enableSavedLocations: true,
+      showDriveRatings: true,
+    });
+    setFolderBrowserCallback(() => (pickedPath: string) => {
+      window.dispatchEvent(new CustomEvent('pdr:libraryDriveFolderPicked', { detail: { path: pickedPath } }));
+    });
+    // The FolderBrowserModal's defaultPath prop seeds the initial
+    // navigation — not yet wired through folderBrowserOpts; left as a
+    // future enhancement. For now the picker opens at the user's
+    // last-viewed location.
+    void detail.defaultPath;
+    setShowFolderBrowser(true);
+  };
+  window.addEventListener('pdr:pickLibraryDriveFolder', handler as EventListener);
+  return () => window.removeEventListener('pdr:pickLibraryDriveFolder', handler as EventListener);
+}, []);
+
+// Parallel Library navigation bridge. LDM dispatches
+// `pdr:openParallelLibrary` when the user clicks the "Use Parallel
+// Library" CTA in the set-up-confirmation step. Workspace switches
+// to the Search & Discovery view — that's where the ParallelStructure
+// wizard lives, behind the "Create Parallel Library" button that
+// appears once the user has filtered + selected the photos they want
+// to mirror to another location.
+useEffect(() => {
+  const handler = () => { setActiveView('search'); };
+  window.addEventListener('pdr:openParallelLibrary', handler as EventListener);
+  return () => window.removeEventListener('pdr:openParallelLibrary', handler as EventListener);
+}, []);
 // `license` (the full LicenseStatus) + `storedLicenseKey` are needed
 // alongside `isLicensed` so the Free Trial file counter knows
 // whether to tick after each Fix run, and which key to send to the
@@ -794,6 +875,24 @@ const handleActivateLicense = () => {
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [showDestBrowser, setShowDestBrowser] = useState(false);
   const [folderBrowserCallback, setFolderBrowserCallback] = useState<((path: string) => void) | null>(null);
+  // Per-open overrides for the workspace-level FolderBrowserModal so callers
+  // (e.g. the Library Drive offline modal's Change/Set-up flows) can present
+  // it with the right title + mode for THAT context. Default = the original
+  // source-add picker behaviour, so all existing entry points keep working
+  // without change. Cleared back to default on cancel / select.
+  // enableSavedLocations + showDriveRatings light up the premium
+  // destination-picker features (Saved Destinations list, drive
+  // ratings) inside the FolderBrowserModal. They default to false for
+  // the source-add use case and are flipped on when a "Library Drive"
+  // selector opens this picker (from LDM or the offline modal).
+  type FolderBrowserOpts = {
+    title: string;
+    mode: 'source' | 'folder' | 'archives';
+    enableSavedLocations?: boolean;
+    showDriveRatings?: boolean;
+  };
+  const FOLDER_BROWSER_DEFAULT_OPTS: FolderBrowserOpts = { title: 'Add Source', mode: 'source' };
+  const [folderBrowserOpts, setFolderBrowserOpts] = useState<FolderBrowserOpts>(FOLDER_BROWSER_DEFAULT_OPTS);
 
   // (outputCardExpanded state lives inside DashboardPanel itself —
   // see that component for the useState. Keeping it here would put
@@ -1546,8 +1645,13 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         // reachable on disk right now (unplugged, NAS offline, USB
         // asleep). Replace the cryptic ENOENT Jane received with a
         // calm modal that explains the state + offers Retry / Change.
-        setLibraryOfflinePath(result.details?.destinationPath ?? null);
+        // Context = 'run-fix' so the modal's "needs / still works"
+        // copy is specific to this action.
+        const destPath = result.details?.destinationPath ?? null;
+        setLibraryOfflinePath(destPath);
+        setLibraryOfflineContext('run-fix');
         setLibraryOfflineOpen(true);
+        if (destPath) setLibraryOfflineBanner({ path: destPath });
       } else if (result.code === 'NO_TEMP_SPACE' && result.details && finalType === 'zip') {
         // Pre-extract resolver couldn't find a drive with enough room.
         // Surface the smart-prompt — user picks a different drive and
@@ -2126,6 +2230,29 @@ return (
 		/>
       {/* Right-side content area: ribbon + panels */}
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
+        {/* Library Drive offline banner — sits ABOVE everything in the
+            workspace content area when the configured Library Drive
+            isn't reachable. Replaces the previous "blocking modal on
+            workspace mount" approach. State (libraryOfflineBanner) is
+            set by the on-mount precheck + any reactive IPC failure
+            (e.g. analysis:run returning DESTINATION_OFFLINE). Retry
+            re-checks via the same IPC; Manage opens LibraryPanel. */}
+        {libraryOfflineBanner && (
+          <LibraryDriveOfflineBanner
+            path={libraryOfflineBanner.path}
+            onRetry={async () => {
+              try {
+                const res = await (window as any).pdr?.library?.checkDestinationOnline?.();
+                if (res?.success && res.data?.online) {
+                  setLibraryOfflineBanner(null);
+                  return true;
+                }
+              } catch { /* fall through */ }
+              return false;
+            }}
+            onOpenLibraryPanel={() => window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'))}
+          />
+        )}
         {/* Search Ribbon — only visible inside the S&D view. Kept mounted
             (display: none when hidden) so filter state is preserved between
             view switches. Loses pin/colour state otherwise would be lost if
@@ -2341,7 +2468,11 @@ return (
 		  onClose={() => setTeaserFeature(null)}
 		  onActivate={handleActivateLicense}
 		/>
-      {/* Custom Folder Browser for source selection */}
+      {/* Custom Folder Browser — defaults to source-add ("Add Source"
+          / mode="source"), but callers can override via folderBrowserOpts
+          before opening (e.g. Library Drive offline modal sets title to
+          "Change Library Drive" / mode="folder"). Opts reset to default
+          on close so the next caller sees the original behaviour. */}
       <FolderBrowserModal
         isOpen={showFolderBrowser}
         onSelect={(path) => {
@@ -2350,10 +2481,17 @@ return (
             folderBrowserCallback(path);
             setFolderBrowserCallback(null);
           }
+          setFolderBrowserOpts(FOLDER_BROWSER_DEFAULT_OPTS);
         }}
-        onCancel={() => { setShowFolderBrowser(false); setFolderBrowserCallback(null); }}
-        title="Add Source"
-        mode="source"
+        onCancel={() => {
+          setShowFolderBrowser(false);
+          setFolderBrowserCallback(null);
+          setFolderBrowserOpts(FOLDER_BROWSER_DEFAULT_OPTS);
+        }}
+        title={folderBrowserOpts.title}
+        mode={folderBrowserOpts.mode}
+        enableSavedLocations={folderBrowserOpts.enableSavedLocations}
+        showDriveRatings={folderBrowserOpts.showDriveRatings ?? false}
       />
 
       {/* Smart-prompt for the NO_TEMP_SPACE pre-extract failure.
@@ -2474,42 +2612,31 @@ return (
       <LibraryDriveOfflineModal
         isOpen={libraryOfflineOpen}
         destinationPath={libraryOfflinePath}
+        context={libraryOfflineContext}
         onClose={() => setLibraryOfflineOpen(false)}
-        onChangeLibraryDrive={() => {
-          // Open the folder picker ON TOP of the offline modal — do NOT
-          // close the offline modal first. That way if the user X's
-          // out of the picker without selecting a folder, they return
-          // to the offline modal and can pick a different action
-          // (Retry, Set up new library, Connect later) instead of being
-          // dropped into a silent empty Workspace. The offline modal
-          // closes itself when the picker callback fires successfully
-          // (path picked → destination updated → offline state resolved).
-          setFolderBrowserCallback(() => async (pickedPath: string) => {
-            const { getDiskSpace } = await import('@/lib/electron-bridge');
-            setDestinationPath(pickedPath);
-            const diskInfo = await getDiskSpace(pickedPath);
-            setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
-            setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
-            setLibraryOfflineOpen(false);
-            toast.success('Library Drive updated.');
-          });
-          setShowFolderBrowser(true);
-        }}
-        onSetUpNewLibrary={() => {
-          // Same picker as Change Library Drive — different framing for
-          // the user (reluctant advanced new-library path vs. swap to a
-          // different existing drive), same mechanism. Same staying-
-          // behind-the-picker behaviour so cancel returns to the modal.
-          setFolderBrowserCallback(() => async (pickedPath: string) => {
-            const { getDiskSpace } = await import('@/lib/electron-bridge');
-            setDestinationPath(pickedPath);
-            const diskInfo = await getDiskSpace(pickedPath);
-            setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
-            setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
-            setLibraryOfflineOpen(false);
-            toast.success('New Library Drive set.');
-          });
-          setShowFolderBrowser(true);
+        onOpenLibraryPanel={() => {
+          // Route "Change Library Drive" through Library Drive Management
+          // (LibraryPanel) instead of opening a one-off folder picker.
+          // Previously this surface had two CTAs (Change + Advanced
+          // Set-up-new) that were mechanically identical — both just
+          // updated destinationPath. Terry called the duplication out.
+          //
+          // LibraryPanel already covers every "manage the library drive"
+          // intent natively: pick existing, set up new, take over writer,
+          // disconnect, multi-device status. Dispatching the CustomEvent
+          // is the cross-component pattern PDR already uses (tour-menu,
+          // post-fix flow). The panel is mounted in LibraryStatusButton
+          // (the Library pill in the title bar); it listens for this
+          // event and opens itself.
+          //
+          // We leave the offline modal OPEN behind the panel so canceling
+          // the panel returns the user to the offline modal — the same
+          // "don't drop them into an empty Workspace" safety net the old
+          // folder-picker route had. When the panel completes a real
+          // change, it'll close the offline modal via its own status
+          // refresh path (destinationPath now points somewhere reachable
+          // → checkDestinationOnline returns true).
+          window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'));
         }}
         onConnectLater={() => {
           setLibraryOfflineOpen(false);
@@ -4241,7 +4368,22 @@ function DashboardPanel({
                                   </div>
                                 )}
                                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                                  {destinationFreeGB >= stats.sizeGB ? (
+                                  {/* Three-state pill: while the disk-space
+                                      fetch is in flight (destinationTotalGB
+                                      still 0), show a NEUTRAL "Calculating..."
+                                      instead of the red "Required" — the
+                                      previous code flashed red for one render
+                                      tick before the green replaced it,
+                                      reading as "you don't have space" when
+                                      really we just hadn't checked yet. Once
+                                      the fetch lands, branch on the real
+                                      comparison. */}
+                                  {destinationTotalGB === 0 ? (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-500/10 ring-1 ring-slate-500/20 text-slate-600 dark:text-slate-300">
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      <span className="text-xs font-medium">Calculating space…</span>
+                                    </div>
+                                  ) : destinationFreeGB >= stats.sizeGB ? (
                                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-700 dark:text-emerald-300">
                                       <CheckCircle2 className="w-3.5 h-3.5" />
                                       <span className="text-xs font-medium">Required: {stats.sizeGB.toFixed(1)} GB</span>
@@ -4262,7 +4404,9 @@ function DashboardPanel({
                                       </span>
                                     </div>
                                   )}
-                                  {destinationFreeGB < stats.sizeGB && (
+                                  {destinationTotalGB === 0 ? (
+                                    <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Calculating space…</span>
+                                  ) : destinationFreeGB < stats.sizeGB && (
                                     <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Insufficient space</span>
                                   )}
                                 </div>
@@ -4435,7 +4579,9 @@ function DashboardPanel({
              <div className="text-sm font-medium text-muted-foreground">
                 <span className="text-foreground font-bold font-heading">{stats.totalFiles.toLocaleString()}</span> files ready to process
                 {!destinationPath && <span className="ml-2 text-amber-600 dark:text-amber-400">— Select a Library Drive to continue</span>}
-                {destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
+                {destinationPath && destinationTotalGB === 0
+                  ? <span className="ml-2 text-slate-600 dark:text-slate-300">— Calculating space…</span>
+                  : destinationPath && destinationFreeGB < stats.sizeGB && <span className="ml-2 text-rose-600 dark:text-rose-400">— Insufficient space on destination</span>}
              </div>
              <div className="flex items-center gap-4">
                <Button
@@ -4488,15 +4634,28 @@ function DashboardPanel({
                          }
                        }
                      }
-                     const pref = localStorage.getItem('pdr-auto-add-to-sd') || 'ask';
-                     if (pref === 'always') {
+                     // Apple-style smart default: auto-index after Fix
+                     // unless the user has explicitly opted out in
+                     // Settings → S&D. The old pre-Fix prompt that
+                     // asked the user every time is gone (a single
+                     // misclick on "No thanks" silently shut off
+                     // S&D / Memories / People Manager / Date Editor
+                     // / Trees for the Fixed files, with no recovery
+                     // surface). Power users who want manual control
+                     // toggle Auto-index Fixed files OFF in settings.
+                     try {
+                       const settings = await getSettings();
+                       const autoIndex = settings.autoIndexAfterFix !== false;
+                       setAddToSDThisRun(autoIndex);
+                       addToSDRef.current = autoIndex;
+                     } catch {
+                       // Best-effort — fall back to on if settings read
+                       // fails. Better to index by default than to
+                       // silently skip indexing for ambiguous reasons.
                        setAddToSDThisRun(true);
                        addToSDRef.current = true;
-                       setShowFixModal(true);
-                     } else {
-                       // 'ask' — show the pre-fix S&D prompt
-                       setShowSDPrompt(true);
                      }
+                     setShowFixModal(true);
                    }}
                    variant="primary"
                    disabled={!destinationPath || destinationFreeGB < stats.sizeGB || runFixBlocked}
@@ -4594,68 +4753,14 @@ function DashboardPanel({
         limit={trialLimit?.limit ?? 1000}
         wouldUse={trialLimit?.wouldUse ?? 0}
       />
-      {/* Pre-fix S&D prompt — shown when user clicks Run Fix and preference is 'ask' */}
-      {showSDPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-card border border-border rounded-xl shadow-2xl w-[440px] p-6"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Search className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold font-heading">Search & Discovery</h3>
-                <p className="text-xs text-muted-foreground">Make fixed files searchable</p>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground mb-5">
-              Would you like the output of this fix to be added to Search & Discovery? This lets you search, filter, and browse your files after the fix completes.
-            </p>
-            <div className="flex flex-col gap-2">
-              <Button
-                onClick={() => {
-                  setAddToSDThisRun(true);
-                  addToSDRef.current = true;
-                  setShowSDPrompt(false);
-                  setShowFixModal(true);
-                }}
-                className="w-full justify-start h-11"
-              >
-                <CheckCircle2 className="w-4 h-4 mr-2" /> Yes, one time only
-              </Button>
-              <Button
-                onClick={() => {
-                  setAddToSDThisRun(true);
-                  addToSDRef.current = true;
-                  localStorage.setItem('pdr-auto-add-to-sd', 'always');
-                  setShowSDPrompt(false);
-                  setShowFixModal(true);
-                }}
-                variant="outline"
-                className="w-full justify-start h-11"
-              >
-                <Sparkles className="w-4 h-4 mr-2" /> Yes, and always add for future fixes
-              </Button>
-              <Button
-                onClick={() => {
-                  setAddToSDThisRun(false);
-                  addToSDRef.current = false;
-                  setShowSDPrompt(false);
-                  setShowFixModal(true);
-                }}
-                variant="ghost"
-                className="w-full justify-start h-11 text-muted-foreground"
-              >
-                <X className="w-4 h-4 mr-2" /> No thanks
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* Pre-Fix S&D prompt removed (2026-05-14). Indexing now runs
+          automatically after every Fix; the opt-out lives in
+          Settings → S&D → "Auto-index Fixed files for Search &
+          Discovery" (default ON). Apple-style smart default: features
+          just work, opt-out is two layers deep for the rare power
+          user. Removes the failure mode where one misclick on "No
+          thanks" silently shut off S&D / Memories / PM / DE / Trees
+          with no recovery surface. */}
       {showFixModal && <FixProgressModal
         onClose={() => { setShowFixModal(false); setHasCompletedFix(true); setPostFixFlowActive(true); }}
         totalFiles={stats.totalFiles}
@@ -9265,6 +9370,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [autoAddToSD, setAutoAddToSD] = useState<'ask' | 'always'>(
     (localStorage.getItem('pdr-auto-add-to-sd') as 'ask' | 'always') === 'always' ? 'always' : 'ask'
   );
+  // Apple-style smart default: Fixed files are auto-indexed for S&D
+  // after every Fix unless this is explicitly OFF. Replaces the
+  // pre-Fix "Add these files to your library?" prompt (which had a
+  // catastrophic failure mode when a user clicked "No thanks" once).
+  // Default true; surfaced as a toggle in Settings → S&D.
+  const [autoIndexAfterFix, setAutoIndexAfterFix] = useState<boolean>(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   
     // Advanced settings state
@@ -9317,6 +9428,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setOpenPeopleOnStartup((settings as any).openPeopleOnStartup ?? false);
       setNetworkUploadMode(((settings as any).networkUploadMode as 'fast' | 'direct') ?? 'fast');
       setBypassLargeZipPreExtract(((settings as any).bypassLargeZipPreExtract as boolean) ?? false);
+      setAutoIndexAfterFix(((settings as any).autoIndexAfterFix as boolean) ?? true);
     });
   }, []);
 
@@ -9455,6 +9567,14 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleAutoAddToSDChange = (value: 'ask' | 'always') => {
     setAutoAddToSD(value);
     localStorage.setItem('pdr-auto-add-to-sd', value);
+  };
+
+  // New auto-index toggle (replaces the pre-Fix prompt). Writes to
+  // the persisted settings store so the Run Fix click handler can read
+  // it directly without any per-run UI gating.
+  const handleAutoIndexAfterFixToggle = (checked: boolean) => {
+    setAutoIndexAfterFix(checked);
+    setSetting('autoIndexAfterFix' as any, checked);
   };
 
   const handleWelcomeToggle = (checked: boolean) => {
@@ -10070,12 +10190,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 <div className="space-y-2">
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Always add fixes to Search & Discovery</span>
-                      <span className="text-xs text-muted-foreground">Skip the prompt and automatically index every fix. When off, you'll be asked each time.</span>
+                      <span className="text-sm font-medium text-foreground">Auto-index Fixed files for Search &amp; Discovery</span>
+                      <span className="text-xs text-muted-foreground">When on, files added to your Library Drive after a Fix are indexed automatically so they're searchable in S&amp;D, viewable in Memories, taggable in People Manager, editable in Date Editor, and usable in Trees. Turn off only if you want to index manually later.</span>
                     </div>
                     <Checkbox
-                      checked={autoAddToSD === 'always'}
-                      onCheckedChange={(checked) => handleAutoAddToSDChange(checked ? 'always' : 'ask')}
+                      checked={autoIndexAfterFix}
+                      onCheckedChange={(checked) => handleAutoIndexAfterFixToggle(!!checked)}
                     />
                   </label>
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">

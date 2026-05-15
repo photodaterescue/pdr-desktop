@@ -76,6 +76,21 @@ export interface PDRSettings {
    *  Google Takeouts. */
   bypassLargeZipPreExtract: boolean;
 
+  /** Auto-index Fixed files for Search & Discovery. When ON (default),
+   *  every Fix run that completes is followed by indexFixRun, which
+   *  writes rows into the search DB's `indexed_files` table — making
+   *  the files visible to S&D, Memories, People Manager, Date Editor
+   *  and Trees. When OFF, the user must trigger indexing manually
+   *  later (Re-index a folder action — v2.0.6 roadmap).
+   *
+   *  Replaces the old pre-Fix "Search & Discovery — Make fixed files
+   *  searchable?" prompt that asked the user every run. Terry's
+   *  framing (2026-05-14): Apple/Lightroom-style defaults — features
+   *  just work, opt-out lives two layers deep for the rare power
+   *  user. Avoids the previous failure mode where a single misclick
+   *  on "No thanks" silently shut off five different surfaces. */
+  autoIndexAfterFix: boolean;
+
   /** Persisted Library Drive (destination) path. Sticky across sessions
    *  so users don't have to re-pick it on every launch — and so the
    *  Welcome screen can keep its app cards / Tour / Best Practices
@@ -145,6 +160,9 @@ export const optimisedDefaults: PDRSettings = {
   networkUploadMode: 'fast',
   bypassLargeZipPreExtract: false,
   destinationPath: null,
+  // Auto-index after Fix — Apple-style smart default. ON so every
+  // Fix run feeds the search DB; user can opt out in Settings → S&D.
+  autoIndexAfterFix: true,
 };
 
 // Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
@@ -208,6 +226,7 @@ export function getSettings(): PDRSettings {
     networkUploadMode: store.get('networkUploadMode', optimisedDefaults.networkUploadMode),
     bypassLargeZipPreExtract: store.get('bypassLargeZipPreExtract', optimisedDefaults.bypassLargeZipPreExtract),
     destinationPath: store.get('destinationPath', optimisedDefaults.destinationPath),
+    autoIndexAfterFix: store.get('autoIndexAfterFix', optimisedDefaults.autoIndexAfterFix),
   };
 }
 

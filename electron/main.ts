@@ -280,6 +280,10 @@ import {
   listFavouriteFilters,
   deleteFavouriteFilter,
   renameFavouriteFilter,
+  // getDb — direct DB handle for ad-hoc aggregation queries that don't
+  // fit the existing typed helpers (e.g. library:listIndexedDrives, which
+  // GROUP BYs over the drive-letter prefix of file_path). Used sparingly.
+  getDb,
   type SearchQuery,
 } from './search-database.js';
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, type IndexProgress, type RebuildProgress } from './search-indexer.js';
@@ -1408,16 +1412,16 @@ app.on('before-quit', async () => {
   closeDatabase();
 });
 
-ipcMain.handle('dialog:openFolder', async () => {
+ipcMain.handle('dialog:openFolder', async (_event, defaultPath?: string) => {
   const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ['openDirectory'],
-    defaultPath: 'C:\\'
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: typeof defaultPath === 'string' && defaultPath.length > 0 ? defaultPath : 'C:\\'
   });
-  
+
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
-  
+
   return result.filePaths[0];
 });
 
@@ -4508,6 +4512,378 @@ ipcMain.handle('library:detectDriveType', async (_event, libraryRoot: string) =>
   try {
     if (!libraryRoot) return { success: false, error: 'libraryRoot is required' };
     return { success: true, data: detectDriveType(libraryRoot) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── library:getDriveDetails ────────────────────────────────────────────────
+// Full premium-LDM identity block for a path's drive. Returns letter,
+// volume label, file system, drive-type label, total/free bytes, online,
+// and the existing isSafeForLibrary flag. Uses PowerShell
+// Get-CimInstance Win32_LogicalDisk + Get-Volume to gather everything in
+// a single async exec (the browser:listDrives handler above proves the
+// pattern works on every supported Windows version).
+//
+// Returns nulls for fields PowerShell couldn't resolve so the renderer
+// can render "Volume: —" or hide rows gracefully rather than throwing.
+ipcMain.handle('library:getDriveDetails', async (_event, libraryRoot: string) => {
+  try {
+    if (!libraryRoot) return { success: false, error: 'libraryRoot is required' };
+    const letter = (libraryRoot.match(/^([A-Za-z]):/) || [])[1];
+    if (!letter) {
+      // Non-letter paths (UNC \\server\share, mounted volumes) — return
+      // what we can without the WMI lookup. detectDriveType still works
+      // for these via its own UNC-aware branch.
+      const driveTypeInfo = detectDriveType(libraryRoot);
+      return {
+        success: true,
+        data: {
+          path: libraryRoot,
+          letter: null,
+          volumeLabel: null,
+          fileSystem: null,
+          driveTypeLabel: driveTypeInfo.driveType,
+          driveTypeCode: null,
+          totalBytes: 0,
+          freeBytes: 0,
+          online: fs.existsSync(libraryRoot),
+          isSafeForLibrary: driveTypeInfo.isSafeForLibrary,
+          safetyReason: driveTypeInfo.reason,
+        },
+      };
+    }
+
+    const driveLetter = letter.toUpperCase();
+    const deviceId = `${driveLetter}:`;
+    let volumeLabel: string | null = null;
+    let fileSystem: string | null = null;
+    let driveTypeCode: number | null = null;
+    let totalBytes = 0;
+    let freeBytes = 0;
+    // Drive interface + media type — surfaced in LDM as a "drive speed"
+    // hint (NVMe / SATA / USB / spinning rust). Populated alongside the
+    // capacity in the same PowerShell exec to avoid a second round-trip.
+    let busType: string | null = null;
+    let mediaType: string | null = null;
+
+    // Robust number parser — PowerShell's ConvertTo-Json sometimes
+    // serialises int64 values as STRINGS instead of JSON numbers
+    // (varies by PowerShell version and value range). The previous
+    // strict `typeof === 'number'` check rejected string-serialised
+    // sizes and silently fell back to 0, leaving the LDM Capacity
+    // column blank for every row. Accept both forms.
+    const parseSizeValue = (v: unknown): number => {
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+      if (typeof v === 'string') {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      }
+      return 0;
+    };
+
+    if (process.platform === 'win32') {
+      // Reuse the EXACT PowerShell pattern that browser:listDrives
+      // uses — no -Filter, no embedded quotes, CSV output. That
+      // pattern is proven working in production; my previous attempts
+      // with -Filter "DeviceID='X:'" kept failing in Node's execFile
+      // (works in an interactive PS shell, but the argv escaping
+      // through Node + powershell.exe -Command breaks the embedded-
+      // quote filter, producing empty stdout and "Unexpected end of
+      // JSON input"). The fix: query all drives, filter in JS.
+      try {
+        const csv = await new Promise<string>((resolve, reject) => {
+          execFile('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-Command',
+            `Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,VolumeName,DriveType,Size,FreeSpace | ConvertTo-Csv -NoTypeInformation`
+          ], { encoding: 'utf8', timeout: 8000 }, (error, stdout, stderr) => {
+            if (error) {
+              const detail = stderr ? `\nstderr: ${String(stderr).slice(0, 500)}` : '';
+              reject(new Error(`${(error as Error).message}${detail}`));
+            } else {
+              resolve(stdout);
+            }
+          });
+        });
+        const lines = csv.trim().split('\n').filter(l => l.trim());
+        // Skip the CSV header line, parse the rest into rows. Trim
+        // each part BEFORE stripping the outer quotes — Windows CSV
+        // lines end with \r and the previous order (strip-then-trim)
+        // left a trailing " character on the FreeSpace column when
+        // its \r came after the closing quote, which then made
+        // Number() return NaN and the cell show "0 B free".
+        for (const line of lines.slice(1)) {
+          const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, '').trim());
+          if (parts[0]?.toUpperCase() === deviceId.toUpperCase()) {
+            volumeLabel = parts[1] && parts[1].trim() ? parts[1].trim() : null;
+            const dt = parseInt(parts[2], 10);
+            driveTypeCode = Number.isFinite(dt) ? dt : null;
+            totalBytes = parseSizeValue(parts[3]);
+            freeBytes = parseSizeValue(parts[4]);
+            break;
+          }
+        }
+      } catch (e) {
+        log.warn(`[library:getDriveDetails] CIM lookup failed for ${deviceId}:`, (e as Error).message);
+      }
+
+      // Separate, optional second query for FileSystem + BusType +
+      // MediaType (drive-speed metadata). Get-Volume / Get-Disk are
+      // Storage-module cmdlets that may not auto-load in every
+      // PowerShell version; failure here just blanks those fields
+      // — the capacity is already populated above.
+      try {
+        const psScript = [
+          `$r = @{FileSystem=$null; BusType=$null; MediaType=$null}`,
+          `try { $v = Get-Volume -DriveLetter '${driveLetter}' -ErrorAction Stop; if ($v) { $r.FileSystem = $v.FileSystem } } catch {}`,
+          `try { $disk = Get-Partition -DriveLetter '${driveLetter}' -ErrorAction Stop | Get-Disk -ErrorAction Stop; if ($disk) { $r.BusType = $disk.BusType; $r.MediaType = $disk.MediaType } } catch {}`,
+          `$r | ConvertTo-Json -Compress`,
+        ].join('; ');
+        const output = await new Promise<string>((resolve, reject) => {
+          execFile('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-Command', psScript,
+          ], { encoding: 'utf8', timeout: 6000 }, (error, stdout, stderr) => {
+            if (error) {
+              const detail = stderr ? `\nstderr: ${String(stderr).slice(0, 500)}` : '';
+              reject(new Error(`${(error as Error).message}${detail}`));
+            } else {
+              resolve(stdout);
+            }
+          });
+        });
+        const parsed = JSON.parse(output.trim());
+        fileSystem = (parsed.FileSystem && String(parsed.FileSystem).trim()) ? String(parsed.FileSystem).trim() : fileSystem;
+        busType = (parsed.BusType && String(parsed.BusType).trim()) ? String(parsed.BusType).trim() : null;
+        mediaType = (parsed.MediaType && String(parsed.MediaType).trim()) ? String(parsed.MediaType).trim() : null;
+      } catch (e) {
+        log.warn(`[library:getDriveDetails] FS/Disk metadata lookup failed for ${deviceId}:`, (e as Error).message);
+      }
+    }
+
+    // Drive-type label — map the Win32 DriveType code to a human label
+    // closer to what a non-technical user expects. Falls back to the
+    // detectDriveType reason if WMI didn't return a code.
+    const driveTypeInfo = detectDriveType(libraryRoot);
+    const driveTypeLabel = (() => {
+      if (driveTypeCode === 2) return 'Removable drive';
+      if (driveTypeCode === 3) return 'Internal drive';
+      if (driveTypeCode === 4) return 'Network drive';
+      if (driveTypeCode === 5) return 'CD/DVD';
+      return driveTypeInfo.driveType;
+    })();
+
+    return {
+      success: true,
+      data: {
+        path: libraryRoot,
+        letter: deviceId,
+        volumeLabel,
+        fileSystem,
+        driveTypeLabel,
+        driveTypeCode,
+        totalBytes,
+        freeBytes,
+        online: fs.existsSync(libraryRoot),
+        isSafeForLibrary: driveTypeInfo.isSafeForLibrary,
+        safetyReason: driveTypeInfo.reason,
+        busType,
+        mediaType,
+      },
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── library:listIndexedDrives ──────────────────────────────────────────────
+// The "drives in your library" section of LDM. Premium LDM shows the
+// user the WHOLE shape of their library, not just the one drive that
+// hosts the sidecar backup — Terry's framing: "the Library DB indexes
+// across all your drives, LDM should reflect that".
+//
+// Strategy: GROUP BY the first two characters of file_path (the drive
+// letter, e.g. "L:") in the search DB's files table. Each row becomes
+// a "drive in your library" entry with:
+//   - drive letter
+//   - photo / video count indexed from that drive
+//   - total bytes indexed from that drive
+//   - last-indexed timestamp (most recent indexed_at)
+//   - online status (fs.existsSync on the drive root)
+//   - volume label (PowerShell lookup, parallel for performance)
+// Non-letter paths (UNC, mounted volumes) are bucketed under a single
+// "Network / mounted" row for now — those are rare enough not to need
+// per-share breakdown in v2.0.5.
+ipcMain.handle('library:listIndexedDrives', async () => {
+  try {
+    const db = getDb();
+    // Two passes: drive-letter paths (UPPER(SUBSTR) for case-insensitive
+    // grouping since Windows is case-insensitive on drive letters but
+    // SQLite isn't by default), then UNC / network paths.
+    // Table is `indexed_files` (not `files` — easy mistake when looking
+    // at the IndexedFile interface). 9000+ rows in Terry's DB returned
+    // nothing on the first cut because the query targeted the wrong
+    // table — confirmed by the search-database.ts CREATE TABLE line.
+    const letterRows = db.prepare(`
+      SELECT
+        UPPER(SUBSTR(file_path, 1, 2)) AS drive,
+        COUNT(*) AS file_count,
+        COALESCE(SUM(size_bytes), 0) AS total_bytes,
+        MAX(indexed_at) AS last_indexed
+      FROM indexed_files
+      WHERE file_path GLOB '[A-Za-z]:*'
+      GROUP BY drive
+      ORDER BY drive
+    `).all() as Array<{ drive: string; file_count: number; total_bytes: number; last_indexed: string | null }>;
+
+    const uncRows = db.prepare(`
+      SELECT
+        COUNT(*) AS file_count,
+        COALESCE(SUM(size_bytes), 0) AS total_bytes,
+        MAX(indexed_at) AS last_indexed
+      FROM indexed_files
+      WHERE file_path LIKE '\\\\%'
+    `).all() as Array<{ file_count: number; total_bytes: number; last_indexed: string | null }>;
+
+    // Resolve labels for letter drives in parallel — PowerShell calls
+    // are the slowest part of this handler, so parallelising keeps the
+    // total wall time at ~1× single-drive lookup latency even with many
+    // drives. PowerShell never blocks on missing drives (it just
+    // returns null fields), so we don't need a separate online check.
+    const letterDrives = await Promise.all(letterRows.map(async (row) => {
+      const driveId = row.drive; // e.g. "L:"
+      const driveLetter = driveId[0];
+      const drivePath = `${driveId}\\`;
+      let volumeLabel: string | null = null;
+      let driveTypeCode: number | null = null;
+      let totalBytes = 0;
+      let freeBytes = 0;
+      if (process.platform === 'win32') {
+        try {
+          const output = await new Promise<string>((resolve, reject) => {
+            execFile('powershell.exe', [
+              '-NoProfile', '-NonInteractive', '-Command',
+              `$d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${driveId}'"; ` +
+              `@{VolumeName=$d.VolumeName; DriveType=[int]$d.DriveType; Size=[int64]$d.Size; FreeSpace=[int64]$d.FreeSpace} | ConvertTo-Json -Compress`
+            ], { encoding: 'utf8', timeout: 5000 }, (error, stdout) => {
+              if (error) reject(error);
+              else resolve(stdout);
+            });
+          });
+          const parsed = JSON.parse(output.trim());
+          volumeLabel = (parsed.VolumeName && String(parsed.VolumeName).trim()) ? String(parsed.VolumeName).trim() : null;
+          driveTypeCode = typeof parsed.DriveType === 'number' ? parsed.DriveType : null;
+          totalBytes = typeof parsed.Size === 'number' ? parsed.Size : 0;
+          freeBytes = typeof parsed.FreeSpace === 'number' ? parsed.FreeSpace : 0;
+        } catch {
+          // Drive offline / not present → leave all fields null; the
+          // renderer will show "Offline" pill based on the online flag.
+        }
+      }
+      const driveTypeLabel = driveTypeCode === 2 ? 'Removable drive'
+        : driveTypeCode === 3 ? 'Internal drive'
+        : driveTypeCode === 4 ? 'Network drive'
+        : driveTypeCode === 5 ? 'CD/DVD'
+        : 'Drive';
+      return {
+        kind: 'letter' as const,
+        path: drivePath,
+        letter: driveId,
+        volumeLabel,
+        driveTypeLabel,
+        driveTypeCode,
+        totalBytes,
+        freeBytes,
+        online: fs.existsSync(drivePath),
+        indexedFileCount: row.file_count,
+        indexedBytes: row.total_bytes,
+        lastIndexedAt: row.last_indexed,
+      };
+    }));
+
+    const uncDrives = uncRows
+      .filter(r => r.file_count > 0)
+      .map(r => ({
+        kind: 'unc' as const,
+        path: '\\\\',
+        letter: null,
+        volumeLabel: 'Network / mounted shares',
+        driveTypeLabel: 'Network',
+        driveTypeCode: 4,
+        totalBytes: 0,
+        freeBytes: 0,
+        online: true, // can't cheaply verify reachability of every share — assume online
+        indexedFileCount: r.file_count,
+        indexedBytes: r.total_bytes,
+        lastIndexedAt: r.last_indexed,
+      }));
+
+    return { success: true, data: { drives: [...letterDrives, ...uncDrives] } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── library:exportDb ───────────────────────────────────────────────────────
+// Premium safeguard introduced when we softened the "must be external
+// drive" rule for the Library Drive: the user can now keep a portable
+// copy of the search DB anywhere (email, cloud, second drive), so they
+// don't need to choose an external Library Drive purely for portability.
+//
+// Flow: ask the user where to save via the native save dialog, flush
+// any in-flight WAL writes with a full checkpoint, then copy
+// pdr-search.db to the chosen path. fs.copyFileSync is safe once we've
+// checkpointed — WAL mode means the .db file plus the .wal file
+// together represent the current state, and a checkpoint merges them
+// into the .db so a single-file copy is consistent.
+ipcMain.handle('library:exportDb', async () => {
+  try {
+    const browserWindow = BrowserWindow.getFocusedWindow();
+    if (!browserWindow) return { success: false, error: 'No active window' };
+
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(browserWindow, {
+      title: 'Download Library DB',
+      defaultPath: `pdr-library-${today}.db`,
+      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'cancelled' };
+    }
+
+    // Flush WAL into the main DB file so the copy is fully consistent.
+    try {
+      const db = getDb();
+      db.pragma('wal_checkpoint(FULL)');
+    } catch (e) {
+      log.warn('[library:exportDb] wal_checkpoint failed (continuing with copy):', (e as Error).message);
+    }
+
+    const sourceDbPath = path.join(app.getPath('userData'), 'search-index', 'pdr-search.db');
+    if (!fs.existsSync(sourceDbPath)) {
+      return { success: false, error: 'Library DB not found on this device.' };
+    }
+    fs.copyFileSync(sourceDbPath, result.filePath);
+    return { success: true, data: { path: result.filePath } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── library:openInExplorer ─────────────────────────────────────────────────
+// Thin wrapper over Electron's shell.openPath. Used by the LDM's "Open
+// in File Explorer" buttons. shell.openPath returns an empty string on
+// success or an error message on failure (Electron API contract), which
+// we surface in the standard { success, error } envelope.
+ipcMain.handle('library:openInExplorer', async (_event, targetPath: string) => {
+  try {
+    if (!targetPath) return { success: false, error: 'targetPath is required' };
+    if (!fs.existsSync(targetPath)) {
+      return { success: false, error: 'Path does not exist on disk.' };
+    }
+    const errMsg = await shell.openPath(targetPath);
+    if (errMsg) return { success: false, error: errMsg };
+    return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

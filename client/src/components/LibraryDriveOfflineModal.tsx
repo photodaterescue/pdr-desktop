@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, AlertTriangle, Loader2, Plug, RotateCcw } from 'lucide-react';
+import { X, AlertTriangle, Loader2, Plug, RotateCcw, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 // LibraryDriveOfflineModal — calmly surfaces the case where PDR's
 // configured Library Drive isn't currently reachable on disk (drive
@@ -20,22 +19,40 @@ import { IconTooltip } from '@/components/ui/icon-tooltip';
 // User actions:
 //   - Retry: re-check the drive. If it's now online, close. If still
 //     missing, keep the modal open.
-//   - Change Library Drive: open the existing destination-picker flow
-//     (the same one the Dashboard "Change Library Drive" button uses).
-//     The parent supplies that handler via onChangeLibraryDrive.
+//   - Change Library Drive: open the Library Drive Management panel
+//     (LibraryPanel). The previous version of this modal had THREE
+//     mechanically-identical entries — "Change Library Drive", an
+//     Advanced "Set up a new library here instead" link, AND the offline
+//     modal itself — all of which ultimately just changed destinationPath
+//     to a different folder. Terry called the duplication out, so we now
+//     route every "I want to manage / swap / set up" intent into the
+//     single Library Drive Management surface that the Library pill in
+//     the title bar also opens. One surface, one source of truth.
 //   - Close (X / Esc / backdrop): dismiss, but the underlying issue
 //     remains — the user will hit it again the moment they try to do
 //     anything that needs the drive.
 
+// Context = what the user JUST tried to do that needed the Library
+// Drive. Drives the headline + the "needs this drive for" line so the
+// modal explains why the wall just appeared, rather than generic
+// "your drive is offline" copy. The "still works without it" list
+// is the same across contexts — it's there to remind the user the
+// app isn't broken, just temporarily restricted.
+type OfflineContext = 'run-fix' | 'open-file' | 'sync-now' | 'generic';
+
 interface LibraryDriveOfflineModalProps {
   isOpen: boolean;
   destinationPath: string | null;
+  /** What operation triggered this modal. Drives the contextual
+   *  "needs for this action" copy. 'generic' = the catch-all banner
+   *  click; otherwise an action-specific framing applies. */
+  context?: OfflineContext;
   onClose: () => void;
-  onChangeLibraryDrive: () => void;
-  /** Reluctant advanced option — set up a brand-new library on a
-   *  different drive (effectively the same picker as Change Library
-   *  Drive, but framed for users who consciously want a fresh start). */
-  onSetUpNewLibrary: () => void;
+  /** Open Library Drive Management (LibraryPanel) — covers swap-to-
+   *  different-existing, set-up-new, take-over-writer, disconnect, all
+   *  inside one cohesive surface. Replaces what used to be two inline
+   *  CTAs ("Change Library Drive" + Advanced "Set up new library"). */
+  onOpenLibraryPanel: () => void;
   /** Soft, acknowledged dismiss — user is aware they need to plug
    *  the drive in but is choosing to defer until later this session. */
   onConnectLater: () => void;
@@ -46,9 +63,9 @@ interface LibraryDriveOfflineModalProps {
 export function LibraryDriveOfflineModal({
   isOpen,
   destinationPath,
+  context = 'generic',
   onClose,
-  onChangeLibraryDrive,
-  onSetUpNewLibrary,
+  onOpenLibraryPanel,
   onConnectLater,
   onRetry,
 }: LibraryDriveOfflineModalProps) {
@@ -56,6 +73,36 @@ export function LibraryDriveOfflineModal({
   const [retryFailed, setRetryFailed] = useState(false);
 
   if (!isOpen) return null;
+
+  // Contextual headline + "needs for this action" copy. Generic =
+  // banner-click path; the others are reactive (user just tried to
+  // do something that hit DESTINATION_OFFLINE). Each headline names
+  // the specific action that's blocked so the user understands why
+  // the modal just appeared.
+  const contextCopy = (() => {
+    switch (context) {
+      case 'run-fix':
+        return {
+          headline: 'Plug in your Library Drive to run Fix',
+          why: 'Fix copies your fixed photos to the Library Drive, so the drive has to be connected before it can run.',
+        };
+      case 'open-file':
+        return {
+          headline: 'This photo lives on your Library Drive',
+          why: 'PDR needs the drive connected to open the original file.',
+        };
+      case 'sync-now':
+        return {
+          headline: 'Library backup can\'t sync right now',
+          why: 'PDR mirrors your library database onto the Library Drive so it can be recovered on another PC. The drive has to be connected.',
+        };
+      default:
+        return {
+          headline: 'Your Library Drive isn\'t connected',
+          why: 'PDR uses this drive to store fixed photos and a backup of your library database.',
+        };
+    }
+  })();
 
   const handleRetry = async () => {
     setIsRetrying(true);
@@ -102,24 +149,62 @@ export function LibraryDriveOfflineModal({
             >
               <AlertTriangle className="w-8 h-8 text-amber-600 dark:text-amber-400" />
             </motion.div>
-            <h2 className="text-h1 text-foreground mb-2">Your Library Drive isn't connected</h2>
-            <p className="text-body-muted max-w-sm">
-              PDR can't reach your Library Drive at:
-            </p>
+            <h2 className="text-h1 text-foreground mb-2">{contextCopy.headline}</h2>
             {destinationPath && (
-              <p className="text-caption mt-2 break-all font-mono">{destinationPath}</p>
+              <p className="text-mono mt-1 break-all">{destinationPath}</p>
             )}
-            <p className="text-body-muted max-w-sm mt-2">
-              It's probably unplugged, sleeping, or offline. Plug it in and click Retry, or pick a different Library Drive.
+            <p className="text-body-muted max-w-sm mt-3">
+              {contextCopy.why}
             </p>
             {retryFailed && (
-              <p className="text-caption text-rose-700 dark:text-rose-300 mt-3">
+              <p className="text-body-muted text-rose-700 dark:text-rose-300 mt-3">
                 Still not reachable. Make sure the drive is plugged in and recognised by Windows, then Retry.
               </p>
             )}
           </div>
         </div>
-        <div className="px-6 pb-6 pt-2 space-y-3">
+        {/* "Still works without it" reassurance — same across all
+            contexts. Tells the user the app isn't broken, just
+            temporarily restricted on a few specific operations.
+            Two-column layout: needs (rose X) + still works (emerald ✓)
+            scans in 2 seconds without forcing the user to read prose. */}
+        <div className="px-6 pt-4 pb-1 grid grid-cols-2 gap-4 border-b border-border">
+          <div>
+            <p className="text-caption uppercase tracking-wider mb-2">Needs the drive</p>
+            <ul className="space-y-1.5">
+              <li className="flex items-start gap-1.5">
+                <XCircle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
+                <span className="text-body-muted">Running Fix</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <XCircle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
+                <span className="text-body-muted">Opening fixed photos</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <XCircle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
+                <span className="text-body-muted">Library backup sync</span>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <p className="text-caption uppercase tracking-wider mb-2">Still works</p>
+            <ul className="space-y-1.5">
+              <li className="flex items-start gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span className="text-body-muted">Adding sources</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span className="text-body-muted">Browsing, search, tagging</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <span className="text-body-muted">Editing dates on sources</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div className="px-6 pb-6 pt-4 space-y-3">
           <Button
             onClick={handleRetry}
             disabled={isRetrying}
@@ -136,8 +221,16 @@ export function LibraryDriveOfflineModal({
               </>
             )}
           </Button>
+          {/* "Change Library Drive" — opens Library Drive Management
+              (LibraryPanel). The user-facing label keeps the same wording
+              as before because that's still the user's mental intent;
+              what changed underneath is that this now routes to the
+              single management surface instead of a one-off folder
+              picker. Inside LibraryPanel they can swap to a different
+              existing drive, set up a brand-new library, take over as
+              writer, or disconnect — all in one place. */}
           <Button
-            onClick={onChangeLibraryDrive}
+            onClick={onOpenLibraryPanel}
             disabled={isRetrying}
             variant="secondary"
             className="w-full h-11"
@@ -145,41 +238,13 @@ export function LibraryDriveOfflineModal({
             <Plug className="w-4 h-4 mr-2" /> Change Library Drive
           </Button>
 
-          {/* Advanced — reluctant new-library path. Uses the
-              style-guide's "discouraged-option" pattern (variant="link"
-              + text-muted-foreground override) so the option exists but
-              visually blends in with body copy rather than calling out
-              to the user as a normal CTA. Tooltip carries the "most
-              people get the best experience keeping a single library"
-              framing from the design memo, via IconTooltip (NOT the
-              native title attribute). */}
-          <div className="pt-2 border-t border-border">
-            <p className="text-caption uppercase tracking-wider mb-1.5">Advanced</p>
-            <p className="text-caption mb-1.5">
-              Want to use a different drive as your library going forward, separate from your existing one?
-            </p>
-            <IconTooltip
-              label="Most people get the best experience keeping a single library. Photos from all your libraries stay unified in PDR's views, but each drive must be connected to open the original files."
-              side="top"
-            >
-              <Button
-                onClick={onSetUpNewLibrary}
-                disabled={isRetrying}
-                variant="link"
-                className="px-0 h-auto text-muted-foreground hover:text-foreground"
-              >
-                Set up a new library here instead
-              </Button>
-            </IconTooltip>
-          </div>
-
           {/* Soft acknowledged dismiss — distinct from a blank X close.
               The user is making an informed deferral ("I know, later")
-              rather than just clicking past the popup. Same
-              discouraged-option pattern as above — we want the option
-              available but visually de-emphasised so users who
-              should retry / change drive aren't pulled toward
-              defer-and-forget. */}
+              rather than just clicking past the popup. Discouraged-option
+              pattern from STYLE_GUIDE.md: variant="link" + the sanctioned
+              text-muted-foreground override so the option exists but
+              visually de-emphasises so users who should retry / change
+              drive aren't pulled toward defer-and-forget. */}
           <div className="pt-2 border-t border-border">
             <Button
               onClick={onConnectLater}

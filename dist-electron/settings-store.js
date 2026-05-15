@@ -34,6 +34,9 @@ export const optimisedDefaults = {
     networkUploadMode: 'fast',
     bypassLargeZipPreExtract: false,
     destinationPath: null,
+    // Auto-index after Fix — Apple-style smart default. ON so every
+    // Fix run feeds the search DB; user can opt out in Settings → S&D.
+    autoIndexAfterFix: true,
 };
 // Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
 // (the productName-based folder customers see in packaged builds)
@@ -94,6 +97,7 @@ export function getSettings() {
         networkUploadMode: store.get('networkUploadMode', optimisedDefaults.networkUploadMode),
         bypassLargeZipPreExtract: store.get('bypassLargeZipPreExtract', optimisedDefaults.bypassLargeZipPreExtract),
         destinationPath: store.get('destinationPath', optimisedDefaults.destinationPath),
+        autoIndexAfterFix: store.get('autoIndexAfterFix', optimisedDefaults.autoIndexAfterFix),
     };
 }
 // ─── Scanner override helpers ────────────────────────────────────────────────
