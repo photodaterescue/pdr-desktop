@@ -112,6 +112,7 @@ import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { LibraryDriveOfflineModal } from "@/components/LibraryDriveOfflineModal";
 import { LibraryDriveOfflineBanner } from "@/components/LibraryDriveOfflineBanner";
+import { AiOfferCard } from "@/components/AiOfferCard";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -605,6 +606,27 @@ useEffect(() => {
   const handler = () => { setActiveView('search'); };
   window.addEventListener('pdr:openParallelLibrary', handler as EventListener);
   return () => window.removeEventListener('pdr:openParallelLibrary', handler as EventListener);
+}, []);
+
+// AI offer accepted — fires when the user clicks Enable on the
+// AiOfferCard (Dashboard or future S&D placement). AiOfferCard has
+// already set settings.aiEnabled = true; here we kick off the
+// background AI processing so the model download + analysis runs
+// start immediately rather than waiting for the next Fix. Same
+// startAiProcessing call the legacy S&D banner used to make.
+useEffect(() => {
+  const handler = async () => {
+    try {
+      const bridge = await import('@/lib/electron-bridge');
+      if (typeof bridge.startAiProcessing === 'function') {
+        bridge.startAiProcessing();
+      }
+    } catch (e) {
+      console.warn('[workspace] aiOfferAccepted → startAiProcessing failed:', e);
+    }
+  };
+  window.addEventListener('pdr:aiOfferAccepted', handler as EventListener);
+  return () => window.removeEventListener('pdr:aiOfferAccepted', handler as EventListener);
 }, []);
 // `license` (the full LicenseStatus) + `storedLicenseKey` are needed
 // alongside `isLicensed` so the Free Trial file counter knows
@@ -4057,6 +4079,13 @@ function DashboardPanel({
            <h2 className="text-2xl font-semibold text-foreground mb-2">Dashboard</h2>
            <p className="text-muted-foreground">{isComplete ? 'Analysis complete — review results and run your fix' : 'Review your sources and start analysis'}</p>
         </div>
+
+        {/* AI Discovery — Apple-style post-Fix moment surface. Self-
+            gates on settings.aiEnabled === false + indexed photo
+            count + dismiss/re-offer state, so it shows when relevant
+            and stays out of the way otherwise. Shares the
+            pdr-ai-prompt-dismissed flag with the existing S&D banner. */}
+        <AiOfferCard surface="dashboard" />
 
         {/* Confidence Summary Section */}
         {hasSelection && (

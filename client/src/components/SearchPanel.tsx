@@ -76,6 +76,7 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import ParallelStructureModal from '@/components/ParallelStructureModal';
 import StaleRunsModal from '@/components/StaleRunsModal';
 import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
+import { AiOfferCard } from '@/components/AiOfferCard';
 import {
   initSearchDatabase,
   searchFiles,
@@ -460,7 +461,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [aiProgress, setAiProgress] = useState<AiProgress | null>(null);
   const [aiStats, setAiStatsState] = useState<AiStats | null>(null);
   const [aiTagOptions, setAiTagOptions] = useState<{ tag: string; count: number }[]>([]);
-  const [aiPromptDismissed, setAiPromptDismissed] = useState(() => localStorage.getItem('pdr-ai-prompt-dismissed') === 'true');
+  // NOTE: AI banner dismiss + re-offer state lives in AiOfferCard now.
+  // It owns its own localStorage flags (pdr-ai-prompt-dismissed +
+  // pdr-ai-prompt-baseline) and the 5,000-indexed re-offer mechanic,
+  // so SearchPanel no longer tracks aiPromptDismissed here.
   const [aiModelsReady, setAiModelsReady] = useState(false);
   const [selectedAiTags, setSelectedAiTags] = useState<string[]>([]);
 
@@ -723,18 +727,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     prevIsIndexingRef.current = isIndexing;
     if (!isIndexing && dbReady) {
       loadFilterOptions(); loadStats(); loadAiData(); if (results) executeSearch();
-      // Only re-surface the AI banner when isIndexing genuinely flipped
-      // from true to false (i.e. a Fix or initial index just finished).
-      // Cold mounts where wasIndexing is already false leave the user's
-      // dismissal in place.
-      if (wasIndexing) {
-        getSettings().then(s => {
-          if (!s.aiEnabled) {
-            setAiPromptDismissed(false);
-            localStorage.removeItem('pdr-ai-prompt-dismissed');
-          }
-        });
-      }
+      // AiOfferCard decides on its own whether to re-surface, based on
+      // its baseline + 5,000-indexed threshold. We deliberately do NOT
+      // clear the dismiss flag on every Fix completion any more — that
+      // would defeat the re-offer mechanic and nag the user after every
+      // run.
     }
   }, [isIndexing]);
 
@@ -3008,47 +3005,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         </div>
       )}
 
-      {/* ═══ AI DISCOVERY BANNER — shown when AI is off but user has indexed files ═══ */}
-      {!aiEnabled && !aiPromptDismissed && stats && stats.totalFiles > 0 && (
-        <div className="mx-4 mt-3 mb-1 p-4 rounded-xl border-2 border-violet-300 dark:border-violet-600 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-950/30 dark:to-purple-950/20 flex items-center gap-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5 text-violet-600 dark:text-violet-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-violet-900 dark:text-violet-200">
-              AI Photo Analysis available
-            </p>
-            <p className="text-xs text-violet-700/80 dark:text-violet-300/70 mt-0.5 leading-relaxed">
-              Detect faces, identify people, and auto-tag your library photos with content labels. AI analysis applies to photos only — videos are not processed. Everything runs locally on your device — nothing is ever uploaded. A one-time ~300 MB model download is required, then fully offline.
-            </p>
-          </div>
-          <button
-            onClick={async () => {
-              setAiEnabled(true);
-              await setSetting('aiEnabled', true);
-              await loadAiData();
-              // Switch to AI tab and expand ribbon so user sees progress
-              setActiveTab('ai');
-              if (!ribbonExpanded) setRibbonExpanded(true);
-              // Start AI processing — will download models on first run
-              setAiProcessing(true);
-              startAiProcessing();
-            }}
-            className="shrink-0 px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold transition-colors flex items-center gap-2 shadow-md"
-          >
-            <Sparkles className="w-4 h-4" />
-            Enable AI & Download Models
-          </button>
-          <IconTooltip label="Dismiss" side="left">
-            <button
-              onClick={() => { setAiPromptDismissed(true); localStorage.setItem('pdr-ai-prompt-dismissed', 'true'); }}
-              className="shrink-0 p-1.5 rounded-lg hover:bg-violet-200/50 dark:hover:bg-violet-800/30 text-violet-400 hover:text-violet-600 dark:hover:text-violet-300 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </IconTooltip>
-        </div>
-      )}
+      {/* AI Discovery — shared AiOfferCard (lives on Dashboard too).
+          Same dismiss flag, same re-offer-at-5000-indexed mechanic,
+          same styling. Mounting both surfaces with the shared
+          primitive means a single Enable or Not-now propagates to
+          both, and Terry never sees a duplicate prompt. SearchPanel
+          wraps in mx-4 to match the panel's left/right padding. */}
+      <div className="mx-4 mt-3 mb-1">
+        <AiOfferCard surface="sd" />
+      </div>
 
       {/* ═══ Unavailable drive banner ═══ */}
       {unavailableFileMessage && (
