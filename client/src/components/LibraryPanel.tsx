@@ -27,7 +27,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
-import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   DropdownMenu,
@@ -947,61 +946,22 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // bars in place of values. When the real data arrives, rows fill
   // in where their placeholders sit, with no shift. The structural
   // chrome stays put so the modal doesn't pop.
+  // Initial-load state. The first version of this was a fake-table
+  // skeleton with three blank rows — Terry's critique was right:
+  // we don't actually KNOW how many drives the user has until the
+  // listIndexedDrives IPC returns, so pretending there will be
+  // three of them implies information we don't have, and the empty
+  // outlines just made the wait feel longer rather than informative.
+  // A single calm centered message is the more honest and more
+  // premium answer when the row count is genuinely unknown.
   const renderInitialLoading = () => (
     <>
       {renderManagementHeader()}
-      <div className="px-6 py-5 space-y-4">
-        {/* Summary line skeleton — mirrors "N photos · M GB · K drives" + last-synced subline */}
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-72" />
-          <Skeleton className="h-3 w-44" />
-        </div>
-        {/* Section label skeleton */}
-        <Skeleton className="h-3 w-40 mt-2" />
-        {/* Column header skeleton — same grid as the real table so
-            rows fill into the same column positions when data arrives */}
-        <div className="grid grid-cols-[minmax(12rem,2fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_3rem_2rem] gap-3 px-3 pb-1">
-          <Skeleton className="h-3 w-12" />
-          <Skeleton className="h-3 w-14" />
-          <Skeleton className="h-3 w-10" />
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="h-3 w-12 mx-auto" />
-          <div></div>
-        </div>
-        {/* Three skeleton rows — same row card geometry as the real
-            drive rows. Staggered widths look natural rather than
-            uniform. Uses the shared Skeleton primitive (bg-primary/10
-            + animate-pulse) so the bars are visibly lavender-tinted
-            against the white modal — bg-muted on its own was too
-            pale on this surface and rendered as empty outlines. */}
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="grid grid-cols-[minmax(12rem,2fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_3rem_2rem] gap-3 items-center rounded-xl border border-border p-3"
-          >
-            <div className="space-y-1.5">
-              <Skeleton className={`h-4 ${i === 0 ? 'w-3/4' : i === 1 ? 'w-2/3' : 'w-1/2'}`} />
-              <Skeleton className="h-3 w-16" />
-            </div>
-            <Skeleton className="h-5 w-20 rounded-full" />
-            <div className="space-y-1">
-              <Skeleton className="h-3.5 w-16" />
-              <Skeleton className="h-3 w-12" />
-            </div>
-            <div className="space-y-1">
-              <Skeleton className="h-3.5 w-20" />
-              <Skeleton className="h-3 w-16" />
-            </div>
-            <Skeleton className="h-4 w-4 rounded-full mx-auto" />
-            <Skeleton className="h-4 w-4" />
-          </div>
-        ))}
-        {/* Calm subtitle anchored at the bottom — reassures without
-            sounding apologetic. Lavender accent on the small spinner
-            keeps it visually tied to the modal's primary colour. */}
-        <div className="flex items-center justify-center gap-2 pt-2">
-          <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-          <p className="text-caption text-muted-foreground">Reading your drives — this only takes a moment</p>
+      <div className="px-6 py-16 flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        <div className="text-center space-y-1.5">
+          <p className="text-h2 text-foreground">One moment — identifying your drives</p>
+          <p className="text-body-muted">PDR is checking which drives are connected and how much of your library lives on each. This usually takes a second or two.</p>
         </div>
       </div>
     </>
@@ -1308,15 +1268,38 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                   onValueChange={(value) => {
                     const target = orderedDrives.find(d => (d.letter ?? d.path) === value);
                     if (!target || target.isCurrentLibraryDrive) return;
-                    // Option A: don't attach to the drive root. Open
-                    // PDR's in-app FolderBrowserModal (the familiar
-                    // "Select Library Drive" picker with Saved
-                    // Destinations + drive ratings + Drive Advisor)
-                    // so the user picks a specific folder rather than
-                    // the bare drive root. The native OS picker we
-                    // used briefly lacked the saved-destinations
-                    // history Terry's been using as PDR muscle memory.
+
+                    // Two paths from here:
                     //
+                    // 1) The target row IS already a specific library
+                    //    folder (e.g. "D:\1. Photos\1. PDR Library
+                    //    Drive" — the saved destinations and the
+                    //    current library always have specific paths).
+                    //    In that case the user has already told us
+                    //    where they want the library to live; opening
+                    //    the picker would force them to re-pick the
+                    //    same path they already selected, which makes
+                    //    no sense (Terry's complaint: "it's available
+                    //    for me to select in the LDM, but it just
+                    //    doesn't select it"). Attach directly via
+                    //    inspectAndRoute — same flow as if they'd
+                    //    picked it through the folder browser.
+                    //
+                    // 2) The target row is a bare drive-letter rollup
+                    //    (e.g. "H:\" — the listIndexedDrives signal
+                    //    that a drive holds indexed photos but isn't
+                    //    a registered library yet). We DON'T attach
+                    //    to "H:\" itself because the bare drive root
+                    //    is rarely what the user actually wants —
+                    //    they want a specific folder inside it. Open
+                    //    PDR's in-app FolderBrowserModal so they can
+                    //    pick that folder.
+                    const isBareDriveRoot = /^[A-Za-z]:[\\/]?$/.test(target.path);
+                    if (!isBareDriveRoot) {
+                      void inspectAndRoute(target.path);
+                      return;
+                    }
+
                     // The LDM modal is portalled and doesn't have the
                     // FolderBrowserModal mounted inside it, so we
                     // dispatch a CustomEvent that workspace.tsx
