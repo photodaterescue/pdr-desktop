@@ -35,6 +35,7 @@ export function DbBackupReminderCard() {
   const [snoozedAt, setSnoozedAt] = useState<string | null>(null);
   const [photoCount, setPhotoCount] = useState<number>(0);
   const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,12 +80,33 @@ export function DbBackupReminderCard() {
     ? `You have ${photoCount.toLocaleString()} photos and counting in PDR. The library DB holds every face, name, tag, and date — back it up off this PC so a broken or stolen PC doesn't take it with it.`
     : 'Save a fresh copy of the library DB off this PC. Cloud, email, or another drive — anywhere not on this machine.';
 
-  const handleBackupNow = () => {
-    // Open the LDM. The user can click the Back-up-DB pill on the
-    // current Library Drive row to open the full explainer + Back-up-
-    // now flow. This keeps the file-save logic in one place
-    // (LibraryPanel.handleExportDb) instead of duplicating it here.
-    window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'));
+  const handleBackupNow = async () => {
+    // Direct OS save dialog — no LDM detour. Terry's call (2026-05-15):
+    // "If the user has already chosen back up now, then shouldn't the
+    // db file just download?" Routing through the LDM just to have the
+    // user click another button felt redundant. Now the banner button
+    // is the action: click → save dialog → save → done. Banner
+    // disappears on next render because lastBackupAt becomes "today".
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await (window as any).pdr?.library?.exportDb?.();
+      if (res?.success && res.data?.path) {
+        const now = new Date().toISOString();
+        try {
+          await (window as any).pdr?.settings?.set?.('lastDbBackupAt', now);
+          await (window as any).pdr?.settings?.set?.('dbBackupReminderSnoozedAt', null);
+        } catch {}
+        setLastBackupAt(now);
+        setSnoozedAt(null);
+      }
+      // res.error === 'cancelled' from the user closing the OS dialog
+      // is a no-op — leave the banner visible and let them try again.
+    } catch (e) {
+      console.warn('[DbBackupReminderCard] backup failed:', e);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleSnooze = async () => {
@@ -107,11 +129,11 @@ export function DbBackupReminderCard() {
         <p className="text-body-muted mt-1">{body}</p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <Button onClick={handleBackupNow} variant="primary" size="sm">
+        <Button onClick={handleBackupNow} disabled={busy} variant="primary" size="sm">
           <Download />
-          Back up now
+          {busy ? 'Saving…' : 'Back up now'}
         </Button>
-        <Button onClick={handleSnooze} variant="secondary" size="sm">
+        <Button onClick={handleSnooze} disabled={busy} variant="secondary" size="sm">
           Snooze 30 days
         </Button>
         <IconTooltip label="Snooze 30 days" side="left">
