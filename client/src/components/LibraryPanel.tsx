@@ -1805,9 +1805,19 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             Cancel
           </Button>
           <Button
+            // Set up a separate library — routes through Library
+            // Planner → DDA → LDM-bound folder picker (v2.0.6). The
+            // planner is the natural sizing step when starting a NEW
+            // library: each library can have different collection
+            // sizes / drive needs. workspace.tsx listens for
+            // pdr:openLibraryPlanner, sets plannerForNewLibrary, opens
+            // the chain. We close the panel so the planner has the
+            // full screen (it's portalled at z-50 same as LDM, so
+            // staying open would stack confusingly).
             onClick={() => {
               setStep('status');
-              window.dispatchEvent(new CustomEvent('pdr:pickLibraryDriveFolder', { detail: {} }));
+              onClose();
+              window.dispatchEvent(new CustomEvent('pdr:openLibraryPlanner'));
             }}
             variant="link"
             className="w-full text-muted-foreground hover:text-foreground"

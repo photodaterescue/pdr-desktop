@@ -3852,6 +3852,15 @@ function DashboardPanel({
   const [showDestBrowser, setShowDestBrowser] = useState(false);
   const [showDestAdvisor, setShowDestAdvisor] = useState(false);
   const [showLibraryPlanner, setShowLibraryPlanner] = useState(false);
+  // True when the Library Planner is opened FROM the LDM's
+  // "Set up a separate library anyway" flow, rather than the
+  // first-time destination setup OR the "review your collection
+  // sizing" path. Drives the post-Planner / post-DDA continuation:
+  // when set, after completion we dispatch pdr:pickLibraryDriveFolder
+  // so the LDM's attach flow takes over the picked folder, instead
+  // of opening the regular destination-setting folder browser.
+  // Reset on completion or cancel.
+  const [plannerForNewLibrary, setPlannerForNewLibrary] = useState(false);
   // Output destination card expansion. Lives here in DashboardPanel
   // (not Workspace) because the chevron + collapse render is inside
   // DashboardPanel — declaring it in Workspace put it out of scope
@@ -3887,6 +3896,23 @@ function DashboardPanel({
 
   // Post-fix flow lives at workspace top-level — DashboardPanel only
   // signals the start of the flow via the setPostFixFlowActive prop.
+
+  // LDM "Set up a separate library anyway" → Library Planner → DDA →
+  // LDM-bound folder picker. Terry's design (2026-05-15): when the
+  // user is starting a NEW library (not the first-time setup, not a
+  // review of an existing library's sizing), the planner is still
+  // the natural sizing step — each library can have different
+  // collection sizes / drive needs. Without this listener, the LDM's
+  // "anyway" link jumped straight to the SLD folder picker, skipping
+  // the sizing context entirely.
+  useEffect(() => {
+    const handler = () => {
+      setPlannerForNewLibrary(true);
+      setShowLibraryPlanner(true);
+    };
+    window.addEventListener('pdr:openLibraryPlanner', handler);
+    return () => window.removeEventListener('pdr:openLibraryPlanner', handler);
+  }, []);
 
   const handleChangeDestination = () => {
     if (isElectron()) {
@@ -4736,36 +4762,70 @@ function DashboardPanel({
         isOpen={showLibraryPlanner}
         previousAnswers={libraryPlannerAnswers}
         onComplete={(answers) => {
-          const isReview = !!destinationPath;
+          const isReview = !!destinationPath && !plannerForNewLibrary;
           setLibraryPlannerAnswers(answers);
           setShowLibraryPlanner(false);
-          // If reviewing (destination already set), just close — don't re-trigger the flow
+          // If reviewing (destination already set, not in new-library
+          // flow), just close — don't re-trigger the flow.
           if (isReview) return;
-          // First-time flow continues to DDA (unless skipped)
+          // First-time setup OR LDM "Set up a separate library" flow:
+          // continue to DDA (unless the user previously chose to skip
+          // the advisor). The DDA's onContinue branches on
+          // plannerForNewLibrary to decide which folder picker to
+          // open at the end of the chain.
           const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
           if (!skipAdvisor) {
             setShowDestAdvisor(true);
+          } else if (plannerForNewLibrary) {
+            // Skip-advisor + new-library flow: jump straight to the
+            // LDM-bound folder picker. Reset the flag — DDA's reset
+            // path is the alternate path through it; here we own the
+            // reset because we're not opening DDA.
+            setPlannerForNewLibrary(false);
+            window.dispatchEvent(new CustomEvent('pdr:pickLibraryDriveFolder', { detail: {} }));
           } else {
             setShowDestBrowser(true);
           }
         }}
         onSkip={() => {
-          const isReview = !!destinationPath;
+          const isReview = !!destinationPath && !plannerForNewLibrary;
           setShowLibraryPlanner(false);
           if (isReview) return;
           const skipAdvisor = localStorage.getItem('pdr-skip-dest-advisor') === 'true';
           if (!skipAdvisor) {
             setShowDestAdvisor(true);
+          } else if (plannerForNewLibrary) {
+            setPlannerForNewLibrary(false);
+            window.dispatchEvent(new CustomEvent('pdr:pickLibraryDriveFolder', { detail: {} }));
           } else {
             setShowDestBrowser(true);
           }
         }}
       />
-      {/* Destination Drive Advisor — shown before first destination selection */}
+      {/* Destination Drive Advisor — shown before first destination
+          selection OR (since v2.0.6) as the second step of the LDM's
+          "Set up a separate library" flow. The onContinue branches:
+          for the new-library flow, dispatch pdr:pickLibraryDriveFolder
+          so the LDM's attach pipeline takes over the picked folder;
+          for first-time setup, open the destination-setting folder
+          browser as before. onClose (user cancels) resets the
+          new-library flag so a follow-up Library Planner open doesn't
+          inherit stale state. */}
       <DestinationAdvisorModal
         isOpen={showDestAdvisor}
-        onClose={() => setShowDestAdvisor(false)}
-        onContinue={() => { setShowDestAdvisor(false); setShowDestBrowser(true); }}
+        onClose={() => {
+          setShowDestAdvisor(false);
+          if (plannerForNewLibrary) setPlannerForNewLibrary(false);
+        }}
+        onContinue={() => {
+          setShowDestAdvisor(false);
+          if (plannerForNewLibrary) {
+            setPlannerForNewLibrary(false);
+            window.dispatchEvent(new CustomEvent('pdr:pickLibraryDriveFolder', { detail: {} }));
+          } else {
+            setShowDestBrowser(true);
+          }
+        }}
         currentSourceSizeGB={stats.sizeGB}
         plannedCollectionSizeGB={libraryPlannerAnswers?.collectionSizeGB ?? null}
       />
