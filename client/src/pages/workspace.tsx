@@ -4276,7 +4276,19 @@ function DashboardPanel({
                         it — that case IS a CTA. */}
                     {destinationPath ? (
                       <button
-                        onClick={handleChangeDestination}
+                        // Change Library Drive — opens the Library
+                        // Drive Manager (LDM), not the folder picker.
+                        // Terry's resolution (2026-05-15): every
+                        // post-setup "switch my Library Drive" action
+                        // should go through the LDM, which is the
+                        // single channel for managing libraries. The
+                        // SLD folder picker is only opened from
+                        // inside the LDM via its "Set up a new
+                        // library on another drive" advanced flow.
+                        // Previously this button jumped straight to
+                        // the picker, bypassing the LDM's drive list
+                        // + saved-destinations affordances.
+                        onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'))}
                         disabled={fixActive}
                         className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                         data-testid="button-change-destination"

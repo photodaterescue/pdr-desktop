@@ -503,10 +503,25 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       }
       const detection = res.data as SidecarDetection;
       setPendingDetection(detection);
-      if (detection.dbExists) {
+      // AppData-wins model (2026-05-15). The user already has a
+      // library attached AND is using the LDM to switch — that means
+      // their AppData DB is the source of truth, not whatever stale
+      // sidecar might happen to sit at the target location. Always
+      // route to attachAsNew so the new sidecar is overwritten FROM
+      // AppData (and the old sidecar gets cleaned up by the backend).
+      // The detected-existing / attachFromSidecar path is only valid
+      // for fresh-install restore — where the user has NO attached
+      // library AND is restoring from a sidecar — and that flow has
+      // its own entry point elsewhere in the wizard.
+      const userHasAttachedLibrary = !!status?.attached;
+      if (detection.dbExists && !userHasAttachedLibrary) {
+        // True bootstrap/restore: empty AppData + sidecar at target.
         setPendingAction({ kind: 'attachFromSidecar', libraryRoot: path });
         setStep('detected-existing');
       } else {
+        // Normal LDM switch (or first attach to an empty location):
+        // AppData wins. attachAsNew will mirror AppData → new sidecar
+        // and delete the old sidecar.
         setPendingAction({ kind: 'attachAsNew', libraryRoot: path });
         setStep('detected-empty');
       }
