@@ -37,6 +37,8 @@ export const optimisedDefaults = {
     // Auto-index after Fix — Apple-style smart default. ON so every
     // Fix run feeds the search DB; user can opt out in Settings → S&D.
     autoIndexAfterFix: true,
+    lastDbBackupAt: null,
+    dbBackupReminderSnoozedAt: null,
 };
 // Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
 // (the productName-based folder customers see in packaged builds)
@@ -98,6 +100,8 @@ export function getSettings() {
         bypassLargeZipPreExtract: store.get('bypassLargeZipPreExtract', optimisedDefaults.bypassLargeZipPreExtract),
         destinationPath: store.get('destinationPath', optimisedDefaults.destinationPath),
         autoIndexAfterFix: store.get('autoIndexAfterFix', optimisedDefaults.autoIndexAfterFix),
+        lastDbBackupAt: store.get('lastDbBackupAt', optimisedDefaults.lastDbBackupAt),
+        dbBackupReminderSnoozedAt: store.get('dbBackupReminderSnoozedAt', optimisedDefaults.dbBackupReminderSnoozedAt),
     };
 }
 // ─── Scanner override helpers ────────────────────────────────────────────────

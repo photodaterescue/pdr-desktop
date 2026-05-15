@@ -47,6 +47,87 @@ export function getSidecarMetaPath(libraryRoot) {
 export function getSidecarAuditPath(libraryRoot) {
     return path.join(getSidecarDir(libraryRoot), SIDECAR_AUDIT_FILENAME);
 }
+/**
+ * Remove the sidecar artefacts at a previous library root.
+ *
+ * Called when the user switches Library Drives. AppData is the
+ * canonical source of truth; the active sidecar at the current
+ * Library Drive is just a mirror of it. Leaving an old sidecar at
+ * the previous Library Drive creates a footgun: if the user ever
+ * re-attaches the old location, the stale sidecar could overwrite
+ * AppData (losing every face / tag / date / Trees edit made since
+ * the switch). The pre-restore snapshot at
+ * `<userData>/backups/snapshots/snapshot-pre-restore-*.db` does
+ * preserve the data, but the user has no obvious recovery path.
+ *
+ * Terry's design (2026-05-15): "AppData is the source of truth,
+ * always. On Library Drive switch, copy AppData → new sidecar,
+ * delete the old sidecar." Best-effort — failures here don't
+ * block the attach.
+ *
+ * Removes: the sidecar DB file, the lock file, the meta file, the
+ * audit log. Leaves the user's photo files completely alone — we
+ * only touch the hidden `.pdr` directory's contents. Removes the
+ * `.pdr` directory itself if it ends up empty.
+ */
+export function cleanupSidecarAt(libraryRoot) {
+    if (!libraryRoot)
+        return;
+    const dir = getSidecarDir(libraryRoot);
+    if (!fs.existsSync(dir))
+        return;
+    // Files we own under .pdr/ — only these are removed. If the user
+    // (or some other tool) has put unrelated files in there, they're
+    // left intact and the directory cleanup at the end will see them
+    // and bail out of the rmdir.
+    const ownedFiles = [
+        getSidecarDbPath(libraryRoot),
+        getSidecarLockPath(libraryRoot),
+        getSidecarMetaPath(libraryRoot),
+        getSidecarAuditPath(libraryRoot),
+    ];
+    for (const f of ownedFiles) {
+        try {
+            if (fs.existsSync(f))
+                fs.unlinkSync(f);
+        }
+        catch (e) {
+            console.warn(`[LibSidecar] cleanup of ${f} failed (non-fatal):`, e.message);
+        }
+    }
+    // Also clear the backups subdirectory if present — the snapshot
+    // store inside .pdr is part of the sidecar artefact set and
+    // shouldn't survive a switch any more than the DB itself should.
+    try {
+        const backupsDir = getSidecarBackupsDir(libraryRoot);
+        if (fs.existsSync(backupsDir)) {
+            for (const name of fs.readdirSync(backupsDir)) {
+                try {
+                    fs.unlinkSync(path.join(backupsDir, name));
+                }
+                catch { }
+            }
+            try {
+                fs.rmdirSync(backupsDir);
+            }
+            catch { }
+        }
+    }
+    catch (e) {
+        console.warn('[LibSidecar] sidecar backups cleanup failed (non-fatal):', e.message);
+    }
+    // Final: remove .pdr dir if it's now empty.
+    try {
+        const remaining = fs.readdirSync(dir);
+        if (remaining.length === 0)
+            fs.rmdirSync(dir);
+    }
+    catch (e) {
+        // Either it has user-owned files we didn't touch, or rmdir
+        // failed for some other reason. Either way, non-fatal.
+    }
+    console.log(`[LibSidecar] cleaned up previous sidecar at ${libraryRoot}`);
+}
 export function getSidecarBackupsDir(libraryRoot) {
     return path.join(getSidecarDir(libraryRoot), SIDECAR_BACKUPS_DIRNAME);
 }
@@ -612,6 +693,12 @@ export async function attachAsNewLibrary(opts) {
     if (!fs.existsSync(opts.libraryRoot)) {
         return { ok: false, error: `Library path does not exist: ${opts.libraryRoot}` };
     }
+    // Capture the previous library root BEFORE writeLibraryState
+    // overwrites it. We use this at the end to delete the stale
+    // sidecar at the old location. Part of the AppData-wins model
+    // (2026-05-15): only one sidecar should exist at any time — the
+    // one at the active Library Drive, mirrored from AppData.
+    const previousRoot = readLibraryState().libraryRoot;
     const ensure = ensureSidecarDir(opts.libraryRoot);
     if (!ensure.ok)
         return { ok: false, error: ensure.error };
@@ -628,6 +715,13 @@ export async function attachAsNewLibrary(opts) {
     if (!mirror.ok)
         return { ok: false, error: mirror.error };
     writeLibraryState({ libraryRoot: opts.libraryRoot, lastAttachedAt: new Date().toISOString() });
+    // Clean up the stale sidecar at the previous Library Drive. Only
+    // runs when there was a previous root AND it differs from the new
+    // one (i.e. an actual switch, not a no-op re-attach to the same
+    // location). Best-effort — failures here don't fail the attach.
+    if (previousRoot && path.normalize(previousRoot) !== path.normalize(opts.libraryRoot)) {
+        cleanupSidecarAt(previousRoot);
+    }
     return { ok: true, status: getLibraryStatus() };
 }
 // Restore from an existing sidecar onto this device. The fundamental
@@ -652,6 +746,12 @@ export async function attachFromSidecar(opts) {
     if (!fs.existsSync(opts.libraryRoot)) {
         return { ok: false, error: `Library path does not exist: ${opts.libraryRoot}` };
     }
+    // Capture the previous library root BEFORE writeLibraryState
+    // overwrites it. Same rationale as attachAsNewLibrary — when this
+    // function is called from the LDM's Switch flow (rather than from
+    // a true bootstrap / restore scenario), we still want to clean
+    // up the stale sidecar at the previous Library Drive.
+    const previousRoot = readLibraryState().libraryRoot;
     const sidecarDbPath = getSidecarDbPath(opts.libraryRoot);
     if (!fs.existsSync(sidecarDbPath)) {
         return { ok: false, error: 'No PDR library data found at this location. Use "Set as new library" instead.' };
@@ -782,6 +882,12 @@ export async function attachFromSidecar(opts) {
     // Refresh sidecar meta now that we're the writer on the new device.
     writeSidecarMeta(opts.libraryRoot, opts.deviceName);
     writeLibraryState({ libraryRoot: opts.libraryRoot, lastAttachedAt: new Date().toISOString() });
+    // Clean up the stale sidecar at the previous Library Drive — same
+    // rationale as in attachAsNewLibrary. AppData-wins model means only
+    // ONE sidecar exists at any time, at the active Library Drive.
+    if (previousRoot && path.normalize(previousRoot) !== path.normalize(opts.libraryRoot)) {
+        cleanupSidecarAt(previousRoot);
+    }
     return { ok: true, status: getLibraryStatus() };
 }
 // Take over writer status from another device. License-key gated — the
