@@ -1747,7 +1747,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       <>
         {renderHeader('Switch your Library Drive?', (
           <>
-            PDR will start using <span className="font-mono text-foreground">{targetPath}</span> as your Library Drive. Your existing photos stay where they are — this just changes which drive PDR works from.
+            Future fixes will save to <span className="font-mono text-foreground">{targetPath}</span>. Past fixes saved to other Library Drives stay where they are.
           </>
         ), 'primary', 'left')}
         <div className="px-6 pb-6 pt-2 space-y-3">
