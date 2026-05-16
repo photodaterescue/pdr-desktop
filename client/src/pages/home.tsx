@@ -134,7 +134,31 @@ export default function Home() {
   // returning users on every launch. First-time users (settings load
   // returns null) see the locked state once settings resolve.
   const stillLoading = destinationPath === undefined;
-  const cardsLocked = !stillLoading && !hasDestination;
+
+  // Returning-user signal (v2.0.6, Terry 2026-05-16). If the user
+  // has ever picked a Library Drive, that path is persisted in
+  // localStorage under `pdr-saved-destinations` (FolderBrowserModal
+  // adds + LDM reads it). When the user clears their current
+  // destination (e.g. clicked the × on the Output card), settings
+  // .destinationPath becomes null but saved-destinations stays —
+  // they're a returning user with KNOWN drives, just nothing
+  // currently selected. Locking them out of the rest of the app
+  // like a first-time user is the bug Terry called out: "I'm not
+  // a first time user now... I've got LDs to choose from."
+  // Returning user → cards unlocked → they can re-enter the
+  // Workspace and pick one of their known drives via the Library
+  // pill in the title bar.
+  const isReturningUser = (() => {
+    try {
+      const raw = localStorage.getItem('pdr-saved-destinations');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.some((p: unknown) => typeof p === 'string' && p.length > 0);
+    } catch {
+      return false;
+    }
+  })();
+  const cardsLocked = !stillLoading && !hasDestination && !isReturningUser;
 
   const triggerHeroPulse = () => {
     if (heroPulseTimer.current) clearTimeout(heroPulseTimer.current);
@@ -172,6 +196,14 @@ export default function Home() {
   // Destination set → hero card just lands the user in Workspace.
   const handleHero = () => {
     if (hasDestination) {
+      navigate("/workspace");
+    } else if (isReturningUser) {
+      // Returning user with KNOWN drives but none currently
+      // selected → go straight to /workspace. The Library pill in
+      // the title bar is visible on /workspace (gated to that
+      // route in TitleBar) and is the channel for picking from
+      // saved drives. /source-selection is the first-time-user
+      // setup wizard which would be the wrong flow here.
       navigate("/workspace");
     } else {
       navigate("/source-selection");
@@ -259,13 +291,23 @@ export default function Home() {
               chosen yet. */}
           <PrimaryCard
             icon={<HardDrive className="w-10 h-10 text-white" />}
-            title={hasDestination ? "Continue in your Workspace" : "Pick a Library Drive"}
-            description={!hasDestination
-              ? "For a quick fix, or your forever library — choose where your organised photos and videos will live."
-              : destinationOnline === false
-              ? "Your Library Drive is offline — you can still browse, search, tag faces, and edit dates. Reconnect it to run Fix or open fixed photos."
-              : "Pick up where you left off — your Library Drive is set and ready."}
-            ctaLabel={hasDestination ? "Open Workspace" : "Get Started"}
+            title={hasDestination
+              ? "Continue in your Workspace"
+              : isReturningUser
+              ? "Pick a Library Drive"
+              : "Pick a Library Drive"}
+            description={hasDestination
+              ? (destinationOnline === false
+                ? "Your Library Drive is offline — you can still browse, search, tag faces, and edit dates. Reconnect it to run Fix or open fixed photos."
+                : "Pick up where you left off — your Library Drive is set and ready.")
+              : isReturningUser
+              ? "No Library Drive is currently selected — pick one from your saved drives in the Workspace, or set up a new one."
+              : "For a quick fix, or your forever library — choose where your organised photos and videos will live."}
+            ctaLabel={hasDestination
+              ? "Open Workspace"
+              : isReturningUser
+              ? "Open Workspace"
+              : "Get Started"}
             onClick={handleHero}
             pulse={heroPulse}
           />
