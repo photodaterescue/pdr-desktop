@@ -406,15 +406,31 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                         Drive Advisor
                       </Button>
                     </div>
-                    {diskSpace && (
-                      <div className="flex items-center gap-2 mt-1.5 text-caption">
-                        <HardDrive className="w-3 h-3" />
-                        <span>{formatBytes(diskSpace.free)} free of {formatBytes(diskSpace.total)}</span>
-                        {totalSize > diskSpace.free && (
-                          <span className="text-rose-700 dark:text-rose-300 font-medium ml-auto">Not enough space!</span>
-                        )}
-                      </div>
-                    )}
+                    {/* Disk-space + payload line. Always renders so
+                        the user always sees AT LEAST the size of
+                        what they're about to copy. The volume's
+                        free/total joins when the probe lands; the
+                        "Not enough space!" warning lights up if the
+                        copy wouldn't fit. Previously this whole row
+                        was hidden whenever the disk probe returned
+                        null — leaving the user with no indication
+                        of either the payload size OR the destination
+                        capacity. Terry (2026-05-16): "It should
+                        surely have the size of the files that's
+                        going to be copied across also right?" */}
+                    <div className="flex items-center gap-2 mt-1.5 text-caption">
+                      <HardDrive className="w-3 h-3" />
+                      <span>Copying {formatBytes(totalSize)}</span>
+                      {diskSpace && Number.isFinite(diskSpace.free) && Number.isFinite(diskSpace.total) && diskSpace.total > 0 && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span>{formatBytes(diskSpace.free)} free of {formatBytes(diskSpace.total)}</span>
+                        </>
+                      )}
+                      {diskSpace && totalSize > diskSpace.free && (
+                        <span className="text-rose-700 dark:text-rose-300 font-medium ml-auto">Not enough space!</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Operation mode.
