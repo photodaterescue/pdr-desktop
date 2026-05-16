@@ -582,22 +582,40 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-border flex justify-end gap-2">
-              {phase === 'configure' && (
-                <>
-                  <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                  <Button
-                    variant={mode === 'move' ? 'caution' : 'primary'}
-                    onClick={handleStart}
-                    disabled={!destination || files.length === 0 || (diskSpace !== null && totalSize > diskSpace.free)}
-                  >
-                    {mode === 'move' ? (
-                      <><ArrowRightLeft className="w-4 h-4 mr-1.5" /> Start Move</>
-                    ) : (
-                      <><Copy className="w-4 h-4 mr-1.5" /> Start Copy</>
-                    )}
-                  </Button>
-                </>
-              )}
+              {phase === 'configure' && (() => {
+                const ctaDisabled = !destination || files.length === 0 || (diskSpace !== null && totalSize > diskSpace.free);
+                // Pulse the Start Copy/Move button once it becomes
+                // enabled — i.e., the user has filled in the
+                // destination and there's enough disk space. Same
+                // "guide the user to the next action" pattern as the
+                // Browse pulse that fires while destination is empty.
+                // Lavender pulse for Copy (primary), amber pulse for
+                // Move (caution) — both keyframes already exist in
+                // index.css. Pulse stops the moment the action is
+                // clicked (phase flips to running).
+                const ctaPulseAnim = !ctaDisabled
+                  ? (mode === 'move'
+                    ? 'outline-pulse-amber 2s ease-in-out infinite'
+                    : 'outline-pulse 2s ease-in-out infinite')
+                  : undefined;
+                return (
+                  <>
+                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button
+                      variant={mode === 'move' ? 'caution' : 'primary'}
+                      onClick={handleStart}
+                      disabled={ctaDisabled}
+                      style={ctaPulseAnim ? { animation: ctaPulseAnim } : undefined}
+                    >
+                      {mode === 'move' ? (
+                        <><ArrowRightLeft className="w-4 h-4 mr-1.5" /> Start Move</>
+                      ) : (
+                        <><Copy className="w-4 h-4 mr-1.5" /> Start Copy</>
+                      )}
+                    </Button>
+                  </>
+                );
+              })()}
               {phase === 'complete' && (
                 <>
                   <Button variant="information" onClick={handleOpenDestination}>
