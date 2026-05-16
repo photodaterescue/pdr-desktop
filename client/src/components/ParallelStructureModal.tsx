@@ -406,30 +406,76 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                         Drive Advisor
                       </Button>
                     </div>
-                    {/* Disk-space + payload line. Always renders so
-                        the user always sees AT LEAST the size of
-                        what they're about to copy. The volume's
-                        free/total joins when the probe lands; the
-                        "Not enough space!" warning lights up if the
-                        copy wouldn't fit. Previously this whole row
-                        was hidden whenever the disk probe returned
-                        null — leaving the user with no indication
-                        of either the payload size OR the destination
-                        capacity. Terry (2026-05-16): "It should
-                        surely have the size of the files that's
-                        going to be copied across also right?" */}
-                    <div className="flex items-center gap-2 mt-1.5 text-caption">
-                      <HardDrive className="w-3 h-3" />
-                      <span>Copying {formatBytes(totalSize)}</span>
-                      {diskSpace && Number.isFinite(diskSpace.free) && Number.isFinite(diskSpace.total) && diskSpace.total > 0 && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span>{formatBytes(diskSpace.free)} free of {formatBytes(diskSpace.total)}</span>
-                        </>
-                      )}
-                      {diskSpace && totalSize > diskSpace.free && (
-                        <span className="text-rose-700 dark:text-rose-300 font-medium ml-auto">Not enough space!</span>
-                      )}
+                    {/* Disk-space card — lifted from the Dashboard's
+                        Output card pattern (workspace.tsx:4424-4490)
+                        so the user gets the same visual treatment
+                        for "will this fit?" wherever they look in
+                        PDR. Terry's call (2026-05-16): "Instead of
+                        trying to redesign it, why not use the same
+                        thing from the Dashboard?" Includes the
+                        used-vs-free progress bar, the required-size
+                        pill (green when it fits, red when it
+                        doesn't, slate while the probe is in flight),
+                        the "free after this fix" follow-on pill,
+                        and a Loader2 spinner during probe.
+                        PL works in bytes natively; Dashboard works
+                        in GB. We pass bytes through formatBytes for
+                        display + keep arithmetic in bytes.
+                        Probe-pending state: diskSpace === null. */}
+                    <div className="mt-2 space-y-2">
+                      {/* Visual space bar — only when we have a real
+                          total and there's something to copy. */}
+                      {diskSpace && diskSpace.total > 0 && totalSize > 0 && (() => {
+                        const used = diskSpace.total - diskSpace.free;
+                        const usedPercent = Math.round((used / diskSpace.total) * 100);
+                        const requiredPercent = Math.min(100 - usedPercent, Math.round((totalSize / diskSpace.total) * 100));
+                        const fits = diskSpace.free >= totalSize;
+                        return (
+                          <div>
+                            <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden">
+                              <div className="h-full flex">
+                                <div className="h-full bg-muted-foreground/30 rounded-l-full" style={{ width: `${usedPercent}%` }} />
+                                <div className={`h-full ${fits ? 'bg-primary/60' : 'bg-rose-500/60'}`} style={{ width: `${requiredPercent}%` }} />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between mt-1 text-caption">
+                              <span>{formatBytes(used)} used</span>
+                              <span>{formatBytes(diskSpace.free)} free of {formatBytes(diskSpace.total)}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Required / fits-after pills. */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {!diskSpace ? (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-500/10 ring-1 ring-slate-500/20 text-slate-600 dark:text-slate-300">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span className="text-xs font-medium">Calculating space…</span>
+                          </div>
+                        ) : diskSpace.free >= totalSize ? (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-700 dark:text-emerald-300">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">Copying {formatBytes(totalSize)}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 ring-1 ring-rose-500/30 text-rose-700 dark:text-rose-300">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">Needs {formatBytes(totalSize)}</span>
+                          </div>
+                        )}
+                        {diskSpace && diskSpace.free >= totalSize && totalSize > 0 && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">
+                              {formatBytes(diskSpace.free - totalSize)} free after this copy
+                            </span>
+                          </div>
+                        )}
+                        {diskSpace && diskSpace.free < totalSize && (
+                          <span className="text-xs text-rose-700 dark:text-rose-300 font-medium ml-auto">Insufficient space</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
