@@ -406,6 +406,15 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                         Drive Advisor
                       </Button>
                     </div>
+                    {/* Disk-space card — only renders when destination
+                        is set. Empty state matches the Dashboard's
+                        "no destination yet" treatment: just the
+                        primary picker + Drive Advisor buttons, no
+                        "Calculating space…" placeholder pill. Terry
+                        2026-05-16: "I think the PL should look like
+                        [the Dashboard empty state] also when there's
+                        no source selected." */}
+                    {destination ? <>
                     {/* Disk-space card — lifted from the Dashboard's
                         Output card pattern (workspace.tsx:4424-4490)
                         so the user gets the same visual treatment
@@ -477,6 +486,7 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                         )}
                       </div>
                     </div>
+                    </> : null}
                   </div>
 
                   {/* Operation mode.

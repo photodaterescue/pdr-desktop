@@ -2427,8 +2427,19 @@ export function onStructureProgress(callback: (progress: StructureProgress) => v
 export async function getDiskSpaceBridge(directoryPath: string): Promise<{ success: boolean; data?: { free: number; total: number } }> {
   if (isElectron() && (window as any).pdr?.getDiskSpace) {
     try {
-      const result = await (window as any).pdr.getDiskSpace(directoryPath);
-      return { success: true, data: result };
+      // The IPC handler (disk:getSpace in electron/main.ts) returns
+      // `{ freeBytes, totalBytes }`. The bridge contract here advertises
+      // `{ free, total }`. Pre-2.0.6 the bridge passed `result` through
+      // unmapped — every caller's `data.free` was reading `undefined`,
+      // which Number.isFinite() correctly rejected, which kept the
+      // "Calculating space…" pill stuck forever (Terry's report
+      // 2026-05-16). Map the IPC fields to the documented contract +
+      // guard against missing / non-numeric returns.
+      const raw = await (window as any).pdr.getDiskSpace(directoryPath);
+      if (!raw || typeof raw.freeBytes !== 'number' || typeof raw.totalBytes !== 'number') {
+        return { success: false };
+      }
+      return { success: true, data: { free: raw.freeBytes, total: raw.totalBytes } };
     } catch {
       return { success: false };
     }
