@@ -1743,22 +1743,53 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
 
           {/* ── Advanced — discouraged-option pattern (link variant +
                 text-muted-foreground override per STYLE_GUIDE.md). */}
-          {/* Advanced section. Hidden entirely in pick-mode — the
-              caller is picking a folder from EXISTING drives, not
-              setting up a new library. Letting the user click "Set
-              up a new library" in pick-mode would route them into a
-              flow (Library Planner → DDA) that's irrelevant to their
-              current task. They can cancel the LDM if none of their
-              existing drives are right. */}
-          {!pickMode && <div className="pt-2 border-t border-border space-y-1.5">
+          {/* Advanced section — visible in BOTH modes.
+              Normal mode: clicking opens Library Planner → DDA →
+              folder picker → attach as a new Library Drive.
+              Pick-mode (caller=parallel-library etc.): clicking
+              opens a folder picker and dispatches the picked path
+              back via pdr:libraryDrivePicked, no library setup
+              wizard, no attach. The user needs this link in pick-
+              mode for the legitimate case where they want the PL
+              on a drive that isn't already in the LDM list. */}
+          <div className="pt-2 border-t border-border space-y-1.5">
             <p className="text-caption uppercase tracking-wider">Advanced</p>
             <div className="flex flex-col items-start">
               <Button
-                onClick={handleConnectClick}
+                onClick={() => {
+                  if (pickMode) {
+                    // Open a folder picker directly; on select,
+                    // dispatch back to the caller and close. Reuses
+                    // the existing pdr:pickLibraryDriveFolder event
+                    // that workspace.tsx already listens for to open
+                    // the FolderBrowserModal. But that event's
+                    // existing callback dispatches
+                    // pdr:libraryDriveFolderPicked which the LDM
+                    // intercepts for inspectAndRoute — NOT what we
+                    // want in pick-mode. So we listen for that event
+                    // once, intercept it, and convert it into our
+                    // pick-mode dispatch instead.
+                    const onePick = (evt: Event) => {
+                      const detail = (evt as CustomEvent<{ path?: string }>).detail ?? {};
+                      window.removeEventListener('pdr:libraryDriveFolderPicked', onePick as EventListener);
+                      if (typeof detail.path === 'string' && detail.path.length > 0 && pickMode) {
+                        window.dispatchEvent(new CustomEvent('pdr:libraryDrivePicked', {
+                          detail: { caller: pickMode.caller, path: detail.path },
+                        }));
+                      }
+                      setPickMode(null);
+                      handleClose();
+                    };
+                    window.addEventListener('pdr:libraryDriveFolderPicked', onePick as EventListener);
+                    window.dispatchEvent(new CustomEvent('pdr:pickLibraryDriveFolder', { detail: {} }));
+                    return;
+                  }
+                  handleConnectClick();
+                }}
                 variant="link"
                 className="px-0 h-auto text-muted-foreground hover:text-foreground"
               >
-                Set up a new library on another drive
+                {pickMode ? 'Pick a different folder' : 'Set up a new library on another drive'}
               </Button>
               {/* "Disconnect this device from the library" was removed
                   per Terry's note. To stop using a library, the user
@@ -1766,7 +1797,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                   in the list — a normal action with a clear destination,
                   not an abstract "disconnect" with no follow-on state. */}
             </div>
-          </div>}
+          </div>
         </div>
       </>
     );
