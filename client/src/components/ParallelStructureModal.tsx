@@ -281,14 +281,20 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
     // the destination field made getDiskSpaceBridge return NaN for
     // free/total (the folder doesn't exist yet so the probe can't
     // measure it). Without this guard `formatBytes(NaN)` falls
-    // through every numeric branch and renders "NaN GB" — see the
-    // "NaN GB free of NaN GB" screenshot. Fall back to "—" so the
-    // user sees a placeholder rather than a math error.
+    // through every numeric branch and renders "NaN GB". Fall back
+    // to "—" so the user sees a placeholder rather than a math
+    // error.
     if (!Number.isFinite(bytes) || bytes < 0) return '—';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    // GB / TB threshold matches the Dashboard's Output card
+    // (workspace.tsx:4444) — at 1000 binary GB, flip to TB so the
+    // user sees "1.29 TB" instead of "1290.27 GB" for typical
+    // 1-2 TB external drives. Terry's call 2026-05-16.
+    const gb = bytes / (1024 * 1024 * 1024);
+    if (gb < 1000) return `${gb.toFixed(2)} GB`;
+    return `${(gb / 1000).toFixed(2)} TB`;
   };
 
   if (!isOpen) return null;
