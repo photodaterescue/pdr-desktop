@@ -353,19 +353,31 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                       </Button>
                     </div>
                     {diskSpace && (
-                      <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-2 mt-1.5 text-caption">
                         <HardDrive className="w-3 h-3" />
                         <span>{formatBytes(diskSpace.free)} free of {formatBytes(diskSpace.total)}</span>
                         {totalSize > diskSpace.free && (
-                          <span className="text-red-500 font-medium ml-auto">Not enough space!</span>
+                          <span className="text-rose-700 dark:text-rose-300 font-medium ml-auto">Not enough space!</span>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Operation mode */}
+                  {/* Operation mode.
+                      Typography brought in line with the 8-tier style
+                      guide (v2.0.6): label uses text-label, subline
+                      uses text-caption, warning uses text-caption.
+                      Amber text colour strengthened from amber-500
+                      (low contrast) to amber-700 / amber-300 so the
+                      caution palette is readable at caption size —
+                      this was Terry's call (2026-05-16). The
+                      operation-toggle buttons stay as custom
+                      <button>s for now; a proper Button-primitive
+                      rewrite is on the v2.0.7 style-audit roadmap
+                      because changing the click semantics now risks
+                      regressions ahead of the v2.0.6 cut. */}
                   <div>
-                    <label className="text-sm font-medium text-foreground mb-2 block">Operation</label>
+                    <label className="text-label text-foreground mb-2 block">Operation</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => setMode('copy')}
@@ -375,8 +387,8 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                       >
                         <Copy className={`w-4 h-4 ${mode === 'copy' ? 'text-primary' : 'text-muted-foreground'}`} />
                         <div className="text-left">
-                          <div className={`text-sm font-medium ${mode === 'copy' ? 'text-primary' : ''}`}>Copy</div>
-                          <div className="text-[10px] text-muted-foreground">Originals untouched</div>
+                          <div className={`text-label ${mode === 'copy' ? 'text-primary' : 'text-foreground'}`}>Copy</div>
+                          <div className="text-caption">Originals untouched</div>
                         </div>
                       </button>
                       <button
@@ -385,15 +397,15 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                           mode === 'move' ? 'border-amber-500 bg-amber-500/5' : 'border-border hover:border-amber-500/30'
                         }`}
                       >
-                        <ArrowRightLeft className={`w-4 h-4 ${mode === 'move' ? 'text-amber-500' : 'text-muted-foreground'}`} />
+                        <ArrowRightLeft className={`w-4 h-4 ${mode === 'move' ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground'}`} />
                         <div className="text-left">
-                          <div className={`text-sm font-medium ${mode === 'move' ? 'text-amber-500' : ''}`}>Move</div>
-                          <div className="text-[10px] text-muted-foreground">Verified safe move</div>
+                          <div className={`text-label ${mode === 'move' ? 'text-amber-700 dark:text-amber-300' : 'text-foreground'}`}>Move</div>
+                          <div className="text-caption">Verified safe move</div>
                         </div>
                       </button>
                     </div>
                     {mode === 'move' && (
-                      <p className="text-[10px] text-amber-500/80 mt-1.5 flex items-center gap-1">
+                      <p className="text-caption text-amber-700 dark:text-amber-300 mt-1.5 flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
                         Files are copied, verified by hash, then originals deleted.
                       </p>
