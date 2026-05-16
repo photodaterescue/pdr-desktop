@@ -6624,12 +6624,30 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
           if (file.isDuplicate) return;
           if (file.type === 'photo' && !includePhotos) return;
           if (file.type === 'video' && !includeVideos) return;
-          
+
+          // ONLY count files that were actually copied to the
+          // destination this run. exifResultMap is populated from
+          // `result.results` and only contains entries for r.success
+          // === true (line 6593-6600 above). So a file present in
+          // the analysis but absent from this map is one that didn't
+          // make it to disk — copy failure, disk full, or anything
+          // else the copy loop refused.
+          //
+          // Without this gate the Fix Complete modal counted every
+          // analysed non-duplicate as "output files" — which
+          // misrepresented runs where the copy was partial. Elaine's
+          // case (2026-05-15): her Fix actually wrote ~10 files
+          // (out of a 50 GB Takeout that ran the destination drive
+          // dry) but the modal showed "58,958 output files",
+          // hiding that almost nothing had been written. Now the
+          // count matches what's actually on disk.
+          if (!exifResultMap.has(file.path)) return;
+
           // Count by confidence
           if (file.dateConfidence === 'confirmed') confirmedCount++;
           else if (file.dateConfidence === 'recovered') recoveredCount++;
           else markedCount++;
-          
+
           // Build file record with EXIF result from copy operation
           const exifResult = exifResultMap.get(file.path);
           allFiles.push({
