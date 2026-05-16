@@ -4564,6 +4564,67 @@ ipcMain.handle('library:listIndexedDrives', async () => {
         return { success: false, error: err.message };
     }
 });
+// ─── library:countFilesAtPath ────────────────────────────────────────────────
+// Per-path indexed-file count. Returns the count + total size + last
+// indexed timestamp for every row in `indexed_files` whose file_path
+// starts with the given rootPath. Used by the LDM to show ACCURATE
+// per-folder counts for library-root rows (currentPath +
+// savedDestinations) instead of the over-attributing per-drive-letter
+// rollup that `listIndexedDrives` returns.
+//
+// Terry's report 2026-05-16: with two libraries on the same drive
+// (D:\1. Photos\1. PDR Library Drive and D:\1. Photos\Test), the LDM
+// showed identical 99-photos / 272.4 MB counts for BOTH rows because
+// the underlying query was per-drive-letter. The fix is per-path
+// counts. The roll-up still has its place (for bare drive-letter
+// rows that aren't a library root), but library-root rows now get
+// their own real count.
+//
+// Path-prefix match: the LIKE pattern is `<normalised root>%` with a
+// trailing separator added if missing, so D:\1. Photos\Test doesn't
+// also match D:\1. Photos\Test2. SQL LIKE wildcards in the path are
+// escaped with a backslash and an ESCAPE clause.
+ipcMain.handle('library:countFilesAtPath', async (_event, rootPath) => {
+    if (typeof rootPath !== 'string' || rootPath.length === 0) {
+        return { success: false, error: 'rootPath is required' };
+    }
+    try {
+        const db = getDb();
+        // Normalise: strip trailing separator, then add a single one so
+        // the LIKE prefix can't match a sibling whose name starts with
+        // the same characters.
+        let prefix = rootPath.replace(/[\\/]+$/, '');
+        // Escape SQL LIKE wildcards (% and _) and the escape char itself.
+        prefix = prefix.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+        // Add the separator + wildcard. Match on either \\ or / so we
+        // handle both Windows and POSIX-style paths from the DB.
+        const likePatternWin = `${prefix}\\\\%`;
+        const likePatternPosix = `${prefix.replace(/\\\\/g, '/')}/%`;
+        // Also match the prefix itself (in case the path is stored
+        // without a trailing separator and IS exactly a single file's
+        // parent dir — rare, but defensive).
+        const row = db.prepare(`
+      SELECT
+        COUNT(*) AS file_count,
+        COALESCE(SUM(size_bytes), 0) AS total_bytes,
+        MAX(indexed_at) AS last_indexed
+      FROM indexed_files
+      WHERE file_path LIKE ? ESCAPE '\\'
+         OR file_path LIKE ? ESCAPE '\\'
+    `).get(likePatternWin, likePatternPosix);
+        return {
+            success: true,
+            data: {
+                indexedFileCount: row.file_count,
+                indexedBytes: row.total_bytes,
+                lastIndexedAt: row.last_indexed,
+            },
+        };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 // ─── library:exportDb ───────────────────────────────────────────────────────
 // Premium safeguard introduced when we softened the "must be external
 // drive" rule for the Library Drive: the user can now keep a portable

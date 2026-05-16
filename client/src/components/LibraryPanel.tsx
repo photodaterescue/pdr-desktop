@@ -239,6 +239,17 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // state + drive details via getDriveDetails.
   const [savedDestinations, setSavedDestinations] = useState<string[]>([]);
   const [savedDestinationDetails, setSavedDestinationDetails] = useState<Record<string, DriveDetails | null>>({});
+  // Per-path indexed-file counts. Keyed by the library-root path
+  // (currentPath + every savedDestination). When present, the LDM
+  // shows ACCURATE per-folder photo counts on those rows instead of
+  // the per-drive-letter rollup that over-attributes when multiple
+  // libraries share a drive. Terry's report 2026-05-16: two folders
+  // on D: both showed 99 photos / 272.4 MB because the count was
+  // per-letter, not per-path. Driven by the new
+  // library:countFilesAtPath IPC. null entry = fetch pending or
+  // failed; row falls back to the per-letter rollup gracefully.
+  type PathCount = { indexedFileCount: number; indexedBytes: number; lastIndexedAt: string | null };
+  const [pathCounts, setPathCounts] = useState<Record<string, PathCount | null>>({});
   // Refresh affordance. Spinner state for the refresh icon button so the
   // user gets visual feedback when they manually trigger a re-fetch
   // (slow on network drives where PowerShell takes a few seconds).
@@ -406,6 +417,37 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     }
   };
 
+  // Refresh per-path indexed-file counts. Called after status +
+  // savedDestinations are known so we have the right set of paths to
+  // query. Each query is parallel + per-path failure-tolerant: a
+  // failed lookup leaves a `null` entry, which the row renderer
+  // treats as "fall back to per-letter rollup".
+  const refreshPathCounts = async (paths: string[]) => {
+    const uniquePaths = Array.from(new Set(paths.filter(p => typeof p === 'string' && p.length > 0)));
+    if (uniquePaths.length === 0) {
+      setPathCounts({});
+      return;
+    }
+    try {
+      const entries = await Promise.all(uniquePaths.map(async (p) => {
+        try {
+          const res = await (window as any).pdr?.library?.countFilesAtPath?.(p);
+          if (res?.success && res.data) {
+            return [p, res.data as PathCount] as const;
+          }
+          return [p, null] as const;
+        } catch {
+          return [p, null] as const;
+        }
+      }));
+      const map: Record<string, PathCount | null> = {};
+      entries.forEach(([p, c]) => { map[p] = c; });
+      setPathCounts(map);
+    } catch (e) {
+      console.warn('[LibraryPanel] pathCounts refresh failed:', e);
+    }
+  };
+
   const refreshSavedDestinations = async () => {
     try {
       const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
@@ -439,6 +481,9 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   const refreshAll = async () => {
     setIsRefreshing(true);
     try {
+      // First pass: fetch status + saved-destinations (needed to know
+      // which paths to query for per-path counts) in parallel with
+      // the other independent fetches.
       await Promise.all([
         refreshLastDbBackupAt(),
         refreshStatus(),
@@ -447,6 +492,30 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         refreshIndexedDrives(),
         refreshSavedDestinations(),
       ]);
+      // Second pass: per-path indexed-file counts for every library-
+      // root row (currentPath + savedDestinations). Read fresh from
+      // state via the underlying sources so we don't rely on stale
+      // local state references after the awaited fetches.
+      const currentRoot = (() => {
+        try {
+          const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          const list: string[] = Array.isArray(parsed)
+            ? parsed.filter((p): p is string => typeof p === 'string' && p.length > 0)
+            : [];
+          return list;
+        } catch { return [] as string[]; }
+      })();
+      // Pull the live status snapshot's libraryRoot too so the
+      // currentPath row gets its own count even when it isn't in
+      // savedDestinations.
+      let attachedRoot: string | null = null;
+      try {
+        const sres = await (window as any).pdr?.library?.status?.();
+        if (sres?.success) attachedRoot = (sres.data as LibraryStatus)?.libraryRoot ?? null;
+      } catch {}
+      const paths = [...(attachedRoot ? [attachedRoot] : []), ...currentRoot];
+      await refreshPathCounts(paths);
     } finally {
       setIsRefreshing(false);
       setInitialDataLoaded(true);
@@ -1137,9 +1206,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         // connected.
         online: driveDetails?.online ?? destinationOnline === true,
         isSafeForLibrary: driveSafe,
-        indexedFileCount: thisDriveIndexed?.indexedFileCount ?? 0,
-        indexedBytes: thisDriveIndexed?.indexedBytes ?? 0,
-        lastIndexedAt: thisDriveIndexed?.lastIndexedAt ?? null,
+        // Prefer the per-path count (accurate for this specific
+        // library folder) over the per-drive-letter rollup (which
+        // over-attributes when multiple libraries share a drive).
+        // Falls back to the rollup if the path-count fetch hasn't
+        // landed yet or failed.
+        indexedFileCount: pathCounts[currentPath]?.indexedFileCount ?? thisDriveIndexed?.indexedFileCount ?? 0,
+        indexedBytes: pathCounts[currentPath]?.indexedBytes ?? thisDriveIndexed?.indexedBytes ?? 0,
+        lastIndexedAt: pathCounts[currentPath]?.lastIndexedAt ?? thisDriveIndexed?.lastIndexedAt ?? null,
         busType: driveDetails?.busType ?? null,
         mediaType: driveDetails?.mediaType ?? null,
       });
@@ -1230,12 +1304,13 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         freeBytes: details?.freeBytes ?? 0,
         online: details?.online ?? false,
         isSafeForLibrary: details?.isSafeForLibrary ?? true,
-        // Approximation: use the drive's total indexed count. When
-        // multiple libraries share a drive this over-attributes; OK
-        // for v1.
-        indexedFileCount: driveIndexed?.indexedFileCount ?? 0,
-        indexedBytes: driveIndexed?.indexedBytes ?? 0,
-        lastIndexedAt: driveIndexed?.lastIndexedAt ?? null,
+        // Per-path indexed count (v2.0.6 — Terry's report: two
+        // folders on D: both showed 99 photos because the rollup
+        // was per-letter). Falls back to the per-letter rollup if
+        // the path-count fetch is still in flight or failed.
+        indexedFileCount: pathCounts[savedPath]?.indexedFileCount ?? driveIndexed?.indexedFileCount ?? 0,
+        indexedBytes: pathCounts[savedPath]?.indexedBytes ?? driveIndexed?.indexedBytes ?? 0,
+        lastIndexedAt: pathCounts[savedPath]?.lastIndexedAt ?? driveIndexed?.lastIndexedAt ?? null,
         busType: details?.busType ?? null,
         mediaType: details?.mediaType ?? null,
       });

@@ -171,6 +171,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // volume labels. Premium LDM shows the WHOLE library shape, not just
     // the one sidecar-host drive.
     listIndexedDrives: () => ipcRenderer.invoke('library:listIndexedDrives'),
+    // Per-path indexed-file count (count + total bytes + last
+    // indexed timestamp) for a specific library root. Lets the LDM
+    // show accurate per-folder counts on library-root rows instead
+    // of the per-drive-letter rollup, which over-attributes when
+    // multiple library folders share a drive.
+    countFilesAtPath: (rootPath: string) => ipcRenderer.invoke('library:countFilesAtPath', rootPath),
     // Open a path in the OS file manager (Explorer on Windows, Finder on
     // macOS). Used by per-drive "Open in File Explorer" entries in LDM.
     openInExplorer: (targetPath: string) => ipcRenderer.invoke('library:openInExplorer', targetPath),
