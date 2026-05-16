@@ -58,6 +58,18 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
   const [mode, setMode] = useState<'copy' | 'move'>('copy');
   const [folderStructure, setFolderStructure] = useState<'year' | 'year-month' | 'year-month-day'>('year-month-day');
   const [skipDuplicates, setSkipDuplicates] = useState(true);
+  // Add-to-search opt-out. Default ON so the parallel-library copies
+  // become visible in S&D / Memories / Trees the moment the copy
+  // completes — the previous behaviour was silent orphaning, where
+  // files landed on disk but PDR never indexed them (Terry's
+  // discovery 2026-05-15: "PL completed but not picked up in LDM").
+  // Power-users with a legitimate reason to keep files OUT of PDR's
+  // tracking (financial docs / sensitive content) can untick.
+  const [addToSearch, setAddToSearch] = useState(true);
+  // True while we're indexing the new location after a successful
+  // copy — drives a small "Adding to PDR's search…" line so the
+  // completion screen doesn't look frozen.
+  const [indexing, setIndexing] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
   const [showDriveAdvisor, setShowDriveAdvisor] = useState(false);
 
@@ -145,8 +157,45 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
 
     const res = await copyToStructure(data);
     setResult(res);
+
+    // Index the copies into the search DB so they're visible in
+    // S&D / Memories / Trees. Without this the files land on disk
+    // but never enter `indexed_files` — the orphaning bug Terry
+    // flagged 2026-05-15. Gated on the addToSearch checkbox so
+    // power-users can deliberately keep sensitive content OUT of
+    // PDR's tracking (financial docs / Move-out workflows).
+    //
+    // For Move with tracking we ALSO run search:cleanup so the
+    // old paths (whose files have now been moved away from) are
+    // removed from the DB — otherwise S&D would show broken-link
+    // rows pointing at gone files. For Copy we leave the originals
+    // tracked (they're still there).
+    //
+    // Best-effort: indexing failures don't fail the operation.
+    // The files are already on disk; the user can re-trigger via
+    // a v2.0.6 "re-index a folder" action (separate roadmap item).
+    if (res?.success && addToSearch) {
+      setIndexing(true);
+      try {
+        const rebuild = (window as any).pdr?.search?.rebuildFromLibraries;
+        if (typeof rebuild === 'function') {
+          await rebuild([destination]);
+        }
+        if (mode === 'move') {
+          const cleanup = (window as any).pdr?.search?.cleanup;
+          if (typeof cleanup === 'function') {
+            await cleanup();
+          }
+        }
+      } catch (e) {
+        console.warn('[ParallelStructure] post-copy index failed (non-fatal):', e);
+      } finally {
+        setIndexing(false);
+      }
+    }
+
     setPhase('complete');
-  }, [destination, files, folderStructure, mode, skipDuplicates]);
+  }, [destination, files, folderStructure, mode, skipDuplicates, addToSearch]);
 
   const handleCancel = useCallback(async () => {
     await cancelStructureCopy();
@@ -159,6 +208,15 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
   }, [destination]);
 
   const formatBytes = (bytes: number) => {
+    // Guard against NaN / Infinity / undefined-coerced-to-number.
+    // Terry's report (2026-05-15): typing a NEW subfolder name into
+    // the destination field made getDiskSpaceBridge return NaN for
+    // free/total (the folder doesn't exist yet so the probe can't
+    // measure it). Without this guard `formatBytes(NaN)` falls
+    // through every numeric branch and renders "NaN GB" — see the
+    // "NaN GB free of NaN GB" screenshot. Fall back to "—" so the
+    // user sees a placeholder rather than a math error.
+    if (!Number.isFinite(bytes) || bytes < 0) return '—';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -324,7 +382,7 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                   </div>
 
                   {/* Options */}
-                  <div>
+                  <div className="space-y-1">
                     <label className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary/50 cursor-pointer transition-colors">
                       <input
                         type="checkbox"
@@ -333,6 +391,28 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                         className="w-4 h-4 rounded accent-primary"
                       />
                       <span className="text-sm">Skip duplicate files</span>
+                    </label>
+                    {/* Add-to-search opt-out (v2.0.6). Default ON so the
+                        parallel-library copies appear in S&D / Memories
+                        / Trees the moment the copy finishes. Off ticks
+                        the box for power-users with a deliberate reason
+                        to keep certain files OUT of PDR's tracking
+                        (financial docs / private content via Move). */}
+                    <label className="flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary/50 cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={addToSearch}
+                        onChange={(e) => setAddToSearch(e.target.checked)}
+                        className="w-4 h-4 rounded accent-primary mt-0.5"
+                      />
+                      <span className="flex flex-col">
+                        <span className="text-sm">Add to PDR's search &amp; views</span>
+                        <span className="text-xs text-muted-foreground">
+                          {mode === 'move'
+                            ? 'New location is indexed; the old paths are removed from PDR so S&D doesn\'t show broken links.'
+                            : 'The new copies appear in Search & Discovery, Memories, and Trees.'}
+                        </span>
+                      </span>
                     </label>
                   </div>
 
@@ -397,6 +477,17 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                       <p className="text-lg font-semibold">
                         {mode === 'move' ? 'Files Moved' : 'Files Copied'}
                       </p>
+                      {/* Adding-to-search status. Renders only while
+                          the post-copy index pass is in flight, so the
+                          user sees PDR doing the work instead of an
+                          apparent hang between "Files Copied" and the
+                          search/Memories views catching up. */}
+                      {indexing && (
+                        <div className="flex items-center justify-center gap-1.5 mt-2 text-xs text-muted-foreground">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Adding to PDR's search &amp; views…</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -465,13 +556,23 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
         </motion.div>
       </AnimatePresence>
 
-      {/* Folder browser sub-modal */}
+      {/* Folder browser sub-modal.
+          enableSavedLocations surfaces the user's known Library
+          Drives (same data the LDM uses) at the top of the picker —
+          so they see "Pick from your existing libraries" front and
+          centre without digging through folders. Terry's call
+          (2026-05-16): the PL Browse path should reuse the LDM's
+          drive-list affordances. Re-routing to the literal LDM modal
+          would require LDM to support a pick-only mode (return path
+          without attaching) which is a bigger refactor — this gives
+          the user the same outcome via the existing picker. */}
       <FolderBrowserModal
         isOpen={showBrowser}
         onCancel={() => setShowBrowser(false)}
         onSelect={(folderPath) => { setDestination(folderPath); setShowBrowser(false); }}
         title="Select Destination for New Structure"
         mode="folder"
+        enableSavedLocations
         plannedCollectionSizeGB={totalSizeGB}
         showDriveRatings
         onOpenDriveAdvisor={() => { setShowBrowser(false); setShowDriveAdvisor(true); }}
