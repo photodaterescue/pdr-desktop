@@ -314,19 +314,36 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                       <div className="flex-1 px-3 py-2 rounded-lg border border-border bg-secondary/30 text-sm text-foreground truncate min-h-[38px] flex items-center min-w-0">
                         {destination || <span className="text-muted-foreground">Choose a folder...</span>}
                       </div>
-                      <Button variant="primary" size="sm" onClick={() => {
-                        // v2.0.6: route Browse through the LDM
-                        // (Terry's call — "I want the LDM, not
-                        // close enough"). Dispatches the pick-mode
-                        // event with caller='parallel-library'; the
-                        // LDM opens in pick-mode, user clicks a
-                        // drive radio, LDM dispatches
-                        // pdr:libraryDrivePicked back, our handler
-                        // up top sets destination.
-                        window.dispatchEvent(new CustomEvent('pdr:openLibraryPanelForPick', {
-                          detail: { caller: 'parallel-library' },
-                        }));
-                      }} className="shrink-0">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          // v2.0.6: route Browse through the LDM
+                          // (Terry's call — "I want the LDM, not
+                          // close enough"). Dispatches the pick-mode
+                          // event with caller='parallel-library'; the
+                          // LDM opens in pick-mode, user clicks a
+                          // drive radio, LDM dispatches
+                          // pdr:libraryDrivePicked back, our handler
+                          // up top sets destination.
+                          window.dispatchEvent(new CustomEvent('pdr:openLibraryPanelForPick', {
+                            detail: { caller: 'parallel-library' },
+                          }));
+                        }}
+                        className="shrink-0"
+                        // Lavender outline-pulse while no Library Drive
+                        // is selected — mirrors the Workspace "Select
+                        // Library Drive" CTA pattern. Animation stops
+                        // the moment the user picks a folder so it
+                        // doesn't keep tugging at the eye once the
+                        // action is done. The reason the user (Terry,
+                        // 2026-05-16) didn't realise the Start
+                        // Move/Copy button was disabled because of
+                        // an empty destination — there was no signal
+                        // on the unfilled field. The pulse tells the
+                        // eye where to look first.
+                        style={!destination ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
+                      >
                         <FolderOpen className="w-4 h-4 mr-1.5" />
                         Browse
                       </Button>
