@@ -29,3 +29,8 @@ release/
 # launch wrapper so log output is queryable without keeping the
 # console open. Per-run, never committed.
 electron-stdout.log
+
+# Per-session scratch directory for ad-hoc diagnostic scripts
+# (DB-forensics .cjs files, throwaway better-sqlite3 installs, etc).
+# Never part of the shipped product or the source tree.
+.scratch/
