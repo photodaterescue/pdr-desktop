@@ -67,6 +67,19 @@ export function LibraryStatusButton() {
     return () => window.removeEventListener('pdr:openLibraryPanel', handler as EventListener);
   }, []);
 
+  // Pick-mode entry (v2.0.6) — when another feature (e.g. Parallel
+  // Library's Browse button) needs the LDM as a folder picker rather
+  // than as the active-Library-Drive manager, it dispatches
+  // `pdr:openLibraryPanelForPick`. We also need to open the panel
+  // here so it's actually visible; LibraryPanel itself handles the
+  // pickMode state internally and dispatches `pdr:libraryDrivePicked`
+  // back to the caller on selection.
+  useEffect(() => {
+    const handler = () => setIsOpen(true);
+    window.addEventListener('pdr:openLibraryPanelForPick', handler as EventListener);
+    return () => window.removeEventListener('pdr:openLibraryPanelForPick', handler as EventListener);
+  }, []);
+
   const handleClose = () => {
     setIsOpen(false);
     void refresh();

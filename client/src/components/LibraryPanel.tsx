@@ -273,6 +273,19 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   const [showBackupExplainer, setShowBackupExplainer] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
 
+  // Pick-mode (v2.0.6). When set, the LDM is being opened as a folder
+  // picker for some OTHER feature (Parallel Library, etc.) rather than
+  // as the active-Library-Drive manager. In pick mode:
+  //   • Clicking a drive radio dispatches `pdr:libraryDrivePicked`
+  //     with { caller, path } and closes the LDM — no
+  //     inspectAndRoute / attach action.
+  //   • The "Set up a separate library anyway" link still works but
+  //     SKIPS the Library Planner / DDA (the caller is picking a
+  //     destination folder, not setting up a new library DB).
+  //   • Reset on close so a follow-up normal-mode open isn't poisoned.
+  // null = normal mode (manage the active Library Drive).
+  const [pickMode, setPickMode] = useState<{ caller: string } | null>(null);
+
   const refreshStatus = async () => {
     try {
       const res = await (window as any).pdr?.library?.status();
@@ -494,8 +507,27 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     setKeyInput('');
     setKeyError(null);
     setErrorMsg(null);
+    // Always clear pickMode on close so a normal-mode reopen isn't
+    // poisoned by a caller from a previous pick-mode session.
+    setPickMode(null);
     onClose();
   };
+
+  // Pick-mode entry point. External callers (e.g. Parallel Library's
+  // Browse button) dispatch `pdr:openLibraryPanelForPick` with detail
+  // identifying the caller. The LDM opens in pick-mode: clicking a
+  // drive returns its path to the caller instead of attaching it as
+  // the active Library Drive. caller name is echoed back in the
+  // `pdr:libraryDrivePicked` dispatch so multiple potential callers
+  // can each filter for their own pick event.
+  useEffect(() => {
+    const handler = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ caller?: string }>).detail ?? {};
+      setPickMode({ caller: detail.caller || 'unknown' });
+    };
+    window.addEventListener('pdr:openLibraryPanelForPick', handler as EventListener);
+    return () => window.removeEventListener('pdr:openLibraryPanelForPick', handler as EventListener);
+  }, []);
 
   // Inspect a path: detect whether a sidecar already exists there →
   // branch to restore vs. set-as-new. We used to BLOCK on internal
@@ -1318,10 +1350,37 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                     doesn't change until the inspect-and-route flow
                     completes and the panel re-refreshes. */}
                 <RadioGroup
-                  value={(allDrives.find(d => d.isCurrentLibraryDrive)?.letter ?? allDrives.find(d => d.isCurrentLibraryDrive)?.path) ?? ''}
+                  // Use the row's FULL PATH as the unique key, not
+                  // the drive letter. Different library folders on
+                  // the same drive (D:\1. Photos\1. PDR Library
+                  // Drive vs D:\1. Photos\Test) shared the same
+                  // letter "D:" — both rows then rendered as checked
+                  // because RadioGroup picks all items matching the
+                  // current value. Terry's report 2026-05-15: "I
+                  // just tried swapping my LD to a different folder
+                  // in the D drive, and now it's showing both as
+                  // selected in the LDM." Full path is unique per
+                  // row, so only one matches at a time. In pick mode
+                  // no row is pre-selected (no "current" yet).
+                  value={pickMode ? '' : (allDrives.find(d => d.isCurrentLibraryDrive)?.path ?? '')}
                   onValueChange={(value) => {
-                    const target = orderedDrives.find(d => (d.letter ?? d.path) === value);
-                    if (!target || target.isCurrentLibraryDrive) return;
+                    const target = orderedDrives.find(d => d.path === value);
+                    if (!target) return;
+
+                    // Pick-mode path (v2.0.6) — caller wants a folder
+                    // path, not an attach action. Dispatch the picked
+                    // path back to whoever opened the LDM in this
+                    // mode and close. Skip inspectAndRoute entirely.
+                    if (pickMode) {
+                      window.dispatchEvent(new CustomEvent('pdr:libraryDrivePicked', {
+                        detail: { caller: pickMode.caller, path: target.path },
+                      }));
+                      setPickMode(null);
+                      handleClose();
+                      return;
+                    }
+
+                    if (target.isCurrentLibraryDrive) return;
 
                     // Two paths from here:
                     //
@@ -1585,9 +1644,15 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                         >
                           <span className={drive.isCurrentLibraryDrive && health.tone === 'amber' ? 'inline-flex rounded-full ring-2 ring-amber-400 ring-offset-2 ring-offset-background' : 'inline-flex'}>
                             <RadioGroupItem
-                              value={drive.letter ?? drive.path}
+                              // Full path as the unique value — two
+                              // library folders on the same drive
+                              // share a letter but always have
+                              // unique paths. See the RadioGroup
+                              // value comment above for the bug
+                              // history.
+                              value={drive.path}
                               disabled={!drive.online && !drive.isCurrentLibraryDrive}
-                              aria-label={drive.isCurrentLibraryDrive ? 'Current Library Drive' : 'Set as Library Drive'}
+                              aria-label={pickMode ? 'Pick this drive' : (drive.isCurrentLibraryDrive ? 'Current Library Drive' : 'Set as Library Drive')}
                             />
                           </span>
                         </IconTooltip>
@@ -1678,7 +1743,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
 
           {/* ── Advanced — discouraged-option pattern (link variant +
                 text-muted-foreground override per STYLE_GUIDE.md). */}
-          <div className="pt-2 border-t border-border space-y-1.5">
+          {/* Advanced section. Hidden entirely in pick-mode — the
+              caller is picking a folder from EXISTING drives, not
+              setting up a new library. Letting the user click "Set
+              up a new library" in pick-mode would route them into a
+              flow (Library Planner → DDA) that's irrelevant to their
+              current task. They can cancel the LDM if none of their
+              existing drives are right. */}
+          {!pickMode && <div className="pt-2 border-t border-border space-y-1.5">
             <p className="text-caption uppercase tracking-wider">Advanced</p>
             <div className="flex flex-col items-start">
               <Button
@@ -1694,7 +1766,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                   in the list — a normal action with a clear destination,
                   not an abstract "disconnect" with no follow-on state. */}
             </div>
-          </div>
+          </div>}
         </div>
       </>
     );

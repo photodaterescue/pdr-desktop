@@ -58,6 +58,20 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
   const [mode, setMode] = useState<'copy' | 'move'>('copy');
   const [folderStructure, setFolderStructure] = useState<'year' | 'year-month' | 'year-month-day'>('year-month-day');
   const [skipDuplicates, setSkipDuplicates] = useState(true);
+  // Listen for the LDM's picked-drive event so the Browse button can
+  // route through the Library Drive Manager (v2.0.6, Terry's call).
+  // Filter on `caller === 'parallel-library'` so other LDM-pick-mode
+  // callers in future don't leak into this modal.
+  useEffect(() => {
+    const handler = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ caller?: string; path?: string }>).detail ?? {};
+      if (detail.caller !== 'parallel-library') return;
+      if (typeof detail.path !== 'string' || detail.path.length === 0) return;
+      setDestination(detail.path);
+    };
+    window.addEventListener('pdr:libraryDrivePicked', handler as EventListener);
+    return () => window.removeEventListener('pdr:libraryDrivePicked', handler as EventListener);
+  }, []);
   // Add-to-search opt-out. Default ON so the parallel-library copies
   // become visible in S&D / Memories / Trees the moment the copy
   // completes — the previous behaviour was silent orphaning, where
@@ -300,7 +314,19 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                       <div className="flex-1 px-3 py-2 rounded-lg border border-border bg-secondary/30 text-sm text-foreground truncate min-h-[38px] flex items-center min-w-0">
                         {destination || <span className="text-muted-foreground">Choose a folder...</span>}
                       </div>
-                      <Button variant="primary" size="sm" onClick={() => setShowBrowser(true)} className="shrink-0">
+                      <Button variant="primary" size="sm" onClick={() => {
+                        // v2.0.6: route Browse through the LDM
+                        // (Terry's call — "I want the LDM, not
+                        // close enough"). Dispatches the pick-mode
+                        // event with caller='parallel-library'; the
+                        // LDM opens in pick-mode, user clicks a
+                        // drive radio, LDM dispatches
+                        // pdr:libraryDrivePicked back, our handler
+                        // up top sets destination.
+                        window.dispatchEvent(new CustomEvent('pdr:openLibraryPanelForPick', {
+                          detail: { caller: 'parallel-library' },
+                        }));
+                      }} className="shrink-0">
                         <FolderOpen className="w-4 h-4 mr-1.5" />
                         Browse
                       </Button>
@@ -580,7 +606,15 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
       <DestinationAdvisorModal
         isOpen={showDriveAdvisor}
         onClose={() => setShowDriveAdvisor(false)}
-        onContinue={() => { setShowDriveAdvisor(false); setShowBrowser(true); }}
+        onContinue={() => {
+          setShowDriveAdvisor(false);
+          // Continue → open the LDM in pick-mode (same channel as
+          // the Browse button) instead of the legacy FolderBrowserModal.
+          // Keeps a single drive-picking surface across PL flows.
+          window.dispatchEvent(new CustomEvent('pdr:openLibraryPanelForPick', {
+            detail: { caller: 'parallel-library' },
+          }));
+        }}
         currentSourceSizeGB={totalSizeGB}
         plannedCollectionSizeGB={totalSizeGB}
       />
