@@ -127,16 +127,70 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
     }
   }, [isOpen]);
 
-  // Fetch disk space when destination changes
+  // Fetch disk space when destination changes.
+  //
+  // The disk-space IPC returns NaN if the path doesn't exist (the
+  // user typed in a NEW subfolder name like "Parallel Library 1"
+  // that hasn't been created yet). Free/total bytes are a VOLUME-
+  // level property — same answer whether we probe D:\foo\bar\baz
+  // or just D:\ — so when the deeper path fails we walk back up to
+  // the deepest parent that returns a valid result. The drive root
+  // is always present and is the guaranteed fallback. Replaces the
+  // earlier "fall back to —" behaviour Terry called out: leaving
+  // the field blank is worse than showing the right number from a
+  // parent path.
   useEffect(() => {
-    if (destination) {
-      getDiskSpaceBridge(destination).then(res => {
-        if (res.success && res.data) setDiskSpace(res.data);
-        else setDiskSpace(null);
-      });
-    } else {
+    if (!destination) {
       setDiskSpace(null);
+      return;
     }
+    let cancelled = false;
+    const probeWithFallback = async () => {
+      // Candidate paths: deepest first, walking up to the drive root.
+      const candidates: string[] = [];
+      let current = destination;
+      const seen = new Set<string>();
+      while (current && !seen.has(current)) {
+        seen.add(current);
+        candidates.push(current);
+        // Step up one level. Windows path separator handling — split
+        // on backslash, drop last segment. Stop when we hit the drive
+        // root ("D:\" or just "D:").
+        const cleaned = current.replace(/[\\/]+$/, '');
+        const idx = Math.max(cleaned.lastIndexOf('\\'), cleaned.lastIndexOf('/'));
+        if (idx <= 2) {
+          // We're at "D:" or shallower — add the drive root explicitly
+          // and stop.
+          const driveLetterMatch = cleaned.match(/^([A-Za-z]:)/);
+          if (driveLetterMatch) candidates.push(driveLetterMatch[1] + '\\');
+          break;
+        }
+        current = cleaned.slice(0, idx);
+      }
+
+      for (const candidate of candidates) {
+        try {
+          const res = await getDiskSpaceBridge(candidate);
+          if (cancelled) return;
+          if (
+            res.success &&
+            res.data &&
+            Number.isFinite(res.data.free) &&
+            Number.isFinite(res.data.total) &&
+            res.data.total > 0
+          ) {
+            setDiskSpace(res.data);
+            return;
+          }
+        } catch {
+          // try next candidate
+        }
+      }
+      // Every candidate failed (offline drive, unreachable path, etc).
+      if (!cancelled) setDiskSpace(null);
+    };
+    void probeWithFallback();
+    return () => { cancelled = true; };
   }, [destination]);
 
   // Listen for progress events
