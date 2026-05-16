@@ -72,18 +72,20 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
     window.addEventListener('pdr:libraryDrivePicked', handler as EventListener);
     return () => window.removeEventListener('pdr:libraryDrivePicked', handler as EventListener);
   }, []);
-  // Add-to-search opt-out. Default ON so the parallel-library copies
-  // become visible in S&D / Memories / Trees the moment the copy
-  // completes — the previous behaviour was silent orphaning, where
-  // files landed on disk but PDR never indexed them (Terry's
-  // discovery 2026-05-15: "PL completed but not picked up in LDM").
-  // Power-users with a legitimate reason to keep files OUT of PDR's
-  // tracking (financial docs / sensitive content) can untick.
-  const [addToSearch, setAddToSearch] = useState(true);
-  // True while we're indexing the new location after a successful
-  // copy — drives a small "Adding to PDR's search…" line so the
-  // completion screen doesn't look frozen.
-  const [indexing, setIndexing] = useState(false);
+  // v2.0.6 — Parallel Library is now PURELY a file-copy operation.
+  // The previous "Add to search" path called rebuildFromLibraries on
+  // the destination after the copy, which walked the destination tree
+  // and silently overwrote `confidence` (→ Confirmed) and
+  // `original_filename` (→ blank) on ANY pre-existing indexed rows
+  // whose file_path lived under that tree. Terry's two test files on
+  // 2026-05-16 lost their Recovered status + Original Name through
+  // exactly this path. Until v2.2's per-library independent PDR
+  // instances exist, PL stays out of the search index entirely. The
+  // master Library Drive remains the canonical source of truth in
+  // S&D / Memories / Trees, and PL is a tidy file copy on disk —
+  // nothing more. A deliberate "Re-index this folder" tool will land
+  // in v2.0.7 as a separate Tools-section action with explicit user
+  // intent and a non-destructive walk.
   const [showBrowser, setShowBrowser] = useState(false);
   const [showDriveAdvisor, setShowDriveAdvisor] = useState(false);
 
@@ -226,44 +228,18 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
     const res = await copyToStructure(data);
     setResult(res);
 
-    // Index the copies into the search DB so they're visible in
-    // S&D / Memories / Trees. Without this the files land on disk
-    // but never enter `indexed_files` — the orphaning bug Terry
-    // flagged 2026-05-15. Gated on the addToSearch checkbox so
-    // power-users can deliberately keep sensitive content OUT of
-    // PDR's tracking (financial docs / Move-out workflows).
-    //
-    // For Move with tracking we ALSO run search:cleanup so the
-    // old paths (whose files have now been moved away from) are
-    // removed from the DB — otherwise S&D would show broken-link
-    // rows pointing at gone files. For Copy we leave the originals
-    // tracked (they're still there).
-    //
-    // Best-effort: indexing failures don't fail the operation.
-    // The files are already on disk; the user can re-trigger via
-    // a v2.0.6 "re-index a folder" action (separate roadmap item).
-    if (res?.success && addToSearch) {
-      setIndexing(true);
-      try {
-        const rebuild = (window as any).pdr?.search?.rebuildFromLibraries;
-        if (typeof rebuild === 'function') {
-          await rebuild([destination]);
-        }
-        if (mode === 'move') {
-          const cleanup = (window as any).pdr?.search?.cleanup;
-          if (typeof cleanup === 'function') {
-            await cleanup();
-          }
-        }
-      } catch (e) {
-        console.warn('[ParallelStructure] post-copy index failed (non-fatal):', e);
-      } finally {
-        setIndexing(false);
-      }
-    }
-
+    // v2.0.6 — post-copy indexing REMOVED. The previous path called
+    // rebuildFromLibraries on the destination, which walked the
+    // destination tree and silently overwrote master-library rows'
+    // confidence + original_filename (Recovered → Confirmed, name
+    // → blank) for any pre-existing indexed files under that tree.
+    // Until v2.2 introduces per-library independent PDR instances,
+    // PL is a pure copy operation — the master Library Drive stays
+    // the canonical source of truth in S&D / Memories / Trees. A
+    // deliberate "Re-index this folder" tool will land in v2.0.7
+    // for users who want copies (or any folder) indexed on demand.
     setPhase('complete');
-  }, [destination, files, folderStructure, mode, skipDuplicates, addToSearch]);
+  }, [destination, files, folderStructure, mode, skipDuplicates]);
 
   const handleCancel = useCallback(async () => {
     await cancelStructureCopy();
@@ -579,28 +555,17 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                       />
                       <span className="text-sm">Skip duplicate files</span>
                     </label>
-                    {/* Add-to-search opt-out (v2.0.6). Default ON so the
-                        parallel-library copies appear in S&D / Memories
-                        / Trees the moment the copy finishes. Off ticks
-                        the box for power-users with a deliberate reason
-                        to keep certain files OUT of PDR's tracking
-                        (financial docs / private content via Move). */}
-                    <label className="flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-secondary/50 cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={addToSearch}
-                        onChange={(e) => setAddToSearch(e.target.checked)}
-                        className="w-4 h-4 rounded accent-primary mt-0.5"
-                      />
-                      <span className="flex flex-col">
-                        <span className="text-sm">Add to PDR's search &amp; views</span>
-                        <span className="text-xs text-muted-foreground">
-                          {mode === 'move'
-                            ? 'New location is indexed; the old paths are removed from PDR so S&D doesn\'t show broken links.'
-                            : 'The new copies appear in Search & Discovery, Memories, and Trees.'}
-                        </span>
-                      </span>
-                    </label>
+                    {/* v2.0.6 — "Add to PDR's search & views" checkbox
+                        REMOVED. Parallel Library is now a pure file-copy
+                        operation. Master Library Drive remains the
+                        canonical source of truth in S&D / Memories /
+                        Trees. The earlier opt-in path silently
+                        overwrote master metadata on any pre-existing
+                        indexed rows under the destination tree. A
+                        deliberate "Re-index this folder" tool lands in
+                        v2.0.7; per-library independent PDR instances
+                        (where PL copies are first-class searchable in
+                        their own scope) land in v2.2. */}
                   </div>
 
                   {/* Summary */}
@@ -664,17 +629,9 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                       <p className="text-lg font-semibold">
                         {mode === 'move' ? 'Files Moved' : 'Files Copied'}
                       </p>
-                      {/* Adding-to-search status. Renders only while
-                          the post-copy index pass is in flight, so the
-                          user sees PDR doing the work instead of an
-                          apparent hang between "Files Copied" and the
-                          search/Memories views catching up. */}
-                      {indexing && (
-                        <div className="flex items-center justify-center gap-1.5 mt-2 text-xs text-muted-foreground">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>Adding to PDR's search &amp; views…</span>
-                        </div>
-                      )}
+                      {/* v2.0.6 — indexing-status line REMOVED with
+                          the post-copy index path. PL is now a pure
+                          file-copy operation. */}
                     </div>
                   )}
 

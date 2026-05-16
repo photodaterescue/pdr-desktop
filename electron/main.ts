@@ -4903,6 +4903,7 @@ ipcMain.handle('library:listIndexedDrives', async () => {
 // escaped with a backslash and an ESCAPE clause.
 ipcMain.handle('library:countFilesAtPath', async (_event, rootPath: unknown) => {
   if (typeof rootPath !== 'string' || rootPath.length === 0) {
+    log.warn('[library:countFilesAtPath] invalid rootPath:', rootPath);
     return { success: false, error: 'rootPath is required' };
   }
   try {
@@ -4929,6 +4930,7 @@ ipcMain.handle('library:countFilesAtPath', async (_event, rootPath: unknown) => 
       WHERE file_path LIKE ? ESCAPE '\\'
          OR file_path LIKE ? ESCAPE '\\'
     `).get(likePatternWin, likePatternPosix) as { file_count: number; total_bytes: number; last_indexed: string | null };
+    log.info(`[library:countFilesAtPath] rootPath=${JSON.stringify(rootPath)} count=${row.file_count} bytes=${row.total_bytes}`);
     return {
       success: true,
       data: {
@@ -4938,6 +4940,7 @@ ipcMain.handle('library:countFilesAtPath', async (_event, rootPath: unknown) => 
       },
     };
   } catch (err) {
+    log.error('[library:countFilesAtPath] failed:', (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 });

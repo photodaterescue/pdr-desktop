@@ -939,6 +939,36 @@ export function listRuns(): IndexedRun[] {
   return database.prepare(`SELECT * FROM indexed_runs ORDER BY indexed_at DESC`).all() as IndexedRun[];
 }
 
+/**
+ * Return the subset of the supplied file_paths that ALREADY have a row in
+ * indexed_files. Used by the passive rebuild path to skip files the DB
+ * already knows about, so a re-walk never overwrites their classification
+ * or original_filename via the insertFiles UPSERT (v2.0.6 data-loss fix —
+ * Parallel Library's post-copy rebuild was flipping master-library rows
+ * from Recovered → Confirmed and blanking Original Names when the
+ * destination overlapped an indexed tree). Path comparison is case-
+ * insensitive on Windows but we leave it case-sensitive here because the
+ * DB stores paths exactly as they were inserted and a same-machine
+ * re-walk yields the same casing.
+ */
+export function findExistingFilePaths(filePaths: string[]): Set<string> {
+  if (filePaths.length === 0) return new Set();
+  const database = getDb();
+  const existing = new Set<string>();
+  // SQLite has a ~999-parameter limit per statement — chunk to be safe.
+  const BATCH = 500;
+  const stmt = (n: number) =>
+    database.prepare(
+      `SELECT file_path FROM indexed_files WHERE file_path IN (${Array(n).fill('?').join(',')})`,
+    );
+  for (let i = 0; i < filePaths.length; i += BATCH) {
+    const chunk = filePaths.slice(i, i + BATCH);
+    const rows = stmt(chunk.length).all(...chunk) as { file_path: string }[];
+    for (const r of rows) existing.add(r.file_path);
+  }
+  return existing;
+}
+
 // ─── File insertion (batch) ──────────────────────────────────────────────────
 
 /**

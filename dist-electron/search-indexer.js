@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { ExifTool } from 'exiftool-vendored';
 import { app } from 'electron';
 import { fileURLToPath } from 'url';
-import { initDatabase, insertRun, insertFiles, updateRunFileCount, removeRunByReportId, getRunByReportId, } from './search-database.js';
+import { initDatabase, insertRun, insertFiles, updateRunFileCount, removeRunByReportId, getRunByReportId, findExistingFilePaths, } from './search-database.js';
 import { initGeocoder, reverseGeocode } from './reverse-geocoder.js';
 import { isScannerDevice } from './scanner-detection.js';
 import { getScannerOverride } from './settings-store.js';
@@ -508,19 +508,40 @@ export async function rebuildIndexFromLibraries(rootPaths, onProgress) {
                     }
                 }
                 // Phase 3: insert
+                //
+                // v2.0.6 data-loss fix — rebuild MUST be non-destructive.
+                // The previous behaviour passed every walked file to insertFiles
+                // which UPSERTs on file_path, overwriting confidence,
+                // original_filename, date_source, and run_id on any pre-existing
+                // row. Terry's Parallel Library investigation 2026-05-16: the
+                // post-PL rebuild walked the destination tree and silently
+                // flipped Recovered → Confirmed and blanked Original Name on
+                // master-library rows whose paths happened to live under that
+                // tree. The rebuild's intent is "discover files PDR doesn't
+                // already know about" — never "re-classify what Fix earlier
+                // categorised." So we filter records down to file_paths NOT
+                // already in indexed_files, and insert only those. Existing
+                // rows are left completely untouched.
+                const allPaths = records.map(r => r.file_path);
+                const existing = findExistingFilePaths(allPaths);
+                const newRecords = records.filter(r => !existing.has(r.file_path));
+                const skippedExisting = records.length - newRecords.length;
                 onProgress?.({
                     phase: 'inserting',
                     rootIndex: r,
                     rootCount: rootPaths.length,
                     rootPath,
                     current: 0,
-                    total: records.length,
+                    total: newRecords.length,
                     currentFile: '',
                 });
-                const inserted = insertFiles(runId, records);
+                const inserted = newRecords.length > 0 ? insertFiles(runId, newRecords) : 0;
                 updateRunFileCount(runId, inserted);
                 grandTotal += inserted;
                 perRoot.push({ root: rootPath, runId, fileCount: inserted });
+                if (skippedExisting > 0) {
+                    console.log(`[rebuild] ${rootPath}: ${inserted} new, ${skippedExisting} already-indexed (preserved)`);
+                }
             }
         }
         finally {

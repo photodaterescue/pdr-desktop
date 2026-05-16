@@ -8948,6 +8948,30 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.6" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.6</span>
+                        {appVersion === '2.0.6' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Parallel Library no longer touches your master library</strong> — Parallel Library is now a pure file-copy operation. Earlier versions could silently change Recovered or Marked photos to Confirmed and clear Original Names on your original files when you used the "Add to PDR's search &amp; views" option. That option has been removed; Parallel Library copies stay out of Search &amp; Discovery, Memories, and Trees so your master Library Drive remains the canonical entry for every photo. A deliberate "Re-index a folder" tool is coming in v2.0.7 for anyone who wants to make a specific folder searchable on demand.</li>
+                        <li><strong className="text-foreground font-medium">Pre-extract space check now accurate for big ZIPs</strong> — the disk-space precheck before extracting a large ZIP / RAR was under-counting the space needed for the Fix copy that follows. Same-drive Fixes now reserve enough room for both the extracted files and the Fixed copies. Cross-drive Fixes (where extraction lands on your system drive and the copy goes to another drive) now check both drives separately. The headroom is also drive-aware now — small drives get a smaller buffer, big drives get a bigger one.</li>
+                        <li><strong className="text-foreground font-medium">Fix Complete file count matches what actually landed on disk</strong> — if a Fix ran out of space mid-copy, the "Output files" total still showed the count from the date analysis (what WOULD have been written if everything succeeded). It now shows the honest number of files that successfully made it to the destination.</li>
+                        <li><strong className="text-foreground font-medium">Welcome screen unlocks for returning users</strong> — if you'd dismissed your Library Drive (or hadn't reattached it yet) the Welcome screen locked you out of the hero card, even though you've used PDR before. PDR now recognises returning users by their saved Library Drives and lets you back in to choose one.</li>
+                        <li><strong className="text-foreground font-medium">Library Drive Manager shows per-folder photo counts</strong> — two libraries on the same drive used to share the same photo count (both showing the drive's total). Each library row now shows the count for that specific folder.</li>
+                        <li><strong className="text-foreground font-medium">Library Planner sits between "set up a separate library" and the folder picker</strong> — the Library Planner now appears for new-library setup from the Library Drive Manager, matching the first-time-setup flow.</li>
+                        <li><strong className="text-foreground font-medium">Parallel Library Browse opens the Library Drive Manager</strong> — Browse in the Parallel Library wizard now opens the full Library Drive Manager in pick-mode, so you can pick from your saved Library Drives in one place.</li>
+                        <li><strong className="text-foreground font-medium">Parallel Library disk-space card matches the Dashboard</strong> — the disk-space readout in Parallel Library now uses the same calm progress bar + free/total figures as the Dashboard, including the TB tier above 1000 GB.</li>
+                        <li><strong className="text-foreground font-medium">Library pill hidden on the Welcome screen</strong> — clicking the Library pill from Welcome silently did nothing because the Library Drive Manager only mounts on the Workspace route. It's now hidden on Welcome and reappears when you're in the Workspace.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.5" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
