@@ -108,6 +108,14 @@ export interface PDRSettings {
    *  affordance) — it only suppresses the post-Fix banner nudge. */
   dbBackupReminderSnoozedAt: string | null;
 
+  /** ISO timestamp the user dismissed the low-RAM advisory. Surfaced
+   *  on Dashboard once when totalmem < 6 GB, then never again unless
+   *  cleared. Customers on budget laptops (Pentium / Celeron / 4 GB)
+   *  hit out-of-memory failures on 50 GB Takeouts; the advisory tells
+   *  them upfront to split the Takeout into smaller pieces in Google's
+   *  Takeout settings. v2.0.7 (Kathr 2026-05-16). */
+  lowRamAdvisoryDismissedAt: string | null;
+
   /** Persisted Library Drive (destination) path. Sticky across sessions
    *  so users don't have to re-pick it on every launch — and so the
    *  Welcome screen can keep its app cards / Tour / Best Practices
@@ -182,6 +190,7 @@ export const optimisedDefaults: PDRSettings = {
   autoIndexAfterFix: true,
   lastDbBackupAt: null,
   dbBackupReminderSnoozedAt: null,
+  lowRamAdvisoryDismissedAt: null,
 };
 
 // Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
@@ -248,6 +257,7 @@ export function getSettings(): PDRSettings {
     autoIndexAfterFix: store.get('autoIndexAfterFix', optimisedDefaults.autoIndexAfterFix),
     lastDbBackupAt: store.get('lastDbBackupAt', optimisedDefaults.lastDbBackupAt),
     dbBackupReminderSnoozedAt: store.get('dbBackupReminderSnoozedAt', optimisedDefaults.dbBackupReminderSnoozedAt),
+    lowRamAdvisoryDismissedAt: store.get('lowRamAdvisoryDismissedAt', optimisedDefaults.lowRamAdvisoryDismissedAt),
   };
 }
 

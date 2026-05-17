@@ -45,19 +45,43 @@ export function UpdateNotification() {
     return unsubscribe;
   }, []);
 
+  // Mandatory flag piped through from latest.yml — set to true for
+  // releases the user must install before continuing. Suppresses the
+  // "Later" button + the X close affordance so the toast becomes a
+  // non-dismissable nudge (still not modal — they can finish what
+  // they're doing — but they can't make the prompt go away without
+  // updating). Defaults to false (the soft-toast experience).
+  const isMandatory =
+    (state.kind === 'available' && state.mandatory === true) ||
+    (state.kind === 'downloading' && state.mandatory === true) ||
+    (state.kind === 'downloaded' && state.mandatory === true);
+
   const visible =
     (state.kind === 'available' ||
       state.kind === 'downloading' ||
       state.kind === 'downloaded') &&
-    dismissedKind !== state.kind;
+    (isMandatory || dismissedKind !== state.kind);
 
-  const onLater = () => setDismissedKind(state.kind);
+  const onLater = () => {
+    // Mandatory updates can't be dismissed — protect against any
+    // residual call paths (the buttons aren't rendered when mandatory,
+    // but defence-in-depth).
+    if (isMandatory) return;
+    setDismissedKind(state.kind);
+  };
 
   const renderBody = () => {
     if (state.kind === 'available') {
       return (
         <>
-          <h3 className="font-semibold text-foreground">Update available</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-foreground">Update available</h3>
+            {isMandatory && (
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full">
+                Required
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Version {state.version} is ready to download
             {state.currentVersion && ` (you're on ${state.currentVersion})`}.
@@ -68,9 +92,11 @@ export function UpdateNotification() {
             </p>
           )}
           <div className="flex gap-2 mt-3 justify-end">
-            <Button size="sm" variant="secondary" onClick={onLater}>
-              Later
-            </Button>
+            {!isMandatory && (
+              <Button size="sm" variant="secondary" onClick={onLater}>
+                Later
+              </Button>
+            )}
             <Button size="sm" onClick={() => void downloadUpdate()}>
               <Download className="w-4 h-4 mr-1.5" />
               Get update
@@ -99,14 +125,23 @@ export function UpdateNotification() {
     if (state.kind === 'downloaded') {
       return (
         <>
-          <h3 className="font-semibold text-foreground">Update ready</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-foreground">Update ready</h3>
+            {isMandatory && (
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full">
+                Required
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Version {state.version} will install when you restart Photo Date Rescue.
           </p>
           <div className="flex gap-2 mt-3 justify-end">
-            <Button size="sm" variant="secondary" onClick={onLater}>
-              Later
-            </Button>
+            {!isMandatory && (
+              <Button size="sm" variant="secondary" onClick={onLater}>
+                Later
+              </Button>
+            )}
             <Button size="sm" onClick={() => void installUpdateNow()}>
               <RefreshCw className="w-4 h-4 mr-1.5" />
               Restart now
@@ -117,6 +152,45 @@ export function UpdateNotification() {
     }
     return null;
   };
+
+  // Mandatory updates use a CENTERED, dimmed-backdrop modal instead
+  // of the bottom-right toast. The corner toast is easy to ignore;
+  // a centred modal with a backdrop blocks the workspace until the
+  // user acts. This is the "critical update" surface — Terry's call
+  // 2026-05-17 — dormant by default; only fires when a release marks
+  // itself `mandatory: true` in latest.yml. Same actionable content
+  // as the toast, just rendered front-and-centre with no Later/X
+  // affordances (those are already gated by isMandatory above).
+  if (visible && isMandatory) {
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+          // Backdrop click is INTENTIONALLY a no-op for mandatory
+          // updates — the whole point is the user can't sidestep it.
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            className="bg-background rounded-xl shadow-2xl border border-border max-w-md w-full p-6"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-900/40 shrink-0">
+                <Download className="w-5 h-5 text-amber-700 dark:text-amber-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                {renderBody()}
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
 
   return (
     <AnimatePresence>
@@ -135,7 +209,7 @@ export function UpdateNotification() {
               <div className="flex-1 min-w-0">
                 {renderBody()}
               </div>
-              {state.kind !== 'downloading' && (
+              {state.kind !== 'downloading' && !isMandatory && (
                 <button
                   onClick={onLater}
                   aria-label="Dismiss"

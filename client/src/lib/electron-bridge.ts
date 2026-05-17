@@ -662,15 +662,16 @@ export type UpdateState =
   | { kind: 'idle' }
   | { kind: 'checking' }
   | { kind: 'not-available'; currentVersion: string }
-  | { kind: 'available'; version: string; releaseNotes?: string; currentVersion: string }
+  | { kind: 'available'; version: string; releaseNotes?: string; currentVersion: string; mandatory?: boolean }
   | {
       kind: 'downloading';
       percent: number;
       bytesPerSecond: number;
       transferred: number;
       total: number;
+      mandatory?: boolean;
     }
-  | { kind: 'downloaded'; version: string }
+  | { kind: 'downloaded'; version: string; mandatory?: boolean }
   | { kind: 'error'; message: string };
 
 export async function checkForUpdates(): Promise<UpdateInfo> {

@@ -114,6 +114,7 @@ import { LibraryDriveOfflineModal } from "@/components/LibraryDriveOfflineModal"
 import { LibraryDriveOfflineBanner } from "@/components/LibraryDriveOfflineBanner";
 import { AiOfferCard } from "@/components/AiOfferCard";
 import { DbBackupReminderCard } from "@/components/DbBackupReminderCard";
+import { LowRamAdvisoryCard } from "@/components/LowRamAdvisoryCard";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -4123,6 +4124,13 @@ function DashboardPanel({
             Dashboard where the user actually is. "Back up now" opens
             the LDM (where the explainer + Back-up-now flow lives). */}
         <DbBackupReminderCard />
+        {/* Low-RAM advisory — one-shot dashboard guidance for budget-
+            hardware users (<6 GB RAM) so they know upfront that very
+            large Takeouts (50 GB+ on a single download) may struggle
+            and that splitting in Google's Takeout settings helps.
+            Hidden permanently once dismissed. v2.0.7 — customer
+            Kathr 2026-05-16 on a Pentium N4200 / 4 GB DDR3 laptop. */}
+        <LowRamAdvisoryCard />
 
         {/* Confidence Summary Section */}
         {hasSelection && (
@@ -8947,6 +8955,27 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </AccordionContent>
                     </AccordionItem>
                   )}
+
+                  <AccordionItem value="ver-2.0.7" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.7</span>
+                        {appVersion === '2.0.7' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Long-path support for big, deeply-nested Google Takeouts</strong> — Windows has a historic 260-character limit on file paths. Big Google Photos Takeouts (with shared-album folder names like *"Trip to &lt;long destination&gt; with &lt;friends&gt;"* under deeply-nested chronological folders) routinely push past it during extraction or when Fix copies them into a year-folder structure beneath an already-deep Library Drive path. PDR now uses Windows' extended-length path mechanism everywhere it touches the disk — extraction, the Fix copy, the library indexer, and face / thumbnail rendering — so paths up to ~32,000 characters work transparently. Resolves the "Unhandled Error: UNKNOWN: unknown error, read" some users hit mid-Takeout.</li>
+                        <li><strong className="text-foreground font-medium">Extraction never silently lands on the wrong drive</strong> — when the Library Drive doesn't have room and PDR needs to fall back to your system drive's temporary folder, it now genuinely uses that folder. A previous subtle bug could route the fallback back onto the Library Drive while the space check had measured a different drive's free space. Now the chosen drive is honoured end-to-end.</li>
+                        <li><strong className="text-foreground font-medium">Network drives now work properly as Library Drives</strong> — if your Library Drive is a network share (a path that starts with &quot;\\&quot;), PDR can now read its free space and capacity directly through the filesystem instead of through a Windows tool that only handles letter drives. Earlier versions silently failed those probes, leaving the LDM unable to show details or proceed with &quot;change library drive&quot;. PDR also labels network shares clearly in the LDM so you know which drives are local vs over the network.</li>
+                        <li><strong className="text-foreground font-medium">Plain-English error message when a ZIP can&apos;t be read</strong> — if PDR hits a corrupted compression stream during extraction (the technical signature is &quot;too many length or distance symbols&quot; from Node&apos;s decompressor), you now get a clear message naming both possibilities: the ZIP itself is corrupted, OR the connection to the source drive is unreliable (common with network drives or slow USB connections). The fix in either case is to copy the ZIP to a local drive first and try again.</li>
+                        <li><strong className="text-foreground font-medium">One-time low-RAM heads-up</strong> — if your PC has less than 6 GB of RAM, the Dashboard now shows a one-time advisory at startup explaining that very large Takeouts (50 GB+) may be slow or run out of memory on this hardware, and that splitting your Takeout in Google&apos;s Takeout settings (e.g. into 10 GB pieces) is the easiest fix. Dismiss it once and it never shows again.</li>
+                        <li><strong className="text-foreground font-medium">Updates now download automatically in the background</strong> — when a new PDR version becomes available, your installation will start downloading it silently as soon as it&apos;s detected, instead of waiting for you to click &quot;Get update&quot;. You&apos;ll see a &quot;Restart to apply&quot; prompt once the download finishes, or PDR will install it automatically the next time you close the app. No more lingering on outdated versions — everyone stays current.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
 
                   <AccordionItem value="ver-2.0.6" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">

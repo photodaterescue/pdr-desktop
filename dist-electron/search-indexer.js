@@ -7,6 +7,7 @@ import { initDatabase, insertRun, insertFiles, updateRunFileCount, removeRunByRe
 import { initGeocoder, reverseGeocode } from './reverse-geocoder.js';
 import { isScannerDevice } from './scanner-detection.js';
 import { getScannerOverride } from './settings-store.js';
+import { toLongPath } from './long-path.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // ─── ExifTool instance (shared, lazy) ────────────────────────────────────────
@@ -390,7 +391,12 @@ const MEDIA_EXTENSIONS_FOR_REBUILD = new Set([
  */
 function walkMediaFiles(root) {
     const results = [];
-    const stack = [root];
+    // Apply the Windows extended-length prefix to the root so the entire
+    // walk inherits MAX_PATH-bypass capability. Without this, a deeply-
+    // nested Google Takeout tree under a long library-drive root would
+    // throw inside readdirSync once any sub-path crosses 260 chars on
+    // Windows. No-op on macOS/Linux. See long-path.ts.
+    const stack = [toLongPath(root)];
     while (stack.length > 0) {
         const dir = stack.pop();
         let entries;

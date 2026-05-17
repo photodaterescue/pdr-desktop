@@ -4,6 +4,12 @@ import log from 'electron-log';
 const { autoUpdater } = pkg;
 let mainWindowRef = null;
 let currentState = { kind: 'idle' };
+// Sticky for the lifetime of the update cycle. update-available
+// carries the mandatory flag; subsequent download-progress and
+// update-downloaded events from electron-updater don't include it,
+// so we cache it here and propagate it onto every broadcast that
+// represents the same update cycle. Reset on the next check.
+let currentUpdateMandatory = false;
 function broadcast(state) {
     currentState = state;
     if (mainWindowRef && !mainWindowRef.isDestroyed()) {
@@ -17,21 +23,53 @@ export function initAutoUpdater(window) {
     // app uses. Crucial when diagnosing "why didn't it update?" reports.
     autoUpdater.logger = log;
     log.transports.file.level = 'info';
-    // We control the lifecycle explicitly — no silent downloads, but if
-    // the user has a downloaded update and quits, install it on quit.
-    autoUpdater.autoDownload = false;
+    // v2.0.7 — silent background download enabled.
+    //
+    // Why this changed: Terry's call 2026-05-17. The previous opt-in
+    // model ("user sees 'Update available — Get it now' toast, must
+    // click to start the download") left a long tail of customers on
+    // older releases — multiple support emails about bugs we'd already
+    // fixed in newer versions. Premium subscribers shouldn't be reading
+    // PDR's release notes; PDR should just be current.
+    //
+    // New behaviour: as soon as electron-updater discovers a newer
+    // version is available, it starts downloading in the background
+    // (no user click required). When the download finishes, the
+    // renderer's 'downloaded' toast surfaces a "Restart now / Later"
+    // prompt. If the user picks Later, autoInstallOnAppQuit applies
+    // the update silently the next time they close PDR. So everyone
+    // converges on the latest release within at most one quit cycle
+    // after a release lands — usually within the same session.
+    //
+    // Note this only takes effect once a user is ON v2.0.7+. Customers
+    // currently on v2.0.6 still need to click "Get update" once to
+    // make the jump (we can't change shipped code retroactively); from
+    // v2.0.7 forwards it's all silent.
+    autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('checking-for-update', () => {
         log.info('[updater] checking for update');
+        // Reset the mandatory cache at the start of each new check cycle
+        // so an older mandatory flag doesn't leak into a subsequent
+        // non-mandatory update.
+        currentUpdateMandatory = false;
         broadcast({ kind: 'checking' });
     });
     autoUpdater.on('update-available', (info) => {
-        log.info(`[updater] update available: v${info.version}`);
+        // electron-updater passes unknown manifest fields through on `info`.
+        // We add `mandatory: true` to latest.yml when a release contains
+        // changes critical enough to block users from continuing on the
+        // old version — the renderer surfaces a non-dismissable "Restart
+        // now" modal instead of the soft toast. Default false (soft).
+        const mandatory = info.mandatory === true;
+        currentUpdateMandatory = mandatory;
+        log.info(`[updater] update available: v${info.version}${mandatory ? ' (mandatory)' : ''}`);
         broadcast({
             kind: 'available',
             version: info.version,
             releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
             currentVersion: app.getVersion(),
+            mandatory,
         });
     });
     autoUpdater.on('update-not-available', () => {
@@ -45,11 +83,12 @@ export function initAutoUpdater(window) {
             bytesPerSecond: progress.bytesPerSecond,
             transferred: progress.transferred,
             total: progress.total,
+            mandatory: currentUpdateMandatory,
         });
     });
     autoUpdater.on('update-downloaded', (info) => {
-        log.info(`[updater] update downloaded: v${info.version}`);
-        broadcast({ kind: 'downloaded', version: info.version });
+        log.info(`[updater] update downloaded: v${info.version}${currentUpdateMandatory ? ' (mandatory)' : ''}`);
+        broadcast({ kind: 'downloaded', version: info.version, mandatory: currentUpdateMandatory });
     });
     autoUpdater.on('error', (err) => {
         log.error('[updater] error:', err);

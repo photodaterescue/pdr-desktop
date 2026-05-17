@@ -397,6 +397,11 @@ contextBridge.exposeInMainWorld('pdr', {
     log: (payload) => ipcRenderer.invoke('app:log', payload),
     getLogFilePath: (reveal) => ipcRenderer.invoke('app:logFilePath', { reveal }),
     reportProblem: (payload) => ipcRenderer.invoke('app:reportProblem', payload),
+    // System memory probe — used by the Dashboard's low-RAM advisory
+    // to gate a one-shot guidance card for budget-laptop users.
+    system: {
+        memoryInfo: () => ipcRenderer.invoke('system:memoryInfo'),
+    },
     // Reveal an arbitrary file path in Explorer (highlights it inside
     // its folder). Used by ReportProblemModal's success state to
     // re-open the Documents folder showing the diagnostic ZIP if the

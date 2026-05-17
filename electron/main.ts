@@ -240,6 +240,7 @@ import AdmZip from 'adm-zip';
 import * as unzipper from 'unzipper';
 import crypto from 'crypto';
 import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, exportReportToCSV, exportReportToTXT, getExportFilename, writeCatalogue, FixReport } from './report-storage.js';
+import { toLongPath } from './long-path.js';
 import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import {
@@ -533,14 +534,23 @@ function runRobocopyMirror(
 
 // Streaming copy that optionally computes hash during copy (single read from disk)
 async function streamCopyFile(src: string, dest: string, computeHash = false): Promise<string | null> {
+  // Long-path-safe wrappers on BOTH ends. The Fix-copy phase frequently
+  // hits long-path territory: source can be a deep Takeout entry under
+  // PDR_Temp, destination is the year-folder structure under the user's
+  // library drive which itself may sit under a deeply-nested path. Either
+  // end exceeding MAX_PATH (260 chars on Windows without the prefix) fails
+  // here with `UNKNOWN: unknown error, read` — see Jane's case 2026-05-16.
+  // No-op on macOS/Linux.
+  const srcLong = toLongPath(src);
+  const destLong = toLongPath(dest);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       readStream.destroy();
       writeStream.destroy();
       reject(new Error(`Copy timeout: ${path.basename(src)}`));
     }, 120000); // 2 min timeout per file
-    const readStream = fs.createReadStream(src, { highWaterMark: 64 * 1024 });
-    const writeStream = fs.createWriteStream(dest);
+    const readStream = fs.createReadStream(srcLong, { highWaterMark: 64 * 1024 });
+    const writeStream = fs.createWriteStream(destLong);
     const hashObj = computeHash ? crypto.createHash('sha256') : null;
 
     readStream.on('data', (chunk) => { if (hashObj) hashObj.update(chunk); });
@@ -768,7 +778,13 @@ async function extractRar(
   tempDir: string,
   onProgress?: (message: string, current?: number, total?: number) => void
 ): Promise<void> {
-  fs.mkdirSync(tempDir, { recursive: true });
+  // Create the temp root with the extended-length prefix so deeply-
+  // nested RAR contents don't trip MAX_PATH inside Node's mkdir binding.
+  // Note: the prefix is intentionally NOT passed to UnRAR.exe below —
+  // external Windows binaries vary in how they handle `\\?\` argv
+  // entries, and UnRAR has its own long-path support via -ap (apply
+  // path) which is the safer route if we ever need to extend this.
+  fs.mkdirSync(toLongPath(tempDir), { recursive: true });
 
   onProgress?.('Unpacking RAR archive...', 0, 0);
 
@@ -1061,10 +1077,21 @@ function pickPreExtractDir(
   // moot — caller is in a pre-destination-pick flow.
   const destCheckPasses = destinationPath == null || !destLocal || destHasRoom;
   if (tempHasRoom && destCheckPasses) {
+    // Build the tempDir explicitly under PDR_TEMP_ROOT (C:\...\Temp\PDR_Temp).
+    // We can NOT call generateTempDirName(zipPath) directly here because it
+    // routes through getCurrentPdrTempRoot(), which prefers the destination
+    // drive whenever one is set — so the returned path would silently land
+    // back on the destination drive instead of %TEMP%. That defeats the
+    // entire purpose of this fallback (extract on C: when the library drive
+    // is too tight) AND it means the space check that ran above measured
+    // C:'s free bytes while the actual extraction would have run on the
+    // destination drive. Same pattern as Option 1: take just the basename
+    // (zip-name + hash segment) and join with our chosen root.
+    const tempName = path.basename(generateTempDirName(zipPath));
     return {
       ok: true,
       baseDir: PDR_TEMP_ROOT,
-      tempDir: generateTempDirName(zipPath),
+      tempDir: path.join(PDR_TEMP_ROOT, tempName),
       chosenLabel: '%TEMP% (PDR_TEMP_ROOT)',
       destinationFreeBytes: destFree,
       tempFreeBytes: tempFree,
@@ -1252,18 +1279,26 @@ function generateTempDirName(zipPath: string): string {
 }
 
 async function extractLargeZip(
-  zipPath: string, 
-  tempDir: string, 
+  zipPath: string,
+  tempDir: string,
   onProgress?: (message: string, current?: number, total?: number) => void
 ): Promise<void> {
-  fs.mkdirSync(tempDir, { recursive: true });
-  
+  // Prefix the temp-dir root once up-front so the recursive mkdir and the
+  // subsequent per-entry writes all carry the extended-length prefix.
+  // Without this, a Takeout zip with deeply-nested folders (Google's
+  // shared-album naming convention can push individual entry paths past
+  // 200 chars before we even add the PDR_Temp root prefix) silently fails
+  // partway through extraction with `UNKNOWN: unknown error, read` —
+  // Jane's case 2026-05-16.
+  const tempDirLong = toLongPath(tempDir);
+  fs.mkdirSync(tempDirLong, { recursive: true });
+
   onProgress?.('Unpacking ZIP archive...', 0, 0);
-  
-  const directory = await unzipper.Open.file(zipPath);
+
+  const directory = await unzipper.Open.file(toLongPath(zipPath));
   const totalEntries = directory.files.length;
   let extracted = 0;
-  
+
   for (const file of directory.files) {
     if (file.type === 'Directory') continue;
 
@@ -1279,17 +1314,65 @@ async function extractLargeZip(
       throw new Error('ANALYSIS_CANCELLED');
     }
 
-    const outputPath = path.join(tempDir, file.path);
+    // Build the per-entry paths off the long-prefixed temp root so every
+    // mkdir + write inherits the extended-length capability.
+    const outputPath = path.join(tempDirLong, file.path);
     const outputDir = path.dirname(outputPath);
 
     fs.mkdirSync(outputDir, { recursive: true });
 
-    await new Promise<void>((resolve, reject) => {
-      file.stream()
-        .pipe(fs.createWriteStream(outputPath))
-        .on('finish', resolve)
-        .on('error', reject);
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const writeStream = fs.createWriteStream(outputPath);
+        const readStream = file.stream();
+        // Both streams can emit errors at different points in the
+        // pipeline. The DEFLATE decompressor (zlib) lives inside
+        // readStream — when the ZIP's compressed payload is corrupt
+        // OR the read from the source returned garbage bytes (common
+        // on flaky network shares + slow USB drives), zlib emits
+        // errors like "too many length or distance symbols" or
+        // "invalid distance too far back" here. Surfacing the raw
+        // message ("Unhandled Error: too many length or distance
+        // symbols") to a non-technical user is unhelpful — Kathr
+        // 2026-05-14 spent a week hitting it without knowing what to
+        // do. Re-throw as a structured error the renderer can
+        // recognise and translate to plain English.
+        const onErr = (err: Error) => {
+          readStream.removeListener('error', onErr);
+          writeStream.removeListener('error', onErr);
+          reject(err);
+        };
+        readStream.on('error', onErr);
+        writeStream.on('error', onErr);
+        readStream.pipe(writeStream).on('finish', resolve);
+      });
+    } catch (err) {
+      const msg = (err as Error).message || String(err);
+      // Zlib failure patterns — Node's zlib binding surfaces a handful
+      // of specific strings for DEFLATE-stream corruption. Catch them
+      // all and re-throw as ZIP_READ_CORRUPTED so the renderer can
+      // show the friendly two-option message (either the file is
+      // genuinely corrupt OR the connection to the source drive is
+      // unreliable).
+      const isZlibCorruption =
+        /too many length or distance symbols/i.test(msg) ||
+        /invalid distance too far back/i.test(msg) ||
+        /invalid block type/i.test(msg) ||
+        /invalid stored block lengths/i.test(msg) ||
+        /invalid literal\/lengths set/i.test(msg) ||
+        /invalid distances set/i.test(msg) ||
+        /unexpected end of file/i.test(msg);
+      if (isZlibCorruption) {
+        throw Object.assign(new Error(
+          'PDR couldn\'t read this ZIP. The file appears to be corrupted, OR the connection to the source drive is unreliable (common with network drives or slow USB connections). Try copying the ZIP to a local drive on this PC first, then add it as a source.'
+        ), {
+          code: 'ZIP_READ_CORRUPTED',
+          zlibErrorMessage: msg,
+          failedAtEntry: file.path,
+        });
+      }
+      throw err;
+    }
 
     extracted++;
     if (extracted % 50 === 0) {
@@ -1301,7 +1384,7 @@ async function extractLargeZip(
       await new Promise(resolve => setImmediate(resolve));
     }
   }
-  
+
   onProgress?.(`Unpacked ${extracted.toLocaleString()} entries`, extracted, totalEntries);
 }
 
@@ -1607,6 +1690,33 @@ ipcMain.handle('window:flashFrame', async () => {
 
 ipcMain.handle('disk:getSpace', async (_event, directoryPath: string) => {
   try {
+    // ── Path 1: fs.statfsSync (Node 18.15+) ──────────────────────────
+    // Cross-platform, filesystem-level free/total bytes. CRITICALLY,
+    // statfs works for UNC paths on Windows (`\\server\share\…`) — the
+    // PowerShell `Get-PSDrive` path below does NOT, because parsing
+    // `\\server\share\` as a "drive letter" produces garbage that PS
+    // can't query. Customer Kathr 2026-05-15: every disk-info probe
+    // for her UNC library (`\\KATDADDY\E Kats Drive`) failed for this
+    // exact reason, leaving her LDM unable to show free space and
+    // her "change library drive" flow hanging.
+    //
+    // statfs returns block-level numbers (bsize × bfree / blocks); we
+    // multiply through to bytes. Works for letter drives, UNC paths,
+    // and mounted volumes alike. Fall through to legacy PS / wmic
+    // paths only on statfs failure (very old Node, EACCES on certain
+    // network mounts, etc).
+    try {
+      const stat = fs.statfsSync(toLongPath(directoryPath));
+      if (stat && typeof stat.bsize === 'number' && typeof stat.bfree === 'number' && typeof stat.blocks === 'number') {
+        return {
+          freeBytes: stat.bsize * stat.bfree,
+          totalBytes: stat.bsize * stat.blocks,
+        };
+      }
+    } catch (statfsErr) {
+      // Fall through to legacy paths below — don't surface the error.
+    }
+
     if (process.platform === 'darwin' || process.platform === 'linux') {
       const output = execSync(`df -k "${directoryPath}"`, { encoding: 'utf8' });
       const lines = output.trim().split('\n');
@@ -1620,6 +1730,15 @@ ipcMain.handle('disk:getSpace', async (_event, directoryPath: string) => {
         };
       }
     } else if (process.platform === 'win32') {
+      // UNC paths can't be queried by drive letter — skip the PS/wmic
+      // letter-based path entirely. statfs above is the primary route
+      // for UNC; if even that failed we have no good answer and
+      // returning zeros lets the caller render a friendly "free space
+      // unavailable for network drives" hint rather than hanging.
+      if (directoryPath.startsWith('\\\\')) {
+        console.warn('[Disk] statfs failed for UNC path; returning 0/0:', directoryPath);
+        return { freeBytes: 0, totalBytes: 0 };
+      }
       const driveLetter = path.parse(directoryPath).root.replace('\\', '');
       // Use PowerShell (always available) instead of wmic (deprecated/removed in newer Windows 11)
       try {
@@ -1829,17 +1948,26 @@ ipcMain.handle('video:prepare', async (_event, filePath: string): Promise<{ succ
 
 ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: number) => {
   try {
-    // Check disk cache first
+    // Check disk cache first. Long-path-wrap the cache path defensively
+    // even though the userData/thumb-cache root is normally short — the
+    // hash-derived filename is short, so the prefix only matters if the
+    // user's userData path itself is unusually long.
     const cacheKey = crypto.createHash('md5').update(`${filePath}:${size}`).digest('hex');
     const cachePath = path.join(thumbCacheDir, `${cacheKey}.jpg`);
+    const cachePathLong = toLongPath(cachePath);
+    // Long-path-wrap the source path too: deep library trees on Windows
+    // routinely push individual photo paths past the 260-char MAX_PATH
+    // boundary, and sharp / fs read through to Win32 APIs that respect
+    // the `\\?\` prefix. See long-path.ts.
+    const filePathLong = toLongPath(filePath);
 
-    if (fs.existsSync(cachePath)) {
-      const cached = await fs.promises.readFile(cachePath);
+    if (fs.existsSync(cachePathLong)) {
+      const cached = await fs.promises.readFile(cachePathLong);
       return { success: true, dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}` };
     }
 
     // Check file exists
-    if (!fs.existsSync(filePath)) {
+    if (!fs.existsSync(filePathLong)) {
       return { success: false, dataUrl: '' };
     }
 
@@ -1850,8 +1978,8 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     if (VIDEO_EXTS.has(ext)) {
       try {
         // Try 1s in first; short clips / MPEG-1 files may fail that seek, so retry at 0.
-        let frame = await extractVideoFrame(filePath, 1);
-        if (!frame) frame = await extractVideoFrame(filePath, 0);
+        let frame = await extractVideoFrame(filePathLong, 1);
+        if (!frame) frame = await extractVideoFrame(filePathLong, 0);
         if (frame) {
           jpegBuffer = await sharp(frame, { failOnError: false })
             .resize(size, size, { fit: 'inside', withoutEnlargement: true })
@@ -1874,7 +2002,7 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     // the wrong region of the same photo.
     if (!jpegBuffer) {
       try {
-        jpegBuffer = await sharp(filePath, { failOnError: false })
+        jpegBuffer = await sharp(filePathLong, { failOnError: false })
           .rotate()
           .resize(size, size, { fit: 'inside', withoutEnlargement: true })
           .jpeg({ quality: 80 })
@@ -1886,7 +2014,7 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
 
     // Fallback: nativeImage (good for standard JPEG/PNG/BMP)
     if (!jpegBuffer) {
-      const img = nativeImage.createFromPath(filePath);
+      const img = nativeImage.createFromPath(filePathLong);
       if (!img.isEmpty()) {
         // For BMP and other formats sharp can't handle, convert via nativeImage → PNG → sharp
         if (ext === '.bmp') {
@@ -1915,8 +2043,9 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
       return { success: false, dataUrl: '' };
     }
 
-    // Save to disk cache (fire and forget)
-    fs.promises.writeFile(cachePath, jpegBuffer).catch(() => {});
+    // Save to disk cache (fire and forget). Long-path-wrap so cache
+    // writes don't fail on unusually-long userData paths.
+    fs.promises.writeFile(cachePathLong, jpegBuffer).catch(() => {});
 
     return { success: true, dataUrl: `data:image/jpeg;base64,${jpegBuffer.toString('base64')}` };
   } catch {
@@ -2809,11 +2938,13 @@ ipcMain.handle('files:copy', async (_event, data: {
     // mkdir BOTH the real destination (so robocopy has a parent
     // when mirroring) AND, when staging, the writeRoot is already
     // mkdir'd above. recursive:true is a no-op when the dir exists.
-    if (!fs.existsSync(destinationPath)) {
-      fs.mkdirSync(destinationPath, { recursive: true });
+    // Long-path wrappers so library-drive roots embedded under
+    // deeply-nested paths don't trip MAX_PATH on Windows.
+    if (!fs.existsSync(toLongPath(destinationPath))) {
+      fs.mkdirSync(toLongPath(destinationPath), { recursive: true });
     }
-    if (useStaging && writeRoot !== destinationPath && !fs.existsSync(writeRoot)) {
-      fs.mkdirSync(writeRoot, { recursive: true });
+    if (useStaging && writeRoot !== destinationPath && !fs.existsSync(toLongPath(writeRoot))) {
+      fs.mkdirSync(toLongPath(writeRoot), { recursive: true });
     }
 
     // Snapshot pre-existing files at the REAL destination (not the
@@ -3190,8 +3321,11 @@ ipcMain.handle('files:copy', async (_event, data: {
       const targetDir = subfolderPath ? path.join(writeRoot, subfolderPath) : writeRoot;
 
       // Ensure target directory exists (cheap mkdir on local staging
-      // disk when staging; same as before otherwise).
-      await fs.promises.mkdir(targetDir, { recursive: true });
+      // disk when staging; same as before otherwise). Wrap with the
+      // extended-length prefix so Fix copies into deeply-nested year-
+      // folder paths under a long library-drive root don't fail with
+      // MAX_PATH (260-char) errors on Windows. See long-path.ts.
+      await fs.promises.mkdir(toLongPath(targetDir), { recursive: true });
       
       // Cross-run duplicate: if exact target filename existed BEFORE this run, skip it
       if (skipDuplicates && preExistingFiles.has(path.join(subfolderPath, finalFilename).toLowerCase())) {
@@ -3806,6 +3940,32 @@ ipcMain.handle('app:log', (_e, payload: { level?: 'info' | 'warn' | 'error' | 'd
  * Returns: { success, logFilePath } — log path is returned so the
  *          UI can offer a "Copy path" or "Open folder" button too.
  */
+// ─── system:memoryInfo ────────────────────────────────────────────
+// Lightweight memory probe for the renderer's low-RAM advisory.
+// Returns total + currently-free RAM in bytes plus convenient GB
+// floats. Used by the Dashboard's LowRamAdvisoryCard to gate a
+// one-shot guidance message for budget-laptop users (Kathr 2026-05-16
+// hit OOM-class failures on a Pentium N4200 / 4 GB DDR3 laptop with
+// 50 GB Takeouts) — "PDR works best with 8 GB+ RAM. On this PC,
+// splitting your Takeout into smaller pieces helps."
+ipcMain.handle('system:memoryInfo', async () => {
+  try {
+    const totalBytes = os.totalmem();
+    const freeBytes = os.freemem();
+    return {
+      success: true,
+      data: {
+        totalBytes,
+        freeBytes,
+        totalGB: Number((totalBytes / (1024 ** 3)).toFixed(1)),
+        freeGB: Number((freeBytes / (1024 ** 3)).toFixed(1)),
+      },
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('app:reportProblem', async (_e, payload: { description?: string; userEmail?: string }) => {
   try {
     const supportEmail = 'admin@photodaterescue.com';
@@ -4592,8 +4752,24 @@ ipcMain.handle('library:getDriveDetails', async (_event, libraryRoot: string) =>
     if (!letter) {
       // Non-letter paths (UNC \\server\share, mounted volumes) — return
       // what we can without the WMI lookup. detectDriveType still works
-      // for these via its own UNC-aware branch.
+      // for these via its own UNC-aware branch. v2.0.7: use fs.statfs
+      // to fetch real free/total bytes for UNC paths instead of leaving
+      // them as 0/0 (Kathr 2026-05-15 — her LDM couldn't show capacity
+      // because Win32_LogicalDisk doesn't enumerate UNC shares).
       const driveTypeInfo = detectDriveType(libraryRoot);
+      let totalBytes = 0;
+      let freeBytes = 0;
+      try {
+        const st = fs.statfsSync(toLongPath(libraryRoot));
+        if (st && typeof st.bsize === 'number') {
+          totalBytes = st.bsize * st.blocks;
+          freeBytes = st.bsize * st.bfree;
+        }
+      } catch {
+        // Network share unreachable / auth pending — leave zeros and
+        // let the LDM render a friendly "free space unavailable" note.
+      }
+      const isUnc = libraryRoot.startsWith('\\\\');
       return {
         success: true,
         data: {
@@ -4601,13 +4777,19 @@ ipcMain.handle('library:getDriveDetails', async (_event, libraryRoot: string) =>
           letter: null,
           volumeLabel: null,
           fileSystem: null,
-          driveTypeLabel: driveTypeInfo.driveType,
-          driveTypeCode: null,
-          totalBytes: 0,
-          freeBytes: 0,
-          online: fs.existsSync(libraryRoot),
+          driveTypeLabel: isUnc ? 'Network share' : driveTypeInfo.driveType,
+          driveTypeCode: isUnc ? 4 : null, // 4 = Network in Win32_LogicalDisk DriveType
+          totalBytes,
+          freeBytes,
+          online: fs.existsSync(toLongPath(libraryRoot)),
           isSafeForLibrary: driveTypeInfo.isSafeForLibrary,
           safetyReason: driveTypeInfo.reason,
+          // Surface that this is a network share so the renderer can
+          // show a calm "Network drive — operations may be slower over
+          // SMB; Windows may prompt for credentials" advisory. Real
+          // remediation (auth, credential prompt) is the user's job in
+          // File Explorer; we just label it honestly.
+          isNetworkShare: isUnc,
         },
       };
     }
@@ -6136,13 +6318,15 @@ ipcMain.handle('ai:faceCropBatch', async (
     const result: Record<number, string> = {};
     // Cache-first pass — read every request from the on-disk JPG cache.
     // Anything that hits avoids the sharp pipeline AND survives even if
-    // the original photo has been deleted by the user.
+    // the original photo has been deleted by the user. Long-path wrap
+    // for cache reads — see long-path.ts.
     const stillNeeded: typeof requests = [];
     await Promise.all(requests.map(async (r) => {
       const cachePath = path.join(faceCropCacheDir, faceCropCacheKey(r.file_path, r.box_x, r.box_y, r.box_w, r.box_h, size));
+      const cachePathLong = toLongPath(cachePath);
       try {
-        if (fs.existsSync(cachePath)) {
-          const buf = await fs.promises.readFile(cachePath);
+        if (fs.existsSync(cachePathLong)) {
+          const buf = await fs.promises.readFile(cachePathLong);
           result[r.face_id] = `data:image/jpeg;base64,${buf.toString('base64')}`;
           return;
         }
@@ -6170,8 +6354,10 @@ ipcMain.handle('ai:faceCropBatch', async (
       while (cursor < fileEntries.length) {
         const i = cursor++;
         const [filePath, faces] = fileEntries[i];
+        // Long-path wrap for sharp source-read. See long-path.ts.
+        const filePathLong = toLongPath(filePath);
         try {
-          const metadata = await sharp(filePath, { failOnError: false }).rotate().metadata();
+          const metadata = await sharp(filePathLong, { failOnError: false }).rotate().metadata();
           if (!metadata.width || !metadata.height) continue;
           const imgW = metadata.width;
           const imgH = metadata.height;
@@ -6194,7 +6380,7 @@ ipcMain.handle('ai:faceCropBatch', async (
               pw = Math.min(pw, imgW - px);
               ph = Math.min(ph, imgH - py);
               if (pw <= 0 || ph <= 0) continue;
-              const buffer = await sharp(filePath, { failOnError: false })
+              const buffer = await sharp(filePathLong, { failOnError: false })
                 .rotate()
                 .extract({ left: px, top: py, width: pw, height: ph })
                 .resize(size, size, { fit: 'cover' })
@@ -6205,7 +6391,7 @@ ipcMain.handle('ai:faceCropBatch', async (
               // this exact crop bypass sharp altogether — and survive
               // deletion of the original. Best-effort write.
               const cachePath = path.join(faceCropCacheDir, faceCropCacheKey(filePath, f.box_x, f.box_y, f.box_w, f.box_h, size));
-              fs.promises.writeFile(cachePath, buffer).catch(err =>
+              fs.promises.writeFile(toLongPath(cachePath), buffer).catch(err =>
                 console.warn('[face-crop] cache write failed:', (err as Error).message)
               );
             } catch { /* per-face failure is non-fatal */ }
@@ -6248,9 +6434,15 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath: string, boxX: number, box
   // thumbnail forever, so the user's manual naming/verification work
   // doesn't visually disappear when they tidy their library.
   const cachePath = path.join(faceCropCacheDir, faceCropCacheKey(filePath, boxX, boxY, boxW, boxH, size));
+  // Long-path wrappers for BOTH the cache path (defensive) and the
+  // source path (deep library trees on Windows routinely push photo
+  // paths past 260 chars; sharp passes through to Win32 file APIs that
+  // honour the `\\?\` prefix). See long-path.ts.
+  const cachePathLong = toLongPath(cachePath);
+  const filePathLong = toLongPath(filePath);
   try {
-    if (fs.existsSync(cachePath)) {
-      const buffer = await fs.promises.readFile(cachePath);
+    if (fs.existsSync(cachePathLong)) {
+      const buffer = await fs.promises.readFile(cachePathLong);
       return { success: true, dataUrl: `data:image/jpeg;base64,${buffer.toString('base64')}` };
     }
   } catch { /* fall through to fresh render */ }
@@ -6262,7 +6454,7 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath: string, boxX: number, box
     // extracting so width/height match the rotated pixel buffer that the
     // detector saw — otherwise normalised box coords (which were computed
     // in rotated space by ai-worker.ts) extract from the wrong region.
-    const metadata = await sharp(filePath, { failOnError: false }).rotate().metadata();
+    const metadata = await sharp(filePathLong, { failOnError: false }).rotate().metadata();
     if (!metadata.width || !metadata.height) return { success: false, error: 'Could not read image' };
 
     const imgW = metadata.width;
@@ -6292,7 +6484,7 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath: string, boxX: number, box
 
     if (pw <= 0 || ph <= 0) return { success: false, error: 'Invalid crop area' };
 
-    const buffer = await sharp(filePath, { failOnError: false })
+    const buffer = await sharp(filePathLong, { failOnError: false })
       .rotate()
       .extract({ left: px, top: py, width: pw, height: ph })
       .resize(size, size, { fit: 'cover' })
@@ -6302,7 +6494,7 @@ ipcMain.handle('ai:faceCrop', async (_event, filePath: string, boxX: number, box
     // Persist to the cache for next time. Best-effort — if the write
     // fails (disk full, permission denied) we still return the freshly
     // rendered crop so the current request succeeds.
-    fs.promises.writeFile(cachePath, buffer).catch(err =>
+    fs.promises.writeFile(cachePathLong, buffer).catch(err =>
       console.warn('[face-crop] cache write failed:', (err as Error).message)
     );
 
@@ -6526,7 +6718,7 @@ ipcMain.handle('structure:copy', async (_event, data: {
       }
 
       const targetDir = path.join(destinationPath, subfolderPath);
-      await fs.promises.mkdir(targetDir, { recursive: true });
+      await fs.promises.mkdir(toLongPath(targetDir), { recursive: true });
 
       let finalFilename = file.filename;
       const ext = path.extname(finalFilename);
