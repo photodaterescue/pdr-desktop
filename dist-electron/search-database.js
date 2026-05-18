@@ -280,7 +280,104 @@ export function initDatabase() {
         PRIMARY KEY (album_id, file_id)
       );
       CREATE INDEX IF NOT EXISTS idx_album_files_file ON album_files(file_id);
+
+      -- ═══ Album organisation (v2.0.8 hierarchical multi-membership groups) ═══
+      -- Hierarchical tagging layer over the flat albums table. Lets the
+      -- user drop the same album into multiple folders without
+      -- duplicating it, while every album also carries an immutable
+      -- "auto" membership in its source group (e.g. "Google Photos
+      -- Takeout", "Created here") so the source identity is never lost.
+      --
+      -- parent_id NULL = root-level (visible at the top of the tree).
+      -- App-layer enforces a max depth of 3 levels (root, sub, album)
+      -- via createUserAlbumGroup. The schema itself doesn't cap it so
+      -- system-managed reorganisation can repair edge cases without
+      -- fighting a CHECK constraint.
+      --
+      -- source_kind:
+      --   'auto' = system-managed group, one per distinct albums.source
+      --            value. Auto-created on migration + on every new
+      --            source import. Title / icon / palette baked in from
+      --            ALBUM_SOURCE_PROFILES (see below). NOT user-editable,
+      --            NOT deletable, parent_id always NULL.
+      --   'user' = user-created folder. Fully editable; nestable up to
+      --            the depth cap; deletable (cascades to memberships).
+      --
+      -- source_key: for 'auto' groups, the matching albums.source value.
+      --             NULL for 'user' groups. The partial unique index
+      --             below guarantees one auto group per source.
+      --
+      -- icon_key + palette_key: render hints consumed by the renderer's
+      -- AlbumSourceProfile helper. Stored as string keys so new sources
+      -- can be added without a column type change.
+      CREATE TABLE IF NOT EXISTS album_groups (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        title        TEXT    NOT NULL,
+        parent_id    INTEGER REFERENCES album_groups(id) ON DELETE CASCADE,
+        source_kind  TEXT    NOT NULL DEFAULT 'user',
+        source_key   TEXT,
+        icon_key     TEXT,
+        palette_key  TEXT,
+        sort_order   INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_album_groups_parent ON album_groups(parent_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_album_groups_auto_source
+        ON album_groups(source_key)
+        WHERE source_kind = 'auto' AND source_key IS NOT NULL;
+
+      -- Many-to-many: an album can live in many groups simultaneously.
+      -- is_auto flags the system-managed source membership; UI refuses
+      -- to remove those. Composite PK gives idempotent INSERT OR IGNORE
+      -- semantics so the auto-seed migration below can run on every
+      -- startup without growing duplicates.
+      CREATE TABLE IF NOT EXISTS album_group_memberships (
+        album_id   INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+        group_id   INTEGER NOT NULL REFERENCES album_groups(id) ON DELETE CASCADE,
+        is_auto    INTEGER NOT NULL DEFAULT 0,
+        added_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (album_id, group_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_album_group_memberships_group ON album_group_memberships(group_id);
     `);
+        // Auto-seed source groups + memberships. Idempotent so every startup
+        // reconciles: any new `albums.source` value that doesn't yet have an
+        // auto group gets one; any album without its auto source membership
+        // gets it linked. Runs after the CREATE TABLE block above so the
+        // tables exist; only writes when there's something missing so the
+        // happy path is two cheap SELECTs.
+        try {
+            const ALBUM_SOURCE_PROFILES = {
+                user_created: { title: 'Created here', icon_key: 'pencil', palette_key: 'violet' },
+                takeout_imported: { title: 'Google Photos Takeout', icon_key: 'sparkles', palette_key: 'red' },
+                // Future sources (apple_photos, icloud, onedrive, google_drive,
+                // dropbox, amazon_photos) will be added to this table as their
+                // importers land. Any source value not in this table falls back
+                // to a neutral cloud icon + sky palette in the renderer.
+            };
+            const distinctSources = db.prepare(`SELECT DISTINCT source FROM albums WHERE source IS NOT NULL AND source != ''`).all();
+            const groupInsert = db.prepare(`INSERT OR IGNORE INTO album_groups (title, source_kind, source_key, icon_key, palette_key, parent_id)
+           VALUES (?, 'auto', ?, ?, ?, NULL)`);
+            for (const { source } of distinctSources) {
+                const profile = ALBUM_SOURCE_PROFILES[source]
+                    ?? { title: source, icon_key: 'cloud', palette_key: 'sky' };
+                groupInsert.run(profile.title, source, profile.icon_key, profile.palette_key);
+            }
+            // Link every existing album to its source's auto group. INSERT OR
+            // IGNORE skips albums that already have the membership, so this is
+            // cheap on warm startups.
+            db.exec(`
+        INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto)
+        SELECT a.id, g.id, 1
+          FROM albums a
+          JOIN album_groups g
+            ON g.source_kind = 'auto' AND g.source_key = a.source
+      `);
+        }
+        catch (seedErr) {
+            console.error('[DB] Album-groups auto-seed failed:', seedErr);
+        }
         // Migrate existing databases — add new columns if missing
         const cols = db.prepare(`PRAGMA table_info(indexed_files)`).all();
         const colNames = new Set(cols.map(c => c.name));
