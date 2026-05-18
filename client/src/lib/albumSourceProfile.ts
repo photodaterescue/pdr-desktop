@@ -18,7 +18,7 @@
  */
 
 import {
-  Sparkles, PencilLine, Cloud, Camera, FolderClosed, Aperture, HardDriveDownload,
+  Sparkles, Home, Cloud, FolderClosed, Aperture, HardDriveDownload,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AlbumGroupRecord, AlbumSummary } from './electron-bridge';
@@ -43,19 +43,29 @@ export interface AlbumSourceProfile {
   /** Human-readable name for the source — used in tooltips and the
    *  group-header title when no explicit title was given (rare). */
   label: string;
+  /** Short brand-recognisable name for the card corner badge (e.g.
+   *  "Google Photos", "PDR", "OneDrive"). Terry 2026-05-18: "Yours"
+   *  read as generic and unbranded; "Takeout" read as technical
+   *  jargon. Badges should signal the company / product the album
+   *  belongs to so the source identity is obvious at a glance. */
+  badgeLabel: string;
 }
 
 // ── Auto-source profiles, keyed by albums.source value ─────────────────────
 
 const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
-  // PDR-native: violet (PDR's brand colour).
+  // PDR-native: violet (PDR's brand colour). Home icon — "your space,
+  // centrally managed". Replaced PencilLine because that icon reads as
+  // "click to edit/rename" everywhere else in PDR; users were
+  // misinterpreting it as a rename affordance on the album cards.
   user_created: {
-    Icon: PencilLine,
+    Icon: Home,
     cardBgClass: 'bg-violet-50/40 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800/40',
     badgeBgClass: 'bg-violet-50 dark:bg-violet-950/80',
     iconColorClass: 'text-violet-500 dark:text-violet-400',
     badgeTextClass: 'text-violet-700 dark:text-violet-300',
-    label: 'Created here',
+    label: 'PDR',
+    badgeLabel: 'PDR',
   },
   // Google Photos Takeout: soft red (Google's primary brand red).
   takeout_imported: {
@@ -65,6 +75,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     iconColorClass: 'text-red-500 dark:text-red-400',
     badgeTextClass: 'text-red-700 dark:text-red-300',
     label: 'Google Photos Takeout',
+    badgeLabel: 'Google Photos',
   },
   // ── Future sources (importers don't exist yet; profiles stubbed
   //    so they slot in cleanly when added) ───────────────────────────
@@ -75,6 +86,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     iconColorClass: 'text-pink-500 dark:text-pink-400',
     badgeTextClass: 'text-pink-700 dark:text-pink-300',
     label: 'Apple Photos',
+    badgeLabel: 'Apple Photos',
   },
   icloud_drive: {
     Icon: Cloud,
@@ -83,6 +95,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     iconColorClass: 'text-sky-500 dark:text-sky-400',
     badgeTextClass: 'text-sky-700 dark:text-sky-300',
     label: 'iCloud Drive',
+    badgeLabel: 'iCloud',
   },
   onedrive: {
     Icon: Cloud,
@@ -91,6 +104,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     iconColorClass: 'text-blue-500 dark:text-blue-400',
     badgeTextClass: 'text-blue-700 dark:text-blue-300',
     label: 'OneDrive',
+    badgeLabel: 'OneDrive',
   },
   google_drive: {
     Icon: Cloud,
@@ -99,6 +113,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     iconColorClass: 'text-emerald-500 dark:text-emerald-400',
     badgeTextClass: 'text-emerald-700 dark:text-emerald-300',
     label: 'Google Drive',
+    badgeLabel: 'Google Drive',
   },
   dropbox: {
     Icon: Cloud,
@@ -107,6 +122,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     iconColorClass: 'text-indigo-500 dark:text-indigo-400',
     badgeTextClass: 'text-indigo-700 dark:text-indigo-300',
     label: 'Dropbox',
+    badgeLabel: 'Dropbox',
   },
   amazon_photos: {
     Icon: Cloud,
@@ -115,6 +131,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     iconColorClass: 'text-amber-500 dark:text-amber-400',
     badgeTextClass: 'text-amber-700 dark:text-amber-300',
     label: 'Amazon Photos',
+    badgeLabel: 'Amazon',
   },
 };
 
@@ -128,6 +145,7 @@ const UNKNOWN_SOURCE_PROFILE: AlbumSourceProfile = {
   iconColorClass: 'text-sky-500 dark:text-sky-400',
   badgeTextClass: 'text-sky-700 dark:text-sky-300',
   label: 'Imported album',
+  badgeLabel: 'Imported',
 };
 
 /** Profile used by user-created folders (NOT user-created albums —
@@ -141,6 +159,7 @@ const USER_FOLDER_PROFILE: AlbumSourceProfile = {
   iconColorClass: 'text-muted-foreground',
   badgeTextClass: 'text-muted-foreground',
   label: 'Folder',
+  badgeLabel: 'Folder',
 };
 
 // ── Lookups ───────────────────────────────────────────────────────────

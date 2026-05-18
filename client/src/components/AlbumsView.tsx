@@ -34,6 +34,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import {
   listAlbums,
   listAlbumGroups,
@@ -543,16 +544,64 @@ export default function AlbumsView() {
     if (loading) {
       return <p className="text-sm text-muted-foreground px-6 py-6">Loading albums…</p>;
     }
+    // Default — nothing selected: show ALL albums as a single grid
+    // sorted alphabetically. Terry 2026-05-18: "no reason to be
+    // seeing a blank screen" — opening Memories → Albums should
+    // land on something useful, not an empty-state prompt.
     if (!selection) {
+      const allSorted = [...albums].sort((a, b) =>
+        a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+      );
       return (
-        <div className="flex flex-col items-center justify-center text-center h-full px-6 py-12 max-w-md mx-auto">
-          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
-            <FileText className="w-6 h-6 text-muted-foreground" />
+        <div className="flex flex-col h-full">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+            <h2 className="text-lg font-medium text-foreground truncate">All albums</h2>
+            <span className="text-xs text-muted-foreground">{allSorted.length} album{allSorted.length === 1 ? '' : 's'}</span>
           </div>
-          <p className="text-sm font-medium text-foreground mb-1">Pick something on the left</p>
-          <p className="text-xs text-muted-foreground">
-            Click a folder to see its albums here. Click an album to see its photos. Drag album rows onto folders to organise.
-          </p>
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            {allSorted.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">
+                No albums yet. Use "New album" on the left to create one, or import a Google Photos Takeout to auto-populate.
+              </p>
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+                {allSorted.map((album) => {
+                  const ap = getSourceProfileForAlbum(album);
+                  const AIcon = ap.Icon;
+                  return (
+                    <button
+                      key={`all-${album.id}`}
+                      type="button"
+                      onClick={() => setSelection({ type: 'album', id: album.id })}
+                      draggable
+                      onDragStart={(e) => handleAlbumDragStart(e, album.id)}
+                      className={`flex flex-col rounded-lg border bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
+                    >
+                      <div className="aspect-square bg-muted relative">
+                        {album.coverPath && thumbs[album.coverPath] ? (
+                          <img src={thumbs[album.coverPath]} alt={album.title} className="w-full h-full object-cover" loading="lazy" />
+                        ) : album.coverPath ? (
+                          <div className="w-full h-full bg-muted animate-pulse" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
+                          </div>
+                        )}
+                        <span className={`absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${ap.badgeBgClass} ${ap.badgeTextClass}`}>
+                          <AIcon className="w-2.5 h-2.5" />
+                          {ap.badgeLabel}
+                        </span>
+                      </div>
+                      <div className="p-3">
+                        <p className="text-sm font-medium text-foreground truncate" title={album.title}>{album.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       );
     }
@@ -602,7 +651,7 @@ export default function AlbumsView() {
                         )}
                         <span className={`absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${ap.badgeBgClass} ${ap.badgeTextClass}`}>
                           <AIcon className="w-2.5 h-2.5" />
-                          {album.source === 'takeout_imported' ? 'Takeout' : 'Yours'}
+                          {ap.badgeLabel}
                         </span>
                       </div>
                       <div className="p-3">
@@ -675,9 +724,10 @@ export default function AlbumsView() {
   // ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full">
-      {/* LEFT — tree pane */}
-      <div className="w-72 shrink-0 flex flex-col border-r border-border bg-background/40">
+    <ResizablePanelGroup direction="horizontal" className="h-full" autoSaveId="pdr-albums-pane-split">
+      {/* LEFT — tree pane (user-resizable, persists size in localStorage
+          via autoSaveId on the ResizablePanelGroup). */}
+      <ResizablePanel defaultSize={22} minSize={14} maxSize={45} className="flex flex-col border-r border-border bg-background/40">
         <div className="px-4 pt-4 pb-2">
           <div className="flex items-baseline gap-2 mb-2">
             <h2 className="text-base font-medium text-foreground">Albums</h2>
@@ -761,12 +811,12 @@ export default function AlbumsView() {
             rootGroups.map((g) => renderGroupRow(g, 0))
           )}
         </div>
-      </div>
-
+      </ResizablePanel>
+      <ResizableHandle withHandle />
       {/* RIGHT — content pane */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <ResizablePanel defaultSize={78} className="flex flex-col">
         {renderRightPane()}
-      </div>
-    </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   );
 }

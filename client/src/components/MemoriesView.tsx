@@ -241,23 +241,19 @@ export default function MemoriesView() {
 
   return (
     <div className="h-full flex flex-col bg-background">
-      {/* Header: title + library selector */}
-      <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            <CalendarRange className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">Memories</h1>
-            <p className="text-xs text-muted-foreground">
-              {loading
-                ? 'Loading…'
-                : buckets.length === 0
-                  ? 'No photos indexed yet — run a Fix first to build your memory timeline.'
-                  : `${totalPhotos.toLocaleString()} photos · ${totalVideos.toLocaleString()} videos across ${yearGroups.length} ${yearGroups.length === 1 ? 'year' : 'years'}.`}
-            </p>
-          </div>
-        </div>
+      {/* By-Date controls row. The "Memories" page title now lives one
+          level up in MemoriesPanel, above the [By Date | Albums] tabs,
+          so we don't repeat it here. The summary line stays — it's
+          specific to the By Date view (photo/video counts across
+          years) and useful context just below the tab strip. */}
+      <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border/60 flex items-center justify-between gap-4 flex-wrap">
+        <p className="text-xs text-muted-foreground">
+          {loading
+            ? 'Loading…'
+            : buckets.length === 0
+              ? 'No photos indexed yet — run a Fix first to build your memory timeline.'
+              : `${totalPhotos.toLocaleString()} photos · ${totalVideos.toLocaleString()} videos across ${yearGroups.length} ${yearGroups.length === 1 ? 'year' : 'years'}.`}
+        </p>
 
         {/* `data-tour="mem-controls"` wraps both static controls so step
             3 of the Memories tour has a guaranteed spotlight target.

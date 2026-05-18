@@ -46,13 +46,30 @@ export default function MemoriesPanel() {
 
   return (
     <Tabs value={tab} onValueChange={handleTabChange} className="flex flex-col h-full">
-      <div className="px-6 pt-4 pb-2">
-        <TabsList>
-          <TabsTrigger value="byDate" data-testid="tab-memories-by-date" className="gap-1.5">
+      {/* Section header + tab strip. "Memories" is a top-level Workspace
+          surface; previous version's "By Date" / "Albums" pills read as
+          minor sub-controls. Now: page title set in lg, tabs sit
+          beneath it as a proper view-switcher with bigger pills, taller
+          h-11, and prominent active state. Terry 2026-05-18: "By Date
+          and Albums are somewhat unnoticeable. They are both really
+          big features, but they just look so bland... maybe it just
+          needs to be written above where By Date and Albums appears." */}
+      <div className="px-6 pt-5 pb-3 border-b border-border">
+        <h1 className="text-2xl font-semibold text-foreground mb-3">Memories</h1>
+        <TabsList className="h-11 p-1">
+          <TabsTrigger
+            value="byDate"
+            data-testid="tab-memories-by-date"
+            className="gap-2 px-4 h-9 text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
             <CalendarRange className="w-4 h-4" />
             By Date
           </TabsTrigger>
-          <TabsTrigger value="albums" data-testid="tab-memories-albums" className="gap-1.5">
+          <TabsTrigger
+            value="albums"
+            data-testid="tab-memories-albums"
+            className="gap-2 px-4 h-9 text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
             <FolderPlus className="w-4 h-4" />
             Albums
           </TabsTrigger>
