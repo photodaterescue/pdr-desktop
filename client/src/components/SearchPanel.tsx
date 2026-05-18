@@ -3247,9 +3247,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               </IconTooltip>
               {selectedFiles.size > 0 && (
                 <>
-                  <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                    {selectedFiles.size} selected
-                  </span>
+                  {/* Selection count chip with built-in clear affordance.
+                      iOS / macOS dismissable-chip pattern — pairs the
+                      state info with the dismiss control so they read as
+                      one unit. Replaces the disassociated "Clear" link
+                      at the end of the bar. */}
+                  <IconTooltip label="Clear selection" side="top">
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
+                      className="group inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 pl-2.5 pr-1 py-0.5 rounded-full transition-colors"
+                      data-testid="button-clear-selection"
+                      aria-label={`${selectedFiles.size} selected — clear selection`}
+                    >
+                      <span>{selectedFiles.size} selected</span>
+                      <span className="rounded-full bg-primary/15 group-hover:bg-primary/25 p-0.5 transition-colors">
+                        <X className="w-3 h-3" />
+                      </span>
+                    </button>
+                  </IconTooltip>
                   <button
                     onClick={() => {
                       // Use the cross-search selection Map so checked files
@@ -3313,12 +3329,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       Create Parallel Library
                     </button>
                   </IconTooltip>
-                  <button
-                    onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Clear
-                  </button>
+                  {/* (Standalone "Clear" link removed — the count chip
+                      at the start of this bar now carries an inline X
+                      dismiss, which reads as a single iOS/macOS-style
+                      removable chip. Single dismissal affordance, no
+                      duplicate.) */}
                 </>
               )}
               {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin inline ml-2 text-primary" />}
@@ -3540,32 +3555,46 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             lastClickedIndexRef.current = idx;
                           }}
                           onClick={(e: React.MouseEvent) => {
-                            // Ctrl/Shift modifiers only take effect when multi-select is already in progress
-                            const multiSelectActive = selectedFiles.size > 0;
-                            if ((e.ctrlKey || e.metaKey) && multiSelectActive) {
-                              const wasChecked = selectedFiles.has(file.id);
+                            // Modifier-key behaviours match the standard
+                            // photos-app patterns (Apple Photos / Google
+                            // Photos) and work from zero state — no need
+                            // to enter Selection Mode first. Terry
+                            // 2026-05-18: "do you think the photos
+                            // should be selectable without having to use
+                            // the select button prior to selecting the
+                            // first photo, by simply holding down CTRL
+                            // before clicking a photo?"
+                            if (e.ctrlKey || e.metaKey) {
+                              // Ctrl/Cmd+click anywhere on the tile — pure
+                              // toggle. Does NOT open the preview (same
+                              // rationale as the checkbox path: when the
+                              // user signals selection intent with a
+                              // modifier, the preview stays put).
+                              e.preventDefault();
                               toggleFileSelection(file);
-                              if (!wasChecked) setSelectedFile(file);
                               lastClickedIndexRef.current = idx;
-                            } else if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
+                              return;
+                            }
+                            if (e.shiftKey && lastClickedIndexRef.current !== null) {
+                              // Shift+click — range select from the last
+                              // clicked tile to this one. Works even
+                              // before any photo is selected, so long as
+                              // SOMETHING was previously clicked (preview
+                              // or selection). Same semantics as the
+                              // checkbox path's shift+click range.
                               e.preventDefault();
                               const start = Math.min(lastClickedIndexRef.current, idx);
                               const end = Math.max(lastClickedIndexRef.current, idx);
-                              // Range selection — operates on the currently-rendered
-                              // grid (displayFiles), so range-clicking inside Custom-
-                              // selection mode adds neighbouring already-selected
-                              // entries (no-op) but inside a normal search adds
-                              // contiguous results.
                               for (let i = start; i <= end; i++) {
                                 const f = displayFiles[i];
                                 if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
                               }
                               setSelectedFile(file);
-                            } else {
-                              // Plain click — open preview panel. Do not touch multi-select.
-                              setSelectedFile(file);
-                              lastClickedIndexRef.current = idx;
+                              return;
                             }
+                            // Plain click — open preview panel. Do not touch multi-select.
+                            setSelectedFile(file);
+                            lastClickedIndexRef.current = idx;
                           }}
                           onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined} />
                       ))}
