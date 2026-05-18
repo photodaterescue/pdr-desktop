@@ -3582,6 +3582,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               // SOMETHING was previously clicked (preview
                               // or selection). Same semantics as the
                               // checkbox path's shift+click range.
+                              //
+                              // Like Ctrl/Cmd+click above, this DOES NOT
+                              // open the preview — any modifier-click
+                              // signals selection intent, so the preview
+                              // panel stays put on whatever the user was
+                              // last reviewing. (Terry 2026-05-18 caught
+                              // the previous regression: "The preview is
+                              // opening when shift is held down.")
                               e.preventDefault();
                               const start = Math.min(lastClickedIndexRef.current, idx);
                               const end = Math.max(lastClickedIndexRef.current, idx);
@@ -3589,7 +3597,6 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                 const f = displayFiles[i];
                                 if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
                               }
-                              setSelectedFile(file);
                               return;
                             }
                             // Plain click — open preview panel. Do not touch multi-select.
