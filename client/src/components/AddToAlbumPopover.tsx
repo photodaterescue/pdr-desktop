@@ -25,6 +25,7 @@ import {
   addPhotosToAlbum,
   type AlbumSummary,
 } from '../lib/electron-bridge';
+import { isAlbumSourceUserEditable } from '../lib/albumSourceProfile';
 
 interface AddToAlbumPopoverProps {
   /** Indexed_files.id list to add. Empty array disables the trigger. */
@@ -72,11 +73,19 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
 
   const triggerDisabled = disabled || fileIds.length === 0;
 
-  // Case-insensitive title filter. Cheap O(n) — album count is dozens-
-  // to-hundreds in practice, not millions.
+  // Filter to user-created albums only — source-imported albums
+  // (Takeout / iCloud / OneDrive / etc.) are content-locked because
+  // they represent factual snapshots of what came from the source.
+  // Adding new photos to them would dilute the source identity, the
+  // same way auto-source MEMBERSHIPS are immutable. Users who want
+  // to extend a source album create a new PDR album beside it and
+  // drop the source album link into the same folder — both visible
+  // in one basket, each carrying its own source identity. (Terry
+  // 2026-05-18.)
+  const addressable = albums.filter((a) => isAlbumSourceUserEditable(a.source));
   const filtered = search.trim()
-    ? albums.filter((a) => a.title.toLowerCase().includes(search.toLowerCase()))
-    : albums;
+    ? addressable.filter((a) => a.title.toLowerCase().includes(search.toLowerCase()))
+    : addressable;
 
   const handleAddToExisting = async (album: AlbumSummary) => {
     if (busy) return;
