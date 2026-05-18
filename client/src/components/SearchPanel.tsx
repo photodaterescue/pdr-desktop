@@ -73,6 +73,7 @@ import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import ParallelStructureModal from '@/components/ParallelStructureModal';
 import AddToAlbumPopover from '@/components/AddToAlbumPopover';
 import StaleRunsModal from '@/components/StaleRunsModal';
@@ -268,13 +269,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // Notify parent when search results are showing/hiding
   useEffect(() => { onSearchActiveChange?.(searchActive); }, [searchActive, onSearchActiveChange]);
 
-  // Allow parent to close S&D results (e.g. Dashboard click)
+  // When the parent signals a close (navigating away to Memories /
+  // Trees / Dashboard), preserve the filter state + results so the
+  // user returns to exactly the view they left. Clearing them here
+  // breaks the obvious user expectation: "I had Marked-only filtered,
+  // I jumped to Memories for a second, I'm back — where are my
+  // photos?" (Terry 2026-05-18: "When a filter is on, and then the
+  // view is changed to a different app like Memories, and then when
+  // you come back, the filtered photos no longer appear, and a blank
+  // screen only exists.")
+  //
+  // Only the orphan preview-file gets cleared — a stale preview
+  // doesn't belong to a fresh return — and the show-all override
+  // resets so the user lands back on their filter view, not on the
+  // override of it.
   useEffect(() => {
     if (requestClose && searchActive) {
-      setSearchActive(false);
-      setResults(null);
       setSelectedFile(null);
-      setShowAllOverride(false); // Reset the show-all opt-in on every close.
+      setShowAllOverride(false);
     }
   }, [requestClose]);
 
@@ -1536,10 +1548,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           const isActive = selectedConfidence.includes(val);
                           return (
                             <label key={val} className="flex items-center gap-1.5 px-1.5 py-0.5 rounded cursor-pointer hover:bg-secondary/50 transition-colors">
-                              <input type="checkbox" checked={isActive} onChange={() => toggleFilter(selectedConfidence, setSelectedConfidence, val)}
-                                className="w-3 h-3 rounded border-border text-primary accent-primary cursor-pointer" />
+                              {/* Uses the shared Checkbox primitive — Radix
+                                  wrapper with guaranteed white check on
+                                  lavender bg when checked, browser-stable
+                                  styling. Replaces a native input that
+                                  used `accent-primary` (Chrome-only). */}
+                              <Checkbox
+                                checked={isActive}
+                                onCheckedChange={() => toggleFilter(selectedConfidence, setSelectedConfidence, val)}
+                                className="h-3.5 w-3.5"
+                              />
                               {icon}
-                              <span className={`text-[11px] font-medium ${isActive ? color : 'text-foreground/70'}`}>{val.charAt(0).toUpperCase() + val.slice(1)}</span>
+                              <span className={`text-xs font-medium ${isActive ? color : 'text-muted-foreground'}`}>{val.charAt(0).toUpperCase() + val.slice(1)}</span>
                             </label>
                           );
                         })}
@@ -1553,11 +1573,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="File Type" onExpand={() => setOverflowModalGroup('type')} groupId="type" isFavourited={isGroupFavourited('type')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex gap-1 flex-1 py-1">
-                        {/* Photos — icon + dropdown stacked */}
+                        {/* Photos — icon + dropdown stacked. Active state
+                            is white on lavender (text-primary-foreground
+                            on bg-primary), NOT lavender on white — the
+                            latter reads as faint body text per
+                            STYLE_GUIDE.md. Inactive state stays muted-
+                            foreground so the eye lands on the active
+                            ones. */}
                         <div className="flex flex-col items-center gap-0.5">
                           <button onClick={() => toggleFilter(selectedFileType, setSelectedFileType, 'photo')}
-                            className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-md border text-[11px] font-medium transition-all min-w-[50px] ${
-                              selectedFileType.includes('photo') ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'
+                            className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-md border text-xs font-medium transition-all min-w-[50px] ${
+                              selectedFileType.includes('photo') ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
                             }`}>
                             <Camera className="w-[16px] h-[16px]" />
                             <span>Photos</span>
@@ -1581,11 +1607,12 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             ))}
                           </FilterDropdown>
                         </div>
-                        {/* Videos — icon + dropdown stacked */}
+                        {/* Videos — same active-state contract as Photos
+                            above: white on lavender when ON. */}
                         <div className="flex flex-col items-center gap-0.5">
                           <button onClick={() => toggleFilter(selectedFileType, setSelectedFileType, 'video')}
-                            className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-md border text-[11px] font-medium transition-all min-w-[50px] ${
-                              selectedFileType.includes('video') ? 'border-primary/50 bg-primary/10 text-primary' : 'border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground'
+                            className={`flex flex-col items-center gap-0.5 px-2.5 py-0.5 rounded-md border text-xs font-medium transition-all min-w-[50px] ${
+                              selectedFileType.includes('video') ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
                             }`}>
                             <Clapperboard className="w-[16px] h-[16px]" />
                             <span>Videos</span>
@@ -3935,8 +3962,14 @@ function FilterDropdown({
         <button
           ref={triggerRef}
           onClick={() => setOpen(!open)}
-          className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] transition-all ${
-            active ? 'border-primary/50 bg-primary/10 text-primary font-medium' : 'border-border text-foreground hover:border-primary/30 hover:text-primary'
+          // Active = white-on-lavender (per style guide); inactive = neutral
+          // bordered chip. Hover doesn't pre-tint with lavender (avoids the
+          // "is it active or just hovered?" ambiguity the original styling
+          // had). text-xs (12 / 500) instead of the hardcoded text-[12px].
+          className={`flex items-center gap-1 px-2 py-1 rounded-md border text-xs transition-all ${
+            active
+              ? 'border-primary bg-primary text-primary-foreground font-medium shadow-sm'
+              : 'border-border text-foreground hover:border-primary/40 hover:bg-secondary'
           }`}
         >
           <span className="max-w-[110px] truncate">{display}</span>
@@ -3968,7 +4001,12 @@ function FilterDropdown({
 function FilterCheckbox({ label, checked, onChange, color, icon }: { label: string; checked: boolean; onChange: () => void; color?: string; icon?: React.ReactNode }) {
   return (
     <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-primary/5 cursor-pointer transition-colors">
-      <input type="checkbox" checked={checked} onChange={onChange} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/30 accent-primary cursor-pointer" />
+      {/* Uses the shared Checkbox primitive so the check icon is white
+          on lavender (data-[state=checked]:bg-primary
+          data-[state=checked]:text-primary-foreground), browser-stable.
+          Replaces a native input that relied on `accent-primary`
+          (Chrome-only, no guarantee on Edge/Firefox WebView). */}
+      <Checkbox checked={checked} onCheckedChange={onChange} />
       {icon && <span className="shrink-0">{icon}</span>}
       <span className={`text-sm flex-1 truncate ${color || 'text-foreground'} ${checked ? 'font-medium' : ''}`}>{label}</span>
     </label>
