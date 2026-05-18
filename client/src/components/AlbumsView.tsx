@@ -190,8 +190,19 @@ export default function AlbumsView() {
    *             the target is a user folder that accepts drops)
    *   null    = no drag is hovering
    *  Set during dragOver based on Y position within the row. Drives
-   *  both the indicator line (above/below) and the ring (into). */
+   *  both the indicator line (above/below) and the ring (into).
+   *
+   *  Mirrored in `dragOverPositionRef` so the drop handler can read
+   *  the latest value synchronously even if React hasn't re-rendered
+   *  between the last dragOver event and the drop, AND so a stray
+   *  dragLeave clearing the state still leaves the ref intact for
+   *  the drop dispatch. State drives the render; ref drives the
+   *  drop logic. Without this split, drop was a no-op because
+   *  `dragOverPosition` was sometimes null at the moment we read it
+   *  inside handleGroupDrop. */
   const [dragOverPosition, setDragOverPosition] = useState<'above' | 'below' | 'into' | null>(null);
+  const dragOverPositionRef = useRef<'above' | 'below' | 'into' | null>(null);
+  const dragOverGroupIdRef = useRef<number | null>(null);
   const [dragOverRoot, setDragOverRoot] = useState(false);
 
   const handleAlbumDragStart = useCallback((e: React.DragEvent, albumId: number) => {
@@ -230,6 +241,10 @@ export default function AlbumsView() {
       else if (isGroupDroppable(group)) position = 'into';
       else position = yRatio < 0.5 ? 'above' : 'below';
     }
+    // Write to BOTH state (drives re-render of the indicator) and the
+    // ref (latest-value source-of-truth for the drop handler).
+    dragOverPositionRef.current = position;
+    dragOverGroupIdRef.current = group.id;
     if (dragOverGroupId !== group.id) setDragOverGroupId(group.id);
     if (dragOverPosition !== position) setDragOverPosition(position);
   }, [dragOverGroupId, dragOverPosition]);
@@ -237,10 +252,23 @@ export default function AlbumsView() {
     const related = e.relatedTarget as Node | null;
     const current = e.currentTarget as HTMLElement;
     if (related && current.contains(related)) return;
-    if (dragOverGroupId === group.id) { setDragOverGroupId(null); setDragOverPosition(null); }
+    if (dragOverGroupId === group.id) {
+      // Clear the VISUAL state but keep the ref intact — if a drop
+      // is about to fire on this same row (HTML5 fires dragLeave
+      // immediately before drop in some browsers), the drop handler
+      // can still read the last-known position from the ref.
+      setDragOverGroupId(null);
+      setDragOverPosition(null);
+    }
   }, [dragOverGroupId]);
   const handleGroupDrop = useCallback(async (e: React.DragEvent, group: AlbumGroupRecord) => {
-    const position = dragOverPosition;
+    // Read position from the ref — it survives any dragLeave that
+    // fired between the last dragOver and the drop. Falls back to
+    // 'into' (legacy nest behaviour) if somehow no position was
+    // captured, which preserves the v2.0.8 first-pass behaviour.
+    const position = dragOverPositionRef.current ?? 'into';
+    dragOverPositionRef.current = null;
+    dragOverGroupIdRef.current = null;
     setDragOverGroupId(null);
     setDragOverPosition(null);
     e.preventDefault();
