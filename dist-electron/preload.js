@@ -263,6 +263,7 @@ contextBridge.exposeInMainWorld('pdr', {
             rename: (groupId, newTitle) => ipcRenderer.invoke('albumGroups:rename', groupId, newTitle),
             delete: (groupId) => ipcRenderer.invoke('albumGroups:delete', groupId),
             move: (groupId, newParentId) => ipcRenderer.invoke('albumGroups:move', groupId, newParentId),
+            reorder: (siblingIds) => ipcRenderer.invoke('albumGroups:reorder', siblingIds),
             addAlbum: (albumId, groupId) => ipcRenderer.invoke('albumGroups:addAlbum', albumId, groupId),
             removeAlbum: (albumId, groupId) => ipcRenderer.invoke('albumGroups:removeAlbum', albumId, groupId),
         },

@@ -4497,6 +4497,15 @@ ipcMain.handle('albumGroups:move', async (_event, groupId: number, newParentId: 
   } catch (err) { return { success: false, error: (err as Error).message }; }
 });
 
+ipcMain.handle('albumGroups:reorder', async (_event, siblingIds: number[]) => {
+  try {
+    const { reorderAlbumGroups } = await import('./search-database.js');
+    const r = reorderAlbumGroups(Array.isArray(siblingIds) ? siblingIds : []);
+    if (r.success) markDbDirty();
+    return r;
+  } catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
 ipcMain.handle('albumGroups:addAlbum', async (_event, albumId: number, groupId: number) => {
   try {
     const { addAlbumToGroup } = await import('./search-database.js');

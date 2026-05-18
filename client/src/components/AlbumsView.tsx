@@ -49,6 +49,7 @@ import {
   addAlbumToGroup,
   removeAlbumFromGroup,
   moveAlbumGroup,
+  reorderAlbumGroups,
   listAlbumPhotos,
   getThumbnail,
   openSearchViewer,
@@ -182,6 +183,15 @@ export default function AlbumsView() {
 
   // ── Drag-drop ────────────────────────────────────────────────────
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
+  /** Where the drop will land relative to the hovered row:
+   *   'above' = reorder the dragged folder ABOVE this row
+   *   'below' = reorder the dragged folder BELOW this row
+   *   'into'  = nest the dragged folder INSIDE this row (only if
+   *             the target is a user folder that accepts drops)
+   *   null    = no drag is hovering
+   *  Set during dragOver based on Y position within the row. Drives
+   *  both the indicator line (above/below) and the ring (into). */
+  const [dragOverPosition, setDragOverPosition] = useState<'above' | 'below' | 'into' | null>(null);
   const [dragOverRoot, setDragOverRoot] = useState(false);
 
   const handleAlbumDragStart = useCallback((e: React.DragEvent, albumId: number) => {
@@ -194,27 +204,52 @@ export default function AlbumsView() {
     e.stopPropagation();
   }, []);
   const handleGroupDragOver = useCallback((e: React.DragEvent, group: AlbumGroupRecord) => {
-    if (!isGroupDroppable(group)) return;
     const hasAlbum = e.dataTransfer.types.includes(DRAG_MIME_ALBUM);
     const hasFolder = e.dataTransfer.types.includes(DRAG_MIME_FOLDER);
     if (!hasAlbum && !hasFolder) return;
+    // Albums can only drop INTO user folders (nest = add membership);
+    // they aren't reorderable in v2.0.8. Folders can drop above/below
+    // any group (sibling reorder) AND into user folders (nest).
+    if (hasAlbum && !isGroupDroppable(group)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = hasAlbum ? 'copy' : 'move';
+    // Y-position math: top 30% = drop above, bottom 30% = drop below,
+    // middle 40% = nest into (only if target accepts nesting). When
+    // the target doesn't accept nesting (auto group), the middle
+    // band collapses to above/below based on side of centre. Mirrors
+    // People Manager's drop-above pattern, extended to support
+    // 'below' + 'into' for folder hierarchies.
+    let position: 'above' | 'below' | 'into';
+    if (hasAlbum) {
+      position = 'into';
+    } else {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const yRatio = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
+      if (yRatio < 0.3) position = 'above';
+      else if (yRatio > 0.7) position = 'below';
+      else if (isGroupDroppable(group)) position = 'into';
+      else position = yRatio < 0.5 ? 'above' : 'below';
+    }
     if (dragOverGroupId !== group.id) setDragOverGroupId(group.id);
-  }, [dragOverGroupId]);
+    if (dragOverPosition !== position) setDragOverPosition(position);
+  }, [dragOverGroupId, dragOverPosition]);
   const handleGroupDragLeave = useCallback((e: React.DragEvent, group: AlbumGroupRecord) => {
     const related = e.relatedTarget as Node | null;
     const current = e.currentTarget as HTMLElement;
     if (related && current.contains(related)) return;
-    if (dragOverGroupId === group.id) setDragOverGroupId(null);
+    if (dragOverGroupId === group.id) { setDragOverGroupId(null); setDragOverPosition(null); }
   }, [dragOverGroupId]);
   const handleGroupDrop = useCallback(async (e: React.DragEvent, group: AlbumGroupRecord) => {
+    const position = dragOverPosition;
     setDragOverGroupId(null);
-    if (!isGroupDroppable(group)) return;
+    setDragOverPosition(null);
     e.preventDefault();
     e.stopPropagation();
+
     const albumIdStr = e.dataTransfer.getData(DRAG_MIME_ALBUM);
     if (albumIdStr) {
+      // Album drop — only valid into a user folder (no reorder).
+      if (!isGroupDroppable(group)) return;
       const albumId = Number(albumIdStr);
       if (!Number.isFinite(albumId)) return;
       const album = albumsById.get(albumId);
@@ -225,16 +260,47 @@ export default function AlbumsView() {
       await refreshAll();
       return;
     }
+
     const folderIdStr = e.dataTransfer.getData(DRAG_MIME_FOLDER);
-    if (folderIdStr) {
-      const folderId = Number(folderIdStr);
-      if (!Number.isFinite(folderId) || folderId === group.id) return;
-      const r = await moveAlbumGroup(folderId, group.id);
-      if (!r.success) { toast.error(`Couldn't move folder`, { description: r.error }); return; }
-      toast.success(`Moved folder into "${group.title}"`);
+    if (!folderIdStr) return;
+    const folderId = Number(folderIdStr);
+    if (!Number.isFinite(folderId) || folderId === group.id) return;
+
+    // Folder drop branches by position:
+    //   above/below → sibling reorder via reorderAlbumGroups (with a
+    //                 pre-move to align parent_id if needed)
+    //   into       → existing nest behaviour via moveAlbumGroup
+    if (position === 'above' || position === 'below') {
+      const draggedFolder = groups.find((g) => g.id === folderId);
+      if (!draggedFolder) return;
+      const targetParentId = group.parent_id;
+      // Pre-align parent if dragged is moving between branches.
+      // moveAlbumGroup guards depth + cycles + auto-immutable rules.
+      if (draggedFolder.parent_id !== targetParentId) {
+        const moveR = await moveAlbumGroup(folderId, targetParentId);
+        if (!moveR.success) { toast.error(`Couldn't move folder`, { description: moveR.error }); return; }
+      }
+      const siblings = groups
+        .filter((g) => g.parent_id === targetParentId)
+        .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+      const filtered = siblings.filter((s) => s.id !== folderId);
+      const targetIdx = filtered.findIndex((s) => s.id === group.id);
+      if (targetIdx < 0) return;
+      const insertIdx = position === 'above' ? targetIdx : targetIdx + 1;
+      const newOrder = [...filtered.slice(0, insertIdx), draggedFolder, ...filtered.slice(insertIdx)].map((s) => s.id);
+      const reorderR = await reorderAlbumGroups(newOrder);
+      if (!reorderR.success) { toast.error(`Couldn't reorder`, { description: reorderR.error }); return; }
       await refreshAll();
+      return;
     }
-  }, [albumsById, refreshAll]);
+
+    // 'into' or null → nest into the target (existing behaviour).
+    if (!isGroupDroppable(group)) return;
+    const r = await moveAlbumGroup(folderId, group.id);
+    if (!r.success) { toast.error(`Couldn't move folder`, { description: r.error }); return; }
+    toast.success(`Moved folder into "${group.title}"`);
+    await refreshAll();
+  }, [albumsById, dragOverPosition, groups, refreshAll]);
   const handleRootDragOver = useCallback((e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes(DRAG_MIME_FOLDER)) return;
     e.preventDefault();
@@ -559,8 +625,13 @@ export default function AlbumsView() {
     const isUser = group.source_kind === 'user';
     const isSelected = selection?.type === 'group' && selection.id === group.id;
     const isRenaming = renamingGroupId === group.id;
-    const isDropping = dragOverGroupId === group.id;
-    const dropAccepted = isGroupDroppable(group);
+    // 'into' nest-style highlight only fires when the cursor is in
+    // the row's middle band AND the target accepts nesting. The
+    // above/below indicators are separate <div> overlays rendered
+    // below.
+    const isNestHighlight = dragOverGroupId === group.id && dragOverPosition === 'into';
+    const showAboveIndicator = dragOverGroupId === group.id && dragOverPosition === 'above';
+    const showBelowIndicator = dragOverGroupId === group.id && dragOverPosition === 'below';
     const childGroupList = childGroups.get(group.id) ?? [];
     const albumIdList = albumIdsByGroup.get(group.id) ?? [];
     const totalCount = albumIdList.length + childGroupList.length;
@@ -576,18 +647,33 @@ export default function AlbumsView() {
         <ContextMenu>
           <ContextMenuTrigger asChild>
         <div
-          className={`flex items-center gap-1.5 pr-2 py-1 rounded-md transition-colors cursor-pointer ${
-            isDropping ? 'bg-primary/10 ring-2 ring-primary/40' : (isSelected ? 'bg-primary/15' : 'hover:bg-muted/40')
+          className={`relative flex items-center gap-1.5 pr-2 py-1 rounded-md transition-colors cursor-pointer ${
+            isNestHighlight ? 'bg-primary/10 ring-2 ring-primary/40' : (isSelected ? 'bg-primary/15' : 'hover:bg-muted/40')
           } ${isUser ? 'cursor-grab active:cursor-grabbing' : ''}`}
           style={{ paddingLeft: `${depth * 1.25 + 0.25}rem` }}
           onClick={() => { if (!isRenaming) setSelection({ type: 'group', id: group.id }); }}
-          draggable={isUser && !isRenaming}
-          onDragStart={isUser ? (e) => handleFolderDragStart(e, group.id) : undefined}
-          onDragOver={dropAccepted ? (e) => handleGroupDragOver(e, group) : undefined}
-          onDragLeave={dropAccepted ? (e) => handleGroupDragLeave(e, group) : undefined}
-          onDrop={dropAccepted ? (e) => handleGroupDrop(e, group) : undefined}
+          draggable={(isUser || group.source_kind === 'auto') && !isRenaming}
+          onDragStart={(isUser || group.source_kind === 'auto') ? (e) => handleFolderDragStart(e, group.id) : undefined}
+          // Drag handlers always attached so EVERY group row is a
+          // potential drop target — at minimum for above/below
+          // sibling reorder. The handlers themselves filter what
+          // actions are valid (nest only into user folders, etc.).
+          onDragOver={(e) => handleGroupDragOver(e, group)}
+          onDragLeave={(e) => handleGroupDragLeave(e, group)}
+          onDrop={(e) => handleGroupDrop(e, group)}
           data-testid={`tree-group-${group.id}`}
         >
+          {/* Drop-indicator lines for above/below sibling reorder.
+              Mirror the PM Unnamed-tab pattern but extended with a
+              second indicator for "drop below this row" so the user
+              can drop either side of the centre band without
+              hunting for the right pixel zone. */}
+          {showAboveIndicator && (
+            <div className="absolute -top-px left-2 right-2 h-0.5 bg-primary rounded-full pointer-events-none shadow-[0_0_4px_var(--tw-shadow-color)] shadow-primary/40" />
+          )}
+          {showBelowIndicator && (
+            <div className="absolute -bottom-px left-2 right-2 h-0.5 bg-primary rounded-full pointer-events-none shadow-[0_0_4px_var(--tw-shadow-color)] shadow-primary/40" />
+          )}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); toggleGroupExpanded(group.id); }}

@@ -1170,6 +1170,10 @@ export async function moveAlbumGroup(groupId: number, newParentId: number | null
   if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.move(groupId, newParentId);
   return { success: false, error: 'Not running in Electron' };
 }
+export async function reorderAlbumGroups(siblingIds: number[]): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.reorder(siblingIds);
+  return { success: false, error: 'Not running in Electron' };
+}
 export async function addAlbumToGroup(albumId: number, groupId: number): Promise<{ success: boolean; inserted?: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.addAlbum(albumId, groupId);
   return { success: false, error: 'Not running in Electron' };

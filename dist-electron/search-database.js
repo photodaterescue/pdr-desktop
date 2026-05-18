@@ -5224,6 +5224,31 @@ export function deleteAlbumGroup(groupId) {
     return { success: true };
 }
 /**
+ * Reorder a contiguous list of sibling album_groups by assigning each
+ * one its index as sort_order. Used by the tree's drag-reorder
+ * gesture (PM-style — Terry asked us to copy the People Manager
+ * Unnamed-tab pattern). Caller passes the FULL list of siblings in
+ * the desired new order; backend writes sort_order = 0, 1, 2, … so
+ * the next listAlbumGroups returns them in that sequence.
+ *
+ * Idempotent re-runs are cheap (same writes). Single transaction so
+ * a partial failure doesn't leave the row sequence broken.
+ */
+export function reorderAlbumGroups(siblingIds) {
+    if (!Array.isArray(siblingIds) || siblingIds.length === 0) {
+        return { success: true };
+    }
+    const db = getDb();
+    const stmt = db.prepare(`UPDATE album_groups SET sort_order = ?, updated_at = datetime('now') WHERE id = ?`);
+    const txn = db.transaction((ids) => {
+        for (let i = 0; i < ids.length; i++) {
+            stmt.run(i, ids[i]);
+        }
+    });
+    txn(siblingIds);
+    return { success: true };
+}
+/**
  * Move a user folder under a new parent (or to root with newParentId
  * = null). Refuses if (a) it's an auto group, (b) the new parent is
  * an auto group, (c) the move would create a cycle, or (d) the move
