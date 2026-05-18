@@ -290,6 +290,14 @@ import {
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, type IndexProgress, type RebuildProgress } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import {
+  gatherTakeoutEnrichmentFromFixResults,
+  gatherTakeoutEnrichmentFromZip,
+  importTakeoutAlbumsFromEnrichment,
+  type PendingTakeoutEnrichment,
+  type BackfillStats,
+  type TakeoutImportSummary,
+} from './takeout-album-importer.js';
+import {
   startAiProcessing,
   cancelAiProcessing,
   pauseAiProcessing,
@@ -1390,6 +1398,16 @@ async function extractLargeZip(
 
 // Track active temp dirs so we can clean up on cancel/quit
 const activeTempDirs = new Set<string>();
+
+// ─── Takeout enrichment rendezvous (v2.0.8) ─────────────────────────────────
+// Captured in files:copy while PDR_Temp still holds the Takeout sidecars,
+// consumed by search:indexRun once indexed_files rows exist. Keyed by the
+// Fix's destination path because that's the only stable identifier shared
+// between the two handlers — the report id isn't generated until after
+// files:copy returns. In-memory by design: if the renderer never triggers
+// indexing (rare; e.g. user quits between Fix and Index), the enrichment is
+// lost but the backfill flow against the original ZIP is the recovery path.
+const pendingTakeoutEnrichments = new Map<string, PendingTakeoutEnrichment>();
 
 // Register custom protocol for serving local files to viewer
 protocol.registerSchemesAsPrivileged([
@@ -3592,6 +3610,26 @@ ipcMain.handle('files:copy', async (_event, data: {
       }
     }
 
+    // ── Takeout enrichment gather (v2.0.8) ────────────────────────
+    // MUST run before the temp-dir cleanup below: we need PDR_Temp's
+    // sidecars + per-folder metadata.json to still be on disk. Stashes
+    // the result in pendingTakeoutEnrichments keyed by destinationPath
+    // so search:indexRun can finish the album write after indexed_files
+    // rows exist. Wrapped in try/catch — a parse failure here must
+    // never block a successful Fix completion.
+    try {
+      const enrichment = gatherTakeoutEnrichmentFromFixResults(results);
+      if (enrichment) {
+        pendingTakeoutEnrichments.set(destinationPath, enrichment);
+        console.log(
+          `[Takeout] Gathered enrichment for ${enrichment.files.length} file(s) ` +
+          `across Takeout album folders (dest: ${destinationPath}).`
+        );
+      }
+    } catch (enrichErr) {
+      console.warn(`[Takeout] Enrichment gather failed (continuing):`, enrichErr);
+    }
+
     // ── Post-copy temp-dir cleanup ────────────────────────────────
     // For every active temp extraction dir whose contents WERE the
     // source of files we just copied, delete it now. This frees the
@@ -4283,6 +4321,25 @@ ipcMain.handle('search:indexRun', async (_event, reportId: string) => {
       mainWindow?.webContents.send('search:indexProgress', progress);
     });
 
+    // ── Takeout albums + caption + original-filename write ──────────
+    // Consume the enrichment gathered during files:copy. Runs only when
+    // indexing succeeded and produced a runId (otherwise the file_ids
+    // we'd be linking to don't exist). Wrapped in try/catch — a failure
+    // in album-write must never poison the indexing result the caller
+    // is waiting on; the user still has a fully Fixed-and-indexed run
+    // and can retry album import later via the backfill flow.
+    if (result.success && result.runId !== undefined) {
+      const enrichment = pendingTakeoutEnrichments.get(report.destinationPath);
+      if (enrichment) {
+        pendingTakeoutEnrichments.delete(report.destinationPath);
+        try {
+          importTakeoutAlbumsFromEnrichment(enrichment, result.runId);
+        } catch (albumErr) {
+          console.warn(`[Takeout] Album import after indexing failed (continuing):`, albumErr);
+        }
+      }
+    }
+
     markDbDirty();
     return result;
   } catch (err) {
@@ -4293,6 +4350,127 @@ ipcMain.handle('search:indexRun', async (_event, reportId: string) => {
 ipcMain.handle('search:cancelIndex', async () => {
   cancelIndexing();
   return { success: true };
+});
+
+// v2.0.8 step 2b — Backfill albums from an original Takeout ZIP.
+// For customers who Fixed their Takeout on v2.0.4–v2.0.7 (before albums
+// were a feature) and still have the original 50 GB ZIP sitting on disk.
+// Streams the ZIP's central directory + sidecar JSONs only — no photo
+// bytes, no extraction to PDR_Temp. Matches each photo against existing
+// indexed_files rows by (original_filename, size_bytes), writes albums +
+// captions + filename corrections through the same importer the Fix path
+// uses post-indexing. Same per-album log lines for sanity-checking.
+// v2.0.8 step 3 — Album CRUD + listing IPC. Used by the Memories Albums
+// tab (renderer-side AlbumsView). Read paths are sync DB calls so the
+// promise resolves immediately; mutations bump `updated_at` on the album
+// so the list re-sorts on the next list call.
+ipcMain.handle('albums:list', async () => {
+  try {
+    const { listAlbums } = await import('./search-database.js');
+    return { success: true, data: listAlbums() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('albums:create', async (_event, title: string) => {
+  try {
+    const { createUserAlbum } = await import('./search-database.js');
+    if (typeof title !== 'string') return { success: false, error: 'Title required.' };
+    const id = createUserAlbum(title);
+    markDbDirty();
+    return { success: true, id };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('albums:rename', async (_event, albumId: number, newTitle: string) => {
+  try {
+    const { renameAlbum } = await import('./search-database.js');
+    const r = renameAlbum(albumId, newTitle);
+    if (r.success) markDbDirty();
+    return r;
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('albums:delete', async (_event, albumId: number) => {
+  try {
+    const { deleteAlbum } = await import('./search-database.js');
+    const r = deleteAlbum(albumId);
+    if (r.success) markDbDirty();
+    return r;
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('albums:listPhotos', async (_event, albumId: number) => {
+  try {
+    const { listAlbumPhotos } = await import('./search-database.js');
+    return { success: true, data: listAlbumPhotos(albumId) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('albums:addPhotos', async (_event, albumId: number, fileIds: number[]) => {
+  try {
+    const { addPhotosToAlbum } = await import('./search-database.js');
+    const inserted = addPhotosToAlbum(albumId, Array.isArray(fileIds) ? fileIds : []);
+    markDbDirty();
+    return { success: true, inserted };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('albums:removePhotos', async (_event, albumId: number, fileIds: number[]) => {
+  try {
+    const { removePhotosFromAlbum } = await import('./search-database.js');
+    const removed = removePhotosFromAlbum(albumId, Array.isArray(fileIds) ? fileIds : []);
+    markDbDirty();
+    return { success: true, removed };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('takeout:backfillFromZip', async (_event, zipPath: string) => {
+  try {
+    if (typeof zipPath !== 'string' || !zipPath) {
+      return { success: false, error: 'No ZIP path provided.' };
+    }
+    if (!fs.existsSync(zipPath)) {
+      return { success: false, error: `ZIP not found: ${zipPath}` };
+    }
+    console.log(`[Takeout] Backfill starting against ZIP: ${zipPath}`);
+    const { enrichment, stats } = await gatherTakeoutEnrichmentFromZip(zipPath);
+    console.log(
+      `[Takeout] Backfill scan complete — ` +
+      `albumFolders=${stats.albumFoldersDetected}, ` +
+      `photosConsidered=${stats.photosConsidered}, ` +
+      `matched=${stats.matchedAgainstLibrary}, ` +
+      `unmatched=${stats.unmatched}`
+    );
+
+    let summary: TakeoutImportSummary | null = null;
+    if (enrichment) {
+      // runId = -1 — backfill enrichments pre-resolve every file_id at
+      // gather time so the importer's run-scoped lookup is bypassed.
+      summary = importTakeoutAlbumsFromEnrichment(enrichment, -1);
+      markDbDirty();
+    } else {
+      console.log(`[Takeout] Backfill: no album folders matched against the existing library — nothing to write.`);
+    }
+
+    return { success: true, stats, summary };
+  } catch (err) {
+    console.error(`[Takeout] Backfill failed:`, err);
+    return { success: false, error: (err as Error).message };
+  }
 });
 
 ipcMain.handle('search:removeRun', async (_event, runId: number) => {

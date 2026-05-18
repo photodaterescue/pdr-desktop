@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useState, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { 
@@ -105,7 +105,7 @@ import { FolderBrowserModal } from "@/components/FolderBrowserModal";
 import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
 import { SearchRibbon } from "@/components/SearchPanel";
-import MemoriesView from "@/components/MemoriesView";
+import MemoriesPanel from "@/components/MemoriesPanel";
 import { TreesView } from "@/components/trees/TreesView";
 import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
@@ -917,6 +917,25 @@ const handleActivateLicense = () => {
   };
   const FOLDER_BROWSER_DEFAULT_OPTS: FolderBrowserOpts = { title: 'Add Source', mode: 'source' };
   const [folderBrowserOpts, setFolderBrowserOpts] = useState<FolderBrowserOpts>(FOLDER_BROWSER_DEFAULT_OPTS);
+
+  // v2.0.8 step 2b — Promise resolver bridging the workspace-level
+  // FolderBrowserModal (for the Takeout ZIP backfill picker in SettingsModal).
+  // Set when SettingsModal calls onPickTakeoutZip; resolved by either the
+  // existing select callback OR the existing cancel handler (both wired
+  // below) so the SettingsModal's await never hangs.
+  const pickTakeoutZipResolverRef = useRef<((p: string | null) => void) | null>(null);
+  const handlePickTakeoutZip = useCallback((): Promise<string | null> => {
+    return new Promise<string | null>((resolve) => {
+      pickTakeoutZipResolverRef.current = resolve;
+      setFolderBrowserOpts({ title: 'Pick Takeout ZIP', mode: 'archives' });
+      setFolderBrowserCallback(() => (path: string) => {
+        const r = pickTakeoutZipResolverRef.current;
+        pickTakeoutZipResolverRef.current = null;
+        r?.(path);
+      });
+      setShowFolderBrowser(true);
+    });
+  }, []);
 
   // (outputCardExpanded state lives inside DashboardPanel itself —
   // see that component for the useState. Keeping it here would put
@@ -2378,8 +2397,10 @@ return (
         </div>
         </div>{/* close zoomable content wrapper */}
 
-        {/* Memories view */}
-        {activeView === 'memories' && <MemoriesView />}
+        {/* Memories view — v2.0.8 step 3 wraps the existing By-Date
+            timeline in a MemoriesPanel that adds the [By Date | Albums]
+            tab toggle. AlbumsView is the new Albums branch. */}
+        {activeView === 'memories' && <MemoriesPanel />}
 
         {/* Trees view — family graph explorer (v1). Deliberately not called
             'Family Tree' because later versions will handle friend groups,
@@ -2511,6 +2532,13 @@ return (
           setShowFolderBrowser(false);
           setFolderBrowserCallback(null);
           setFolderBrowserOpts(FOLDER_BROWSER_DEFAULT_OPTS);
+          // Resolve any pending Takeout-ZIP picker promise with null so
+          // the awaiting handler in SettingsModal can short-circuit. Safe
+          // no-op for all other callers (the ref is only set by the
+          // Takeout-ZIP pick handler).
+          const r = pickTakeoutZipResolverRef.current;
+          pickTakeoutZipResolverRef.current = null;
+          r?.(null);
         }}
         title={folderBrowserOpts.title}
         mode={folderBrowserOpts.mode}
@@ -2718,6 +2746,7 @@ return (
 			localStorage.setItem('pdr-burger-pulse-disabled', disabled ? 'true' : 'false');
 		  }}
 		  analysisActive={isScanning}
+		  onPickTakeoutZip={handlePickTakeoutZip}
 		/>
       )}
 	        
@@ -4345,7 +4374,16 @@ function DashboardPanel({
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={handleChangeDestination}
+                        // First-time "Select Library Drive" must route to
+                        // the LDM, same as the "Change Library Drive"
+                        // branch above (post-setup). Previously this
+                        // jumped straight to handleChangeDestination
+                        // which opens the LDA / folder-picker flow,
+                        // skipping the LDM's drive list + saved-
+                        // destinations. Terry 2026-05-18: "should take
+                        // the user to the LDM... but it goes to the
+                        // LDA". Single channel = LDM, always.
+                        onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'))}
                         disabled={fixActive}
                         className="justify-center gap-2 shadow-md shadow-primary/20"
                         data-testid="button-change-destination"
@@ -9516,7 +9554,7 @@ export function setSkipWelcomeScreen(skip: boolean): void {
   }
 }
 
-function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange, burgerPulseDisabled, onBurgerPulseChange, analysisActive = false }: {
+function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructureChange, playSound, onPlaySoundChange, burgerPulseDisabled, onBurgerPulseChange, analysisActive = false, onPickTakeoutZip }: {
   initialTab?: 'general' | 'workspace' | 'sd' | 'people' | 'ai' | 'backup',
   onClose: () => void,
   folderStructure: 'year' | 'year-month' | 'year-month-day',
@@ -9525,7 +9563,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   onPlaySoundChange: (value: boolean) => void,
   burgerPulseDisabled: boolean,
   onBurgerPulseChange: (disabled: boolean) => void,
-  analysisActive?: boolean
+  analysisActive?: boolean,
+  /** v2.0.8 step 2b — routes through the workspace-level
+   *  FolderBrowserModal in `archives` mode (PDR's premium custom
+   *  picker). Resolves with the chosen ZIP path or null on cancel. */
+  onPickTakeoutZip?: () => Promise<string | null>,
 }) {
   // Gate destructive engine operations (Re-cluster) when a Fix is
   // running anywhere — same broadcast-driven flag the rest of PDR
@@ -9827,6 +9869,53 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
 
   const [settingsTab, setSettingsTab] = useState<'general' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
   const [folderStructureOpen, setFolderStructureOpen] = useState(false);
+
+  // v2.0.8 step 2b — Takeout ZIP backfill (After Fix tab card).
+  const [takeoutBackfillBusy, setTakeoutBackfillBusy] = useState(false);
+  const [takeoutBackfillResult, setTakeoutBackfillResult] = useState<{ kind: 'ok'; summary: { albumsCreated: number; totalFilesLinked: number; totalOriginalFilenamesRecovered: number; totalCaptionsApplied: number } | null; stats: { albumFoldersDetected: number; photosConsidered: number; matchedAgainstLibrary: number; unmatched: number } } | { kind: 'error'; message: string } | null>(null);
+  // Ref the result card so we can scroll it into view the moment a
+  // result lands. Otherwise the card sits below the modal's scroll
+  // fold and a normal user — not expecting to scroll — sees nothing.
+  const takeoutBackfillResultRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (takeoutBackfillResult && takeoutBackfillResultRef.current) {
+      takeoutBackfillResultRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [takeoutBackfillResult]);
+  const handleTakeoutBackfill = async () => {
+    try {
+      setTakeoutBackfillResult(null);
+      // Route the picker through workspace's FolderBrowserModal in
+      // `archives` mode — PDR's premium custom file picker. Falls back
+      // to the OS dialog only if the prop wasn't wired (shouldn't
+      // happen in production).
+      const zipPath = onPickTakeoutZip
+        ? await onPickTakeoutZip()
+        : await (window as any).pdr?.openZip?.();
+      if (!zipPath) return; // User cancelled — no toast.
+      setTakeoutBackfillBusy(true);
+      const bridge = await import('@/lib/electron-bridge');
+      const result = await bridge.takeoutBackfillFromZip(zipPath);
+      if (result.success) {
+        setTakeoutBackfillResult({
+          kind: 'ok',
+          summary: result.summary ? {
+            albumsCreated: result.summary.albumsCreated,
+            totalFilesLinked: result.summary.totalFilesLinked,
+            totalOriginalFilenamesRecovered: result.summary.totalOriginalFilenamesRecovered,
+            totalCaptionsApplied: result.summary.totalCaptionsApplied,
+          } : null,
+          stats: result.stats ?? { albumFoldersDetected: 0, photosConsidered: 0, matchedAgainstLibrary: 0, unmatched: 0 },
+        });
+      } else {
+        setTakeoutBackfillResult({ kind: 'error', message: result.error ?? 'Backfill failed.' });
+      }
+    } catch (err) {
+      setTakeoutBackfillResult({ kind: 'error', message: (err as Error).message });
+    } finally {
+      setTakeoutBackfillBusy(false);
+    }
+  };
 
   // Backup list — fetched on demand when the user expands the Restore
   // section so we don't pay a stat()-of-the-backup-dir cost every time
@@ -10522,6 +10611,59 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   <p className="text-xs text-violet-700 dark:text-violet-300">
                     <strong>Privacy:</strong> Photo recognition runs entirely on your device — nothing is uploaded, shared, or sent anywhere. Applies to photos only, not videos.
                   </p>
+                </div>
+              </div>
+
+              {/* v2.0.8 step 2b — Takeout ZIP backfill.
+                  For users who Fixed their Takeout on v2.0.4–v2.0.7
+                  (before albums existed) and still have the original
+                  ZIP. Pulls in album memberships, captions, and
+                  corrected original filenames against the EXISTING
+                  indexed_files rows — no re-Fix, no re-extraction.
+                  Streams sidecar JSONs out of the ZIP's central
+                  directory; photo bytes are never read. Lives here on
+                  the After Fix tab because the headline is "fix what
+                  you missed on the original Fix". Will move to the
+                  Memories Albums tab's empty-state CTA in step 3. */}
+              <div className="mt-6">
+                <label className="block text-sm font-medium text-foreground mb-1">Already Fixed your Google Photos Takeout?</label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Point us at the original Takeout ZIP and we'll bring across your albums, captions, and original filenames — without re-running Fix on the whole archive.
+                </p>
+                <div className="p-3 rounded-lg border border-border">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleTakeoutBackfill}
+                    disabled={takeoutBackfillBusy}
+                    data-testid="button-takeout-backfill"
+                    className="gap-2"
+                  >
+                    {takeoutBackfillBusy ? 'Scanning ZIP…' : 'Pick Takeout ZIP'}
+                  </Button>
+                  {takeoutBackfillResult?.kind === 'ok' && (
+                    <div ref={takeoutBackfillResultRef} className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                      <div className="text-xs text-foreground">
+                        {takeoutBackfillResult.summary ? (
+                          <>
+                            <strong>{takeoutBackfillResult.summary.albumsCreated}</strong> album{takeoutBackfillResult.summary.albumsCreated === 1 ? '' : 's'} imported, <strong>{takeoutBackfillResult.summary.totalFilesLinked}</strong> photo{takeoutBackfillResult.summary.totalFilesLinked === 1 ? '' : 's'} linked, <strong>{takeoutBackfillResult.summary.totalOriginalFilenamesRecovered}</strong> original filename{takeoutBackfillResult.summary.totalOriginalFilenamesRecovered === 1 ? '' : 's'} recovered, <strong>{takeoutBackfillResult.summary.totalCaptionsApplied}</strong> caption{takeoutBackfillResult.summary.totalCaptionsApplied === 1 ? '' : 's'} applied.
+                            <div className="text-muted-foreground mt-1">
+                              Scanned {takeoutBackfillResult.stats.albumFoldersDetected} album folder{takeoutBackfillResult.stats.albumFoldersDetected === 1 ? '' : 's'} containing {takeoutBackfillResult.stats.photosConsidered} photo{takeoutBackfillResult.stats.photosConsidered === 1 ? '' : 's'}; {takeoutBackfillResult.stats.matchedAgainstLibrary} matched against your library, {takeoutBackfillResult.stats.unmatched} unmatched.
+                            </div>
+                          </>
+                        ) : (
+                          <>No album folders matched against your library — nothing to import. This usually means the ZIP doesn't contain the Takeout you previously Fixed, or its photos haven't been indexed yet.</>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {takeoutBackfillResult?.kind === 'error' && (
+                    <div ref={takeoutBackfillResultRef} className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40">
+                      <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                      <p className="text-xs text-amber-800 dark:text-amber-300">{takeoutBackfillResult.message}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </>

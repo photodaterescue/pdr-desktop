@@ -152,6 +152,17 @@ export function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_files_position   ON indexed_files(camera_position);
       CREATE INDEX IF NOT EXISTS idx_files_country    ON indexed_files(geo_country);
       CREATE INDEX IF NOT EXISTS idx_files_city       ON indexed_files(geo_city);
+      -- Hash + (original_filename, size_bytes) + (original_filename,
+      -- derived_date) lookups: used by the Takeout backfill flow to
+      -- match sidecar entries back to existing indexed_files rows when
+      -- re-running album import against a ZIP on a library that's
+      -- already been Fixed. The derived_date variant is the primary
+      -- key because PDR's Fix writes EXIF (changing file size) but
+      -- never changes the taken-date — so date is invariant across
+      -- the Fix pipeline while size is not.
+      CREATE INDEX IF NOT EXISTS idx_files_hash       ON indexed_files(hash);
+      CREATE INDEX IF NOT EXISTS idx_files_origname_size ON indexed_files(original_filename, size_bytes);
+      CREATE INDEX IF NOT EXISTS idx_files_origname_date ON indexed_files(original_filename, derived_date);
 
       -- ═══ AI Recognition Tables ═══
 
@@ -212,6 +223,63 @@ export function initDatabase() {
         content='',
         content_rowid='rowid'
       );
+
+      -- ═══ Albums (v2.0.8) ═══
+      -- Albums are virtual groupings of files. A photo lives in one
+      -- row of indexed_files but can belong to many albums via the
+      -- album_files join table.
+      --
+      -- source values (no CHECK constraint — kept open so future sources
+      --   like 'apple_photos_imported' can land without a schema migration):
+      --     'user_created'      — created in PDR's UI
+      --     'takeout_imported'  — auto-created from a Google Photos Takeout
+      --
+      -- external_album_key — for Takeout imports, the original Google folder
+      -- name (e.g. "Italy 2019"). Stays stable across PDR-side renames.
+      -- NULL for user_created albums. The partial unique index below
+      -- guarantees that a second Takeout import with the same folder
+      -- name merges into the existing album rather than creating a
+      -- duplicate — and ONLY collides with other takeout_imported rows,
+      -- so a user's hand-curated "Italy 2019" can never silently absorb
+      -- Google's photos.
+      --
+      -- cover_file_id — optional manual pick (manual-pick UI lands in
+      -- v2.0.9). When NULL, callers fall back to the first album_file
+      -- by photo's taken-date at render time. ON DELETE SET NULL so a
+      -- deleted cover photo doesn't break the album.
+      CREATE TABLE IF NOT EXISTS albums (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        title               TEXT    NOT NULL,
+        description         TEXT,
+        cover_file_id       INTEGER REFERENCES indexed_files(id) ON DELETE SET NULL,
+        external_album_key  TEXT,
+        source              TEXT    NOT NULL DEFAULT 'user_created',
+        created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_albums_source ON albums(source);
+      -- Cross-Takeout dedupe key: same external_album_key within
+      -- takeout_imported rows can only exist once. User-created albums
+      -- (external_album_key IS NULL) are unaffected.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_external_key
+        ON albums(external_album_key)
+        WHERE external_album_key IS NOT NULL AND source = 'takeout_imported';
+
+      -- Junction table — photos in albums. Composite primary key
+      -- doubles as the UNIQUE(album_id, file_id) constraint so re-running
+      -- the Takeout importer on the same source can use INSERT OR IGNORE
+      -- and stay idempotent.
+      --
+      -- No 'position' column in v2.0.8 — order is taken-date at query
+      -- time (ORDER BY indexed_files.derived_date, indexed_files.id).
+      -- Manual reorder lands in v2.0.9 with a 'position INTEGER' ALTER.
+      CREATE TABLE IF NOT EXISTS album_files (
+        album_id   INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+        file_id    INTEGER NOT NULL REFERENCES indexed_files(id) ON DELETE CASCADE,
+        added_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (album_id, file_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_album_files_file ON album_files(file_id);
     `);
         // Migrate existing databases — add new columns if missing
         const cols = db.prepare(`PRAGMA table_info(indexed_files)`).all();
@@ -232,6 +300,13 @@ export function initDatabase() {
             // honoured by the renderer; this is the user's manual override
             // on top of whatever the camera wrote.
             { name: 'user_rotation', type: 'INTEGER NOT NULL DEFAULT 0' },
+            // Per-photo caption (v2.0.8). Populated from Google Takeout's
+            // sidecar JSON description field during Fix or backfill. Lives on
+            // indexed_files (per-photo) rather than album_files (per-membership)
+            // because the same photo in three albums has one caption. Not
+            // currently in the files_fts FTS5 index — caption search lands in
+            // v2.0.9 alongside the FTS rebuild.
+            { name: 'caption', type: 'TEXT' },
         ];
         for (const col of newCols) {
             if (!colNames.has(col.name)) {
@@ -4636,4 +4711,228 @@ export function removePlaceholder(placeholderId) {
     // ON DELETE CASCADE on relationships takes care of edges.
     db.prepare(`DELETE FROM persons WHERE id = ?`).run(placeholderId);
     return { success: true };
+}
+// ═══ Albums (v2.0.8) ═════════════════════════════════════════════════════════
+/**
+ * Insert or update a Takeout-imported album by its external key (the original
+ * Google Photos folder name). Returns the album_id. The partial unique index
+ * `idx_albums_external_key` (WHERE source='takeout_imported') is what makes this
+ * collision-free within Takeout imports while never bleeding into user-created
+ * albums of the same name. User-created albums use createUserAlbum instead.
+ */
+export function upsertTakeoutAlbum(externalKey, title) {
+    const db = getDb();
+    const existing = db.prepare(`SELECT id FROM albums WHERE external_album_key = ? AND source = 'takeout_imported' LIMIT 1`).get(externalKey);
+    if (existing) {
+        db.prepare(`UPDATE albums SET title = ?, updated_at = datetime('now') WHERE id = ?`).run(title, existing.id);
+        return existing.id;
+    }
+    const result = db.prepare(`INSERT INTO albums (title, external_album_key, source) VALUES (?, ?, 'takeout_imported')`).run(title, externalKey);
+    return Number(result.lastInsertRowid);
+}
+/**
+ * Link a file to an album. Idempotent via the composite primary key — calling
+ * twice with the same (albumId, fileId) is a no-op. Returns true iff a new row
+ * was inserted (so callers can count fresh memberships vs. revisits).
+ */
+export function linkAlbumFile(albumId, fileId) {
+    const db = getDb();
+    const result = db.prepare(`INSERT OR IGNORE INTO album_files (album_id, file_id) VALUES (?, ?)`).run(albumId, fileId);
+    return result.changes > 0;
+}
+/**
+ * Apply Takeout sidecar metadata to an indexed_files row. Sets caption when a
+ * description is provided and overrides original_filename with the sidecar's
+ * `title` when present (sidecar title is the ground-truth device name; the
+ * on-disk filename can drift if Google appended (1)/(2) for collisions or
+ * truncated for length).
+ *
+ * COALESCE semantics: passing null leaves the existing value untouched, so
+ * re-runs against the same file are non-destructive — if the sidecar drops a
+ * description on a later import, we don't wipe the caption we already had.
+ */
+export function applyTakeoutSidecarMetadata(fileId, sidecarTitle, sidecarDescription) {
+    const db = getDb();
+    const before = db.prepare(`SELECT caption, original_filename FROM indexed_files WHERE id = ?`).get(fileId);
+    if (!before)
+        return { captionSet: false, originalFilenameUpdated: false };
+    const nextCaption = sidecarDescription ?? before.caption;
+    const nextOriginal = sidecarTitle ?? before.original_filename;
+    db.prepare(`UPDATE indexed_files SET caption = ?, original_filename = ? WHERE id = ?`).run(nextCaption, nextOriginal, fileId);
+    return {
+        captionSet: !!sidecarDescription && sidecarDescription !== before.caption,
+        originalFilenameUpdated: !!sidecarTitle && sidecarTitle !== before.original_filename,
+    };
+}
+/**
+ * Look up indexed_files.id by destination file_path within a specific run.
+ * Used by the Takeout importer to match Fix-output paths back to the freshly
+ * inserted DB rows after indexFixRun.
+ */
+export function findFileIdByPathInRun(runId, filePath) {
+    const db = getDb();
+    const row = db.prepare(`SELECT id FROM indexed_files WHERE run_id = ? AND file_path = ? LIMIT 1`).get(runId, filePath);
+    return row?.id;
+}
+/**
+ * Look up indexed_files.id by (original_filename, size_bytes). Kept as a
+ * secondary fallback for the backfill path when no sidecar timestamp is
+ * available — most sidecars include photoTakenTime so this rarely fires.
+ * NOTE: PDR's Fix writes EXIF into output files, which CHANGES the on-disk
+ * size from whatever the Takeout ZIP originally held. So this size-based
+ * lookup only works for files PDR DIDN'T EXIF-stamp (typically Marked
+ * confidence with no derived date). For everything else use the date-based
+ * variant below.
+ */
+export function findFileIdByOriginalNameAndSize(originalFilename, sizeBytes) {
+    const db = getDb();
+    const row = db.prepare(`SELECT id FROM indexed_files
+      WHERE original_filename = ? AND size_bytes = ?
+      ORDER BY id DESC
+      LIMIT 1`).get(originalFilename, sizeBytes);
+    return row?.id;
+}
+/**
+ * Look up indexed_files.id by (original_filename, derived_date). This is the
+ * preferred match path for the backfill flow because the sidecar's
+ * photoTakenTime → derived_date is invariant under PDR's Fix pipeline (Fix
+ * writes EXIF, which changes file size, but the taken-date stays exactly
+ * what the sidecar said).
+ *
+ * `derivedDate` is the canonical 'YYYY-MM-DD HH:MM:SS' format PDR stores in
+ * indexed_files.derived_date. Returns the most recent id when multiple rows
+ * match (e.g. the same filename + same taken-second from a re-imported
+ * Takeout) so the latest indexing wins.
+ */
+export function findFileIdByOriginalNameAndDate(originalFilename, derivedDate) {
+    const db = getDb();
+    const row = db.prepare(`SELECT id FROM indexed_files
+      WHERE original_filename = ? AND derived_date = ?
+      ORDER BY id DESC
+      LIMIT 1`).get(originalFilename, derivedDate);
+    return row?.id;
+}
+/**
+ * List every album with its photo count and a resolved cover-photo path.
+ * Cover resolution per question 3 of the v2.0.8 design: explicit
+ * `cover_file_id` wins; on NULL we fall back to the first album_file by
+ * the photo's derived_date (chronologically earliest). Cheap enough to
+ * compute inline via correlated SELECTs — the user-album cardinality is
+ * O(dozens-to-hundreds), not millions.
+ *
+ * Ordered by `updated_at DESC` so recently-touched albums bubble up. New
+ * Takeout imports + recent additions both surface naturally.
+ */
+export function listAlbums() {
+    const db = getDb();
+    const rows = db.prepare(`
+    SELECT
+      a.id, a.title, a.source, a.external_album_key AS externalAlbumKey,
+      a.description, a.cover_file_id AS coverFileId,
+      a.created_at AS createdAt, a.updated_at AS updatedAt,
+      (SELECT COUNT(*) FROM album_files af WHERE af.album_id = a.id) AS photoCount,
+      COALESCE(
+        (SELECT file_path FROM indexed_files WHERE id = a.cover_file_id),
+        (SELECT i.file_path
+           FROM album_files af2
+           JOIN indexed_files i ON i.id = af2.file_id
+          WHERE af2.album_id = a.id
+          ORDER BY i.derived_date ASC, i.id ASC
+          LIMIT 1)
+      ) AS coverPath
+    FROM albums a
+    ORDER BY a.updated_at DESC, a.created_at DESC
+  `).all();
+    return rows;
+}
+/**
+ * Create a user-authored album. `external_album_key` stays NULL — only
+ * Takeout-imported albums populate it. Returns the new album id.
+ */
+export function createUserAlbum(title) {
+    const db = getDb();
+    const trimmed = title.trim() || 'Untitled album';
+    const result = db.prepare(`INSERT INTO albums (title, source) VALUES (?, 'user_created')`).run(trimmed);
+    return Number(result.lastInsertRowid);
+}
+/** Rename an album. Always bumps updated_at so the list re-sorts. */
+export function renameAlbum(albumId, newTitle) {
+    const db = getDb();
+    const trimmed = newTitle.trim();
+    if (!trimmed)
+        return { success: false, error: 'Album title cannot be empty.' };
+    const result = db.prepare(`UPDATE albums SET title = ?, updated_at = datetime('now') WHERE id = ?`).run(trimmed, albumId);
+    if (result.changes === 0)
+        return { success: false, error: 'Album not found.' };
+    return { success: true };
+}
+/**
+ * Delete an album entirely. `album_files` rows cascade via the FK; the
+ * actual photo files in `indexed_files` stay untouched (an album is a
+ * virtual grouping, never a container).
+ */
+export function deleteAlbum(albumId) {
+    const db = getDb();
+    const result = db.prepare(`DELETE FROM albums WHERE id = ?`).run(albumId);
+    if (result.changes === 0)
+        return { success: false, error: 'Album not found.' };
+    return { success: true };
+}
+/**
+ * List the photos in an album, sorted by taken-date ascending (then id for
+ * ties). Per question 1 of the v2.0.8 design: taken-date is the natural
+ * order for chronological-muscle-memory readers. Photos with no derived_date
+ * sink to the bottom (NULL sorts last in SQLite's ASC by default — actually
+ * NULL sorts FIRST in SQLite ASC; we adjust with COALESCE to push them
+ * down).
+ */
+export function listAlbumPhotos(albumId) {
+    const db = getDb();
+    return db.prepare(`
+    SELECT i.*
+    FROM album_files af
+    JOIN indexed_files i ON i.id = af.file_id
+    WHERE af.album_id = ?
+    ORDER BY COALESCE(i.derived_date, '9999-99-99') ASC, i.id ASC
+  `).all(albumId);
+}
+/**
+ * Bulk-add files to an album. `INSERT OR IGNORE` makes the call
+ * idempotent under the composite PK, so callers can pass the user's full
+ * selection without de-duping client-side. Returns the count of NEW rows
+ * inserted (excluding ignored duplicates).
+ */
+export function addPhotosToAlbum(albumId, fileIds) {
+    if (fileIds.length === 0)
+        return 0;
+    const db = getDb();
+    const stmt = db.prepare(`INSERT OR IGNORE INTO album_files (album_id, file_id) VALUES (?, ?)`);
+    const txn = db.transaction((ids) => {
+        let inserted = 0;
+        for (const id of ids) {
+            const r = stmt.run(albumId, id);
+            if (r.changes > 0)
+                inserted++;
+        }
+        // Bump the album's updated_at so the list re-sorts.
+        db.prepare(`UPDATE albums SET updated_at = datetime('now') WHERE id = ?`).run(albumId);
+        return inserted;
+    });
+    return txn(fileIds);
+}
+/**
+ * Bulk-remove files from an album. Photos themselves stay in
+ * indexed_files; only the membership row goes. Returns the count of
+ * removed memberships.
+ */
+export function removePhotosFromAlbum(albumId, fileIds) {
+    if (fileIds.length === 0)
+        return 0;
+    const db = getDb();
+    const placeholders = fileIds.map(() => '?').join(',');
+    const result = db.prepare(`DELETE FROM album_files WHERE album_id = ? AND file_id IN (${placeholders})`).run(albumId, ...fileIds);
+    if (result.changes > 0) {
+        db.prepare(`UPDATE albums SET updated_at = datetime('now') WHERE id = ?`).run(albumId);
+    }
+    return Number(result.changes);
 }

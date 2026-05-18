@@ -1080,6 +1080,69 @@ export async function indexFixRun(reportId: string): Promise<{ success: boolean;
   return { success: false, error: 'Not running in Electron' };
 }
 
+// v2.0.8 step 3 — Albums CRUD (Memories Albums tab).
+export interface AlbumSummary {
+  id: number;
+  title: string;
+  source: 'user_created' | 'takeout_imported';
+  externalAlbumKey: string | null;
+  description: string | null;
+  coverFileId: number | null;
+  coverPath: string | null;
+  photoCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export async function listAlbums(): Promise<{ success: boolean; data?: AlbumSummary[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.list();
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function createAlbum(title: string): Promise<{ success: boolean; id?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.create(title);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function renameAlbum(albumId: number, newTitle: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.rename(albumId, newTitle);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function deleteAlbum(albumId: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.delete(albumId);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function listAlbumPhotos(albumId: number): Promise<{ success: boolean; data?: any[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.listPhotos(albumId);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function addPhotosToAlbum(albumId: number, fileIds: number[]): Promise<{ success: boolean; inserted?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.addPhotos(albumId, fileIds);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function removePhotosFromAlbum(albumId: number, fileIds: number[]): Promise<{ success: boolean; removed?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.removePhotos(albumId, fileIds);
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// v2.0.8 step 2b — backfill albums from a Takeout ZIP without re-extracting.
+export interface TakeoutBackfillResult {
+  success: boolean;
+  error?: string;
+  stats?: { albumFoldersDetected: number; photosConsidered: number; matchedAgainstLibrary: number; unmatched: number };
+  summary?: {
+    albumsCreated: number;
+    albumsUpdated: number;
+    totalFilesLinked: number;
+    totalOriginalFilenamesRecovered: number;
+    totalCaptionsApplied: number;
+    perAlbum: Array<{ externalKey: string; title: string; filesLinked: number; originalFilenamesRecovered: number; captionsApplied: number; unresolvedFiles: number }>;
+  } | null;
+}
+export async function takeoutBackfillFromZip(zipPath: string): Promise<TakeoutBackfillResult> {
+  if (isElectron() && (window as any).pdr?.takeout) {
+    return (window as any).pdr.takeout.backfillFromZip(zipPath);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 // Cancel ongoing indexing
 export async function cancelSearchIndexing(): Promise<{ success: boolean }> {
   if (isElectron() && (window as any).pdr?.search) {

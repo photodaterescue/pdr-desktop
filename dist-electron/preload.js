@@ -244,6 +244,23 @@ contextBridge.exposeInMainWorld('pdr', {
         mergePlaceholder: (args) => ipcRenderer.invoke('trees:mergePlaceholder', args),
         removePlaceholder: (id) => ipcRenderer.invoke('trees:removePlaceholder', id),
     },
+    albums: {
+        // v2.0.8 step 3 — Memories Albums tab CRUD.
+        list: () => ipcRenderer.invoke('albums:list'),
+        create: (title) => ipcRenderer.invoke('albums:create', title),
+        rename: (albumId, newTitle) => ipcRenderer.invoke('albums:rename', albumId, newTitle),
+        delete: (albumId) => ipcRenderer.invoke('albums:delete', albumId),
+        listPhotos: (albumId) => ipcRenderer.invoke('albums:listPhotos', albumId),
+        addPhotos: (albumId, fileIds) => ipcRenderer.invoke('albums:addPhotos', albumId, fileIds),
+        removePhotos: (albumId, fileIds) => ipcRenderer.invoke('albums:removePhotos', albumId, fileIds),
+    },
+    takeout: {
+        // v2.0.8 step 2b — backfill albums + captions + corrected
+        // original_filenames from a Google Takeout ZIP without re-extracting.
+        // For users who Fixed their Takeout on v2.0.4–v2.0.7 (before albums
+        // existed) and still have the original ZIP on disk.
+        backfillFromZip: (zipPath) => ipcRenderer.invoke('takeout:backfillFromZip', zipPath),
+    },
     search: {
         init: () => ipcRenderer.invoke('search:init'),
         indexRun: (reportId) => ipcRenderer.invoke('search:indexRun', reportId),

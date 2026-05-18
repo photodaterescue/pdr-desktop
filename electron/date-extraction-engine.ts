@@ -249,7 +249,11 @@ export async function extractXmpMetadataFromPath(filePath: string): Promise<XmpM
 
 export function parseGoogleTakeoutJson(jsonPath: string): GoogleTakeoutData | null {
   try {
-    const content = fs.readFileSync(jsonPath, 'utf-8');
+    let content = fs.readFileSync(jsonPath, 'utf-8');
+    // Strip UTF-8 BOM (EF BB BF → U+FEFF) if present. Real Google Takeouts
+    // don't include a BOM, but a user re-packaging via a Windows tool can
+    // re-introduce one, and JSON.parse() throws on a leading U+FEFF.
+    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
     const data = JSON.parse(content);
     
     let timestamp: number | null = null;
@@ -276,6 +280,7 @@ export function parseGoogleTakeoutJson(jsonPath: string): GoogleTakeoutData | nu
 
 export function parseGoogleTakeoutJsonContent(jsonContent: string): GoogleTakeoutData | null {
   try {
+    if (jsonContent.charCodeAt(0) === 0xFEFF) jsonContent = jsonContent.slice(1);
     const data = JSON.parse(jsonContent);
     
     let timestamp: number | null = null;

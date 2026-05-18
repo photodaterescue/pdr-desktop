@@ -74,6 +74,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import ParallelStructureModal from '@/components/ParallelStructureModal';
+import AddToAlbumPopover from '@/components/AddToAlbumPopover';
 import StaleRunsModal from '@/components/StaleRunsModal';
 import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
 import { AiOfferCard } from '@/components/AiOfferCard';
@@ -3286,6 +3287,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       {showSelectedOnly ? 'Show all results' : `Show ${selectedFilesMap.size} selected`}
                     </button>
                   </IconTooltip>
+                  {/* v2.0.8 step 4 — Add to Album popover. Sits next to
+                      the PL button in the selection bar so the two
+                      "do something with this selection" actions are
+                      side-by-side. Self-contained: trigger pill +
+                      content live inside the component. */}
+                  <AddToAlbumPopover
+                    fileIds={Array.from(selectedFiles)}
+                    disabled={fixActive}
+                    disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
+                  />
                   <IconTooltip
                     label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Libraries use the same copy engine as the Fix.' : 'Mirror the selected files into a Parallel Library'}
                     side="top"
@@ -3497,13 +3508,35 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           selectionMode={selectionMode}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.has(file.id)}
-                          onCheckboxClick={() => {
-                            // Checkbox click — toggle without needing CTRL.
-                            // Goes through toggleFileSelection so the cross-search
-                            // selection map stays in sync with the id-only set.
-                            const wasChecked = selectedFiles.has(file.id);
+                          onCheckboxClick={(e: React.MouseEvent) => {
+                            // Checkbox click — toggle selection ONLY. Do NOT
+                            // touch the preview panel (Terry 2026-05-18:
+                            // "When a checkbox is specifically selected, this
+                            // should only select the photos, and not open
+                            // the preview"). Plain clicks on the tile body
+                            // still set the preview via the onClick handler
+                            // below; the checkbox is a pure selection control.
+                            //
+                            // Shift+click range — standard photos-app pattern
+                            // (Apple Photos / Google Photos). If a previous
+                            // tile has been clicked AND there's at least one
+                            // selection already in progress, shift+click on
+                            // a checkbox extends the selection across the
+                            // contiguous range between the two indices. Same
+                            // semantics as the photo-body shift+click below,
+                            // just reachable via the checkbox affordance too.
+                            const multiSelectActive = selectedFiles.size > 0;
+                            if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
+                              const start = Math.min(lastClickedIndexRef.current, idx);
+                              const end = Math.max(lastClickedIndexRef.current, idx);
+                              for (let i = start; i <= end; i++) {
+                                const f = displayFiles[i];
+                                if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
+                              }
+                              lastClickedIndexRef.current = idx;
+                              return;
+                            }
                             toggleFileSelection(file);
-                            if (!wasChecked) setSelectedFile(file);
                             lastClickedIndexRef.current = idx;
                           }}
                           onClick={(e: React.MouseEvent) => {
@@ -3911,7 +3944,7 @@ function FilterCheckbox({ label, checked, onChange, color, icon }: { label: stri
 // Metadata field keys that users can toggle on for tile footers
 type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: () => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean }) {
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean }) {
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
@@ -3925,7 +3958,7 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
         {/* Multi-select checkbox — only visible when Selection Mode is active */}
         {(selectionMode || isMultiSelected) && (
           <div
-            onClick={(e) => { e.stopPropagation(); onCheckboxClick?.(); }}
+            onClick={(e) => { e.stopPropagation(); onCheckboxClick?.(e); }}
             className={`absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
               isMultiSelected
                 ? 'bg-primary border-primary text-white'
