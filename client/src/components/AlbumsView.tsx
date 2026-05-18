@@ -564,7 +564,7 @@ export default function AlbumsView() {
                 No albums yet. Use "New album" on the left to create one, or import a Google Photos Takeout to auto-populate.
               </p>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+              <div className="grid grid-cols-[repeat(auto-fill,220px)] gap-3">
                 {allSorted.map((album) => {
                   const ap = getSourceProfileForAlbum(album);
                   const AIcon = ap.Icon;
@@ -575,7 +575,7 @@ export default function AlbumsView() {
                       onClick={() => setSelection({ type: 'album', id: album.id })}
                       draggable
                       onDragStart={(e) => handleAlbumDragStart(e, album.id)}
-                      className={`flex flex-col rounded-lg border bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
+                      className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
                     >
                       <div className="aspect-square bg-muted relative">
                         {album.coverPath && thumbs[album.coverPath] ? (
@@ -624,7 +624,7 @@ export default function AlbumsView() {
                   : 'No albums in this source yet.'}
               </p>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+              <div className="grid grid-cols-[repeat(auto-fill,220px)] gap-3">
                 {selectedGroupAlbumIds.map((id) => {
                   const album = albumsById.get(id);
                   if (!album) return null;
@@ -637,7 +637,7 @@ export default function AlbumsView() {
                       onClick={() => setSelection({ type: 'album', id: album.id })}
                       draggable
                       onDragStart={(e) => handleAlbumDragStart(e, album.id)}
-                      className={`flex flex-col rounded-lg border bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
+                      className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
                     >
                       <div className="aspect-square bg-muted relative">
                         {album.coverPath && thumbs[album.coverPath] ? (

@@ -60,7 +60,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   // misinterpreting it as a rename affordance on the album cards.
   user_created: {
     Icon: Home,
-    cardBgClass: 'bg-violet-50/40 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800/40',
+    cardBgClass: 'bg-violet-50 dark:bg-violet-950/40 border-2 border-violet-300 dark:border-violet-700/60',
     badgeBgClass: 'bg-violet-50 dark:bg-violet-950/80',
     iconColorClass: 'text-violet-500 dark:text-violet-400',
     badgeTextClass: 'text-violet-700 dark:text-violet-300',
@@ -70,7 +70,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   // Google Photos Takeout: soft red (Google's primary brand red).
   takeout_imported: {
     Icon: Sparkles,
-    cardBgClass: 'bg-red-50/40 dark:bg-red-950/20 border-red-200 dark:border-red-800/40',
+    cardBgClass: 'bg-red-50 dark:bg-red-950/40 border-2 border-red-300 dark:border-red-700/60',
     badgeBgClass: 'bg-red-50 dark:bg-red-950/80',
     iconColorClass: 'text-red-500 dark:text-red-400',
     badgeTextClass: 'text-red-700 dark:text-red-300',
@@ -81,7 +81,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   //    so they slot in cleanly when added) ───────────────────────────
   apple_photos: {
     Icon: Aperture,
-    cardBgClass: 'bg-pink-50/40 dark:bg-pink-950/20 border-pink-200 dark:border-pink-800/40',
+    cardBgClass: 'bg-pink-50 dark:bg-pink-950/40 border-2 border-pink-300 dark:border-pink-700/60',
     badgeBgClass: 'bg-pink-50 dark:bg-pink-950/80',
     iconColorClass: 'text-pink-500 dark:text-pink-400',
     badgeTextClass: 'text-pink-700 dark:text-pink-300',
@@ -90,7 +90,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   },
   icloud_drive: {
     Icon: Cloud,
-    cardBgClass: 'bg-sky-50/40 dark:bg-sky-950/20 border-sky-200 dark:border-sky-800/40',
+    cardBgClass: 'bg-sky-50 dark:bg-sky-950/40 border-2 border-sky-300 dark:border-sky-700/60',
     badgeBgClass: 'bg-sky-50 dark:bg-sky-950/80',
     iconColorClass: 'text-sky-500 dark:text-sky-400',
     badgeTextClass: 'text-sky-700 dark:text-sky-300',
@@ -99,7 +99,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   },
   onedrive: {
     Icon: Cloud,
-    cardBgClass: 'bg-blue-50/40 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/40',
+    cardBgClass: 'bg-blue-50 dark:bg-blue-950/40 border-2 border-blue-300 dark:border-blue-700/60',
     badgeBgClass: 'bg-blue-50 dark:bg-blue-950/80',
     iconColorClass: 'text-blue-500 dark:text-blue-400',
     badgeTextClass: 'text-blue-700 dark:text-blue-300',
@@ -108,7 +108,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   },
   google_drive: {
     Icon: Cloud,
-    cardBgClass: 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40',
+    cardBgClass: 'bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-300 dark:border-emerald-700/60',
     badgeBgClass: 'bg-emerald-50 dark:bg-emerald-950/80',
     iconColorClass: 'text-emerald-500 dark:text-emerald-400',
     badgeTextClass: 'text-emerald-700 dark:text-emerald-300',
@@ -117,7 +117,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   },
   dropbox: {
     Icon: Cloud,
-    cardBgClass: 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800/40',
+    cardBgClass: 'bg-indigo-50 dark:bg-indigo-950/40 border-2 border-indigo-300 dark:border-indigo-700/60',
     badgeBgClass: 'bg-indigo-50 dark:bg-indigo-950/80',
     iconColorClass: 'text-indigo-500 dark:text-indigo-400',
     badgeTextClass: 'text-indigo-700 dark:text-indigo-300',
@@ -126,7 +126,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
   },
   amazon_photos: {
     Icon: Cloud,
-    cardBgClass: 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/40',
+    cardBgClass: 'bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60',
     badgeBgClass: 'bg-amber-50 dark:bg-amber-950/80',
     iconColorClass: 'text-amber-500 dark:text-amber-400',
     badgeTextClass: 'text-amber-700 dark:text-amber-300',
@@ -140,7 +140,7 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
  *  to this table). Neutral cloud styling so it doesn't crash render. */
 const UNKNOWN_SOURCE_PROFILE: AlbumSourceProfile = {
   Icon: HardDriveDownload,
-  cardBgClass: 'bg-sky-50/40 dark:bg-sky-950/20 border-sky-200 dark:border-sky-800/40',
+  cardBgClass: 'bg-sky-50 dark:bg-sky-950/40 border-2 border-sky-300 dark:border-sky-700/60',
   badgeBgClass: 'bg-sky-50 dark:bg-sky-950/80',
   iconColorClass: 'text-sky-500 dark:text-sky-400',
   badgeTextClass: 'text-sky-700 dark:text-sky-300',
