@@ -29,7 +29,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   ChevronDown, ChevronRight, FolderPlus, FolderClosed, FolderOpen,
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
-  Sparkles, FileText,
+  Sparkles, FileText, LayoutGrid,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -67,6 +67,7 @@ const DRAG_MIME_FOLDER = 'application/x-pdr-folder-id';
 const EXPANDED_STORAGE_KEY = 'pdr-albums-expanded-groups';
 
 type Selection =
+  | { type: 'all' }
   | { type: 'group'; id: number }
   | { type: 'album'; id: number }
   | null;
@@ -544,11 +545,14 @@ export default function AlbumsView() {
     if (loading) {
       return <p className="text-sm text-muted-foreground px-6 py-6">Loading albums…</p>;
     }
-    // Default — nothing selected: show ALL albums as a single grid
-    // sorted alphabetically. Terry 2026-05-18: "no reason to be
-    // seeing a blank screen" — opening Memories → Albums should
-    // land on something useful, not an empty-state prompt.
-    if (!selection) {
+    // Default — nothing selected, OR the user picked the "All albums"
+    // virtual tree row at the top of the left pane: show ALL albums
+    // as a single grid sorted alphabetically. Terry 2026-05-18: "no
+    // reason to be seeing a blank screen" — opening Memories →
+    // Albums should land on something useful, not an empty-state
+    // prompt. The "All albums" tree row gives a re-entry point
+    // back to this view from anywhere else.
+    if (!selection || selection.type === 'all') {
       const allSorted = [...albums].sort((a, b) =>
         a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
       );
@@ -808,7 +812,27 @@ export default function AlbumsView() {
               No albums yet. Create one with the buttons above, or import a Google Photos Takeout to auto-populate this list.
             </p>
           ) : (
-            rootGroups.map((g) => renderGroupRow(g, 0))
+            <>
+              {/* "All albums" virtual row — sits above the real groups
+                  and selects the "show every album" view in the right
+                  pane (same content as the default no-selection state,
+                  but with this row highlighted so the user knows where
+                  they are). Not backed by an album_groups row; pure
+                  client-side virtual node. */}
+              <div
+                onClick={() => setSelection({ type: 'all' })}
+                className={`flex items-center gap-1.5 pr-2 py-1 mb-1 rounded-md transition-colors cursor-pointer ${
+                  selection?.type === 'all' ? 'bg-primary/15' : 'hover:bg-muted/40'
+                }`}
+                style={{ paddingLeft: '1.75rem' }}
+                data-testid="tree-all-albums"
+              >
+                <span className="shrink-0 text-muted-foreground"><LayoutGrid className="w-3.5 h-3.5" /></span>
+                <span className="text-xs font-medium text-foreground truncate flex-1">All albums</span>
+                <span className="text-[10px] text-muted-foreground shrink-0">{albums.length}</span>
+              </div>
+              {rootGroups.map((g) => renderGroupRow(g, 0))}
+            </>
           )}
         </div>
       </ResizablePanel>

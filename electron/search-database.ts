@@ -544,7 +544,7 @@ export function initDatabase(): { success: boolean; error?: string } {
     // happy path is two cheap SELECTs.
     try {
       const ALBUM_SOURCE_PROFILES: Record<string, { title: string; icon_key: string; palette_key: string }> = {
-        user_created:     { title: 'Created here',          icon_key: 'pencil',    palette_key: 'violet'   },
+        user_created:     { title: 'PDR',                   icon_key: 'home',      palette_key: 'violet'   },
         takeout_imported: { title: 'Google Photos Takeout', icon_key: 'sparkles',  palette_key: 'red'      },
         // Future sources (apple_photos, icloud, onedrive, google_drive,
         // dropbox, amazon_photos) will be added to this table as their
@@ -572,6 +572,25 @@ export function initDatabase(): { success: boolean; error?: string } {
           FROM albums a
           JOIN album_groups g
             ON g.source_kind = 'auto' AND g.source_key = a.source
+      `);
+      // 2026-05-18 rename — the user_created auto group was originally
+      // titled "Created here". Terry's call: shorter, brand-anchored
+      // "PDR" reads better and matches the source-name convention of
+      // every other auto group. Existing DBs get migrated in-place;
+      // new DBs get the right title from the seed above. Title-equality
+      // guard ensures we don't clobber a user who's manually edited
+      // their own (unlikely — auto groups aren't renamable in the UI,
+      // but defensive). Same for the icon_key bump from pencil → home,
+      // see the v2.0.8 polish round where the PencilLine icon was
+      // misread as a "click to rename" affordance.
+      db.exec(`
+        UPDATE album_groups
+           SET title    = 'PDR',
+               icon_key = 'home',
+               updated_at = datetime('now')
+         WHERE source_kind = 'auto'
+           AND source_key  = 'user_created'
+           AND title       = 'Created here'
       `);
     } catch (seedErr) {
       console.error('[DB] Album-groups auto-seed failed:', seedErr);
