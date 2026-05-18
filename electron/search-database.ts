@@ -5777,3 +5777,292 @@ export function removePhotosFromAlbum(albumId: number, fileIds: number[]): numbe
   }
   return Number(result.changes);
 }
+
+// ─── Album-group helpers (v2.0.8 hierarchical multi-membership) ─────────────
+
+export interface AlbumGroupRecord {
+  id: number;
+  title: string;
+  parent_id: number | null;
+  source_kind: 'auto' | 'user';
+  source_key: string | null;
+  icon_key: string | null;
+  palette_key: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  /** Pre-aggregated count of albums (direct memberships) inside this
+   *  group. Useful for the renderer's tree headers without an extra
+   *  round-trip per node. */
+  album_count: number;
+}
+
+export interface AlbumGroupMembershipRecord {
+  album_id: number;
+  group_id: number;
+  is_auto: 0 | 1;
+  added_at: string;
+}
+
+/**
+ * Maximum folder nesting depth for USER groups. Auto/source groups
+ * always sit at the root (parent_id NULL) and aren't counted. With
+ * cap = 1, the tree is at most root → sub → album-leaf. Terry's
+ * design decision 2026-05-18: "Two is the right choice + the album."
+ */
+const USER_GROUP_MAX_DEPTH = 1;
+
+/** Walk parent_id upwards and return the depth (root = 0). Cycle-safe
+ *  via a 16-hop guard — beyond that something has gone seriously
+ *  wrong with the schema and we bail rather than loop forever. */
+function getAlbumGroupDepth(groupId: number): number {
+  const db = getDb();
+  let currentId: number | null = groupId;
+  let depth = 0;
+  for (let i = 0; i < 16 && currentId !== null; i++) {
+    const row = db.prepare(
+      `SELECT parent_id FROM album_groups WHERE id = ?`
+    ).get(currentId) as { parent_id: number | null } | undefined;
+    if (!row || row.parent_id === null) return depth;
+    currentId = row.parent_id;
+    depth++;
+  }
+  return depth;
+}
+
+/** Max depth of any descendant under `groupId` (group itself = 0).
+ *  Used by moveAlbumGroup to refuse moves that would push the
+ *  subtree past USER_GROUP_MAX_DEPTH after the move. */
+function getAlbumGroupSubtreeDepth(groupId: number): number {
+  const db = getDb();
+  const direct = db.prepare(
+    `SELECT id FROM album_groups WHERE parent_id = ?`
+  ).all(groupId) as { id: number }[];
+  if (direct.length === 0) return 0;
+  let max = 0;
+  for (const child of direct) {
+    const childDepth = 1 + getAlbumGroupSubtreeDepth(child.id);
+    if (childDepth > max) max = childDepth;
+  }
+  return max;
+}
+
+/**
+ * List every album group with its direct album_count. Flat list with
+ * parent_id; the renderer assembles the tree. Sorted by sort_order
+ * then alphabetical (case-insensitive), with auto groups bubbling
+ * to the top of the root level so the source folders are always
+ * the first thing the user sees.
+ */
+export function listAlbumGroups(): AlbumGroupRecord[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT
+      g.id, g.title, g.parent_id, g.source_kind, g.source_key,
+      g.icon_key, g.palette_key, g.sort_order,
+      g.created_at, g.updated_at,
+      (SELECT COUNT(*) FROM album_group_memberships m WHERE m.group_id = g.id) AS album_count
+    FROM album_groups g
+    ORDER BY
+      CASE WHEN g.parent_id IS NULL AND g.source_kind = 'auto' THEN 0 ELSE 1 END,
+      g.parent_id IS NULL DESC,
+      g.sort_order ASC,
+      g.title COLLATE NOCASE ASC
+  `).all() as AlbumGroupRecord[];
+}
+
+/**
+ * List every album_group membership in one query. Flat list; the
+ * renderer joins against listAlbums() + listAlbumGroups() to render
+ * the tree. Cheap — memberships are O(albums × ~3 average folders).
+ */
+export function listAlbumGroupMemberships(): AlbumGroupMembershipRecord[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT album_id, group_id, is_auto, added_at
+      FROM album_group_memberships
+      ORDER BY group_id, album_id
+  `).all() as AlbumGroupMembershipRecord[];
+}
+
+/**
+ * List albums that live in a specific group, sorted alphabetically
+ * (case-insensitive). Used by the AlbumsView when the user clicks
+ * a group header to drill in.
+ */
+export function listAlbumsInGroup(groupId: number): AlbumSummary[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT
+      a.id, a.title, a.source, a.external_album_key AS externalAlbumKey,
+      a.description, a.cover_file_id AS coverFileId,
+      a.created_at AS createdAt, a.updated_at AS updatedAt,
+      (SELECT COUNT(*) FROM album_files af WHERE af.album_id = a.id) AS photoCount,
+      COALESCE(
+        (SELECT file_path FROM indexed_files WHERE id = a.cover_file_id),
+        (SELECT i.file_path
+           FROM album_files af2
+           JOIN indexed_files i ON i.id = af2.file_id
+          WHERE af2.album_id = a.id
+          ORDER BY i.derived_date ASC, i.id ASC
+          LIMIT 1)
+      ) AS coverPath
+    FROM album_group_memberships m
+    JOIN albums a ON a.id = m.album_id
+    WHERE m.group_id = ?
+    ORDER BY a.title COLLATE NOCASE ASC
+  `).all(groupId) as AlbumSummary[];
+}
+
+/**
+ * Create a user-authored folder. `parentId = null` lands at root;
+ * non-null nests under that group, refused if it would exceed
+ * USER_GROUP_MAX_DEPTH. Source-kind 'auto' parents are also refused
+ * to keep auto groups flat (they're a render-time grouping, not a
+ * place to nest user folders inside).
+ */
+export function createUserAlbumGroup(title: string, parentId: number | null = null): { success: boolean; id?: number; error?: string } {
+  const db = getDb();
+  const trimmed = title.trim() || 'New folder';
+  if (parentId !== null) {
+    const parent = db.prepare(
+      `SELECT source_kind FROM album_groups WHERE id = ?`
+    ).get(parentId) as { source_kind: 'auto' | 'user' } | undefined;
+    if (!parent) return { success: false, error: 'Parent folder not found.' };
+    if (parent.source_kind === 'auto') {
+      return { success: false, error: "Source folders can't have sub-folders." };
+    }
+    const parentDepth = getAlbumGroupDepth(parentId);
+    if (parentDepth >= USER_GROUP_MAX_DEPTH) {
+      return { success: false, error: 'Folders can only nest one level deep.' };
+    }
+  }
+  const result = db.prepare(
+    `INSERT INTO album_groups (title, parent_id, source_kind) VALUES (?, ?, 'user')`
+  ).run(trimmed, parentId);
+  return { success: true, id: Number(result.lastInsertRowid) };
+}
+
+/** Rename a user folder. Refuses on auto groups (their titles come
+ *  from ALBUM_SOURCE_PROFILES and are part of the source identity). */
+export function renameAlbumGroup(groupId: number, newTitle: string): { success: boolean; error?: string } {
+  const db = getDb();
+  const trimmed = newTitle.trim();
+  if (!trimmed) return { success: false, error: 'Folder name cannot be empty.' };
+  const row = db.prepare(
+    `SELECT source_kind FROM album_groups WHERE id = ?`
+  ).get(groupId) as { source_kind: 'auto' | 'user' } | undefined;
+  if (!row) return { success: false, error: 'Folder not found.' };
+  if (row.source_kind === 'auto') {
+    return { success: false, error: "Source folders can't be renamed." };
+  }
+  db.prepare(
+    `UPDATE album_groups SET title = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(trimmed, groupId);
+  return { success: true };
+}
+
+/** Delete a user folder. Cascades to child folders + memberships
+ *  (the actual albums and photos are untouched — folders are
+ *  virtual). Refuses on auto groups. */
+export function deleteAlbumGroup(groupId: number): { success: boolean; error?: string } {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT source_kind FROM album_groups WHERE id = ?`
+  ).get(groupId) as { source_kind: 'auto' | 'user' } | undefined;
+  if (!row) return { success: false, error: 'Folder not found.' };
+  if (row.source_kind === 'auto') {
+    return { success: false, error: "Source folders can't be deleted." };
+  }
+  db.prepare(`DELETE FROM album_groups WHERE id = ?`).run(groupId);
+  return { success: true };
+}
+
+/**
+ * Move a user folder under a new parent (or to root with newParentId
+ * = null). Refuses if (a) it's an auto group, (b) the new parent is
+ * an auto group, (c) the move would create a cycle, or (d) the move
+ * would push the subtree past USER_GROUP_MAX_DEPTH.
+ */
+export function moveAlbumGroup(groupId: number, newParentId: number | null): { success: boolean; error?: string } {
+  const db = getDb();
+  const group = db.prepare(
+    `SELECT source_kind FROM album_groups WHERE id = ?`
+  ).get(groupId) as { source_kind: 'auto' | 'user' } | undefined;
+  if (!group) return { success: false, error: 'Folder not found.' };
+  if (group.source_kind === 'auto') return { success: false, error: "Source folders can't be moved." };
+
+  if (newParentId !== null) {
+    if (newParentId === groupId) return { success: false, error: "Can't move a folder into itself." };
+    const parent = db.prepare(
+      `SELECT source_kind FROM album_groups WHERE id = ?`
+    ).get(newParentId) as { source_kind: 'auto' | 'user' } | undefined;
+    if (!parent) return { success: false, error: 'Destination folder not found.' };
+    if (parent.source_kind === 'auto') return { success: false, error: "Can't move folders into source folders." };
+
+    // Cycle check — walk newParentId up; if we hit groupId, the move
+    // would create a loop in the tree.
+    let cursor: number | null = newParentId;
+    for (let i = 0; i < 16 && cursor !== null; i++) {
+      if (cursor === groupId) return { success: false, error: "Can't move a folder into one of its own sub-folders." };
+      const up = db.prepare(`SELECT parent_id FROM album_groups WHERE id = ?`).get(cursor) as { parent_id: number | null } | undefined;
+      cursor = up?.parent_id ?? null;
+    }
+
+    // Depth check — after the move, the moved group lives at
+    // (parentDepth + 1) and its deepest descendant lives at
+    // (parentDepth + 1 + subtreeDepth). Refuse if that exceeds the
+    // cap.
+    const parentDepth = getAlbumGroupDepth(newParentId);
+    const subtreeDepth = getAlbumGroupSubtreeDepth(groupId);
+    if (parentDepth + 1 + subtreeDepth > USER_GROUP_MAX_DEPTH) {
+      return { success: false, error: 'Move would nest folders past the depth limit.' };
+    }
+  }
+
+  db.prepare(
+    `UPDATE album_groups SET parent_id = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(newParentId, groupId);
+  return { success: true };
+}
+
+/**
+ * Add an album to a user folder. INSERT OR IGNORE so drag-drop is
+ * idempotent. Refuses adds to auto groups — those memberships are
+ * managed by the system. Returns whether a NEW row was inserted so
+ * the renderer can distinguish "added 1" from "already there".
+ */
+export function addAlbumToGroup(albumId: number, groupId: number): { success: boolean; inserted: boolean; error?: string } {
+  const db = getDb();
+  const group = db.prepare(
+    `SELECT source_kind FROM album_groups WHERE id = ?`
+  ).get(groupId) as { source_kind: 'auto' | 'user' } | undefined;
+  if (!group) return { success: false, inserted: false, error: 'Folder not found.' };
+  if (group.source_kind === 'auto') {
+    return { success: false, inserted: false, error: "Albums can't be added to source folders manually." };
+  }
+  const result = db.prepare(
+    `INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto) VALUES (?, ?, 0)`
+  ).run(albumId, groupId);
+  db.prepare(`UPDATE album_groups SET updated_at = datetime('now') WHERE id = ?`).run(groupId);
+  return { success: true, inserted: result.changes > 0 };
+}
+
+/**
+ * Remove an album from a user folder. Refuses removing the auto-
+ * source membership (UI hides this affordance anyway, but enforce
+ * here too — the source identity is factual, not editable).
+ */
+export function removeAlbumFromGroup(albumId: number, groupId: number): { success: boolean; error?: string } {
+  const db = getDb();
+  const membership = db.prepare(
+    `SELECT is_auto FROM album_group_memberships WHERE album_id = ? AND group_id = ?`
+  ).get(albumId, groupId) as { is_auto: 0 | 1 } | undefined;
+  if (!membership) return { success: false, error: 'Membership not found.' };
+  if (membership.is_auto === 1) {
+    return { success: false, error: "Source memberships can't be removed." };
+  }
+  db.prepare(`DELETE FROM album_group_memberships WHERE album_id = ? AND group_id = ?`).run(albumId, groupId);
+  db.prepare(`UPDATE album_groups SET updated_at = datetime('now') WHERE id = ?`).run(groupId);
+  return { success: true };
+}

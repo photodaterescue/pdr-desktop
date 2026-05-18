@@ -324,6 +324,20 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     listPhotos: (albumId: number) => ipcRenderer.invoke('albums:listPhotos', albumId),
     addPhotos: (albumId: number, fileIds: number[]) => ipcRenderer.invoke('albums:addPhotos', albumId, fileIds),
     removePhotos: (albumId: number, fileIds: number[]) => ipcRenderer.invoke('albums:removePhotos', albumId, fileIds),
+
+    // v2.0.8 — Album group (folder) CRUD. Drives the AlbumsView's
+    // hierarchical multi-membership tree.
+    groups: {
+      list: () => ipcRenderer.invoke('albumGroups:list'),
+      listMemberships: () => ipcRenderer.invoke('albumGroups:listMemberships'),
+      listAlbumsIn: (groupId: number) => ipcRenderer.invoke('albumGroups:listAlbumsIn', groupId),
+      create: (title: string, parentId: number | null) => ipcRenderer.invoke('albumGroups:create', title, parentId),
+      rename: (groupId: number, newTitle: string) => ipcRenderer.invoke('albumGroups:rename', groupId, newTitle),
+      delete: (groupId: number) => ipcRenderer.invoke('albumGroups:delete', groupId),
+      move: (groupId: number, newParentId: number | null) => ipcRenderer.invoke('albumGroups:move', groupId, newParentId),
+      addAlbum: (albumId: number, groupId: number) => ipcRenderer.invoke('albumGroups:addAlbum', albumId, groupId),
+      removeAlbum: (albumId: number, groupId: number) => ipcRenderer.invoke('albumGroups:removeAlbum', albumId, groupId),
+    },
   },
 
   takeout: {

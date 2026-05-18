@@ -253,6 +253,19 @@ contextBridge.exposeInMainWorld('pdr', {
         listPhotos: (albumId) => ipcRenderer.invoke('albums:listPhotos', albumId),
         addPhotos: (albumId, fileIds) => ipcRenderer.invoke('albums:addPhotos', albumId, fileIds),
         removePhotos: (albumId, fileIds) => ipcRenderer.invoke('albums:removePhotos', albumId, fileIds),
+        // v2.0.8 — Album group (folder) CRUD. Drives the AlbumsView's
+        // hierarchical multi-membership tree.
+        groups: {
+            list: () => ipcRenderer.invoke('albumGroups:list'),
+            listMemberships: () => ipcRenderer.invoke('albumGroups:listMemberships'),
+            listAlbumsIn: (groupId) => ipcRenderer.invoke('albumGroups:listAlbumsIn', groupId),
+            create: (title, parentId) => ipcRenderer.invoke('albumGroups:create', title, parentId),
+            rename: (groupId, newTitle) => ipcRenderer.invoke('albumGroups:rename', groupId, newTitle),
+            delete: (groupId) => ipcRenderer.invoke('albumGroups:delete', groupId),
+            move: (groupId, newParentId) => ipcRenderer.invoke('albumGroups:move', groupId, newParentId),
+            addAlbum: (albumId, groupId) => ipcRenderer.invoke('albumGroups:addAlbum', albumId, groupId),
+            removeAlbum: (albumId, groupId) => ipcRenderer.invoke('albumGroups:removeAlbum', albumId, groupId),
+        },
     },
     takeout: {
         // v2.0.8 step 2b — backfill albums + captions + corrected

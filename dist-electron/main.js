@@ -4081,6 +4081,107 @@ ipcMain.handle('albums:removePhotos', async (_event, albumId, fileIds) => {
         return { success: false, error: err.message };
     }
 });
+// v2.0.8 — Album group (folder) CRUD + tree listing IPC. Drives the
+// AlbumsView's hierarchical multi-membership tree.
+ipcMain.handle('albumGroups:list', async () => {
+    try {
+        const { listAlbumGroups } = await import('./search-database.js');
+        return { success: true, data: listAlbumGroups() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:listMemberships', async () => {
+    try {
+        const { listAlbumGroupMemberships } = await import('./search-database.js');
+        return { success: true, data: listAlbumGroupMemberships() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:listAlbumsIn', async (_event, groupId) => {
+    try {
+        const { listAlbumsInGroup } = await import('./search-database.js');
+        return { success: true, data: listAlbumsInGroup(groupId) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:create', async (_event, title, parentId) => {
+    try {
+        const { createUserAlbumGroup } = await import('./search-database.js');
+        const r = createUserAlbumGroup(title, parentId ?? null);
+        if (r.success)
+            markDbDirty();
+        return r;
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:rename', async (_event, groupId, newTitle) => {
+    try {
+        const { renameAlbumGroup } = await import('./search-database.js');
+        const r = renameAlbumGroup(groupId, newTitle);
+        if (r.success)
+            markDbDirty();
+        return r;
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:delete', async (_event, groupId) => {
+    try {
+        const { deleteAlbumGroup } = await import('./search-database.js');
+        const r = deleteAlbumGroup(groupId);
+        if (r.success)
+            markDbDirty();
+        return r;
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:move', async (_event, groupId, newParentId) => {
+    try {
+        const { moveAlbumGroup } = await import('./search-database.js');
+        const r = moveAlbumGroup(groupId, newParentId ?? null);
+        if (r.success)
+            markDbDirty();
+        return r;
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:addAlbum', async (_event, albumId, groupId) => {
+    try {
+        const { addAlbumToGroup } = await import('./search-database.js');
+        const r = addAlbumToGroup(albumId, groupId);
+        if (r.success)
+            markDbDirty();
+        return r;
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('albumGroups:removeAlbum', async (_event, albumId, groupId) => {
+    try {
+        const { removeAlbumFromGroup } = await import('./search-database.js');
+        const r = removeAlbumFromGroup(albumId, groupId);
+        if (r.success)
+            markDbDirty();
+        return r;
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
 ipcMain.handle('takeout:backfillFromZip', async (_event, zipPath) => {
     try {
         if (typeof zipPath !== 'string' || !zipPath) {

@@ -1122,6 +1122,63 @@ export async function removePhotosFromAlbum(albumId: number, fileIds: number[]):
   return { success: false, error: 'Not running in Electron' };
 }
 
+// v2.0.8 — Album group (folder) types + wrappers.
+export interface AlbumGroupRecord {
+  id: number;
+  title: string;
+  parent_id: number | null;
+  source_kind: 'auto' | 'user';
+  source_key: string | null;
+  icon_key: string | null;
+  palette_key: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  album_count: number;
+}
+export interface AlbumGroupMembershipRecord {
+  album_id: number;
+  group_id: number;
+  is_auto: 0 | 1;
+  added_at: string;
+}
+export async function listAlbumGroups(): Promise<{ success: boolean; data?: AlbumGroupRecord[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.list();
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function listAlbumGroupMemberships(): Promise<{ success: boolean; data?: AlbumGroupMembershipRecord[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.listMemberships();
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function listAlbumsInGroup(groupId: number): Promise<{ success: boolean; data?: AlbumSummary[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.listAlbumsIn(groupId);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function createAlbumGroup(title: string, parentId: number | null = null): Promise<{ success: boolean; id?: number; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.create(title, parentId);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function renameAlbumGroup(groupId: number, newTitle: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.rename(groupId, newTitle);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function deleteAlbumGroup(groupId: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.delete(groupId);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function moveAlbumGroup(groupId: number, newParentId: number | null): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.move(groupId, newParentId);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function addAlbumToGroup(albumId: number, groupId: number): Promise<{ success: boolean; inserted?: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.addAlbum(albumId, groupId);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function removeAlbumFromGroup(albumId: number, groupId: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.removeAlbum(albumId, groupId);
+  return { success: false, error: 'Not running in Electron' };
+}
+
 // v2.0.8 step 2b — backfill albums from a Takeout ZIP without re-extracting.
 export interface TakeoutBackfillResult {
   success: boolean;
