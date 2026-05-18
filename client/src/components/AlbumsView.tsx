@@ -102,121 +102,6 @@ export default function AlbumsView() {
     });
   }, [persistExpanded]);
 
-  // ── Drag-drop state ──────────────────────────────────────────────
-  // Single dragOverGroupId — only one drop target is ever highlighted
-  // at a time. Cleared on drop, dragLeave, or dragEnd to keep the UI
-  // from getting stuck in a "highlighted forever" state if the user
-  // drags off the window.
-  const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
-
-  const handleAlbumDragStart = useCallback((e: React.DragEvent, albumId: number) => {
-    e.dataTransfer.setData(DRAG_MIME_ALBUM, String(albumId));
-    e.dataTransfer.effectAllowed = 'copyMove';
-  }, []);
-
-  const handleFolderDragStart = useCallback((e: React.DragEvent, groupId: number) => {
-    e.dataTransfer.setData(DRAG_MIME_FOLDER, String(groupId));
-    e.dataTransfer.effectAllowed = 'move';
-    // stopPropagation: prevents the drag from bubbling up to a parent
-    // folder that's ALSO draggable (a nested folder dragging shouldn't
-    // accidentally drag its parent too).
-    e.stopPropagation();
-  }, []);
-
-  // Drop-target handlers — only fire for user folders (droppable). We
-  // accept either a DRAG_MIME_ALBUM payload (add album to folder) or a
-  // DRAG_MIME_FOLDER payload (nest folder under this folder). Auto
-  // groups never accept drops.
-  const handleGroupDragOver = useCallback((e: React.DragEvent, group: AlbumGroupRecord) => {
-    if (!isGroupDroppable(group)) return;
-    const hasAlbum = e.dataTransfer.types.includes(DRAG_MIME_ALBUM);
-    const hasFolder = e.dataTransfer.types.includes(DRAG_MIME_FOLDER);
-    if (!hasAlbum && !hasFolder) return;
-    e.preventDefault(); // Required so the drop event fires later.
-    e.dataTransfer.dropEffect = hasAlbum ? 'copy' : 'move';
-    if (dragOverGroupId !== group.id) setDragOverGroupId(group.id);
-  }, [dragOverGroupId]);
-
-  const handleGroupDragLeave = useCallback((e: React.DragEvent, group: AlbumGroupRecord) => {
-    // dragLeave fires on every child too. Use the relatedTarget to
-    // detect if we genuinely left the group's bounding region.
-    const related = e.relatedTarget as Node | null;
-    const current = e.currentTarget as HTMLElement;
-    if (related && current.contains(related)) return;
-    if (dragOverGroupId === group.id) setDragOverGroupId(null);
-  }, [dragOverGroupId]);
-
-  const handleGroupDrop = useCallback(async (e: React.DragEvent, group: AlbumGroupRecord) => {
-    setDragOverGroupId(null);
-    if (!isGroupDroppable(group)) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const albumIdStr = e.dataTransfer.getData(DRAG_MIME_ALBUM);
-    if (albumIdStr) {
-      const albumId = Number(albumIdStr);
-      if (!Number.isFinite(albumId)) return;
-      const album = albumsById.get(albumId);
-      const r = await addAlbumToGroup(albumId, group.id);
-      if (!r.success) {
-        toast.error(`Couldn't add to "${group.title}"`, { description: r.error });
-        return;
-      }
-      if (r.inserted) {
-        toast.success(`Added "${album?.title ?? 'album'}" to "${group.title}"`);
-      } else {
-        toast.message(`Already in "${group.title}"`, { description: 'No duplicate created.' });
-      }
-      await refreshAll();
-      return;
-    }
-
-    const folderIdStr = e.dataTransfer.getData(DRAG_MIME_FOLDER);
-    if (folderIdStr) {
-      const folderId = Number(folderIdStr);
-      if (!Number.isFinite(folderId)) return;
-      if (folderId === group.id) return; // Dropping onto self is a no-op.
-      const r = await moveAlbumGroup(folderId, group.id);
-      if (!r.success) {
-        toast.error(`Couldn't move folder`, { description: r.error });
-        return;
-      }
-      toast.success(`Moved folder into "${group.title}"`);
-      await refreshAll();
-    }
-  }, [albumsById, refreshAll]);
-
-  // Top-level drop zone — dragging a folder onto the root area (not
-  // any specific group) unparents it back to the root level.
-  const [dragOverRoot, setDragOverRoot] = useState(false);
-  const handleRootDragOver = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(DRAG_MIME_FOLDER)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (!dragOverRoot) setDragOverRoot(true);
-  }, [dragOverRoot]);
-  const handleRootDragLeave = useCallback((e: React.DragEvent) => {
-    const related = e.relatedTarget as Node | null;
-    const current = e.currentTarget as HTMLElement;
-    if (related && current.contains(related)) return;
-    setDragOverRoot(false);
-  }, []);
-  const handleRootDrop = useCallback(async (e: React.DragEvent) => {
-    setDragOverRoot(false);
-    const folderIdStr = e.dataTransfer.getData(DRAG_MIME_FOLDER);
-    if (!folderIdStr) return;
-    e.preventDefault();
-    const folderId = Number(folderIdStr);
-    if (!Number.isFinite(folderId)) return;
-    const r = await moveAlbumGroup(folderId, null);
-    if (!r.success) {
-      toast.error(`Couldn't move folder to root`, { description: r.error });
-      return;
-    }
-    toast.success(`Moved folder to the top`);
-    await refreshAll();
-  }, [refreshAll]);
-
   // ── Inline-edit state ────────────────────────────────────────────
   const [creatingAlbum, setCreatingAlbum] = useState(false);
   const [newAlbumTitle, setNewAlbumTitle] = useState('');
@@ -292,6 +177,116 @@ export default function AlbumsView() {
     }
     return m;
   }, [memberships, albumsById]);
+
+  // ── Drag-drop state + handlers ───────────────────────────────────
+  // Placed AFTER the data declarations because the handlers' useCallback
+  // dep arrays reference refreshAll + albumsById. Declaring them before
+  // those identifiers exist would throw a TDZ ReferenceError at render
+  // time (caught the hard way: blank Welcome screen 2026-05-18 because
+  // 'M' (minified albumsById) was accessed before initialization).
+  const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
+
+  const handleAlbumDragStart = useCallback((e: React.DragEvent, albumId: number) => {
+    e.dataTransfer.setData(DRAG_MIME_ALBUM, String(albumId));
+    e.dataTransfer.effectAllowed = 'copyMove';
+  }, []);
+
+  const handleFolderDragStart = useCallback((e: React.DragEvent, groupId: number) => {
+    e.dataTransfer.setData(DRAG_MIME_FOLDER, String(groupId));
+    e.dataTransfer.effectAllowed = 'move';
+    // stopPropagation: prevents the drag from bubbling up to a parent
+    // folder that's ALSO draggable (a nested folder dragging shouldn't
+    // accidentally drag its parent too).
+    e.stopPropagation();
+  }, []);
+
+  const handleGroupDragOver = useCallback((e: React.DragEvent, group: AlbumGroupRecord) => {
+    if (!isGroupDroppable(group)) return;
+    const hasAlbum = e.dataTransfer.types.includes(DRAG_MIME_ALBUM);
+    const hasFolder = e.dataTransfer.types.includes(DRAG_MIME_FOLDER);
+    if (!hasAlbum && !hasFolder) return;
+    e.preventDefault(); // Required so the drop event fires later.
+    e.dataTransfer.dropEffect = hasAlbum ? 'copy' : 'move';
+    if (dragOverGroupId !== group.id) setDragOverGroupId(group.id);
+  }, [dragOverGroupId]);
+
+  const handleGroupDragLeave = useCallback((e: React.DragEvent, group: AlbumGroupRecord) => {
+    // dragLeave fires on every child too. Use the relatedTarget to
+    // detect if we genuinely left the group's bounding region.
+    const related = e.relatedTarget as Node | null;
+    const current = e.currentTarget as HTMLElement;
+    if (related && current.contains(related)) return;
+    if (dragOverGroupId === group.id) setDragOverGroupId(null);
+  }, [dragOverGroupId]);
+
+  const handleGroupDrop = useCallback(async (e: React.DragEvent, group: AlbumGroupRecord) => {
+    setDragOverGroupId(null);
+    if (!isGroupDroppable(group)) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const albumIdStr = e.dataTransfer.getData(DRAG_MIME_ALBUM);
+    if (albumIdStr) {
+      const albumId = Number(albumIdStr);
+      if (!Number.isFinite(albumId)) return;
+      const album = albumsById.get(albumId);
+      const r = await addAlbumToGroup(albumId, group.id);
+      if (!r.success) {
+        toast.error(`Couldn't add to "${group.title}"`, { description: r.error });
+        return;
+      }
+      if (r.inserted) {
+        toast.success(`Added "${album?.title ?? 'album'}" to "${group.title}"`);
+      } else {
+        toast.message(`Already in "${group.title}"`, { description: 'No duplicate created.' });
+      }
+      await refreshAll();
+      return;
+    }
+
+    const folderIdStr = e.dataTransfer.getData(DRAG_MIME_FOLDER);
+    if (folderIdStr) {
+      const folderId = Number(folderIdStr);
+      if (!Number.isFinite(folderId)) return;
+      if (folderId === group.id) return; // Dropping onto self is a no-op.
+      const r = await moveAlbumGroup(folderId, group.id);
+      if (!r.success) {
+        toast.error(`Couldn't move folder`, { description: r.error });
+        return;
+      }
+      toast.success(`Moved folder into "${group.title}"`);
+      await refreshAll();
+    }
+  }, [albumsById, refreshAll]);
+
+  const [dragOverRoot, setDragOverRoot] = useState(false);
+  const handleRootDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes(DRAG_MIME_FOLDER)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!dragOverRoot) setDragOverRoot(true);
+  }, [dragOverRoot]);
+  const handleRootDragLeave = useCallback((e: React.DragEvent) => {
+    const related = e.relatedTarget as Node | null;
+    const current = e.currentTarget as HTMLElement;
+    if (related && current.contains(related)) return;
+    setDragOverRoot(false);
+  }, []);
+  const handleRootDrop = useCallback(async (e: React.DragEvent) => {
+    setDragOverRoot(false);
+    const folderIdStr = e.dataTransfer.getData(DRAG_MIME_FOLDER);
+    if (!folderIdStr) return;
+    e.preventDefault();
+    const folderId = Number(folderIdStr);
+    if (!Number.isFinite(folderId)) return;
+    const r = await moveAlbumGroup(folderId, null);
+    if (!r.success) {
+      toast.error(`Couldn't move folder to root`, { description: r.error });
+      return;
+    }
+    toast.success(`Moved folder to the top`);
+    await refreshAll();
+  }, [refreshAll]);
 
   // ── Thumbnail loader ─────────────────────────────────────────────
   useEffect(() => {
