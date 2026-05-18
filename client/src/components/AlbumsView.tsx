@@ -35,6 +35,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
 import {
   listAlbums,
   listAlbumGroups,
@@ -112,6 +113,11 @@ export default function AlbumsView() {
   const [newAlbumTitle, setNewAlbumTitle] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderTitle, setNewFolderTitle] = useState('');
+  /** Parent folder id when creating a sub-folder via the right-click
+   *  "New sub-folder" context-menu action. NULL = creating at root via
+   *  the toolbar "New folder" button. The same input flow handles
+   *  both; the placeholder + on-submit call use this id. */
+  const [subfolderParentId, setSubfolderParentId] = useState<number | null>(null);
   const [renamingAlbumId, setRenamingAlbumId] = useState<number | null>(null);
   const [renameAlbumTitle, setRenameAlbumTitle] = useState('');
   const [renamingGroupId, setRenamingGroupId] = useState<number | null>(null);
@@ -307,8 +313,36 @@ export default function AlbumsView() {
   const handleCreateFolder = async () => {
     const title = newFolderTitle.trim();
     if (!title) return;
-    const r = await createAlbumGroup(title, null);
-    if (r.success) { setNewFolderTitle(''); setCreatingFolder(false); await refreshAll(); }
+    const r = await createAlbumGroup(title, subfolderParentId);
+    if (r.success) {
+      setNewFolderTitle('');
+      setCreatingFolder(false);
+      setSubfolderParentId(null);
+      await refreshAll();
+    }
+  };
+  /** Cancel the create-folder flow + reset the sub-folder parent so the
+   *  next "New folder" toolbar click starts at root again. */
+  const cancelCreateFolder = () => {
+    setCreatingFolder(false);
+    setNewFolderTitle('');
+    setSubfolderParentId(null);
+  };
+  /** Start a sub-folder create flow for `group`. Called from the
+   *  right-click context menu's "New sub-folder" entry. The shared
+   *  toolbar input becomes the entry surface; on submit the new folder
+   *  lands inside `group`. */
+  const startSubfolderCreate = (group: AlbumGroupRecord) => {
+    setSubfolderParentId(group.id);
+    setNewFolderTitle('');
+    setCreatingFolder(true);
+    // Expand the parent so the user sees the new sub-folder appear.
+    if (!expandedGroups.has(group.id)) {
+      const next = new Set(expandedGroups);
+      next.add(group.id);
+      setExpandedGroups(next);
+      persistExpanded(next);
+    }
   };
   const handleRenameAlbum = async () => {
     if (renamingAlbumId === null) return;
@@ -399,6 +433,8 @@ export default function AlbumsView() {
     const isInUserFolder = parentGroup?.source_kind === 'user';
     return (
       <div key={`leaf-${parentGroupId}-${album.id}`} className="group/leaf">
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
         <div
           className={`flex items-center gap-2 pr-2 py-1 rounded-md transition-colors cursor-pointer ${
             isSelected ? 'bg-primary/15 text-foreground' : 'hover:bg-muted/40'
@@ -478,6 +514,40 @@ export default function AlbumsView() {
             </>
           )}
         </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={() => setSelection({ type: 'album', id: album.id })}>
+              <ImageIcon className="w-3.5 h-3.5 mr-2" />
+              Open
+            </ContextMenuItem>
+            {album.source === 'user_created' && (
+              <ContextMenuItem onSelect={() => { setRenamingAlbumId(album.id); setRenameAlbumTitle(album.title); }}>
+                <Pencil className="w-3.5 h-3.5 mr-2" />
+                Rename
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+            {isInUserFolder && parentGroup ? (
+              /* In a user folder: remove the link only, never delete
+                 the album record. Membership-delete. */
+              <ContextMenuItem onSelect={() => handleRemoveFromFolder(album.id, parentGroup.id, album.title, parentGroup.title)}>
+                <FolderMinus className="w-3.5 h-3.5 mr-2" />
+                Remove from "{parentGroup.title}"
+              </ContextMenuItem>
+            ) : album.source === 'user_created' && (
+              /* In the source group: full album delete with confirm.
+                 Only available for user_created; takeout albums are
+                 source-immutable so this item is hidden for them. */
+              <ContextMenuItem
+                onSelect={() => handleDeleteAlbum(album.id, album.title)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-2" />
+                Delete album
+              </ContextMenuItem>
+            )}
+          </ContextMenuContent>
+        </ContextMenu>
       </div>
     );
   };
@@ -495,8 +565,16 @@ export default function AlbumsView() {
     const albumIdList = albumIdsByGroup.get(group.id) ?? [];
     const totalCount = albumIdList.length + childGroupList.length;
 
+    // Right-click context menu items vary by group kind. Auto groups
+    // (source-managed: PDR, Google Photos) get nothing actionable —
+    // they aren't renamable, deletable, or sub-folder-receivable.
+    // User folders get the full create/rename/delete kit. Depth-1
+    // folders skip the "New sub-folder" entry (USER_GROUP_MAX_DEPTH).
+    const canHaveSubfolders = isUser && depth === 0;
     return (
       <div key={`group-${group.id}`} className="group/row">
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
         <div
           className={`flex items-center gap-1.5 pr-2 py-1 rounded-md transition-colors cursor-pointer ${
             isDropping ? 'bg-primary/10 ring-2 ring-primary/40' : (isSelected ? 'bg-primary/15' : 'hover:bg-muted/40')
@@ -570,6 +648,40 @@ export default function AlbumsView() {
             </>
           )}
         </div>
+          </ContextMenuTrigger>
+          {isUser ? (
+            <ContextMenuContent>
+              {canHaveSubfolders && (
+                <>
+                  <ContextMenuItem onSelect={() => startSubfolderCreate(group)}>
+                    <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                    New sub-folder
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                </>
+              )}
+              <ContextMenuItem onSelect={() => { setRenamingGroupId(group.id); setRenameGroupTitle(group.title); }}>
+                <Pencil className="w-3.5 h-3.5 mr-2" />
+                Rename
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => handleDeleteFolder(group.id, group.title)} className="text-destructive focus:text-destructive">
+                <Trash2 className="w-3.5 h-3.5 mr-2" />
+                Delete folder
+              </ContextMenuItem>
+            </ContextMenuContent>
+          ) : (
+            /* Auto groups (PDR / Google Photos / future iCloud etc.):
+               not renamable, not deletable, can't host sub-folders.
+               One useful action — refresh — for symmetry with the
+               toolbar refresh button. */
+            <ContextMenuContent>
+              <ContextMenuItem onSelect={() => refreshAll()}>
+                <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                Refresh
+              </ContextMenuItem>
+            </ContextMenuContent>
+          )}
+        </ContextMenu>
         {isExpanded && (
           <>
             {childGroupList.map((child) => renderGroupRow(child, depth + 1))}
@@ -808,6 +920,13 @@ export default function AlbumsView() {
                 autoFocus
                 className="px-2 py-1 rounded-md border border-border bg-background text-foreground text-xs flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary"
                 data-testid="input-new-album-title"
+                // outline-pulse animation matches the Workspace's "Add
+                // Source" pulse pattern so the user knows the input
+                // wants their attention (Terry 2026-05-18: "I didn't
+                // realise I had to do something in there before"). The
+                // pulse stops once a value's been typed so it doesn't
+                // distract from the user actually composing the name.
+                style={!newAlbumTitle ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
               />
               <Button variant="primary" size="sm" onClick={handleCreateAlbum} disabled={!newAlbumTitle.trim()} className="px-2 py-1 h-auto">
                 <Check className="w-3.5 h-3.5" />
@@ -823,17 +942,20 @@ export default function AlbumsView() {
                 onChange={(e) => setNewFolderTitle(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateFolder(); }
-                  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCreatingFolder(false); setNewFolderTitle(''); }
+                  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelCreateFolder(); }
                 }}
-                placeholder="Folder name"
+                placeholder={subfolderParentId !== null
+                  ? `Sub-folder in "${groups.find((g) => g.id === subfolderParentId)?.title ?? 'folder'}"`
+                  : 'Folder name'}
                 autoFocus
                 className="px-2 py-1 rounded-md border border-border bg-background text-foreground text-xs flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary"
                 data-testid="input-new-folder-title"
+                style={!newFolderTitle ? { animation: 'outline-pulse 2s ease-in-out infinite' } : undefined}
               />
               <Button variant="primary" size="sm" onClick={handleCreateFolder} disabled={!newFolderTitle.trim()} className="px-2 py-1 h-auto">
                 <Check className="w-3.5 h-3.5" />
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => { setCreatingFolder(false); setNewFolderTitle(''); }} className="px-2 py-1 h-auto">
+              <Button variant="secondary" size="sm" onClick={cancelCreateFolder} className="px-2 py-1 h-auto">
                 <X className="w-3.5 h-3.5" />
               </Button>
             </div>
