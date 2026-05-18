@@ -29,7 +29,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   ChevronDown, ChevronRight, FolderPlus, FolderClosed, FolderOpen,
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
-  Sparkles, FileText, LayoutGrid,
+  Sparkles, FileText, LayoutGrid, FolderMinus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -46,6 +46,7 @@ import {
   renameAlbumGroup,
   deleteAlbumGroup,
   addAlbumToGroup,
+  removeAlbumFromGroup,
   moveAlbumGroup,
   listAlbumPhotos,
   getThumbnail,
@@ -323,6 +324,28 @@ export default function AlbumsView() {
     const r = await renameAlbumGroup(renamingGroupId, title);
     if (r.success) { setRenamingGroupId(null); setRenameGroupTitle(''); await refreshAll(); }
   };
+  // Remove an album from a USER folder (membership-delete only). Does
+  // NOT delete the album record — the album survives in its source
+  // group (PDR / Google Photos / etc.) and anywhere else it's
+  // linked. Terry 2026-05-18 bug report: previously the trash icon
+  // inside a folder context was calling handleDeleteAlbum, which
+  // killed the whole album. That's now reserved for the trash icon
+  // when viewing the album under its source group.
+  const handleRemoveFromFolder = async (albumId: number, folderId: number, albumTitle: string, folderTitle: string) => {
+    const ok = await promptConfirm({
+      title: 'Remove from folder?',
+      message: `Remove "${albumTitle}" from the "${folderTitle}" folder. The album itself stays in your library and in any other folders it's in — only this folder link is removed.`,
+      confirmLabel: 'Remove from folder',
+      cancelLabel: 'Keep it',
+    });
+    if (!ok) return;
+    const r = await removeAlbumFromGroup(albumId, folderId);
+    if (r.success) {
+      await refreshAll();
+    } else {
+      toast.error(`Couldn't remove from "${folderTitle}"`, { description: r.error });
+    }
+  };
   const handleDeleteAlbum = async (albumId: number, albumTitle: string) => {
     const ok = await promptConfirm({
       title: 'Delete album?',
@@ -366,6 +389,14 @@ export default function AlbumsView() {
     const Icon = profile.Icon;
     const isSelected = selection?.type === 'album' && selection.id === album.id;
     const isRenaming = renamingAlbumId === album.id;
+    // Hover-action affordances split by context: inside a USER FOLDER
+    // the trash icon becomes a FolderMinus that ONLY removes the
+    // membership (album survives in source + everywhere else linked).
+    // Inside the album's SOURCE auto group, the trash icon does the
+    // album-delete-with-confirm flow. Critical bug fix 2026-05-18:
+    // previously the in-folder trash icon deleted the album entirely.
+    const parentGroup = groups.find((g) => g.id === parentGroupId);
+    const isInUserFolder = parentGroup?.source_kind === 'user';
     return (
       <div key={`leaf-${parentGroupId}-${album.id}`} className="group/leaf">
         <div
@@ -401,10 +432,12 @@ export default function AlbumsView() {
             </div>
           ) : (
             <>
-              <span className="text-xs text-foreground truncate flex-1" title={album.title}>{album.title}</span>
+              <IconTooltip content={album.title}>
+                <span className="text-xs text-foreground truncate flex-1">{album.title}</span>
+              </IconTooltip>
               <span className="text-[10px] text-muted-foreground shrink-0">{album.photoCount}</span>
-              {album.source === 'user_created' && (
-                <div className="hidden group-hover/leaf:flex items-center gap-0.5 shrink-0">
+              <div className="hidden group-hover/leaf:flex items-center gap-0.5 shrink-0">
+                {album.source === 'user_created' && (
                   <IconTooltip content="Rename album">
                     <button
                       type="button"
@@ -414,6 +447,23 @@ export default function AlbumsView() {
                       <Pencil className="w-3 h-3" />
                     </button>
                   </IconTooltip>
+                )}
+                {isInUserFolder ? (
+                  /* Folder context — pure membership removal, never
+                     touches the album record. Works for any album source. */
+                  <IconTooltip content={`Remove from "${parentGroup?.title ?? 'folder'}"`}>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); if (parentGroup) handleRemoveFromFolder(album.id, parentGroup.id, album.title, parentGroup.title); }}
+                      className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
+                    >
+                      <FolderMinus className="w-3 h-3" />
+                    </button>
+                  </IconTooltip>
+                ) : album.source === 'user_created' && (
+                  /* Source-group context — full album delete with confirm.
+                     Only available for user_created; takeout albums are
+                     source-immutable so the icon is hidden. */
                   <IconTooltip content="Delete album (photos stay)">
                     <button
                       type="button"
@@ -423,8 +473,8 @@ export default function AlbumsView() {
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </IconTooltip>
-                </div>
-              )}
+                )}
+              </div>
             </>
           )}
         </div>
@@ -491,7 +541,9 @@ export default function AlbumsView() {
             </div>
           ) : (
             <>
-              <span className="text-xs font-medium text-foreground truncate flex-1" title={group.title}>{group.title}</span>
+              <IconTooltip content={group.title}>
+                <span className="text-xs font-medium text-foreground truncate flex-1">{group.title}</span>
+              </IconTooltip>
               <span className="text-[10px] text-muted-foreground shrink-0">{totalCount === 0 ? 'empty' : totalCount}</span>
               {isUser && (
                 <div className="hidden group-hover/row:flex items-center gap-0.5 shrink-0">
@@ -597,7 +649,9 @@ export default function AlbumsView() {
                         </span>
                       </div>
                       <div className="p-3">
-                        <p className="text-sm font-medium text-foreground truncate" title={album.title}>{album.title}</p>
+                        <IconTooltip content={album.title}>
+                          <p className="text-sm font-medium text-foreground truncate">{album.title}</p>
+                        </IconTooltip>
                         <p className="text-xs text-muted-foreground mt-0.5">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
                       </div>
                     </button>
@@ -659,7 +713,9 @@ export default function AlbumsView() {
                         </span>
                       </div>
                       <div className="p-3">
-                        <p className="text-sm font-medium text-foreground truncate" title={album.title}>{album.title}</p>
+                        <IconTooltip content={album.title}>
+                          <p className="text-sm font-medium text-foreground truncate">{album.title}</p>
+                        </IconTooltip>
                         <p className="text-xs text-muted-foreground mt-0.5">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
                       </div>
                     </button>

@@ -19,6 +19,7 @@ import { FolderPlus, Search, Plus, Check, X, ImageIcon, Sparkles, PencilLine } f
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/custom-button';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import {
   listAlbums,
   createAlbum,
@@ -245,7 +246,9 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
                         <ImageIcon className="w-4 h-4 text-muted-foreground/40" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground truncate" title={album.title}>{album.title}</p>
+                        <IconTooltip content={album.title}>
+                          <p className="text-sm text-foreground truncate">{album.title}</p>
+                        </IconTooltip>
                         <p className="text-xs text-muted-foreground">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
                       </div>
                       {/* Source icon — Sparkles violet for Takeout

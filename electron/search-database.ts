@@ -545,7 +545,7 @@ export function initDatabase(): { success: boolean; error?: string } {
     try {
       const ALBUM_SOURCE_PROFILES: Record<string, { title: string; icon_key: string; palette_key: string }> = {
         user_created:     { title: 'PDR',                   icon_key: 'home',      palette_key: 'violet'   },
-        takeout_imported: { title: 'Google Photos Takeout', icon_key: 'sparkles',  palette_key: 'red'      },
+        takeout_imported: { title: 'Google Photos',         icon_key: 'sparkles',  palette_key: 'red'      },
         // Future sources (apple_photos, icloud, onedrive, google_drive,
         // dropbox, amazon_photos) will be added to this table as their
         // importers land. Any source value not in this table falls back
@@ -591,6 +591,19 @@ export function initDatabase(): { success: boolean; error?: string } {
          WHERE source_kind = 'auto'
            AND source_key  = 'user_created'
            AND title       = 'Created here'
+      `);
+      // Same trim for the Takeout group — Terry 2026-05-18: "We don't
+      // need to have the word Takeout do we? It's only important to
+      // know where it came from, not the method." Title-equality
+      // guard means a user who somehow customised it gets to keep
+      // their choice.
+      db.exec(`
+        UPDATE album_groups
+           SET title    = 'Google Photos',
+               updated_at = datetime('now')
+         WHERE source_kind = 'auto'
+           AND source_key  = 'takeout_imported'
+           AND title       = 'Google Photos Takeout'
       `);
     } catch (seedErr) {
       console.error('[DB] Album-groups auto-seed failed:', seedErr);
