@@ -3262,9 +3262,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     openDateEditor(query);
                   }}
                   disabled={results.total === 0 || !isEditDatesEnabled()}
-                  data-pdr-variant="information"
-                  className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+                  // Peer-group action button — same lavender pill style as
+                  // Open in Viewer / Show selected / Add to Album / PL so
+                  // the action bar reads as a single row of equally-
+                  // weighted "do something with this selection" controls.
+                  // Drops the previous freehand blue (intentional but
+                  // visually orphaned from the rest of the row).
+                  className="ml-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <Calendar className="w-3.5 h-3.5" />
                   {selectedFiles.size > 0
@@ -3275,20 +3279,26 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               {selectedFiles.size > 0 && (
                 <>
                   {/* Selection count chip with built-in clear affordance.
-                      iOS / macOS dismissable-chip pattern — pairs the
-                      state info with the dismiss control so they read as
-                      one unit. Replaces the disassociated "Clear" link
-                      at the end of the bar. */}
+                      iOS / macOS dismissable-chip pattern. Neutral muted
+                      palette — this is a STATUS indicator with a dismiss
+                      action, NOT a peer of the lavender CTAs that follow.
+                      The visual contrast is deliberate: the count reads
+                      as state ("you have 12 of these"), the lavender
+                      pills read as actions ("do something with them").
+                      Was lavender-on-lavender-tint which violated the
+                      style guide's "lavender body text reads as faint"
+                      rule and made the chip look washed out next to the
+                      bold CTA pills. */}
                   <IconTooltip label="Clear selection" side="top">
                     <button
                       type="button"
                       onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
-                      className="group inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 pl-2.5 pr-1 py-0.5 rounded-full transition-colors"
+                      className="group inline-flex items-center gap-1 text-xs font-medium text-foreground bg-muted hover:bg-muted/80 pl-2.5 pr-1 py-0.5 rounded-full transition-colors"
                       data-testid="button-clear-selection"
                       aria-label={`${selectedFiles.size} selected — clear selection`}
                     >
                       <span>{selectedFiles.size} selected</span>
-                      <span className="rounded-full bg-primary/15 group-hover:bg-primary/25 p-0.5 transition-colors">
+                      <span className="rounded-full bg-foreground/10 group-hover:bg-foreground/20 p-0.5 transition-colors">
                         <X className="w-3 h-3" />
                       </span>
                     </button>
@@ -3350,7 +3360,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         setShowStructureModal(true);
                       }}
                       disabled={fixActive}
-                      className="text-xs font-medium text-white bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
+                      // Lifted from the freehand purple-500 to lavender
+                      // (text-primary-foreground bg-primary) so the
+                      // action bar reads as a single peer group of
+                      // equally-weighted CTAs. The purple was orphaned
+                      // from PDR's design tokens — a different shade
+                      // than every other primary surface. Step 7's PL
+                      // discoverability pass will lift this and the
+                      // surrounding pills together to the Button
+                      // primitive in one pass.
+                      className="text-xs font-medium text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
                     >
                       <Copy className="w-3 h-3" />
                       Create Parallel Library

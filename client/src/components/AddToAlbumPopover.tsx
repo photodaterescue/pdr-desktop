@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { FolderPlus, Search, Plus, Check, X, ImageIcon, Sparkles } from 'lucide-react';
+import { FolderPlus, Search, Plus, Check, X, ImageIcon, Sparkles, PencilLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/custom-button';
@@ -239,8 +239,15 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
                         <p className="text-sm text-foreground truncate" title={album.title}>{album.title}</p>
                         <p className="text-xs text-muted-foreground">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
                       </div>
-                      {album.source === 'takeout_imported' && (
+                      {/* Source icon — Sparkles violet for Takeout
+                          imports, PencilLine muted for user-created.
+                          Mirrors the AlbumsView grid card badges so
+                          the same fact reads the same way across
+                          surfaces. */}
+                      {album.source === 'takeout_imported' ? (
                         <Sparkles className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+                      ) : (
+                        <PencilLine className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       )}
                     </button>
                   </li>

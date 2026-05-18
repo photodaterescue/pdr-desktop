@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { FolderPlus, ChevronLeft, Trash2, Pencil, Sparkles, Image as ImageIcon, Plus, Check, X } from 'lucide-react';
+import { FolderPlus, ChevronLeft, Trash2, Pencil, Sparkles, Image as ImageIcon, Plus, Check, X, PencilLine } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import {
@@ -349,9 +349,22 @@ export default function AlbumsView() {
                       <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
                     </div>
                   )}
-                  {album.source === 'takeout_imported' && (
-                    <span className="absolute top-2 right-2 text-[10px] font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/80 px-1.5 py-0.5 rounded">
+                  {/* Source badge — Takeout-imported gets Sparkles +
+                      violet palette (premium "magical import" cue);
+                      user-created gets PencilLine + muted palette
+                      ("authored locally"). Both surfaces stay
+                      symmetrical so the user can tell at a glance
+                      what kind of album they're looking at without
+                      reading the label. */}
+                  {album.source === 'takeout_imported' ? (
+                    <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/80 px-1.5 py-0.5 rounded">
+                      <Sparkles className="w-2.5 h-2.5" />
                       Takeout
+                    </span>
+                  ) : (
+                    <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-medium text-foreground bg-background/80 dark:bg-background/60 backdrop-blur-sm px-1.5 py-0.5 rounded border border-border">
+                      <PencilLine className="w-2.5 h-2.5" />
+                      Yours
                     </span>
                   )}
                 </div>
