@@ -894,12 +894,48 @@ function pickPreExtractDir(zipPath, destinationPath) {
     const tempTotal = tempSpace?.totalBytes ?? null;
     const destHeadroom = computeHeadroomBytes(destTotal);
     const tempHeadroom = computeHeadroomBytes(tempTotal);
+    const sameDriveNeeded = extractionBytes + copyBytes + destHeadroom;
+    const tempNeeded = extractionBytes + tempHeadroom;
+    const destNeededForCopy = copyBytes + destHeadroom;
+    // Diagnostic line — one structured log entry per call with every
+    // input + the final decision (or refusal reason). v2.0.8 addition
+    // following Jane's silent-fallback case (USB Library Drive on H:
+    // routed her Takeouts to %TEMP% even though H: had 1.4 TB free, and
+    // the pre-v2.0.8 log line just said "→ %TEMP%" with no clue why).
+    // Bytes printed as GB to keep the line readable; nulls preserved
+    // explicitly so we can tell "probe failed" from "0 bytes".
+    const gb = (b) => b == null ? 'null' : `${(b / (1024 ** 3)).toFixed(2)}GB`;
+    const baseDiag = `zipSize=${gb(zipSize)} destinationPath=${JSON.stringify(destinationPath)} ` +
+        `destLocal=${destLocal} destFree=${gb(destFree)} destTotal=${gb(destTotal)} ` +
+        `tempFree=${gb(tempFree)} tempTotal=${gb(tempTotal)} ` +
+        `sameDriveNeeded=${gb(sameDriveNeeded)} tempNeeded=${gb(tempNeeded)} destNeededForCopy=${gb(destNeededForCopy)}`;
+    // ── LIBRARY_DRIVE_UNREACHABLE — destinationPath is set and we
+    // think it's a local drive, but the disk-space probe returned null.
+    // Strongly implies the drive isn't currently mounted (USB unplugged,
+    // sleep state, NTFS metadata read failed, etc.). Pre-v2.0.8 we'd
+    // silently fall through to %TEMP%, the extraction would run, the
+    // post-fix copy would fail when it actually tried to write to the
+    // unreachable destination — confusing error far downstream. Refusing
+    // up-front with a structured code lets the renderer surface a clean
+    // "Reconnect your Library Drive" modal. Terry 2026-05-19 (Jane).
+    if (destinationPath !== null && destLocal && destSpace === null) {
+        log.warn(`[Pre-extract] REFUSED zip="${path.basename(zipPath)}" reason="LIBRARY_DRIVE_UNREACHABLE" ${baseDiag}`);
+        return {
+            ok: false,
+            errorCode: 'LIBRARY_DRIVE_UNREACHABLE',
+            neededBytes: sameDriveNeeded,
+            destinationPath,
+            destinationLocal: destLocal,
+            destinationFreeBytes: destFree,
+            tempFreeBytes: tempFree,
+        };
+    }
     // ── Option 1: extract into the destination drive (same physical
     // drive as the year-folder output). Combined need: extraction +
     // copy + headroom. This is the path Elaine's case was missing.
-    const sameDriveNeeded = extractionBytes + copyBytes + destHeadroom;
     if (destinationPath && destLocal && destFree != null && destFree >= sameDriveNeeded) {
         const baseDir = path.join(destinationPath, 'PDR_Temp');
+        log.info(`[Pre-extract] zip="${path.basename(zipPath)}" → destination drive (${destinationPath}) ${baseDiag}`);
         return {
             ok: true,
             baseDir,
@@ -909,13 +945,24 @@ function pickPreExtractDir(zipPath, destinationPath) {
             tempFreeBytes: null,
         };
     }
+    // Option 1 skipped — record exactly which input failed it so the
+    // log makes the silent-degrade case diagnosable.
+    let option1Skipped;
+    if (destinationPath == null)
+        option1Skipped = 'destinationPath null (no library drive picked)';
+    else if (!destLocal)
+        option1Skipped = 'destLocal false (library drive classified as network)';
+    else if (destFree == null)
+        option1Skipped = 'destFree null (disk-space probe failed)';
+    else if (destFree < sameDriveNeeded)
+        option1Skipped = `destFree ${gb(destFree)} < sameDriveNeeded ${gb(sameDriveNeeded)}`;
+    else
+        option1Skipped = 'unknown (logic gap)';
     // ── Option 2: extract into %TEMP% (system drive), copy across to
     // the destination during the Fix. BOTH drives need to fit their
     // respective portion. Previously the destination side was not
     // checked at all — a roomy C: could pass the temp check while the
     // destination ran out half-way through the copy.
-    const tempNeeded = extractionBytes + tempHeadroom;
-    const destNeededForCopy = copyBytes + destHeadroom;
     const tempHasRoom = tempFree != null && tempFree >= tempNeeded;
     const destHasRoom = destFree != null && destFree >= destNeededForCopy;
     // If there's no destination at all, the "post-fix copy" check is
@@ -933,6 +980,7 @@ function pickPreExtractDir(zipPath, destinationPath) {
         // destination drive. Same pattern as Option 1: take just the basename
         // (zip-name + hash segment) and join with our chosen root.
         const tempName = path.basename(generateTempDirName(zipPath));
+        log.info(`[Pre-extract] zip="${path.basename(zipPath)}" → %TEMP% (PDR_TEMP_ROOT) option1Skipped="${option1Skipped}" ${baseDiag}`);
         return {
             ok: true,
             baseDir: PDR_TEMP_ROOT,
@@ -947,8 +995,17 @@ function pickPreExtractDir(zipPath, destinationPath) {
     // old extraction-only figure. neededBytes is the same-drive need;
     // callers comparing against destFree see whether they're short by
     // a little or a lot.
+    let option2Skipped;
+    if (!tempHasRoom)
+        option2Skipped = tempFree == null ? 'tempFree null' : `tempFree ${gb(tempFree)} < tempNeeded ${gb(tempNeeded)}`;
+    else if (!destCheckPasses)
+        option2Skipped = `destination needs ${gb(destNeededForCopy)} for post-fix copy but only ${gb(destFree)} free`;
+    else
+        option2Skipped = 'unknown (logic gap)';
+    log.warn(`[Pre-extract] REFUSED zip="${path.basename(zipPath)}" reason="NO_SPACE" option1Skipped="${option1Skipped}" option2Skipped="${option2Skipped}" ${baseDiag}`);
     return {
         ok: false,
+        errorCode: 'NO_SPACE',
         neededBytes: sameDriveNeeded,
         destinationPath,
         destinationLocal: destLocal,
@@ -2287,9 +2344,32 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
                 const decision = pickPreExtractDir(sourcePath, settings?.destinationPath ?? null);
                 if (!decision.ok) {
                     // Surface a structured error so the renderer can drive a
-                    // smart-prompt modal asking the user to pick a different
-                    // temp drive. Re-invoking analysis:run with a
-                    // tempDirOverride bypasses this branch.
+                    // smart-prompt modal. Two refusal modes:
+                    //   - LIBRARY_DRIVE_UNREACHABLE — Library Drive is set but
+                    //     PDR can't reach it (USB unplugged, sleep state, NTFS
+                    //     probe failed). Renderer shows a "reconnect your
+                    //     Library Drive" modal naming the path. Added v2.0.8
+                    //     after Jane's silent-fallback case where PDR routed
+                    //     to %TEMP% with no message because the disk-space
+                    //     probe on her USB Seagate returned null.
+                    //   - NO_SPACE — both temp + destination options checked
+                    //     and neither had enough room. Renderer shows the
+                    //     existing smart-prompt picker so the user can pick a
+                    //     different temp drive.
+                    if (decision.errorCode === 'LIBRARY_DRIVE_UNREACHABLE') {
+                        // Reuse the existing DESTINATION_OFFLINE IPC code so the
+                        // renderer's LibraryOfflineModal handler picks this up —
+                        // same user experience as the upstream fs.existsSync
+                        // precheck. The pre-extract diagnostic log line still
+                        // names the specific check that fired
+                        // (reason="LIBRARY_DRIVE_UNREACHABLE") so future debugging
+                        // can distinguish the two failure modes.
+                        throw Object.assign(new Error(`PDR can't reach your Library Drive (${decision.destinationPath}). Reconnect it before adding sources.`), {
+                            code: 'DESTINATION_OFFLINE',
+                            destinationPath: decision.destinationPath,
+                            zipPath: sourcePath,
+                        });
+                    }
                     throw Object.assign(new Error('Not enough disk space to unpack this zip safely.'), {
                         code: 'NO_TEMP_SPACE',
                         neededBytes: decision.neededBytes,
@@ -2307,7 +2387,9 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
             activeTempDirs.add(tempDir);
             largeExtractInFlight = { zipPath: sourcePath, tempDir, startedAt: Date.now() };
             claimedExtractInFlight = true;
-            console.log(`[Pre-extract] zip="${path.basename(sourcePath)}" → ${chosenLabel}`);
+            // (Detailed [Pre-extract] log line is now emitted inside
+            // pickPreExtractDir itself, including all decision inputs.
+            // Duplicate console.log removed — v2.0.8.)
             // Notify renderer about the extraction
             mainWindow?.webContents.send('analysis:progress', {
                 current: 0,
