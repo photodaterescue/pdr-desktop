@@ -244,8 +244,17 @@
       flex-shrink: 0;
       min-height: 80px;
     }
-    .filmstrip::-webkit-scrollbar { height: 4px; }
-    .filmstrip::-webkit-scrollbar-thumb { background: rgba(169,156,255,0.3); border-radius: 2px; }
+    /* Filmstrip scrollbar — thicker so it's easy to grab and drag
+       (Terry 2026-05-19: "the slider in the viewer is quite
+       difficult to grab because this height is so thin... make it
+       double the height"). Doubled from 4px to 10px, with a slightly
+       higher-opacity thumb and a hover state so the affordance is
+       clearer. */
+    .filmstrip::-webkit-scrollbar { height: 10px; }
+    .filmstrip::-webkit-scrollbar-track { background: rgba(169,156,255,0.05); border-radius: 5px; }
+    .filmstrip::-webkit-scrollbar-thumb { background: rgba(169,156,255,0.5); border-radius: 5px; min-width: 60px; }
+    .filmstrip::-webkit-scrollbar-thumb:hover { background: rgba(169,156,255,0.75); }
+    .filmstrip::-webkit-scrollbar-thumb:active { background: rgba(169,156,255,0.9); }
     .filmstrip .thumb {
       height: 60px;
       width: auto;

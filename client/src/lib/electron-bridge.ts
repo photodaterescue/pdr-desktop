@@ -960,6 +960,10 @@ export interface SearchQuery {
   faceCountMin?: number;
   faceCountMax?: number;
   personTogetherIds?: number[];
+  /** v2.0.8 step 5: restrict results to photos that are members of
+   *  one of these albums. Empty/undefined = no album filter. Multi
+   *  select uses IN — photos in ANY of the listed albums. */
+  albumIds?: number[];
   sortBy?: 'derived_date' | 'filename' | 'size_bytes' | 'confidence' | 'camera_model';
   sortDir?: 'asc' | 'desc';
   limit?: number;
@@ -1028,6 +1032,29 @@ export interface FilterOptions {
   cities?: string[];
   destinations: string[];
   runs: Array<{ id: number; report_id: string; destination_path: string; indexed_at: string; file_count: number }>;
+  /** Per-option file counts (v2.0.8). Keys match the value strings
+   *  in the corresponding list above (e.g. counts.country['Italy']).
+   *  NULL/empty rows are aggregated under sentinel labels where
+   *  applicable: "(No location)" for country/city, "(No camera
+   *  make)" / "(No camera model)" / "(No lens)" for camera fields.
+   *  Optional for backward compat with cached responses. */
+  counts?: {
+    confidence: Record<string, number>;
+    fileType: Record<string, number>;
+    dateSource: Record<string, number>;
+    cameraMake: Record<string, number>;
+    cameraModel: Record<string, number>;
+    lensModel: Record<string, number>;
+    extension: Record<string, number>;
+    sceneCaptureType: Record<string, number>;
+    exposureProgram: Record<string, number>;
+    whiteBalance: Record<string, number>;
+    cameraPosition: Record<string, number>;
+    orientation: Record<string, number>;
+    country: Record<string, number>;
+    city: Record<string, number>;
+    destination: Record<string, number>;
+  };
 }
 
 export interface IndexStats {
@@ -1248,6 +1275,24 @@ export async function searchFiles(query: SearchQuery): Promise<{ success: boolea
 export async function getSearchFilterOptions(): Promise<{ success: boolean; data?: FilterOptions; error?: string }> {
   if (isElectron() && (window as any).pdr?.search) {
     return (window as any).pdr.search.filterOptions();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+/** Contextual / faceted counts. For each filter dimension, returns
+ *  counts computed by applying all OTHER active filters but skipping
+ *  the dimension's own filter (leave-one-out). Empty / 0-count
+ *  options should be hidden in the UI (unless the user already
+ *  selected them). */
+export type ContextualCounts = Partial<Record<
+  | 'confidence' | 'fileType' | 'dateSource' | 'cameraMake' | 'cameraModel' | 'lensModel'
+  | 'extension' | 'sceneCaptureType' | 'exposureProgram' | 'whiteBalance'
+  | 'cameraPosition' | 'orientation' | 'country' | 'city' | 'destination' | 'album',
+  Record<string, number>
+>>;
+export async function getFilterCounts(query: SearchQuery): Promise<{ success: boolean; data?: ContextualCounts; error?: string }> {
+  if (isElectron() && (window as any).pdr?.search) {
+    return (window as any).pdr.search.filterCounts(query);
   }
   return { success: false, error: 'Not running in Electron' };
 }

@@ -269,6 +269,7 @@ import {
   closeDatabase,
   searchFiles,
   getFilterOptions,
+  getFilterCounts,
   getIndexStats,
   clearAllIndexData,
   removeRun,
@@ -4599,6 +4600,14 @@ ipcMain.handle('search:query', async (_event, query: SearchQuery) => {
 ipcMain.handle('search:filterOptions', async () => {
   try {
     return { success: true, data: getFilterOptions() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('search:filterCounts', async (_event, query: SearchQuery) => {
+  try {
+    return { success: true, data: getFilterCounts(query) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

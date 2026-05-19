@@ -141,10 +141,14 @@ import {
   openDateEditor,
   onDateEditorDataChanged,
   onPeopleDataChanged,
+  listAlbums,
+  getFilterCounts,
   type SearchQuery,
   type SearchResult,
   type IndexedFile,
   type FilterOptions,
+  type AlbumSummary,
+  type ContextualCounts,
   type IndexStats,
   type IndexedRun,
   type ReportSummary,
@@ -306,8 +310,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   }, [pickMode]);
 
   // Filter state
-  const [selectedConfidence, setSelectedConfidence] = useState<string[]>([]);
-  const [selectedFileType, setSelectedFileType] = useState<string[]>([]);
+  // Confidence is the primary gate — S&D returns no results when
+  // every confidence level is unchecked (intentional: lets the user
+  // narrow to a specific class without hiding it under another
+  // filter). Default to all three ticked so a fresh session shows
+  // results immediately. Terry 2026-05-19: "have them on by default,
+  // and allow people to turn them off, and educate them that way".
+  const [selectedConfidence, setSelectedConfidence] = useState<string[]>(['confirmed', 'recovered', 'marked']);
+  // File Type is a Tier-1 gate — empty selection = zero results.
+  // Default to both so a fresh session shows photos AND videos.
+  // Terry 2026-05-19: gates default-on, narrow filters default-empty.
+  const [selectedFileType, setSelectedFileType] = useState<string[]>(['photo', 'video']);
   const [selectedDateSource, setSelectedDateSource] = useState<string[]>([]);
   const [selectedExtension, setSelectedExtension] = useState<string[]>([]);
   const [selectedCameraMake, setSelectedCameraMake] = useState<string[]>([]);
@@ -343,9 +356,27 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [dateTo, setDateTo] = useState<string>('');
   const [sizeFromMB, setSizeFromMB] = useState<number | undefined>(undefined);
   const [sizeToMB, setSizeToMB] = useState<number | undefined>(undefined);
+  // Library Drive is a Tier-1 gate — empty selection = zero results.
+  // Default visual = all libraries ticked once filterOptions.destinations
+  // loads (done in a useEffect below the filterOptions state, so the
+  // initial empty array is replaced by the full list on first load,
+  // and the user can untick individual drives from there).
   const [selectedDestination, setSelectedDestination] = useState<string[]>([]);
+  const destinationsInitializedRef = useRef(false);
   const [destinationAvailability, setDestinationAvailability] = useState<Record<string, boolean>>({});
   const [unavailableFileMessage, setUnavailableFileMessage] = useState<string | null>(null);
+  // v2.0.8 step 5 — Album filter. List of available albums (loaded
+  // via listAlbums) + the user's current multi-selection. IDs flow
+  // into the search query as `albumIds`; backend JOINs album_files.
+  const [albums, setAlbums] = useState<AlbumSummary[]>([]);
+  const [selectedAlbums, setSelectedAlbums] = useState<number[]>([]);
+  /** Contextual / faceted counts (v2.0.8). Refreshed on every filter
+   *  change via getFilterCounts. Each dimension's counts are computed
+   *  with the OTHER active filters applied but its OWN filter omitted
+   *  ("leave one out"). UI uses these to (a) replace the static
+   *  counts and (b) hide 0-count options the user hasn't already
+   *  selected. */
+  const [contextualCounts, setContextualCounts] = useState<ContextualCounts | null>(null);
 
   const allFilterGroups = [
     { id: 'confidence', label: 'Confidence' },
@@ -366,6 +397,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     { id: 'flash', label: 'Flash' },
     { id: 'megapixels', label: 'Megapixels' },
     { id: 'fileSize', label: 'File Size' },
+    { id: 'album', label: 'Album' },
     { id: 'destination', label: 'Library Drive' },
   ] as const;
 
@@ -375,7 +407,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   // Which groups belong to which tab
   const tabGroups: Record<Exclude<RibbonTab, 'favourites'>, string[]> = {
-    filters: ['confidence', 'type', 'dateRange', 'source', 'gps', 'fileSize', 'destination'],
+    filters: ['confidence', 'type', 'dateRange', 'source', 'gps', 'fileSize', 'album', 'destination'],
     camera: ['camera', 'lens', 'cameraPosition', 'scene', 'orientation'],
     exposure: ['iso', 'aperture', 'focalLength', 'flash', 'exposureProgram', 'whiteBalance', 'megapixels'],
     ai: ['aiTags'],
@@ -818,7 +850,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         const availability = await checkPathsExist(r.data.destinations);
         setDestinationAvailability(availability);
       }
+      // Library Drive Tier-1 gate auto-fill: on the first load that
+      // returns destinations, tick every one of them. This makes the
+      // default visual match the default behaviour ("all libraries
+      // included") and gives the user a concrete starting point to
+      // untick from. Ref-guarded so refreshes don't clobber the
+      // user's customised selection.
+      if (!destinationsInitializedRef.current && r.data.destinations && r.data.destinations.length > 0) {
+        setSelectedDestination([...r.data.destinations]);
+        destinationsInitializedRef.current = true;
+      }
     }
+    // Load album list for the Album filter (v2.0.8 step 5). Albums
+    // come from a separate endpoint because they live in their own
+    // tables (`albums` + `album_files`). Same mount/refresh trigger
+    // as the rest of filterOptions so newly-created albums show up
+    // in the dropdown after the next refresh.
+    const albumsR = await listAlbums();
+    if (albumsR.success && albumsR.data) setAlbums(albumsR.data);
   };
   const loadStats = async () => { const r = await getSearchStats(); if (r.success && r.data) setStats(r.data); };
   const loadFavourites = async () => { const r = await listFavouriteFilters(); if (r.success && r.data) setFavourites(r.data); };
@@ -958,11 +1007,12 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     cameraPosition: selectedCameraPosition.length > 0 ? selectedCameraPosition : undefined,
     orientation: selectedOrientation.length > 0 ? selectedOrientation : undefined,
     destinationPath: selectedDestination.length > 0 ? selectedDestination : undefined,
+    albumIds: selectedAlbums.length > 0 ? selectedAlbums : undefined,
     aiTag: combinedTags.length > 0 ? combinedTags : undefined,
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
     } as SearchQuery);
-  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir]);
+  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery, opts?: { silent?: boolean }) => {
     // `silent` keeps the existing results visible during the fetch
@@ -1145,7 +1195,23 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setResults(null);
       setSearchActive(false);
     }
-  }, [selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAiTags, sortBy, sortDir, showAllOverride]);
+  }, [selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
+
+  // Contextual counts refresh — debounced so rapid clicks (e.g. the
+  // ribbon's Select-all) don't trigger N requests. Calls
+  // getFilterCounts with the CURRENT query state; each dimension's
+  // counts use leave-one-out semantics. Result drives the dropdown
+  // count badges + 0-count option hiding.
+  useEffect(() => {
+    if (!dbReady) return;
+    const timer = setTimeout(async () => {
+      const q = buildQuery();
+      const r = await getFilterCounts(q);
+      if (r.success && r.data) setContextualCounts(r.data);
+    }, 200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbReady, searchText, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums]);
 
   // People window data-changed listener — refresh AI data + re-run
   // the current search when PM modifies clusters. Calls
@@ -1234,17 +1300,48 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setSelectedScene([]); setSelectedExposureProgram([]); setSelectedWhiteBalance([]);
     setSelectedCameraPosition([]); setSelectedOrientation([]);
     setSizeFromMB(undefined); setSizeToMB(undefined);
-    setSelectedAiTags([]); setSelectedDestination([]);
+    setSelectedAiTags([]); setSelectedDestination([]); setSelectedAlbums([]);
     setSortBy('derived_date'); setSortDir('desc');
     setResults(null); setSearchActive(false); setSelectedFile(null);
     setShowAllOverride(false);
   };
 
   const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
+  // Note: selectedAlbums is intentionally NOT in hasActiveFilters.
+  // Terry 2026-05-19 confirmed: "Selecting an album alone is not
+  // enough to show the results for it, as it needs the confidence
+  // filter to be firing. This isn't a bug... it's expected." Album
+  // narrows the result set; it doesn't trigger a search on its own.
   const activeFilterCount = [selectedConfidence.length > 0, selectedFileType.length > 0, selectedDateSource.length > 0, selectedExtension.length > 0, selectedCameraMake.length > 0 || selectedCameraModel.length > 0, selectedLensModel.length > 0, !!dateFrom || !!dateTo, yearFrom != null || yearTo != null, monthFrom != null || monthTo != null, hasGps != null, isoFrom != null || isoTo != null, apertureFrom != null || apertureTo != null, focalLengthFrom != null || focalLengthTo != null, flashFired != null, megapixelsFrom != null || megapixelsTo != null, sizeFromMB != null || sizeToMB != null, selectedScene.length > 0, selectedExposureProgram.length > 0, selectedWhiteBalance.length > 0, selectedCameraPosition.length > 0, selectedOrientation.length > 0, selectedDestination.length > 0].filter(Boolean).length;
 
   const toggleFilter = (current: string[], setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => {
     setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+  };
+
+  // Contextual-count helpers (v2.0.8). `getCount` returns the count
+  // for a (dimension, value) pair — prefers contextualCounts (leave-
+  // one-out, reflects current filter state) and falls back to the
+  // static filterOptions.counts before the first contextual fetch
+  // resolves. `shouldShowOption` is the gate for hiding 0-count
+  // options in dropdowns — but currently-selected options always
+  // stay visible so the user can untick them.
+  const getCount = (dim: keyof NonNullable<ContextualCounts>, value: string): number | undefined => {
+    const ctx = contextualCounts ? (contextualCounts as Record<string, Record<string, number>>)[dim] : undefined;
+    // If contextual counts are loaded for this dimension, USE THEM
+    // EXCLUSIVELY — values not present mean "0 in the current filter
+    // context" and the option should be hidden. Falling back to the
+    // global count here was the bug behind Broxbourne staying
+    // visible at 988 when Philippines was the only country
+    // selected (no Philippines photos are in Broxbourne but the
+    // global count returned 988 anyway). Terry 2026-05-19.
+    if (ctx) return ctx[value]; // undefined if missing → hidden
+    const stat = filterOptions?.counts ? (filterOptions.counts as Record<string, Record<string, number>>)[dim] : undefined;
+    return stat ? stat[value] : undefined;
+  };
+  const shouldShowOption = (dim: keyof NonNullable<ContextualCounts>, value: string, isSelected: boolean): boolean => {
+    if (isSelected) return true;
+    const c = getCount(dim, value);
+    return c !== undefined && c > 0;
   };
 
   // ─── Favourites ───────────────────────────────────────────────────────────
@@ -1270,6 +1367,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setYearFrom(q.yearFrom); setYearTo(q.yearTo);
       setHasGps(q.hasGps);
       setSelectedDestination(q.destinationPath || []);
+      setSelectedAlbums(q.albumIds || []);
       setSortBy(q.sortBy || 'derived_date'); setSortDir(q.sortDir || 'desc');
       setRibbonExpanded(true);
     } catch {}
@@ -1546,6 +1644,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           { val: 'marked', icon: <HelpCircle className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />, color: 'text-red-600 dark:text-red-400' },
                         ].map(({ val, icon, color }) => {
                           const isActive = selectedConfidence.includes(val);
+                          const count = getCount('confidence', val);
                           return (
                             <label key={val} className="flex items-center gap-1.5 px-1.5 py-0.5 rounded cursor-pointer hover:bg-secondary/50 transition-colors">
                               {/* Uses the shared Checkbox primitive — Radix
@@ -1560,6 +1659,9 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               />
                               {icon}
                               <span className={`text-xs font-medium ${isActive ? color : 'text-muted-foreground'}`}>{val.charAt(0).toUpperCase() + val.slice(1)}</span>
+                              {count !== undefined && (
+                                <span className="text-[10px] text-muted-foreground tabular-nums ml-auto pl-1">{count.toLocaleString()}</span>
+                              )}
                             </label>
                           );
                         })}
@@ -1588,24 +1690,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             <Camera className="w-[16px] h-[16px]" />
                             <span>Photos</span>
                           </button>
-                          <FilterDropdown label="▾" active={selectedExtension.some(e => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(e.toLowerCase()))}
-                            activeLabel={selectedExtension.filter(e => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(e.toLowerCase())).map(e => e.toUpperCase()).join(', ') || undefined}>
-                            {filterOptions?.extensions.filter(ext => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(ext.toLowerCase())).length === 0 && <p className="text-sm text-muted-foreground italic p-2">No photo formats found</p>}
-                            <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
-                              <span className="text-[10px] font-semibold text-foreground/70 uppercase">Photo Formats</span>
-                              <button onClick={() => {
-                                const photoExts = filterOptions?.extensions.filter(ext => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(ext.toLowerCase())) || [];
-                                const allSelected = photoExts.every(ext => selectedExtension.includes(ext));
-                                if (allSelected) setSelectedExtension(prev => prev.filter(e => !photoExts.includes(e)));
-                                else setSelectedExtension(prev => Array.from(new Set([...prev, ...photoExts])));
-                              }} className="text-[10px] text-primary hover:text-primary/80 font-medium">
-                                {filterOptions?.extensions.filter(ext => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(ext.toLowerCase())).every(ext => selectedExtension.includes(ext)) ? 'Deselect All' : 'Select All'}
-                              </button>
-                            </div>
-                            {filterOptions?.extensions.filter(ext => ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'].includes(ext.toLowerCase())).map(ext => (
-                              <FilterCheckbox key={ext} label={ext.toUpperCase()} checked={selectedExtension.includes(ext)} onChange={() => toggleFilter(selectedExtension, setSelectedExtension, ext)} />
+                          {(() => {
+                            const PHOTO_EXTS = ['.jpg','.jpeg','.png','.gif','.bmp','.tiff','.tif','.heic','.heif','.webp','.raw','.cr2','.nef','.arw','.dng','.orf','.rw2','.pef','.sr2','.raf'];
+                            const availablePhotoExts = filterOptions?.extensions.filter(ext => PHOTO_EXTS.includes(ext.toLowerCase())) || [];
+                            const selectedPhotoExts = selectedExtension.filter(e => PHOTO_EXTS.includes(e.toLowerCase()));
+                            return (
+                          <FilterDropdown
+                            label="▾"
+                            active={selectedPhotoExts.length > 0}
+                            selectedValues={selectedPhotoExts.map(e => e.toUpperCase())}
+                            onSelectAll={availablePhotoExts.length > 0 ? () => setSelectedExtension(prev => Array.from(new Set([...prev, ...availablePhotoExts]))) : undefined}
+                            onClearAll={selectedPhotoExts.length > 0 ? () => setSelectedExtension(prev => prev.filter(e => !PHOTO_EXTS.includes(e.toLowerCase()))) : undefined}
+                          >
+                            {availablePhotoExts.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No photo formats found</p>}
+                            {availablePhotoExts.filter(ext => shouldShowOption('extension', ext, selectedExtension.includes(ext))).map(ext => (
+                              <FilterCheckbox key={ext} label={ext.toUpperCase()} checked={selectedExtension.includes(ext)} onChange={() => toggleFilter(selectedExtension, setSelectedExtension, ext)} count={getCount('extension', ext)} />
                             ))}
                           </FilterDropdown>
+                            );
+                          })()}
                         </div>
                         {/* Videos — same active-state contract as Photos
                             above: white on lavender when ON. */}
@@ -1617,24 +1720,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             <Clapperboard className="w-[16px] h-[16px]" />
                             <span>Videos</span>
                           </button>
-                          <FilterDropdown label="▾" active={selectedExtension.some(e => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(e.toLowerCase()))}
-                            activeLabel={selectedExtension.filter(e => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(e.toLowerCase())).map(e => e.toUpperCase()).join(', ') || undefined}>
-                            {filterOptions?.extensions.filter(ext => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(ext.toLowerCase())).length === 0 && <p className="text-sm text-muted-foreground italic p-2">No video formats found</p>}
-                            <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
-                              <span className="text-[10px] font-semibold text-foreground/70 uppercase">Video Formats</span>
-                              <button onClick={() => {
-                                const videoExts = filterOptions?.extensions.filter(ext => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(ext.toLowerCase())) || [];
-                                const allSelected = videoExts.every(ext => selectedExtension.includes(ext));
-                                if (allSelected) setSelectedExtension(prev => prev.filter(e => !videoExts.includes(e)));
-                                else setSelectedExtension(prev => Array.from(new Set([...prev, ...videoExts])));
-                              }} className="text-[10px] text-primary hover:text-primary/80 font-medium">
-                                {filterOptions?.extensions.filter(ext => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(ext.toLowerCase())).every(ext => selectedExtension.includes(ext)) ? 'Deselect All' : 'Select All'}
-                              </button>
-                            </div>
-                            {filterOptions?.extensions.filter(ext => ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'].includes(ext.toLowerCase())).map(ext => (
-                              <FilterCheckbox key={ext} label={ext.toUpperCase()} checked={selectedExtension.includes(ext)} onChange={() => toggleFilter(selectedExtension, setSelectedExtension, ext)} />
+                          {(() => {
+                            const VIDEO_EXTS = ['.mp4','.mov','.avi','.mkv','.wmv','.flv','.webm','.m4v','.3gp','.mpg','.mpeg','.mts','.m2ts'];
+                            const availableVideoExts = filterOptions?.extensions.filter(ext => VIDEO_EXTS.includes(ext.toLowerCase())) || [];
+                            const selectedVideoExts = selectedExtension.filter(e => VIDEO_EXTS.includes(e.toLowerCase()));
+                            return (
+                          <FilterDropdown
+                            label="▾"
+                            active={selectedVideoExts.length > 0}
+                            selectedValues={selectedVideoExts.map(e => e.toUpperCase())}
+                            onSelectAll={availableVideoExts.length > 0 ? () => setSelectedExtension(prev => Array.from(new Set([...prev, ...availableVideoExts]))) : undefined}
+                            onClearAll={selectedVideoExts.length > 0 ? () => setSelectedExtension(prev => prev.filter(e => !VIDEO_EXTS.includes(e.toLowerCase()))) : undefined}
+                          >
+                            {availableVideoExts.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No video formats found</p>}
+                            {availableVideoExts.filter(ext => shouldShowOption('extension', ext, selectedExtension.includes(ext))).map(ext => (
+                              <FilterCheckbox key={ext} label={ext.toUpperCase()} checked={selectedExtension.includes(ext)} onChange={() => toggleFilter(selectedExtension, setSelectedExtension, ext)} count={getCount('extension', ext)} />
                             ))}
                           </FilterDropdown>
+                            );
+                          })()}
                         </div>
                       </div>
                     </RibbonGroup>
@@ -1679,16 +1783,28 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <div className="flex items-center gap-1.5 flex-1 py-1">
                         <Camera className="w-[16px] h-[16px] text-foreground/70 shrink-0" />
                         <div className="flex flex-col gap-0.5">
-                          <FilterDropdown label="Make" active={selectedCameraMake.length > 0} selectedValues={selectedCameraMake}>
+                          <FilterDropdown
+                            label="Make"
+                            active={selectedCameraMake.length > 0}
+                            selectedValues={selectedCameraMake}
+                            onSelectAll={filterOptions?.cameraMakes && filterOptions.cameraMakes.length > 0 ? () => setSelectedCameraMake([...(filterOptions?.cameraMakes || [])]) : undefined}
+                            onClearAll={selectedCameraMake.length > 0 ? () => setSelectedCameraMake([]) : undefined}
+                          >
                             {filterOptions?.cameraMakes.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No camera data</p>}
-                            {filterOptions?.cameraMakes.map(make => (
-                              <FilterCheckbox key={make} label={make} checked={selectedCameraMake.includes(make)} onChange={() => toggleFilter(selectedCameraMake, setSelectedCameraMake, make)} />
+                            {filterOptions?.cameraMakes.filter(make => shouldShowOption('cameraMake', make, selectedCameraMake.includes(make))).map(make => (
+                              <FilterCheckbox key={make} label={make} checked={selectedCameraMake.includes(make)} onChange={() => toggleFilter(selectedCameraMake, setSelectedCameraMake, make)} count={getCount('cameraMake', make)} />
                             ))}
                           </FilterDropdown>
-                          <FilterDropdown label="Model" active={selectedCameraModel.length > 0} selectedValues={selectedCameraModel}>
+                          <FilterDropdown
+                            label="Model"
+                            active={selectedCameraModel.length > 0}
+                            selectedValues={selectedCameraModel}
+                            onSelectAll={filterOptions?.cameraModels && filterOptions.cameraModels.length > 0 ? () => setSelectedCameraModel([...(filterOptions?.cameraModels || [])]) : undefined}
+                            onClearAll={selectedCameraModel.length > 0 ? () => setSelectedCameraModel([]) : undefined}
+                          >
                             {filterOptions?.cameraModels.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No models</p>}
-                            {filterOptions?.cameraModels.map(model => (
-                              <FilterCheckbox key={model} label={model} checked={selectedCameraModel.includes(model)} onChange={() => toggleFilter(selectedCameraModel, setSelectedCameraModel, model)} />
+                            {filterOptions?.cameraModels.filter(model => shouldShowOption('cameraModel', model, selectedCameraModel.includes(model))).map(model => (
+                              <FilterCheckbox key={model} label={model} checked={selectedCameraModel.includes(model)} onChange={() => toggleFilter(selectedCameraModel, setSelectedCameraModel, model)} count={getCount('cameraModel', model)} />
                             ))}
                           </FilterDropdown>
                         </div>
@@ -1702,10 +1818,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Lens" onExpand={() => setOverflowModalGroup('lens')} groupId="lens" isFavourited={isGroupFavourited('lens')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Lens Model" active={selectedLensModel.length > 0} selectedValues={selectedLensModel}>
+                        <FilterDropdown
+                          label="Lens Model"
+                          active={selectedLensModel.length > 0}
+                          selectedValues={selectedLensModel}
+                          onSelectAll={filterOptions?.lensModels && filterOptions.lensModels.length > 0 ? () => setSelectedLensModel([...(filterOptions?.lensModels || [])]) : undefined}
+                          onClearAll={selectedLensModel.length > 0 ? () => setSelectedLensModel([]) : undefined}
+                        >
                           {(!filterOptions?.lensModels || filterOptions.lensModels.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No lens data</p>}
-                          {filterOptions?.lensModels?.map(lens => (
-                            <FilterCheckbox key={lens} label={lens} checked={selectedLensModel.includes(lens)} onChange={() => toggleFilter(selectedLensModel, setSelectedLensModel, lens)} />
+                          {filterOptions?.lensModels?.filter(lens => shouldShowOption('lensModel', lens, selectedLensModel.includes(lens))).map(lens => (
+                            <FilterCheckbox key={lens} label={lens} checked={selectedLensModel.includes(lens)} onChange={() => toggleFilter(selectedLensModel, setSelectedLensModel, lens)} count={getCount('lensModel', lens)} />
                           ))}
                         </FilterDropdown>
                       </div>
@@ -1718,10 +1840,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Camera Type" onExpand={() => setOverflowModalGroup('cameraPosition')} groupId="cameraPosition" isFavourited={isGroupFavourited('cameraPosition')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Position" active={selectedCameraPosition.length > 0} selectedValues={selectedCameraPosition.map(p => p.charAt(0).toUpperCase() + p.slice(1))}>
+                        <FilterDropdown
+                          label="Position"
+                          active={selectedCameraPosition.length > 0}
+                          selectedValues={selectedCameraPosition.map(p => p.charAt(0).toUpperCase() + p.slice(1))}
+                          onSelectAll={filterOptions?.cameraPositions && filterOptions.cameraPositions.length > 0 ? () => setSelectedCameraPosition([...(filterOptions?.cameraPositions || [])]) : undefined}
+                          onClearAll={selectedCameraPosition.length > 0 ? () => setSelectedCameraPosition([]) : undefined}
+                        >
                           {(!filterOptions?.cameraPositions || filterOptions.cameraPositions.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
-                          {filterOptions?.cameraPositions?.map(pos => (
-                            <FilterCheckbox key={pos} label={pos.charAt(0).toUpperCase() + pos.slice(1)} checked={selectedCameraPosition.includes(pos)} onChange={() => toggleFilter(selectedCameraPosition, setSelectedCameraPosition, pos)} />
+                          {filterOptions?.cameraPositions?.filter(pos => shouldShowOption('cameraPosition', pos, selectedCameraPosition.includes(pos))).map(pos => (
+                            <FilterCheckbox key={pos} label={pos.charAt(0).toUpperCase() + pos.slice(1)} checked={selectedCameraPosition.includes(pos)} onChange={() => toggleFilter(selectedCameraPosition, setSelectedCameraPosition, pos)} count={getCount('cameraPosition', pos)} />
                           ))}
                         </FilterDropdown>
                       </div>
@@ -1739,10 +1867,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         Landscape / Portrait / Night), not visual content. */}
                     <RibbonGroup label="Camera Mode" onExpand={() => setOverflowModalGroup('scene')} groupId="scene" isFavourited={isGroupFavourited('scene')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Mode" active={selectedScene.length > 0} selectedValues={selectedScene}>
+                        <FilterDropdown
+                          label="Mode"
+                          active={selectedScene.length > 0}
+                          selectedValues={selectedScene}
+                          onSelectAll={filterOptions?.sceneCaptureTypes && filterOptions.sceneCaptureTypes.length > 0 ? () => setSelectedScene([...(filterOptions?.sceneCaptureTypes || [])]) : undefined}
+                          onClearAll={selectedScene.length > 0 ? () => setSelectedScene([]) : undefined}
+                        >
                           {(!filterOptions?.sceneCaptureTypes || filterOptions.sceneCaptureTypes.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No camera-mode data — run a fix to populate</p>}
-                          {filterOptions?.sceneCaptureTypes?.map(scene => (
-                            <FilterCheckbox key={scene} label={scene} checked={selectedScene.includes(scene)} onChange={() => toggleFilter(selectedScene, setSelectedScene, scene)} />
+                          {filterOptions?.sceneCaptureTypes?.filter(scene => shouldShowOption('sceneCaptureType', scene, selectedScene.includes(scene))).map(scene => (
+                            <FilterCheckbox key={scene} label={scene} checked={selectedScene.includes(scene)} onChange={() => toggleFilter(selectedScene, setSelectedScene, scene)} count={getCount('sceneCaptureType', scene)} />
                           ))}
                         </FilterDropdown>
                       </div>
@@ -1755,10 +1889,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Exposure" onExpand={() => setOverflowModalGroup('exposureProgram')} groupId="exposureProgram" isFavourited={isGroupFavourited('exposureProgram')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Program" active={selectedExposureProgram.length > 0} selectedValues={selectedExposureProgram}>
+                        <FilterDropdown
+                          label="Program"
+                          active={selectedExposureProgram.length > 0}
+                          selectedValues={selectedExposureProgram}
+                          onSelectAll={filterOptions?.exposurePrograms && filterOptions.exposurePrograms.length > 0 ? () => setSelectedExposureProgram([...(filterOptions?.exposurePrograms || [])]) : undefined}
+                          onClearAll={selectedExposureProgram.length > 0 ? () => setSelectedExposureProgram([]) : undefined}
+                        >
                           {(!filterOptions?.exposurePrograms || filterOptions.exposurePrograms.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
-                          {filterOptions?.exposurePrograms?.map(prog => (
-                            <FilterCheckbox key={prog} label={prog} checked={selectedExposureProgram.includes(prog)} onChange={() => toggleFilter(selectedExposureProgram, setSelectedExposureProgram, prog)} />
+                          {filterOptions?.exposurePrograms?.filter(prog => shouldShowOption('exposureProgram', prog, selectedExposureProgram.includes(prog))).map(prog => (
+                            <FilterCheckbox key={prog} label={prog} checked={selectedExposureProgram.includes(prog)} onChange={() => toggleFilter(selectedExposureProgram, setSelectedExposureProgram, prog)} count={getCount('exposureProgram', prog)} />
                           ))}
                         </FilterDropdown>
                       </div>
@@ -1771,10 +1911,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="White Balance" onExpand={() => setOverflowModalGroup('whiteBalance')} groupId="whiteBalance" isFavourited={isGroupFavourited('whiteBalance')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="WB" active={selectedWhiteBalance.length > 0} selectedValues={selectedWhiteBalance}>
+                        <FilterDropdown
+                          label="WB"
+                          active={selectedWhiteBalance.length > 0}
+                          selectedValues={selectedWhiteBalance}
+                          onSelectAll={filterOptions?.whiteBalances && filterOptions.whiteBalances.length > 0 ? () => setSelectedWhiteBalance([...(filterOptions?.whiteBalances || [])]) : undefined}
+                          onClearAll={selectedWhiteBalance.length > 0 ? () => setSelectedWhiteBalance([]) : undefined}
+                        >
                           {(!filterOptions?.whiteBalances || filterOptions.whiteBalances.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No data — run a fix to populate</p>}
-                          {filterOptions?.whiteBalances?.map(wb => (
-                            <FilterCheckbox key={wb} label={wb} checked={selectedWhiteBalance.includes(wb)} onChange={() => toggleFilter(selectedWhiteBalance, setSelectedWhiteBalance, wb)} />
+                          {filterOptions?.whiteBalances?.filter(wb => shouldShowOption('whiteBalance', wb, selectedWhiteBalance.includes(wb))).map(wb => (
+                            <FilterCheckbox key={wb} label={wb} checked={selectedWhiteBalance.includes(wb)} onChange={() => toggleFilter(selectedWhiteBalance, setSelectedWhiteBalance, wb)} count={getCount('whiteBalance', wb)} />
                           ))}
                         </FilterDropdown>
                       </div>
@@ -1806,7 +1952,19 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <RibbonSeparator />
                       <RibbonGroup label="Orientation" onExpand={() => setOverflowModalGroup('orientation')} groupId="orientation" isFavourited={isGroupFavourited('orientation')} onToggleFavourite={toggleFavouriteGroup}>
                         <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                          <FilterDropdown label="Orient." active={selectedOrientation.length > 0} selectedValues={selectedGroupLabels}>
+                          <FilterDropdown
+                            label="Orient."
+                            active={selectedOrientation.length > 0}
+                            selectedValues={selectedGroupLabels}
+                            onSelectAll={() => {
+                              // Select all 4 orientation groups (Landscape /
+                              // Portrait / Mirrored / Unknown). The underlying
+                              // raw values are stored, not the group labels.
+                              const allRaws = ORIENTATION_GROUPS.flatMap(g => g.raws);
+                              setSelectedOrientation(allRaws);
+                            }}
+                            onClearAll={selectedOrientation.length > 0 ? () => setSelectedOrientation([]) : undefined}
+                          >
                             {activeGroups.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No orientation data — run a fix to populate</p>}
                             {activeGroups.map(g => {
                               const allSelected = g.present.every(r => selectedOrientation.includes(r));
@@ -1816,6 +1974,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                   label={g.label}
                                   checked={allSelected}
                                   onChange={() => toggleGroup(g.label, g.present)}
+                                  count={g.present.reduce((sum, raw) => sum + (getCount('orientation', raw) ?? 0), 0) || undefined}
                                 />
                               );
                             })}
@@ -1831,10 +1990,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <RibbonSeparator />
                     <RibbonGroup label="Date Source" onExpand={() => setOverflowModalGroup('source')} groupId="source" isFavourited={isGroupFavourited('source')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Source" active={selectedDateSource.length > 0} selectedValues={selectedDateSource}>
+                        <FilterDropdown
+                          label="Source"
+                          active={selectedDateSource.length > 0}
+                          selectedValues={selectedDateSource}
+                          onSelectAll={filterOptions?.dateSources && filterOptions.dateSources.length > 0 ? () => setSelectedDateSource([...(filterOptions?.dateSources || [])]) : undefined}
+                          onClearAll={selectedDateSource.length > 0 ? () => setSelectedDateSource([]) : undefined}
+                        >
                           {filterOptions?.dateSources.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No sources</p>}
-                          {filterOptions?.dateSources.map(src => (
-                            <FilterCheckbox key={src} label={src} checked={selectedDateSource.includes(src)} onChange={() => toggleFilter(selectedDateSource, setSelectedDateSource, src)} />
+                          {filterOptions?.dateSources.filter(src => shouldShowOption('dateSource', src, selectedDateSource.includes(src))).map(src => (
+                            <FilterCheckbox key={src} label={src} checked={selectedDateSource.includes(src)} onChange={() => toggleFilter(selectedDateSource, setSelectedDateSource, src)} count={getCount('dateSource', src)} />
                           ))}
                         </FilterDropdown>
                       </div>
@@ -1876,18 +2041,30 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         {/* Country / City dropdowns — matching widths */}
                         <div className="flex flex-col gap-0.5">
                           <div className="[&>div>button]:w-[96px] [&>div>button]:justify-between">
-                            <FilterDropdown label="Country" active={selectedCountry.length > 0} selectedValues={selectedCountry}>
+                            <FilterDropdown
+                              label="Country"
+                              active={selectedCountry.length > 0}
+                              selectedValues={selectedCountry}
+                              onSelectAll={filterOptions?.countries && filterOptions.countries.length > 0 ? () => setSelectedCountry([...(filterOptions?.countries || [])]) : undefined}
+                              onClearAll={selectedCountry.length > 0 ? () => setSelectedCountry([]) : undefined}
+                            >
                               {(!filterOptions?.countries || filterOptions.countries.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
-                              {filterOptions?.countries?.map(c => (
-                                <FilterCheckbox key={c} label={c} checked={selectedCountry.includes(c)} onChange={() => toggleFilter(selectedCountry, setSelectedCountry, c)} />
+                              {filterOptions?.countries?.filter(c => shouldShowOption('country', c, selectedCountry.includes(c))).map(c => (
+                                <FilterCheckbox key={c} label={c} checked={selectedCountry.includes(c)} onChange={() => toggleFilter(selectedCountry, setSelectedCountry, c)} count={getCount('country', c)} />
                               ))}
                             </FilterDropdown>
                           </div>
                           <div className="[&>div>button]:w-[96px] [&>div>button]:justify-between">
-                            <FilterDropdown label="City" active={selectedCity.length > 0} selectedValues={selectedCity}>
+                            <FilterDropdown
+                              label="City"
+                              active={selectedCity.length > 0}
+                              selectedValues={selectedCity}
+                              onSelectAll={filterOptions?.cities && filterOptions.cities.length > 0 ? () => setSelectedCity([...(filterOptions?.cities || [])]) : undefined}
+                              onClearAll={selectedCity.length > 0 ? () => setSelectedCity([]) : undefined}
+                            >
                               {(!filterOptions?.cities || filterOptions.cities.length === 0) && <p className="text-sm text-muted-foreground italic p-2">No location data — run a fix to populate</p>}
-                              {filterOptions?.cities?.map(c => (
-                                <FilterCheckbox key={c} label={c} checked={selectedCity.includes(c)} onChange={() => toggleFilter(selectedCity, setSelectedCity, c)} />
+                              {filterOptions?.cities?.filter(c => shouldShowOption('city', c, selectedCity.includes(c))).map(c => (
+                                <FilterCheckbox key={c} label={c} checked={selectedCity.includes(c)} onChange={() => toggleFilter(selectedCity, setSelectedCity, c)} count={getCount('city', c)} />
                               ))}
                             </FilterDropdown>
                           </div>
@@ -1993,17 +2170,59 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </>
                 )}
 
+                {/* ── Album filter (v2.0.8 step 5) ── */}
+                {visibleGroups.includes('album') && (
+                  <>
+                    <RibbonSeparator />
+                    <RibbonGroup label="Album" onExpand={() => setOverflowModalGroup('album')} groupId="album" isFavourited={isGroupFavourited('album')} onToggleFavourite={toggleFavouriteGroup}>
+                      <div className="flex items-center gap-1.5 flex-1 py-1.5">
+                        <FilterDropdown
+                          label="Album"
+                          active={selectedAlbums.length > 0}
+                          selectedValues={selectedAlbums.map(id => albums.find(a => a.id === id)?.title ?? `#${id}`)}
+                          onSelectAll={albums.length > 0 ? () => setSelectedAlbums(albums.map(a => a.id)) : undefined}
+                          onClearAll={selectedAlbums.length > 0 ? () => setSelectedAlbums([]) : undefined}
+                        >
+                          {albums.length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic px-3 py-2">No albums yet. Create one in Memories → Albums.</p>
+                          ) : (
+                            albums
+                              .slice()
+                              .filter(album => shouldShowOption('album', String(album.id), selectedAlbums.includes(album.id)))
+                              .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+                              .map(album => (
+                                <FilterCheckbox
+                                  key={album.id}
+                                  label={album.title}
+                                  checked={selectedAlbums.includes(album.id)}
+                                  onChange={() => setSelectedAlbums(prev => prev.includes(album.id) ? prev.filter(id => id !== album.id) : [...prev, album.id])}
+                                  count={getCount('album', String(album.id)) ?? album.photoCount}
+                                />
+                              ))
+                          )}
+                        </FilterDropdown>
+                      </div>
+                    </RibbonGroup>
+                  </>
+                )}
+
                 {/* ── Destination filter ── */}
                 {visibleGroups.includes('destination') && (
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Library Drive" onExpand={() => setOverflowModalGroup('destination')} groupId="destination" isFavourited={isGroupFavourited('destination')} onToggleFavourite={toggleFavouriteGroup}>
                       <div className="flex items-center gap-1.5 flex-1 py-1.5">
-                        <FilterDropdown label="Library Drive" active={selectedDestination.length > 0} activeLabel={selectedDestination.length > 0 ? `${selectedDestination.length} selected` : undefined}>
+                        <FilterDropdown
+                          label="Library Drive"
+                          active={selectedDestination.length > 0}
+                          selectedValues={selectedDestination}
+                          onSelectAll={filterOptions?.destinations && filterOptions.destinations.length > 0 ? () => setSelectedDestination([...(filterOptions?.destinations || [])]) : undefined}
+                          onClearAll={selectedDestination.length > 0 ? () => setSelectedDestination([]) : undefined}
+                        >
                           {(!filterOptions?.destinations || filterOptions.destinations.length === 0) ? (
                             <p className="text-xs text-muted-foreground italic px-3 py-2">No Library Drives indexed</p>
                           ) : (
-                            filterOptions.destinations.map(dest => {
+                            filterOptions.destinations.filter(dest => shouldShowOption('destination', dest, selectedDestination.includes(dest))).map(dest => {
                               const available = destinationAvailability[dest] !== false;
                               return (
                                 <FilterCheckbox
@@ -2015,6 +2234,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                     ? <FolderOpen className="w-3.5 h-3.5 text-muted-foreground" />
                                     : <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                                   }
+                                  count={getCount('destination', dest)}
                                 />
                               );
                             })
@@ -3238,6 +3458,52 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         </div>
       )}
 
+      {/* Persistent hint when any Tier-1 gate filter has been emptied
+          out. Tier-1 gates (Confidence, File Type, Library Drive)
+          each return zero results when their selection is empty —
+          regardless of any other filter — so this banner names the
+          empty ones and offers one-click recovery. Terry 2026-05-19:
+          gates default-on, with a banner when they go empty. */}
+      {(() => {
+        const driveOptions = filterOptions?.destinations ?? [];
+        const driveEmpty = destinationsInitializedRef.current && selectedDestination.length === 0 && driveOptions.length > 0;
+        const empties: string[] = [];
+        if (selectedConfidence.length === 0) empties.push('Confidence');
+        if (selectedFileType.length === 0) empties.push('File Type');
+        if (driveEmpty) empties.push('Library Drive');
+        if (empties.length === 0) return null;
+        const restoreAll = () => {
+          if (selectedConfidence.length === 0) setSelectedConfidence(['confirmed', 'recovered', 'marked']);
+          if (selectedFileType.length === 0) setSelectedFileType(['photo', 'video']);
+          if (driveEmpty) setSelectedDestination([...driveOptions]);
+        };
+        return (
+          <div
+            className="shrink-0 mx-3 mt-2 mb-1 px-3 py-2 rounded-md text-xs flex items-center gap-2"
+            style={{ backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#78350f', borderWidth: '1px', borderStyle: 'solid' }}
+            data-testid="gate-filters-empty-banner"
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">
+              <strong>No results will show.</strong>{' '}
+              {empties.length === 1
+                ? `${empties[0]} has no selection`
+                : `These filters need at least one tick each: ${empties.join(' · ')}`}
+              {' — tick at least one option in each above to see photos.'}
+            </span>
+            <button
+              type="button"
+              onClick={restoreAll}
+              className="px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors"
+              style={{ backgroundColor: '#f59e0b', color: 'white' }}
+              data-testid="gate-filters-empty-banner-restore"
+            >
+              Show all
+            </button>
+          </div>
+        );
+      })()}
+
       {/* ═══ RESULTS AREA (below ribbon, above workspace) ═══ */}
       {searchActive && results && (
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -3910,12 +4176,21 @@ function FilterDropdown({
   activeLabel,
   selectedValues,
   children,
+  onSelectAll,
+  onClearAll,
 }: {
   label: string;
   active: boolean;
   activeLabel?: string;
   selectedValues?: string[];
   children: React.ReactNode;
+  /** Optional handlers. When provided, a "Select all / Clear all"
+   *  header strip is rendered at the top of the dropdown so users
+   *  don't have to click each item individually. Terry 2026-05-19:
+   *  "There needs to be a clear all and select all on this filter."
+   *  Available to every filter that wires the props through. */
+  onSelectAll?: () => void;
+  onClearAll?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -3962,18 +4237,20 @@ function FilterDropdown({
     };
   }, [open]);
 
-  let display: string;
-  let title: string | undefined;
-  if (selectedValues && selectedValues.length > 0) {
-    title = selectedValues.join(', ');
-    display = selectedValues.length === 1 ? selectedValues[0] : `${selectedValues.length} selected`;
-  } else if (activeLabel) {
-    // Legacy path — used by filters that already format their own label.
-    display = activeLabel;
-    title = activeLabel;
-  } else {
-    display = label;
-  }
+  // Trigger ALWAYS shows the filter's name — Terry 2026-05-19: "the
+  // filter button name should remain in view and the no. selected
+  // appears at the top of the dropdown". Previous behaviour swapped
+  // the label out for "N selected" or the joined value list, which
+  // (a) hid the filter's identity once it had a selection, and (b)
+  // grew the trigger's width as more items were ticked. The count
+  // + selected-values summary now live inside the dropdown header.
+  const display = label;
+  const title = selectedValues && selectedValues.length > 0 ? selectedValues.join(', ') : activeLabel;
+  const selectionCount = selectedValues?.length ?? 0;
+  const inDropdownSummary = selectionCount > 0
+    ? `${selectionCount} selected`
+    : (activeLabel && activeLabel !== label ? activeLabel : null);
+  const hasHeaderStrip = inDropdownSummary !== null || !!onSelectAll || !!onClearAll;
 
   return (
     <>
@@ -4007,6 +4284,37 @@ function FilterDropdown({
           }}
           className="min-w-[200px] max-h-[60vh] overflow-y-auto bg-background border border-border rounded-xl shadow-lg p-2 space-y-0.5"
         >
+          {hasHeaderStrip && (
+            <div className="flex items-center gap-2 pb-1.5 mb-1 border-b border-border/60">
+              {inDropdownSummary && (
+                <span className="text-[11px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/10 truncate" data-testid="filter-dropdown-count">
+                  {inDropdownSummary}
+                </span>
+              )}
+              <div className="flex items-center gap-1 ml-auto shrink-0">
+                {onSelectAll && (
+                  <button
+                    type="button"
+                    onClick={onSelectAll}
+                    className="px-2 py-1 text-[11px] font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
+                    data-testid="filter-dropdown-select-all"
+                  >
+                    Select all
+                  </button>
+                )}
+                {onClearAll && (
+                  <button
+                    type="button"
+                    onClick={onClearAll}
+                    className="px-2 py-1 text-[11px] font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
+                    data-testid="filter-dropdown-clear-all"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {children}
         </div>,
         document.body,
@@ -4017,7 +4325,7 @@ function FilterDropdown({
 
 // ─── Filter Checkbox ─────────────────────────────────────────────────────────
 
-function FilterCheckbox({ label, checked, onChange, color, icon }: { label: string; checked: boolean; onChange: () => void; color?: string; icon?: React.ReactNode }) {
+function FilterCheckbox({ label, checked, onChange, color, icon, count }: { label: string; checked: boolean; onChange: () => void; color?: string; icon?: React.ReactNode; count?: number }) {
   return (
     <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-primary/5 cursor-pointer transition-colors">
       {/* Uses the shared Checkbox primitive so the check icon is white
@@ -4028,6 +4336,15 @@ function FilterCheckbox({ label, checked, onChange, color, icon }: { label: stri
       <Checkbox checked={checked} onCheckedChange={onChange} />
       {icon && <span className="shrink-0">{icon}</span>}
       <span className={`text-sm flex-1 truncate ${color || 'text-foreground'} ${checked ? 'font-medium' : ''}`}>{label}</span>
+      {/* Count badge — number of files in the index that match this
+          option. Terry 2026-05-19: "aren't you able to have the
+          numbers of files for each location?" Optional so legacy
+          callers that don't pass count still render cleanly. */}
+      {count !== undefined && count !== null && (
+        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 ml-1">
+          {count.toLocaleString()}
+        </span>
+      )}
     </label>
   );
 }

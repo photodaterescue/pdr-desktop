@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarRange,
   ChevronLeft,
@@ -12,9 +12,22 @@ import {
   HardDrive,
   PlayCircle,
   ArrowRight,
+  Check,
+  Copy,
+  FolderPlus,
+  ListChecks,
+  ArrowUpToLine,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/custom-button';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
 import {
   getMemoriesYearMonthBuckets,
   getMemoriesOnThisDay,
@@ -28,6 +41,7 @@ import {
   type IndexedRun,
 } from '../lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import AddToAlbumPopover from './AddToAlbumPopover';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -209,14 +223,43 @@ export default function MemoriesView() {
   const totalPhotos = useMemo(() => buckets.reduce((s, b) => s + (b.photoCount || 0), 0), [buckets]);
   const totalVideos = useMemo(() => buckets.reduce((s, b) => s + (b.videoCount || 0), 0), [buckets]);
 
-  const openMonth = (year: number, month: number) => setSelectedRange({ year, month });
-  const openYear = (year: number) => setSelectedRange({ year });
+  // Remember the year the user drilled into so "Back to timeline"
+  // can scroll the timeline back to that year, not the top. Terry
+  // 2026-05-19: "if someone had drilled into a month of 2004, there
+  // unlikely to want to go back to May 2026 when they go back to
+  // timeline". Set by openMonth/openYear, consumed by the effect
+  // below when selectedRange returns to null.
+  const [lastDrilledYear, setLastDrilledYear] = useState<number | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  const openMonth = (year: number, month: number) => {
+    setLastDrilledYear(year);
+    setSelectedRange({ year, month });
+  };
+  const openYear = (year: number) => {
+    setLastDrilledYear(year);
+    setSelectedRange({ year });
+  };
 
   // Year sidebar — quick scroll to a year.
   const jumpToYear = (year: number) => {
     const el = document.getElementById(`memories-year-${year}`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  // When returning from a drilldown, scroll the timeline to the
+  // year the user was browsing (if any). Use 'auto' scroll so it
+  // feels like "back to where I was" instead of an animated jump.
+  useEffect(() => {
+    if (selectedRange !== null) return;
+    if (lastDrilledYear === null) return;
+    // Defer to next tick so the timeline DOM has re-rendered.
+    const id = setTimeout(() => {
+      const el = document.getElementById(`memories-year-${lastDrilledYear}`);
+      if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [selectedRange, lastDrilledYear]);
 
   if (selectedRange) {
     return (
@@ -226,6 +269,7 @@ export default function MemoriesView() {
         day={selectedRange.day}
         runIds={selectedRunIds}
         density={density}
+        onDensityChange={changeDensity}
         onBack={() => setSelectedRange(null)}
       />
     );
@@ -247,13 +291,31 @@ export default function MemoriesView() {
           specific to the By Date view (photo/video counts across
           years) and useful context just below the tab strip. */}
       <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border/60 flex items-center justify-between gap-4 flex-wrap">
-        <p className="text-xs text-muted-foreground">
-          {loading
-            ? 'Loading…'
-            : buckets.length === 0
-              ? 'No photos indexed yet — run a Fix first to build your memory timeline.'
-              : `${totalPhotos.toLocaleString()} photos · ${totalVideos.toLocaleString()} videos across ${yearGroups.length} ${yearGroups.length === 1 ? 'year' : 'years'}.`}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-muted-foreground">
+            {loading
+              ? 'Loading…'
+              : buckets.length === 0
+                ? 'No photos indexed yet — run a Fix first to build your memory timeline.'
+                : `${totalPhotos.toLocaleString()} photos · ${totalVideos.toLocaleString()} videos across ${yearGroups.length} ${yearGroups.length === 1 ? 'year' : 'years'}.`}
+          </p>
+          {/* Jump to most recent year — useful after returning from a
+              deep drilldown into older years. Terry 2026-05-19:
+              "there should be a button that says back to today, or
+              latest photos". Hidden when timeline is empty. */}
+          {yearGroups.length > 0 && (
+            <IconTooltip label={`Jump to ${yearGroups[0][0]} (most recent)`} side="bottom">
+              <button
+                onClick={() => jumpToYear(yearGroups[0][0])}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-xs font-medium text-foreground transition-colors"
+                data-testid="button-jump-to-latest"
+              >
+                <ArrowUpToLine className="w-3 h-3" />
+                Jump to latest
+              </button>
+            </IconTooltip>
+          )}
+        </div>
 
         {/* `data-tour="mem-controls"` wraps both static controls so step
             3 of the Memories tour has a guaranteed spotlight target.
@@ -469,24 +531,52 @@ export default function MemoriesView() {
 // ─── Density toggle ───────────────────────────────────────────────────────
 
 function DensityToggle({ value, onChange }: { value: Density; onChange: (d: Density) => void }) {
+  // Sliding-thumb segmented control — matches the MemoriesPanel's
+  // By Date / Albums switch so the visual language stays consistent
+  // across this surface. Terry 2026-05-19: "Spacious / Tight should
+  // adopt the same slider type button as what By Date and Albums
+  // does." A single absolute-positioned white pill slides between
+  // the two triggers; the triggers themselves are transparent.
+  const spaciousRef = useRef<HTMLButtonElement>(null);
+  const tightRef = useRef<HTMLButtonElement>(null);
+  const [thumbStyle, setThumbStyle] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const target = value === 'spacious' ? spaciousRef.current : tightRef.current;
+    if (target) setThumbStyle({ left: target.offsetLeft, width: target.offsetWidth });
+  }, [value]);
   return (
-    <div className="flex items-center rounded-md border border-border overflow-hidden bg-background">
-      <IconTooltip label="Space between photos" side="bottom">
-        <button
-          onClick={() => onChange('spacious')}
-          className={`px-2 py-1 text-[11px] font-medium transition-colors ${value === 'spacious' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-        >
-          Spacious
-        </button>
-      </IconTooltip>
-      <IconTooltip label="No gaps between photos — dense wall view" side="bottom">
-        <button
-          onClick={() => onChange('tight')}
-          className={`px-2 py-1 text-[11px] font-medium transition-colors border-l border-border ${value === 'tight' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}
-        >
-          Tight
-        </button>
-      </IconTooltip>
+    /* `shrink-0` prevents the timeline parent's `flex-wrap` from
+       squashing the capsule when the LibrarySelector is also present.
+       IconTooltip wrappers dropped — Radix Slot+asChild ref-forwarding
+       was occasionally interfering with the offsetLeft/offsetWidth
+       measurement of the trigger buttons, producing a one-segment
+       render in the timeline context. Native `title=` for the hover
+       label (sanctioned by IconTooltip's own source comment when the
+       Radix tooltip causes layout edge cases). */
+    <div className="relative inline-flex h-8 p-0.5 bg-primary rounded-full shrink-0">
+      {thumbStyle && (
+        <div
+          aria-hidden
+          className="absolute top-0.5 h-7 bg-background rounded-full shadow-sm pointer-events-none transition-[left,width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          style={{ left: `${thumbStyle.left}px`, width: `${thumbStyle.width}px` }}
+        />
+      )}
+      <button
+        ref={spaciousRef}
+        onClick={() => onChange('spacious')}
+        title="Space between photos"
+        className={`relative z-10 px-3 h-7 rounded-full text-[11px] font-medium transition-colors duration-300 ${value === 'spacious' ? 'text-primary' : 'text-primary-foreground'}`}
+      >
+        Spacious
+      </button>
+      <button
+        ref={tightRef}
+        onClick={() => onChange('tight')}
+        title="No gaps between photos — dense wall view"
+        className={`relative z-10 px-3 h-7 rounded-full text-[11px] font-medium transition-colors duration-300 ${value === 'tight' ? 'text-primary' : 'text-primary-foreground'}`}
+      >
+        Tight
+      </button>
     </div>
   );
 }
@@ -553,9 +643,46 @@ function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBuc
 
 // ─── Day drill-down ────────────────────────────────────────────────────────
 
-function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { year: number; month?: number; day?: number; runIds: number[] | undefined; density: Density; onBack: () => void }) {
+function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChange, onBack }: { year: number; month?: number; day?: number; runIds: number[] | undefined; density: Density; onDensityChange: (d: Density) => void; onBack: () => void }) {
   const [files, setFiles] = useState<IndexedFile[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  // Selection mode toggle — when on, checkboxes are visible by
+  // default (not only on hover). Mirrors the S&D "Select" button
+  // contract so users without keyboards can still drive multi-
+  // select. Terry 2026-05-19: "I want you to include the select
+  // button as shown in the screenshot from S&D. This will make
+  // it easier for people that can't use the keyboard for
+  // whatever reason."
+  const [selectionMode, setSelectionMode] = useState(false);
+
+  // Multi-select state — same model as S&D so users can build albums
+  // while browsing chronologically. Terry 2026-05-18: "There should
+  // be the same photo checking/selecting available in Memories—By
+  // Date as what is in S&D... this will enable users to create
+  // albums or add to them as they see photos in a chronological
+  // view." Plain click still opens the viewer; Ctrl/Cmd+click
+  // toggles selection; Shift+click range-selects; checkbox click
+  // also toggles. Mirrors SearchPanel's FileCard contract.
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
+  const lastClickedIndexRef = useRef<number | null>(null);
+  const toggleSelection = (file: IndexedFile, mode?: 'add' | 'remove') => {
+    setSelectedFileIds(prev => {
+      const next = new Set(prev);
+      if (mode === 'add') next.add(file.id);
+      else if (mode === 'remove') next.delete(file.id);
+      else if (next.has(file.id)) next.delete(file.id);
+      else next.add(file.id);
+      return next;
+    });
+  };
+  const clearSelection = () => {
+    setSelectedFileIds(new Set());
+    lastClickedIndexRef.current = null;
+  };
+  // Clear selection on drilldown navigation — when the user clicks
+  // a different year/month/day, the old selection is no longer
+  // referenceable in the new file list.
+  useEffect(() => { clearSelection(); }, [year, month, day]);
 
   // Tile size — Ctrl+scroll to zoom, persisted across sessions.
   const [tileSizeSlider, setTileSizeSlider] = useState<number>(() => {
@@ -734,12 +861,65 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
             </p>
           </PopoverContent>
         </Popover>
+        {/* Density toggle — same control as the main timeline view,
+            so the user can switch spacious/tight while drilled in
+            (Terry 2026-05-19: "Spacious - Tight should still be an
+            option when drilling into look at the months photos"). */}
+        <DensityToggle value={density} onChange={onDensityChange} />
+        {/* Select toggle — when on, checkboxes are visible by default.
+            Mouse-only / accessibility alternative to Ctrl/Shift+click. */}
+        <IconTooltip label={selectionMode ? 'Exit selection mode' : 'Show checkboxes on every photo'} side="bottom">
+          <button
+            onClick={() => setSelectionMode(v => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
+            data-testid="button-selection-mode"
+          >
+            <ListChecks className="w-3.5 h-3.5" />
+            {selectionMode ? 'Selecting' : 'Select'}
+          </button>
+        </IconTooltip>
+        {/* Selection bar — only renders when user has checked items.
+            Mirrors the S&D selection-bar contract: dismissable chip
+            with count + AddToAlbumPopover sit between the static
+            controls and the "Open all in Viewer" CTA. */}
+        {selectedFileIds.size > 0 && (
+          <>
+            <IconTooltip label="Clear selection" side="bottom">
+              <button
+                onClick={clearSelection}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-xs font-medium text-foreground transition-colors"
+                data-testid="memories-selection-chip"
+              >
+                {selectedFileIds.size} selected
+                <X className="w-3 h-3 opacity-70" />
+              </button>
+            </IconTooltip>
+            <AddToAlbumPopover
+              fileIds={Array.from(selectedFileIds)}
+              onAdded={clearSelection}
+            />
+          </>
+        )}
         {files != null && files.length > 1 && (
           <button
-            onClick={() => openSearchViewer(files.map(f => f.file_path), files.map(f => f.filename))}
-            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all"
+            onClick={() => {
+              // When the user has a selection, open ONLY those files
+              // in the viewer (Terry 2026-05-19: "if any photos have
+              // been checked/selected, then it should read 'Open
+              // Selected in Viewer' — and obviously only show the
+              // selected in the viewer"). Otherwise open the full
+              // year/month/day set.
+              const target = selectedFileIds.size > 0
+                ? files.filter(f => selectedFileIds.has(f.id))
+                : files;
+              openSearchViewer(target.map(f => f.file_path), target.map(f => f.filename));
+            }}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
+            data-testid="button-open-in-viewer"
           >
-            Open all in Viewer
+            {selectedFileIds.size > 0
+              ? `Open ${selectedFileIds.size} Selected in Viewer`
+              : `Open ${title} in Viewer`}
           </button>
         )}
       </div>
@@ -756,39 +936,157 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onBack }: { y
             className={`grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
             style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${drilldownSliderToPx(tileSizeSlider)}px, 1fr))` }}
           >
-            {files.map((f, idx) => (
-              <IconTooltip key={f.id} label={`${f.filename} · ${formatHumanDate(f.derived_date)}`} side="top">
-                <button
-                  // Pass every file in this drilldown + the clicked
-                  // index so the viewer's arrows browse the whole
-                  // year/month/day from where the user landed.
-                  onClick={() => openSearchViewer(files.map(x => x.file_path), files.map(x => x.filename), idx)}
-                  className={`group relative aspect-square overflow-hidden bg-secondary/30 transition-all ${density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50'}`}
-                >
-                  {thumbs[f.file_path] ? (
-                    <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
-                      {f.file_type === 'video' ? <Film className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
-                    </div>
-                  )}
-                  {f.file_type === 'video' && (
-                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
-                      <Film className="w-2.5 h-2.5" /> Video
-                    </div>
-                  )}
-                  {/* Footer strip — only rendered when at least one
-                      meta field is enabled, so the default view is a
-                      clean photo wall with zero overlay. */}
-                  {(showFilename || showDate) && (
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent px-2 pb-1.5 pt-6 space-y-0.5">
-                      {showFilename && <div className="text-[11px] text-white/90 truncate">{f.filename}</div>}
-                      {showDate && <div className="text-[10px] text-white/75 truncate">{formatHumanDate(f.derived_date)}</div>}
-                    </div>
-                  )}
-                </button>
-              </IconTooltip>
-            ))}
+            {files.map((f, idx) => {
+              const isMultiSelected = selectedFileIds.has(f.id);
+              return (
+              <ContextMenu key={f.id}>
+                <ContextMenuTrigger asChild>
+                    <button
+                      // Native title attribute (sanctioned by
+                      // IconTooltip's own source comment for tile-
+                      // grid use cases — "Keep native title= only for
+                      // pure overflow/truncation previews ... where
+                      // converting thousands of DOM nodes to Radix
+                      // tooltips would be a perf regression"). The
+                      // previous IconTooltip wrapper broke
+                      // ContextMenuTrigger asChild because Radix
+                      // tried to forward trigger props to the
+                      // TooltipProvider element — context-menu event
+                      // never reached the button. With native title
+                      // the button IS the trigger's direct child, so
+                      // right-click works.
+                      title={`${f.filename} · ${formatHumanDate(f.derived_date)}`}
+                      // Modifier-key contract mirrors SearchPanel/S&D:
+                      //   plain click            → open viewer (jump in at idx)
+                      //   selectionMode + click  → toggle selection (Select-button affordance)
+                      //   Ctrl/Cmd+click         → toggle selection
+                      //   Shift+click            → range select from last clicked
+                      onClick={(e) => {
+                        if (e.ctrlKey || e.metaKey) {
+                          e.preventDefault();
+                          toggleSelection(f);
+                          lastClickedIndexRef.current = idx;
+                          return;
+                        }
+                        if (e.shiftKey && lastClickedIndexRef.current !== null) {
+                          const start = Math.min(lastClickedIndexRef.current, idx);
+                          const end = Math.max(lastClickedIndexRef.current, idx);
+                          for (let i = start; i <= end; i++) {
+                            const file = files[i];
+                            if (file) toggleSelection(file, 'add');
+                          }
+                          lastClickedIndexRef.current = idx;
+                          return;
+                        }
+                        // Selection-mode body click toggles selection
+                        // (mouse-only alternative). Terry 2026-05-19:
+                        // "Select button should allow the user to
+                        // click anywhere on the photo to select it,
+                        // not just the top left corner."
+                        if (selectionMode) {
+                          toggleSelection(f);
+                          lastClickedIndexRef.current = idx;
+                          return;
+                        }
+                        lastClickedIndexRef.current = idx;
+                        openSearchViewer(files.map(x => x.file_path), files.map(x => x.filename), idx);
+                      }}
+                      className={`group relative aspect-square overflow-hidden bg-secondary/30 transition-all ${
+                        isMultiSelected ? 'ring-2 ring-primary' :
+                        density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50'
+                      }`}
+                    >
+                      {/* Selection checkbox — visible on hover, OR
+                          when selected, OR when selectionMode is on
+                          (the "Select" toggle in the header forces
+                          every checkbox visible for keyboard-free
+                          users). */}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          const multiSelectActive = selectedFileIds.size > 0;
+                          if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
+                            const start = Math.min(lastClickedIndexRef.current, idx);
+                            const end = Math.max(lastClickedIndexRef.current, idx);
+                            for (let i = start; i <= end; i++) {
+                              const file = files[i];
+                              if (file && !selectedFileIds.has(file.id)) toggleSelection(file, 'add');
+                            }
+                            lastClickedIndexRef.current = idx;
+                            return;
+                          }
+                          toggleSelection(f);
+                          lastClickedIndexRef.current = idx;
+                        }}
+                        className={`absolute top-1.5 left-1.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
+                          isMultiSelected
+                            ? 'bg-primary border-primary text-primary-foreground opacity-100'
+                            : selectionMode
+                              ? 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-100'
+                              : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-0 group-hover:opacity-100'
+                        }`}
+                        data-testid={`memories-tile-checkbox-${f.id}`}
+                      >
+                        {isMultiSelected && <Check className="w-3 h-3" />}
+                      </div>
+                      {thumbs[f.file_path] ? (
+                        <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
+                          {f.file_type === 'video' ? <Film className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+                        </div>
+                      )}
+                      {f.file_type === 'video' && (
+                        <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
+                          <Film className="w-2.5 h-2.5" /> Video
+                        </div>
+                      )}
+                      {/* Footer strip — only rendered when at least one
+                          meta field is enabled, so the default view is a
+                          clean photo wall with zero overlay. */}
+                      {(showFilename || showDate) && (
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent px-2 pb-1.5 pt-6 space-y-0.5">
+                          {showFilename && <div className="text-[11px] text-white/90 truncate">{f.filename}</div>}
+                          {showDate && <div className="text-[10px] text-white/75 truncate">{formatHumanDate(f.derived_date)}</div>}
+                        </div>
+                      )}
+                    </button>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  {/* Right-click actions — Terry 2026-05-19. "Add to
+                      album" adds the photo to the current selection
+                      so the user can drive the AddToAlbumPopover in
+                      the header to pick the album. "Copy filename"
+                      writes the filename to the clipboard. */}
+                  <ContextMenuItem
+                    onSelect={async () => {
+                      try {
+                        await navigator.clipboard.writeText(f.filename);
+                        toast.success('Filename copied', { description: f.filename });
+                      } catch {
+                        toast.error("Couldn't copy filename");
+                      }
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-2" />
+                    Copy filename
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    onSelect={() => {
+                      toggleSelection(f, 'add');
+                      lastClickedIndexRef.current = idx;
+                      toast.message('Added to selection', { description: 'Use "Add to album" in the header to pick the album.' });
+                    }}
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                    Add to album…
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+              );
+            })}
           </div>
         )}
       </div>

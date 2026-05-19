@@ -20,7 +20,7 @@
  * navigation inside denser surfaces (e.g. Settings).
  */
 
-import { useState } from 'react';
+import { useState, useRef, useLayoutEffect } from 'react';
 import { CalendarRange, FolderPlus } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import MemoriesView from './MemoriesView';
@@ -38,48 +38,97 @@ function loadInitialTab(): MemoriesTab {
 export default function MemoriesPanel() {
   const [tab, setTab] = useState<MemoriesTab>(loadInitialTab);
 
+  // Sliding-thumb refs + state. The white pill that marks the active
+  // tab is a single absolute-positioned div inside the TabsList;
+  // when the tab changes we re-measure the target trigger's offset
+  // and animate left+width. This gives the premium iOS-segmented
+  // feel rather than the snap-of-two-backgrounds default. Terry
+  // 2026-05-18: "Can you make the transition... seem premium? It
+  // feels robotic at the moment."
+  const byDateRef = useRef<HTMLButtonElement>(null);
+  const albumsRef = useRef<HTMLButtonElement>(null);
+  const [thumbStyle, setThumbStyle] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const target = tab === 'byDate' ? byDateRef.current : albumsRef.current;
+    if (target) {
+      setThumbStyle({ left: target.offsetLeft, width: target.offsetWidth });
+    }
+  }, [tab]);
+
   const handleTabChange = (next: string) => {
     const nextTyped: MemoriesTab = next === 'albums' ? 'albums' : 'byDate';
     setTab(nextTyped);
     try { localStorage.setItem(TAB_STORAGE_KEY, nextTyped); } catch { /* localStorage may be unavailable */ }
   };
 
+  // Header content (h1 + sliding tab switcher) — extracted so both
+  // TabsContents can render it. In By Date mode it sits at the top
+  // spanning full width; in Albums mode it's passed via `headerSlot`
+  // into AlbumsView's left pane so the vertical divider between the
+  // tree and the right content runs up to the title bar. Only the
+  // active TabsContent's instance is mounted at runtime — the refs
+  // bind to whichever is current, and useLayoutEffect re-measures
+  // when `tab` changes.
+  const headerInner = (
+    <>
+      <h1 className="text-2xl font-semibold text-foreground mb-3">Memories</h1>
+      <TabsList className="relative inline-flex h-11 p-1 bg-primary rounded-full">
+        {thumbStyle && (
+          <div
+            aria-hidden
+            className="absolute top-1 h-9 bg-background rounded-full shadow-sm pointer-events-none transition-[left,width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            style={{ left: `${thumbStyle.left}px`, width: `${thumbStyle.width}px` }}
+          />
+        )}
+        <TabsTrigger
+          ref={byDateRef}
+          value="byDate"
+          data-testid="tab-memories-by-date"
+          className="relative z-10 gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 data-[state=active]:text-primary data-[state=inactive]:text-primary-foreground"
+        >
+          <CalendarRange className="w-4 h-4" />
+          By Date
+        </TabsTrigger>
+        <TabsTrigger
+          ref={albumsRef}
+          value="albums"
+          data-testid="tab-memories-albums"
+          className="relative z-10 gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 data-[state=active]:text-primary data-[state=inactive]:text-primary-foreground"
+        >
+          <FolderPlus className="w-4 h-4" />
+          Albums
+        </TabsTrigger>
+      </TabsList>
+    </>
+  );
+
   return (
     <Tabs value={tab} onValueChange={handleTabChange} className="flex flex-col h-full">
-      {/* Section header + tab strip. "Memories" is a top-level Workspace
-          surface; previous version's "By Date" / "Albums" pills read as
-          minor sub-controls. Now: page title set in lg, tabs sit
-          beneath it as a proper view-switcher with bigger pills, taller
-          h-11, and prominent active state. Terry 2026-05-18: "By Date
-          and Albums are somewhat unnoticeable. They are both really
-          big features, but they just look so bland... maybe it just
-          needs to be written above where By Date and Albums appears." */}
-      <div className="px-6 pt-5 pb-3 border-b border-border">
-        <h1 className="text-2xl font-semibold text-foreground mb-3">Memories</h1>
-        <TabsList className="h-11 p-1">
-          <TabsTrigger
-            value="byDate"
-            data-testid="tab-memories-by-date"
-            className="gap-2 px-4 h-9 text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <CalendarRange className="w-4 h-4" />
-            By Date
-          </TabsTrigger>
-          <TabsTrigger
-            value="albums"
-            data-testid="tab-memories-albums"
-            className="gap-2 px-4 h-9 text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <FolderPlus className="w-4 h-4" />
-            Albums
-          </TabsTrigger>
-        </TabsList>
-      </div>
-      <TabsContent value="byDate" className="flex-1 min-h-0 mt-0">
-        <MemoriesView />
+      {/* forceMount on BOTH TabsContents keeps each tab's React state
+          alive across switches. By default Radix unmounts inactive
+          content, which wiped MemoriesView's drilldown position and
+          AlbumsView's selection state every time the user toggled
+          tabs. With forceMount the inactive content is hidden via
+          [hidden]:display:none from the browser's default UA rule
+          but stays in the DOM — state persists, scroll positions
+          survive, and the only cost is rendering both surfaces once
+          on first mount (which both are cheap). Terry 2026-05-19:
+          "the user should be able to go to Albums, and then go back
+          to By Date, and still be in the same place them left." */}
+      <TabsContent value="byDate" forceMount className="flex-1 min-h-0 mt-0 flex-col data-[state=active]:flex data-[state=inactive]:hidden">
+        <div className="px-6 pt-5 pb-3 border-b border-border">{headerInner}</div>
+        <div className="flex-1 min-h-0">
+          <MemoriesView />
+        </div>
       </TabsContent>
-      <TabsContent value="albums" className="flex-1 min-h-0 mt-0">
-        <AlbumsView />
+      <TabsContent value="albums" forceMount className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
+        <AlbumsView
+          headerSlot={
+            <div className="px-4 pt-5 pb-3 border-b border-border">
+              {headerInner}
+            </div>
+          }
+        />
       </TabsContent>
     </Tabs>
   );
