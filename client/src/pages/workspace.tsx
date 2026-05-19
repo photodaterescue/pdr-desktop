@@ -9078,7 +9078,17 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                   )}
                 </div>
 
-                <Accordion type="multiple" defaultValue={updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : ["ver-2.0.3"]} className="space-y-2">
+                {/* Default-expand the entry that matches the running
+                    app version, so the current release's changelog
+                    is open and every older entry is collapsed below
+                    it. Falls back to the available-update version
+                    when one's pending, then to the running version,
+                    then to the seed value as a last resort. Terry
+                    2026-05-19: "About PDR has all versions collapsed
+                    apart from the latest one with each update." */}
+                <Accordion type="multiple" defaultValue={[
+                  `ver-${updateStatus === 'update-available' && latestVersion ? latestVersion : appVersion}`,
+                ]} className="space-y-2">
 
                   {updateStatus === 'update-available' && latestVersion && (
                     <AccordionItem value={`ver-${latestVersion}`} className="border border-primary/30 rounded-lg px-4 bg-primary/5">
