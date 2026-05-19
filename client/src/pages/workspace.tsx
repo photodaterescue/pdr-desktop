@@ -214,6 +214,12 @@ const handleZoomReset = () => {
   applyZoom(100);
 };
 
+// Ref mirror of `activeView` for handlers that have to read it but
+// can't depend on it (because they're declared above the useState
+// for activeView). The sibling effect just below the activeView
+// declaration keeps this ref in sync.
+const activeViewRef = useRef<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
+
 // Diagnostic stream from the analysis pipeline. The main process
 // emits [PDR-DIAG ...] phase markers, memory snapshots, per-large-
 // file timings, skip-and-continue warnings, and a final summary
@@ -230,13 +236,26 @@ useEffect(() => {
   return () => removeAnalysisDiagnosticListener();
 }, []);
 
-// Ctrl+scroll wheel zoom (like browsers and Word) — scoped to the
-// Dashboard / Workspace view only. S&D has its own tile-size cycling that
-// owns Ctrl+wheel inside its area, so this listener is effectively a no-op
-// there because the S&D panel intercepts the event first.
+// Ctrl+scroll wheel zoom (like browsers and Word) — STRICTLY scoped to
+// the Dashboard / Workspace view. The listener checks `activeViewRef`
+// at fire time; on any other top-level view (S&D, Memories, Trees, PM)
+// it short-circuits so Ctrl+wheel events in those surfaces can't
+// silently mutate the workspace zoom behind their back.
+// Terry 2026-05-19: "All apps that have a zoom function should act
+// independently from each other. This has happened before that the
+// Workspace is getting more zoomed by something that's happening in
+// another screen/app." Root cause was this listener registered on
+// `window` and fired regardless of activeView — Memories' Ctrl+wheel
+// hit it whenever the local handler didn't preventDefault first.
+//
+// Reads via `activeViewRef` (set in a sibling effect further down)
+// rather than `activeView` directly so this effect can stay above
+// the `useState` declaration that introduces `activeView` later in
+// the function (a deps-array reference would TDZ-crash the render).
 useEffect(() => {
   const handleWheel = (e: WheelEvent) => {
     if (!e.ctrlKey) return;
+    if (activeViewRef.current !== 'dashboard') return;
     e.preventDefault();
     setZoomLevel(prev => {
       const newZoom = e.deltaY < 0
@@ -436,6 +455,11 @@ useEffect(() => {
   // the default (the existing workspace/dashboard hybrid); other options are
   // separate destinations in the sidebar.
   const [activeView, setActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
+
+  // Keep the early-declared `activeViewRef` in sync with the
+  // canonical state. Handlers registered above (where `activeView`
+  // isn't in scope yet) read the ref instead.
+  useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
   const [showReportProblem, setShowReportProblem] = useState(false);
   // When the analysis pipeline throws an unhandled error, we open the
   // Report-a-Problem modal automatically with a pre-filled description
@@ -608,6 +632,72 @@ useEffect(() => {
   const handler = () => { setActiveView('search'); };
   window.addEventListener('pdr:openParallelLibrary', handler as EventListener);
   return () => window.removeEventListener('pdr:openParallelLibrary', handler as EventListener);
+}, []);
+
+// Search & Discovery navigation bridge. AlbumsView's empty-album
+// CTA dispatches `pdr:openSearchDiscovery` when the user clicks
+// "Go to Search & Discovery" from inside an empty album. Switches
+// activeView so the sidebar nav and the workspace render the
+// S&D surface — same destination the sidebar's S&D button reaches.
+// v2.0.8 step 6 polish.
+//
+// When the event carries a `detail.from` payload (came from an
+// empty-album CTA), stash the source album in the module-level
+// AlbumReturnSource state. SearchPanel reads that and shows a
+// "Back to '<title>'" pill until the user navigates to a non-
+// Memories / non-S&D view.
+useEffect(() => {
+  const handler = async (e: Event) => {
+    setActiveView('search');
+    const detail = (e as CustomEvent).detail as { from?: { albumId: number; title: string } } | undefined;
+    if (detail?.from) {
+      const mod = await import('@/lib/album-return-source');
+      mod.setAlbumReturnSource(detail.from);
+    }
+  };
+  window.addEventListener('pdr:openSearchDiscovery', handler as EventListener);
+  return () => window.removeEventListener('pdr:openSearchDiscovery', handler as EventListener);
+}, []);
+
+// Memories tab switch bridge — same dual purpose as the S&D
+// handler above. When the empty-album "Go to By Date" CTA fires,
+// stash the source album so MemoriesView can render a return
+// pill. The actual tab switch is handled by MemoriesPanel's own
+// listener; here we just ensure activeView routes to Memories
+// (in case the user dispatched from inside an album that was
+// reached via a different surface).
+useEffect(() => {
+  const handler = async (e: Event) => {
+    setActiveView('memories');
+    const detail = (e as CustomEvent).detail as { from?: { albumId: number; title: string } } | undefined;
+    if (detail?.from) {
+      const mod = await import('@/lib/album-return-source');
+      mod.setAlbumReturnSource(detail.from);
+    }
+  };
+  window.addEventListener('pdr:memoriesSwitchTab', handler as EventListener);
+  return () => window.removeEventListener('pdr:memoriesSwitchTab', handler as EventListener);
+}, []);
+
+// Clear the album-return source whenever activeView leaves both
+// Search and Memories — opening Dashboard / Trees / PM / etc.
+// dismisses the back pill per Terry 2026-05-19: "BUT ONLY until
+// the user opens a different app, ie. Workspace, Trees, PM, etc."
+useEffect(() => {
+  if (activeView === 'search' || activeView === 'memories') return;
+  void import('@/lib/album-return-source').then((mod) => {
+    if (mod.getAlbumReturnSource() !== null) mod.setAlbumReturnSource(null);
+  });
+}, [activeView]);
+
+// Return-to-album bridge — back-pill click in SearchPanel /
+// MemoriesView dispatches `pdr:openAlbumsAlbum` with the album id.
+// Workspace routes to Memories; MemoriesPanel switches to the
+// Albums tab; AlbumsView selects the album.
+useEffect(() => {
+  const handler = () => { setActiveView('memories'); };
+  window.addEventListener('pdr:openAlbumsAlbum', handler as EventListener);
+  return () => window.removeEventListener('pdr:openAlbumsAlbum', handler as EventListener);
 }, []);
 
 // AI offer accepted — fires when the user clicks Enable on the
@@ -2123,7 +2213,7 @@ return (
         while S&D results own the main area and while non-zoomable views
         (Memories, Trees) are active, to avoid the impression of
         controlling something you're not looking at. */}
-    {activeView === 'dashboard' && !searchResultsActive && (
+    {activeView === 'dashboard' && (
       <div className="fixed right-5 bottom-24 z-40 flex flex-col items-center gap-1 bg-background/90 backdrop-blur-sm border border-border/30 rounded-xl p-1.5 shadow-md opacity-80 hover:opacity-100 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 ease-out">
         <TooltipProvider>
           <Tooltip>
@@ -2957,8 +3047,23 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // Instead the menu button just expands for the current view, and
   // we reset the flag whenever the active view changes so the
   // expansion doesn't bleed into views that auto-collapse.
-  const [tempExpanded, setTempExpanded] = useState(false);
-  useEffect(() => { setTempExpanded(false); }, [activeView, searchResultsActive]);
+  //
+  // Initial value is `true` so the sidebar starts expanded on first
+  // launch regardless of which view the user lands on. The reset
+  // useEffect below intentionally SKIPS the first run via the
+  // mountRef guard so the initial-expanded value survives. Terry
+  // 2026-05-19: "the workspace sidebar is collapsing immediately
+  // when I go to workspace... this should always be expanded
+  // whenever launching for the first time."
+  const [tempExpanded, setTempExpanded] = useState(true);
+  const tempExpandedMountRef = useRef(true);
+  useEffect(() => {
+    if (tempExpandedMountRef.current) {
+      tempExpandedMountRef.current = false;
+      return;
+    }
+    setTempExpanded(false);
+  }, [activeView, searchResultsActive]);
 
   // Dashboard / Workspace doubles as the Source Menu — the sidebar
   // is critical there once sources exist. When the workspace is
@@ -2977,20 +3082,33 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.removeItem('pdr-sidebar-pin');
   }, []);
-  // Compute collapsed state. In 'auto' mode the sidebar collapses when
-  // S&D results are showing OR when a full-canvas view (Trees,
-  // Memories) owns the main area — all three benefit from every
-  // horizontal pixel for content.
+  // Compute collapsed state. In 'auto' mode the sidebar collapses
+  // when a full-canvas view (Trees, Memories, S&D) owns the main
+  // area — all three benefit from every horizontal pixel.
+  //
+  // `searchResultsActive` was previously included here too, but it
+  // was a leaky flag: SearchRibbon flips it to true the moment a
+  // saved filter set auto-runs after the workspace mounts, which
+  // could happen a few seconds AFTER landing on Dashboard. That
+  // collapsed the sidebar with no apparent trigger — the user just
+  // sat on Dashboard and watched it shrink. Removed: collapse now
+  // depends solely on activeView. If the user is on Dashboard,
+  // sidebar stays expanded regardless of whether S&D has results
+  // cached behind the scenes. Terry 2026-05-19: "The Workspace
+  // opened with the sidebar expanded... and then a few seconds
+  // later it collapsed". (When the user IS on S&D, activeView ===
+  // 'search' covers it.)
   const collapsed = pinState === 'closed'
     ? true
     : pinState === 'open'
     ? false
     : tempExpanded
     ? false
-    : (!!searchResultsActive
-       || activeView === 'familytree'
-       || activeView === 'memories'
-       || activeView === 'search');
+    : (
+      activeView === 'familytree'
+      || activeView === 'memories'
+      || activeView === 'search'
+    );
 
   // Section-collapse state for Views / Tools / Guidance. Session-only so
   // the sidebar always opens fully expanded in a fresh session. User can
@@ -4550,7 +4668,7 @@ function DashboardPanel({
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-muted-foreground">Choose the location where your new library structure will go.</p>
+                      <p className="text-sm text-muted-foreground">Choose where your new library will be stored.</p>
                       {/* Library Planner link — shown even when no
                           destination has been selected yet, so users
                           can still take the size-planning wizard

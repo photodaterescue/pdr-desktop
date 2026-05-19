@@ -243,7 +243,7 @@ import { getLicenseStatus, activateLicense, refreshLicense, deactivateLicense, g
 import { getUsage as getUsageFromWorker, incrementUsage as incrementUsageOnWorker, FREE_TRIAL_FILE_LIMIT, } from './usage-tracker.js';
 import { checkForUpdates, initAutoUpdater, downloadUpdate, quitAndInstall, getUpdateState, } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
-import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, 
+import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getFilterCounts, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, 
 // getDb — direct DB handle for ad-hoc aggregation queries that don't
 // fit the existing typed helpers (e.g. library:listIndexedDrives, which
 // GROUP BYs over the drive-letter prefix of file_path). Used sparingly.
@@ -610,6 +610,26 @@ function createWindow() {
     });
     mainWindow.on('closed', () => {
         mainWindow = null;
+    });
+    // Forward window-move events to the renderer so popovers /
+    // dropdowns can close when the user drags the titlebar.
+    // `-webkit-app-region: drag` swallows mouse events in the
+    // renderer, so the only reliable signal that the user has
+    // interacted with the titlebar drag region is the OS-level
+    // window 'move' event. Coalesced to once per ~50ms to avoid
+    // flooding the renderer during a long drag.
+    let lastMoveAt = 0;
+    mainWindow.on('move', () => {
+        const now = Date.now();
+        if (now - lastMoveAt < 50)
+            return;
+        lastMoveAt = now;
+        try {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('pdr:window-move');
+            }
+        }
+        catch { /* renderer might be unloaded — ignore */ }
     });
 }
 const LARGE_ZIP_THRESHOLD = 2 * 1024 * 1024 * 1024; // 2 GiB
@@ -4266,6 +4286,14 @@ ipcMain.handle('search:query', async (_event, query) => {
 ipcMain.handle('search:filterOptions', async () => {
     try {
         return { success: true, data: getFilterOptions() };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+ipcMain.handle('search:filterCounts', async (_event, query) => {
+    try {
+        return { success: true, data: getFilterCounts(query) };
     }
     catch (err) {
         return { success: false, error: err.message };

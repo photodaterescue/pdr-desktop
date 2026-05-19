@@ -72,6 +72,15 @@ contextBridge.exposeInMainWorld('pdr', {
         ipcRenderer.on('fix:progressBroadcast', handler);
         return () => ipcRenderer.removeListener('fix:progressBroadcast', handler);
     },
+    // Window-move forwarder. Main process emits this when the user
+    // drags the titlebar (-webkit-app-region: drag swallows mouse
+    // events at the renderer, so this is the only reliable signal).
+    // Popovers and dropdowns listen so they close on drag.
+    onWindowMove: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('pdr:window-move', handler);
+        return () => ipcRenderer.removeListener('pdr:window-move', handler);
+    },
     saveReport: (reportData) => ipcRenderer.invoke('report:save', reportData),
     loadReport: (reportId) => ipcRenderer.invoke('report:load', reportId),
     loadLatestReport: () => ipcRenderer.invoke('report:loadLatest'),
@@ -284,6 +293,7 @@ contextBridge.exposeInMainWorld('pdr', {
         listRuns: () => ipcRenderer.invoke('search:listRuns'),
         query: (query) => ipcRenderer.invoke('search:query', query),
         filterOptions: () => ipcRenderer.invoke('search:filterOptions'),
+        filterCounts: (query) => ipcRenderer.invoke('search:filterCounts', query),
         stats: () => ipcRenderer.invoke('search:stats'),
         rebuildIndex: () => ipcRenderer.invoke('search:rebuildIndex'),
         rebuildFromLibraries: (rootPaths) => ipcRenderer.invoke('search:rebuildFromLibraries', rootPaths),

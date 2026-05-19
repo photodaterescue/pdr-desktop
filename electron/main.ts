@@ -757,6 +757,25 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Forward window-move events to the renderer so popovers /
+  // dropdowns can close when the user drags the titlebar.
+  // `-webkit-app-region: drag` swallows mouse events in the
+  // renderer, so the only reliable signal that the user has
+  // interacted with the titlebar drag region is the OS-level
+  // window 'move' event. Coalesced to once per ~50ms to avoid
+  // flooding the renderer during a long drag.
+  let lastMoveAt = 0;
+  mainWindow.on('move', () => {
+    const now = Date.now();
+    if (now - lastMoveAt < 50) return;
+    lastMoveAt = now;
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('pdr:window-move');
+      }
+    } catch { /* renderer might be unloaded — ignore */ }
+  });
 }
 
 const LARGE_ZIP_THRESHOLD = 2 * 1024 * 1024 * 1024; // 2 GiB

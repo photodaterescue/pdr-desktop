@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarRange,
   ChevronLeft,
@@ -41,6 +41,7 @@ import {
   type IndexedRun,
 } from '../lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { DensityToggle, type Density } from '@/components/ui/density-toggle';
 import AddToAlbumPopover from './AddToAlbumPopover';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -68,7 +69,9 @@ function formatHumanDate(iso: string | null): string {
 
 // ─── Main component ────────────────────────────────────────────────────────
 
-type Density = 'spacious' | 'tight';
+// `Density` is now defined in @/components/ui/density-toggle so the
+// Albums view (v2.0.8 step 6) can reuse the exact same surface
+// without duplicating the type or the segmented-control component.
 
 // A "library" in the UI is one or more runs that share the same set of
 // source labels. Two runs that fixed the same sources into two destinations
@@ -110,8 +113,16 @@ function groupRunsIntoLibraries(runs: IndexedRun[]): Library[] {
 }
 
 export default function MemoriesView() {
+  // (Back-to-album pill moved into TitleBar — see TitleBar.tsx.)
+
   const [runs, setRuns] = useState<IndexedRun[]>([]);
-  const [libraryKey, setLibraryKey] = useState<string | undefined>(undefined); // undefined = all libraries
+  // Multi-select library filter — matches S&D's Library Drive
+  // pattern (Terry 2026-05-19: "Libraries in By Date… should be
+  // the same one as in S&D… have all enabled by default").
+  // Default = all library keys; treated as a no-op filter when
+  // every library is selected. State holds the SET of selected
+  // keys; the data fetch maps to union of runIds.
+  const [libraryKeys, setLibraryKeys] = useState<string[]>([]);
   const [buckets, setBuckets] = useState<MemoriesYearBucket[]>([]);
   const [onThisDay, setOnThisDay] = useState<MemoriesOnThisDayItem[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
@@ -145,11 +156,36 @@ export default function MemoriesView() {
   // for "all libraries"). Libraries is memoised so the effect below doesn't
   // spin from identity-only changes.
   const libraries = useMemo(() => groupRunsIntoLibraries(runs), [runs]);
+
+  // Default the selection to ALL library keys when the libraries list
+  // first loads. Terry 2026-05-19: "have all enabled by default".
+  // Re-runs if the underlying library set changes (e.g. new Fix run).
+  useEffect(() => {
+    if (libraries.length === 0) return;
+    setLibraryKeys((prev) => {
+      // First load OR new libraries appeared → reset to everything.
+      if (prev.length === 0) return libraries.map((l) => l.key);
+      // Drop any stale keys that no longer exist; add any new ones.
+      const valid = new Set(libraries.map((l) => l.key));
+      const filtered = prev.filter((k) => valid.has(k));
+      const missing = libraries.map((l) => l.key).filter((k) => !prev.includes(k));
+      if (filtered.length === prev.length && missing.length === 0) return prev;
+      return [...filtered, ...missing];
+    });
+  }, [libraries]);
+
   const selectedRunIds = useMemo(() => {
-    if (!libraryKey) return undefined;
-    const lib = libraries.find(l => l.key === libraryKey);
-    return lib ? lib.runIds : undefined;
-  }, [libraryKey, libraries]);
+    // All libraries selected (or none — treated as all for safety)
+    // = no-op filter; pass undefined so the backend doesn't bother
+    // narrowing.
+    if (libraryKeys.length === 0 || libraryKeys.length === libraries.length) {
+      return undefined;
+    }
+    const selectedSet = new Set(libraryKeys);
+    return libraries
+      .filter((l) => selectedSet.has(l.key))
+      .flatMap((l) => l.runIds);
+  }, [libraryKeys, libraries]);
   const selectedRunIdsKey = selectedRunIds ? selectedRunIds.join(',') : '';
 
   // Re-fetch whenever the scope changes.
@@ -285,6 +321,10 @@ export default function MemoriesView() {
 
   return (
     <div className="h-full flex flex-col bg-background">
+      {/* Back-to-album pill moved into TitleBar (v2.0.8 polish pass).
+          Terry 2026-05-19: "to the right of 'Photo Date Rescue' in
+          the titlebar" — visible regardless of which surface is
+          active. */}
       {/* By-Date controls row. The "Memories" page title now lives one
           level up in MemoriesPanel, above the [By Date | Albums] tabs,
           so we don't repeat it here. The summary line stays — it's
@@ -325,7 +365,7 @@ export default function MemoriesView() {
             tooltip and no highlight (Terry's report May 7 2026). */}
         <div className="flex items-center gap-3" data-tour="mem-controls">
           <DensityToggle value={density} onChange={changeDensity} />
-          <LibrarySelector libraries={libraries} value={libraryKey} onChange={setLibraryKey} />
+          <LibrarySelector libraries={libraries} selectedKeys={libraryKeys} onChange={setLibraryKeys} />
         </div>
       </div>
 
@@ -428,14 +468,33 @@ export default function MemoriesView() {
 
           {/* Main scroll area */}
           <div className="flex-1 overflow-y-auto">
-            {/* On This Day row — `data-tour="mem-on-this-day"` is the
-                spotlight target for step 3 of the Memories tour. */}
+            {/* On This Day row — premium-event styling so it reads as
+                a curated suggestion rather than another scroll-row
+                (Terry 2026-05-19: "should look like more of an
+                event… it just looks like the same as the other rows,
+                they all blend into one"). Soft lavender gradient
+                card + AI-suggestion badge + larger heading make the
+                hierarchy obvious. `data-tour="mem-on-this-day"` is
+                the spotlight target for step 3 of the Memories tour. */}
             {onThisDay.length > 0 && (
-              <section className="px-6 pt-6 pb-4" data-tour="mem-on-this-day">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-semibold text-foreground">On {otdLabel} in previous years</h2>
-                  <span className="text-xs text-muted-foreground">· {onThisDay.length} {onThisDay.length === 1 ? 'photo' : 'photos'}</span>
+              <section
+                className="mx-6 mt-6 mb-4 p-4 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 shadow-sm"
+                data-tour="mem-on-this-day"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    <Sparkles className="w-3 h-3" />
+                    AI suggestion
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {onThisDay.length} {onThisDay.length === 1 ? 'photo' : 'photos'}
+                  </span>
+                </div>
+                <div className="mb-3">
+                  <h2 className="text-base font-bold text-foreground leading-tight">On {otdLabel} in previous years</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Photos taken on this date in earlier years — rediscover what you were up to.
+                  </p>
                 </div>
                 <div className={`flex ${density === 'tight' ? 'gap-0' : 'gap-2.5'} overflow-x-auto pb-2`}>
                   {onThisDay.map((item, idx) => (
@@ -528,84 +587,84 @@ export default function MemoriesView() {
   );
 }
 
-// ─── Density toggle ───────────────────────────────────────────────────────
-
-function DensityToggle({ value, onChange }: { value: Density; onChange: (d: Density) => void }) {
-  // Sliding-thumb segmented control — matches the MemoriesPanel's
-  // By Date / Albums switch so the visual language stays consistent
-  // across this surface. Terry 2026-05-19: "Spacious / Tight should
-  // adopt the same slider type button as what By Date and Albums
-  // does." A single absolute-positioned white pill slides between
-  // the two triggers; the triggers themselves are transparent.
-  const spaciousRef = useRef<HTMLButtonElement>(null);
-  const tightRef = useRef<HTMLButtonElement>(null);
-  const [thumbStyle, setThumbStyle] = useState<{ left: number; width: number } | null>(null);
-  useLayoutEffect(() => {
-    const target = value === 'spacious' ? spaciousRef.current : tightRef.current;
-    if (target) setThumbStyle({ left: target.offsetLeft, width: target.offsetWidth });
-  }, [value]);
-  return (
-    /* `shrink-0` prevents the timeline parent's `flex-wrap` from
-       squashing the capsule when the LibrarySelector is also present.
-       IconTooltip wrappers dropped — Radix Slot+asChild ref-forwarding
-       was occasionally interfering with the offsetLeft/offsetWidth
-       measurement of the trigger buttons, producing a one-segment
-       render in the timeline context. Native `title=` for the hover
-       label (sanctioned by IconTooltip's own source comment when the
-       Radix tooltip causes layout edge cases). */
-    <div className="relative inline-flex h-8 p-0.5 bg-primary rounded-full shrink-0">
-      {thumbStyle && (
-        <div
-          aria-hidden
-          className="absolute top-0.5 h-7 bg-background rounded-full shadow-sm pointer-events-none transition-[left,width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-          style={{ left: `${thumbStyle.left}px`, width: `${thumbStyle.width}px` }}
-        />
-      )}
-      <button
-        ref={spaciousRef}
-        onClick={() => onChange('spacious')}
-        title="Space between photos"
-        className={`relative z-10 px-3 h-7 rounded-full text-[11px] font-medium transition-colors duration-300 ${value === 'spacious' ? 'text-primary' : 'text-primary-foreground'}`}
-      >
-        Spacious
-      </button>
-      <button
-        ref={tightRef}
-        onClick={() => onChange('tight')}
-        title="No gaps between photos — dense wall view"
-        className={`relative z-10 px-3 h-7 rounded-full text-[11px] font-medium transition-colors duration-300 ${value === 'tight' ? 'text-primary' : 'text-primary-foreground'}`}
-      >
-        Tight
-      </button>
-    </div>
-  );
-}
-
 // ─── Library selector ──────────────────────────────────────────────────────
 
-function LibrarySelector({ libraries, value, onChange }: { libraries: Library[]; value: string | undefined; onChange: (key: string | undefined) => void }) {
+function LibrarySelector({ libraries, selectedKeys, onChange }: { libraries: Library[]; selectedKeys: string[]; onChange: (keys: string[]) => void }) {
   // Hide entirely when there's only one logical library — nothing to choose
   // between. Destinations alone don't create separate libraries; parallel
   // structures (when they ship) will surface as distinct entries here
   // because they carry a different source-labels signature.
   if (libraries.length <= 1) return null;
+  const allSelected = selectedKeys.length === 0 || selectedKeys.length === libraries.length;
+  const summary = allSelected
+    ? `All libraries (${libraries.length})`
+    : `${selectedKeys.length} of ${libraries.length}`;
+  const toggle = (key: string) => {
+    if (selectedKeys.includes(key)) {
+      onChange(selectedKeys.filter((k) => k !== key));
+    } else {
+      onChange([...selectedKeys, key]);
+    }
+  };
   return (
-    <div className="flex items-center gap-2">
-      <Layers className="w-4 h-4 text-muted-foreground" />
-      <label className="text-xs text-muted-foreground">Library</label>
-      <select
-        value={value ?? 'all'}
-        onChange={(e) => onChange(e.target.value === 'all' ? undefined : e.target.value)}
-        className="px-2.5 py-1 rounded-md border border-border bg-background text-xs text-foreground cursor-pointer"
-      >
-        <option value="all">All libraries ({libraries.length})</option>
-        {libraries.map((lib) => (
-          <option key={lib.key} value={lib.key}>
-            {lib.label} · {lib.fileCount.toLocaleString()} files
-          </option>
-        ))}
-      </select>
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-border bg-background hover:bg-muted/40 text-xs font-medium text-foreground transition-colors"
+          data-testid="memories-library-selector"
+        >
+          <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+          <span>{summary}</span>
+          <ChevronRight className="w-3 h-3 text-muted-foreground rotate-90" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-2">
+        <div className="flex items-center justify-between px-2 pt-1 pb-2 border-b border-border mb-1">
+          <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Libraries</span>
+          <div className="flex items-center gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => onChange(libraries.map((l) => l.key))}
+              className="text-primary hover:underline disabled:opacity-40 disabled:no-underline"
+              disabled={selectedKeys.length === libraries.length}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="text-muted-foreground hover:underline disabled:opacity-40 disabled:no-underline"
+              disabled={selectedKeys.length === 0}
+            >
+              Clear all
+            </button>
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {libraries.map((lib) => {
+            const checked = selectedKeys.includes(lib.key) || selectedKeys.length === 0;
+            return (
+              <label
+                key={lib.key}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(lib.key)}
+                  className="rounded border-border text-primary focus:ring-primary/40"
+                />
+                <span className="flex-1 text-sm text-foreground truncate">{lib.label}</span>
+                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                  {lib.fileCount.toLocaleString()}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

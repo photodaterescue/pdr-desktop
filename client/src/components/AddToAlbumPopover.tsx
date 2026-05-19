@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { FolderPlus, Search, Plus, Check, X, ImageIcon, Sparkles, PencilLine } from 'lucide-react';
+import { FolderPlus, Search, Plus, Check, X, ImageIcon, Sparkles, PencilLine, ArrowLeft, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/custom-button';
@@ -27,6 +27,7 @@ import {
   type AlbumSummary,
 } from '../lib/electron-bridge';
 import { isAlbumSourceUserEditable } from '../lib/albumSourceProfile';
+import { useAlbumReturnSource, setAlbumReturnSource, setPendingAlbumOpen } from '@/lib/album-return-source';
 
 interface AddToAlbumPopoverProps {
   /** Indexed_files.id list to add. Empty array disables the trigger. */
@@ -50,6 +51,14 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
   const [creating, setCreating] = useState(false);
   const [newAlbumTitle, setNewAlbumTitle] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Source-album context — non-null when the user reached this
+  // surface via the empty-album CTA. Drives the "Add to <album>"
+  // hero rendered at the top of the popover (v2.0.8 step 6 polish,
+  // Terry 2026-05-19: "it should say… Add to <Empty Folder Name>
+  // and go back to albums? Add and continue looking around? or
+  // create a new album").
+  const albumReturnSource = useAlbumReturnSource();
 
   // Refresh album list when popover opens. Cached for the lifetime of
   // the open state; closing + reopening re-fetches so freshly-created
@@ -115,6 +124,72 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
       );
     }
     setOpen(false);
+    // Refresh any mounted AlbumsView so counts + tiles update
+    // without a manual refresh click.
+    window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
+    onAdded?.();
+  };
+
+  // Hero action — add to the source album (the one the user came
+  // from via the empty-album CTA). `goBack=true` also routes the
+  // user back to that album in the Albums view; `goBack=false`
+  // adds silently and keeps them where they are so they can pick
+  // more photos.
+  //
+  // OPTIMISTIC NAVIGATION (Terry 2026-05-19: "Add and go back to
+  // album has a delay"). Dispatch the back-nav event BEFORE
+  // awaiting the add IPC so the user gets immediate visual feedback.
+  // The add IPC runs in parallel; once it completes we fire
+  // `pdr:albumsRefresh` so AlbumsView reloads photo counts + tiles.
+  const handleAddToSourceAlbum = async (goBack: boolean) => {
+    if (busy || !albumReturnSource) return;
+    const captured = albumReturnSource;
+    setBusy(true);
+    setOpen(false);
+
+    // Fire nav synchronously — no await between user click and
+    // the page changing.
+    if (goBack) {
+      setAlbumReturnSource(null);
+      setPendingAlbumOpen(captured.albumId);
+      window.dispatchEvent(new CustomEvent('pdr:openAlbumsAlbum', { detail: { id: captured.albumId } }));
+    }
+    // ELSE: "Add & keep picking" — leave the back-pill in place.
+    // The user is still actively adding to this album, so the
+    // hero CTA + the title-bar pill should both persist until
+    // either they click the X to dismiss, switch to a non-S&D /
+    // non-Memories app, or explicitly click "Add & go back".
+    // Terry 2026-05-19: "the orange pill disappears and then the
+    // custom add files to the album no longer appears. This isn't
+    // the desired outcome, it should continue until I've finished
+    // or closed the orange pill, or come out of S&D to go to the
+    // workspace, or trees, etc."
+
+    // Now do the actual add. Result toasts as usual.
+    const r = await addPhotosToAlbum(captured.albumId, fileIds);
+    setBusy(false);
+    if (!r.success) {
+      toast.error(`Couldn't add to "${captured.title}"`, { description: r.error });
+      return;
+    }
+    const inserted = r.inserted ?? 0;
+    const total = fileIds.length;
+    if (inserted === 0) {
+      toast.message(
+        `Already in "${captured.title}"`,
+        { description: total === 1 ? 'This photo is already in the album.' : `All ${total} photos are already in the album.` }
+      );
+    } else {
+      toast.success(
+        inserted === total
+          ? (total === 1 ? `Photo added to "${captured.title}"` : `${total} photos added to "${captured.title}"`)
+          : `${inserted} of ${total} added to "${captured.title}"`
+      );
+    }
+    // Refresh AlbumsView so the (possibly newly-mounted) view
+    // reflects the new photo count + tiles without a manual
+    // refresh click.
+    window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
     onAdded?.();
   };
 
@@ -139,6 +214,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
       inserted === 1 ? `Created "${title}" with 1 photo` : `Created "${title}" with ${inserted} photos`
     );
     setOpen(false);
+    window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
     onAdded?.();
   };
 
@@ -184,6 +260,48 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
           )}
         </div>
 
+        {/* Source-album hero — only shown when the user reached this
+            surface via the empty-album CTA. Two prominent actions
+            (Add & go back / Add & stay) plus a quiet "or pick a
+            different album below" hint. Gold-tinted card so it
+            reads as the obvious thing to do, matching the gold
+            back-pill in the title bar. */}
+        {albumReturnSource && !creating && (
+          <div className="px-4 py-3 border-b border-border" style={{ backgroundColor: '#fff8eb' }} data-testid="add-to-album-source-hero">
+            <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1.5">
+              Album that sent you here
+            </p>
+            <p className="text-sm font-semibold text-foreground truncate mb-2.5" title={albumReturnSource.title}>
+              {albumReturnSource.title}
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleAddToSourceAlbum(true)}
+                disabled={busy}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white shadow-sm hover:brightness-105 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                style={{ backgroundColor: '#f8c15c' }}
+                data-testid="add-to-source-and-back"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Add &amp; go back to album
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddToSourceAlbum(false)}
+                disabled={busy}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-foreground border border-border bg-background hover:bg-muted/40 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                data-testid="add-to-source-and-stay"
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+                Add &amp; keep picking more
+              </button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+              Or pick a different album below, or create a new one.
+            </p>
+          </div>
+        )}
         {/* Body — either the album list OR the inline-create input. */}
         {creating ? (
           <div className="p-3 border-b border-border">

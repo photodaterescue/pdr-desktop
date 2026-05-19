@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
 import { onAiProgress, pauseAi, resumeAi, cancelAi, type AiProgress } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
+import { useAlbumReturnSource, setAlbumReturnSource, setPendingAlbumOpen } from '@/lib/album-return-source';
 import type { TourStep, TourMeta } from '@/components/ui/tour-overlay';
 
 /**
@@ -36,6 +37,13 @@ export function TitleBar() {
   // using it anyhow.")
   const location = useLocation();
   const showLibraryPill = location.pathname !== '/';
+
+  // Back-to-album affordance — non-null when the user navigated INTO
+  // S&D or Memories from an empty album's CTA. Cleared by workspace
+  // when the user opens any other top-level surface (Dashboard,
+  // Trees, PM). Visible regardless of route because TitleBar is
+  // mounted at the app root. v2.0.8 step 6 polish (Terry 2026-05-19).
+  const albumReturnSource = useAlbumReturnSource();
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(280);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -131,10 +139,23 @@ export function TitleBar() {
   // When collapsed, the white section holds just the logo at a fixed minimum width
   const whiteSectionWidth = isSidebarCollapsed ? 48 : sidebarWidth;
 
+  // Pointer-down handler that broadcasts a custom event whenever the
+  // user interacts with the titlebar. -webkit-app-region: drag
+  // normally swallows mouse events so renderer-level click-outside
+  // listeners don't fire — this gives every popover/dropdown a
+  // reliable signal to close. Terry 2026-05-19: "clicking on the
+  // titlebar should also make the drop down disappear". Fires for
+  // every interaction (drag or click); listeners can de-bounce if
+  // needed.
+  const broadcastTitlebarPointer = () => {
+    try { window.dispatchEvent(new CustomEvent('pdr:titlebar-pointer')); } catch {}
+  };
   return (
     <div
       className="custom-title-bar flex items-center shrink-0 select-none z-50 relative"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      onPointerDown={broadcastTitlebarPointer}
+      onMouseDown={broadcastTitlebarPointer}
     >
       {/* Left: white section with logo (+ text when expanded) */}
       <div
@@ -169,6 +190,63 @@ export function TitleBar() {
         >
           Photo Date Rescue
         </span>
+      )}
+
+      {/* Back-to-album affordance (v2.0.8 step 6, Terry 2026-05-19).
+          When the user reached S&D or Memories via an empty-album
+          CTA, this pill sits right of "Photo Date Rescue" — gold + white
+          so it stands out from the lavender title bar as a
+          "purposeful visit" reminder. Click returns to that specific
+          album; auto-dismisses when the user opens any other top-level
+          surface. Wrapped in a no-drag region so the click registers
+          without being swallowed by the title-bar drag chrome. */}
+      {albumReturnSource && (
+        <div
+          className="flex items-center gap-2 pl-3"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          data-testid="titlebar-album-return"
+        >
+          <span className="h-5 w-px bg-foreground/20" aria-hidden="true" />
+          {/* Single chip with TWO inline actions — gold pill body
+              (click to go back) + small white X cap (click to
+              dismiss without going back). Same iOS/macOS dismissable-
+              chip pattern used elsewhere in PDR. */}
+          <div
+            className="inline-flex items-center rounded-full shadow-sm overflow-hidden"
+            style={{ backgroundColor: '#f8c15c' }}
+          >
+            <IconTooltip label="Return to the album you came from" side="bottom">
+              <button
+                type="button"
+                onClick={() => {
+                  const id = albumReturnSource.albumId;
+                  setAlbumReturnSource(null);
+                  // Latch the target so AlbumsView picks it up even
+                  // when it hasn't mounted yet (workspace mounts
+                  // MemoriesPanel lazily based on activeView).
+                  setPendingAlbumOpen(id);
+                  window.dispatchEvent(new CustomEvent('pdr:openAlbumsAlbum', { detail: { id } }));
+                }}
+                className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 text-xs font-semibold text-white transition-colors hover:brightness-105"
+                data-testid="titlebar-album-return-button"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to "{albumReturnSource.title}"
+              </button>
+            </IconTooltip>
+            <IconTooltip label="Dismiss — don't take me back" side="bottom">
+              <button
+                type="button"
+                onClick={() => setAlbumReturnSource(null)}
+                className="inline-flex items-center justify-center pr-2.5 pl-1 py-1 text-white/90 hover:text-white hover:bg-black/10 transition-colors"
+                data-testid="titlebar-album-return-dismiss"
+                aria-label="Dismiss back-to-album pill"
+              >
+                <XIcon className="w-3.5 h-3.5" />
+              </button>
+            </IconTooltip>
+          </div>
+        </div>
       )}
 
       {/* Rest: lavender draggable area */}

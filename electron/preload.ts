@@ -84,6 +84,15 @@ onFixProgress: (callback: (payload: any) => void) => {
   ipcRenderer.on('fix:progressBroadcast', handler);
   return () => ipcRenderer.removeListener('fix:progressBroadcast', handler);
 },
+// Window-move forwarder. Main process emits this when the user
+// drags the titlebar (-webkit-app-region: drag swallows mouse
+// events at the renderer, so this is the only reliable signal).
+// Popovers and dropdowns listen so they close on drag.
+onWindowMove: (callback: () => void) => {
+  const handler = () => callback();
+  ipcRenderer.on('pdr:window-move', handler);
+  return () => ipcRenderer.removeListener('pdr:window-move', handler);
+},
 
   saveReport: (reportData: any) =>
     ipcRenderer.invoke('report:save', reportData),

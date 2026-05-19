@@ -63,11 +63,13 @@ import {
   LayoutList,
   Grid3X3,
   ZoomIn,
+  ZoomOut,
   Merge,
   ShieldAlert,
   ChevronLeft,
   ChevronRight,
   CalendarRange,
+  MoreHorizontal,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -215,6 +217,10 @@ interface SearchRibbonProps {
 // and the workspace content is hidden. Collapsing the ribbon hides results.
 
 export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: externalDbReady, zoomLevel = 100, isDarkMode, onToggleDarkMode, licenseStatusBadge, onSearchActiveChange, showLibraryManager = false, requestClose, hasSources, pickMode, onPickCancel, onPickConfirm }: SearchRibbonProps) {
+  // (Back-to-album pill moved into TitleBar — see TitleBar.tsx and
+  // the AlbumReturnSource singleton. Visible regardless of view, no
+  // longer steals a row from the filter ribbon.)
+
   // Ribbon state
   const [ribbonExpanded, setRibbonExpanded] = useState(true);
   const [searchActive, setSearchActive] = useState(false); // true when results should show
@@ -1382,6 +1388,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   return (
     <>
+      {/* Back-to-album pill moved into TitleBar (v2.0.8 polish pass).
+          Terry 2026-05-19: "to the right of 'Photo Date Rescue' in
+          the titlebar" — visible regardless of which surface is
+          active, doesn't steal a row from S&D's filter ribbon. */}
       {/* ═══ RIBBON — Word-style, collapsible, high contrast ═══ */}
       {/* Tab bar — OUTSIDE scaling so it stays fixed height */}
       <div className="shrink-0 select-none">
@@ -3504,12 +3514,101 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         );
       })()}
 
+      {/* Active filter chips now render inline within the results-count
+          bar below — between Edit Dates and the right-side view controls,
+          separated by a vertical divider. Excess chips collapse into a
+          chevron "+N more" popover. The previous standalone chip bar
+          above the results-count bar was removed 2026-05-19. */}
+
       {/* ═══ RESULTS AREA (below ribbon, above workspace) ═══ */}
       {searchActive && results && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Results count bar */}
-          <div className="px-4 py-1 border-b border-border flex items-center justify-between shrink-0 bg-secondary/20">
-            <span className="text-sm font-semibold text-foreground flex items-center gap-2">
+          {/* Results count bar with inline filter chips (Terry 2026-05-19).
+              The chips live BETWEEN the left-hand "results count + Edit
+              Dates + selection actions" span and the right-hand view-
+              controls block, separated from Edit Dates by a vertical
+              divider. When the chips can't all fit, the first MAX_INLINE
+              render inline and the rest move into a "+N more" chevron
+              popover. The chip-generation block was previously a
+              standalone bar above this one — single-row layout reads as
+              calmer and frees vertical space for the grid. */}
+          {(() => {
+            const chips: Array<{ id: string; label: string; value: string; onClear: () => void }> = [];
+            const summarise = (values: string[]): string => {
+              if (values.length === 0) return '';
+              if (values.length === 1) return values[0];
+              if (values.length === 2) return `${values[0]} + 1 more`;
+              return `${values[0]} + ${values.length - 1} more`;
+            };
+
+            if (searchText.trim()) {
+              chips.push({ id: 'search', label: 'Search', value: searchText.trim(), onClear: () => setSearchText('') });
+            }
+            // Tier-1 gates — only when deviated from default-all
+            if (selectedConfidence.length > 0 && selectedConfidence.length < 3) {
+              chips.push({
+                id: 'confidence',
+                label: 'Confidence',
+                value: selectedConfidence.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(', '),
+                onClear: () => setSelectedConfidence(['confirmed', 'recovered', 'marked']),
+              });
+            }
+            if (selectedFileType.length > 0 && selectedFileType.length < 2) {
+              chips.push({
+                id: 'fileType',
+                label: 'File Type',
+                value: selectedFileType.map(t => t.charAt(0).toUpperCase() + t.slice(1) + 's').join(', '),
+                onClear: () => setSelectedFileType(['photo', 'video']),
+              });
+            }
+            const totalDrives = filterOptions?.destinations?.length ?? 0;
+            if (selectedDestination.length > 0 && selectedDestination.length < totalDrives) {
+              chips.push({
+                id: 'destination',
+                label: 'Library Drive',
+                value: summarise(selectedDestination.map(d => d.split(/[\\/]/).filter(Boolean).pop() ?? d)),
+                onClear: () => setSelectedDestination([...(filterOptions?.destinations || [])]),
+              });
+            }
+            // Tier-2 narrowing filters
+            if (selectedDateSource.length > 0) chips.push({ id: 'dateSource', label: 'Source', value: summarise(selectedDateSource), onClear: () => setSelectedDateSource([]) });
+            if (selectedCountry.length > 0) chips.push({ id: 'country', label: 'Country', value: summarise(selectedCountry), onClear: () => setSelectedCountry([]) });
+            if (selectedCity.length > 0) chips.push({ id: 'city', label: 'City', value: summarise(selectedCity), onClear: () => setSelectedCity([]) });
+            if (selectedCameraMake.length > 0) chips.push({ id: 'cameraMake', label: 'Make', value: summarise(selectedCameraMake), onClear: () => setSelectedCameraMake([]) });
+            if (selectedCameraModel.length > 0) chips.push({ id: 'cameraModel', label: 'Model', value: summarise(selectedCameraModel), onClear: () => setSelectedCameraModel([]) });
+            if (selectedLensModel.length > 0) chips.push({ id: 'lensModel', label: 'Lens', value: summarise(selectedLensModel), onClear: () => setSelectedLensModel([]) });
+            if (selectedCameraPosition.length > 0) chips.push({ id: 'cameraPosition', label: 'Position', value: summarise(selectedCameraPosition.map(p => p.charAt(0).toUpperCase() + p.slice(1))), onClear: () => setSelectedCameraPosition([]) });
+            if (selectedScene.length > 0) chips.push({ id: 'scene', label: 'Mode', value: summarise(selectedScene), onClear: () => setSelectedScene([]) });
+            if (selectedExposureProgram.length > 0) chips.push({ id: 'program', label: 'Program', value: summarise(selectedExposureProgram), onClear: () => setSelectedExposureProgram([]) });
+            if (selectedWhiteBalance.length > 0) chips.push({ id: 'wb', label: 'WB', value: summarise(selectedWhiteBalance), onClear: () => setSelectedWhiteBalance([]) });
+            if (selectedOrientation.length > 0) chips.push({ id: 'orientation', label: 'Orientation', value: `${selectedOrientation.length} state${selectedOrientation.length === 1 ? '' : 's'}`, onClear: () => setSelectedOrientation([]) });
+            if (selectedExtension.length > 0) chips.push({ id: 'extension', label: 'Format', value: summarise(selectedExtension.map(e => e.toUpperCase())), onClear: () => setSelectedExtension([]) });
+            if (selectedAlbums.length > 0) chips.push({
+              id: 'album',
+              label: 'Album',
+              value: summarise(selectedAlbums.map(id => albums.find(a => a.id === id)?.title ?? `#${id}`)),
+              onClear: () => setSelectedAlbums([]),
+            });
+            // Range filters
+            if (dateFrom || dateTo) chips.push({ id: 'date', label: 'Date', value: `${dateFrom || '…'} – ${dateTo || '…'}`, onClear: () => { setDateFrom(''); setDateTo(''); } });
+            if (yearFrom != null || yearTo != null) chips.push({ id: 'year', label: 'Year', value: `${yearFrom ?? '…'} – ${yearTo ?? '…'}`, onClear: () => { setYearFrom(undefined); setYearTo(undefined); } });
+            if (isoFrom != null || isoTo != null) chips.push({ id: 'iso', label: 'ISO', value: `${isoFrom ?? '…'} – ${isoTo ?? '…'}`, onClear: () => { setIsoFrom(undefined); setIsoTo(undefined); } });
+            if (apertureFrom != null || apertureTo != null) chips.push({ id: 'aperture', label: 'Aperture', value: `f/${apertureFrom ?? '…'} – f/${apertureTo ?? '…'}`, onClear: () => { setApertureFrom(undefined); setApertureTo(undefined); } });
+            if (focalLengthFrom != null || focalLengthTo != null) chips.push({ id: 'focal', label: 'Focal', value: `${focalLengthFrom ?? '…'}mm – ${focalLengthTo ?? '…'}mm`, onClear: () => { setFocalLengthFrom(undefined); setFocalLengthTo(undefined); } });
+            if (megapixelsFrom != null || megapixelsTo != null) chips.push({ id: 'mp', label: 'MP', value: `${megapixelsFrom ?? '…'} – ${megapixelsTo ?? '…'}`, onClear: () => { setMegapixelsFrom(undefined); setMegapixelsTo(undefined); } });
+            if (sizeFromMB != null || sizeToMB != null) chips.push({ id: 'size', label: 'Size', value: `${sizeFromMB ?? '…'}MB – ${sizeToMB ?? '…'}MB`, onClear: () => { setSizeFromMB(undefined); setSizeToMB(undefined); } });
+            if (hasGps !== undefined) chips.push({ id: 'gps', label: 'GPS', value: hasGps ? 'Has GPS' : 'No GPS', onClear: () => setHasGps(undefined) });
+            if (flashFired !== undefined) chips.push({ id: 'flash', label: 'Flash', value: flashFired ? 'Fired' : 'Not fired', onClear: () => setFlashFired(undefined) });
+
+            // Cap inline chips so the bar never grows unmanageably wide.
+            // Anything beyond MAX_INLINE moves into a chevron popover.
+            const MAX_INLINE = 5;
+            const visibleChips = chips.slice(0, MAX_INLINE);
+            const overflowChips = chips.slice(MAX_INLINE);
+
+            return (
+          <div className="px-4 py-1 border-b border-border flex items-center gap-3 shrink-0 bg-secondary/20">
+            <span className="text-sm font-semibold text-foreground flex items-center gap-2 shrink-0">
               {results.total.toLocaleString()} {results.total === 1 ? 'result' : 'results'}
               {/* Date Editor button — inherits the current S&D query so the
                   dedicated window operates on exactly these photos. Enabled
@@ -3521,27 +3620,71 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   unfinished UX. Tooltip and visual disabled-state
                   reflect the gate so users see why the button looks
                   greyed. */}
-              <IconTooltip label={isEditDatesEnabled() ? "Open these photos in the Date Editor to review and correct their dates" : EDIT_DATES_RELEASED_SHORTLY_MESSAGE} side="bottom">
-                <button
-                  onClick={() => {
-                    if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
-                    openDateEditor(query);
-                  }}
-                  disabled={results.total === 0 || !isEditDatesEnabled()}
-                  // Peer-group action button — same lavender pill style as
-                  // Open in Viewer / Show selected / Add to Album / PL so
-                  // the action bar reads as a single row of equally-
-                  // weighted "do something with this selection" controls.
-                  // Drops the previous freehand blue (intentional but
-                  // visually orphaned from the rest of the row).
-                  className="ml-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  {selectedFiles.size > 0
-                    ? `Edit dates (${selectedFiles.size} selected)`
-                    : `Edit dates (${results.total.toLocaleString()})`}
-                </button>
-              </IconTooltip>
+              {/* Overflow menu — Edit Dates + Create Parallel Library
+                  moved here so the visible action row stays calm and
+                  filter-focused (Terry 2026-05-19: "really fucking
+                  busy in this bit between the ribbon and the
+                  pictures"). Both actions were full-set verbs that
+                  ate horizontal space disproportionate to how often
+                  they're used. Edit Dates is also currently release-
+                  gated; the menu acknowledges the gesture without
+                  parking a greyed-out pill front-and-centre. */}
+              <Popover>
+                <IconTooltip label="More actions" side="bottom">
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="ml-1 inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+                      data-testid="button-sd-more-actions"
+                      aria-label="More actions"
+                    >
+                      <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                </IconTooltip>
+                <PopoverContent align="start" className="w-64 p-1">
+                  <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
+                    Act on {selectedFiles.size > 0 ? `${selectedFiles.size} selected` : `${results.total.toLocaleString()} results`}
+                  </p>
+                  {/* Edit Dates — release-gated; clicking when locked
+                      fires a toast instead of opening the editor. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
+                      openDateEditor(query);
+                    }}
+                    disabled={results.total === 0}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm text-foreground transition-colors"
+                    data-testid="menu-edit-dates"
+                  >
+                    <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="flex-1">
+                      <span className="font-medium">Edit dates</span>
+                      {!isEditDatesEnabled() && (
+                        <span className="block text-[10px] text-muted-foreground">Coming in v2.1</span>
+                      )}
+                    </span>
+                  </button>
+                  {/* Create Parallel Library — full-set or selection-
+                      driven. Disabled when no results or a Fix is in
+                      flight (PL shares the copy engine). */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (fixActive) return;
+                      setShowStructureModal(true);
+                    }}
+                    disabled={fixActive || results.total === 0}
+                    title={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Libraries use the same copy engine as the Fix.' : undefined}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm text-foreground transition-colors"
+                    data-testid="menu-create-pl"
+                  >
+                    <Copy className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="font-medium">Create Parallel Library</span>
+                  </button>
+                </PopoverContent>
+              </Popover>
               {selectedFiles.size > 0 && (
                 <>
                   {/* Selection count chip with built-in clear affordance.
@@ -3616,31 +3759,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     disabled={fixActive}
                     disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
                   />
-                  <IconTooltip
-                    label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Libraries use the same copy engine as the Fix.' : 'Mirror the selected files into a Parallel Library'}
-                    side="top"
-                  >
-                    <button
-                      onClick={() => {
-                        if (fixActive) return;
-                        setShowStructureModal(true);
-                      }}
-                      disabled={fixActive}
-                      // Lifted from the freehand purple-500 to lavender
-                      // (text-primary-foreground bg-primary) so the
-                      // action bar reads as a single peer group of
-                      // equally-weighted CTAs. The purple was orphaned
-                      // from PDR's design tokens — a different shade
-                      // than every other primary surface. Step 7's PL
-                      // discoverability pass will lift this and the
-                      // surrounding pills together to the Button
-                      // primitive in one pass.
-                      className="text-xs font-medium text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
-                    >
-                      <Copy className="w-3 h-3" />
-                      Create Parallel Library
-                    </button>
-                  </IconTooltip>
+                  {/* Create Parallel Library moved into the kebab
+                      "More actions" menu next to the results count
+                      (Terry 2026-05-19: "Sure we can put it in a
+                      kebab menu, and that will save some space").
+                      Selection-bar peers stay focused on the per-
+                      selection actions (Open in Viewer, Show
+                      selected, Add to Album); PL is the heavier
+                      "do something with the whole set" verb and
+                      now lives one click away. */}
                   {/* (Standalone "Clear" link removed — the count chip
                       at the start of this bar now carries an inline X
                       dismiss, which reads as a single iOS/macOS-style
@@ -3650,7 +3777,99 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               )}
               {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin inline ml-2 text-primary" />}
             </span>
-            <div className="flex items-center gap-3">
+            {/* Active filter chips — inline between Edit Dates and view
+                controls. Divider visually separates the selection-action
+                cluster from the filter-status cluster. When more than
+                MAX_INLINE filters are active, the overflow lives behind
+                a "+N more" chevron popover (Radix Popover for free
+                titlebar-click dismiss, matching the dropdown filters). */}
+            {chips.length > 0 ? (
+              <>
+                <div className="h-5 w-px bg-border shrink-0" aria-hidden="true" />
+                <div
+                  className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto"
+                  data-testid="active-filters-inline"
+                >
+                  {visibleChips.map(chip => (
+                    <div
+                      key={chip.id}
+                      className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full border border-border bg-secondary/40 text-xs shrink-0"
+                      data-testid={`active-filter-chip-${chip.id}`}
+                    >
+                      <span className="text-foreground whitespace-nowrap">
+                        <span className="font-semibold">{chip.label}:</span>{' '}
+                        <span className="text-muted-foreground">{chip.value}</span>
+                      </span>
+                      <IconTooltip label={`Clear ${chip.label}`} side="bottom">
+                        <button
+                          type="button"
+                          onClick={chip.onClear}
+                          className="text-muted-foreground hover:text-foreground rounded-full p-0.5 hover:bg-secondary transition-colors"
+                          data-testid={`active-filter-chip-clear-${chip.id}`}
+                          aria-label={`Clear ${chip.label} filter`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </IconTooltip>
+                    </div>
+                  ))}
+                  {overflowChips.length > 0 && (
+                    <Popover>
+                      <IconTooltip
+                        label={`${overflowChips.length} more active filter${overflowChips.length === 1 ? '' : 's'}`}
+                        side="bottom"
+                      >
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 pl-2 pr-1.5 py-0.5 rounded-full border border-border bg-secondary/60 hover:bg-secondary text-xs font-medium text-foreground shrink-0 transition-colors"
+                            data-testid="active-filter-overflow-trigger"
+                            aria-label={`Show ${overflowChips.length} more active filters`}
+                          >
+                            +{overflowChips.length} more
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </PopoverTrigger>
+                      </IconTooltip>
+                      <PopoverContent align="end" className="w-64 p-2">
+                        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-2 pt-1 pb-2">
+                          More active filters
+                        </p>
+                        <div className="flex flex-col gap-0.5">
+                          {overflowChips.map(chip => (
+                            <div
+                              key={chip.id}
+                              className="flex items-center justify-between gap-2 px-2 py-1 rounded-md hover:bg-secondary/50 text-xs"
+                              data-testid={`active-filter-overflow-${chip.id}`}
+                            >
+                              <span className="min-w-0 truncate">
+                                <span className="font-semibold text-foreground">{chip.label}:</span>{' '}
+                                <span className="text-muted-foreground">{chip.value}</span>
+                              </span>
+                              <IconTooltip label={`Clear ${chip.label}`} side="left">
+                                <button
+                                  type="button"
+                                  onClick={chip.onClear}
+                                  className="text-muted-foreground hover:text-foreground rounded-full p-0.5 hover:bg-secondary transition-colors shrink-0"
+                                  data-testid={`active-filter-overflow-clear-${chip.id}`}
+                                  aria-label={`Clear ${chip.label} filter`}
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </IconTooltip>
+                            </div>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+              </>
+            ) : (
+              // No active filters — spacer keeps right controls pinned right.
+              <div className="flex-1" />
+            )}
+            <div className="flex items-center gap-3 shrink-0">
               {/* Tile size slider (grid view only) + List + Details */}
               <div className="flex items-center gap-2">
                 {/* Grid tile size slider — styled like the People Match slider */}
@@ -3662,29 +3881,47 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
                 </IconTooltip>
+                {/* Workspace-style zoom pill — same triplet pattern
+                    (Zoom in / percent / Zoom out) as the Workspace's
+                    floating zoom control. Terry 2026-05-19: "The same
+                    zoom button icon that is in the Workspace is meant
+                    to be in S&D". Click % to reset to 50 (middle).
+                    Ctrl+wheel on the grid below still works for fast
+                    scaling. */}
                 {viewMode === 'grid' && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-border bg-background min-w-[160px]">
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">0%</span>
-                    <div className="relative flex-1">
-                      <input
-                        type="range"
-                        min={TILE_SLIDER_MIN}
-                        max={TILE_SLIDER_MAX}
-                        step={TILE_SLIDER_STEP}
-                        value={tileSizeSlider}
-                        onChange={(e) => setTileSizeSlider(parseInt(e.target.value, 10))}
-                        className="w-full h-1 accent-purple-500 cursor-pointer relative z-10"
-                      />
-                      {/* Tick marks at 25%, 50%, 75% */}
-                      <div className="absolute top-1/2 left-0 right-0 flex justify-between px-[2px] pointer-events-none" style={{ transform: 'translateY(-50%)' }}>
-                        <div className="w-px h-2 bg-transparent" />
-                        <div className="w-px h-2.5 bg-muted-foreground/25" />
-                        <div className="w-px h-2.5 bg-muted-foreground/25" />
-                        <div className="w-px h-2.5 bg-muted-foreground/25" />
-                        <div className="w-px h-2 bg-transparent" />
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">100%</span>
+                  <div className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-lg border border-border bg-background">
+                    <IconTooltip label="Zoom out" side="bottom">
+                      <button
+                        onClick={() => setTileSizeSlider(prev => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
+                        disabled={tileSizeSlider <= TILE_SLIDER_MIN}
+                        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        data-testid="button-sd-zoom-out"
+                        aria-label="Zoom out"
+                      >
+                        <ZoomOut className="w-3.5 h-3.5" />
+                      </button>
+                    </IconTooltip>
+                    <IconTooltip label="Reset to 50%" side="bottom">
+                      <button
+                        onClick={() => setTileSizeSlider(50)}
+                        className="px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
+                        data-testid="button-sd-zoom-reset"
+                        aria-label="Reset zoom"
+                      >
+                        {tileSizeSlider}%
+                      </button>
+                    </IconTooltip>
+                    <IconTooltip label="Zoom in" side="bottom">
+                      <button
+                        onClick={() => setTileSizeSlider(prev => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
+                        disabled={tileSizeSlider >= TILE_SLIDER_MAX}
+                        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        data-testid="button-sd-zoom-in"
+                        aria-label="Zoom in"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" />
+                      </button>
+                    </IconTooltip>
                   </div>
                 )}
                 <div className="flex items-center border border-border rounded-lg overflow-hidden">
@@ -3788,12 +4025,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   {showPreviewPanel ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
                 </button>
               </IconTooltip>
-              <button onClick={clearFilters} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-all flex items-center gap-1.5 ml-1 border border-primary/40">
-                <ArrowLeft className="w-3.5 h-3.5" />
-                {hasSources ? 'Back to Dashboard' : 'Back to Workspace'}
-              </button>
+              {/* Back-to-Dashboard button removed (Terry 2026-05-19):
+                  the sidebar already has a Dashboard nav item, so
+                  this button was redundant. It dated back to when
+                  S&D was the only non-Dashboard surface. */}
             </div>
           </div>
+            );
+          })()}
 
           {/* Grid/List/Details + Preview — rendered whenever EITHER the
               current search produced results OR Custom-selection mode is
@@ -4031,6 +4270,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           if (viewerSet && viewerSet.length > 0) {
                             const startIdx = Math.max(0, viewerSet.findIndex(f => f.id === selectedFile.id));
                             safeOpenViewer(viewerSet.map(f => f.file_path), viewerSet.map(f => f.filename), startIdx);
+                          } else if (navFiles.length > 1) {
+                            // Open the FULL filtered set with this photo
+                            // as the start index — viewer's left/right
+                            // arrows browse the rest of the results.
+                            // Mirrors MemoriesDayDrilldown's open
+                            // behaviour. Terry 2026-05-19: "I should
+                            // still be able to go left and right or
+                            // have a slide show like what the viewer
+                            // does normally."
+                            const startIdx = Math.max(0, navFiles.findIndex(f => f.id === selectedFile.id));
+                            safeOpenViewer(navFiles.map(f => f.file_path), navFiles.map(f => f.filename), startIdx);
                           } else {
                             safeOpenViewer(selectedFile.file_path, selectedFile.filename);
                           }
@@ -4184,66 +4434,19 @@ function FilterDropdown({
   activeLabel?: string;
   selectedValues?: string[];
   children: React.ReactNode;
-  /** Optional handlers. When provided, a "Select all / Clear all"
-   *  header strip is rendered at the top of the dropdown so users
-   *  don't have to click each item individually. Terry 2026-05-19:
-   *  "There needs to be a clear all and select all on this filter."
-   *  Available to every filter that wires the props through. */
   onSelectAll?: () => void;
   onClearAll?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  // Popover is rendered into document.body via a portal so it can never be
-  // clipped by the ribbon's overflow-x-auto container. Position is kept in
-  // sync with the trigger rect via useLayoutEffect + scroll/resize listeners.
-  const [popoverPos, setPopoverPos] = useState<{ left: number; top: number } | null>(null);
-
-  const recomputePosition = useCallback(() => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    // Horizontally centre under the trigger.
-    const left = rect.left + rect.width / 2;
-    const top = rect.bottom + 4; // small gap below the trigger
-    setPopoverPos({ left, top });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    recomputePosition();
-    const handler = () => recomputePosition();
-    window.addEventListener('resize', handler);
-    window.addEventListener('scroll', handler, true);
-    return () => {
-      window.removeEventListener('resize', handler);
-      window.removeEventListener('scroll', handler, true);
-    };
-  }, [open, recomputePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (triggerRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [open]);
-
-  // Trigger ALWAYS shows the filter's name — Terry 2026-05-19: "the
-  // filter button name should remain in view and the no. selected
-  // appears at the top of the dropdown". Previous behaviour swapped
-  // the label out for "N selected" or the joined value list, which
-  // (a) hid the filter's identity once it had a selection, and (b)
-  // grew the trigger's width as more items were ticked. The count
-  // + selected-values summary now live inside the dropdown header.
+  // Rewritten to use the Radix Popover primitive — its built-in
+  // outside-pointer detection works reliably for titlebar clicks
+  // (Electron's `-webkit-app-region: drag` swallows custom mouse
+  // listeners but Radix's DismissableLayer uses a tracking strategy
+  // that escapes it, the same way every other Popover in PDR closes
+  // when you click the titlebar). Terry 2026-05-19: "It works in
+  // other locations. What's stopping it from happening here?" —
+  // answer: the hand-rolled portal+listener combo. Swapped for the
+  // standard primitive.
   const display = label;
   const title = selectedValues && selectedValues.length > 0 ? selectedValues.join(', ') : activeLabel;
   const selectionCount = selectedValues?.length ?? 0;
@@ -4253,15 +4456,11 @@ function FilterDropdown({
   const hasHeaderStrip = inDropdownSummary !== null || !!onSelectAll || !!onClearAll;
 
   return (
-    <>
-      <IconTooltip label={title ?? ''} side="bottom" disabled={!title}>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button
-          ref={triggerRef}
-          onClick={() => setOpen(!open)}
-          // Active = white-on-lavender (per style guide); inactive = neutral
-          // bordered chip. Hover doesn't pre-tint with lavender (avoids the
-          // "is it active or just hovered?" ambiguity the original styling
-          // had). text-xs (12 / 500) instead of the hardcoded text-[12px].
+          type="button"
+          title={title ?? undefined}
           className={`flex items-center gap-1 px-2 py-1 rounded-md border text-xs transition-all ${
             active
               ? 'border-primary bg-primary text-primary-foreground font-medium shadow-sm'
@@ -4271,55 +4470,46 @@ function FilterDropdown({
           <span className="max-w-[110px] truncate">{display}</span>
           <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
-      </IconTooltip>
-      {open && popoverPos && createPortal(
-        <div
-          ref={popoverRef}
-          style={{
-            position: 'fixed',
-            left: popoverPos.left,
-            top: popoverPos.top,
-            transform: 'translateX(-50%)',
-            zIndex: 1000,
-          }}
-          className="min-w-[200px] max-h-[60vh] overflow-y-auto bg-background border border-border rounded-xl shadow-lg p-2 space-y-0.5"
-        >
-          {hasHeaderStrip && (
-            <div className="flex items-center gap-2 pb-1.5 mb-1 border-b border-border/60">
-              {inDropdownSummary && (
-                <span className="text-[11px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/10 truncate" data-testid="filter-dropdown-count">
-                  {inDropdownSummary}
-                </span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="center"
+        sideOffset={4}
+        className="min-w-[200px] max-h-[60vh] overflow-y-auto p-2 space-y-0.5 w-auto"
+      >
+        {hasHeaderStrip && (
+          <div className="flex items-center gap-2 pb-1.5 mb-1 border-b border-border/60">
+            {inDropdownSummary && (
+              <span className="text-[11px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/10 truncate" data-testid="filter-dropdown-count">
+                {inDropdownSummary}
+              </span>
+            )}
+            <div className="flex items-center gap-1 ml-auto shrink-0">
+              {onSelectAll && (
+                <button
+                  type="button"
+                  onClick={onSelectAll}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
+                  data-testid="filter-dropdown-select-all"
+                >
+                  Select all
+                </button>
               )}
-              <div className="flex items-center gap-1 ml-auto shrink-0">
-                {onSelectAll && (
-                  <button
-                    type="button"
-                    onClick={onSelectAll}
-                    className="px-2 py-1 text-[11px] font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
-                    data-testid="filter-dropdown-select-all"
-                  >
-                    Select all
-                  </button>
-                )}
-                {onClearAll && (
-                  <button
-                    type="button"
-                    onClick={onClearAll}
-                    className="px-2 py-1 text-[11px] font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
-                    data-testid="filter-dropdown-clear-all"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
+              {onClearAll && (
+                <button
+                  type="button"
+                  onClick={onClearAll}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
+                  data-testid="filter-dropdown-clear-all"
+                >
+                  Clear all
+                </button>
+              )}
             </div>
-          )}
-          {children}
-        </div>,
-        document.body,
-      )}
-    </>
+          </div>
+        )}
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -1312,15 +1312,37 @@ export function searchFiles(query) {
         conditions.push(`f.month <= ?`);
         params.push(query.monthTo);
     }
+    // Sentinel-aware multi-select helper. When the user has ticked
+    // the "(No X)" entry in the filter dropdown, treat that value as
+    // "match NULL or empty string" for the column AND OR it with any
+    // real values that were also selected. Centralised so country /
+    // city / make / model / lens / album-source all share the logic.
+    const sentinelAwareIn = (column, values, nullSentinel) => {
+        const realValues = values.filter(v => v !== nullSentinel);
+        const includeNull = values.includes(nullSentinel);
+        const clauses = [];
+        if (realValues.length > 0) {
+            clauses.push(`${column} IN (${realValues.map(() => '?').join(',')})`);
+            params.push(...realValues);
+        }
+        if (includeNull) {
+            clauses.push(`(${column} IS NULL OR ${column} = '')`);
+        }
+        if (clauses.length === 0)
+            return null;
+        return clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
+    };
     // Camera make
     if (query.cameraMake && query.cameraMake.length > 0) {
-        conditions.push(`f.camera_make IN (${query.cameraMake.map(() => '?').join(',')})`);
-        params.push(...query.cameraMake);
+        const clause = sentinelAwareIn('f.camera_make', query.cameraMake, NO_CAMERA_MAKE_LABEL);
+        if (clause)
+            conditions.push(clause);
     }
     // Camera model
     if (query.cameraModel && query.cameraModel.length > 0) {
-        conditions.push(`f.camera_model IN (${query.cameraModel.map(() => '?').join(',')})`);
-        params.push(...query.cameraModel);
+        const clause = sentinelAwareIn('f.camera_model', query.cameraModel, NO_CAMERA_MODEL_LABEL);
+        if (clause)
+            conditions.push(clause);
     }
     // GPS filter
     if (query.hasGps === true) {
@@ -1329,15 +1351,17 @@ export function searchFiles(query) {
     else if (query.hasGps === false) {
         conditions.push(`(f.gps_lat IS NULL OR f.gps_lon IS NULL)`);
     }
-    // Country filter
+    // Country filter (sentinel-aware: "(No location)" → IS NULL)
     if (query.country && query.country.length > 0) {
-        conditions.push(`f.geo_country IN (${query.country.map(() => '?').join(',')})`);
-        params.push(...query.country);
+        const clause = sentinelAwareIn('f.geo_country', query.country, NO_LOCATION_LABEL);
+        if (clause)
+            conditions.push(clause);
     }
-    // City filter
+    // City filter (sentinel-aware: "(No location)" → IS NULL)
     if (query.city && query.city.length > 0) {
-        conditions.push(`f.geo_city IN (${query.city.map(() => '?').join(',')})`);
-        params.push(...query.city);
+        const clause = sentinelAwareIn('f.geo_city', query.city, NO_LOCATION_LABEL);
+        if (clause)
+            conditions.push(clause);
     }
     // Run filter
     if (query.runId != null) {
@@ -1360,10 +1384,11 @@ export function searchFiles(query) {
         conditions.push(`f.extension IN (${query.extension.map(() => '?').join(',')})`);
         params.push(...query.extension);
     }
-    // Lens model
+    // Lens model (sentinel-aware: "(No lens)" → IS NULL)
     if (query.lensModel && query.lensModel.length > 0) {
-        conditions.push(`f.lens_model IN (${query.lensModel.map(() => '?').join(',')})`);
-        params.push(...query.lensModel);
+        const clause = sentinelAwareIn('f.lens_model', query.lensModel, NO_LENS_LABEL);
+        if (clause)
+            conditions.push(clause);
     }
     // ISO range
     if (query.isoFrom != null) {
@@ -1441,6 +1466,14 @@ export function searchFiles(query) {
     if (query.orientation && query.orientation.length > 0) {
         conditions.push(`f.orientation IN (${query.orientation.map(() => '?').join(',')})`);
         params.push(...query.orientation);
+    }
+    // Album filter (v2.0.8 step 5) — restrict to photos that are
+    // members of any of the listed albums via album_files. Uses IN
+    // semantics: a photo matches if it's in ANY of the selected
+    // albums (multi-select union). Empty/missing list = no constraint.
+    if (query.albumIds && query.albumIds.length > 0) {
+        conditions.push(`f.id IN (SELECT file_id FROM album_files WHERE album_id IN (${query.albumIds.map(() => '?').join(',')}))`);
+        params.push(...query.albumIds);
     }
     // AI: Person + Tag filters. Rendered as two SQL fragments first so we
     // can decide at the end whether to AND them into separate conditions
@@ -1596,26 +1629,395 @@ export function searchFiles(query) {
 // ─── Filter options (for dropdowns) ──────────────────────────────────────────
 export function getFilterOptions() {
     const database = getDb();
-    const confidences = database.prepare(`SELECT DISTINCT confidence FROM indexed_files ORDER BY confidence`).all().map(r => r.confidence);
-    const fileTypes = database.prepare(`SELECT DISTINCT file_type FROM indexed_files ORDER BY file_type`).all().map(r => r.file_type);
-    const dateSources = database.prepare(`SELECT DISTINCT date_source FROM indexed_files WHERE date_source != '' ORDER BY date_source`).all().map(r => r.date_source);
-    const years = database.prepare(`SELECT DISTINCT year FROM indexed_files WHERE year IS NOT NULL ORDER BY year`).all().map(r => r.year);
-    const cameraMakes = database.prepare(`SELECT DISTINCT camera_make FROM indexed_files WHERE camera_make IS NOT NULL ORDER BY camera_make`).all().map(r => r.camera_make);
-    const cameraModels = database.prepare(`SELECT DISTINCT camera_model FROM indexed_files WHERE camera_model IS NOT NULL ORDER BY camera_model`).all().map(r => r.camera_model);
-    const lensModels = database.prepare(`SELECT DISTINCT lens_model FROM indexed_files WHERE lens_model IS NOT NULL ORDER BY lens_model`).all().map(r => r.lens_model);
-    const extensions = database.prepare(`SELECT DISTINCT extension FROM indexed_files ORDER BY extension`).all().map(r => r.extension);
-    const sceneCaptureTypes = database.prepare(`SELECT DISTINCT scene_capture_type FROM indexed_files WHERE scene_capture_type IS NOT NULL ORDER BY scene_capture_type`).all().map(r => r.scene_capture_type);
-    const exposurePrograms = database.prepare(`SELECT DISTINCT exposure_program FROM indexed_files WHERE exposure_program IS NOT NULL ORDER BY exposure_program`).all().map(r => r.exposure_program);
-    const whiteBalances = database.prepare(`SELECT DISTINCT white_balance FROM indexed_files WHERE white_balance IS NOT NULL ORDER BY white_balance`).all().map(r => r.white_balance);
-    const cameraPositions = database.prepare(`SELECT DISTINCT camera_position FROM indexed_files WHERE camera_position IS NOT NULL ORDER BY camera_position`).all().map(r => r.camera_position);
-    const orientations = database.prepare(`SELECT DISTINCT orientation FROM indexed_files WHERE orientation IS NOT NULL ORDER BY orientation`).all().map(r => r.orientation);
-    const countries = database.prepare(`SELECT DISTINCT geo_country FROM indexed_files WHERE geo_country IS NOT NULL ORDER BY geo_country`).all().map(r => r.geo_country);
-    const cities = database.prepare(`SELECT DISTINCT geo_city FROM indexed_files WHERE geo_city IS NOT NULL ORDER BY geo_city`).all().map(r => r.geo_city);
-    const rawDestinations = database.prepare(`SELECT DISTINCT destination_path FROM indexed_runs ORDER BY destination_path`).all().map(r => r.destination_path);
-    // Normalise and deduplicate (handles legacy double-backslash entries)
-    const destinations = [...new Set(rawDestinations.map(d => d.replace(/\\\\/g, '\\').replace(/\\$/, '')))];
+    const groupBy = (column, includeNullAsLabel) => {
+        const rows = database.prepare(`SELECT ${column} AS v, COUNT(*) AS c FROM indexed_files GROUP BY ${column}`).all();
+        const counts = {};
+        const values = [];
+        let nullCount = 0;
+        for (const r of rows) {
+            if (r.v === null || r.v === '') {
+                nullCount += Number(r.c);
+                continue;
+            }
+            counts[r.v] = Number(r.c);
+            values.push(r.v);
+        }
+        values.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        // "(No location)" / "(No camera)" entry — only added if we have a
+        // label AND at least one NULL row. Sentinel value is the LABEL
+        // itself; backend treats it as a NULL check in searchFiles. Goes
+        // to the TOP of the returned values per Terry's request: "there
+        // should also be a field for no location (which should probably
+        // go at the top, as the list can get quite long)."
+        if (includeNullAsLabel && nullCount > 0) {
+            values.unshift(includeNullAsLabel);
+            counts[includeNullAsLabel] = nullCount;
+        }
+        return { values, counts };
+    };
+    const groupByNumeric = (column) => {
+        const rows = database.prepare(`SELECT ${column} AS v, COUNT(*) AS c FROM indexed_files WHERE ${column} IS NOT NULL GROUP BY ${column} ORDER BY ${column}`).all();
+        const counts = {};
+        const values = [];
+        for (const r of rows) {
+            counts[String(r.v)] = Number(r.c);
+            values.push(r.v);
+        }
+        return { values, counts };
+    };
+    const confidence = groupBy('confidence');
+    const fileType = groupBy('file_type');
+    const dateSource = groupBy('date_source');
+    const yearGroup = groupByNumeric('year');
+    const cameraMake = groupBy('camera_make', NO_CAMERA_MAKE_LABEL);
+    const cameraModel = groupBy('camera_model', NO_CAMERA_MODEL_LABEL);
+    const lensModel = groupBy('lens_model', NO_LENS_LABEL);
+    const extension = groupBy('extension');
+    const sceneCaptureType = groupBy('scene_capture_type');
+    const exposureProgram = groupBy('exposure_program');
+    const whiteBalance = groupBy('white_balance');
+    const cameraPosition = groupBy('camera_position');
+    const orientation = groupBy('orientation');
+    const country = groupBy('geo_country', NO_LOCATION_LABEL);
+    const city = groupBy('geo_city', NO_LOCATION_LABEL);
+    // Library Drive counts — files per destination_path, joining
+    // indexed_runs to indexed_files via run_id. LEFT JOIN so runs
+    // with zero files still appear in the list (count=0).
+    const destinationRows = database.prepare(`
+    SELECT r.destination_path AS v, COUNT(f.id) AS c
+      FROM indexed_runs r
+      LEFT JOIN indexed_files f ON f.run_id = r.id
+     GROUP BY r.destination_path
+     ORDER BY r.destination_path
+  `).all();
+    // Normalise destination paths (handles legacy double-backslash) and
+    // accumulate counts onto the normalised form.
+    const destinationCounts = {};
+    for (const row of destinationRows) {
+        const norm = row.v.replace(/\\\\/g, '\\').replace(/\\$/, '');
+        destinationCounts[norm] = (destinationCounts[norm] ?? 0) + Number(row.c);
+    }
+    const destinations = Object.keys(destinationCounts).sort();
     const runs = database.prepare(`SELECT id, report_id, destination_path, indexed_at, file_count FROM indexed_runs ORDER BY indexed_at DESC`).all();
-    return { confidences, fileTypes, lensModels, dateSources, years, cameraMakes, cameraModels, extensions, sceneCaptureTypes, exposurePrograms, whiteBalances, cameraPositions, orientations, countries, cities, destinations, runs };
+    return {
+        confidences: confidence.values,
+        fileTypes: fileType.values,
+        lensModels: lensModel.values,
+        dateSources: dateSource.values,
+        years: yearGroup.values,
+        cameraMakes: cameraMake.values,
+        cameraModels: cameraModel.values,
+        extensions: extension.values,
+        sceneCaptureTypes: sceneCaptureType.values,
+        exposurePrograms: exposureProgram.values,
+        whiteBalances: whiteBalance.values,
+        cameraPositions: cameraPosition.values,
+        orientations: orientation.values,
+        countries: country.values,
+        cities: city.values,
+        destinations,
+        runs,
+        counts: {
+            confidence: confidence.counts,
+            fileType: fileType.counts,
+            dateSource: dateSource.counts,
+            cameraMake: cameraMake.counts,
+            cameraModel: cameraModel.counts,
+            lensModel: lensModel.counts,
+            extension: extension.counts,
+            sceneCaptureType: sceneCaptureType.counts,
+            exposureProgram: exposureProgram.counts,
+            whiteBalance: whiteBalance.counts,
+            cameraPosition: cameraPosition.counts,
+            orientation: orientation.counts,
+            country: country.counts,
+            city: city.counts,
+            destination: destinationCounts,
+        },
+    };
+}
+// Sentinel labels for the "(No X)" entries. Frontend renders them as
+// the top item in their dropdown; backend matches them as NULL/empty
+// in searchFiles via these literal strings.
+export const NO_LOCATION_LABEL = '(No location)';
+export const NO_CAMERA_MAKE_LABEL = '(No camera make)';
+export const NO_CAMERA_MODEL_LABEL = '(No camera model)';
+export const NO_LENS_LABEL = '(No lens)';
+/**
+ * Contextual / faceted counts. For each filter dimension D, this
+ * applies every active filter EXCEPT D's own and counts photos
+ * grouped by D's column. "Leave-one-out" semantics — so a user
+ * who has Country=Italy selected sees City counts reflecting
+ * "Italian cities" (and ticking another city ADDS, doesn't replace),
+ * but the Country dropdown still shows other countries with their
+ * counts so the user can add them.
+ *
+ * Frontend uses these to (a) replace the static counts on each
+ * checkbox and (b) HIDE 0-count options (except for ones the user
+ * has explicitly selected — those stay visible so they can untick
+ * them).
+ *
+ * Performance: one GROUP BY per dimension, 15ish per call. On 9k
+ * rows it's sub-100ms; for very large libraries every column used
+ * for filtering should have an index (most do already).
+ */
+export function getFilterCounts(query) {
+    const db = getDb();
+    // Re-builds the WHERE clause from the SearchQuery, omitting the
+    // dimension named in `skip`. Mirrors searchFiles' condition logic
+    // for the multi-select / range / sentinel-aware dimensions. AI/
+    // person filters are intentionally omitted from this MVP — when
+    // those become contextual-count drivers they can be added here.
+    const buildConditions = (skip) => {
+        const conditions = [];
+        const params = [];
+        if (query.text && query.text.trim()) {
+            const rawText = query.text.trim().replace(/['"]/g, '');
+            const searchTerm = rawText.split(/\s+/).map(t => `"${t}"*`).join(' ');
+            const likePattern = `%${rawText.toLowerCase()}%`;
+            conditions.push(`f.id IN (
+        SELECT rowid FROM files_fts WHERE files_fts MATCH ?
+        UNION
+        SELECT rowid FROM files_ai_fts WHERE files_ai_fts MATCH ?
+        UNION
+        SELECT file_id FROM ai_tags WHERE LOWER(tag) LIKE ?
+        UNION
+        SELECT fd.file_id FROM face_detections fd JOIN persons p ON fd.person_id = p.id WHERE LOWER(p.name) LIKE ? AND p.discarded_at IS NULL
+      )`);
+            params.push(searchTerm, searchTerm, likePattern, likePattern);
+        }
+        const sentinelClause = (column, values, nullSentinel) => {
+            const realValues = values.filter(v => v !== nullSentinel);
+            const includeNull = values.includes(nullSentinel);
+            const clauses = [];
+            if (realValues.length > 0) {
+                clauses.push(`${column} IN (${realValues.map(() => '?').join(',')})`);
+                params.push(...realValues);
+            }
+            if (includeNull)
+                clauses.push(`(${column} IS NULL OR ${column} = '')`);
+            if (clauses.length === 0)
+                return null;
+            return clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
+        };
+        if (skip !== 'confidence' && query.confidence?.length) {
+            conditions.push(`f.confidence IN (${query.confidence.map(() => '?').join(',')})`);
+            params.push(...query.confidence);
+        }
+        if (skip !== 'fileType' && query.fileType?.length) {
+            conditions.push(`f.file_type IN (${query.fileType.map(() => '?').join(',')})`);
+            params.push(...query.fileType);
+        }
+        if (skip !== 'dateSource' && query.dateSource?.length) {
+            conditions.push(`f.date_source IN (${query.dateSource.map(() => '?').join(',')})`);
+            params.push(...query.dateSource);
+        }
+        if (query.dateFrom) {
+            conditions.push(`f.derived_date >= ?`);
+            params.push(query.dateFrom);
+        }
+        if (query.dateTo) {
+            const endDate = query.dateTo.length <= 10 ? query.dateTo + ' 23:59:59' : query.dateTo;
+            conditions.push(`f.derived_date <= ?`);
+            params.push(endDate);
+        }
+        if (query.yearFrom != null) {
+            conditions.push(`f.year >= ?`);
+            params.push(query.yearFrom);
+        }
+        if (query.yearTo != null) {
+            conditions.push(`f.year <= ?`);
+            params.push(query.yearTo);
+        }
+        if (query.monthFrom != null) {
+            conditions.push(`f.month >= ?`);
+            params.push(query.monthFrom);
+        }
+        if (query.monthTo != null) {
+            conditions.push(`f.month <= ?`);
+            params.push(query.monthTo);
+        }
+        if (skip !== 'cameraMake' && query.cameraMake?.length) {
+            const c = sentinelClause('f.camera_make', query.cameraMake, NO_CAMERA_MAKE_LABEL);
+            if (c)
+                conditions.push(c);
+        }
+        if (skip !== 'cameraModel' && query.cameraModel?.length) {
+            const c = sentinelClause('f.camera_model', query.cameraModel, NO_CAMERA_MODEL_LABEL);
+            if (c)
+                conditions.push(c);
+        }
+        if (query.hasGps === true)
+            conditions.push(`f.gps_lat IS NOT NULL AND f.gps_lon IS NOT NULL`);
+        else if (query.hasGps === false)
+            conditions.push(`(f.gps_lat IS NULL OR f.gps_lon IS NULL)`);
+        if (skip !== 'country' && query.country?.length) {
+            const c = sentinelClause('f.geo_country', query.country, NO_LOCATION_LABEL);
+            if (c)
+                conditions.push(c);
+        }
+        if (skip !== 'city' && query.city?.length) {
+            const c = sentinelClause('f.geo_city', query.city, NO_LOCATION_LABEL);
+            if (c)
+                conditions.push(c);
+        }
+        if (skip !== 'destination' && query.destinationPath?.length) {
+            const normPaths = query.destinationPath.flatMap(p => {
+                const norm = p.replace(/\\\\/g, '\\').replace(/\\$/, '');
+                const dbl = norm.replace(/\\/g, '\\\\');
+                return norm === dbl ? [norm] : [norm, dbl];
+            });
+            conditions.push(`f.run_id IN (SELECT id FROM indexed_runs WHERE destination_path IN (${normPaths.map(() => '?').join(',')}))`);
+            params.push(...normPaths);
+        }
+        if (skip !== 'extension' && query.extension?.length) {
+            conditions.push(`f.extension IN (${query.extension.map(() => '?').join(',')})`);
+            params.push(...query.extension);
+        }
+        if (skip !== 'lensModel' && query.lensModel?.length) {
+            const c = sentinelClause('f.lens_model', query.lensModel, NO_LENS_LABEL);
+            if (c)
+                conditions.push(c);
+        }
+        if (query.isoFrom != null) {
+            conditions.push(`f.iso >= ?`);
+            params.push(query.isoFrom);
+        }
+        if (query.isoTo != null) {
+            conditions.push(`f.iso <= ?`);
+            params.push(query.isoTo);
+        }
+        if (query.apertureFrom != null) {
+            conditions.push(`f.aperture >= ?`);
+            params.push(query.apertureFrom);
+        }
+        if (query.apertureTo != null) {
+            conditions.push(`f.aperture <= ?`);
+            params.push(query.apertureTo);
+        }
+        if (query.focalLengthFrom != null) {
+            conditions.push(`f.focal_length >= ?`);
+            params.push(query.focalLengthFrom);
+        }
+        if (query.focalLengthTo != null) {
+            conditions.push(`f.focal_length <= ?`);
+            params.push(query.focalLengthTo);
+        }
+        if (query.flashFired === true)
+            conditions.push(`f.flash_fired = 1`);
+        else if (query.flashFired === false)
+            conditions.push(`f.flash_fired = 0`);
+        if (query.megapixelsFrom != null) {
+            conditions.push(`f.megapixels >= ?`);
+            params.push(query.megapixelsFrom);
+        }
+        if (query.megapixelsTo != null) {
+            conditions.push(`f.megapixels <= ?`);
+            params.push(query.megapixelsTo);
+        }
+        if (query.sizeFrom != null) {
+            conditions.push(`f.size_bytes >= ?`);
+            params.push(query.sizeFrom);
+        }
+        if (query.sizeTo != null) {
+            conditions.push(`f.size_bytes <= ?`);
+            params.push(query.sizeTo);
+        }
+        if (skip !== 'sceneCaptureType' && query.sceneCaptureType?.length) {
+            conditions.push(`f.scene_capture_type IN (${query.sceneCaptureType.map(() => '?').join(',')})`);
+            params.push(...query.sceneCaptureType);
+        }
+        if (skip !== 'exposureProgram' && query.exposureProgram?.length) {
+            conditions.push(`f.exposure_program IN (${query.exposureProgram.map(() => '?').join(',')})`);
+            params.push(...query.exposureProgram);
+        }
+        if (skip !== 'whiteBalance' && query.whiteBalance?.length) {
+            conditions.push(`f.white_balance IN (${query.whiteBalance.map(() => '?').join(',')})`);
+            params.push(...query.whiteBalance);
+        }
+        if (skip !== 'cameraPosition' && query.cameraPosition?.length) {
+            conditions.push(`f.camera_position IN (${query.cameraPosition.map(() => '?').join(',')})`);
+            params.push(...query.cameraPosition);
+        }
+        if (skip !== 'orientation' && query.orientation?.length) {
+            conditions.push(`f.orientation IN (${query.orientation.map(() => '?').join(',')})`);
+            params.push(...query.orientation);
+        }
+        if (skip !== 'album' && query.albumIds?.length) {
+            conditions.push(`f.id IN (SELECT file_id FROM album_files WHERE album_id IN (${query.albumIds.map(() => '?').join(',')}))`);
+            params.push(...query.albumIds);
+        }
+        return { conditions, params };
+    };
+    const countByColumn = (dim, column, nullLabel) => {
+        const { conditions, params } = buildConditions(dim);
+        const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const rows = db.prepare(`SELECT ${column} AS v, COUNT(*) AS c FROM indexed_files f ${whereSql} GROUP BY ${column}`).all(...params);
+        const map = {};
+        let nullCount = 0;
+        for (const r of rows) {
+            if (r.v === null || r.v === '') {
+                nullCount += Number(r.c);
+                continue;
+            }
+            map[r.v] = Number(r.c);
+        }
+        if (nullLabel && nullCount > 0)
+            map[nullLabel] = nullCount;
+        return map;
+    };
+    const result = {};
+    result.confidence = countByColumn('confidence', 'f.confidence');
+    result.fileType = countByColumn('fileType', 'f.file_type');
+    result.dateSource = countByColumn('dateSource', 'f.date_source');
+    result.cameraMake = countByColumn('cameraMake', 'f.camera_make', NO_CAMERA_MAKE_LABEL);
+    result.cameraModel = countByColumn('cameraModel', 'f.camera_model', NO_CAMERA_MODEL_LABEL);
+    result.lensModel = countByColumn('lensModel', 'f.lens_model', NO_LENS_LABEL);
+    result.extension = countByColumn('extension', 'f.extension');
+    result.sceneCaptureType = countByColumn('sceneCaptureType', 'f.scene_capture_type');
+    result.exposureProgram = countByColumn('exposureProgram', 'f.exposure_program');
+    result.whiteBalance = countByColumn('whiteBalance', 'f.white_balance');
+    result.cameraPosition = countByColumn('cameraPosition', 'f.camera_position');
+    result.orientation = countByColumn('orientation', 'f.orientation');
+    result.country = countByColumn('country', 'f.geo_country', NO_LOCATION_LABEL);
+    result.city = countByColumn('city', 'f.geo_city', NO_LOCATION_LABEL);
+    // Destination — JOIN to indexed_runs and normalise paths.
+    {
+        const { conditions, params } = buildConditions('destination');
+        const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const rows = db.prepare(`
+      SELECT r.destination_path AS v, COUNT(f.id) AS c
+        FROM indexed_files f
+        JOIN indexed_runs r ON r.id = f.run_id
+        ${whereSql}
+       GROUP BY r.destination_path
+    `).all(...params);
+        const map = {};
+        for (const row of rows) {
+            const norm = row.v.replace(/\\\\/g, '\\').replace(/\\$/, '');
+            map[norm] = (map[norm] ?? 0) + Number(row.c);
+        }
+        result.destination = map;
+    }
+    // Album — JOIN to album_files. Result is keyed by album_id as a
+    // string (Record<string, number>) so it round-trips through JSON
+    // cleanly; frontend looks up via `counts.album[String(albumId)]`.
+    {
+        const { conditions, params } = buildConditions('album');
+        const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const rows = db.prepare(`
+      SELECT af.album_id AS v, COUNT(*) AS c
+        FROM indexed_files f
+        JOIN album_files af ON af.file_id = f.id
+        ${whereSql}
+       GROUP BY af.album_id
+    `).all(...params);
+        const map = {};
+        for (const r of rows)
+            map[String(r.v)] = Number(r.c);
+        result.album = map;
+    }
+    return result;
 }
 // ─── Index stats ─────────────────────────────────────────────────────────────
 export function getIndexStats() {
@@ -4981,8 +5383,26 @@ export function listAlbums() {
 export function createUserAlbum(title) {
     const db = getDb();
     const trimmed = title.trim() || 'Untitled album';
-    const result = db.prepare(`INSERT INTO albums (title, source) VALUES (?, 'user_created')`).run(trimmed);
-    return Number(result.lastInsertRowid);
+    const txn = db.transaction(() => {
+        const result = db.prepare(`INSERT INTO albums (title, source) VALUES (?, 'user_created')`).run(trimmed);
+        const albumId = Number(result.lastInsertRowid);
+        // Auto-link the new album to its source's auto group (here:
+        // the "PDR" auto group, source_kind='auto', source_key=
+        // 'user_created'). Mirrors what the startup-time seed migration
+        // does for existing albums — without this, freshly created
+        // albums only show in the "All albums" view until the app
+        // restarts and the seed re-runs. Terry 2026-05-18: "closing
+        // the app and relaunching it is not acceptable behaviour."
+        db.prepare(`
+      INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto)
+      SELECT ?, g.id, 1
+        FROM album_groups g
+       WHERE g.source_kind = 'auto'
+         AND g.source_key  = 'user_created'
+    `).run(albumId);
+        return albumId;
+    });
+    return txn();
 }
 /** Rename an album. Always bumps updated_at so the list re-sorts. */
 export function renameAlbum(albumId, newTitle) {

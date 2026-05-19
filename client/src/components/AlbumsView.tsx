@@ -29,13 +29,20 @@ import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from 'rea
 import {
   ChevronDown, ChevronRight, ChevronLeft, FolderPlus, FolderClosed, FolderOpen,
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
-  Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical,
+  Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
+  CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
+  ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
+import ParallelStructureModal from '@/components/ParallelStructureModal';
+import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
+import { DensityToggle, type Density } from '@/components/ui/density-toggle';
+import { consumePendingAlbumOpen } from '@/lib/album-return-source';
 import {
   listAlbums,
   listAlbumGroups,
@@ -67,6 +74,12 @@ import {
 
 const DRAG_MIME_ALBUM = 'application/x-pdr-album-id';
 const DRAG_MIME_FOLDER = 'application/x-pdr-folder-id';
+/** Carries the source group id (where the dragged album was
+ *  picked up FROM) so the drop handler can decide between move
+ *  semantics (user folder → user folder = move) and copy
+ *  semantics (auto group → anywhere, or CTRL-held). v2.0.8 step
+ *  6 (Terry 2026-05-19). */
+const DRAG_MIME_ALBUM_SOURCE_GROUP = 'application/x-pdr-album-source-group-id';
 /** Section-card MIME — used when dragging the WHOLE "Album Sources"
  *  or "Folders" card to swap their on-screen order. Distinct from the
  *  row/album MIMEs so row-level handlers ignore it during dragOver. */
@@ -161,9 +174,265 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
   // ── Selection (drives the right pane) ────────────────────────────
-  const [selection, setSelection] = useState<Selection>(null);
+  // Default selection is the "All albums" virtual row so opening
+  // Memories → Albums lands on a useful surface (the All-albums
+  // grid) AND the tree's "All albums" row is highlighted from
+  // the first paint. Pre-fix the user landed with `selection: null`
+  // — the grid still rendered (the right-pane fallback covers
+  // `!selection`), but the tree showed no highlight, which meant
+  // Ctrl+wheel zoom didn't visually associate with anything until
+  // they manually clicked into a row. Terry 2026-05-19: "it should
+  // automatically have All Albums highlighted, because I keep
+  // wanting to change the zoom by using my mouse when I enter."
+  const [selection, setSelection] = useState<Selection>({ type: 'all' });
   const [albumPhotos, setAlbumPhotos] = useState<IndexedFile[]>([]);
   const [albumPhotosLoading, setAlbumPhotosLoading] = useState(false);
+
+  // ── "Export as Parallel Library" entry point (v2.0.8 step 6) ─────
+  // The PL wizard is re-used as a verb invoked from this album view —
+  // no new modal, no new code path. Disabled during an active Fix
+  // because PL shares the same copy engine.
+  //
+  // Two entry points share one wizard:
+  //   1. The header Export button on the open album (uses albumPhotos
+  //      already loaded for the right-pane grid).
+  //   2. The "Export as Parallel Library" item in any album row's
+  //      right-click context menu in the left tree (lazy-fetches that
+  //      album's photos before opening the wizard).
+  //
+  // `exportPhotos` holds the list the modal will see — populated by
+  // whichever handler opened it. Keeps the right-pane's albumPhotos
+  // state independent of the export flow.
+  const [showStructureModal, setShowStructureModal] = useState(false);
+  const [exportPhotos, setExportPhotos] = useState<IndexedFile[]>([]);
+  // Controlled "Add files" popover (in the album-detail header).
+  // We need control so the popover can close on action — Radix's
+  // built-in close-on-click only fires for elements wrapped in
+  // PopoverClose, and we want full control of the nav-dispatch
+  // ordering. Terry 2026-05-19: "the Pick Photos from window still
+  // appeared when it took me to the By Date screen... very buggy."
+  const [addFilesPopoverOpen, setAddFilesPopoverOpen] = useState(false);
+  const fixActive = useFixInProgress();
+
+  const startExportAlbumAsPL = useCallback(async (album: AlbumSummary) => {
+    if (fixActive) {
+      toast.error('Wait for the current Fix to finish — Parallel Libraries use the same copy engine.');
+      return;
+    }
+    // Fast path — already on this album and photos are loaded.
+    if (selection?.type === 'album' && selection.id === album.id && albumPhotos.length > 0) {
+      setExportPhotos(albumPhotos);
+      setShowStructureModal(true);
+      return;
+    }
+    // Lazy path — context menu on a different album row. Fetch
+    // photos before opening the wizard so the file count is honest
+    // from the very first frame.
+    const res = await listAlbumPhotos(album.id);
+    if (!res.success || !res.data || res.data.length === 0) {
+      toast.info('This album is empty — add photos first.');
+      return;
+    }
+    setExportPhotos(res.data as IndexedFile[]);
+    setShowStructureModal(true);
+  }, [fixActive, selection, albumPhotos]);
+
+  // ── Undo / Redo ring buffer (v2.0.8 step 6) ───────────────────────
+  // Last-10 history of reversible membership operations: add-to-group,
+  // remove-from-group, and move-between-groups. Toolbar Undo button
+  // (and Ctrl-Z) pops the most recent entry and applies its inverse;
+  // Redo (and Ctrl-Y / Ctrl-Shift-Z) replays the most recent
+  // undone op in the original direction. Album + folder deletions
+  // deliberately not yet supported here — those need backend
+  // snapshot-and-restore plumbing (deferred to a follow-up).
+  type UndoOp =
+    | { kind: 'add_membership'; albumId: number; groupId: number; albumTitle: string; groupTitle: string }
+    | { kind: 'remove_membership'; albumId: number; groupId: number; albumTitle: string; groupTitle: string }
+    | { kind: 'move_album'; albumId: number; fromGroupId: number; toGroupId: number; albumTitle: string; fromTitle: string; toTitle: string };
+  const [undoStack, setUndoStack] = useState<UndoOp[]>([]);
+  const [redoStack, setRedoStack] = useState<UndoOp[]>([]);
+
+  const pushUndo = useCallback((op: UndoOp) => {
+    // Fresh user action — invalidates any redo history (matches
+    // Word / VS Code / browser editor convention).
+    setRedoStack([]);
+    setUndoStack((prev) => {
+      const next = [...prev, op];
+      // Cap at 10 — drop oldest when exceeded.
+      return next.length > 10 ? next.slice(next.length - 10) : next;
+    });
+  }, []);
+
+  // Apply an op's INVERSE — used by performUndo. Returns true on success.
+  const applyInverse = useCallback(async (op: UndoOp): Promise<boolean> => {
+    try {
+      if (op.kind === 'add_membership') {
+        const r = await removeAlbumFromGroup(op.albumId, op.groupId);
+        if (!r.success) { toast.error(`Couldn't undo`, { description: r.error }); return false; }
+      } else if (op.kind === 'remove_membership') {
+        const r = await addAlbumToGroup(op.albumId, op.groupId);
+        if (!r.success) { toast.error(`Couldn't undo`, { description: r.error }); return false; }
+      } else if (op.kind === 'move_album') {
+        const a = await addAlbumToGroup(op.albumId, op.fromGroupId);
+        if (!a.success) { toast.error(`Couldn't undo`, { description: a.error }); return false; }
+        const r = await removeAlbumFromGroup(op.albumId, op.toGroupId);
+        if (!r.success) { toast.error(`Couldn't undo move`, { description: r.error }); return false; }
+      }
+      return true;
+    } catch (err) {
+      toast.error(`Couldn't undo`, { description: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
+  }, []);
+
+  // Apply an op in its FORWARD direction — used by performRedo.
+  const applyForward = useCallback(async (op: UndoOp): Promise<boolean> => {
+    try {
+      if (op.kind === 'add_membership') {
+        const r = await addAlbumToGroup(op.albumId, op.groupId);
+        if (!r.success) { toast.error(`Couldn't redo`, { description: r.error }); return false; }
+      } else if (op.kind === 'remove_membership') {
+        const r = await removeAlbumFromGroup(op.albumId, op.groupId);
+        if (!r.success) { toast.error(`Couldn't redo`, { description: r.error }); return false; }
+      } else if (op.kind === 'move_album') {
+        const a = await addAlbumToGroup(op.albumId, op.toGroupId);
+        if (!a.success) { toast.error(`Couldn't redo`, { description: a.error }); return false; }
+        const r = await removeAlbumFromGroup(op.albumId, op.fromGroupId);
+        if (!r.success) { toast.error(`Couldn't redo move`, { description: r.error }); return false; }
+      }
+      return true;
+    } catch (err) {
+      toast.error(`Couldn't redo`, { description: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
+  }, []);
+
+  const performUndo = useCallback(async () => {
+    const last = undoStack[undoStack.length - 1];
+    if (!last) return;
+    const ok = await applyInverse(last);
+    if (!ok) return;
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, last]);
+    await refreshAll();
+  }, [undoStack, applyInverse]);
+
+  const performRedo = useCallback(async () => {
+    const last = redoStack[redoStack.length - 1];
+    if (!last) return;
+    const ok = await applyForward(last);
+    if (!ok) return;
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => {
+      const next = [...prev, last];
+      return next.length > 10 ? next.slice(next.length - 10) : next;
+    });
+    await refreshAll();
+  }, [redoStack, applyForward]);
+
+  // Keyboard shortcuts — Ctrl/Cmd+Z = undo, Ctrl/Cmd+Y =
+  // Ctrl/Cmd+Shift+Z = redo. Only when the user isn't typing in an
+  // input / textarea / contentEditable (matches editor convention).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const t = e.target as HTMLElement | null;
+      const inEditable = !!t && (
+        t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || (t as HTMLElement).isContentEditable
+      );
+      if (inEditable) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        void performUndo();
+      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        void performRedo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [performUndo, performRedo]);
+
+  // ── Tile-size zoom (v2.0.8 step 6 polish, Terry 2026-05-19) ───────
+  // Same zoom interaction Memories By Date uses — Ctrl+scroll on the
+  // grid container scales the tiles — plus a visible pill control
+  // (Zoom out / percent / Zoom in) so the affordance isn't hidden
+  // behind a keyboard chord. Drives the gap-less album-photo grid
+  // and the album-card grids. 0–100 slider; mapped to two pixel
+  // ranges so photo tiles and album cards each look right.
+  const ALBUMS_TILE_KEY = 'pdr-albums-tile-size';
+  const TILE_SLIDER_MIN = 0;
+  const TILE_SLIDER_MAX = 100;
+  const TILE_SLIDER_STEP = 10;
+  const [tileSizeSlider, setTileSizeSlider] = useState<number>(() => {
+    if (typeof localStorage === 'undefined') return 50;
+    const saved = parseInt(localStorage.getItem(ALBUMS_TILE_KEY) || '', 10);
+    return Number.isFinite(saved) ? Math.max(0, Math.min(100, saved)) : 50;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(ALBUMS_TILE_KEY, String(tileSizeSlider)); } catch { /* localStorage may be unavailable */ }
+  }, [tileSizeSlider]);
+  // Photo tiles in the album detail view: 100–300px.
+  const albumPhotoTilePx = Math.round(100 + (tileSizeSlider / 100) * 200);
+  // Album cards in the All-albums / per-group grids: 160–300px.
+  const albumCardTilePx = Math.round(160 + (tileSizeSlider / 100) * 140);
+
+  // Ctrl+wheel zoom — same interaction the S&D grid and Memories
+  // By Date use. Previously attached to `gridScrollRef` (the per-
+  // surface grid container), which had a subtle bug: when the user
+  // first opens Memories → Albums, the right pane is mounted but
+  // the gridScrollRef-bound useEffect's `el` is sometimes null at
+  // attach time (the surface mounts inside a hidden TabsContent on
+  // first load), so the listener never registered. The user had to
+  // click into the tree to trigger a selection change before the
+  // effect re-ran with a non-null `el`. Terry 2026-05-19: "Why am
+  // I having to physically click on every fucking album on the
+  // tree first before I can zoom in our out?"
+  //
+  // Fix: ONE listener attached to a stable outer container (the
+  // AlbumsView root) at mount, valid for the lifetime of the
+  // component. Fires whenever Ctrl-wheel hits anywhere inside
+  // Albums — no per-surface re-attachment, no ref timing race.
+  const albumsRootRef = useRef<HTMLDivElement | null>(null);
+  // Keep gridScrollRef for callers (right-click ContextMenu trigger,
+  // various place still reference it via ref={gridScrollRef}). It's
+  // no longer used for the wheel listener but harmless to retain.
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = albumsRootRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      setTileSizeSlider((prev) => {
+        const next = e.deltaY < 0
+          ? Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP)
+          : Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP);
+        return next;
+      });
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
+
+  // ── Spacious / Tight density (v2.0.8 step 6 polish) ──────────────
+  // Same segmented control Memories By Date uses, so the visual
+  // language stays consistent across both Memories surfaces. Persists
+  // to its own localStorage key — independent from the By Date
+  // density so changing one doesn't unexpectedly retune the other.
+  // Drives the photo-grid gap in the album detail view and the
+  // album-card-grid gap in the All Albums / per-group views.
+  const ALBUMS_DENSITY_KEY = 'pdr-albums-density';
+  const [density, setDensity] = useState<Density>(() => {
+    if (typeof localStorage === 'undefined') return 'spacious';
+    return localStorage.getItem(ALBUMS_DENSITY_KEY) === 'tight' ? 'tight' : 'spacious';
+  });
+  useEffect(() => {
+    try { localStorage.setItem(ALBUMS_DENSITY_KEY, density); } catch { /* localStorage may be unavailable */ }
+  }, [density]);
 
   // Forward-only navigation history. Terry 2026-05-19: "the Go Back
   // button is confusing. I think what I actually wanted was a chevron
@@ -333,6 +602,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
    *  read what's being dragged from the event itself during hover. */
   const draggedFolderIdRef = useRef<number | null>(null);
   const draggedAlbumIdRef = useRef<number | null>(null);
+  // Source group of the album being dragged — used by dragOver to
+  // set the cursor's "copy" vs "move" hint correctly. dataTransfer
+  // .getData() is empty during dragOver for security reasons, so
+  // we mirror the value into this ref at dragStart time.
+  const draggedAlbumSourceGroupRef = useRef<number | null>(null);
   const [dragOverRoot, setDragOverRoot] = useState(false);
 
   // ── Section ordering (Sources / Folders cards) ────────────────────
@@ -389,8 +663,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     setDragOverSection(null);
   }, []);
 
-  const handleAlbumDragStart = useCallback((e: React.DragEvent, albumId: number) => {
+  const handleAlbumDragStart = useCallback((e: React.DragEvent, albumId: number, sourceGroupId: number | null) => {
     e.dataTransfer.setData(DRAG_MIME_ALBUM, String(albumId));
+    // Encode source group so the drop handler knows whether to MOVE
+    // (user folder → user folder, default) or COPY (auto group, or
+    // CTRL-held). When the drag came from a context with no group
+    // membership (e.g. All-albums grid), source is `null` and the
+    // handler falls back to COPY semantics — safest default.
+    if (sourceGroupId !== null) {
+      e.dataTransfer.setData(DRAG_MIME_ALBUM_SOURCE_GROUP, String(sourceGroupId));
+    }
     e.dataTransfer.effectAllowed = 'copyMove';
     // Replace the browser's default drag image (a semi-transparent
     // clone of the row that obscures the target's text when hovering
@@ -411,6 +693,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     dragOverPositionRef.current = null;
     draggedAlbumIdRef.current = albumId;
     draggedFolderIdRef.current = null;
+    draggedAlbumSourceGroupRef.current = sourceGroupId;
   }, [albumsById]);
   const handleFolderDragStart = useCallback((e: React.DragEvent, groupId: number) => {
     e.dataTransfer.setData(DRAG_MIME_FOLDER, String(groupId));
@@ -500,7 +783,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       }
     }
     e.preventDefault();
-    e.dataTransfer.dropEffect = hasAlbum ? 'copy' : 'move';
+    // Cursor hint: 'move' when this drop will move the album out of
+    // a user folder (default semantic); 'copy' for everything else
+    // (source-group → folder, or CTRL-held). The actual decision
+    // happens on drop, but giving the user a correct cursor at
+    // dragOver time helps them anticipate the result.
+    if (hasAlbum) {
+      const sourceId = draggedAlbumSourceGroupRef.current;
+      const sourceGroup = sourceId !== null ? groups.find((g) => g.id === sourceId) ?? null : null;
+      const willMove = sourceGroup?.source_kind === 'user' && !(e.ctrlKey || e.metaKey) && sourceGroup.id !== group.id;
+      e.dataTransfer.dropEffect = willMove ? 'move' : 'copy';
+    } else {
+      e.dataTransfer.dropEffect = 'move';
+    }
     // No-op detection: suppress the visual indicator when the drop
     // would leave the dragged item in its current location. Three
     // cases qualify:
@@ -633,13 +928,73 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     e.stopPropagation();
 
     // Album drop → membership add (only into user folders, no reorder).
+    // v2.0.8 step 6 (Terry 2026-05-19): MOVE-vs-COPY semantics.
+    //   - From a USER folder, no CTRL → MOVE (add to target, remove
+    //     from source) so the user can shuffle albums between folders
+    //     without ending up with duplicate memberships everywhere.
+    //   - From a USER folder, CTRL/Cmd held → COPY (keep both
+    //     memberships) — explicit opt-in to duplicate.
+    //   - From an album SOURCE (auto group: PDR / Google Photos) →
+    //     always COPY. The source group is the "canonical home" of
+    //     the album and must never lose its membership via drag.
+    //   - From the All-albums grid (no source-group context) →
+    //     COPY (safe default).
     const albumIdStr = e.dataTransfer.getData(DRAG_MIME_ALBUM);
     if (albumIdStr) {
       if (!isGroupDroppable(group)) return;
       const albumId = Number(albumIdStr);
       if (!Number.isFinite(albumId)) return;
-      const r = await addAlbumToGroup(albumId, group.id);
-      if (!r.success) { toast.error(`Couldn't add to "${group.title}"`, { description: r.error }); return; }
+
+      const sourceGroupIdStr = e.dataTransfer.getData(DRAG_MIME_ALBUM_SOURCE_GROUP);
+      const sourceGroupId = sourceGroupIdStr ? Number(sourceGroupIdStr) : null;
+      // Drop onto the same group the drag started in = silent no-op.
+      if (sourceGroupId === group.id) return;
+      const sourceGroup = sourceGroupId !== null
+        ? groups.find((g) => g.id === sourceGroupId) ?? null
+        : null;
+      const isFromUserFolder = sourceGroup?.source_kind === 'user';
+      const ctrlHeld = e.ctrlKey || e.metaKey;
+      const shouldMove = isFromUserFolder && !ctrlHeld;
+
+      // ADD first — if this fails, we haven't lost anything (the
+      // source membership is still intact, no destructive change
+      // has been made).
+      const addRes = await addAlbumToGroup(albumId, group.id);
+      if (!addRes.success) { toast.error(`Couldn't add to "${group.title}"`, { description: addRes.error }); return; }
+
+      const album = albumsById.get(albumId);
+      const albumTitle = album?.title ?? `album #${albumId}`;
+
+      if (shouldMove && sourceGroup) {
+        // Remove from source AFTER the add succeeded. If this fails,
+        // the user has a duplicate membership rather than a lost
+        // album — recoverable. We log but don't error-toast unless
+        // it's clearly a real failure.
+        const remRes = await removeAlbumFromGroup(albumId, sourceGroup.id);
+        if (!remRes.success) {
+          toast.warning(`Move incomplete`, { description: `Added to "${group.title}", but couldn't remove from "${sourceGroup.title}".` });
+        } else {
+          pushUndo({
+            kind: 'move_album',
+            albumId,
+            fromGroupId: sourceGroup.id,
+            toGroupId: group.id,
+            albumTitle,
+            fromTitle: sourceGroup.title,
+            toTitle: group.title,
+          });
+        }
+      } else {
+        // COPY path — pure add, undo just removes the new
+        // membership.
+        pushUndo({
+          kind: 'add_membership',
+          albumId,
+          groupId: group.id,
+          albumTitle,
+          groupTitle: group.title,
+        });
+      }
       // Silent on success (and silent if already a member — the
       // album is visibly in the folder either way). See the
       // dispatchFolderDrop comment for the rationale.
@@ -716,6 +1071,54 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     await refreshAll();
   }, [dispatchFolderDrop, groups, refreshAll]);
 
+  // ── Return-nav from TitleBar back-pill ───────────────────────────
+  // Two paths into AlbumsView from the back-pill:
+  //
+  //   A) AlbumsView is ALREADY mounted (user was on Memories or
+  //      S&D). The `pdr:openAlbumsAlbum` event fires; this listener
+  //      catches it and runs navigateSelection.
+  //
+  //   B) AlbumsView is NOT yet mounted (user was on Dashboard /
+  //      Trees / PM; workspace only mounts MemoriesPanel — and
+  //      therefore AlbumsView — when activeView === 'memories').
+  //      The event fires before this listener registers, so it's
+  //      missed. Instead, the back-pill click latches the target
+  //      id into `pendingAlbumOpen`; the mount-time effect below
+  //      consumes it.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { id?: number } | undefined;
+      if (!detail || typeof detail.id !== 'number') return;
+      navigateSelection({ type: 'album', id: detail.id });
+      // Force a refresh so the album's photo count + tiles reflect
+      // any photos added moments ago in the AddToAlbumPopover.
+      // Without this the count stays stale until the user manually
+      // refreshes — Terry 2026-05-19: "the no. photos doesn't
+      // update unless the albums page is refreshed".
+      void refreshAll();
+    };
+    window.addEventListener('pdr:openAlbumsAlbum', handler as EventListener);
+    return () => window.removeEventListener('pdr:openAlbumsAlbum', handler as EventListener);
+  }, [navigateSelection, refreshAll]);
+
+  // Mount-time consume of any latched album-open target. Handles
+  // path B above (AlbumsView wasn't mounted when the back-pill
+  // fired). Runs once per mount; the singleton's read clears it.
+  useEffect(() => {
+    const id = consumePendingAlbumOpen();
+    if (id !== null) navigateSelection({ type: 'album', id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refresh on demand — AddToAlbumPopover fires this after
+  // successfully adding photos so the visible album view picks
+  // up the new count + tiles without a manual refresh click.
+  useEffect(() => {
+    const handler = () => { void refreshAll(); };
+    window.addEventListener('pdr:albumsRefresh', handler as EventListener);
+    return () => window.removeEventListener('pdr:albumsRefresh', handler as EventListener);
+  }, [refreshAll]);
+
   // ── Right-pane data: load album photos when an album is selected ──
   useEffect(() => {
     if (selection?.type !== 'album') { setAlbumPhotos([]); return; }
@@ -785,9 +1188,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     setSubfolderParentId(null);
   };
   /** Start a sub-folder create flow for `group`. Called from the
-   *  right-click context menu's "New sub-folder" entry. The shared
-   *  toolbar input becomes the entry surface; on submit the new folder
-   *  lands inside `group`. */
+   *  right-click context menu's "New sub-folder" entry. Renders an
+   *  inline input inside the parent group's expanded children; on
+   *  submit the new folder lands inside `group`. */
   const startSubfolderCreate = (group: AlbumGroupRecord) => {
     setSubfolderParentId(group.id);
     setNewFolderTitle('');
@@ -800,6 +1203,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       persistExpanded(next);
     }
   };
+
+  // Inline sub-folder input — focused immediately after the inline
+  // input row mounts. autoFocus is unreliable here because the
+  // Radix ContextMenu that triggered the create flow steals focus
+  // back to itself during its close animation. We use a callback
+  // ref with two requestAnimationFrames so the focus call lands
+  // AFTER Radix's focus-restoration dance. Terry 2026-05-19: "When
+  // a new sub-folder is made, the cursor should be ready to start
+  // typing in the name field of that sub-folder."
+  const subfolderInputCallbackRef = useCallback((el: HTMLInputElement | null) => {
+    if (!el) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try { el.focus(); } catch { /* ignore — element may have unmounted between frames */ }
+      });
+    });
+  }, []);
   const handleRenameAlbum = async () => {
     if (renamingAlbumId === null) return;
     const title = renameAlbumTitle.trim();
@@ -831,6 +1251,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     if (!ok) return;
     const r = await removeAlbumFromGroup(albumId, folderId);
     if (r.success) {
+      // Record for undo — restore the membership row by re-adding.
+      pushUndo({ kind: 'remove_membership', albumId, groupId: folderId, albumTitle, groupTitle: folderTitle });
       await refreshAll();
     } else {
       toast.error(`Couldn't remove from "${folderTitle}"`, { description: r.error });
@@ -892,15 +1314,28 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         <ContextMenu>
           <ContextMenuTrigger asChild>
         <div
-          className={`flex items-center gap-2 pr-2 py-1 rounded-md transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 pr-2 py-1 rounded-md transition-colors ${
             isSelected ? 'bg-primary/15 text-foreground' : 'hover:bg-muted/40'
-          }`}
-          style={{ paddingLeft: `${depth * 1.25 + 1.5}rem` }}
+          } ${isRenaming ? 'cursor-text' : 'cursor-grab active:cursor-grabbing'}`}
+          style={{ paddingLeft: `${depth * 1.25 + 0.5}rem` }}
           onClick={() => { if (!isRenaming) navigateSelection({ type: 'album', id: album.id }); }}
           draggable={!isRenaming}
-          onDragStart={(e) => handleAlbumDragStart(e, album.id)}
+          onDragStart={(e) => handleAlbumDragStart(e, album.id, parentGroupId)}
           data-testid={`tree-album-${album.id}`}
         >
+          {/* Persistent drag handle — signals "this is pickable"
+              without requiring a hover. Subtle at rest (30%
+              opacity), brightens on row hover (70%). Same lucide
+              glyph the section header uses, kept small so the row
+              still reads as text-first. Terry 2026-05-19: "albums
+              can be dragged and copied to a folder, but right now
+              it looks like they can't." */}
+          <span
+            className="shrink-0 text-muted-foreground opacity-30 group-hover/leaf:opacity-70 transition-opacity"
+            aria-hidden="true"
+          >
+            <GripVertical className="w-3 h-3" />
+          </span>
           <span className={`shrink-0 ${profile.iconColorClass}`}><Icon className="w-3.5 h-3.5" /></span>
           {isRenaming ? (
             <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -982,6 +1417,20 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 Rename
               </ContextMenuItem>
             )}
+            {/* Export-as-Parallel-Library — works from any album row
+                in the tree without first navigating into the album.
+                Lazy-fetches that album's photos via the shared
+                handler so the wizard opens with the right file count.
+                Disabled with greyed-out item when a Fix is in flight
+                (PL shares the copy engine) or the album is empty. */}
+            <ContextMenuItem
+              onSelect={() => startExportAlbumAsPL(album)}
+              disabled={fixActive || album.photoCount === 0}
+              data-testid={`context-menu-export-pl-${album.id}`}
+            >
+              <Copy className="w-3.5 h-3.5 mr-2" />
+              Export as Parallel Library
+            </ContextMenuItem>
             <ContextMenuSeparator />
             {isInUserFolder && parentGroup ? (
               /* In a user folder: remove the link only, never delete
@@ -1043,7 +1492,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           <ContextMenuTrigger asChild>
         <div
           className={`relative flex items-center gap-1.5 pr-2 py-1 rounded-md transition-all cursor-pointer ${
-            isNestHighlight ? 'bg-primary/20 ring-2 ring-primary shadow-sm' : (isSelected ? 'bg-primary/15' : 'hover:bg-muted/40')
+            // Dashed inner outline reads as "drop here" without the
+            // heavy filled chip the old solid ring produced. Same OS-
+            // standard convention as folder drop zones in Finder /
+            // Explorer. Terry 2026-05-19 redesign pass.
+            isNestHighlight ? 'border-2 border-dashed border-primary bg-primary/5 -m-0.5' : (isSelected ? 'bg-primary/15' : 'hover:bg-muted/40')
           } ${isUser ? 'cursor-grab active:cursor-grabbing' : ''}`}
           style={{ paddingLeft: `${depth * 1.25 + 0.25}rem` }}
           onClick={() => { if (!isRenaming) navigateSelection({ type: 'group', id: group.id }); }}
@@ -1132,7 +1585,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         </div>
           </ContextMenuTrigger>
           {isUser ? (
-            <ContextMenuContent>
+            /* onCloseAutoFocus preventDefault keeps focus away from
+               the trigger row when the menu closes — without it
+               Radix returns focus to the row's div, which steals
+               focus from the freshly-rendered inline sub-folder
+               input. Terry 2026-05-19: "the cursor highlights the
+               field after creating but then immediately disappears.
+               It's like something else is calling its attention."
+               That "something else" was this exact focus
+               restoration. */
+            <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
               {canHaveSubfolders && (
                 <>
                   <ContextMenuItem onSelect={() => startSubfolderCreate(group)}>
@@ -1171,6 +1633,40 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
               const a = albumsById.get(id);
               return a ? renderAlbumLeaf(a, depth + 1, group.id) : null;
             })}
+            {/* Inline sub-folder create input — rendered at the depth
+                the new folder will land. Replaces the previous flow
+                where the toolbar input at the top of the panel was
+                used for sub-folders too (Terry 2026-05-19: "should
+                allow the subfolder to be named where it's created…
+                not back up at the top"). Auto-focused when the
+                context menu opens this surface; Enter commits, Esc
+                cancels. */}
+            {creatingFolder && subfolderParentId === group.id && (
+              <div
+                className="flex items-center gap-1.5 py-1 pr-2"
+                style={{ paddingLeft: `${(depth + 1) * 1.25 + 0.25}rem` }}
+                data-testid={`tree-inline-subfolder-input-${group.id}`}
+              >
+                <FolderClosed className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <input
+                  ref={subfolderInputCallbackRef}
+                  value={newFolderTitle}
+                  onChange={(e) => setNewFolderTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateFolder(); }
+                    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelCreateFolder(); }
+                  }}
+                  placeholder="Sub-folder name"
+                  className="px-2 py-0.5 rounded border border-border bg-background text-foreground text-xs flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); handleCreateFolder(); }} className="px-1.5 py-0.5 h-auto">
+                  <Check className="w-3 h-3" />
+                </Button>
+                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); cancelCreateFolder(); }} className="px-1.5 py-0.5 h-auto">
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            )}
           </>
         )}
         {/* "Below" indicator — sits AFTER the row's expanded children
@@ -1203,22 +1699,22 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     const isDragging = draggedSection === kind;
     const isDropTarget = dragOverSection === kind && draggedSection !== null && draggedSection !== kind;
 
-    // Brand-tinted card surface (Terry 2026-05-18: "should look
-    // almost like cards and have the PDR brand colours very faintly,
-    // one lavender and the other is brand orange/gold").
-    //   Sources → --primary lavender at 5–10% opacity
-    //   Folders → --color-gold (#f8c15c) at 10–15% opacity
-    // Hex arbitrary values per feedback_tailwind_v4_pale_palette
-    // (Tailwind v4's oklch palette is paler than v3 — chip tints use
-    // hex for predictability).
-    const cardClass = isSources
-      ? 'bg-primary/5 border-primary/30'
-      : 'bg-[#f8c15c]/10 border-[#f8c15c]/40';
-    const dropRingClass = isSources
-      ? 'ring-2 ring-primary bg-primary/15'
-      : 'ring-2 ring-[#f8c15c] bg-[#f8c15c]/20';
-    const headerIconColor = isSources ? 'text-primary' : 'text-[#a16207]';
-    const HeaderIcon = isSources ? Layers : FolderClosed;
+    // v2.0.8 step 6 redesign (Terry 2026-05-19): drop the tinted
+    // card wrappers entirely. The sidebar reads calmer as two flat
+    // zones separated by a hairline divider, with quiet section
+    // headers that signal "what's below" without competing
+    // visually for attention. Brand colour survives as a 6×6 dot
+    // alongside each section label — lavender for sources, gold
+    // for folders — so the colour identity is preserved.
+    //
+    // Drop-target affordance migrates from "tinted background fill"
+    // to a dashed lavender / gold ring around the section block.
+    // Reads as "this is where the dropped thing will land" without
+    // requiring a card chrome to outline. The dashed line is the
+    // standard OS drop-zone convention.
+    const dotColorClass = isSources ? 'bg-primary' : 'bg-[#f8c15c]';
+    const labelColorClass = isSources ? 'text-primary' : 'text-[#a16207]';
+    const dropRingColorClass = isSources ? 'border-primary' : 'border-[#f8c15c]';
     const headerLabel = isSources ? 'Album Sources' : 'Folders';
     const emptyMessage = isSources
       ? 'No sources yet. Run Fix on a Google Photos Takeout, or create an album here, to populate this zone.'
@@ -1230,20 +1726,24 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         onDragOver={(e) => handleSectionDragOver(e, kind)}
         onDragLeave={(e) => handleSectionDragLeave(e, kind)}
         onDrop={(e) => handleSectionDrop(e, kind)}
-        className={`rounded-lg border p-1.5 transition-all ${cardClass} ${isDropTarget ? dropRingClass : ''} ${isDragging ? 'opacity-50' : ''}`}
+        className={`px-1 py-1 rounded-md transition-colors ${isDropTarget ? `border-2 border-dashed ${dropRingColorClass}` : 'border-2 border-transparent'} ${isDragging ? 'opacity-50' : ''}`}
         data-testid={`section-${kind}`}
       >
+        {/* Quiet section header — colour dot + uppercase label, faint
+            hairline below. The whole header is the drag handle for
+            section reordering (cursor-grab); the GripVertical glyph
+            is suppressed in favour of a less-noisy surface. */}
         <div
           draggable
           onDragStart={(e) => handleSectionDragStart(e, kind)}
           onDragEnd={handleSectionDragEnd}
-          className="flex items-center gap-1.5 px-1.5 py-1 cursor-grab active:cursor-grabbing select-none"
+          className="flex items-center gap-1.5 px-1 pb-1 mb-1 border-b border-border/60 cursor-grab active:cursor-grabbing select-none"
+          data-testid={`section-${kind}-header`}
         >
-          <IconTooltip content="Drag to swap section order">
+          <IconTooltip label="Drag to swap section order" side="right">
             <span className="inline-flex items-center gap-1.5">
-              <GripVertical className={`w-3 h-3 opacity-60 ${headerIconColor}`} />
-              <HeaderIcon className={`w-3 h-3 ${headerIconColor}`} />
-              <span className={`text-[10px] font-semibold uppercase tracking-wider ${headerIconColor}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${dotColorClass}`} aria-hidden="true" />
+              <span className={`text-[10px] font-semibold uppercase tracking-wider ${labelColorClass}`}>
                 {headerLabel}
               </span>
             </span>
@@ -1386,6 +1886,51 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     );
   };
 
+  // Shared zoom-pill — same triplet pattern S&D and the Workspace
+  // use. Defined here so all three headers (All-albums, per-group,
+  // album-detail) render an identical control. Clicking the percent
+  // resets to 50; Ctrl-wheel on the grid below is also wired (see
+  // the photo-grid useEffect + the card-grid wheel handler).
+  const zoomPill = (
+    <div className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-lg border border-border bg-background shrink-0">
+      <IconTooltip label="Zoom out" side="bottom">
+        <button
+          type="button"
+          onClick={() => setTileSizeSlider((prev) => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
+          disabled={tileSizeSlider <= TILE_SLIDER_MIN}
+          className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          data-testid="button-albums-zoom-out"
+          aria-label="Zoom out"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+      </IconTooltip>
+      <IconTooltip label="Reset to 50%" side="bottom">
+        <button
+          type="button"
+          onClick={() => setTileSizeSlider(50)}
+          className="px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
+          data-testid="button-albums-zoom-reset"
+          aria-label="Reset zoom"
+        >
+          {tileSizeSlider}%
+        </button>
+      </IconTooltip>
+      <IconTooltip label="Zoom in" side="bottom">
+        <button
+          type="button"
+          onClick={() => setTileSizeSlider((prev) => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
+          disabled={tileSizeSlider >= TILE_SLIDER_MAX}
+          className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          data-testid="button-albums-zoom-in"
+          aria-label="Zoom in"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+      </IconTooltip>
+    </div>
+  );
+
   const renderRightPane = () => {
     if (loading) {
       return <p className="text-sm text-muted-foreground px-6 py-6">Loading albums…</p>;
@@ -1407,14 +1952,26 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           <div className="flex items-center gap-3 px-6 py-3 border-b border-border">
             <h2 className="text-lg font-medium text-foreground truncate">All albums</h2>
             <span className="text-xs text-muted-foreground">{allSorted.length} album{allSorted.length === 1 ? '' : 's'}</span>
+            {/* Zoom pill + Density toggle — zoom drives tile size,
+                density drives gap. Zoom sits LEFT of density so the
+                "size" control reads as preceding the "spacing"
+                control. Both share state across the All-albums /
+                per-group / detail surfaces. */}
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              {zoomPill}
+              <DensityToggle value={density} onChange={setDensity} testId="albums-all-density-toggle" />
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
+          <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
             {allSorted.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
                 No albums yet. Use "New album" on the left to create one, or import a Google Photos Takeout to auto-populate.
               </p>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,220px)] gap-3">
+              <div
+                className={`grid ${density === 'tight' ? 'gap-1' : 'gap-3'}`}
+                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumCardTilePx}px, 1fr))` }}
+              >
                 {allSorted.map((album) => {
                   const ap = getSourceProfileForAlbum(album);
                   const AIcon = ap.Icon;
@@ -1424,7 +1981,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       type="button"
                       onClick={() => navigateSelection({ type: 'album', id: album.id })}
                       draggable
-                      onDragStart={(e) => handleAlbumDragStart(e, album.id)}
+                      // All-albums grid has no specific source-group
+                      // context (the album might live in several
+                      // groups). Pass null → drop handler falls back
+                      // to COPY semantics, which is the safe default.
+                      onDragStart={(e) => handleAlbumDragStart(e, album.id, null)}
                       className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
                     >
                       <div className="aspect-square bg-muted relative">
@@ -1468,8 +2029,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             <span className={profile.iconColorClass}><Icon className="w-5 h-5" /></span>
             <h2 className="text-lg font-medium text-foreground truncate">{selectedGroup.title}</h2>
             <span className="text-xs text-muted-foreground">{selectedGroupAlbumIds.length} album{selectedGroupAlbumIds.length === 1 ? '' : 's'}</span>
+            {/* Zoom + Density — follows the user across all three
+                surfaces (All-albums / per-group / album detail).
+                State is shared, so resizing here also resizes
+                everywhere else. */}
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              {zoomPill}
+              <DensityToggle value={density} onChange={setDensity} testId="albums-group-density-toggle" />
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
+          <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
             {selectedGroupAlbumIds.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
                 {isGroupDroppable(selectedGroup)
@@ -1477,7 +2046,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   : 'No albums in this source yet.'}
               </p>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,220px)] gap-3">
+              <div
+                className={`grid ${density === 'tight' ? 'gap-1' : 'gap-3'}`}
+                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumCardTilePx}px, 1fr))` }}
+              >
                 {selectedGroupAlbumIds.map((id) => {
                   const album = albumsById.get(id);
                   if (!album) return null;
@@ -1489,7 +2061,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       type="button"
                       onClick={() => navigateSelection({ type: 'album', id: album.id })}
                       draggable
-                      onDragStart={(e) => handleAlbumDragStart(e, album.id)}
+                      // Group view = clear source-group context.
+                      // Drag from a user folder → MOVE semantics
+                      // apply on drop (CTRL = copy). Drag from a
+                      // source auto-group (Google Photos / PDR) →
+                      // COPY always.
+                      onDragStart={(e) => handleAlbumDragStart(e, album.id, selectedGroup.id)}
                       className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
                     >
                       <div className="aspect-square bg-muted relative">
@@ -1578,26 +2155,172 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 {selectedAlbum.source === 'takeout_imported' && (
                   <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full shrink-0">From Google Takeout</span>
                 )}
+                {/* Right-cluster: + (add from elsewhere) + zoom +
+                    density + Export-as-PL CTA. Order reads left-to-
+                    right as "summon photos → size → spacing →
+                    export". + is hidden for source-imported albums
+                    (content-locked) — same gating the right-click
+                    menu uses. All controls reuse shared primitives. */}
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  {selectedAlbum.source === 'user_created' && (
+                    <Popover open={addFilesPopoverOpen} onOpenChange={setAddFilesPopoverOpen}>
+                      <IconTooltip label="Pick more photos from Search & Discovery or By Date" side="bottom">
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="gap-1.5 px-3 py-1 h-auto text-xs"
+                            data-testid="button-album-add-from-elsewhere"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add files
+                          </Button>
+                        </PopoverTrigger>
+                      </IconTooltip>
+                      <PopoverContent align="end" className="w-64 p-1">
+                        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
+                          Pick photos from…
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddFilesPopoverOpen(false);
+                            window.dispatchEvent(new CustomEvent('pdr:openSearchDiscovery', {
+                              detail: { from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
+                            }));
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 text-sm text-foreground transition-colors"
+                          data-testid="album-add-from-sd"
+                        >
+                          <SearchIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="font-medium">Search &amp; Discovery</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddFilesPopoverOpen(false);
+                            window.dispatchEvent(new CustomEvent('pdr:memoriesSwitchTab', {
+                              detail: { tab: 'byDate', from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
+                            }));
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 text-sm text-foreground transition-colors"
+                          data-testid="album-add-from-bydate"
+                        >
+                          <CalendarRange className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="font-medium">By Date</span>
+                        </button>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                  {zoomPill}
+                  <DensityToggle value={density} onChange={setDensity} testId="albums-density-toggle" />
+                  <IconTooltip
+                    label={
+                      fixActive
+                        ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
+                        : selectedAlbum.photoCount === 0
+                          ? 'Add photos to this album before exporting'
+                          : `Copy these ${selectedAlbum.photoCount} photo${selectedAlbum.photoCount === 1 ? '' : 's'} into a Parallel Library`
+                    }
+                    side="bottom"
+                  >
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        if (fixActive || albumPhotos.length === 0) return;
+                        startExportAlbumAsPL(selectedAlbum);
+                      }}
+                      disabled={fixActive || albumPhotos.length === 0}
+                      className="gap-1.5 px-3 py-1 h-auto text-xs"
+                      data-testid="button-album-export-pl"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Export as Parallel Library
+                    </Button>
+                  </IconTooltip>
+                </div>
               </>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
+          {/* Right-click context menu wraps the photo grid area — lets
+              the user summon photos into THIS album from S&D or
+              By Date without first emptying it (Terry 2026-05-19:
+              "users can populate their albums actively which is
+              super fucking cool. It shouldn't be resigned to only
+              empty albums"). Items only render for user-created
+              albums; Takeout-imported albums are content-locked. */}
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+          <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
             {albumPhotosLoading ? (
               <p className="text-sm text-muted-foreground">Loading photos…</p>
             ) : albumPhotos.length === 0 ? (
-              <div className="flex flex-col items-center justify-center text-center py-16">
-                <ImageIcon className="w-10 h-10 text-muted-foreground/40 mb-3" />
-                <p className="text-sm text-foreground font-medium mb-1">This album is empty</p>
-                <p className="text-xs text-muted-foreground max-w-sm">Add photos from Memories By Date or Search &amp; Discovery — coming in the next update.</p>
+              <>
+                {/* Empty-album CTA — premium polish pass (Terry
+                    2026-05-19). Icon swapped from the generic mountain
+                    ImageIcon to lucide `Images` (a stack of photos) so
+                    the surface reads as "a collection waiting to be
+                    filled," not a missing-thumbnail placeholder. Two
+                    CTAs share a min-w-200px so they balance side-by-
+                    side instead of two different widths. Both dispatch
+                    nav events with the album id+title in detail so
+                    the destination surface can show a back-to-album
+                    pill until the user navigates to a different app. */}
+              <div className="flex flex-col items-center justify-center text-center py-20">
+                <div className="relative mb-4">
+                  <span className="absolute inset-0 rounded-2xl bg-primary/10 blur-xl" aria-hidden="true" />
+                  <Images className="relative w-12 h-12 text-primary/70" />
+                </div>
+                <p className="text-base text-foreground font-semibold mb-1.5">This album is empty</p>
+                <p className="text-xs text-muted-foreground max-w-sm mb-6 leading-relaxed">
+                  Pick photos from <strong className="text-foreground">Memories By Date</strong> or <strong className="text-foreground">Search &amp; Discovery</strong>, then use <em>Add to Album</em> to drop them in here.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => window.dispatchEvent(new CustomEvent('pdr:memoriesSwitchTab', {
+                      detail: { tab: 'byDate', from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
+                    }))}
+                    className="gap-1.5 px-4 py-1.5 h-auto text-xs min-w-[200px] justify-center"
+                    data-testid="button-empty-album-go-bydate"
+                  >
+                    <CalendarRange className="w-3.5 h-3.5" />
+                    Go to By Date
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => window.dispatchEvent(new CustomEvent('pdr:openSearchDiscovery', {
+                      detail: { from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
+                    }))}
+                    className="gap-1.5 px-4 py-1.5 h-auto text-xs min-w-[200px] justify-center"
+                    data-testid="button-empty-album-go-sd"
+                  >
+                    <SearchIcon className="w-3.5 h-3.5" />
+                    Go to Search &amp; Discovery
+                  </Button>
+                </div>
               </div>
+              </>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
+              <>
+                {/* Photo grid — gap + tile-rounding driven by the
+                    density toggle. Spacious = breathing room (gap-3,
+                    rounded corners). Tight = dense wall view (no
+                    gaps, no rounding) — matches the By-Date
+                    drilldown's tight mode visually. */}
+              <div
+                className={`grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
+                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumPhotoTilePx}px, 1fr))` }}
+              >
                 {albumPhotos.map((p, i) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => handleOpenPhoto(i)}
-                    className="aspect-square overflow-hidden rounded-lg border border-border hover:ring-2 hover:ring-primary/40 transition-all"
+                    className={`aspect-square overflow-hidden ${density === 'tight' ? 'rounded-none border-0' : 'rounded-lg border border-border'} hover:ring-2 hover:ring-primary/40 transition-all`}
                   >
                     {thumbs[p.file_path] ? (
                       <img src={thumbs[p.file_path]} alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
@@ -1607,8 +2330,39 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   </button>
                 ))}
               </div>
+              </>
             )}
           </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              {selectedAlbum.source === 'user_created' ? (
+                <>
+                  <ContextMenuItem
+                    onSelect={() => window.dispatchEvent(new CustomEvent('pdr:openSearchDiscovery', {
+                      detail: { from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
+                    }))}
+                    data-testid="album-context-menu-add-from-sd"
+                  >
+                    <SearchIcon className="w-3.5 h-3.5 mr-2" />
+                    Add photos from Search &amp; Discovery
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => window.dispatchEvent(new CustomEvent('pdr:memoriesSwitchTab', {
+                      detail: { tab: 'byDate', from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
+                    }))}
+                    data-testid="album-context-menu-add-from-bydate"
+                  >
+                    <CalendarRange className="w-3.5 h-3.5 mr-2" />
+                    Add photos from By Date
+                  </ContextMenuItem>
+                </>
+              ) : (
+                <ContextMenuItem disabled>
+                  Source-imported album — content is locked
+                </ContextMenuItem>
+              )}
+            </ContextMenuContent>
+          </ContextMenu>
         </div>
       );
     }
@@ -1621,6 +2375,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // ─────────────────────────────────────────────────────────────────
 
   return (
+    <>
+    {/* Wrap in a ref'd container so the Ctrl+wheel zoom listener can
+        attach to a stable element for the lifetime of AlbumsView,
+        independent of which right-pane surface is currently
+        rendered. The wrapper is presentational only — h-full so it
+        doesn't collapse the panel-group's layout. */}
+    <div ref={albumsRootRef} className="h-full">
     <ResizablePanelGroup direction="horizontal" className="h-full" autoSaveId="pdr-albums-pane-split">
       {/* LEFT — tree pane (user-resizable, persists size in localStorage
           via autoSaveId on the ResizablePanelGroup). */}
@@ -1640,9 +2401,57 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 No `ml-auto` so widening the pencil bar doesn't push it
                 to the right edge (Terry 2026-05-18: "should remain
                 static"). */}
-            <IconTooltip content="Refresh albums">
+            <IconTooltip label="Refresh albums" side="bottom">
               <Button variant="secondary" size="sm" onClick={() => refreshAll()} disabled={loading} className="px-1.5 py-0.5 h-auto" data-testid="button-refresh-albums">
                 <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </IconTooltip>
+            {/* Undo + Redo — icon-only, sit next to Refresh as the
+                "history controls" pair. Disabled (and visually
+                muted via opacity) when their respective stacks are
+                empty. Ctrl-Z / Ctrl-Y / Ctrl-Shift-Z also work
+                anywhere in the app outside a text input. v2.0.8
+                step 6 polish (Terry 2026-05-19). */}
+            <IconTooltip
+              label={(() => {
+                const last = undoStack[undoStack.length - 1];
+                if (!last) return 'Nothing to undo';
+                if (last.kind === 'move_album') return `Undo: move "${last.albumTitle}" back to "${last.fromTitle}" (Ctrl+Z)`;
+                if (last.kind === 'add_membership') return `Undo: remove "${last.albumTitle}" from "${last.groupTitle}" (Ctrl+Z)`;
+                return `Undo: put "${last.albumTitle}" back in "${last.groupTitle}" (Ctrl+Z)`;
+              })()}
+              side="bottom"
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={performUndo}
+                disabled={undoStack.length === 0}
+                className="px-1.5 py-0.5 h-auto"
+                data-testid="button-albums-undo"
+              >
+                <Undo2 className="w-3 h-3" />
+              </Button>
+            </IconTooltip>
+            <IconTooltip
+              label={(() => {
+                const last = redoStack[redoStack.length - 1];
+                if (!last) return 'Nothing to redo';
+                if (last.kind === 'move_album') return `Redo: move "${last.albumTitle}" to "${last.toTitle}" (Ctrl+Y)`;
+                if (last.kind === 'add_membership') return `Redo: add "${last.albumTitle}" to "${last.groupTitle}" (Ctrl+Y)`;
+                return `Redo: remove "${last.albumTitle}" from "${last.groupTitle}" (Ctrl+Y)`;
+              })()}
+              side="bottom"
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={performRedo}
+                disabled={redoStack.length === 0}
+                className="px-1.5 py-0.5 h-auto"
+                data-testid="button-albums-redo"
+              >
+                <Redo2 className="w-3 h-3" />
               </Button>
             </IconTooltip>
           </div>
@@ -1674,7 +2483,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 <X className="w-3.5 h-3.5" />
               </Button>
             </div>
-          ) : creatingFolder ? (
+          ) : creatingFolder && subfolderParentId === null ? (
+            /* Root-folder create — keeps the inline-toolbar input
+               surface (no parent to anchor to in the tree). When
+               creating a SUB-folder, this branch is skipped so the
+               input renders inline inside the parent group instead.
+               See the inline-subfolder-input block in renderGroupRow. */
             <div className="flex items-center gap-1.5">
               <input
                 value={newFolderTitle}
@@ -1683,9 +2497,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateFolder(); }
                   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelCreateFolder(); }
                 }}
-                placeholder={subfolderParentId !== null
-                  ? `Sub-folder in "${groups.find((g) => g.id === subfolderParentId)?.title ?? 'folder'}"`
-                  : 'Folder name'}
+                placeholder="Folder name"
                 autoFocus
                 className="px-2 py-1 rounded-md border border-border bg-background text-foreground text-xs flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary"
                 data-testid="input-new-folder-title"
@@ -1766,5 +2578,20 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         {renderRightPane()}
       </ResizablePanel>
     </ResizablePanelGroup>
+    </div>
+    {/* Parallel Library wizard — mounted at the AlbumsView root so it
+        overlays the whole split pane, not just the right pane.
+        Files come from `exportPhotos`, populated by either the
+        header Export button (uses the open album's loaded photos)
+        or any album's context-menu Export item (lazy-fetches that
+        album's photos first). Same wizard S&D launches; no new
+        modal, no new code path. v2.0.8 step 6. */}
+    <ParallelStructureModal
+      isOpen={showStructureModal}
+      onClose={() => { setShowStructureModal(false); setExportPhotos([]); }}
+      files={exportPhotos}
+      totalResultCount={exportPhotos.length}
+    />
+    </>
   );
 }
