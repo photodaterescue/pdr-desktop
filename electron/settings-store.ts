@@ -116,6 +116,13 @@ export interface PDRSettings {
    *  Takeout settings. v2.0.7 (Kathr 2026-05-16). */
   lowRamAdvisoryDismissedAt: string | null;
 
+  /** ISO timestamp the user dismissed or acted on the unindexed-
+   *  libraries banner. v2.0.9 catch-up indexer auto-sets this on
+   *  click-to-index so the banner doesn't re-appear next launch.
+   *  Cleared automatically by the post-indexer refresh once the
+   *  on-disk vs indexed counts re-equalise. */
+  unindexedLibrariesDismissedAt: string | null;
+
   /** Persisted Library Drive (destination) path. Sticky across sessions
    *  so users don't have to re-pick it on every launch — and so the
    *  Welcome screen can keep its app cards / Tour / Best Practices
@@ -191,6 +198,7 @@ export const optimisedDefaults: PDRSettings = {
   lastDbBackupAt: null,
   dbBackupReminderSnoozedAt: null,
   lowRamAdvisoryDismissedAt: null,
+  unindexedLibrariesDismissedAt: null,
 };
 
 // Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
@@ -258,6 +266,7 @@ export function getSettings(): PDRSettings {
     lastDbBackupAt: store.get('lastDbBackupAt', optimisedDefaults.lastDbBackupAt),
     dbBackupReminderSnoozedAt: store.get('dbBackupReminderSnoozedAt', optimisedDefaults.dbBackupReminderSnoozedAt),
     lowRamAdvisoryDismissedAt: store.get('lowRamAdvisoryDismissedAt', optimisedDefaults.lowRamAdvisoryDismissedAt),
+    unindexedLibrariesDismissedAt: store.get('unindexedLibrariesDismissedAt', optimisedDefaults.unindexedLibrariesDismissedAt),
   };
 }
 

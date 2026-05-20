@@ -40,6 +40,7 @@ export const optimisedDefaults = {
     lastDbBackupAt: null,
     dbBackupReminderSnoozedAt: null,
     lowRamAdvisoryDismissedAt: null,
+    unindexedLibrariesDismissedAt: null,
 };
 // Pin the settings file path explicitly to %APPDATA%\Photo Date Rescue\
 // (the productName-based folder customers see in packaged builds)
@@ -104,6 +105,7 @@ export function getSettings() {
         lastDbBackupAt: store.get('lastDbBackupAt', optimisedDefaults.lastDbBackupAt),
         dbBackupReminderSnoozedAt: store.get('dbBackupReminderSnoozedAt', optimisedDefaults.dbBackupReminderSnoozedAt),
         lowRamAdvisoryDismissedAt: store.get('lowRamAdvisoryDismissedAt', optimisedDefaults.lowRamAdvisoryDismissedAt),
+        unindexedLibrariesDismissedAt: store.get('unindexedLibrariesDismissedAt', optimisedDefaults.unindexedLibrariesDismissedAt),
     };
 }
 // ─── Scanner override helpers ────────────────────────────────────────────────
