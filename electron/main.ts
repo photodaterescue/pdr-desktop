@@ -603,7 +603,12 @@ function createWindow() {
 
 	// Surface renderer [inline-video] / [video] console messages in main log.
 	mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-	  if (message.includes('[inline-video]') || message.includes('[video]') || message.includes('[pdr-file]')) {
+	  if (
+	    message.includes('[inline-video]') ||
+	    message.includes('[video]') ||
+	    message.includes('[pdr-file]') ||
+	    message.includes('[Welcome]')
+	  ) {
 	    console.log(`[main-renderer] ${sourceId}:${line} ${message}`);
 	  }
 	});

@@ -18,6 +18,7 @@ import {
   FolderPlus,
   ListChecks,
   ArrowUpToLine,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -44,6 +45,7 @@ import {
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
 import AddToAlbumPopover from './AddToAlbumPopover';
+import { getPrefetchedMemories, getPrefetchedThumb } from '../lib/memories-prefetch';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -138,7 +140,17 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
   // every library is selected. State holds the SET of selected
   // keys; the data fetch maps to union of runIds.
   const [libraryKeys, setLibraryKeys] = useState<string[]>([]);
-  const [buckets, setBuckets] = useState<MemoriesYearBucket[]>([]);
+  // Buckets state seeded from the Welcome-page prefetch (see
+  // memories-prefetch.ts). If the prefetch completed before
+  // MemoriesView mounted, the first render already has the full
+  // bucket list — no async wait, no flash of the empty-timeline
+  // skeleton, no fresh IPC call. If the prefetch hasn't completed
+  // (user clicked Memories very fast, or skipped Welcome entirely),
+  // we fall back to the existing cold fetch in the effect below.
+  const [buckets, setBuckets] = useState<MemoriesYearBucket[]>(() => {
+    const pref = getPrefetchedMemories();
+    return pref ? pref.buckets : [];
+  });
   const [onThisDay, setOnThisDay] = useState<MemoriesOnThisDayItem[]>([]);
   // "On This Day" AI-suggestion card — hidden when the user has
   // dismissed it via the X. Persists across sessions in localStorage
@@ -246,7 +258,14 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
   }, [hasInitialized, libraryKeys, libraries]);
   const selectedRunIdsKey = selectedRunIds ? selectedRunIds.join(',') : '';
 
-  // Re-fetch whenever the scope changes.
+  // Manual-refresh tick. Bumping this triggers the fetch effect
+  // below to re-run with the same scope. Terry 2026-05-20: "There
+  // should be a refresh in By Date and Albums also." Useful when
+  // a Fix completes in another surface and the user wants the
+  // timeline updated without waiting for the auto-refresh event.
+  const [refreshTick, setRefreshTick] = useState(0);
+  // Re-fetch whenever the scope changes — or when the user
+  // explicitly hits Refresh.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -262,7 +281,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [selectedRunIdsKey]);
+  }, [selectedRunIdsKey, refreshTick]);
 
   // Load sample thumbnails for each year/month card + on-this-day items.
   // Uses a sliding-window pool (12 concurrent requests) and writes
@@ -275,8 +294,14 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
   // that produced the ~30 seconds of placeholder tiles Terry hit.
   useEffect(() => {
     let cancelled = false;
+    // Month tile thumbnails are now fetched lazily by each
+    // MonthTile via IntersectionObserver — only the visible tiles
+    // (plus a 600px lead margin) request their image, so a 200-
+    // month timeline doesn't fire 200 IPCs on every Memories
+    // mount. This loop now exists only for the "On This Day" AI
+    // suggestion strip, which is small (≤40 items, hardcoded
+    // limit on the IPC call) and always visible at the top.
     const paths = new Set<string>();
-    for (const b of buckets) if (b.sampleFilePath) paths.add(b.sampleFilePath);
     for (const o of onThisDay) paths.add(o.file_path);
     const toLoad = Array.from(paths).filter((p) => !thumbs[p]);
     if (toLoad.length === 0) return;
@@ -299,7 +324,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
     void Promise.allSettled(workers);
     return () => { cancelled = true; };
-  }, [buckets, onThisDay]);
+  }, [onThisDay]);
 
   // Group buckets by year for the main timeline render.
   const yearGroups = useMemo(() => {
@@ -448,6 +473,26 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                 saw a centered tooltip and no highlight (Terry's report
                 May 7 2026). */}
             <div className="flex items-center gap-3 shrink-0" data-tour="mem-controls">
+              {/* Manual refresh — to the left of the Spacious/Tight
+                  toggle per Terry's placement spec 2026-05-20. Bumps
+                  the refreshTick state, which re-runs the bucket +
+                  on-this-day fetch. Tooltip via IconTooltip per
+                  style-guide. The icon button matches the muted
+                  border-button look used by Jump-to-latest and the
+                  collapsed-sidebar burger so it visually belongs in
+                  this control cluster. */}
+              <IconTooltip label="Refresh — reload the timeline" side="bottom">
+                <button
+                  type="button"
+                  onClick={() => setRefreshTick(t => t + 1)}
+                  disabled={loading}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                  data-testid="memories-refresh"
+                  aria-label="Refresh Memories"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              </IconTooltip>
               <DensityToggle value={density} onChange={changeDensity} />
               <LibrarySelector libraries={libraries} selectedKeys={libraryKeys} onChange={setLibraryKeys} />
             </div>
@@ -682,7 +727,6 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                         <MonthTile
                           key={`${b.year}-${b.month}`}
                           bucket={b}
-                          thumb={b.sampleFilePath ? thumbs[b.sampleFilePath] : undefined}
                           onOpen={() => openMonth(b.year, b.month)}
                           density={density}
                         />
@@ -800,12 +844,69 @@ function LibrarySelector({ libraries, selectedKeys, onChange }: { libraries: Lib
 
 // ─── Month tile ────────────────────────────────────────────────────────────
 
-function MonthTile({ bucket, thumb, onOpen, density }: { bucket: MemoriesYearBucket; thumb?: string; onOpen: () => void; density: Density }) {
+function MonthTile({ bucket, onOpen, density }: { bucket: MemoriesYearBucket; onOpen: () => void; density: Density }) {
   const total = (bucket.photoCount || 0) + (bucket.videoCount || 0);
   const tight = density === 'tight';
+  // Self-fetched thumbnail. Each tile observes its own visibility
+  // and only fetches when it enters the viewport (with a 600px
+  // lead margin so the next strip of tiles loads just before the
+  // user scrolls to them). Replaces the previous up-front
+  // load-every-month-thumbnail-on-mount pool which made first-
+  // Memories-click feel slow — for a 200-month timeline that was
+  // 200 IPC round-trips and 200 React state writes on mount, even
+  // though only ~36 tiles are visible (Terry 2026-05-20:
+  // "Surely it only needs to fire up the visible thumbnails…").
+  // Disk-cached thumbnails (warmed by workspace.tsx's prewarm)
+  // resolve in under a millisecond per IPC, so this stays
+  // smooth even when scrolling fast.
+  const tileRef = useRef<HTMLButtonElement>(null);
+  // Seed thumb from the Welcome-page prefetch when available. The
+  // very first render of MonthTile then already has the image, no
+  // IntersectionObserver fetch needed. Falls back to null when the
+  // prefetch hasn't populated this path (cold open, very fast
+  // click, or a bucket added since Welcome was last visited) —
+  // observer below picks up those cases.
+  const [thumb, setThumb] = useState<string | null>(() => {
+    const path = bucket.sampleFilePath;
+    if (!path) return null;
+    return getPrefetchedThumb(path) ?? null;
+  });
+  // Skip the IntersectionObserver entirely when the prefetch
+  // already supplied a thumb on first render — no point watching
+  // for visibility when the image is already correct.
+  const requestedRef = useRef<boolean>(thumb !== null);
+  useEffect(() => {
+    const samplePath = bucket.sampleFilePath;
+    if (!samplePath) return;
+    if (requestedRef.current) return;
+    const el = tileRef.current;
+    if (!el) return;
+    let cancelled = false;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && !requestedRef.current) {
+          requestedRef.current = true;
+          observer.unobserve(el);
+          (async () => {
+            try {
+              const r = await getThumbnail(samplePath, 160);
+              if (!cancelled && r.success && r.dataUrl) setThumb(r.dataUrl);
+            } catch { /* per-tile failure is non-fatal — placeholder stays */ }
+          })();
+          break;
+        }
+      }
+    }, { rootMargin: '600px 0px' });
+    observer.observe(el);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [bucket.sampleFilePath]);
   return (
     <IconTooltip label={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year} · ${total.toLocaleString()} files`} side="top">
     <button
+      ref={tileRef}
       onClick={() => onOpen()}
       className={`group relative aspect-[4/3] overflow-hidden bg-secondary/30 transition-all text-left ${tight ? '' : 'rounded-xl ring-1 ring-border hover:ring-primary/50'}`}
     >

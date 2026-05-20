@@ -197,6 +197,18 @@ interface SearchRibbonProps {
   showLibraryManager?: boolean;
   requestClose?: boolean;
   hasSources?: boolean;
+  /** When true, SearchPanel is mounted but currently hidden (the
+   *  workspace pre-mount pattern keeps S&D in the React tree from
+   *  app launch so it can swap-in instantly when the user clicks
+   *  the sidebar, but until then it must NOT run any IPC-heavy
+   *  work — initial searches, contextual-count refreshes, the
+   *  infinite-scroll auto-paginator, video-thumbnail ffmpeg
+   *  spawns, etc.). Effects gate on this to stay dormant while
+   *  paused; the moment the user clicks S&D and `paused` flips to
+   *  false, the deferred initial search fires once. Terry
+   *  2026-05-20: "this is not sustainable to have so many loading
+   *  at launch (or maybe ever)". */
+  paused?: boolean;
   /** When set, S&D is in "pick a background photo for Trees" mode.
    *  Renders a banner across the top of results, intercepts the primary
    *  "Use this photo" action per tile, and on confirm/cancel hands back
@@ -217,7 +229,7 @@ interface SearchRibbonProps {
 // When the user searches or applies filters, results appear below the ribbon
 // and the workspace content is hidden. Collapsing the ribbon hides results.
 
-export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: externalDbReady, zoomLevel = 100, isDarkMode, onToggleDarkMode, licenseStatusBadge, onSearchActiveChange, showLibraryManager = false, requestClose, hasSources, pickMode, onPickCancel, onPickConfirm }: SearchRibbonProps) {
+export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: externalDbReady, zoomLevel = 100, isDarkMode, onToggleDarkMode, licenseStatusBadge, onSearchActiveChange, showLibraryManager = false, requestClose, hasSources, paused = false, pickMode, onPickCancel, onPickConfirm }: SearchRibbonProps) {
   // (Back-to-album pill moved into TitleBar — see TitleBar.tsx and
   // the AlbumReturnSource singleton. Visible regardless of view, no
   // longer steals a row from the filter ribbon.)
@@ -655,26 +667,32 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // window's worth, so 200/500/1000-tile result sets stay light
   // after multiple infinite-scroll pages have loaded.
   const [gridSize, setGridSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  // The grid container element is only rendered into the DOM when
+  // `displayFiles.length > 0` (i.e. after the first search has
+  // returned results). A plain mount-only useEffect therefore
+  // attaches to a null ref and the ResizeObserver never sees the
+  // element when it later appears — gridSize stays 0/0, the
+  // react-window List refuses to render, and S&D shows "18,744
+  // results" with an empty grid. Re-running the effect whenever
+  // `results` changes from null → populated catches the first
+  // grid-container mount; subsequent re-runs as pagination
+  // continues are essentially no-ops (the existing observer
+  // disconnects, the same element gets re-observed). Terry
+  // 2026-05-20: "why doesn't anything appear in S&D? it shows
+  // 18,744 results, but nothing loads".
   useEffect(() => {
     const el = gridContainerRef.current;
     if (!el) return;
-    // Seed with the current size so the first render after mount
-    // already has real dimensions (otherwise the List defaults to
-    // its own placeholder and flashes the wrong layout for one
-    // frame).
     setGridSize({ width: el.clientWidth, height: el.clientHeight });
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
-        // contentBoxSize is the modern API; some older Electron
-        // releases still use contentRect. We read whichever is
-        // populated to stay forward-compatible.
         const cr = e.contentRect;
         if (cr) setGridSize({ width: cr.width, height: cr.height });
       }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [results]);
   // Sentinel div watched by an IntersectionObserver to drive
   // infinite scroll. Replaces the previous "Load more (N of M)"
   // button which Terry called "shit and horrible to use" 2026-05-20.
@@ -685,8 +703,19 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // the async fetch — once `loadMore` resumes (results array grew,
   // sentinel scrolled out of view) the lock releases so the next
   // page can fire on the next intersection.
+  //
+  // `hasUserScrolledRef` is the safety against auto-load on first
+  // paint: with a 60-result initial page on a tall viewport (or a
+  // hidden display:none preload), the sentinel sits inside the
+  // 600px lookahead margin from the very first frame. Without this
+  // guard the observer chain-fires loadMore until ALL results land
+  // (18,744 on Terry's library — would saturate the IPC channel
+  // and freeze S&D for minutes). We require an actual user scroll
+  // before the auto-paginator is allowed to fire — after that
+  // first scroll, normal lookahead behaviour kicks in.
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreLockRef = useRef(false);
+  const hasUserScrolledRef = useRef(false);
 
   // ─── Navigation helpers ──────────────────────────────────────────────────
 
@@ -1250,16 +1279,27 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     const root = gridContainerRef.current;
     if (!sentinel || !root) return;
     if (!results || results.files.length >= results.total) return;
+    // Flip the "user has actually scrolled" gate on the first scroll
+    // event. After that, infinite scroll behaves normally. Before
+    // that, the IntersectionObserver below refuses to auto-fire even
+    // if the sentinel is in view — which guards against the
+    // chain-fire-on-mount that would otherwise eat a whole 18k-result
+    // library on first paint of S&D.
+    const onScroll = () => { hasUserScrolledRef.current = true; };
+    root.addEventListener('scroll', onScroll, { passive: true });
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (entry.isIntersecting) {
+        if (entry.isIntersecting && hasUserScrolledRef.current) {
           void loadMore();
           break;
         }
       }
     }, { root, rootMargin: '600px 0px' });
     observer.observe(sentinel);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      root.removeEventListener('scroll', onScroll);
+    };
     // `loadMore` is intentionally not in deps — it captures `results`
     // by closure and the effect re-runs anyway whenever results change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1291,6 +1331,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     // Show/hide search suggestions based on text
     setShowSearchSuggestions(searchText.trim().length > 0 && document.activeElement === searchInputRef.current);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    // Paused (mounted-but-hidden) → no search executions. Once the
+    // workspace pre-mount flips paused off (user clicks S&D), this
+    // effect re-runs and any pending search text fires normally.
+    if (paused) return;
     searchTimeoutRef.current = setTimeout(() => {
       if (searchText.trim() || hasActiveFilters) {
         executeSearch();
@@ -1301,7 +1345,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       }
     }, 300);
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
-  }, [searchText, dbReady]);
+  }, [searchText, dbReady, paused]);
 
   // Re-search on filter change.
   // Behaviour:
@@ -1315,6 +1359,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   //     Dashboard.
   useEffect(() => {
     if (!dbReady) return;
+    // When S&D is mounted-but-hidden (workspace pre-mount keeps the
+    // component in the tree from app launch so the first click is
+    // instant), do not fire any search. Default-on filters (all
+    // Confidence tiers, all Library Drives) would otherwise return
+    // 18,744 rows for Terry's library while the user is still
+    // reading the Welcome cards — and the result tiles include
+    // videos which spawn ffmpeg per tile, pegging both CPU and
+    // process count. Once the user clicks S&D and paused flips to
+    // false, this effect re-runs and the legitimate search fires.
+    if (paused) return;
     if (searchText.trim() || hasActiveFilters) {
       executeSearch();
     } else if (showAllOverride && searchActive) {
@@ -1325,7 +1379,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setResults(null);
       setSearchActive(false);
     }
-  }, [selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
+  }, [paused, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
 
   // Contextual counts refresh — debounced so rapid clicks (e.g. the
   // ribbon's Select-all) don't trigger N requests. Calls
@@ -1334,6 +1388,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // count badges + 0-count option hiding.
   useEffect(() => {
     if (!dbReady) return;
+    // Mounted-but-hidden → no contextual-count work either. Same
+    // reasoning as the executeSearch gate above: the user hasn't
+    // chosen to look at S&D yet, so running 15+ GROUP BY queries
+    // for them is pure waste.
+    if (paused) return;
     // Skip the contextual-count refresh entirely when there's
     // nothing to count against. With no search text and no active
     // filters, the "leave one out" counts collapse to "every option
@@ -1390,7 +1449,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbReady, searchText, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums]);
+  }, [dbReady, paused, searchText, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums]);
 
   // People window data-changed listener — refresh AI data + re-run
   // the current search when PM modifies clusters. Calls
@@ -4111,6 +4170,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     </button>
                   </IconTooltip>
                 </div>
+                {/* Manual refresh button — re-runs the current search
+                    so the user can pull in fresh results after a Fix
+                    completes or photos get added/removed elsewhere.
+                    Sits at the right edge of the view-control cluster
+                    so it's always reachable regardless of view mode.
+                    Terry 2026-05-20: "Why is there not a refresh in
+                    S&D? I thought you were going to add one." */}
+                <IconTooltip label="Refresh — re-run this search" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => executeSearch()}
+                    disabled={isLoading || !searchActive}
+                    className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                    data-testid="sd-refresh"
+                    aria-label="Refresh search"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </IconTooltip>
               </div>
 
               {/* Metadata display dropdown — customise what info appears below each tile */}
@@ -4267,15 +4345,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     // line of each tile.
                     const metaLineHeight = 18;
                     const rowHeight = tilePx + (tileMetaFields.length * metaLineHeight) + 6;
-                    const columnCount = Math.max(1, Math.floor((gridSize.width || tilePx) / tilePx));
+                    // Window-size fallback so the List renders even
+                    // when the ResizeObserver hasn't measured the
+                    // container yet (which happens on the very first
+                    // appearance of the grid container — it's only
+                    // mounted to the DOM when results materialise).
+                    // Without the fallback we used to short-circuit
+                    // to an empty placeholder div, which left S&D
+                    // showing "555 results" with a blank grid until
+                    // the next ResizeObserver callback. Terry
+                    // 2026-05-20. Real measurements arrive within a
+                    // frame or two and the List re-renders at the
+                    // correct dims.
+                    const effectiveWidth = gridSize.width || (typeof window !== 'undefined' ? window.innerWidth - 100 : 1200);
+                    const effectiveHeight = gridSize.height || (typeof window !== 'undefined' ? window.innerHeight - 250 : 600);
+                    const columnCount = Math.max(1, Math.floor(effectiveWidth / tilePx));
                     const rowCount = Math.ceil(displayFiles.length / columnCount);
-                    if (gridSize.width === 0 || gridSize.height === 0 || rowCount === 0) {
-                      // First frame after mount before the
-                      // ResizeObserver fires. Render a single
-                      // placeholder row at the correct height so
-                      // there's no zero-height flash; the real
-                      // virtualisation kicks in on the next frame.
-                      return <div style={{ height: rowHeight }} aria-hidden />;
+                    if (rowCount === 0) {
+                      return null;
                     }
                     const Row = ({ index, style }: RowComponentProps<object>) => {
                       const startIdx = index * columnCount;
@@ -4349,7 +4436,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <List
                         rowCount={rowCount}
                         rowHeight={rowHeight}
-                        defaultHeight={gridSize.height}
+                        defaultHeight={effectiveHeight}
                         rowComponent={Row}
                         rowProps={{}}
                         overscanCount={2}
@@ -4360,7 +4447,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           // list/details views, but works inside react-window's
                           // own scroll container (which doesn't trigger the
                           // sentinel because it's outside the List).
+                          // Gated on `hasUserScrolledRef` for the same reason
+                          // as the sentinel path: on initial render react-window
+                          // synthesises an onRowsRendered for the first batch
+                          // of visible rows, which would auto-fire loadMore
+                          // chain-style and pull a 18k-result library down
+                          // before the user has done anything.
                           if (
+                            hasUserScrolledRef.current &&
                             results &&
                             results.files.length < results.total &&
                             stopIndex >= rowCount - 2

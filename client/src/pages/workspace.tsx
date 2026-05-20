@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { 
@@ -461,6 +461,91 @@ useEffect(() => {
   // canonical state. Handlers registered above (where `activeView`
   // isn't in scope yet) read the ref instead.
   useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
+
+  // Pre-warm Memories — By Date in the background so clicking the
+  // sidebar Memories link doesn't show a wall of empty thumbnail
+  // icons while every tile fetches its sample image. Same pattern
+  // as the PM window pre-warm in main.ts. We fire one Memories
+  // bucket query (warms the SQL pages PDR will need) and then
+  // pre-generate the small thumbnail for each month's sample file
+  // through the shared browser:thumbnail IPC — those thumbnails
+  // land in the cross-surface on-disk cache, so when MemoriesView
+  // actually mounts each tile's IPC call resolves from cache and
+  // populates instantly instead of icon-then-image. Terry
+  // 2026-05-20: "every thumbnail is an empty icon... looks really
+  // shit". Fires once per workspace session, gated on user not
+  // landing directly on Memories (no need to pre-warm what they're
+  // already viewing). Wrapped in a 2.5s setTimeout so we don't
+  // compete with the critical path of Dashboard's own data load.
+  const memoriesPrewarmRef = useRef(false);
+  useEffect(() => {
+    if (memoriesPrewarmRef.current) return;
+    if (activeView === 'memories') return; // already there, no point pre-warming
+    memoriesPrewarmRef.current = true;
+    const timer = setTimeout(async () => {
+      try {
+        const { getMemoriesYearMonthBuckets, listAlbums, getThumbnail } = await import('@/lib/electron-bridge');
+        // Kick off both queries in parallel — independent IPC calls,
+        // independent caches. We don't care if one fails; the other
+        // still warms its half of the Memories surface.
+        const [bucketsRes, albumsRes] = await Promise.all([
+          getMemoriesYearMonthBuckets(),
+          listAlbums(),
+        ]);
+        // Build a single de-duplicated queue of (filePath, size)
+        // pairs for the small concurrent pool below to chew through.
+        // CRITICAL: sizes MUST match what each consuming surface
+        // actually requests — the thumbnail cache key is
+        // `md5(filePath:size)`, so a pre-warm at the wrong size is
+        // wasted work (the cold mount will still re-generate).
+        // First version of this pre-warm used 320px and produced
+        // tiles neither surface ever asked for. Sizes verified
+        // against MemoriesView (getThumbnail(p, 160)) and
+        // AlbumsView (getThumbnail(p, 200)) at the time of this
+        // comment — if either bumps its tile size in the future,
+        // bump the matching constant below.
+        const MEMORIES_TILE_SIZE = 160;
+        const ALBUMS_COVER_SIZE = 200;
+        const queue: Array<{ filePath: string; size: number }> = [];
+        const seen = new Set<string>();
+        const enqueue = (filePath: string | null | undefined, size: number) => {
+          if (!filePath) return;
+          const key = `${filePath}:${size}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          queue.push({ filePath, size });
+        };
+        if (bucketsRes.success && bucketsRes.data) {
+          for (const b of bucketsRes.data) enqueue(b.sampleFilePath, MEMORIES_TILE_SIZE);
+        }
+        if (albumsRes.success && albumsRes.data) {
+          for (const a of albumsRes.data) enqueue(a.coverPath, ALBUMS_COVER_SIZE);
+        }
+        // Small concurrent pool — 4 thumbnails in flight at a time
+        // keeps the IPC channel responsive for any foreground work
+        // the user kicks off (clicking Memories themselves, opening
+        // a photo from S&D, etc.). Each thumbnail's IPC handler
+        // hits the disk cache first (md5 of filePath:size) so a
+        // re-run is cheap.
+        const POOL = 4;
+        const worker = async () => {
+          while (queue.length > 0 && !memoriesPrewarmCancelledRef.current) {
+            const item = queue.shift();
+            if (!item) continue;
+            try { await getThumbnail(item.filePath, item.size); } catch { /* per-tile failures don't abort the pre-warm */ }
+          }
+        };
+        await Promise.all(Array.from({ length: POOL }, worker));
+      } catch { /* if the pre-warm fails, the cold render still works — no user-visible regression */ }
+    }, 2500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Lets the unmount cleanup signal the in-flight pool workers to stop
+  // — otherwise a fast unmount + remount could leave the previous
+  // pool still draining the queue in the background.
+  const memoriesPrewarmCancelledRef = useRef(false);
+  useEffect(() => () => { memoriesPrewarmCancelledRef.current = true; }, []);
   const [showReportProblem, setShowReportProblem] = useState(false);
   // When the analysis pipeline throws an unhandled error, we open the
   // Report-a-Problem modal automatically with a pre-filled description
@@ -2410,6 +2495,17 @@ return (
             requestClose={requestSearchClose}
             hasSources={sources.length > 0}
             showLibraryManager={localStorage.getItem('pdr-show-library-manager') === 'true'}
+            // Suppress SearchPanel's auto-search + contextual-count
+            // work while the user is anywhere other than S&D — the
+            // workspace pre-mount in App.tsx keeps SearchPanel
+            // mounted from app launch so the first S&D click is
+            // instant, but those default-on filters (all Confidence
+            // tiers, all Library Drives) would otherwise return
+            // 18,744 rows on Terry's library while Welcome is still
+            // visible. The moment activeView flips to 'search' this
+            // prop flips to false and SearchPanel runs its initial
+            // search normally.
+            paused={activeView !== 'search'}
             pickMode={pendingBackgroundPick}
             onPickCancel={() => {
               setPendingBackgroundPick(null);
@@ -3058,13 +3154,64 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // whenever launching for the first time."
   const [tempExpanded, setTempExpanded] = useState(true);
   const tempExpandedMountRef = useRef(true);
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so that when the user clicks a
+  // sidebar link that auto-collapses the sidebar (Memories, S&D,
+  // Trees), the tempExpanded → false flip happens BEFORE the
+  // browser paints — instead of one frame after the visible
+  // sidebar renders expanded. Without this, clicking Memories
+  // from the sidebar (or from Welcome) shows the sidebar painted
+  // wide for ~16ms before snapping/animating to the collapsed
+  // state. Terry 2026-05-20: "it opens with the sidebar expanded…
+  // then it quickly contracts… do it so that the user doesn't see
+  // this fuckup the moment they open Memories". React 18 commits
+  // useLayoutEffect updates synchronously before paint, so both
+  // the activeView change AND the tempExpanded reset land in the
+  // same paint cycle — sidebar renders in its final collapsed
+  // state on the first frame.
+  useLayoutEffect(() => {
     if (tempExpandedMountRef.current) {
       tempExpandedMountRef.current = false;
       return;
     }
     setTempExpanded(false);
   }, [activeView, searchResultsActive]);
+
+  // Same reset, but driven off the URL hash rather than activeView
+  // state. activeView lags one render behind the URL when the user
+  // navigates via a Welcome card or sidebar deep-link (the
+  // searchString useEffect that turns ?view= into setActiveView is
+  // a regular useEffect, runs AFTER paint). Without this URL-
+  // driven layout-effect, the workspace's first paint after
+  // becoming visible still shows the wide Dashboard sidebar; the
+  // collapse only happens on the second paint. With it, both the
+  // sidebar collapse AND the activeView change land in the same
+  // pre-paint commit cycle, so the user only ever sees the
+  // collapsed state. Terry 2026-05-20: "Memories — Fast, but
+  // opens still in expanded sidebar… S&D — Sidebar is collapsed
+  // already, the only thing that moved was the title bar. This
+  // behaviour would be acceptable for Memories, and Trees also."
+  // No deps array → fires every render. Guarded by the
+  // `tempExpanded` check so we don't loop. Workspace re-renders
+  // whenever the parent (AppShell in App.tsx) re-renders on URL
+  // change, so this catches every navigation INTO a collapsing
+  // view. The earlier attempts using `location` from wouter as
+  // a dep didn't work because wouter and react-router-dom (the
+  // actual router driving App.tsx) don't share state — wouter's
+  // location never updates here even though the URL did change.
+  // Reading window.location.hash inside the layout effect
+  // synchronously sees the fresh hash on each render. Terry
+  // 2026-05-20: "WS to Memories on first load… it still doing
+  // the sidebar collapse as you go on Memories — This NEVER
+  // happens with S&D".
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined' || !tempExpanded) return;
+    const parts = window.location.hash.split('?');
+    const qs = parts.length > 1 ? '?' + parts[1] : '';
+    const v = new URLSearchParams(qs).get('view');
+    if (v === 'memories' || v === 'search' || v === 'familytree') {
+      setTempExpanded(false);
+    }
+  });
 
   // Dashboard / Workspace doubles as the Source Menu — the sidebar
   // is critical there once sources exist. When the workspace is
@@ -3099,16 +3246,59 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // opened with the sidebar expanded... and then a few seconds
   // later it collapsed". (When the user IS on S&D, activeView ===
   // 'search' covers it.)
+  // Sidebar collapse rule — read the effective view from the URL
+  // synchronously so the very first render after the workspace
+  // becomes visible (e.g. after a Welcome-card click that flips
+  // App.tsx's display:none → block) ALREADY has the correct
+  // collapsed state. Without this, activeView state lags one
+  // render behind the URL change (useEffect-driven), so the
+  // user briefly sees the wide "Dashboard" sidebar while the
+  // useEffect fires and switches activeView to 'memories'/'search'
+  // /'familytree'. Reading from window.location.hash inside the
+  // render is safe because useLocation() above subscribes us to
+  // hash changes — every URL change triggers a re-render, and
+  // window.location.hash is fresh at that point. activeView state
+  // remains the source of truth for everything ELSE (panel
+  // switching, side-effects); this is purely the collapse calc.
+  // Terry 2026-05-20: "Memories — Fast, but opens still in
+  // expanded sidebar… S&D — Sidebar is collapsed already…
+  // Surely you can check to see what the code is for S&D
+  // sidebar and match that behaviour?"
+  const urlViewForCollapse = (() => {
+    if (typeof window === 'undefined') return null;
+    const parts = window.location.hash.split('?');
+    const qs = parts.length > 1 ? '?' + parts[1] : '';
+    const v = new URLSearchParams(qs).get('view');
+    return (v === 'dashboard' || v === 'search' || v === 'memories' || v === 'familytree') ? v : null;
+  })();
+  const effectiveViewForCollapse = urlViewForCollapse ?? activeView;
+  // URL view takes priority over tempExpanded for the very first
+  // render. Without this priority order, the first paint after
+  // workspace becomes visible still shows the wide sidebar
+  // (tempExpanded=true short-circuits collapsed=false) and the
+  // useLayoutEffect that resets tempExpanded only runs AFTER
+  // commit. With this order: a URL of /workspace?view=memories
+  // forces collapsed=true on the very first render, regardless
+  // of stale tempExpanded state. Once the URL handler cleans
+  // ?view= away (setLocation('/workspace')), the useLayoutEffect
+  // above has already set tempExpanded=false, so subsequent
+  // renders fall through to the activeView-based rule and stay
+  // collapsed.
+  const urlForcesCollapse = urlViewForCollapse === 'memories'
+    || urlViewForCollapse === 'search'
+    || urlViewForCollapse === 'familytree';
   const collapsed = pinState === 'closed'
     ? true
     : pinState === 'open'
     ? false
+    : urlForcesCollapse
+    ? true
     : tempExpanded
     ? false
     : (
-      activeView === 'familytree'
-      || activeView === 'memories'
-      || activeView === 'search'
+      effectiveViewForCollapse === 'familytree'
+      || effectiveViewForCollapse === 'memories'
+      || effectiveViewForCollapse === 'search'
     );
 
   // Section-collapse state for Views / Tools / Guidance. Session-only so
@@ -10350,6 +10540,34 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     data-testid="checkbox-show-welcome"
                   />
                 </label>
+              </div>
+
+              {/* Jump-back-to-Welcome action. Terry 2026-05-20: "I've
+                  often wanted a way back to the WS from within the
+                  Workspace." HashRouter-aware navigation via the
+                  hash directly — wouter / react-router-dom don't
+                  share scope here, but the underlying URL is the
+                  source of truth for both. Closes the Settings
+                  modal first so the Welcome Screen renders cleanly
+                  without the modal overlay still mounted. */}
+              <div className="pt-4 border-t border-border">
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Go to the Welcome Screen now</span>
+                    <span className="text-xs text-muted-foreground">Jump out of the Workspace and back to the Welcome surface without restarting PDR.</span>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      onClose();
+                      window.location.hash = '#/';
+                    }}
+                    data-testid="settings-go-to-welcome"
+                  >
+                    Go to Welcome
+                  </Button>
+                </div>
               </div>
             </>
           )}

@@ -68,7 +68,7 @@ export default function Home() {
 
   useEffect(() => {
     if (skipScreen) {
-      navigate("/workspace", { replace: true });
+      navigate("/workspace?view=dashboard", { replace: true });
     }
   }, [skipScreen, navigate]);
 
@@ -115,6 +115,41 @@ export default function Home() {
   // renderer.
   useEffect(() => {
     prewarmDrives();
+  }, []);
+
+  // Pre-warm Memories — By Date thumbnails while the user is still
+  // on the Welcome Screen. Terry 2026-05-20: "Do you think you can
+  // start loading the Memories page while on the Welcome Screen…
+  // it looks really shit when each time I click on the Memories
+  // link and every thumbnail is an empty icon." A first attempt
+  // ran this from the workspace, but the workspace doesn't mount
+  // until the user clicks a sidebar link — by then it's too late
+  // and the user is already staring at icon placeholders. Running
+  // it here, where the user typically spends several seconds
+  // before deciding which surface to visit, means the on-disk
+  // thumbnail cache is well-populated by the time the Memories
+  // grid mounts and the lazy IntersectionObserver per-tile fetches
+  // resolve in ~1ms each (cache hit) instead of running cold
+  // sharp/ffmpeg per tile. Albums is intentionally skipped — Terry
+  // 2026-05-20: "Albums can be deferred if clicking Memories
+  // always starts the user at By Date instead of Albums" — the
+  // hot path through Welcome → Memories lands on By Date by
+  // default. No timeout / delay: the user is sitting on the
+  // Welcome screen reading the cards; this can run immediately.
+  useEffect(() => {
+    if (!isElectron()) return;
+    // Module-level prefetch — populates a singleton buckets +
+    // thumbnails-as-data-URLs cache that MemoriesView consumes
+    // synchronously on mount. See memories-prefetch.ts for the
+    // why (the on-disk thumbnail cache alone wasn't enough — the
+    // visible mount still paid 36 × IPC roundtrips + base64
+    // decode + AI-worker contention, which read as the ~5s
+    // empty-icon flash Terry saw). Idempotent: a second call
+    // joins the in-flight promise. Lifetime = renderer process.
+    (async () => {
+      const { prefetchMemories } = await import('@/lib/memories-prefetch');
+      void prefetchMemories();
+    })();
   }, []);
 
   useEffect(() => {
@@ -196,7 +231,7 @@ export default function Home() {
   // Destination set → hero card just lands the user in Workspace.
   const handleHero = () => {
     if (hasDestination) {
-      navigate("/workspace");
+      navigate("/workspace?view=dashboard");
     } else if (isReturningUser) {
       // Returning user with KNOWN drives but none currently
       // selected → go straight to /workspace. The Library pill in
@@ -204,7 +239,7 @@ export default function Home() {
       // route in TitleBar) and is the channel for picking from
       // saved drives. /source-selection is the first-time-user
       // setup wizard which would be the wrong flow here.
-      navigate("/workspace");
+      navigate("/workspace?view=dashboard");
     } else {
       navigate("/source-selection");
     }
@@ -350,7 +385,7 @@ export default function Home() {
               title="Workspace"
               description="Copy, rename, structure and deduplicate your source libraries chronologically."
               locked={cardsLocked}
-              onClick={handleAppCard(() => navigate("/workspace"))}
+              onClick={handleAppCard(() => navigate("/workspace?view=dashboard"))}
             />
             <ShowcaseCard
               accent="blue"
@@ -400,7 +435,7 @@ export default function Home() {
             up. */}
 		<motion.div variants={item} className={`mb-4 -mt-2 ${cardsLocked ? 'pointer-events-none opacity-30' : ''}`}>
 		  <button
-			onClick={cardsLocked ? undefined : () => navigate("/workspace")}
+			onClick={cardsLocked ? undefined : () => navigate("/workspace?view=dashboard")}
 			disabled={cardsLocked}
 			className={`text-sm font-medium flex items-center transition-colors group ${cardsLocked ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:text-primary'}`}
 		  >

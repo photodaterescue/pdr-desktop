@@ -1,4 +1,5 @@
-import { HashRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
@@ -16,33 +17,69 @@ import SourceSelection from "@/pages/source-selection";
 
 const queryClient = new QueryClient();
 
-function AppRouter() {
+// Workspace is mounted from app launch (after an idle delay so
+// Welcome paints first) and toggled visible/hidden via display:none
+// based on route. Every panel inside Workspace knows when it's
+// hidden via a `paused` prop and refuses to do IPC-heavy work until
+// the user clicks into it — SearchPanel especially, since its
+// default-on filters would otherwise fire an 18,744-row search +
+// per-tile ffmpeg spawns the moment workspace mounts. The shell
+// (sidebar, titlebar, dashboard skeleton, Memories prefetch
+// consumers) DOES run during the pre-mount, so the first sidebar
+// click lands on an already-warmed tree. Terry 2026-05-20: "I want
+// both… it will make the app seem so much faster".
+function AppShell() {
+  const location = useLocation();
+  const isWorkspace = location.pathname === '/workspace';
+  const [workspaceMounted, setWorkspaceMounted] = useState(false);
+  useEffect(() => {
+    if (workspaceMounted) return;
+    if (isWorkspace) {
+      setWorkspaceMounted(true);
+      return;
+    }
+    const schedule = (cb: () => void) => {
+      if (typeof (window as any).requestIdleCallback === 'function') {
+        (window as any).requestIdleCallback(cb, { timeout: 1500 });
+      } else {
+        setTimeout(cb, 500);
+      }
+    };
+    schedule(() => setWorkspaceMounted(true));
+  }, [isWorkspace, workspaceMounted]);
+
   return (
-    <HashRouter>
-      <div className="flex flex-col h-screen overflow-hidden">
-        {/* Custom title bar — always visible on all views */}
-        <TitleBar />
-        {/* Cross-window Fix-in-progress chip — single source of
-            truth for the chip across every route in the main
-            window (Home, Source Selection, Workspace). Interactive
-            variant: clicking the Open button dispatches a window
-            event that un-minimises the FixProgressModal. */}
-        <FixStatusChip interactive />
-        {/* Page content fills remaining space */}
-        <div className="flex-1 overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
+      <TitleBar />
+      <FixStatusChip interactive />
+      <div className="flex-1 overflow-hidden relative">
+        {workspaceMounted && (
+          <div
+            className="absolute inset-0"
+            style={{ display: isWorkspace ? 'block' : 'none' }}
+            aria-hidden={!isWorkspace}
+          >
+            <Workspace />
+          </div>
+        )}
+        {!isWorkspace && (
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/source-selection" element={<SourceSelection />} />
-            <Route path="/workspace" element={<Workspace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </div>
-        {/* Window resize-corner hints — CSS handles bottom two via body
-            ::before/::after; these two provide the top-left / top-right
-            brackets. All four are pointer-events: none, see index.css. */}
-        <div className="window-resize-hint-tl" aria-hidden="true" />
-        <div className="window-resize-hint-tr" aria-hidden="true" />
+        )}
       </div>
+      <div className="window-resize-hint-tl" aria-hidden="true" />
+      <div className="window-resize-hint-tr" aria-hidden="true" />
+    </div>
+  );
+}
+
+function AppRouter() {
+  return (
+    <HashRouter>
+      <AppShell />
     </HashRouter>
   );
 }

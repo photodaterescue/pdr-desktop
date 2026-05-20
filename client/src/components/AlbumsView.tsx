@@ -31,7 +31,7 @@ import {
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
   Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
-  ZoomIn, ZoomOut,
+  ZoomIn, ZoomOut, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -1133,11 +1133,22 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return () => { cancelled = true; };
   }, [selection]);
 
-  // ── Thumbnail loader (covers + album photos) ─────────────────────
+  // ── Thumbnail loader (album photos only — covers are lazy) ───────
+  // Album-detail photos (the contents of one opened album) are
+  // loaded up-front because there's only ever one album-worth of
+  // photos in view at a time — usually tens, sometimes hundreds.
+  // Album COVERS, however, can run into the thousands (Takeout
+  // imports) and used to all fetch on mount even when the user
+  // was looking at a different surface. They're now lazy-loaded
+  // via a separate IntersectionObserver effect below — only the
+  // covers that scroll into view get fetched, with a 600px lead
+  // margin so the next strip is already there when the user
+  // scrolls. Terry 2026-05-20: "it just needs to fire up the
+  // visible thumbnails… the ones below that can be loaded up
+  // afterwards".
   useEffect(() => {
     let cancelled = false;
     const paths = new Set<string>();
-    for (const a of albums) if (a.coverPath) paths.add(a.coverPath);
     for (const p of albumPhotos) paths.add(p.file_path);
     const toLoad = Array.from(paths).filter((p) => !thumbs[p]);
     if (toLoad.length === 0) return;
@@ -1160,7 +1171,46 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
     void Promise.allSettled(workers);
     return () => { cancelled = true; };
-  }, [albums, albumPhotos]);
+  }, [albumPhotos]);
+
+  // ── Lazy cover loader — observes every album tile's outer
+  // element (tagged with data-cover-path) and fetches its
+  // thumbnail only when the tile scrolls into view (with a
+  // 600px lead margin). Same pattern as MonthTile in
+  // MemoriesView. Re-runs when `albums` changes so newly-
+  // added tiles get observed. Falls back to a no-op when
+  // gridScrollRef isn't mounted yet (e.g. on the empty-state
+  // surface where no grid is rendered).
+  useEffect(() => {
+    const container = gridScrollRef.current;
+    if (!container) return;
+    const requested = new Set<string>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const path = (entry.target as HTMLElement).dataset.coverPath;
+        if (!path || requested.has(path)) continue;
+        requested.add(path);
+        observer.unobserve(entry.target);
+        (async () => {
+          try {
+            const r = await getThumbnail(path, 200);
+            if (r.success && r.dataUrl) {
+              setThumbs((prev) => prev[path] ? prev : { ...prev, [path]: r.dataUrl });
+            }
+          } catch { /* per-tile failure is non-fatal */ }
+        })();
+      }
+    }, { root: container, rootMargin: '600px 0px' });
+    // Observe every cover-bearing tile currently in the DOM.
+    // requestAnimationFrame defers one frame so the album grid
+    // has actually rendered when we query for [data-cover-path].
+    const raf = requestAnimationFrame(() => {
+      const els = container.querySelectorAll('[data-cover-path]');
+      els.forEach((el) => observer.observe(el));
+    });
+    return () => { cancelAnimationFrame(raf); observer.disconnect(); };
+  }, [albums]);
 
   // ── Actions ──────────────────────────────────────────────────────
   const handleCreateAlbum = async () => {
@@ -1931,6 +1981,28 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     </div>
   );
 
+  // Manual refresh — re-runs listAlbums + the rest of refreshAll so
+  // the user can pull freshly-imported albums into the grid without
+  // navigating away. Sits inline with the zoom pill + density
+  // toggle on every Albums surface (All / per-folder / per-album).
+  // Terry 2026-05-20: "Why is there not a refresh in S&D? I thought
+  // you were going to add one. There should be a refresh in By Date
+  // and Albums also..."
+  const refreshButton = (
+    <IconTooltip label="Refresh — reload albums" side="bottom">
+      <button
+        type="button"
+        onClick={() => { void refreshAll(); }}
+        disabled={loading}
+        className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+        data-testid="albums-refresh"
+        aria-label="Refresh albums"
+      >
+        <RotateCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+      </button>
+    </IconTooltip>
+  );
+
   const renderRightPane = () => {
     if (loading) {
       return <p className="text-sm text-muted-foreground px-6 py-6">Loading albums…</p>;
@@ -1959,6 +2031,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 per-group / detail surfaces. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
               {zoomPill}
+              {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-all-density-toggle" />
             </div>
           </div>
@@ -1981,6 +2054,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       type="button"
                       onClick={() => navigateSelection({ type: 'album', id: album.id })}
                       draggable
+                      data-cover-path={album.coverPath ?? undefined}
                       // All-albums grid has no specific source-group
                       // context (the album might live in several
                       // groups). Pass null → drop handler falls back
@@ -2035,6 +2109,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 everywhere else. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
               {zoomPill}
+              {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-group-density-toggle" />
             </div>
           </div>
@@ -2061,6 +2136,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       type="button"
                       onClick={() => navigateSelection({ type: 'album', id: album.id })}
                       draggable
+                      data-cover-path={album.coverPath ?? undefined}
                       // Group view = clear source-group context.
                       // Drag from a user folder → MOVE semantics
                       // apply on drop (CTRL = copy). Drag from a
@@ -2213,6 +2289,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     </Popover>
                   )}
                   {zoomPill}
+                  {refreshButton}
                   <DensityToggle value={density} onChange={setDensity} testId="albums-density-toggle" />
                   <IconTooltip
                     label={
