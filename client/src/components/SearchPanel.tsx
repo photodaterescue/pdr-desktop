@@ -786,6 +786,23 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     }
   }, [isIndexing]);
 
+  // Catch-up indexer (v2.0.9) finished — re-fetch everything so any
+  // newly-indexed photos from old libraries appear in the filter
+  // dropdowns + counts + the current results without the user having
+  // to close and reopen PDR. UnindexedLibrariesCard dispatches the
+  // event on its last 'phase: complete'.
+  useEffect(() => {
+    if (!dbReady) return;
+    const handler = () => {
+      loadFilterOptions();
+      loadStats();
+      loadAiData();
+      if (results) executeSearch();
+    };
+    window.addEventListener('pdr:libraryRebuildComplete', handler);
+    return () => window.removeEventListener('pdr:libraryRebuildComplete', handler);
+  }, [dbReady, results]);
+
   // AI init — check settings, load stats, check models, listen for progress
   useEffect(() => {
     getSettings().then(s => setAiEnabled(s.aiEnabled));

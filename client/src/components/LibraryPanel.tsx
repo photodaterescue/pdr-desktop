@@ -541,6 +541,18 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     }
   }, [isOpen]);
 
+  // Catch-up indexer (v2.0.9) finished — re-fetch the per-row file
+  // counts so an LDM that's currently open updates its "X photos"
+  // figures immediately. Without this the LDM keeps showing the
+  // pre-index counts until next open. Mirrors SearchPanel + Memories
+  // listeners on the same event.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = () => { void refreshAll(); };
+    window.addEventListener('pdr:libraryRebuildComplete', handler);
+    return () => window.removeEventListener('pdr:libraryRebuildComplete', handler);
+  }, [isOpen]);
+
   // Receive picker results from workspace. When the LDM's Select
   // radio fires `pdr:pickLibraryDriveFolder`, workspace opens the
   // in-app FolderBrowserModal; on select it dispatches

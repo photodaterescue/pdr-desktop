@@ -177,6 +177,15 @@ export function UnindexedLibrariesCard() {
           // Last root finished — resolve the loading toast.
           toast.success(`Finished indexing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}`,
             { id: toastId, description: 'Your photos are now searchable in S&D, Memories, and the Date Editor.' });
+          // Broadcast so any surface that's currently mounted can
+          // re-fetch its data without the user having to close and
+          // reopen PDR. Listeners: SearchPanel (reloads filter
+          // options + active query), MemoriesView (reloads runs +
+          // buckets), LibraryPanel (refreshes per-row file counts).
+          // Terry 2026-05-20: "There should be a refresh button for
+          // the indexing... because I think I might have to close
+          // PDR just to get this to update on S&D."
+          window.dispatchEvent(new CustomEvent('pdr:libraryRebuildComplete'));
           unsubscribe?.();
           return;
         }

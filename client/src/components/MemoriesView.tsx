@@ -144,12 +144,19 @@ export default function MemoriesView() {
     try { localStorage.setItem('pdr-memories-density', d); } catch {}
   };
 
-  // Load once on mount.
+  // Load once on mount + whenever the catch-up indexer signals new
+  // rows landed. The pdr:libraryRebuildComplete event fires from
+  // UnindexedLibrariesCard when the last root finishes; re-fetching
+  // runs picks up any new ones so libraries / timeline reflect the
+  // newly-indexed photos without restarting PDR. v2.0.9.
   useEffect(() => {
-    (async () => {
+    const refetch = async () => {
       const r = await listSearchRuns();
       if (r.success && r.data) setRuns(r.data);
-    })();
+    };
+    refetch();
+    window.addEventListener('pdr:libraryRebuildComplete', refetch);
+    return () => window.removeEventListener('pdr:libraryRebuildComplete', refetch);
   }, []);
 
   // Derived libraries grouping + currently-selected run IDs (or undefined
