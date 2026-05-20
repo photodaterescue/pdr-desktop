@@ -5666,9 +5666,15 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
 
     // If viewer already open, reuse it
     if (viewerWindow && !viewerWindow.isDestroyed()) {
-      const viewerHtml = app.isPackaged
-        ? path.join(process.resourcesPath, 'dist/public/viewer.html')
-        : path.join(__dirname, '../dist/public/viewer.html');
+      // Same __dirname-relative pattern the main + people + date-
+      // editor windows use. In packaged builds `__dirname` is
+      // inside `app.asar/dist-electron`, so joining `../dist/public`
+      // resolves to `app.asar/dist/public/...` and Electron's asar
+      // loader handles it. The earlier `process.resourcesPath`
+      // branch resolved to `resources/dist/public/` (outside asar),
+      // which doesn't exist in our packaged layout — viewer.html
+      // wasn't loading in the live v2.0.8 build. v2.0.9 hotfix.
+      const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
       viewerWindow.loadFile(viewerHtml, { query: { files: filesParam, start: String(start) } });
       viewerWindow.setTitle(title);
       viewerWindow.focus();

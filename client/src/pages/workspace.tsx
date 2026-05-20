@@ -9122,6 +9122,22 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.9" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.9</span>
+                        {appVersion === '2.0.9' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Photo viewer works again in the installed app</strong> — v2.0.8 shipped with a path-resolution bug that stopped the dedicated viewer window from loading its UI in installed builds (it worked fine in development). Photos and videos opened from Search &amp; Discovery, Memories, and Albums now display correctly again. No data was at risk — the viewer just refused to render.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.8" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
