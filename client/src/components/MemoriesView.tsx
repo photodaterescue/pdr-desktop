@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CalendarRange,
   ChevronLeft,
@@ -112,7 +113,21 @@ function groupRunsIntoLibraries(runs: IndexedRun[]): Library[] {
   return Array.from(byKey.values());
 }
 
-export default function MemoriesView() {
+// `headerControlsTarget` — DOM node owned by MemoriesPanel. When
+// provided, MemoriesView portals its summary + jump-to-latest +
+// density + library-selector controls into that node so they live
+// on the same row as the [By Date | Albums] toggle pill. This
+// reclaims the otherwise-empty horizontal real estate to the right
+// of the toggle and removes a whole header row from the timeline
+// surface, giving the photo grid more vertical room. Terry
+// 2026-05-20: "consolidation of the buttons and info to the same
+// row as the toggle switch for By Date / Albums but with a |
+// divider between them. This will allow more real estate for the
+// thing that really matters — the pictures." Falls back to the
+// previous in-place rendering when the prop isn't passed (keeps the
+// component usable from any future caller that hasn't wired the
+// slot).
+export default function MemoriesView({ headerControlsTarget }: { headerControlsTarget?: HTMLElement | null } = {}) {
   // (Back-to-album pill moved into TitleBar — see TitleBar.tsx.)
 
   const [runs, setRuns] = useState<IndexedRun[]>([]);
@@ -125,6 +140,28 @@ export default function MemoriesView() {
   const [libraryKeys, setLibraryKeys] = useState<string[]>([]);
   const [buckets, setBuckets] = useState<MemoriesYearBucket[]>([]);
   const [onThisDay, setOnThisDay] = useState<MemoriesOnThisDayItem[]>([]);
+  // "On This Day" AI-suggestion card — hidden when the user has
+  // dismissed it via the X. Persists across sessions in localStorage
+  // so Terry doesn't have to re-dismiss every launch. Terry
+  // 2026-05-20: "There should be the way to hide the AI suggestion
+  // on Memories — By Date". The card can be brought back from a small
+  // text link that surfaces in the header controls slot when it's
+  // currently hidden (symmetric: hide via the X on the card, restore
+  // via the link on the controls row). Both surfaces flip the same
+  // flag so wherever the user looks they see consistent state.
+  const OTD_HIDDEN_KEY = 'pdr-memories-otd-hidden';
+  const [otdHidden, setOtdHidden] = useState<boolean>(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem(OTD_HIDDEN_KEY) === '1';
+  });
+  const hideOnThisDay = () => {
+    setOtdHidden(true);
+    try { localStorage.setItem(OTD_HIDDEN_KEY, '1'); } catch { /* localStorage may be unavailable */ }
+  };
+  const showOnThisDay = () => {
+    setOtdHidden(false);
+    try { localStorage.removeItem(OTD_HIDDEN_KEY); } catch { /* localStorage may be unavailable */ }
+  };
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   // Drilldown selection. `month` and `day` are independently optional
@@ -351,44 +388,83 @@ export default function MemoriesView() {
           so we don't repeat it here. The summary line stays — it's
           specific to the By Date view (photo/video counts across
           years) and useful context just below the tab strip. */}
-      <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border/60 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground">
-            {loading
-              ? 'Loading…'
-              : buckets.length === 0
-                ? 'No photos indexed yet — run a Fix first to build your memory timeline.'
-                : `${totalPhotos.toLocaleString()} photos · ${totalVideos.toLocaleString()} videos across ${yearGroups.length} ${yearGroups.length === 1 ? 'year' : 'years'}.`}
-          </p>
-          {/* Jump to most recent year — useful after returning from a
-              deep drilldown into older years. Terry 2026-05-19:
-              "there should be a button that says back to today, or
-              latest photos". Hidden when timeline is empty. */}
-          {yearGroups.length > 0 && (
-            <IconTooltip label={`Jump to ${yearGroups[0][0]} (most recent)`} side="bottom">
-              <button
-                onClick={() => jumpToYear(yearGroups[0][0])}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-xs font-medium text-foreground transition-colors"
-                data-testid="button-jump-to-latest"
-              >
-                <ArrowUpToLine className="w-3 h-3" />
-                Jump to latest
-              </button>
-            </IconTooltip>
-          )}
-        </div>
-
-        {/* `data-tour="mem-controls"` wraps both static controls so step
-            3 of the Memories tour has a guaranteed spotlight target.
-            Replaces the previous `mem-on-this-day` step which was
-            conditional on having past-year photos for today's date —
-            users with no historical photos for today saw a centered
-            tooltip and no highlight (Terry's report May 7 2026). */}
-        <div className="flex items-center gap-3" data-tour="mem-controls">
-          <DensityToggle value={density} onChange={changeDensity} />
-          <LibrarySelector libraries={libraries} selectedKeys={libraryKeys} onChange={setLibraryKeys} />
-        </div>
-      </div>
+      {/* Header controls — summary text, Jump to latest, density
+          toggle, and library selector. Rendered EITHER into the slot
+          MemoriesPanel hands us (consolidated onto the toggle row) OR
+          inline as a standalone row when no slot exists (legacy
+          fallback). The two render targets share the same JSX via
+          `controlsContent` so behaviour stays identical regardless of
+          where the controls land. */}
+      {(() => {
+        const summaryText = loading
+          ? 'Loading…'
+          : buckets.length === 0
+            ? 'No photos indexed yet — run a Fix first to build your memory timeline.'
+            : `${totalPhotos.toLocaleString()} photos · ${totalVideos.toLocaleString()} videos across ${yearGroups.length} ${yearGroups.length === 1 ? 'year' : 'years'}.`;
+        const controlsContent = (
+          <>
+            <div className="flex items-center gap-3 min-w-0">
+              <p className="text-xs text-muted-foreground truncate">{summaryText}</p>
+              {/* Jump to most recent year — useful after returning from a
+                  deep drilldown into older years. Terry 2026-05-19:
+                  "there should be a button that says back to today, or
+                  latest photos". Hidden when timeline is empty. */}
+              {yearGroups.length > 0 && (
+                <IconTooltip label={`Jump to ${yearGroups[0][0]} (most recent)`} side="bottom">
+                  <button
+                    onClick={() => jumpToYear(yearGroups[0][0])}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-xs font-medium text-foreground transition-colors shrink-0"
+                    data-testid="button-jump-to-latest"
+                  >
+                    <ArrowUpToLine className="w-3 h-3" />
+                    Jump to latest
+                  </button>
+                </IconTooltip>
+              )}
+              {/* "Show On This Day" — restores the dismissed AI
+                  suggestion card. Only rendered when the card is
+                  currently hidden AND there's something to suggest
+                  (otd has entries) — no point teasing a restore link
+                  for an empty surface. Pill style matches Jump to
+                  latest so the controls row feels uniform. */}
+              {otdHidden && onThisDay.length > 0 && (
+                <IconTooltip label="Show the On This Day AI suggestion" side="bottom">
+                  <button
+                    onClick={showOnThisDay}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10 hover:bg-primary/20 text-xs font-medium text-foreground transition-colors shrink-0"
+                    data-testid="otd-show"
+                  >
+                    <Sparkles className="w-3 h-3 text-primary" />
+                    Show On This Day
+                  </button>
+                </IconTooltip>
+              )}
+            </div>
+            {/* `data-tour="mem-controls"` wraps both static controls so
+                step 3 of the Memories tour has a guaranteed spotlight
+                target. Replaces the previous `mem-on-this-day` step
+                which was conditional on having past-year photos for
+                today's date — users with no historical photos for today
+                saw a centered tooltip and no highlight (Terry's report
+                May 7 2026). */}
+            <div className="flex items-center gap-3 shrink-0" data-tour="mem-controls">
+              <DensityToggle value={density} onChange={changeDensity} />
+              <LibrarySelector libraries={libraries} selectedKeys={libraryKeys} onChange={setLibraryKeys} />
+            </div>
+          </>
+        );
+        if (headerControlsTarget) {
+          // Portal into the slot MemoriesPanel set aside next to the
+          // [By Date | Albums] toggle. No standalone row is rendered
+          // here — the photo grid moves up by exactly that one row.
+          return createPortal(controlsContent, headerControlsTarget);
+        }
+        return (
+          <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border/60 flex items-center justify-between gap-4 flex-wrap">
+            {controlsContent}
+          </div>
+        );
+      })()}
 
       {buckets.length === 0 && !loading ? (
         // Rich first-launch empty state. The previous "Nothing to show
@@ -497,11 +573,26 @@ export default function MemoriesView() {
                 card + AI-suggestion badge + larger heading make the
                 hierarchy obvious. `data-tour="mem-on-this-day"` is
                 the spotlight target for step 3 of the Memories tour. */}
-            {onThisDay.length > 0 && (
+            {onThisDay.length > 0 && !otdHidden && (
               <section
-                className="mx-6 mt-6 mb-4 p-4 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 shadow-sm"
+                className="mx-6 mt-6 mb-4 p-4 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 shadow-sm relative"
                 data-tour="mem-on-this-day"
               >
+                {/* Hide button. Sets a persistent localStorage flag so
+                    the card stays dismissed across sessions. The
+                    counterpart "Show On This Day" link appears in the
+                    header controls slot when this is hidden, so it's
+                    always recoverable. Terry 2026-05-20. */}
+                <IconTooltip label="Hide this AI suggestion" side="left">
+                  <button
+                    onClick={hideOnThisDay}
+                    className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Hide On This Day"
+                    data-testid="otd-hide"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </IconTooltip>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 text-[10px] font-semibold uppercase tracking-wider text-primary">
                     <Sparkles className="w-3 h-3" />
@@ -511,7 +602,7 @@ export default function MemoriesView() {
                     {onThisDay.length} {onThisDay.length === 1 ? 'photo' : 'photos'}
                   </span>
                 </div>
-                <div className="mb-3">
+                <div className="mb-3 pr-8">
                   <h2 className="text-base font-bold text-foreground leading-tight">On {otdLabel} in previous years</h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Photos taken on this date in earlier years — rediscover what you were up to.
@@ -905,11 +996,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           <ChevronLeft className="w-4 h-4" /> Back to timeline
         </button>
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-        {files != null && (
-          <span className="text-xs text-muted-foreground">
-            {files.length.toLocaleString()} {files.length === 1 ? 'file' : 'files'}
-          </span>
-        )}
+        {files != null && (() => {
+          // Break out photos vs videos the same way the month tile
+          // on the timeline does — Terry 2026-05-20: "There's NOTHING
+          // that says the number of photos or videos while you're in
+          // the month... are we meant to memorise the data from the
+          // previous level that we can no longer see?". The previous
+          // "X files" string lumped them together which made it
+          // impossible to know what you'd actually find inside the
+          // month at a glance. Mirrors MonthTile's photo / video
+          // line so the two surfaces speak the same language.
+          const photoCount = files.filter(f => f.file_type === 'photo').length;
+          const videoCount = files.filter(f => f.file_type === 'video').length;
+          const parts: string[] = [];
+          if (photoCount > 0) parts.push(`${photoCount.toLocaleString()} ${photoCount === 1 ? 'photo' : 'photos'}`);
+          if (videoCount > 0) parts.push(`${videoCount.toLocaleString()} ${videoCount === 1 ? 'video' : 'videos'}`);
+          return (
+            <span className="text-xs text-muted-foreground">
+              {parts.join(' · ')}
+            </span>
+          );
+        })()}
         {/* Add Info — same checkbox dropdown style as S&D's tile
             metadata picker, so muscle-memory transfers. Defaults to
             NONE (clean photo wall) and lets the user opt into

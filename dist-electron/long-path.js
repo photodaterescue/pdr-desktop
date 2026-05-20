@@ -45,3 +45,41 @@ export function toLongPath(p) {
     // is presumably operating on a path they constructed locally.
     return p;
 }
+/**
+ * Inverse of toLongPath — strip the Windows extended-length prefix back
+ * to a canonical, human-readable form. Used at every persistence
+ * boundary so paths stored in the DB / settings / IPC payloads match
+ * the form callers query with.
+ *
+ * Why this matters: the rebuild indexer walks via `toLongPath`-prefixed
+ * roots (so it can descend into 260+ char trees safely), but the file
+ * paths that fall out the bottom of the walker still carry the prefix.
+ * If we wrote those into `indexed_files.file_path` unchanged, queries
+ * like the LDM's per-library count (`file_path LIKE 'D:\…%'`) would
+ * miss every row inserted by a rebuild — even though the Fix pipeline
+ * stores the same files with clean paths and matches fine. Banner +
+ * count queries would then under-report indexed files and re-runs of
+ * the rebuild would treat existing files as new (because the
+ * pre-insert dedup also misses them) and insert prefixed duplicates.
+ * Caught in v2.0.9 after Terry's catch-up indexer run looked successful
+ * but the banner kept showing the same un-indexed gap on next launch.
+ *
+ *   \\?\D:\1. Photos\IMG.jpg      → D:\1. Photos\IMG.jpg
+ *   \\?\UNC\server\share\IMG.jpg  → \\server\share\IMG.jpg
+ *   D:\1. Photos\IMG.jpg          → D:\1. Photos\IMG.jpg (no-op)
+ */
+export function fromLongPath(p) {
+    if (process.platform !== 'win32')
+        return p;
+    if (!p)
+        return p;
+    if (p.startsWith('\\\\?\\UNC\\')) {
+        // \\?\UNC\server\share\… → \\server\share\…
+        return '\\\\' + p.slice(8);
+    }
+    if (p.startsWith('\\\\?\\')) {
+        // \\?\D:\… → D:\…
+        return p.slice(4);
+    }
+    return p;
+}

@@ -1016,6 +1016,118 @@ export function initDatabase(): { success: boolean; error?: string } {
       console.warn('[DB] match_similarity backfill failed (non-fatal):', backfillErr);
     }
 
+    // ─── Long-path prefix cleanup (v2.0.9) ─────────────────────────
+    // Rows inserted by the catch-up indexer before the v2.0.9 fix
+    // carry a leading \\?\ Windows extended-length prefix on
+    // file_path (or \\?\UNC\ for UNC paths). The prefix was needed
+    // internally by walkMediaFiles so readdirSync could descend into
+    // 260+ char trees, but it leaked into the DB write — and every
+    // downstream consumer queries with the canonical (un-prefixed)
+    // form, so the rows are invisible to:
+    //   • the LDM per-library count (LIKE 'D:\…%')
+    //   • the Dashboard banner gap check
+    //   • the rebuild dedup (findExistingFilePaths) — which then
+    //     caused a SECOND, prefixed copy of every Fix-indexed file
+    //     to be inserted on the catch-up run.
+    //
+    // This migration:
+    //   1. Reparents AI / album / cover-photo references off any
+    //      prefixed row whose clean twin already exists, then drops
+    //      the prefixed duplicate. UPDATE OR IGNORE handles the rare
+    //      case where the clean row already has its own entry in a
+    //      uniqueness-constrained child table (the dup's child is
+    //      then CASCADE-deleted along with its parent — no data
+    //      loss in practice because both children describe the same
+    //      physical file).
+    //   2. Strips the prefix off any remaining prefixed rows (those
+    //      whose clean form doesn't yet exist) so they become
+    //      countable by the LDM + banner queries.
+    //
+    // Idempotent — once all rows are clean, both phases no-op.
+    // Wrapped in a single transaction so a mid-cleanup crash leaves
+    // the DB in its pre-migration state, not a half-stripped mess.
+    try {
+      const prefixedCount = (db.prepare(
+        `SELECT COUNT(*) AS cnt FROM indexed_files WHERE file_path LIKE '\\\\?\\%'`,
+      ).get() as { cnt: number }).cnt;
+      if (prefixedCount > 0) {
+        console.warn(`[DB] long-path migration: cleaning ${prefixedCount} prefixed indexed_files rows…`);
+        db.exec(`
+          BEGIN;
+
+          -- Pair every prefixed row with its clean twin (if one exists).
+          CREATE TEMP TABLE _lp_pairs AS
+          SELECT
+            prefixed.id AS prefixed_id,
+            clean.id    AS clean_id
+          FROM indexed_files prefixed
+          JOIN indexed_files clean ON clean.file_path = (
+            CASE
+              WHEN substr(prefixed.file_path, 1, 8) = '\\\\?\\UNC\\'
+                THEN '\\\\' || substr(prefixed.file_path, 9)
+              WHEN substr(prefixed.file_path, 1, 4) = '\\\\?\\'
+                THEN substr(prefixed.file_path, 5)
+              ELSE prefixed.file_path
+            END
+          ) AND clean.id != prefixed.id
+          WHERE prefixed.file_path LIKE '\\\\?\\%';
+
+          -- Reparent dependent rows from prefixed -> clean. OR IGNORE
+          -- skips any row whose target would collide with a pre-existing
+          -- entry on the clean row (e.g. duplicate ai_processing_status,
+          -- duplicate album membership).
+          UPDATE OR IGNORE face_detections SET file_id = (
+            SELECT clean_id FROM _lp_pairs WHERE prefixed_id = face_detections.file_id
+          )
+          WHERE file_id IN (SELECT prefixed_id FROM _lp_pairs);
+
+          UPDATE OR IGNORE ai_tags SET file_id = (
+            SELECT clean_id FROM _lp_pairs WHERE prefixed_id = ai_tags.file_id
+          )
+          WHERE file_id IN (SELECT prefixed_id FROM _lp_pairs);
+
+          UPDATE OR IGNORE ai_processing_status SET file_id = (
+            SELECT clean_id FROM _lp_pairs WHERE prefixed_id = ai_processing_status.file_id
+          )
+          WHERE file_id IN (SELECT prefixed_id FROM _lp_pairs);
+
+          UPDATE OR IGNORE album_files SET file_id = (
+            SELECT clean_id FROM _lp_pairs WHERE prefixed_id = album_files.file_id
+          )
+          WHERE file_id IN (SELECT prefixed_id FROM _lp_pairs);
+
+          UPDATE albums SET cover_file_id = (
+            SELECT clean_id FROM _lp_pairs WHERE prefixed_id = albums.cover_file_id
+          )
+          WHERE cover_file_id IN (SELECT prefixed_id FROM _lp_pairs);
+
+          -- Drop the prefixed duplicates. CASCADE on the FK columns mops
+          -- up anything that couldn't be reparented above.
+          DELETE FROM indexed_files
+          WHERE id IN (SELECT prefixed_id FROM _lp_pairs);
+
+          DROP TABLE _lp_pairs;
+
+          -- Strip the prefix off rows that have no clean twin.
+          UPDATE indexed_files
+          SET file_path = CASE
+            WHEN substr(file_path, 1, 8) = '\\\\?\\UNC\\' THEN '\\\\' || substr(file_path, 9)
+            WHEN substr(file_path, 1, 4) = '\\\\?\\'      THEN substr(file_path, 5)
+            ELSE file_path
+          END
+          WHERE file_path LIKE '\\\\?\\%';
+
+          COMMIT;
+        `);
+        const remaining = (db.prepare(
+          `SELECT COUNT(*) AS cnt FROM indexed_files WHERE file_path LIKE '\\\\?\\%'`,
+        ).get() as { cnt: number }).cnt;
+        console.warn(`[DB] long-path migration done — ${prefixedCount - remaining} rows cleaned, ${remaining} prefixed rows remain (should be 0)`);
+      }
+    } catch (lpErr) {
+      console.error('[DB] long-path migration failed (non-fatal — DB left in pre-migration state):', lpErr);
+    }
+
     return { success: true };
   } catch (err) {
     console.error('Failed to initialise search database:', err);
@@ -1335,6 +1447,28 @@ function mergeIndexedFilesIntoWinner(database: Database.Database, winnerId: numb
   `);
   const moveStatusStmt = database.prepare(`UPDATE ai_processing_status SET file_id = ? WHERE file_id = ?`);
   const delStatusStmt = database.prepare(`DELETE FROM ai_processing_status WHERE file_id = ?`);
+  // ─── Album / cover handling (v2.0.9 hotfix) ────────────────────
+  // Albums (v2.0.8) added a new dependent table — album_files —
+  // that wasn't taught to this merge routine. When the consolidator
+  // ran on (clean, prefixed-catch-up) pairs from the v2.0.9
+  // walkMediaFiles bug, it picked the higher-id prefixed row as
+  // winner and deleted the lower-id clean row WITHOUT moving its
+  // album memberships first. The FK cascade on album_files.file_id
+  // then silently wiped 19 user-curated entries (Chiang Mai 1st
+  // time + Amie Halloween 2017 v1) before Terry could see what
+  // was happening. Same hole would have hit albums.cover_file_id
+  // (SET NULL on delete — a manually-chosen cover would silently
+  // revert to the auto-pick). Fix: copy album_files to the winner
+  // (INSERT OR IGNORE for the rare case where the user added the
+  // same physical photo to the same album via two different
+  // duplicate rows) before deleting the loser, and re-point any
+  // album.cover_file_id from loser → winner.
+  const copyAlbumFilesStmt = database.prepare(`
+    INSERT OR IGNORE INTO album_files (album_id, file_id, added_at)
+    SELECT album_id, ?, added_at FROM album_files WHERE file_id = ?
+  `);
+  const delAlbumFilesStmt = database.prepare(`DELETE FROM album_files WHERE file_id = ?`);
+  const movCoverStmt = database.prepare(`UPDATE albums SET cover_file_id = ? WHERE cover_file_id = ?`);
   const delFileStmt = database.prepare(`DELETE FROM indexed_files WHERE id = ?`);
 
   let removed = 0;
@@ -1358,6 +1492,15 @@ function mergeIndexedFilesIntoWinner(database: Database.Database, winnerId: numb
         moveStatusStmt.run(winnerId, loserId);
       }
     }
+    // Copy album memberships before the cascade deletes them. Then
+    // wipe the loser's rows explicitly so the subsequent file
+    // delete doesn't leave dangling duplicates.
+    copyAlbumFilesStmt.run(winnerId, loserId);
+    delAlbumFilesStmt.run(loserId);
+    // Re-point any album that used the loser as its cover photo
+    // onto the winner — the user picked that physical photo as the
+    // cover, and the winner row IS that physical photo post-merge.
+    movCoverStmt.run(winnerId, loserId);
     delFileStmt.run(loserId);
     removed++;
   }

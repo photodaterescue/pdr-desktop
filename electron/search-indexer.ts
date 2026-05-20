@@ -17,7 +17,7 @@ import type { FixReport, FileChange } from './report-storage.js';
 import { initGeocoder, reverseGeocode } from './reverse-geocoder.js';
 import { isScannerDevice } from './scanner-detection.js';
 import { getScannerOverride } from './settings-store.js';
-import { toLongPath } from './long-path.js';
+import { toLongPath, fromLongPath } from './long-path.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -481,7 +481,16 @@ export function walkMediaFiles(root: string): string[] {
       } else if (ent.isFile()) {
         const ext = path.extname(ent.name).toLowerCase();
         if (MEDIA_EXTENSIONS_FOR_REBUILD.has(ext)) {
-          results.push(full);
+          // Strip the \\?\ long-path prefix back off before returning.
+          // The prefix is needed internally so readdirSync can descend
+          // into 260+-char trees, but every downstream consumer (DB
+          // persistence, LDM count query, banner gap check) works
+          // with the canonical form. Leaving the prefix on would leak
+          // \\?\D:\… strings into indexed_files.file_path, which the
+          // LIKE-prefix count query can't match — the exact mismatch
+          // that left v2.0.9's catch-up indexer's rows invisible to
+          // the dashboard banner after Terry's first rebuild run.
+          results.push(fromLongPath(full));
         }
       }
     }

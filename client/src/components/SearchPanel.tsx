@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { List, type RowComponentProps } from 'react-window';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { isEditDatesEnabled, EDIT_DATES_RELEASED_SHORTLY_MESSAGE } from '@/lib/feature-flags';
@@ -644,6 +645,48 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     return { items, prefix, isOperatorContext };
   }, [searchText, searchSuggestionPersons, aiTagOptions]);
   const gridContainerRef = useRef<HTMLDivElement>(null);
+  // Live width/height of the grid scroll container — fed by a
+  // ResizeObserver below. Used by the virtualised grid view to
+  // compute column count + row count for react-window's List, and
+  // to size the List to fill the container without overflow.
+  // Tracked as state (not just a ref) so the layout recomputes on
+  // window resize, sidebar collapse, and preview-pane resize. v2.0.9
+  // perf pass — virtualisation cuts DOM nodes to the visible
+  // window's worth, so 200/500/1000-tile result sets stay light
+  // after multiple infinite-scroll pages have loaded.
+  const [gridSize, setGridSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el) return;
+    // Seed with the current size so the first render after mount
+    // already has real dimensions (otherwise the List defaults to
+    // its own placeholder and flashes the wrong layout for one
+    // frame).
+    setGridSize({ width: el.clientWidth, height: el.clientHeight });
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        // contentBoxSize is the modern API; some older Electron
+        // releases still use contentRect. We read whichever is
+        // populated to stay forward-compatible.
+        const cr = e.contentRect;
+        if (cr) setGridSize({ width: cr.width, height: cr.height });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Sentinel div watched by an IntersectionObserver to drive
+  // infinite scroll. Replaces the previous "Load more (N of M)"
+  // button which Terry called "shit and horrible to use" 2026-05-20.
+  // When the sentinel enters the scroll container's viewport (or
+  // gets within 600px of it via rootMargin) we fire the same
+  // loadMore() call the button used to. A `loadMoreLockRef` guards
+  // against the observer firing twice in quick succession during
+  // the async fetch — once `loadMore` resumes (results array grew,
+  // sentinel scrolled out of view) the lock releases so the next
+  // page can fire on the next intersection.
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreLockRef = useRef(false);
 
   // ─── Navigation helpers ──────────────────────────────────────────────────
 
@@ -748,7 +791,33 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         const result = await initSearchDatabase();
         if (result.success) setDbReady(true); else return;
       }
-      await loadFilterOptions();
+      // Defer loadFilterOptions off the critical mount path. It fires
+      // 15+ GROUP BY queries to populate every filter dropdown's
+      // labels + static counts — useful when the user actually opens
+      // the ribbon, but pure overhead at S&D mount when the user
+      // intends to type a search or look at recent results first.
+      // Per the v2.0.9 perf investigation (Terry 2026-05-20),
+      // running this at mount cost 50–150ms of blocking work on
+      // every S&D open. requestIdleCallback pushes it to whatever
+      // idle slot the browser has after first paint — usually
+      // sub-100ms after mount, so the dropdowns still feel populated
+      // by the time the user looks at them; setTimeout fallback for
+      // environments without rIC (older Electron versions, the
+      // packaged build at the time of this comment supports rIC).
+      // The contextualCounts useEffect is also gated so it won't
+      // run until both filterOptions has loaded AND there's an
+      // actual active filter or search — see the next item in the
+      // perf pass.
+      const scheduleIdle = (cb: () => void) => {
+        if (typeof (window as any).requestIdleCallback === 'function') {
+          (window as any).requestIdleCallback(cb, { timeout: 500 });
+        } else {
+          setTimeout(cb, 0);
+        }
+      };
+      scheduleIdle(() => { void loadFilterOptions(); });
+      // Stats + favourites stay synchronous — both are tiny single
+      // queries and the UI reads them directly into the header/sidebar.
       await loadStats();
       await loadFavourites();
     };
@@ -1151,12 +1220,50 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   const loadMore = async () => {
     if (!results || results.files.length >= results.total) return;
+    if (loadMoreLockRef.current) return; // a previous fetch is still in flight
+    loadMoreLockRef.current = true;
     setIsLoading(true);
-    const q = { ...query, offset: results.files.length };
-    const res = await searchFiles(q);
-    if (res.success && res.data) { setResults({ ...res.data, files: [...results.files, ...res.data.files] }); loadThumbnailsBatch(res.data.files); }
-    setIsLoading(false);
+    try {
+      const q = { ...query, offset: results.files.length };
+      const res = await searchFiles(q);
+      if (res.success && res.data) {
+        setResults({ ...res.data, files: [...results.files, ...res.data.files] });
+        loadThumbnailsBatch(res.data.files);
+      }
+    } finally {
+      setIsLoading(false);
+      loadMoreLockRef.current = false;
+    }
   };
+
+  // Infinite-scroll observer. Fires loadMore() whenever the sentinel
+  // at the bottom of the results enters the scroll container (with a
+  // 600px lead margin so the next page lands BEFORE the user reaches
+  // the gap and notices the wait). Re-arms whenever the results
+  // array or scroll container changes — gridContainerRef itself is
+  // stable across renders but the `root` capture has to be fresh
+  // each time the results array grows so the observer measures
+  // against the up-to-date layout. Cleanup disconnects the previous
+  // observer so we don't double-fire.
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    const root = gridContainerRef.current;
+    if (!sentinel || !root) return;
+    if (!results || results.files.length >= results.total) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          void loadMore();
+          break;
+        }
+      }
+    }, { root, rootMargin: '600px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // `loadMore` is intentionally not in deps — it captures `results`
+    // by closure and the effect re-runs anyway whenever results change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results, query]);
 
   // Wrapper for opening viewer — checks drive availability first.
   // startIndex is forwarded so a click on result #14 of 175 lands on
@@ -1227,11 +1334,60 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // count badges + 0-count option hiding.
   useEffect(() => {
     if (!dbReady) return;
+    // Skip the contextual-count refresh entirely when there's
+    // nothing to count against. With no search text and no active
+    // filters, the "leave one out" counts collapse to "every option
+    // has its own raw total" — already available from filterOptions
+    // itself. Running 15+ GROUP BY queries to recompute the same
+    // numbers per keystroke was the single biggest contributor to
+    // S&D's mount-time + typing-lag (per the v2.0.9 perf
+    // investigation). Debounce bumped from 200ms → 400ms — faster
+    // typers stop triggering a count-refresh between every
+    // character, but still feels live (the 400ms window matches
+    // the search-term debounce two effects up, so both fire on the
+    // same pause). Terry 2026-05-20: "kills the per-keystroke
+    // storm".
+    const hasAnyActiveCriterion =
+      searchText.trim().length > 0 ||
+      selectedConfidence.length > 0 ||
+      selectedFileType.length > 0 ||
+      selectedDateSource.length > 0 ||
+      selectedExtension.length > 0 ||
+      selectedCameraMake.length > 0 ||
+      selectedCameraModel.length > 0 ||
+      selectedLensModel.length > 0 ||
+      !!dateFrom || !!dateTo ||
+      yearFrom !== undefined || yearTo !== undefined ||
+      monthFrom !== undefined || monthTo !== undefined ||
+      hasGps !== undefined ||
+      selectedCountry.length > 0 ||
+      selectedCity.length > 0 ||
+      isoFrom !== undefined || isoTo !== undefined ||
+      apertureFrom !== undefined || apertureTo !== undefined ||
+      focalLengthFrom !== undefined || focalLengthTo !== undefined ||
+      flashFired !== undefined ||
+      megapixelsFrom !== undefined || megapixelsTo !== undefined ||
+      sizeFromMB !== undefined || sizeToMB !== undefined ||
+      selectedScene.length > 0 ||
+      selectedExposureProgram.length > 0 ||
+      selectedWhiteBalance.length > 0 ||
+      selectedCameraPosition.length > 0 ||
+      selectedOrientation.length > 0 ||
+      selectedDestination.length > 0 ||
+      selectedAlbums.length > 0;
+    if (!hasAnyActiveCriterion) {
+      // Clear out any stale contextualCounts so the UI falls back
+      // to the cheap filterOptions.counts (raw per-dimension
+      // totals) — that's the right number to show when no other
+      // filter is constraining the result set.
+      setContextualCounts(null);
+      return;
+    }
     const timer = setTimeout(async () => {
       const q = buildQuery();
       const r = await getFilterCounts(q);
       if (r.success && r.data) setContextualCounts(r.data);
-    }, 200);
+    }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbReady, searchText, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums]);
@@ -4079,102 +4235,142 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     });
                   }}
                 >
-                  {/* ── Grid View (tile size controlled by slider) ── */}
-                  {viewMode === 'grid' && (
-                    <div
-                      className="grid gap-0"
-                      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSliderToPx(tileSizeSlider)}px, 1fr))` }}
-                    >
-                      {displayFiles.map((file, idx) => (
-                        <FileCard key={file.id} file={file} thumbnail={thumbnails[file.file_path]}
-                          metaFields={tileMetaFields}
-                          selectionMode={selectionMode}
-                          isSelected={selectedFile?.id === file.id}
-                          isMultiSelected={selectedFiles.has(file.id)}
-                          onCheckboxClick={(e: React.MouseEvent) => {
-                            // Checkbox click — toggle selection ONLY. Do NOT
-                            // touch the preview panel (Terry 2026-05-18:
-                            // "When a checkbox is specifically selected, this
-                            // should only select the photos, and not open
-                            // the preview"). Plain clicks on the tile body
-                            // still set the preview via the onClick handler
-                            // below; the checkbox is a pure selection control.
-                            //
-                            // Shift+click range — standard photos-app pattern
-                            // (Apple Photos / Google Photos). If a previous
-                            // tile has been clicked AND there's at least one
-                            // selection already in progress, shift+click on
-                            // a checkbox extends the selection across the
-                            // contiguous range between the two indices. Same
-                            // semantics as the photo-body shift+click below,
-                            // just reachable via the checkbox affordance too.
-                            const multiSelectActive = selectedFiles.size > 0;
-                            if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
-                              const start = Math.min(lastClickedIndexRef.current, idx);
-                              const end = Math.max(lastClickedIndexRef.current, idx);
-                              for (let i = start; i <= end; i++) {
-                                const f = displayFiles[i];
-                                if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
-                              }
-                              lastClickedIndexRef.current = idx;
-                              return;
+                  {/* ── Grid View (virtualised, tile size controlled by slider) ──
+                      v2.0.9 perf pass: replaces the previous full-DOM
+                      CSS Grid (rendering every FileCard regardless of
+                      visibility) with react-window's List. Each
+                      virtualised "row" is a flex container of N
+                      FileCards; only the visible rows plus a small
+                      overscan window stay in the DOM. After several
+                      infinite-scroll pages the DOM stays ~20 cards
+                      instead of growing linearly to 200/500/1000+.
+                      Column count is derived from the live container
+                      width (via the ResizeObserver above) divided by
+                      the tile-size slider's current px target — same
+                      "auto-fill / minmax" semantics as the previous
+                      CSS Grid, recomputed on resize. Infinite scroll
+                      driven by List's onRowsRendered (when the user
+                      gets within 2 rows of the end, fire loadMore).
+                      The separate IntersectionObserver-based sentinel
+                      below still fires for List/Details views which
+                      remain non-virtualised. */}
+                  {viewMode === 'grid' && (() => {
+                    const tilePx = tileSliderToPx(tileSizeSlider);
+                    // Approx per-tile vertical footprint:
+                    //   tilePx (square thumbnail)
+                    //   + ~18px per metadata line shown beneath
+                    //   + 6px breathing room
+                    // The current CSS grid uses `gap-0`, so no extra
+                    // gap to factor in. If the meta-line line-height
+                    // changes in FileCard's CSS, bump the multiplier
+                    // here so virtualisation doesn't clip the last
+                    // line of each tile.
+                    const metaLineHeight = 18;
+                    const rowHeight = tilePx + (tileMetaFields.length * metaLineHeight) + 6;
+                    const columnCount = Math.max(1, Math.floor((gridSize.width || tilePx) / tilePx));
+                    const rowCount = Math.ceil(displayFiles.length / columnCount);
+                    if (gridSize.width === 0 || gridSize.height === 0 || rowCount === 0) {
+                      // First frame after mount before the
+                      // ResizeObserver fires. Render a single
+                      // placeholder row at the correct height so
+                      // there's no zero-height flash; the real
+                      // virtualisation kicks in on the next frame.
+                      return <div style={{ height: rowHeight }} aria-hidden />;
+                    }
+                    const Row = ({ index, style }: RowComponentProps<object>) => {
+                      const startIdx = index * columnCount;
+                      return (
+                        <div style={style as React.CSSProperties} className="flex">
+                          {Array.from({ length: columnCount }, (_, col) => {
+                            const idx = startIdx + col;
+                            const file = displayFiles[idx];
+                            if (!file) {
+                              // Pad the last row with empty placeholders so
+                              // the surviving tiles don't stretch to fill.
+                              return <div key={`empty-${col}`} className="flex-1 min-w-0" />;
                             }
-                            toggleFileSelection(file);
-                            lastClickedIndexRef.current = idx;
-                          }}
-                          onClick={(e: React.MouseEvent) => {
-                            // Modifier-key behaviours match the standard
-                            // photos-app patterns (Apple Photos / Google
-                            // Photos) and work from zero state — no need
-                            // to enter Selection Mode first. Terry
-                            // 2026-05-18: "do you think the photos
-                            // should be selectable without having to use
-                            // the select button prior to selecting the
-                            // first photo, by simply holding down CTRL
-                            // before clicking a photo?"
-                            if (e.ctrlKey || e.metaKey) {
-                              // Ctrl/Cmd+click anywhere on the tile — pure
-                              // toggle. Does NOT open the preview (same
-                              // rationale as the checkbox path: when the
-                              // user signals selection intent with a
-                              // modifier, the preview stays put).
-                              e.preventDefault();
-                              toggleFileSelection(file);
-                              lastClickedIndexRef.current = idx;
-                              return;
-                            }
-                            if (e.shiftKey && lastClickedIndexRef.current !== null) {
-                              // Shift+click — range select from the last
-                              // clicked tile to this one. Works even
-                              // before any photo is selected, so long as
-                              // SOMETHING was previously clicked (preview
-                              // or selection). Same semantics as the
-                              // checkbox path's shift+click range.
-                              //
-                              // Like Ctrl/Cmd+click above, this DOES NOT
-                              // open the preview — any modifier-click
-                              // signals selection intent, so the preview
-                              // panel stays put on whatever the user was
-                              // last reviewing. (Terry 2026-05-18 caught
-                              // the previous regression: "The preview is
-                              // opening when shift is held down.")
-                              e.preventDefault();
-                              const start = Math.min(lastClickedIndexRef.current, idx);
-                              const end = Math.max(lastClickedIndexRef.current, idx);
-                              for (let i = start; i <= end; i++) {
-                                const f = displayFiles[i];
-                                if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
-                              }
-                              return;
-                            }
-                            // Plain click — open preview panel. Do not touch multi-select.
-                            setSelectedFile(file);
-                            lastClickedIndexRef.current = idx;
-                          }}
-                          onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined} />
-                      ))}
-                    </div>
-                  )}
+                            return (
+                              <div key={file.id} className="flex-1 min-w-0">
+                                <FileCard file={file} thumbnail={thumbnails[file.file_path]}
+                                  metaFields={tileMetaFields}
+                                  selectionMode={selectionMode}
+                                  isSelected={selectedFile?.id === file.id}
+                                  isMultiSelected={selectedFiles.has(file.id)}
+                                  onCheckboxClick={(e: React.MouseEvent) => {
+                                    // Same handler semantics as the
+                                    // pre-virtualisation CSS Grid. Idx
+                                    // here is the FLAT file index
+                                    // (row * columnCount + col) so
+                                    // shift-range-select still walks
+                                    // displayFiles linearly the way
+                                    // the user perceives the grid.
+                                    const multiSelectActive = selectedFiles.size > 0;
+                                    if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
+                                      const start = Math.min(lastClickedIndexRef.current, idx);
+                                      const end = Math.max(lastClickedIndexRef.current, idx);
+                                      for (let i = start; i <= end; i++) {
+                                        const f = displayFiles[i];
+                                        if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
+                                      }
+                                      lastClickedIndexRef.current = idx;
+                                      return;
+                                    }
+                                    toggleFileSelection(file);
+                                    lastClickedIndexRef.current = idx;
+                                  }}
+                                  onClick={(e: React.MouseEvent) => {
+                                    if (e.ctrlKey || e.metaKey) {
+                                      e.preventDefault();
+                                      toggleFileSelection(file);
+                                      lastClickedIndexRef.current = idx;
+                                      return;
+                                    }
+                                    if (e.shiftKey && lastClickedIndexRef.current !== null) {
+                                      e.preventDefault();
+                                      const start = Math.min(lastClickedIndexRef.current, idx);
+                                      const end = Math.max(lastClickedIndexRef.current, idx);
+                                      for (let i = start; i <= end; i++) {
+                                        const f = displayFiles[i];
+                                        if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
+                                      }
+                                      return;
+                                    }
+                                    setSelectedFile(file);
+                                    lastClickedIndexRef.current = idx;
+                                  }}
+                                  onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    };
+                    return (
+                      <List
+                        rowCount={rowCount}
+                        rowHeight={rowHeight}
+                        defaultHeight={gridSize.height}
+                        rowComponent={Row}
+                        rowProps={{}}
+                        overscanCount={2}
+                        onRowsRendered={({ stopIndex }: { stopIndex: number }) => {
+                          // Drive infinite scroll once the user reaches the
+                          // last couple of virtual rows. Mirrors the
+                          // IntersectionObserver-based sentinel used by
+                          // list/details views, but works inside react-window's
+                          // own scroll container (which doesn't trigger the
+                          // sentinel because it's outside the List).
+                          if (
+                            results &&
+                            results.files.length < results.total &&
+                            stopIndex >= rowCount - 2
+                          ) {
+                            void loadMore();
+                          }
+                        }}
+                      />
+                    );
+                  })()}
 
                   {/* ── List View ── */}
                   {viewMode === 'list' && (
@@ -4242,12 +4438,40 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     </div>
                   )}
 
+                  {/* Infinite-scroll sentinel + footer. Replaces the
+                      old "Load more" button (Terry 2026-05-20: "shit
+                      and horrible to use… I would much rather there
+                      is no button and more photos just load when you
+                      scroll to the bottom of the screen"). The
+                      sentinel is watched by an IntersectionObserver
+                      with a 600px lead margin so the next page lands
+                      before the gap is visible. The small inline
+                      loading strip + count footer give the user
+                      feedback without taking up the prominent button
+                      slot the old design did. When fully loaded the
+                      footer collapses to a quiet "Showing all N
+                      results" line so the user knows they've reached
+                      the end and it's not a glitch. */}
                   {results.files.length < results.total && (
-                    <div className="flex justify-center py-6">
-                      <button onClick={loadMore} disabled={isLoading}
-                        className="px-5 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all disabled:opacity-50">
-                        {isLoading ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Loading...</> : `Load more (${results.files.length} of ${results.total.toLocaleString()})`}
-                      </button>
+                    <>
+                      <div ref={loadMoreSentinelRef} aria-hidden className="h-1" />
+                      <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground" data-testid="search-load-more-footer">
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Loading more…</span>
+                          </>
+                        ) : (
+                          <span>
+                            Showing {results.files.length.toLocaleString()} of {results.total.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  {results.files.length > 0 && results.files.length >= results.total && (
+                    <div className="flex justify-center py-4 text-xs text-muted-foreground" data-testid="search-end-of-results">
+                      Showing all {results.total.toLocaleString()} result{results.total === 1 ? '' : 's'}
                     </div>
                   )}
                 </div>

@@ -41,6 +41,15 @@ export function UnindexedLibrariesCard() {
   const [loaded, setLoaded] = useState(false);
   const [rows, setRows] = useState<LibraryRow[]>([]);
   const [indexing, setIndexing] = useState(false);
+  // Session-only hide once "Index now" has been clicked — we don't
+  // persist a dismiss to settings until either (a) the indexer's
+  // final `complete` event fires for the last root, or (b) the user
+  // hits the X. This closes the loophole where an immediate persist
+  // would silence the banner forever even if the indexer crashed,
+  // the user closed PDR before it finished, or the IPC errored out.
+  // On the failure path we flip this back to false so the banner
+  // reappears in-session for retry.
+  const [hiddenWhileIndexing, setHiddenWhileIndexing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +119,7 @@ export function UnindexedLibrariesCard() {
 
   if (!loaded) return null;
   if (dismissedAt) return null;
+  if (hiddenWhileIndexing) return null;
 
   // 5 % slack so a single new file between the two probes doesn't
   // trip the banner. Unreachable libraries (onDiskCount === null)
@@ -204,18 +214,31 @@ export function UnindexedLibrariesCard() {
           console.warn('[UnindexedLibrariesCard] rebuild failed:', e);
           toast.error('Indexing failed', { id: toastId, description: String(e?.message ?? e) });
           unsubscribe?.();
+          // Bring the banner back so the user can retry. We deliberately
+          // do NOT persist a dismiss timestamp on failure — that would
+          // silence the banner forever even though the gap is still
+          // there. Persisted dismiss is reserved for explicit X clicks.
+          setHiddenWhileIndexing(false);
         });
-      // Dismiss the banner so it doesn't keep nagging while the
-      // background indexer churns. Subsequent launches re-check; if
-      // some libraries still have gaps, the banner returns. (`stale`
-      // mention shuts up the "lastRootIndex assigned but never used"
-      // TS warning when the file is type-checked strictly.)
+      // Hide the banner in-session so it doesn't keep nagging while
+      // the background indexer churns. Crucially, this is NOT
+      // persisted to settings — if the indexer crashes, the user
+      // quits PDR mid-run, or anything else interrupts the rebuild,
+      // the next launch will probe the gap again from scratch and
+      // re-show the banner if files are still missing. The
+      // persistent dismiss flag stays untouched until either the
+      // explicit X click or (implicitly) the gap closes on next
+      // launch — meaning a fresh probe finds nothing stale and the
+      // banner naturally stays hidden via the stale.length === 0
+      // early return above. (`lastRootIndex` is touched here only to
+      // shut up the unused-variable TS warning in strict mode.)
       void lastRootIndex;
-      await handleDismiss();
+      setHiddenWhileIndexing(true);
     } catch (e) {
       console.warn('[UnindexedLibrariesCard] index-now failed:', e);
       toast.error('Indexing failed to start', { id: toastId });
       unsubscribe?.();
+      setHiddenWhileIndexing(false);
     } finally {
       setIndexing(false);
     }

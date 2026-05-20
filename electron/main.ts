@@ -5686,8 +5686,32 @@ ipcMain.handle('library:bumpDirty', async () => {
 
 let viewerWindow: BrowserWindow | null = null;
 
+// Rapid-click guard. The viewer's loadFile is asynchronous and
+// passes a JSON-encoded file list in the URL query string — for
+// Memories — By Date buckets with thousands of files that payload
+// can take a few hundred ms to ship + parse. If a second
+// search:openViewer call lands while the first loadFile is still in
+// flight, Electron aborts the in-flight load and logs the alarming
+// "Failed to load URL" error visible in the main log. The page
+// eventually loads (the latest loadFile wins) but the noise looked
+// like a real failure to Terry 2026-05-20 ("It kept freaking out
+// and freezing... looked like it was going to crash"). This lock
+// ignores duplicate calls until the active load resolves (via
+// did-finish-load or did-fail-load), then accepts again. Lifetime
+// is per-handler-invocation — never persists across viewer windows.
+let viewerLoadInFlight = false;
+
 ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileNames: string[], startIndex?: number) => {
+  // Skip if a previous open is mid-flight. Returns success:true on
+  // purpose — the caller doesn't need to retry; the previous load
+  // will resolve and the viewer will appear with its file set. A
+  // distinct error code would propagate as a toast in some callers
+  // and look like a real failure.
+  if (viewerLoadInFlight) {
+    return { success: true, deduped: true };
+  }
   try {
+    viewerLoadInFlight = true;
     // Support single or multiple files — pass as JSON-encoded array in query param
     const filesParam = JSON.stringify(filePaths);
     // Clamp the start index defensively so a bad caller can't open
@@ -5696,6 +5720,21 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     const title = filePaths.length === 1
       ? fileNames[0] + ' — PDR Viewer'
       : `${start + 1} of ${filePaths.length} — PDR Viewer`;
+
+    // Release the load lock as soon as the viewer's webContents
+    // reports finished — succeed or fail. Attached once per
+    // handler invocation (cleaned up by the .once method itself
+    // when it fires). Wrapped in a small helper so both branches
+    // (reuse + create-new) can share the same lifecycle.
+    const releaseOn = (win: BrowserWindow) => {
+      const release = () => { viewerLoadInFlight = false; };
+      win.webContents.once('did-finish-load', release);
+      win.webContents.once('did-fail-load', release);
+      // Belt-and-braces — if neither event fires for some reason
+      // (window destroyed mid-load, etc.), don't strand the lock
+      // forever. 5 seconds is well beyond any realistic load.
+      setTimeout(release, 5000);
+    };
 
     // If viewer already open, reuse it
     if (viewerWindow && !viewerWindow.isDestroyed()) {
@@ -5708,6 +5747,7 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
       // which doesn't exist in our packaged layout — viewer.html
       // wasn't loading in the live v2.0.8 build. v2.0.9 hotfix.
       const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
+      releaseOn(viewerWindow);
       viewerWindow.loadFile(viewerHtml, { query: { files: filesParam, start: String(start) } });
       viewerWindow.setTitle(title);
       viewerWindow.focus();
@@ -5732,10 +5772,20 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     });
     hardenWindowAgainstNavigation(viewerWindow);
 
-    const viewerHtml = app.isPackaged
-      ? path.join(process.resourcesPath, 'dist/public/viewer.html')
-      : path.join(__dirname, '../dist/public/viewer.html');
+    // Same `__dirname`-relative pattern the reuse branch above and
+    // the main / people / date-editor windows use. The earlier
+    // v2.0.9 fix patched the REUSE branch but missed THIS one (the
+    // create-new-viewer-window branch — runs on the very first
+    // viewer open per launch). In packaged builds `__dirname` is
+    // inside `app.asar/dist-electron`, so joining `../dist/public`
+    // resolves to `app.asar/dist/public/viewer.html` and Electron's
+    // asar loader handles it. `process.resourcesPath/dist/public/...`
+    // sits OUTSIDE asar and doesn't exist in our packaged layout —
+    // which is exactly what broke the viewer in v2.0.8 for every
+    // first-time user.
+    const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
 
+    releaseOn(viewerWindow);
     viewerWindow.loadFile(viewerHtml, { query: { files: filesParam, start: String(start) } });
 
     // Log renderer console messages to the main process so we can diagnose
@@ -5750,6 +5800,10 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
 
     return { success: true };
   } catch (err) {
+    // Release the lock on early failure so the user can retry
+    // (otherwise the very next click would deduplicate against the
+    // lock that's still set from the failed call).
+    viewerLoadInFlight = false;
     return { success: false, error: (err as Error).message };
   }
 });

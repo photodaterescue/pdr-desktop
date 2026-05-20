@@ -38,6 +38,18 @@ function loadInitialTab(): MemoriesTab {
 export default function MemoriesPanel() {
   const [tab, setTab] = useState<MemoriesTab>(loadInitialTab);
 
+  // Slot DOM node next to the [By Date | Albums] toggle. MemoriesView
+  // portals its summary / Jump-to-latest / density toggle / library
+  // selector into this slot so they live on the toggle's row instead
+  // of consuming a second header strip below. Terry 2026-05-20: the
+  // empty horizontal space next to the toggle was wasted real estate;
+  // packing the controls onto the same row frees a row's worth of
+  // vertical space for the actual photo grid. Stored as state (not a
+  // ref) so MemoriesView re-portals when the node mounts on first
+  // render — ref alone would land MemoriesView's effect a tick too
+  // early and skip the portal.
+  const [byDateControlsSlot, setByDateControlsSlot] = useState<HTMLDivElement | null>(null);
+
   // Cross-component nav: empty-album state CTAs in AlbumsView dispatch
   // `pdr:memoriesSwitchTab` with detail = string | { tab, from }.
   // Keeps the AlbumsView decoupled from MemoriesPanel state — no
@@ -117,37 +129,58 @@ export default function MemoriesPanel() {
   const headerInner = (
     <>
       <h1 className="text-2xl font-semibold text-foreground mb-3">Memories</h1>
-      <button
-        type="button"
-        onClick={() => handleTabChange(tab === 'byDate' ? 'albums' : 'byDate')}
-        title={tab === 'byDate' ? 'Switch to Albums' : 'Switch to By Date'}
-        className="relative inline-flex items-center h-11 p-1 bg-primary rounded-full cursor-pointer"
-        data-testid="memories-tab-toggle"
-      >
-        {thumbStyle && (
+      <div className="flex items-center gap-4 flex-wrap">
+        <button
+          type="button"
+          onClick={() => handleTabChange(tab === 'byDate' ? 'albums' : 'byDate')}
+          title={tab === 'byDate' ? 'Switch to Albums' : 'Switch to By Date'}
+          className="relative inline-flex items-center h-11 p-1 bg-primary rounded-full cursor-pointer shrink-0"
+          data-testid="memories-tab-toggle"
+        >
+          {thumbStyle && (
+            <span
+              aria-hidden
+              className="absolute top-1 h-9 bg-background rounded-full shadow-sm pointer-events-none transition-[left,width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+              style={{ left: `${thumbStyle.left}px`, width: `${thumbStyle.width}px` }}
+            />
+          )}
           <span
-            aria-hidden
-            className="absolute top-1 h-9 bg-background rounded-full shadow-sm pointer-events-none transition-[left,width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            style={{ left: `${thumbStyle.left}px`, width: `${thumbStyle.width}px` }}
-          />
+            ref={byDateRef}
+            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'byDate' ? 'text-primary' : 'text-primary-foreground'}`}
+            data-testid="tab-memories-by-date"
+          >
+            <CalendarRange className="w-4 h-4" />
+            By Date
+          </span>
+          <span
+            ref={albumsRef}
+            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'albums' ? 'text-primary' : 'text-primary-foreground'}`}
+            data-testid="tab-memories-albums"
+          >
+            <FolderPlus className="w-4 h-4" />
+            Albums
+          </span>
+        </button>
+        {/* Slot inline with the toggle pill. Only rendered on the By
+            Date tab — Albums has no equivalent controls today. The
+            vertical bar divider sits between the toggle and the slot
+            content; aria-hidden because it's purely decorative. The
+            slot is filled at runtime by MemoriesView via createPortal
+            (see `byDateControlsSlot` state + the
+            `headerControlsTarget` prop on MemoriesView below). When
+            byDate's summary text wraps to a second line on narrow
+            windows the flex-wrap on this row lets it drop cleanly
+            below the toggle. */}
+        {tab === 'byDate' && (
+          <>
+            <span aria-hidden className="text-border select-none">|</span>
+            <div
+              ref={(el) => setByDateControlsSlot(el)}
+              className="flex items-center justify-between gap-4 flex-wrap flex-1 min-w-0"
+            />
+          </>
         )}
-        <span
-          ref={byDateRef}
-          className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'byDate' ? 'text-primary' : 'text-primary-foreground'}`}
-          data-testid="tab-memories-by-date"
-        >
-          <CalendarRange className="w-4 h-4" />
-          By Date
-        </span>
-        <span
-          ref={albumsRef}
-          className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'albums' ? 'text-primary' : 'text-primary-foreground'}`}
-          data-testid="tab-memories-albums"
-        >
-          <FolderPlus className="w-4 h-4" />
-          Albums
-        </span>
-      </button>
+      </div>
     </>
   );
 
@@ -184,7 +217,7 @@ export default function MemoriesPanel() {
           </div>
         )}
         <div className="flex-1 min-h-0">
-          <MemoriesView />
+          <MemoriesView headerControlsTarget={byDateControlsSlot} />
         </div>
       </TabsContent>
       <TabsContent value="albums" forceMount className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
