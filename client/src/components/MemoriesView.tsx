@@ -160,6 +160,11 @@ export default function MemoriesView() {
   // Default the selection to ALL library keys when the libraries list
   // first loads. Terry 2026-05-19: "have all enabled by default".
   // Re-runs if the underlying library set changes (e.g. new Fix run).
+  // hasInitialized flips true once we've actually populated keys —
+  // before that, the data fetch treats the empty state as "loading"
+  // (pass undefined = show all) so we don't briefly render an empty
+  // timeline between mount and the useEffect firing.
+  const [hasInitialized, setHasInitialized] = useState(false);
   useEffect(() => {
     if (libraries.length === 0) return;
     setLibraryKeys((prev) => {
@@ -172,20 +177,29 @@ export default function MemoriesView() {
       if (filtered.length === prev.length && missing.length === 0) return prev;
       return [...filtered, ...missing];
     });
+    setHasInitialized(true);
   }, [libraries]);
 
   const selectedRunIds = useMemo(() => {
-    // All libraries selected (or none — treated as all for safety)
-    // = no-op filter; pass undefined so the backend doesn't bother
-    // narrowing.
-    if (libraryKeys.length === 0 || libraryKeys.length === libraries.length) {
-      return undefined;
-    }
+    // Loading state — libraries haven't finished initialising yet.
+    // Pass `undefined` so the backend returns everything; avoids a
+    // brief empty-timeline flash before useEffect populates keys.
+    if (!hasInitialized) return undefined;
+    // All selected = no-op filter (skip the backend narrowing path).
+    if (libraryKeys.length === libraries.length) return undefined;
+    // Explicit Clear all → return an empty array. The backend treats
+    // an empty runIds list as "match no runs", so the timeline goes
+    // empty — matching what the UI shows (no checkboxes ticked).
+    // Terry 2026-05-20: Clear all wasn't visibly doing anything
+    // because the previous shortcut quietly translated empty into
+    // "all" at this point; now the user gets the change they asked
+    // for.
+    if (libraryKeys.length === 0) return [];
     const selectedSet = new Set(libraryKeys);
     return libraries
       .filter((l) => selectedSet.has(l.key))
       .flatMap((l) => l.runIds);
-  }, [libraryKeys, libraries]);
+  }, [hasInitialized, libraryKeys, libraries]);
   const selectedRunIdsKey = selectedRunIds ? selectedRunIds.join(',') : '';
 
   // Re-fetch whenever the scope changes.
@@ -595,10 +609,13 @@ function LibrarySelector({ libraries, selectedKeys, onChange }: { libraries: Lib
   // structures (when they ship) will surface as distinct entries here
   // because they carry a different source-labels signature.
   if (libraries.length <= 1) return null;
-  const allSelected = selectedKeys.length === 0 || selectedKeys.length === libraries.length;
+  const allSelected = selectedKeys.length === libraries.length;
+  const noneSelected = selectedKeys.length === 0;
   const summary = allSelected
     ? `All libraries (${libraries.length})`
-    : `${selectedKeys.length} of ${libraries.length}`;
+    : noneSelected
+      ? 'No libraries'
+      : `${selectedKeys.length} of ${libraries.length}`;
   const toggle = (key: string) => {
     if (selectedKeys.includes(key)) {
       onChange(selectedKeys.filter((k) => k !== key));
@@ -620,30 +637,45 @@ function LibrarySelector({ libraries, selectedKeys, onChange }: { libraries: Lib
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-2">
+        {/* Select all / Clear all — match S&D's pattern: HIDE the
+            button rather than disabling it when it'd be a no-op. Mixed
+            with the literal `checked` below, this means Clear all
+            triggers a visible UI change (boxes empty out + button
+            disappears) every time it's clicked, instead of silently
+            doing nothing because the old "empty = all" shortcut left
+            every box visually ticked. */}
         <div className="flex items-center justify-between px-2 pt-1 pb-2 border-b border-border mb-1">
           <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Libraries</span>
           <div className="flex items-center gap-2 text-[11px]">
-            <button
-              type="button"
-              onClick={() => onChange(libraries.map((l) => l.key))}
-              className="text-primary hover:underline disabled:opacity-40 disabled:no-underline"
-              disabled={selectedKeys.length === libraries.length}
-            >
-              Select all
-            </button>
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="text-muted-foreground hover:underline disabled:opacity-40 disabled:no-underline"
-              disabled={selectedKeys.length === 0}
-            >
-              Clear all
-            </button>
+            {!allSelected && (
+              <button
+                type="button"
+                onClick={() => onChange(libraries.map((l) => l.key))}
+                className="px-2 py-1 font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
+                data-testid="memories-library-select-all"
+              >
+                Select all
+              </button>
+            )}
+            {!noneSelected && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="px-2 py-1 font-medium rounded-md text-foreground hover:bg-primary/5 transition-colors"
+                data-testid="memories-library-clear-all"
+              >
+                Clear all
+              </button>
+            )}
           </div>
         </div>
         <div className="max-h-72 overflow-y-auto">
           {libraries.map((lib) => {
-            const checked = selectedKeys.includes(lib.key) || selectedKeys.length === 0;
+            // Literal — drop the "OR length===0" shortcut that previously
+            // made every box still appear ticked after Clear all,
+            // hiding the change from the user. Matches S&D's
+            // FilterCheckbox pattern.
+            const checked = selectedKeys.includes(lib.key);
             return (
               <label
                 key={lib.key}
