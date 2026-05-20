@@ -115,6 +115,7 @@ import { LibraryDriveOfflineBanner } from "@/components/LibraryDriveOfflineBanne
 import { AiOfferCard } from "@/components/AiOfferCard";
 import { DbBackupReminderCard } from "@/components/DbBackupReminderCard";
 import { LowRamAdvisoryCard } from "@/components/LowRamAdvisoryCard";
+import { UnindexedLibrariesCard } from "@/components/UnindexedLibrariesCard";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -4278,6 +4279,14 @@ function DashboardPanel({
             Hidden permanently once dismissed. v2.0.7 — customer
             Kathr 2026-05-16 on a Pentium N4200 / 4 GB DDR3 laptop. */}
         <LowRamAdvisoryCard />
+        {/* Unindexed-libraries advisory — calm banner that detects
+            libraries with files on disk but few/none in the search DB
+            (e.g. anyone who Fixed on v2.0.4 or earlier when auto-index
+            was off by default), offers a single-click backfill.
+            Uses the existing non-destructive rebuildIndexFromLibraries
+            so re-indexing never overwrites existing rows. v2.0.9
+            (Terry 2026-05-20). */}
+        <UnindexedLibrariesCard />
 
         {/* Confidence Summary Section */}
         {hasSelection && (
@@ -9134,6 +9143,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <AccordionContent className="pt-2 pb-4">
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">Photo viewer works again in the installed app</strong> — v2.0.8 shipped with a path-resolution bug that stopped the dedicated viewer window from loading its UI in installed builds (it worked fine in development). Photos and videos opened from Search &amp; Discovery, Memories, and Albums now display correctly again. No data was at risk — the viewer just refused to render.</li>
+                        <li><strong className="text-foreground font-medium">Catch-up indexer for libraries created before v2.0.5</strong> — auto-indexing has been on by default since v2.0.5, but libraries that were Fixed on v2.0.4 or earlier (or where the user explicitly turned indexing off) have photos on disk that don&apos;t appear in Search &amp; Discovery, Memories, or the Date Editor. PDR now detects this gap on the Dashboard and surfaces a calm banner: <em>&quot;N of your libraries aren&apos;t fully searchable yet — Index now&quot;</em>. One click triggers the same non-destructive re-indexer the Parallel Library uses (existing rows are left completely alone; only NEW files get inserted). Progress lives in a single toast that follows you across views; the banner dismisses on completion. From now on all Fixes index automatically as before — this is a one-off catch-up for older libraries.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>

@@ -288,7 +288,7 @@ import {
   getDb,
   type SearchQuery,
 } from './search-database.js';
-import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, type IndexProgress, type RebuildProgress } from './search-indexer.js';
+import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, walkMediaFiles, type IndexProgress, type RebuildProgress } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import {
   gatherTakeoutEnrichmentFromFixResults,
@@ -5506,6 +5506,39 @@ ipcMain.handle('library:countFilesAtPath', async (_event, rootPath: unknown) => 
     };
   } catch (err) {
     log.error('[library:countFilesAtPath] failed:', (err as Error).message);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── library:countOnDiskFiles ───────────────────────────────────────────────
+// v2.0.9 — recursively walks `rootPath` and returns the number of media
+// files (photo + video extensions) found on disk. Used by the
+// Unindexed-Libraries Dashboard banner + the LDM "X unindexed" pill to
+// compare against indexedFileCount (from library:countFilesAtPath) and
+// surface libraries whose contents predate v2.0.5's auto-index-by-default
+// or were explicitly opted out. Skips hidden / system folders the same
+// way the rebuild indexer does (.dotdirs, $RECYCLE.BIN, System Volume
+// Information), so the count matches what a re-index would actually
+// insert.
+ipcMain.handle('library:countOnDiskFiles', async (_event, rootPath: unknown) => {
+  if (typeof rootPath !== 'string' || rootPath.length === 0) {
+    log.warn('[library:countOnDiskFiles] invalid rootPath:', rootPath);
+    return { success: false, error: 'rootPath is required' };
+  }
+  try {
+    // Reachability guard — if the drive isn't mounted right now the
+    // walker would just return 0 and the caller would interpret that
+    // as "fully indexed, no banner needed", masking the real state.
+    // Return a distinct flag instead so the caller can hide the row
+    // from comparisons until the drive comes back.
+    if (!fs.existsSync(rootPath)) {
+      return { success: true, data: { onDiskCount: null, reachable: false } };
+    }
+    const files = walkMediaFiles(rootPath);
+    log.info(`[library:countOnDiskFiles] rootPath=${JSON.stringify(rootPath)} onDiskCount=${files.length}`);
+    return { success: true, data: { onDiskCount: files.length, reachable: true } };
+  } catch (err) {
+    log.error('[library:countOnDiskFiles] failed:', (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 });

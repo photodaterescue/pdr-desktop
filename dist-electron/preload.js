@@ -145,6 +145,14 @@ contextBridge.exposeInMainWorld('pdr', {
         // of the per-drive-letter rollup, which over-attributes when
         // multiple library folders share a drive.
         countFilesAtPath: (rootPath) => ipcRenderer.invoke('library:countFilesAtPath', rootPath),
+        // v2.0.9 — counts media files (photos + videos) on disk under
+        // `rootPath`. Paired with countFilesAtPath so callers can compare
+        // "what's on disk" vs "what's in the search DB" and surface the
+        // delta as a "this library isn't fully searchable yet" prompt.
+        // Returns { onDiskCount: null, reachable: false } when the path
+        // doesn't exist (drive unplugged) so the caller can distinguish
+        // "0 files on disk" from "drive offline".
+        countOnDiskFiles: (rootPath) => ipcRenderer.invoke('library:countOnDiskFiles', rootPath),
         // Open a path in the OS file manager (Explorer on Windows, Finder on
         // macOS). Used by per-drive "Open in File Explorer" entries in LDM.
         openInExplorer: (targetPath) => ipcRenderer.invoke('library:openInExplorer', targetPath),

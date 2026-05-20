@@ -451,8 +451,12 @@ const MEDIA_EXTENSIONS_FOR_REBUILD = new Set([
  * Recursively walk `root` and return every media file found. Skips
  * hidden / system folders (.dotdirs, $RECYCLE.BIN, System Volume
  * Information) so we don't scan trash or NTFS metadata.
+ *
+ * Exported (v2.0.9) so the on-disk-count IPC can call it without
+ * duplicating the recursive walker. Reused unchanged by
+ * rebuildIndexFromLibraries inside this file.
  */
-function walkMediaFiles(root: string): string[] {
+export function walkMediaFiles(root: string): string[] {
   const results: string[] = [];
   // Apply the Windows extended-length prefix to the root so the entire
   // walk inherits MAX_PATH-bypass capability. Without this, a deeply-
