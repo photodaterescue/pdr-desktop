@@ -268,6 +268,16 @@ export async function sweepOrphanedTempDirsIfEmpty(): Promise<{ success: boolean
   return { success: false, dirsRemoved: 0, bytesRemoved: 0 };
 }
 
+/** Pre-flight library-drive probe. Wakes the configured library drive
+ *  via mkdir then probes for free space. Returns ready=false if the
+ *  drive can't be probed (asleep, unplugged, etc.). */
+export async function probeLibraryDrive(): Promise<{ ready: boolean; destinationPath: string | null; freeBytes: number | null; totalBytes: number | null }> {
+  if (isElectron() && typeof (window as any).pdr?.probeLibraryDrive === 'function') {
+    return await (window as any).pdr.probeLibraryDrive();
+  }
+  return { ready: true, destinationPath: null, freeBytes: null, totalBytes: null };
+}
+
 export async function saveReport(reportData: Omit<FixReport, 'id' | 'timestamp'>): Promise<{ success: boolean; data?: FixReport; error?: string }> {
   if (isElectron()) {
     return (window as any).pdr.saveReport(reportData);

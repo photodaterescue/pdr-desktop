@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('pdr', {
   sweepOrphanedTempDirsIfEmpty: () =>
     ipcRenderer.invoke('analysis:sweepOrphanedTempDirsIfEmpty'),
 
+  // Pre-flight library-drive readiness probe. Returns
+  // { ready, destinationPath, freeBytes, totalBytes }.
+  probeLibraryDrive: () => ipcRenderer.invoke('analysis:probeLibraryDrive'),
+
   onAnalysisProgress: (callback: (progress: any) => void) => {
   ipcRenderer.on('analysis:progress', (_: any, data: any) => callback(data));
 },

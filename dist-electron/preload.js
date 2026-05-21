@@ -13,6 +13,14 @@ contextBridge.exposeInMainWorld('pdr', {
     // { success, cleaned } where cleaned is the number of temp
     // directories actually deleted.
     cleanupTempDirForSource: (sourcePath) => ipcRenderer.invoke('analysis:cleanupTempDirForSource', sourcePath),
+    // Launch-time orphan sweep. Called by the renderer on FIRST mount
+    // when the source list is empty — any files in PDR_Temp are
+    // necessarily orphans from a previous crashed pre-extract.
+    // Returns { success, dirsRemoved, bytesRemoved }.
+    sweepOrphanedTempDirsIfEmpty: () => ipcRenderer.invoke('analysis:sweepOrphanedTempDirsIfEmpty'),
+    // Pre-flight library-drive readiness probe. Returns
+    // { ready, destinationPath, freeBytes, totalBytes }.
+    probeLibraryDrive: () => ipcRenderer.invoke('analysis:probeLibraryDrive'),
     onAnalysisProgress: (callback) => {
         ipcRenderer.on('analysis:progress', (_, data) => callback(data));
     },

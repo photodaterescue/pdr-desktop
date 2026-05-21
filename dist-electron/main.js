@@ -880,16 +880,44 @@ function computeHeadroomBytes(totalBytes) {
     const pctBased = Math.ceil(totalBytes * HEADROOM_DRIVE_PCT);
     return Math.max(MIN_HEADROOM_BYTES, Math.min(pctBased, MAX_HEADROOM_BYTES));
 }
-function pickPreExtractDir(zipPath, destinationPath) {
+async function pickPreExtractDir(zipPath, destinationPath) {
     const zipSize = getZipFileSize(zipPath);
     const extractionBytes = Math.ceil(zipSize * EXTRACTION_INFLATION);
     const copyBytes = Math.ceil(zipSize * POST_FIX_COPY_FACTOR);
-    // Fetch disk space (with totals) for both candidates up-front so the
-    // headroom math can scale per-drive.
+    // Wake the destination drive via a benign mkdir on its PDR_Temp
+    // directory BEFORE probing free space. Forces Windows to wake the
+    // drive from any sleep / low-power state — the root cause of
+    // Jane's silent-fallback-to-%TEMP% case (USB Library Drive on H:
+    // returned null on the disk-space probe even though H: had
+    // 1.4 TB free; pre-v2.0.8 silently routed her Takeouts to C:).
+    // Idempotent via recursive:true. If the drive's still asleep
+    // after mkdir we retry once with a 1.5s delay below. Terry
+    // 2026-05-21: "Since we're going to be extracting to a PDR_Temp
+    // folder, why not just create this folder? and then we can read
+    // that until it's time to extract to it?"
     const destLocal = isLocalDir(destinationPath);
-    const destSpace = (destinationPath && destLocal)
+    if (destinationPath !== null && destLocal) {
+        try {
+            fs.mkdirSync(path.join(destinationPath, 'PDR_Temp'), { recursive: true });
+        }
+        catch (err) {
+            log.warn(`[wake-drive] mkdir wake failed on ${destinationPath}: ${err.message}`);
+        }
+    }
+    // Fetch disk space (with totals) for both candidates up-front so the
+    // headroom math can scale per-drive. Retry the destination probe
+    // once with a short delay if the first attempt returns null — the
+    // drive may still be spinning up from the mkdir wake.
+    let destSpace = (destinationPath && destLocal)
         ? getDiskSpaceForDirSync(destinationPath)
         : null;
+    if (destinationPath !== null && destLocal && destSpace === null) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        destSpace = getDiskSpaceForDirSync(destinationPath);
+        if (destSpace !== null) {
+            log.info(`[wake-drive] ${destinationPath} probe succeeded on retry after 1.5s delay`);
+        }
+    }
     const destFree = destSpace?.freeBytes ?? null;
     const destTotal = destSpace?.totalBytes ?? null;
     const tempSpace = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
@@ -2284,9 +2312,161 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath) =>
     }
     return { success: true, cleaned };
 });
+// Workspace-empty orphan sweep. Called by the renderer on mount when
+// the source list is empty (localStorage.pdr-sources has 0 entries).
+// Logic: if the user's workspace is empty, anything sitting in
+// PDR_Temp is by definition an orphan — there's no source row that
+// could ever reconcile it. The most common cause is a Takeout pre-
+// extraction that crashed mid-way (Jane 2026-05-21: ~21.5 GB of
+// orphaned extract from a May 18 crash, blocked her next Takeout
+// from being added because the 55 GB cap counted the orphans).
+//
+// Sweeps BOTH potential roots:
+//   - PDR_TEMP_ROOT (=%TEMP%\PDR_Temp), the legacy / fallback path
+//   - getCurrentPdrTempRoot() (=<destinationDrive>\PDR_Temp), the
+//     v2.0.0 default for extracted ZIP/RAR sources
+//
+// Safety: the renderer only calls this when sources.length === 0
+// AND it's the first mount, so we can't race with an in-flight
+// extraction (which would have already added a source row by the
+// time it pre-extracts).
+// Pre-flight library-drive readiness check. Called by the renderer on
+// Workspace mount. Wakes the configured library drive (mkdir on its
+// PDR_Temp directory) then probes for free space. Returns
+// { ready, destinationPath, freeBytes, totalBytes }. The renderer
+// surfaces a banner if !ready so the user knows to wake / reconnect
+// the drive BEFORE trying to add a source — Jane 2026-05-21's silent-
+// fallback case caught at the entry point instead of mid-workflow.
+//
+// Non-blocking by design: if no destinationPath is set, or the drive
+// has never been configured, returns ready=true with destinationPath=null
+// (nothing to check). Terry 2026-05-21: "we don't want the app to stop
+// working just because an old library doesn't answer back."
+ipcMain.handle('analysis:probeLibraryDrive', async () => {
+    let destinationPath = null;
+    try {
+        destinationPath = getSettings()?.destinationPath ?? null;
+    }
+    catch { /* settings unreadable */ }
+    if (!destinationPath) {
+        return { ready: true, destinationPath: null, freeBytes: null, totalBytes: null };
+    }
+    if (!isLocalDir(destinationPath)) {
+        return { ready: true, destinationPath, freeBytes: null, totalBytes: null };
+    }
+    // Wake the drive via mkdir, then probe. Same pattern as
+    // pickPreExtractDir uses at source-add time, but applied earlier.
+    try {
+        fs.mkdirSync(path.join(destinationPath, 'PDR_Temp'), { recursive: true });
+    }
+    catch (err) {
+        log.warn(`[probe-library] mkdir wake failed on ${destinationPath}: ${err.message}`);
+    }
+    let space = getDiskSpaceForDirSync(destinationPath);
+    if (space === null) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        space = getDiskSpaceForDirSync(destinationPath);
+        if (space !== null) {
+            log.info(`[probe-library] ${destinationPath} probe succeeded on retry after 1.5s delay`);
+        }
+    }
+    const ready = space !== null;
+    if (!ready) {
+        log.warn(`[probe-library] ${destinationPath} probe failed both attempts — drive likely asleep or unplugged`);
+    }
+    return {
+        ready,
+        destinationPath,
+        freeBytes: space?.freeBytes ?? null,
+        totalBytes: space?.totalBytes ?? null,
+    };
+});
+ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
+    const roots = new Set();
+    roots.add(PDR_TEMP_ROOT);
+    try {
+        const currentRoot = getCurrentPdrTempRoot();
+        if (currentRoot)
+            roots.add(currentRoot);
+    }
+    catch { /* settings unreadable — only %TEMP% root counts */ }
+    let dirsRemoved = 0;
+    let bytesRemoved = 0;
+    for (const root of roots) {
+        if (!fs.existsSync(root))
+            continue;
+        let rootSize = 0;
+        try {
+            rootSize = folderSizeBytes(root);
+        }
+        catch { /* size measure failed — proceed with cleanup anyway */ }
+        let entries = [];
+        try {
+            entries = fs.readdirSync(root);
+        }
+        catch (err) {
+            log.warn(`[orphan-sweep] failed to read ${root}: ${err.message}`);
+            continue;
+        }
+        for (const entry of entries) {
+            const full = path.join(root, entry);
+            try {
+                fs.rmSync(full, { recursive: true, force: true });
+                dirsRemoved++;
+            }
+            catch (err) {
+                log.warn(`[orphan-sweep] failed to remove ${full}: ${err.message}`);
+            }
+        }
+        bytesRemoved += rootSize;
+        if (rootSize > 0) {
+            log.info(`[orphan-sweep] cleaned ${root} — freed ${(rootSize / (1024 ** 3)).toFixed(1)} GB`);
+        }
+    }
+    return { success: true, dirsRemoved, bytesRemoved };
+});
 ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOverride) => {
     let tempDir = null;
     let claimedExtractInFlight = false;
+    // Drive-details diagnostic — logged on EVERY source-add regardless
+    // of outcome (success OR failure), so we always have the full
+    // drive picture for support tickets. Terry 2026-05-21: "Drive
+    // details are integral to our analysis." The previous baseDiag
+    // line only logged on the %TEMP% fallback path and on refusals,
+    // not on the happy Option 1 path. Format: source / destination /
+    // %TEMP% root, each with letter + total/free if local + classify.
+    try {
+        const settingsForDiag = (() => { try {
+            return getSettings();
+        }
+        catch {
+            return null;
+        } })();
+        const destPathForDiag = settingsForDiag?.destinationPath ?? null;
+        const gbDiag = (b) => (b == null) ? 'null' : `${(b / (1024 ** 3)).toFixed(2)}GB`;
+        const driveOf = (p) => {
+            if (!p || p.length < 2 || p[1] !== ':')
+                return 'unknown';
+            return p.substring(0, 2).toUpperCase();
+        };
+        const srcLocal = isLocalDir(sourcePath);
+        const srcSpace = srcLocal ? getDiskSpaceForDirSync(sourcePath) : null;
+        const destLocalDiag = isLocalDir(destPathForDiag);
+        const destSpaceDiag = (destPathForDiag && destLocalDiag) ? getDiskSpaceForDirSync(destPathForDiag) : null;
+        const tempSpaceDiag = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
+        log.info(`[source-add] sourcePath=${JSON.stringify(sourcePath)} sourceType=${sourceType} ` +
+            `srcDrive=${driveOf(sourcePath)} srcLocal=${srcLocal} ` +
+            `srcFree=${gbDiag(srcSpace?.freeBytes)} srcTotal=${gbDiag(srcSpace?.totalBytes)} ` +
+            `destPath=${JSON.stringify(destPathForDiag)} destDrive=${driveOf(destPathForDiag)} ` +
+            `destLocal=${destLocalDiag} ` +
+            `destFree=${gbDiag(destSpaceDiag?.freeBytes)} destTotal=${gbDiag(destSpaceDiag?.totalBytes)} ` +
+            `tempDrive=${driveOf(PDR_TEMP_ROOT)} ` +
+            `tempFree=${gbDiag(tempSpaceDiag?.freeBytes)} tempTotal=${gbDiag(tempSpaceDiag?.totalBytes)}`);
+    }
+    catch (logErr) {
+        // Never fail the IPC just because logging blew up.
+        log.warn(`[source-add] drive-detail logging failed: ${logErr.message}`);
+    }
     try {
         // Destination-online precheck. v2.0.x bug Terry reproduced
         // 2026-05-13: PDR remembers the Library Drive path in settings
@@ -2406,7 +2586,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
                 catch {
                     return null;
                 } })();
-                const decision = pickPreExtractDir(sourcePath, settings?.destinationPath ?? null);
+                const decision = await pickPreExtractDir(sourcePath, settings?.destinationPath ?? null);
                 if (!decision.ok) {
                     // Surface a structured error so the renderer can drive a
                     // smart-prompt modal. Two refusal modes:

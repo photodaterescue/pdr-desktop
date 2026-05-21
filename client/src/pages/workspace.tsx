@@ -695,11 +695,30 @@ useEffect(() => {
       if (res?.success && res.data?.destinationPath && !res.data.online) {
         setLibraryOfflineBanner({ path: res.data.destinationPath });
         setLibraryOfflinePath(res.data.destinationPath);
+        return; // Definitively offline — skip the deeper probe.
       } else if (res?.success && res.data?.online) {
         // Drive came back online (e.g. user re-plugged before we
         // checked, OR the user just switched LDM to a connected
         // drive) — clear any stale banner state.
         setLibraryOfflineBanner(null);
+      }
+      // Drive's path resolves (existsSync passed) — but it can still
+      // be in a low-power / sleep state where the disk-space probe
+      // returns null. That's Jane's silent-fallback-to-%TEMP% case
+      // (Terry 2026-05-21). Run the deeper probe that mkdir-wakes
+      // the drive then queries disk space. If ready=false the drive
+      // is asleep enough that source-add would fall back to C:.
+      // Non-blocking — banner only, the app keeps working.
+      try {
+        const { probeLibraryDrive } = await import('@/lib/electron-bridge');
+        const probeRes = await probeLibraryDrive();
+        if (cancelled) return;
+        if (!probeRes.ready && probeRes.destinationPath) {
+          setLibraryOfflineBanner({ path: probeRes.destinationPath });
+          setLibraryOfflinePath(probeRes.destinationPath);
+        }
+      } catch {
+        // Deeper probe failed — leave existing banner state alone.
       }
     } catch {
       // Best-effort — never block Workspace mount on the precheck.
