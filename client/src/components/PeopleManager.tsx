@@ -952,8 +952,17 @@ export default function PeopleManager() {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem(CLUSTER_ORDER_KEY) || '{}'); } catch { return {}; }
   });
-  const [draggedClusterKey, setDraggedClusterKey] = useState<string | null>(null);
-  const [dragOverClusterKey, setDragOverClusterKey] = useState<string | null>(null);
+  // Drag state lives in REFS + DOM mutation, not React state. Each
+  // dragOver event used to setState → re-render every one of the
+  // 3624 unnamed-cluster rows, which made the drag unusable on a real
+  // dataset. With refs + direct DOM attribute writes (data-drag-state
+  // on the dragged row, data-drag-target on the hover target), React
+  // never re-renders during a drag; the visuals are painted by CSS
+  // rules in index.css keyed off those attributes. Terry 2026-05-21:
+  // "huge delays and it doesn't even appear to drop the row anywhere
+  // at all."
+  const draggedClusterKeyRef = useRef<string | null>(null);
+  const dragOverClusterKeyRef = useRef<string | null>(null);
 
   const persistClusterOrder = (next: Record<string, number>) => {
     setClusterOrder(next);
@@ -971,12 +980,21 @@ export default function PeopleManager() {
     return arr;
   }, [unnamedClustersRaw, clusterOrder]);
 
+  // Helper: find a row's DOM element by its cluster key. Used to
+  // apply/remove the data-drag-state / data-drag-target attributes
+  // without going through React. CSS.escape protects against keys
+  // that contain quotes / special chars (cluster keys are mostly
+  // numeric IDs but defensive).
+  const findClusterRowEl = (key: string): HTMLElement | null => {
+    return document.querySelector(`[data-cluster-row][data-cluster-key="${CSS.escape(key)}"]`) as HTMLElement | null;
+  };
+
   const handleClusterDragStart = (e: React.DragEvent, key: string) => {
     e.dataTransfer.effectAllowed = 'move';
     // Use a CLONE of the row as the drag image, not the row itself.
     // The browser captures the drag image asynchronously, so by the
-    // time it samples the source element, our React state update has
-    // already faded it (opacity-30) and the dragged preview ends up
+    // time it samples the source element our DOM mutation below has
+    // already faded it (opacity-25) and the dragged preview ends up
     // looking like a ghost. The clone is a snapshot of the row as it
     // was BEFORE the state update — proper drop-shadow card that
     // visibly follows the cursor.
@@ -993,48 +1011,101 @@ export default function PeopleManager() {
       clone.style.background = 'var(--background, white)';
       clone.style.transform = 'rotate(-1deg)';
       clone.style.pointerEvents = 'none';
-      // Strip any leftover state classes from the clone so it doesn't
-      // inherit a "being dragged" appearance.
-      clone.classList.remove('opacity-30', 'opacity-40', 'scale-[0.98]', 'ring-1', 'ring-purple-500/50');
+      // Strip data-drag attributes from the clone so it doesn't look
+      // mid-drag itself.
+      clone.removeAttribute('data-drag-state');
+      clone.removeAttribute('data-drag-target');
       document.body.appendChild(clone);
       e.dataTransfer.setDragImage(clone, 20, 20);
       // Remove the clone after the browser has had a chance to
       // snapshot it. setTimeout(0) is enough on every modern engine.
       setTimeout(() => { try { clone.remove(); } catch {} }, 0);
+      // AFTER cloning, fade the original via DOM attribute. The CSS
+      // rule in index.css ([data-cluster-row][data-drag-state="dragging"])
+      // paints the opacity + dashed border. Zero React renders.
+      parent.setAttribute('data-drag-state', 'dragging');
     }
-    setDraggedClusterKey(key);
+    draggedClusterKeyRef.current = key;
   };
+
   const handleClusterDragOver = (e: React.DragEvent, key: string) => {
-    if (!draggedClusterKey || draggedClusterKey === key) return;
+    const dragged = draggedClusterKeyRef.current;
+    if (!dragged || dragged === key) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (dragOverClusterKey !== key) setDragOverClusterKey(key);
+    const prev = dragOverClusterKeyRef.current;
+    if (prev === key) return;
+    // Clear the previous drop-target marker (if any).
+    if (prev) {
+      const prevEl = findClusterRowEl(prev);
+      if (prevEl) prevEl.removeAttribute('data-drag-target');
+    }
+    // Mark the new target. Use currentTarget rather than a query so
+    // the attribute lands on the exact row even if there are nested
+    // [data-cluster-row] descendants in some future structure.
+    const targetEl = e.currentTarget as HTMLElement;
+    targetEl.setAttribute('data-drag-target', 'true');
+    dragOverClusterKeyRef.current = key;
   };
-  const handleClusterDragLeave = (key: string) => {
-    if (dragOverClusterKey === key) setDragOverClusterKey(null);
+
+  const handleClusterDragLeave = (_key: string, e?: React.DragEvent) => {
+    // HTML5 fires dragleave when the cursor crosses a child element's
+    // boundary inside the same row. Guard so we don't clear the
+    // target marker while still inside the same row.
+    if (e) {
+      const related = e.relatedTarget as Node | null;
+      const current = e.currentTarget as HTMLElement;
+      if (related && current.contains(related)) return;
+    }
+    // We don't actually need per-key handling here — when the cursor
+    // leaves a row, that row's data-drag-target attribute gets cleared.
+    // The next dragOver on another row will mark the new one.
+    const target = e?.currentTarget as HTMLElement | undefined;
+    if (target && target.getAttribute('data-drag-target') === 'true') {
+      target.removeAttribute('data-drag-target');
+      if (dragOverClusterKeyRef.current === _key) {
+        dragOverClusterKeyRef.current = null;
+      }
+    }
   };
+
+  const clearAllDragAttrs = () => {
+    const draggedKey = draggedClusterKeyRef.current;
+    const targetKey = dragOverClusterKeyRef.current;
+    if (draggedKey) {
+      const el = findClusterRowEl(draggedKey);
+      if (el) el.removeAttribute('data-drag-state');
+    }
+    if (targetKey) {
+      const el = findClusterRowEl(targetKey);
+      if (el) el.removeAttribute('data-drag-target');
+    }
+    draggedClusterKeyRef.current = null;
+    dragOverClusterKeyRef.current = null;
+  };
+
   const handleClusterDrop = (e: React.DragEvent, targetKey: string) => {
     e.preventDefault();
-    setDragOverClusterKey(null);
-    if (!draggedClusterKey || draggedClusterKey === targetKey) {
-      setDraggedClusterKey(null);
+    const draggedKey = draggedClusterKeyRef.current;
+    if (!draggedKey || draggedKey === targetKey) {
+      clearAllDragAttrs();
       return;
     }
     const currentList = unnamedClusters.map(clusterKey);
-    const fromIdx = currentList.indexOf(draggedClusterKey);
+    const fromIdx = currentList.indexOf(draggedKey);
     const toIdx = currentList.indexOf(targetKey);
-    if (fromIdx === -1 || toIdx === -1) { setDraggedClusterKey(null); return; }
+    clearAllDragAttrs();
+    if (fromIdx === -1 || toIdx === -1) return;
     const reordered = [...currentList];
     const [moved] = reordered.splice(fromIdx, 1);
     reordered.splice(toIdx, 0, moved);
     const next: Record<string, number> = {};
     reordered.forEach((k, i) => { next[k] = i; });
     persistClusterOrder(next);
-    setDraggedClusterKey(null);
   };
+
   const handleClusterDragEnd = () => {
-    setDraggedClusterKey(null);
-    setDragOverClusterKey(null);
+    clearAllDragAttrs();
   };
 
   const prepareFaces = (cluster: PersonCluster): PersonCluster => {
@@ -1737,25 +1808,25 @@ export default function PeopleManager() {
                       <div className="space-y-2">
                         {unnamedClusters.map((cluster, idx) => {
                           const ck = clusterKey(cluster);
-                          const isBeingDragged = draggedClusterKey === ck;
-                          const isDropTarget = dragOverClusterKey === ck && draggedClusterKey !== null && draggedClusterKey !== ck;
                           return (
                           <div
                             key={ck}
                             data-cluster-row
+                            data-cluster-key={ck}
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
-                            onDragLeave={() => handleClusterDragLeave(ck)}
+                            onDragLeave={(e) => handleClusterDragLeave(ck, e)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
-                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-25 scale-[0.97] border-2 border-dashed border-purple-400/70 rounded-xl' : ''}`}
+                            // Drag visuals (faded source + insertion line on
+                            // the drop target) are painted by CSS rules in
+                            // index.css that key off data-drag-state and
+                            // data-drag-target — set via DOM mutation in the
+                            // handlers above, NOT React state. Zero re-renders
+                            // during drag.
+                            className="relative"
                           >
-                            {/* Insertion-line drop indicator — appears above
-                                the row that's currently being hovered, like
-                                a file-explorer drag. Clearer than a ring
-                                because it shows exactly where the dragged
-                                row will land. */}
-                            {isDropTarget && (
-                              <div className="absolute left-0 right-0 -top-1 h-1 bg-purple-500 rounded-full shadow-[0_0_6px_rgba(168,85,247,0.6)] z-20 pointer-events-none" />
-                            )}
+                            {/* Insertion-line drop indicator is rendered by
+                                CSS ::before pseudo-element on
+                                [data-drag-target="true"] — see index.css. */}
                             {/* Drag handle — visible-by-default vertical
                                 grip strip on the left edge. Big enough to
                                 grab without aiming, purple-tinted on hover
@@ -1829,20 +1900,19 @@ export default function PeopleManager() {
                       <div className="space-y-0.5">
                         {unnamedClusters.map((cluster) => {
                           const ck = clusterKey(cluster);
-                          const isBeingDragged = draggedClusterKey === ck;
-                          const isDropTarget = dragOverClusterKey === ck && draggedClusterKey !== null && draggedClusterKey !== ck;
                           return (
                           <div
                             key={ck}
                             data-cluster-row
+                            data-cluster-key={ck}
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
-                            onDragLeave={() => handleClusterDragLeave(ck)}
+                            onDragLeave={(e) => handleClusterDragLeave(ck, e)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
-                            className={`relative transition-all duration-150 ${isBeingDragged ? 'opacity-25 scale-[0.97] border-2 border-dashed border-purple-400/70 rounded' : ''}`}
+                            // Drag visuals via CSS / DOM attrs — see other map().
+                            className="relative"
                           >
-                            {isDropTarget && (
-                              <div className="absolute left-0 right-0 -top-0.5 h-1 bg-purple-500 rounded-full shadow-[0_0_6px_rgba(168,85,247,0.6)] z-20 pointer-events-none" />
-                            )}
+                            {/* Insertion-line drop indicator via CSS ::before
+                                on [data-drag-target="true"]. */}
                             <IconTooltip label="Drag to reorder" side="left">
                               <div
                                 draggable

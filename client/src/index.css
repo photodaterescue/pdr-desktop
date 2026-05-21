@@ -504,6 +504,42 @@ body > .window-resize-hint-tr {
     transition: filter 75ms ease-out;
   }
 
+  /* ── PM Unnamed drag state — driven via data attributes ──────────── */
+  /* People Manager renders thousands of unnamed-cluster rows (Terry's
+     install: 3624). The original drag implementation stored
+     draggedClusterKey + dragOverClusterKey in React state, which meant
+     every dragOver fire (60+ events/sec) re-rendered the ENTIRE list —
+     dragging on a big dataset was unusable. v2.0.9 moves the drag
+     state to refs + sets these data attributes via DOM mutation, so
+     React never re-renders during a drag. These rules paint the same
+     visual state the React renderer used to (dragged-row fade + dashed
+     border, drop-target insertion line). Targets the [data-cluster-row]
+     scope so they only fire on PM rows.
+
+     No transform: scale on the dragged row — that was the v2.0.9
+     batch-2 button-press regression on a different surface, and a
+     scale on a 60k-button cluster row would invite the same class
+     of issue. Opacity + border is plenty to read as "this one is
+     in flight." */
+  [data-cluster-row][data-drag-state="dragging"] {
+    opacity: 0.25;
+    border: 2px dashed rgb(192 132 252 / 0.7);
+    border-radius: 12px;
+  }
+  [data-cluster-row][data-drag-target="true"]::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -4px;
+    height: 4px;
+    background: rgb(168 85 247);
+    border-radius: 9999px;
+    box-shadow: 0 0 6px rgb(168 85 247 / 0.6);
+    z-index: 20;
+    pointer-events: none;
+  }
+
   /* ── Skeleton shimmer for image-loading placeholders ──────────────── */
   /* Replaces the binary opacity-pulse of Tailwind's animate-pulse on
      thumbnail placeholders. A diagonal lavender gradient sweeps left
