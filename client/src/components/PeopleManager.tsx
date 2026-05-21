@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import {
   Search,
   X,
@@ -1155,6 +1155,17 @@ export default function PeopleManager() {
     clearAllDragAttrs();
   };
 
+  // framer-motion Reorder callback. Called with the NEW ORDER of
+  // unnamed clusters when the user drops a dragged row. Translates
+  // the order back to clusterOrder (key → index) and persists it.
+  // Replaces the HTML5-drag-based reorder path for the Unnamed tab.
+  const handleReorderUnnamed = useCallback((next: PersonCluster[]) => {
+    const nextOrder: Record<string, number> = {};
+    next.forEach((c, i) => { nextOrder[clusterKey(c)] = i; });
+    persistClusterOrder(nextOrder);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const prepareFaces = (cluster: PersonCluster): PersonCluster => {
     if (!cluster.sample_faces) return cluster;
     let faces = cluster.sample_faces;
@@ -1869,34 +1880,35 @@ export default function PeopleManager() {
                       </p>
                     </div>
                     {viewMode === 'card' ? (
-                      <div className="space-y-2">
+                      <Reorder.Group
+                        as="div"
+                        axis="y"
+                        values={unnamedClusters}
+                        onReorder={handleReorderUnnamed}
+                        className="space-y-2"
+                      >
                         {unnamedClusters.map((cluster, idx) => {
                           const ck = clusterKey(cluster);
                           return (
-                          <LazyClusterRow
+                          <ReorderClusterRow
                             key={ck}
+                            cluster={cluster}
                             clusterKey={ck}
-                            onDragOver={(e) => handleClusterDragOver(e, ck)}
-                            onDragLeave={(e) => handleClusterDragLeave(ck, e)}
-                            onDrop={(e) => handleClusterDrop(e, ck)}
-                            // Drag visuals painted by CSS rules in
-                            // index.css keyed off data-drag-state +
-                            // data-drag-target — set via DOM mutation in
-                            // the handlers above, NOT React state. Zero
-                            // re-renders during drag.
-                            className="relative"
+                            className="relative bg-card"
                             placeholderHeight={100}
                           >
-                            {() => <>
-                            {/* Drag handle — visible-by-default vertical
-                                grip strip on the left edge. Only the
-                                handle is draggable so clicks on thumbnails
-                                / name fields keep working. */}
+                            {({ dragControls }) => <>
+                            {/* Drag handle — vertical grip strip on the
+                                left edge. onPointerDown hands control
+                                to framer-motion's drag system; everywhere
+                                else on the row stays clickable for
+                                thumbnails / name fields. touchAction:none
+                                so the browser doesn't try to scroll
+                                instead. */}
                             <IconTooltip label="Drag to reorder" side="left">
                               <div
-                                draggable
-                                onDragStart={(e) => handleClusterDragStart(e, ck)}
-                                onDragEnd={handleClusterDragEnd}
+                                onPointerDown={(e) => dragControls.start(e)}
+                                style={{ touchAction: 'none' }}
                                 className="absolute left-0 top-0 bottom-0 -translate-x-2 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l-md z-10"
                               >
                                 <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
@@ -1950,31 +1962,33 @@ export default function PeopleManager() {
                             showUnverifiedOnly={showUnverifiedOnly}
                           />
                           </>}
-                          </LazyClusterRow>
+                          </ReorderClusterRow>
                           );
                         })}
-                      </div>
+                      </Reorder.Group>
                     ) : (
-                      <div className="space-y-0.5">
+                      <Reorder.Group
+                        as="div"
+                        axis="y"
+                        values={unnamedClusters}
+                        onReorder={handleReorderUnnamed}
+                        className="space-y-0.5"
+                      >
                         {unnamedClusters.map((cluster) => {
                           const ck = clusterKey(cluster);
                           return (
-                          <LazyClusterRow
+                          <ReorderClusterRow
                             key={ck}
+                            cluster={cluster}
                             clusterKey={ck}
-                            onDragOver={(e) => handleClusterDragOver(e, ck)}
-                            onDragLeave={(e) => handleClusterDragLeave(ck, e)}
-                            onDrop={(e) => handleClusterDrop(e, ck)}
-                            // Drag visuals via CSS / DOM attrs — see other map().
-                            className="relative"
+                            className="relative bg-card"
                             placeholderHeight={36}
                           >
-                            {() => <>
+                            {({ dragControls }) => <>
                             <IconTooltip label="Drag to reorder" side="left">
                               <div
-                                draggable
-                                onDragStart={(e) => handleClusterDragStart(e, ck)}
-                                onDragEnd={handleClusterDragEnd}
+                                onPointerDown={(e) => dragControls.start(e)}
+                                style={{ touchAction: 'none' }}
                                 className="absolute left-0 top-0 bottom-0 -translate-x-2 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l z-10"
                               >
                                 <svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor">
@@ -2005,10 +2019,10 @@ export default function PeopleManager() {
                             onCancelUnsure={() => setPendingUnsure(null)}
                           />
                           </>}
-                          </LazyClusterRow>
+                          </ReorderClusterRow>
                           );
                         })}
-                      </div>
+                      </Reorder.Group>
                     )}
                   </>
                 )}
@@ -3514,48 +3528,39 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
   );
 }
 
-/* ─── Lazy cluster row wrapper ──────────────────────────────────────────
-   Defers the expensive inner content (drag handle + PersonCardRow with
-   its ~30 face thumbnails per cluster) until the row scrolls into the
-   viewport (or within 500px of it). The OUTER wrapper div stays mounted
-   for every cluster so drag-drop handlers + querySelector lookups by
-   data-cluster-key keep working even for off-screen rows. Once revealed,
-   the row stays revealed for the lifetime of the list — scrolling back
-   doesn't re-mount, but scrolling further down doesn't keep paying for
-   rows we've already rendered.
+/* ─── Reorderable lazy cluster row ──────────────────────────────────────
+   Two things rolled into one wrapper component:
 
-   Why function-as-children: the parent's .map() runs for ALL 3624
-   clusters on every render. If we passed the inner JSX directly as
-   children, React would construct 3624 PersonCardRow elements + their
-   ~30 callback closures each on every render. The function child is a
-   single cheap closure that's only called when the row is revealed.
+   (1) Apple-style drag-to-reorder via framer-motion. The Reorder.Item
+       lifts on pointerdown (scale + shadow), follows the cursor, and
+       framer-motion auto-animates ALL other rows shifting up/down to
+       make space. dragListener=false + useDragControls means only the
+       drag handle starts a drag, so clicks on thumbnails / name fields
+       still work. Terry 2026-05-21: "the row you're moving should
+       literally be moved and taking precedence over the other rows.
+       Other rows will be reshuffling to make way."
 
-   Terry 2026-05-21: "There are 3624 Unnamed thumbnails to go through,
-   but they shouldn't have have to all load just to make the UX better.
-   There's potentially 200 in view that need to be loaded to allow the
-   rest of it behind the scene (off-view) to render." */
-function LazyClusterRow({
-  clusterKey: ck,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  className,
-  placeholderHeight,
-  children,
-}: {
+   (2) Lazy inner content via IntersectionObserver. Defers the expensive
+       PersonCardRow + ~30 face thumbnails until the row scrolls within
+       500px of the viewport. Function-as-children keeps the parent
+       .map() cheap — without it, React would construct 3624
+       PersonCardRow elements + their callback closures on every render.
+
+   children is a render function that receives `dragControls` so the
+   drag handle inside the row can wire its onPointerDown. */
+const ReorderClusterRow = React.forwardRef<HTMLDivElement, {
+  cluster: PersonCluster;
   clusterKey: string;
-  onDragOver: (e: React.DragEvent) => void;
-  onDragLeave: (e: React.DragEvent) => void;
-  onDrop: (e: React.DragEvent) => void;
   className?: string;
   placeholderHeight: number;
-  children: () => React.ReactNode;
-}) {
+  children: (args: { dragControls: ReturnType<typeof useDragControls> }) => React.ReactNode;
+}>(function ReorderClusterRow({ cluster, clusterKey: ck, className, placeholderHeight, children }, externalRef) {
   const [revealed, setRevealed] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const dragControls = useDragControls();
   useEffect(() => {
     if (revealed) return;
-    const el = ref.current;
+    const el = innerRef.current;
     if (!el) return;
     const obs = new IntersectionObserver((entries) => {
       for (const entry of entries) {
@@ -3570,19 +3575,32 @@ function LazyClusterRow({
     return () => obs.disconnect();
   }, [revealed]);
   return (
-    <div
-      ref={ref}
+    <Reorder.Item
+      ref={(el: HTMLDivElement | null) => {
+        innerRef.current = el;
+        if (typeof externalRef === 'function') externalRef(el);
+        else if (externalRef) (externalRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+      }}
+      value={cluster}
+      dragListener={false}
+      dragControls={dragControls}
+      // Apple-style in-flight visual: scale up slightly + elevated
+      // lavender shadow + sit above neighbours. Tween is fast so the
+      // lift feels responsive, not floaty.
+      whileDrag={{ scale: 1.02, zIndex: 50, boxShadow: '0 16px 32px rgba(168, 85, 247, 0.28)', cursor: 'grabbing' }}
+      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
       data-cluster-row
       data-cluster-key={ck}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
       className={className}
+      // `layout` is what enables the other rows to smoothly slide up
+      // and down to make space as the user drags. Without this they'd
+      // snap on every reorder tick.
+      layout
     >
-      {revealed ? children() : <div style={{ height: placeholderHeight }} aria-hidden="true" />}
-    </div>
+      {revealed ? children({ dragControls }) : <div style={{ height: placeholderHeight }} aria-hidden="true" />}
+    </Reorder.Item>
   );
-}
+});
 
 /* ─── Card Row — name LEFT, scrollable thumbnails RIGHT ─────────────────── */
 
