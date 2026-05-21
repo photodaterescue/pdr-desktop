@@ -169,6 +169,7 @@ import {
   type ClusterFacesResult,
 } from '@/lib/electron-bridge';
 import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
+import { getSourceProfileForAlbum } from '@/lib/albumSourceProfile';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -390,6 +391,29 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // into the search query as `albumIds`; backend JOINs album_files.
   const [albums, setAlbums] = useState<AlbumSummary[]>([]);
   const [selectedAlbums, setSelectedAlbums] = useState<number[]>([]);
+  // Which Album-Sources groups (e.g. "user_created", "takeout_imported")
+  // are currently expanded in the Album filter dropdown. Defaults to
+  // all-expanded on first render via the lazy-init that reads the
+  // current albums. Terry 2026-05-21: S&D's Album filter should
+  // mirror the Album Sources tree from the Albums view rather than
+  // the existing flat alphabetical list of every album.
+  const [expandedAlbumSources, setExpandedAlbumSources] = useState<Set<string>>(new Set());
+  const expandedAlbumSourcesInitRef = useRef(false);
+  // Initialise expanded set to ALL source groups the first time
+  // albums arrive — default to fully-expanded so the dropdown isn't
+  // empty-looking when the user first opens it. Subsequent toggles
+  // persist via the click handler in the dropdown body. The init-ref
+  // guard ensures we don't re-expand groups the user has explicitly
+  // collapsed (e.g. they collapse "Google Photos" then add a new
+  // PDR album — the new album shouldn't re-expand the Google group).
+  useEffect(() => {
+    if (expandedAlbumSourcesInitRef.current) return;
+    if (albums.length === 0) return;
+    const sources = new Set<string>();
+    for (const album of albums) sources.add(album.source || 'unknown');
+    setExpandedAlbumSources(sources);
+    expandedAlbumSourcesInitRef.current = true;
+  }, [albums]);
   /** Contextual / faceted counts (v2.0.8). Refreshed on every filter
    *  change via getFilterCounts. Each dimension's counts are computed
    *  with the OTHER active filters applied but its OWN filter omitted
@@ -2428,21 +2452,72 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         >
                           {albums.length === 0 ? (
                             <p className="text-xs text-muted-foreground italic px-3 py-2">No albums yet. Create one in Memories → Albums.</p>
-                          ) : (
-                            albums
-                              .slice()
-                              .filter(album => shouldShowOption('album', String(album.id), selectedAlbums.includes(album.id)))
-                              .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
-                              .map(album => (
-                                <FilterCheckbox
-                                  key={album.id}
-                                  label={album.title}
-                                  checked={selectedAlbums.includes(album.id)}
-                                  onChange={() => setSelectedAlbums(prev => prev.includes(album.id) ? prev.filter(id => id !== album.id) : [...prev, album.id])}
-                                  count={getCount('album', String(album.id)) ?? album.photoCount}
-                                />
-                              ))
-                          )}
+                          ) : (() => {
+                            // Group albums by their source field so the
+                            // dropdown mirrors the Album Sources tree
+                            // shown in the Albums view. Each source
+                            // group is a collapsible header (icon + label
+                            // + count); albums nested below indented.
+                            const albumsBySource = new Map<string, typeof albums>();
+                            for (const album of albums) {
+                              const key = album.source || 'unknown';
+                              const arr = albumsBySource.get(key);
+                              if (arr) arr.push(album);
+                              else albumsBySource.set(key, [album]);
+                            }
+                            // Order: auto-sources (takeout_imported,
+                            // future cloud sources) alphabetically by
+                            // their display label, then user_created last
+                            // so user-managed albums sit at the bottom.
+                            const orderedSources = Array.from(albumsBySource.keys()).sort((a, b) => {
+                              if (a === 'user_created') return 1;
+                              if (b === 'user_created') return -1;
+                              const la = getSourceProfileForAlbum({ source: a } as { source: string }).badgeLabel;
+                              const lb = getSourceProfileForAlbum({ source: b } as { source: string }).badgeLabel;
+                              return la.localeCompare(lb);
+                            });
+                            return orderedSources.map(source => {
+                              const sourceAlbums = albumsBySource.get(source)!
+                                .slice()
+                                .filter(album => shouldShowOption('album', String(album.id), selectedAlbums.includes(album.id)))
+                                .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+                              if (sourceAlbums.length === 0) return null;
+                              const profile = getSourceProfileForAlbum({ source } as { source: string });
+                              const isExpanded = expandedAlbumSources.has(source);
+                              const Icon = profile.Icon;
+                              return (
+                                <div key={source}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedAlbumSources(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(source)) next.delete(source);
+                                      else next.add(source);
+                                      return next;
+                                    })}
+                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-primary/5 transition-colors"
+                                  >
+                                    {isExpanded
+                                      ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                      : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                                    <Icon className={`w-3.5 h-3.5 shrink-0 ${profile.iconColorClass}`} />
+                                    <span className="text-sm text-foreground font-medium flex-1 text-left truncate">{profile.badgeLabel}</span>
+                                    <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{sourceAlbums.length}</span>
+                                  </button>
+                                  {isExpanded && sourceAlbums.map(album => (
+                                    <div key={album.id} className="pl-5">
+                                      <FilterCheckbox
+                                        label={album.title}
+                                        checked={selectedAlbums.includes(album.id)}
+                                        onChange={() => setSelectedAlbums(prev => prev.includes(album.id) ? prev.filter(id => id !== album.id) : [...prev, album.id])}
+                                        count={getCount('album', String(album.id)) ?? album.photoCount}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            });
+                          })()}
                         </FilterDropdown>
                       </div>
                     </RibbonGroup>
