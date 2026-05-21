@@ -177,6 +177,22 @@ export default function Home() {
     return () => window.clearTimeout(delayId);
   }, []);
 
+  // Signal the boot splash that Welcome has mounted and its first
+  // frame has been committed. main.tsx waits for this BEFORE
+  // dismissing the splash (alongside the 3 s minimum floor), so the
+  // splash duration adapts to the host machine: a fast computer hits
+  // the floor and exits at 3 s, a slower one holds the splash until
+  // Welcome is genuinely ready (up to the 6.5 s ceiling).
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const signal = (window as Window & { __pdrSplashReady?: () => void })
+          .__pdrSplashReady;
+        if (typeof signal === 'function') signal();
+      });
+    });
+  }, []);
+
   useEffect(() => {
     return () => {
       if (heroPulseTimer.current) clearTimeout(heroPulseTimer.current);
