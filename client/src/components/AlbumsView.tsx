@@ -2078,7 +2078,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         {album.coverPath && thumbs[album.coverPath] ? (
                           <img src={thumbs[album.coverPath]} alt={album.title} className="w-full h-full object-cover" loading="lazy" />
                         ) : album.coverPath ? (
-                          <div className="w-full h-full bg-muted animate-pulse" />
+                          <div className="w-full h-full skeleton-shimmer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
@@ -2164,7 +2164,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         {album.coverPath && thumbs[album.coverPath] ? (
                           <img src={thumbs[album.coverPath]} alt={album.title} className="w-full h-full object-cover" loading="lazy" />
                         ) : album.coverPath ? (
-                          <div className="w-full h-full bg-muted animate-pulse" />
+                          <div className="w-full h-full skeleton-shimmer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
@@ -2417,7 +2417,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     {thumbs[p.file_path] ? (
                       <img src={thumbs[p.file_path]} alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
                     ) : (
-                      <div className="w-full h-full bg-muted animate-pulse" />
+                      <div className="w-full h-full skeleton-shimmer" />
                     )}
                   </button>
                 ))}

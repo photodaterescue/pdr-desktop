@@ -582,7 +582,11 @@ function ShowcaseCard({ accent, icon, title, description, onClick, locked, relea
   const interactive = !!onClick && !locked && !releasedShortly;
   return (
     <Card
-      className={`flex flex-col p-4 h-full bg-white/40 transition-colors relative overflow-hidden text-left ${interactive ? 'cursor-pointer group hover:bg-white/70 hover:shadow-md' : 'cursor-default'}`}
+      // Premium hover: 2px lift + softer shadow when interactive.
+      // ease-out 200ms matches the workspace card / album card
+      // hover timing for consistency. transition-all covers the
+      // translateY + shadow + bg change together.
+      className={`flex flex-col p-4 h-full bg-white/40 transition-all duration-200 ease-out relative overflow-hidden text-left ${interactive ? 'cursor-pointer group hover:bg-white/70 hover:shadow-lg hover:-translate-y-[2px]' : 'cursor-default'}`}
       style={{ borderColor: '#e5e7eb', borderTopWidth: '3px', borderTopColor: a.topBar, borderTopStyle: 'solid' }}
       onClick={interactive ? onClick : undefined}
       role={interactive ? 'button' : undefined}

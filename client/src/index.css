@@ -485,27 +485,47 @@ body > .window-resize-hint-tr {
   }
 
   /* ── App-wide button press feedback ───────────────────────────────── */
-  /* Tactile 0.97 scale-down on every clickable surface — buttons,
-     role="button", anchors, and the radix-dialog close-X. Premium apps
-     all do this (Linear, Notion, Apple HIG). 90ms ease-out is the
-     sweet spot — fast enough to feel like a real press, slow enough
-     to register as motion rather than a flicker.
+  /* Tactile dim-on-press across every clickable surface. The earlier
+     v2.0.9 take used transform: scale(0.97) which broke People
+     Manager drag-drop — scale on the (60,000+) face thumbnails in
+     PM Unnamed competed with the HTML5 drag image transform and
+     added transition state to every button, dragging frame budget
+     under the cursor. filter: brightness is GPU-cheap, doesn't
+     touch transform, and reads as "pressed" without moving the
+     pixel grid (so it never interferes with native drag/drop).
 
-     Specificity is intentionally higher than Tailwind's hover utility
-     classes (element + pseudo-class = 0,1,1 vs class = 0,1,0) so the
-     press wins over hover lift/scale — when the user is pressing,
-     they expect the button to settle DOWN, not stay lifted up. On
-     release, hover resumes; on mouse-out, baseline transform.
+     Excludes [draggable="true"] explicitly anyway — belt-and-braces
+     so future buttons-that-are-also-drag-sources (album cards in
+     AlbumsView are one) stay drag-safe. */
+  button:not(:disabled):not([draggable="true"]):active,
+  [role="button"]:not(:disabled):not([draggable="true"]):active,
+  a:not([aria-disabled="true"]):not([draggable="true"]):active {
+    filter: brightness(0.92);
+    transition: filter 75ms ease-out;
+  }
 
-     transition-duration override (75ms) makes the press feel snappy.
-     The browser smoothly interpolates the existing translateY/scale
-     into a flat scale(0.97), so even buttons with hover-lift settle
-     visibly. */
-  button:not(:disabled):active,
-  [role="button"]:not(:disabled):active,
-  a:not([aria-disabled="true"]):active {
-    transform: scale(0.97);
-    transition-duration: 75ms;
+  /* ── Skeleton shimmer for image-loading placeholders ──────────────── */
+  /* Replaces the binary opacity-pulse of Tailwind's animate-pulse on
+     thumbnail placeholders. A diagonal lavender gradient sweeps left
+     to right every 1.6s, giving the impression of light passing
+     across a frosted surface rather than a "loading" indicator
+     blinking on and off. Used on album cover placeholders and any
+     other thumbnail slot that's waiting for image data.
+     background-size: 200% spreads the gradient wider than the box so
+     the sweep has room to travel through. */
+  @keyframes pdr-skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--secondary)) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: pdr-skeleton-shimmer 1.6s ease-in-out infinite;
   }
 
   /* ── Sidebar collapse/expand animation — premium smooth feel ─────── */
