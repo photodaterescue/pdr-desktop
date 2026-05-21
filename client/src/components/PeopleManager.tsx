@@ -304,6 +304,14 @@ export default function PeopleManager() {
   // existing full names never get overwritten silently).
   const [globalReassignFullName, setGlobalReassignFullName] = useState('');
   const [panelSuggestionIdx, setPanelSuggestionIdx] = useState(-1);
+  // Tracks whether the user has just PICKED a suggestion from the
+  // dropdown — when true, the dropdown stays hidden even though the
+  // filter logic would still produce matches against the now-filled
+  // name field. Cleared the moment the user types again so the
+  // dropdown can re-appear if they're refining their choice. Terry
+  // 2026-05-21: "the dropdown menu doesn't close after the choice
+  // has been selected from it."
+  const [panelSuggestionsDismissed, setPanelSuggestionsDismissed] = useState(false);
   // Full-name disambiguation:
   //   • fullNameUserEdited — true once the user types in the Full name field,
   //     so we stop auto-filling on top of their input.
@@ -367,6 +375,7 @@ export default function PeopleManager() {
       setFullNameUserEdited(false);
       setGlobalReassignPersonId(null);
       setFullNameCandidates([]);
+      setPanelSuggestionsDismissed(false);
       return;
     }
     // Resolve the effective short name (typed > implicit).
@@ -2655,6 +2664,9 @@ export default function PeopleManager() {
                       onChange={(e) => {
                         setGlobalReassignName(e.target.value);
                         setPanelSuggestionIdx(-1);
+                        // User is typing again → re-open the dropdown
+                        // if a previous selection had dismissed it.
+                        setPanelSuggestionsDismissed(false);
                         // Short name changed → resume auto-fill of full
                         // name (user hasn't yet locked it in for this
                         // new candidate).
@@ -2697,8 +2709,15 @@ export default function PeopleManager() {
                           // path. A SECOND Enter (with no highlight,
                           // since we just cleared it) then verifies.
                           if (panelSuggestionIdx >= 0 && panelSuggestions[panelSuggestionIdx]) {
-                            setGlobalReassignName(panelSuggestions[panelSuggestionIdx].name);
+                            const picked = panelSuggestions[panelSuggestionIdx];
+                            setGlobalReassignName(picked.name);
+                            setGlobalReassignPersonId(picked.id);
+                            if (picked.full_name) {
+                              setGlobalReassignFullName(picked.full_name);
+                              setFullNameUserEdited(false);
+                            }
                             setPanelSuggestionIdx(-1);
+                            setPanelSuggestionsDismissed(true);
                             return;
                           }
                           const nameToUse = globalReassignName.trim();
@@ -2753,7 +2772,7 @@ export default function PeopleManager() {
                       autoCorrect="off"
                       autoCapitalize="words"
                     />
-                    {panelSuggestions.length > 0 && (
+                    {panelSuggestions.length > 0 && !panelSuggestionsDismissed && (
                       <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
                         {panelSuggestions.map((p, idx) => (
                           <button
@@ -2773,6 +2792,13 @@ export default function PeopleManager() {
                                 setFullNameUserEdited(false);
                               }
                               setPanelSuggestionIdx(-1);
+                              // Dismiss the dropdown — the user has made their
+                              // choice. Without this, the suggestions stay
+                              // visible because the filter still matches the
+                              // (now-filled) name. Terry 2026-05-21: "the
+                              // dropdown menu doesn't close after the choice
+                              // has been selected from it."
+                              setPanelSuggestionsDismissed(true);
                             }}
                             className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-sm transition-colors text-left ${idx === panelSuggestionIdx ? 'bg-purple-200/70 dark:bg-purple-800/40' : 'hover:bg-purple-100/50 dark:hover:bg-purple-900/20'}`}
                           >
