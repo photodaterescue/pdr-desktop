@@ -10301,6 +10301,15 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           } : null,
           stats: result.stats ?? { albumFoldersDetected: 0, photosConsidered: 0, matchedAgainstLibrary: 0, unmatched: 0 },
         });
+        // Auto-refresh Albums so the user doesn't have to hunt for the
+        // refresh icon after a successful Takeout backfill — the new
+        // albums + memberships should appear immediately. Terry
+        // 2026-05-21: "I had to select the refresh which is a bit
+        // annoying in Albums... can't you make this happen
+        // automatically?"
+        if (result.summary && result.summary.albumsCreated > 0) {
+          window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
+        }
       } else {
         setTakeoutBackfillResult({ kind: 'error', message: result.error ?? 'Backfill failed.' });
       }

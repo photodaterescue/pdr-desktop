@@ -4382,6 +4382,22 @@ ipcMain.handle('takeout:backfillFromZip', async (_event, zipPath) => {
             // gather time so the importer's run-scoped lookup is bypassed.
             summary = importTakeoutAlbumsFromEnrichment(enrichment, -1);
             markDbDirty();
+            // Auto-link the newly created albums to the Google Photos auto
+            // source group so they appear in the AlbumsView tree, not just
+            // the all-albums grid. Without this, the tree only refreshed on
+            // next launch (when initDatabase re-ran the seed). Terry
+            // 2026-05-21: "it's not updated the Google Photos albums in the
+            // tree... even after pressing the refresh."
+            try {
+                const { reconcileAutoSourceMemberships } = await import('./search-database.js');
+                const newlyLinked = reconcileAutoSourceMemberships();
+                if (newlyLinked > 0) {
+                    console.log(`[Takeout] Linked ${newlyLinked} album(s) to their auto source group.`);
+                }
+            }
+            catch (linkErr) {
+                console.warn('[Takeout] Auto-membership reconcile failed:', linkErr.message);
+            }
         }
         else {
             console.log(`[Takeout] Backfill: no album folders matched against the existing library — nothing to write.`);

@@ -5401,6 +5401,50 @@ export function upsertTakeoutAlbum(externalKey, title) {
     return Number(result.lastInsertRowid);
 }
 /**
+ * Reconcile auto source-group memberships for every album. Idempotent
+ * INSERT OR IGNORE — runs the same SQL as the startup auto-seed in
+ * initDatabase so albums created at RUNTIME (Takeout backfill, future
+ * importers) get linked to their auto group (e.g. 'Google Photos')
+ * without waiting for the next launch.
+ *
+ * Background — Terry 2026-05-21: the Takeout backfill in Settings
+ * created 6 new Google Photos albums but they only appeared in the
+ * all-albums grid, not in the tree. Root cause: the auto-membership
+ * link was a once-at-init job. This function is the runtime version.
+ *
+ * Returns the number of new memberships inserted (0 when the DB is
+ * already fully reconciled).
+ */
+export function reconcileAutoSourceMemberships() {
+    const db = getDb();
+    // Step 1: make sure every distinct source has an auto group. New
+    // sources that didn't exist at last init (e.g. first-ever Takeout
+    // import) need their group row before the membership INSERT can
+    // join against it.
+    const ALBUM_SOURCE_PROFILES = {
+        user_created: { title: 'PDR', icon_key: 'home', palette_key: 'violet' },
+        takeout_imported: { title: 'Google Photos', icon_key: 'sparkles', palette_key: 'red' },
+    };
+    const distinctSources = db.prepare(`SELECT DISTINCT source FROM albums WHERE source IS NOT NULL AND source != ''`).all();
+    const groupInsert = db.prepare(`INSERT OR IGNORE INTO album_groups (title, source_kind, source_key, icon_key, palette_key, parent_id)
+       VALUES (?, 'auto', ?, ?, ?, NULL)`);
+    for (const { source } of distinctSources) {
+        const profile = ALBUM_SOURCE_PROFILES[source]
+            ?? { title: source, icon_key: 'cloud', palette_key: 'sky' };
+        groupInsert.run(profile.title, source, profile.icon_key, profile.palette_key);
+    }
+    // Step 2: link every album that isn't already linked to its source's
+    // auto group. INSERT OR IGNORE skips albums already linked.
+    const result = db.prepare(`
+    INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto)
+    SELECT a.id, g.id, 1
+      FROM albums a
+      JOIN album_groups g
+        ON g.source_kind = 'auto' AND g.source_key = a.source
+  `).run();
+    return Number(result.changes);
+}
+/**
  * Link a file to an album. Idempotent via the composite primary key — calling
  * twice with the same (albumId, fileId) is a no-op. Returns true iff a new row
  * was inserted (so callers can count fresh memberships vs. revisits).
