@@ -102,6 +102,7 @@ import {
 } from '@/lib/electron-bridge';
 import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from '@/lib/fix-state';
 import { FixStatusChip } from './FixStatusChip';
+import { toast } from 'sonner';
 import { TourOverlay, PEOPLE_MANAGER_TOUR_STEPS, PEOPLE_MANAGER_TOUR_META, resetTourCompletion, type TourStep } from '@/components/ui/tour-overlay';
 import { WindowChrome } from './WindowChrome';
 
@@ -901,7 +902,13 @@ export default function PeopleManager() {
 
   const handleReassignFace = async (faceId: number, newName: string, verified: boolean = true, skipReload: boolean = false, newFullName?: string | null, targetPersonId?: number | null) => {
     if (newName === '__unnamed__') {
-      await unnameFace(faceId);
+      const res = await unnameFace(faceId);
+      if (!res?.success) {
+        const msg = `Couldn't move face ${faceId} to Unnamed: ${(res as any)?.error ?? 'unknown error'}`;
+        console.error('[PM]', msg);
+        toast.error(msg);
+        return;
+      }
       if (!skipReload) { await loadClusters(); notifyChange(); }
       return;
     }
@@ -928,9 +935,26 @@ export default function PeopleManager() {
       // verify panel. Safe for both new-person and existing-person flows.
       const personResult = await namePerson(newName, undefined, undefined, newFullName);
       if (personResult.success && personResult.data?.personId) personId = personResult.data.personId;
+      else {
+        const msg = `Couldn't create/find person "${newName}": ${personResult?.error ?? 'unknown error'}`;
+        console.error('[PM]', msg);
+        toast.error(msg);
+        return;
+      }
     }
     if (personId) {
-      await assignFace(faceId, personId, verified);
+      // Check assignFace return value — IPC returns {success, error} on
+      // any DB throw. Before this fix the return was ignored, so a
+      // silent failure would leave the user wondering why their click
+      // didn't move the face. Terry 2026-05-21: couldn't reassign Mum's
+      // face to Nan, no visible error to diagnose from.
+      const assignResult = await assignFace(faceId, personId, verified);
+      if (!assignResult?.success) {
+        const msg = `Couldn't reassign face ${faceId} to "${newName}" (id=${personId}): ${(assignResult as any)?.error ?? 'unknown error'}`;
+        console.error('[PM]', msg);
+        toast.error(msg);
+        return;
+      }
       // Improve-recognition chip prompt — Vote D from the FR redesign.
       // Fires only when this was the LAST face in a batch (skipReload
       // is false on the final iteration), avoiding chip-spam during
