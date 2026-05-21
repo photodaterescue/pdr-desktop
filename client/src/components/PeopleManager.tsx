@@ -1965,7 +1965,7 @@ export default function PeopleManager() {
                             key={ck}
                             cluster={cluster}
                             clusterKey={ck}
-                            className="relative bg-card"
+                            className="relative"
                             placeholderHeight={100}
                           >
                             {({ listeners }) => <>
@@ -2044,13 +2044,36 @@ export default function PeopleManager() {
                             heavy rows. */}
                         <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
                           {activeDraggedCluster && (
-                            <div className="bg-card border-2 border-primary/50 rounded-lg shadow-2xl px-4 py-2 flex items-center gap-3" style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)' }}>
-                              <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300">
-                                <Users className="w-5 h-5" />
-                              </span>
-                              <div className="flex flex-col">
-                                <span className="text-sm font-medium text-foreground">{activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__') ? activeDraggedCluster.person_name : 'Unknown person'}</span>
-                                <span className="text-xs text-muted-foreground">{activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}</span>
+                            <div
+                              className="bg-card border-2 border-primary/50 rounded-xl px-4 py-2.5 flex items-center gap-3"
+                              style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)', cursor: 'grabbing' }}
+                            >
+                              {/* Face crop avatar so the user can see
+                                  WHICH cluster they're moving — using
+                                  the same face the cluster row's
+                                  representative shows on its left edge.
+                                  Falls back to a Users icon if the crop
+                                  hasn't loaded yet. */}
+                              {faceCropsMap[clusterKey(activeDraggedCluster)] ? (
+                                <img
+                                  src={faceCropsMap[clusterKey(activeDraggedCluster)]}
+                                  alt=""
+                                  className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400 shrink-0"
+                                />
+                              ) : (
+                                <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 ring-2 ring-amber-400 shrink-0">
+                                  <Users className="w-5 h-5" />
+                                </span>
+                              )}
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-sm font-medium text-foreground italic truncate">
+                                  {activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__')
+                                    ? activeDraggedCluster.person_name
+                                    : 'Unknown person'}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}
+                                </span>
                               </div>
                             </div>
                           )}
@@ -2074,7 +2097,7 @@ export default function PeopleManager() {
                             key={ck}
                             cluster={cluster}
                             clusterKey={ck}
-                            className="relative bg-card"
+                            className="relative"
                             placeholderHeight={36}
                           >
                             {({ listeners }) => <>
@@ -2119,13 +2142,36 @@ export default function PeopleManager() {
                         </SortableContext>
                         <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
                           {activeDraggedCluster && (
-                            <div className="bg-card border-2 border-primary/50 rounded-lg shadow-2xl px-4 py-2 flex items-center gap-3" style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)' }}>
-                              <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300">
-                                <Users className="w-5 h-5" />
-                              </span>
-                              <div className="flex flex-col">
-                                <span className="text-sm font-medium text-foreground">{activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__') ? activeDraggedCluster.person_name : 'Unknown person'}</span>
-                                <span className="text-xs text-muted-foreground">{activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}</span>
+                            <div
+                              className="bg-card border-2 border-primary/50 rounded-xl px-4 py-2.5 flex items-center gap-3"
+                              style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)', cursor: 'grabbing' }}
+                            >
+                              {/* Face crop avatar so the user can see
+                                  WHICH cluster they're moving — using
+                                  the same face the cluster row's
+                                  representative shows on its left edge.
+                                  Falls back to a Users icon if the crop
+                                  hasn't loaded yet. */}
+                              {faceCropsMap[clusterKey(activeDraggedCluster)] ? (
+                                <img
+                                  src={faceCropsMap[clusterKey(activeDraggedCluster)]}
+                                  alt=""
+                                  className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400 shrink-0"
+                                />
+                              ) : (
+                                <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 ring-2 ring-amber-400 shrink-0">
+                                  <Users className="w-5 h-5" />
+                                </span>
+                              )}
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-sm font-medium text-foreground italic truncate">
+                                  {activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__')
+                                    ? activeDraggedCluster.person_name
+                                    : 'Unknown person'}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}
+                                </span>
                               </div>
                             </div>
                           )}
@@ -3657,8 +3703,58 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 
    children is a render function that receives `listeners` from
    useSortable; spread those onto the drag handle. */
+/* Inner — only mounted once the row has scrolled into the viewport
+   buffer. useSortable hook runs ONLY here, so the parent SortableContext
+   has at most ~20 sortable subscribers (visible + 500px buffer), not
+   3624. Off-screen rows are cheap placeholder divs. This is what makes
+   the initial render usable on Terry's 3624-cluster install. */
+function SortableClusterRowInner({
+  clusterKey: ck,
+  className,
+  children,
+}: {
+  clusterKey: string;
+  className?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  children: (args: { listeners: Record<string, any> | undefined }) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: ck });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    // Source row goes invisible while a drag is active — the parent
+    // DragOverlay renders the visible drag preview that follows the
+    // cursor. opacity 0 (not display:none) preserves the row's space
+    // so the sortable can compute drop indices correctly.
+    opacity: isDragging ? 0 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      data-cluster-row
+      data-cluster-key={ck}
+      className={className}
+    >
+      {children({ listeners })}
+    </div>
+  );
+}
+
+/* Outer — lazy gate that ONLY mounts the sortable inner once the
+   row scrolls within the viewport buffer. Off-screen rows are plain
+   placeholder divs with no @dnd-kit machinery — cheap to create and
+   cheap to keep around for 3624 of them. */
 function SortableClusterRow({
-  cluster,
+  cluster: _cluster,
   clusterKey: ck,
   className,
   placeholderHeight,
@@ -3672,26 +3768,10 @@ function SortableClusterRow({
   children: (args: { listeners: Record<string, any> | undefined }) => React.ReactNode;
 }) {
   const [revealed, setRevealed] = useState(false);
-  const innerRef = useRef<HTMLDivElement | null>(null);
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: ck });
-
-  // Combine @dnd-kit's setNodeRef with our innerRef so the
-  // IntersectionObserver below can observe the same element.
-  const setRefs = useCallback((el: HTMLDivElement | null) => {
-    innerRef.current = el;
-    setNodeRef(el);
-  }, [setNodeRef]);
-
+  const placeholderRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (revealed) return;
-    const el = innerRef.current;
+    const el = placeholderRef.current;
     if (!el) return;
     const obs = new IntersectionObserver((entries) => {
       for (const entry of entries) {
@@ -3705,30 +3785,21 @@ function SortableClusterRow({
     obs.observe(el);
     return () => obs.disconnect();
   }, [revealed]);
-
-  // The dragged row goes INVISIBLE while a drag is active — the
-  // DragOverlay at the parent level renders the visible preview that
-  // follows the cursor. This is @dnd-kit's recommended pattern for
-  // heavy row content (each PersonCardRow has ~30 face thumbnails).
-  // The source row's space is preserved (no layout collapse) so the
-  // sortable can compute drop indices correctly.
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0 : 1,
-  };
-
+  if (!revealed) {
+    return (
+      <div
+        ref={placeholderRef}
+        data-cluster-row
+        data-cluster-key={ck}
+        style={{ height: placeholderHeight }}
+        aria-hidden="true"
+      />
+    );
+  }
   return (
-    <div
-      ref={setRefs}
-      style={style}
-      {...attributes}
-      data-cluster-row
-      data-cluster-key={ck}
-      className={className}
-    >
-      {revealed ? children({ listeners }) : <div style={{ height: placeholderHeight }} aria-hidden="true" />}
-    </div>
+    <SortableClusterRowInner clusterKey={ck} className={className}>
+      {children}
+    </SortableClusterRowInner>
   );
 }
 
