@@ -546,13 +546,18 @@ body > .window-resize-hint-tr {
      scale on a 60k-button cluster row would invite the same class
      of issue. Opacity + border is plenty to read as "this one is
      in flight." */
-  /* Source row fade — opacity only, no border. The dashed border on
-     the source row + the drag clone preview floating over the target
-     + the Radix tooltip all visible at once made the drag feel
-     cluttered (Terry 2026-05-21 screenshot). Just opacity is plenty
-     — the drag clone is the visual the user follows. */
+  /* Source row stays visually UNCHANGED during a drag — matching the
+     Albums tree pattern. The drag preview clone (set via setDragImage
+     in handleClusterDragStart) is the visual the user follows; fading
+     the source makes it feel like a ghost is being moved, not the
+     row itself. Terry 2026-05-21: "PM makes the row you're moving
+     transparent and because of that it doesn't feel like it is the
+     thing being moved." */
   [data-cluster-row][data-drag-state="dragging"] {
-    opacity: 0.2;
+    /* Intentionally empty — the drag clone preview is sufficient
+       feedback. Keeping the selector around in case we want to add
+       a subtle in-flight cue later (e.g. cursor change or accent
+       bar) without it being a full opacity fade. */
   }
   /* Insertion line above the drop target. Same lavender-to-purple
      palette as Albums tree's drop indicators (shadow primary/40) so
