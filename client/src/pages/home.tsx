@@ -147,34 +147,34 @@ export default function Home() {
     // empty-icon flash Terry saw). Idempotent: a second call
     // joins the in-flight promise. Lifetime = renderer process.
     //
-    // Deferred via requestIdleCallback so the Welcome screen paints
-    // first and the title-bar drag region is responsive immediately.
-    // Without the defer the prefetch's IPC + base64-decode work fired
-    // synchronously with first paint and jammed the renderer for 7-8
-    // seconds. A 1500 ms timeout guarantees the prefetch still kicks
-    // off even if the user never goes idle, so the snappy-Memories
-    // win is preserved.
-    const trigger = () => {
+    // Deferred so the Welcome screen paints, the boot splash finishes
+    // its 3-second hold + 700 ms exit transition, AND the title-bar
+    // settles fully before any heavy IPC + base64-decode work fires.
+    // Without the defer the prefetch ran synchronously with first
+    // paint and jammed the renderer for 7-8 seconds (drag region
+    // unresponsive, title-bar mid-adjust). We wait a fixed 4 seconds
+    // after Welcome mount, then hand off to requestIdleCallback so
+    // the prefetch only actually starts when the renderer is idle —
+    // with a 1500 ms timeout as a backstop so the snappy-Memories
+    // win is preserved even if the user is interacting non-stop.
+    const startPrefetch = () => {
       void (async () => {
         const { prefetchMemories } = await import('@/lib/memories-prefetch');
         void prefetchMemories();
       })();
     };
-    const ric = (window as any).requestIdleCallback as
-      | ((cb: () => void, opts?: { timeout: number }) => number)
-      | undefined;
-    if (typeof ric === 'function') {
-      const id = ric(trigger, { timeout: 1500 });
-      return () => {
-        const cic = (window as any).cancelIdleCallback as
-          | ((id: number) => void)
-          | undefined;
-        if (typeof cic === 'function') cic(id);
-      };
-    } else {
-      const id = window.setTimeout(trigger, 200);
-      return () => window.clearTimeout(id);
-    }
+    const scheduleWhenIdle = () => {
+      const ric = (window as any).requestIdleCallback as
+        | ((cb: () => void, opts?: { timeout: number }) => number)
+        | undefined;
+      if (typeof ric === 'function') {
+        ric(startPrefetch, { timeout: 1500 });
+      } else {
+        window.setTimeout(startPrefetch, 200);
+      }
+    };
+    const delayId = window.setTimeout(scheduleWhenIdle, 4000);
+    return () => window.clearTimeout(delayId);
   }, []);
 
   useEffect(() => {

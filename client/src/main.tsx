@@ -11,24 +11,39 @@ createRoot(document.getElementById("root")!).render(
 );
 
 // Boot-splash dismissal. The splash (see index.html) covers the
-// unavoidable 2-3 second Electron + Vite bundle load. We wait one
-// animation frame after createRoot.render so React has at least
-// scheduled its first paint, then fade the splash out and remove it.
-// A 4-second safety timer guarantees the splash never strands the
-// user even if the first paint is somehow delayed.
+// unavoidable Electron + Vite bundle load and the early renderer work
+// (DB cleanup, sidebar measurement, etc.). It's intentionally held on
+// screen for a minimum of 3 seconds so the staggered entrance
+// animation has time to complete and the user gets a proper branded
+// boot moment rather than a flash. After the minimum hold the splash
+// runs a 700 ms scale-up + fade exit so it transitions gracefully into
+// the Welcome screen behind it.
+const SPLASH_MIN_DISPLAY_MS = 3000;
+const SPLASH_EXIT_DURATION_MS = 700;
+const splashStartedAt = performance.now();
+let splashDismissed = false;
+
 function dismissBootSplash() {
+  if (splashDismissed) return;
+  splashDismissed = true;
   const splash = document.getElementById("pdr-splash");
   if (!splash) return;
-  splash.classList.add("pdr-splash-hide");
-  // Match the CSS transition (350ms) plus a small buffer before
-  // removing from the DOM.
-  window.setTimeout(() => splash.remove(), 450);
+  const elapsed = performance.now() - splashStartedAt;
+  const wait = Math.max(0, SPLASH_MIN_DISPLAY_MS - elapsed);
+  window.setTimeout(() => {
+    splash.classList.add("pdr-splash-exit");
+    // Match the CSS transition (700ms) plus a small buffer before
+    // removing from the DOM.
+    window.setTimeout(() => splash.remove(), SPLASH_EXIT_DURATION_MS + 80);
+  }, wait);
 }
 requestAnimationFrame(() => {
   // Two RAFs — the first lets React commit, the second runs after the
-  // browser paints. Empirically this is the moment the user actually
-  // sees Welcome on screen, so the splash fades out into the painted
-  // app rather than into a half-rendered placeholder.
+  // browser paints. Welcome is painted behind the splash by this point;
+  // the minimum-hold timer in dismissBootSplash decides when it
+  // actually reveals.
   requestAnimationFrame(dismissBootSplash);
 });
-window.setTimeout(dismissBootSplash, 4000);
+// Safety timer: caps total splash visibility even if first paint
+// somehow never happens.
+window.setTimeout(dismissBootSplash, 8000);
