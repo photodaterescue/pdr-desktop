@@ -146,10 +146,35 @@ export default function Home() {
     // decode + AI-worker contention, which read as the ~5s
     // empty-icon flash Terry saw). Idempotent: a second call
     // joins the in-flight promise. Lifetime = renderer process.
-    (async () => {
-      const { prefetchMemories } = await import('@/lib/memories-prefetch');
-      void prefetchMemories();
-    })();
+    //
+    // Deferred via requestIdleCallback so the Welcome screen paints
+    // first and the title-bar drag region is responsive immediately.
+    // Without the defer the prefetch's IPC + base64-decode work fired
+    // synchronously with first paint and jammed the renderer for 7-8
+    // seconds. A 1500 ms timeout guarantees the prefetch still kicks
+    // off even if the user never goes idle, so the snappy-Memories
+    // win is preserved.
+    const trigger = () => {
+      void (async () => {
+        const { prefetchMemories } = await import('@/lib/memories-prefetch');
+        void prefetchMemories();
+      })();
+    };
+    const ric = (window as any).requestIdleCallback as
+      | ((cb: () => void, opts?: { timeout: number }) => number)
+      | undefined;
+    if (typeof ric === 'function') {
+      const id = ric(trigger, { timeout: 1500 });
+      return () => {
+        const cic = (window as any).cancelIdleCallback as
+          | ((id: number) => void)
+          | undefined;
+        if (typeof cic === 'function') cic(id);
+      };
+    } else {
+      const id = window.setTimeout(trigger, 200);
+      return () => window.clearTimeout(id);
+    }
   }, []);
 
   useEffect(() => {

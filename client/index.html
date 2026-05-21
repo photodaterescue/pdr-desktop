@@ -18,12 +18,81 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- System fonts are preferred by the design spec, but we'll include Inter as a fallback/enhancement just in case, 
-         plus nice display fonts if we decide to deviate slightly for "Premium" feel, 
+    <!-- System fonts are preferred by the design spec, but we'll include Inter as a fallback/enhancement just in case,
+         plus nice display fonts if we decide to deviate slightly for "Premium" feel,
          but adhering to "System-first stack" means we mostly rely on CSS font-family stack. -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+    <!--
+      PDR boot splash — pure inline HTML/CSS so it paints within ~200ms
+      of window-appears (before Vite has even started loading the main
+      JS bundle). Replaces the 2-3 second blank-white flash with a
+      branded lavender splash showing the PDR mark + name + a thin
+      indeterminate progress bar. main.tsx fades it out and removes it
+      after React has rendered its first frame.
+    -->
+    <style>
+      #pdr-splash {
+        position: fixed;
+        inset: 0;
+        background: #a99cff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 350ms ease-out;
+        -webkit-app-region: drag;
+      }
+      #pdr-splash.pdr-splash-hide {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #pdr-splash img {
+        width: 112px;
+        height: 112px;
+        margin-bottom: 28px;
+        filter: drop-shadow(0 6px 28px rgba(0, 0, 0, 0.22));
+      }
+      #pdr-splash .pdr-splash-name {
+        font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+        font-weight: 600;
+        font-size: 22px;
+        letter-spacing: 0.06em;
+        color: #ffffff;
+        margin-bottom: 32px;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+      }
+      #pdr-splash .pdr-splash-bar {
+        width: 200px;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.25);
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+      }
+      #pdr-splash .pdr-splash-bar::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        background: #ffffff;
+        border-radius: 999px;
+        animation: pdr-splash-progress 1.2s ease-in-out infinite;
+      }
+      @keyframes pdr-splash-progress {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(250%); }
+      }
+    </style>
   </head>
   <body>
+    <div id="pdr-splash">
+      <img src="./assets/pdr-logo_transparent.png" alt="" />
+      <div class="pdr-splash-name">PHOTO DATE RESCUE</div>
+      <div class="pdr-splash-bar"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
