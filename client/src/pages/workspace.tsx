@@ -404,6 +404,43 @@ useEffect(() => {
     sessionStorage.removeItem("pdr-sources");
   }, [sources]);
 
+  // Launch-time orphan sweep. If the workspace is empty at mount,
+  // any files sitting in PDR_Temp (either %TEMP%\PDR_Temp or
+  // <destinationDrive>\PDR_Temp) are necessarily orphans from a
+  // previous extraction that crashed mid-way (no completed fix to
+  // clean them, no source row in the UI to manually remove). They
+  // count against the 55 GB extraction cap, so without this sweep
+  // a crashed extract can permanently shrink the cap until the
+  // user manually deletes the temp folder. Jane 2026-05-21: had
+  // 21.5 GB of orphans from a May 18 crash blocking her next
+  // Takeout from being added. Fires once per app session via a
+  // ref guard.
+  const orphanSweepFiredRef = useRef(false);
+  useEffect(() => {
+    if (orphanSweepFiredRef.current) return;
+    if (sources.length > 0) {
+      // Sources present → not empty → no sweep. Mark fired so we
+      // don't trigger later when the user removes everything (that
+      // path has its own per-source cleanup).
+      orphanSweepFiredRef.current = true;
+      return;
+    }
+    orphanSweepFiredRef.current = true;
+    (async () => {
+      try {
+        const { sweepOrphanedTempDirsIfEmpty } = await import('@/lib/electron-bridge');
+        const result = await sweepOrphanedTempDirsIfEmpty();
+        if (result.success && result.bytesRemoved > 0) {
+          const gb = (result.bytesRemoved / (1024 ** 3)).toFixed(1);
+          console.log(`[orphan-sweep] freed ${gb} GB from ${result.dirsRemoved} orphaned temp director${result.dirsRemoved === 1 ? 'y' : 'ies'}`);
+        }
+      } catch (err) {
+        console.warn('[orphan-sweep] failed:', err);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Listen for reports history event from EmptyState
   useEffect(() => {
     const handleOpenReports = () => setShowReportsList(true);

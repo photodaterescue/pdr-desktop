@@ -259,6 +259,15 @@ export async function cleanupTempDirForSource(sourcePath: string): Promise<{ suc
   return { success: false, cleaned: 0 };
 }
 
+/** Launch-time orphan sweep — called when workspace has 0 sources but
+ *  PDR_Temp may have files from a previously-crashed extraction. */
+export async function sweepOrphanedTempDirsIfEmpty(): Promise<{ success: boolean; dirsRemoved: number; bytesRemoved: number }> {
+  if (isElectron() && typeof (window as any).pdr?.sweepOrphanedTempDirsIfEmpty === 'function') {
+    return await (window as any).pdr.sweepOrphanedTempDirsIfEmpty();
+  }
+  return { success: false, dirsRemoved: 0, bytesRemoved: 0 };
+}
+
 export async function saveReport(reportData: Omit<FixReport, 'id' | 'timestamp'>): Promise<{ success: boolean; data?: FixReport; error?: string }> {
   if (isElectron()) {
     return (window as any).pdr.saveReport(reportData);

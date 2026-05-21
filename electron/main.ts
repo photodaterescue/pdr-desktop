@@ -2514,7 +2514,65 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
   }
   return { success: true, cleaned };
 });
-  
+
+// Workspace-empty orphan sweep. Called by the renderer on mount when
+// the source list is empty (localStorage.pdr-sources has 0 entries).
+// Logic: if the user's workspace is empty, anything sitting in
+// PDR_Temp is by definition an orphan — there's no source row that
+// could ever reconcile it. The most common cause is a Takeout pre-
+// extraction that crashed mid-way (Jane 2026-05-21: ~21.5 GB of
+// orphaned extract from a May 18 crash, blocked her next Takeout
+// from being added because the 55 GB cap counted the orphans).
+//
+// Sweeps BOTH potential roots:
+//   - PDR_TEMP_ROOT (=%TEMP%\PDR_Temp), the legacy / fallback path
+//   - getCurrentPdrTempRoot() (=<destinationDrive>\PDR_Temp), the
+//     v2.0.0 default for extracted ZIP/RAR sources
+//
+// Safety: the renderer only calls this when sources.length === 0
+// AND it's the first mount, so we can't race with an in-flight
+// extraction (which would have already added a source row by the
+// time it pre-extracts).
+ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
+  const roots = new Set<string>();
+  roots.add(PDR_TEMP_ROOT);
+  try {
+    const currentRoot = getCurrentPdrTempRoot();
+    if (currentRoot) roots.add(currentRoot);
+  } catch { /* settings unreadable — only %TEMP% root counts */ }
+
+  let dirsRemoved = 0;
+  let bytesRemoved = 0;
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    let rootSize = 0;
+    try {
+      rootSize = folderSizeBytes(root);
+    } catch { /* size measure failed — proceed with cleanup anyway */ }
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(root);
+    } catch (err) {
+      log.warn(`[orphan-sweep] failed to read ${root}: ${(err as Error).message}`);
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(root, entry);
+      try {
+        fs.rmSync(full, { recursive: true, force: true });
+        dirsRemoved++;
+      } catch (err) {
+        log.warn(`[orphan-sweep] failed to remove ${full}: ${(err as Error).message}`);
+      }
+    }
+    bytesRemoved += rootSize;
+    if (rootSize > 0) {
+      log.info(`[orphan-sweep] cleaned ${root} — freed ${(rootSize / (1024 ** 3)).toFixed(1)} GB`);
+    }
+  }
+  return { success: true, dirsRemoved, bytesRemoved };
+});
+
 ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', tempDirOverride?: string) => {
   let tempDir: string | null = null;
   let claimedExtractInFlight = false;

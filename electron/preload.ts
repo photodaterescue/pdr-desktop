@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('pdr', {
   cleanupTempDirForSource: (sourcePath: string) =>
     ipcRenderer.invoke('analysis:cleanupTempDirForSource', sourcePath),
 
+  // Launch-time orphan sweep. Called by the renderer on FIRST mount
+  // when the source list is empty — any files in PDR_Temp are
+  // necessarily orphans from a previous crashed pre-extract.
+  // Returns { success, dirsRemoved, bytesRemoved }.
+  sweepOrphanedTempDirsIfEmpty: () =>
+    ipcRenderer.invoke('analysis:sweepOrphanedTempDirsIfEmpty'),
+
   onAnalysisProgress: (callback: (progress: any) => void) => {
   ipcRenderer.on('analysis:progress', (_: any, data: any) => callback(data));
 },
