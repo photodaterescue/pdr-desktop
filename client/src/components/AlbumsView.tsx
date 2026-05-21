@@ -2080,13 +2080,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 hover:-translate-y-[2px] hover:shadow-lg hover:z-10 relative transition-all duration-200 ease-out cursor-grab active:cursor-grabbing animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both ${ap.cardBgClass}`}
                       style={{ animationDelay: `${Math.min(idx, 8) * 30}ms`, animationDuration: '400ms' }}
                     >
-                      <div className="aspect-square bg-muted relative">
+                      {/* Cover image container — square via BOTH the
+                          aspect-square utility AND explicit inline
+                          aspectRatio. The class alone wasn't reliably
+                          forcing a 1:1 ratio inside the flex-col card
+                          (Terry 2026-05-21 screenshot showed cards in
+                          the same row with dramatically different
+                          heights). The img inside gets w-full + h-full +
+                          absolute positioning so its intrinsic
+                          dimensions can't leak through to grow the
+                          container vertically. */}
+                      <div className="aspect-square bg-muted relative overflow-hidden" style={{ aspectRatio: '1 / 1' }}>
                         {album.coverPath && thumbs[album.coverPath] ? (
-                          <img src={thumbs[album.coverPath]} alt={album.title} className="w-full h-full object-cover" loading="lazy" />
+                          <img src={thumbs[album.coverPath]} alt={album.title} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
                         ) : album.coverPath ? (
-                          <div className="w-full h-full skeleton-shimmer" />
+                          <div className="absolute inset-0 skeleton-shimmer" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center">
+                          <div className="absolute inset-0 flex items-center justify-center">
                             <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
                           </div>
                         )}
@@ -2166,13 +2176,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 hover:-translate-y-[2px] hover:shadow-lg hover:z-10 relative transition-all duration-200 ease-out cursor-grab active:cursor-grabbing animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both ${ap.cardBgClass}`}
                       style={{ animationDelay: `${Math.min(idx, 8) * 30}ms`, animationDuration: '400ms' }}
                     >
-                      <div className="aspect-square bg-muted relative">
+                      {/* Cover image container — square via BOTH the
+                          aspect-square utility AND explicit inline
+                          aspectRatio. The class alone wasn't reliably
+                          forcing a 1:1 ratio inside the flex-col card
+                          (Terry 2026-05-21 screenshot showed cards in
+                          the same row with dramatically different
+                          heights). The img inside gets w-full + h-full +
+                          absolute positioning so its intrinsic
+                          dimensions can't leak through to grow the
+                          container vertically. */}
+                      <div className="aspect-square bg-muted relative overflow-hidden" style={{ aspectRatio: '1 / 1' }}>
                         {album.coverPath && thumbs[album.coverPath] ? (
-                          <img src={thumbs[album.coverPath]} alt={album.title} className="w-full h-full object-cover" loading="lazy" />
+                          <img src={thumbs[album.coverPath]} alt={album.title} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
                         ) : album.coverPath ? (
-                          <div className="w-full h-full skeleton-shimmer" />
+                          <div className="absolute inset-0 skeleton-shimmer" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center">
+                          <div className="absolute inset-0 flex items-center justify-center">
                             <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
                           </div>
                         )}

@@ -964,6 +964,14 @@ export default function PeopleManager() {
   const draggedClusterKeyRef = useRef<string | null>(null);
   const dragOverClusterKeyRef = useRef<string | null>(null);
 
+  // "Preparing rows" indicator. True while the browser is still
+  // painting the initial render of the unnamed list. Cleared after a
+  // requestIdleCallback fires, which only happens once the browser
+  // has caught up. Terry 2026-05-21: "there needs to be some way of
+  // identifying if PM is still rendering, rather than having to base
+  // it on how laggy it is."
+  const [pmRendering, setPmRendering] = useState(true);
+
   const persistClusterOrder = (next: Record<string, number>) => {
     setClusterOrder(next);
     try { localStorage.setItem(CLUSTER_ORDER_KEY, JSON.stringify(next)); } catch { /* quota — ignore */ }
@@ -979,6 +987,24 @@ export default function PeopleManager() {
     });
     return arr;
   }, [unnamedClustersRaw, clusterOrder]);
+
+  // Flip pmRendering off once the browser is idle — meaning all
+  // initial paint/layout work for the rows has completed. With
+  // content-visibility:auto in CSS the browser will skip off-screen
+  // rows entirely, so this usually settles within 200-500ms even for
+  // thousands of clusters. Re-fires every time the unnamed list
+  // length changes (refresh, re-cluster, etc.) so the indicator
+  // reappears when there's fresh work happening.
+  useEffect(() => {
+    setPmRendering(true);
+    const w = window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
+    if (w.requestIdleCallback) {
+      const handle = w.requestIdleCallback(() => setPmRendering(false), { timeout: 1500 });
+      return () => { w.cancelIdleCallback?.(handle); };
+    }
+    const t = window.setTimeout(() => setPmRendering(false), 400);
+    return () => window.clearTimeout(t);
+  }, [unnamedClusters.length]);
 
   // Helper: find a row's DOM element by its cluster key. Used to
   // apply/remove the data-drag-state / data-drag-target attributes
@@ -1221,6 +1247,23 @@ export default function PeopleManager() {
               >
                 <Sparkle className="w-3 h-3 animate-pulse" />
                 <span>Analysing {aiProgress.current}/{aiProgress.total}</span>
+              </div>
+            </IconTooltip>
+          )}
+
+          {/* Rendering indicator — shown while the browser is still
+              painting the initial unnamed-clusters render. Disappears
+              once the browser idle callback fires (typically 200-500ms
+              after the list arrives, thanks to content-visibility:auto
+              skipping off-screen rows). Without this, Terry would have
+              to gauge readiness by laggy-ness. */}
+          {pmRendering && unnamedClusters.length > 0 && (
+            <IconTooltip label="Browser is still painting the rows. Drag and hover will be smoother in a moment." side="bottom">
+              <div
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-400/40 text-sm text-amber-700 dark:text-amber-300"
+              >
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Preparing {unnamedClusters.length.toLocaleString()} rows…</span>
               </div>
             </IconTooltip>
           )}

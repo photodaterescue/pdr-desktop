@@ -504,6 +504,31 @@ body > .window-resize-hint-tr {
     transition: filter 75ms ease-out;
   }
 
+  /* ── PM cluster row content-visibility (cheap virtualization) ───── */
+  /* People Manager renders thousands of unnamed-cluster rows (Terry:
+     3624). Even with the v2.0.9 drag-to-refs fix, raw DOM weight made
+     hover-over-grab-handle take seconds to respond — the browser was
+     spending its time on paint/layout for the off-screen rows. CSS
+     content-visibility: auto tells Chromium to skip paint and layout
+     for off-screen rows entirely, which is browser-level virtualization
+     without needing a JS library refactor. The DOM stays present
+     (drag handlers, querySelector, drag-end fallback paths all still
+     work), only the expensive parts are deferred.
+
+     contain-intrinsic-size: auto 120px sets the implicit row height
+     when offscreen — the browser uses it to size the scroll bar
+     correctly without having to paint each row first. 120px is close
+     to a typical cluster row's actual height; the `auto` keyword tells
+     the browser to remember each row's real height the FIRST time it
+     paints it, so re-scroll is even more accurate.
+
+     This rule is scoped to PM ([data-cluster-row]) so other surfaces
+     are unaffected. */
+  [data-cluster-row] {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
+
   /* ── PM Unnamed drag state — driven via data attributes ──────────── */
   /* People Manager renders thousands of unnamed-cluster rows (Terry's
      install: 3624). The original drag implementation stored
