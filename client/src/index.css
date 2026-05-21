@@ -546,23 +546,38 @@ body > .window-resize-hint-tr {
      scale on a 60k-button cluster row would invite the same class
      of issue. Opacity + border is plenty to read as "this one is
      in flight." */
+  /* Source row fade — opacity only, no border. The dashed border on
+     the source row + the drag clone preview floating over the target
+     + the Radix tooltip all visible at once made the drag feel
+     cluttered (Terry 2026-05-21 screenshot). Just opacity is plenty
+     — the drag clone is the visual the user follows. */
   [data-cluster-row][data-drag-state="dragging"] {
-    opacity: 0.25;
-    border: 2px dashed rgb(192 132 252 / 0.7);
-    border-radius: 12px;
+    opacity: 0.2;
   }
+  /* Insertion line above the drop target. Same lavender-to-purple
+     palette as Albums tree's drop indicators (shadow primary/40) so
+     PM drag visual reads as the same family. 3px thick (was 4px) —
+     thinner is more "premium". */
   [data-cluster-row][data-drag-target="true"]::before {
     content: '';
     position: absolute;
-    left: 0;
-    right: 0;
-    top: -4px;
-    height: 4px;
+    left: 8px;
+    right: 8px;
+    top: -2px;
+    height: 3px;
     background: rgb(168 85 247);
     border-radius: 9999px;
-    box-shadow: 0 0 6px rgb(168 85 247 / 0.6);
+    box-shadow: 0 0 6px rgb(168 85 247 / 0.5);
     z-index: 20;
     pointer-events: none;
+  }
+  /* Hide Radix tooltips globally during a PM drag. The "Drag to
+     reorder" tooltip would otherwise stay mounted from the pre-drag
+     hover and overlap the drag preview. body[data-pm-dragging] is
+     set by the drag handlers in PeopleManager.tsx. */
+  body[data-pm-dragging="true"] [data-radix-tooltip-content],
+  body[data-pm-dragging="true"] [data-state="delayed-open"][role="tooltip"] {
+    display: none !important;
   }
 
   /* ── Skeleton shimmer for image-loading placeholders ──────────────── */

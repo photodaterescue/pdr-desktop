@@ -1048,10 +1048,13 @@ export default function PeopleManager() {
       setTimeout(() => { try { clone.remove(); } catch {} }, 0);
       // AFTER cloning, fade the original via DOM attribute. The CSS
       // rule in index.css ([data-cluster-row][data-drag-state="dragging"])
-      // paints the opacity + dashed border. Zero React renders.
+      // paints the opacity. Zero React renders.
       parent.setAttribute('data-drag-state', 'dragging');
     }
     draggedClusterKeyRef.current = key;
+    // Tell global CSS that a PM drag is in flight so Radix tooltips
+    // hide themselves — see body[data-pm-dragging] rule in index.css.
+    document.body.setAttribute('data-pm-dragging', 'true');
   };
 
   const handleClusterDragOver = (e: React.DragEvent, key: string) => {
@@ -1108,6 +1111,8 @@ export default function PeopleManager() {
     }
     draggedClusterKeyRef.current = null;
     dragOverClusterKeyRef.current = null;
+    // Drag is over — tooltips can show again.
+    document.body.removeAttribute('data-pm-dragging');
   };
 
   const handleClusterDrop = (e: React.DragEvent, targetKey: string) => {
