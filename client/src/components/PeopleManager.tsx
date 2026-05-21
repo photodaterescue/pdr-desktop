@@ -1017,40 +1017,56 @@ export default function PeopleManager() {
 
   const handleClusterDragStart = (e: React.DragEvent, key: string) => {
     e.dataTransfer.effectAllowed = 'move';
-    // Use a CLONE of the row as the drag image, not the row itself.
-    // The browser captures the drag image asynchronously, so by the
-    // time it samples the source element our DOM mutation below has
-    // already faded it (opacity-25) and the dragged preview ends up
-    // looking like a ghost. The clone is a snapshot of the row as it
-    // was BEFORE the state update — proper drop-shadow card that
-    // visibly follows the cursor.
+    // Drag preview: a small lavender-bordered chip with a person
+    // icon + photo count — matches the Albums tree drag style
+    // (createDragPreviewChip in AlbumsView.tsx). Tiny clean pill that
+    // visibly follows the cursor. No more row-clone-with-rotation
+    // (Terry 2026-05-21: "it should operate in the same style as the
+    // tree for Albums").
+    const cluster = unnamedClusters.find((c) => clusterKey(c) === key);
+    const label = cluster
+      ? `${cluster.photo_count.toLocaleString()} photo${cluster.photo_count === 1 ? '' : 's'}`
+      : 'Move row';
+    const chip = document.createElement('div');
+    chip.style.cssText = [
+      'position: absolute',
+      'top: -1000px',
+      'left: -1000px',
+      'pointer-events: none',
+      'display: inline-flex',
+      'align-items: center',
+      'gap: 6px',
+      'padding: 4px 10px',
+      'background: var(--card, white)',
+      'border: 1.5px solid var(--primary, #ad9eff)',
+      'border-radius: 8px',
+      'box-shadow: 0 4px 12px rgba(173, 158, 255, 0.35)',
+      'font: 500 12px/1.4 var(--font-sans, system-ui, sans-serif)',
+      'color: var(--foreground, #1a1a1a)',
+      'white-space: nowrap',
+      'max-width: 240px',
+      'overflow: hidden',
+      'text-overflow: ellipsis',
+      'z-index: 99999',
+    ].join('; ');
+    const iconWrap = document.createElement('span');
+    iconWrap.style.cssText = 'display: inline-flex; flex-shrink: 0';
+    iconWrap.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ad9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a6.5 6.5 0 0 1 13 0"/></svg>';
+    const textEl = document.createElement('span');
+    textEl.textContent = label;
+    chip.appendChild(iconWrap);
+    chip.appendChild(textEl);
+    document.body.appendChild(chip);
+    e.dataTransfer.setDragImage(chip, 12, 8);
+    // Remove on next tick — after the browser snapshots it.
+    setTimeout(() => { try { chip.remove(); } catch { /* ignore */ } }, 0);
+
+    // Mark the source row via data attribute so any future in-flight
+    // cue (CSS-driven, see index.css) can pick it up. No opacity fade
+    // — Albums tree leaves the source row visually unchanged and PM
+    // now matches.
     const parent = (e.currentTarget as HTMLElement).closest('[data-cluster-row]') as HTMLElement | null;
-    if (parent) {
-      const clone = parent.cloneNode(true) as HTMLElement;
-      clone.style.position = 'absolute';
-      clone.style.top = '-9999px';
-      clone.style.left = '-9999px';
-      clone.style.width = `${parent.offsetWidth}px`;
-      clone.style.opacity = '0.95';
-      clone.style.boxShadow = '0 12px 28px rgba(168, 85, 247, 0.35), 0 4px 12px rgba(0,0,0,0.2)';
-      clone.style.borderRadius = '12px';
-      clone.style.background = 'var(--background, white)';
-      clone.style.transform = 'rotate(-1deg)';
-      clone.style.pointerEvents = 'none';
-      // Strip data-drag attributes from the clone so it doesn't look
-      // mid-drag itself.
-      clone.removeAttribute('data-drag-state');
-      clone.removeAttribute('data-drag-target');
-      document.body.appendChild(clone);
-      e.dataTransfer.setDragImage(clone, 20, 20);
-      // Remove the clone after the browser has had a chance to
-      // snapshot it. setTimeout(0) is enough on every modern engine.
-      setTimeout(() => { try { clone.remove(); } catch {} }, 0);
-      // AFTER cloning, fade the original via DOM attribute. The CSS
-      // rule in index.css ([data-cluster-row][data-drag-state="dragging"])
-      // paints the opacity. Zero React renders.
-      parent.setAttribute('data-drag-state', 'dragging');
-    }
+    if (parent) parent.setAttribute('data-drag-state', 'dragging');
     draggedClusterKeyRef.current = key;
     // Tell global CSS that a PM drag is in flight so Radix tooltips
     // hide themselves — see body[data-pm-dragging] rule in index.css.
