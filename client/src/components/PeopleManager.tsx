@@ -1852,32 +1852,25 @@ export default function PeopleManager() {
                         {unnamedClusters.map((cluster, idx) => {
                           const ck = clusterKey(cluster);
                           return (
-                          <div
+                          <LazyClusterRow
                             key={ck}
-                            data-cluster-row
-                            data-cluster-key={ck}
+                            clusterKey={ck}
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
                             onDragLeave={(e) => handleClusterDragLeave(ck, e)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
-                            // Drag visuals (faded source + insertion line on
-                            // the drop target) are painted by CSS rules in
-                            // index.css that key off data-drag-state and
-                            // data-drag-target — set via DOM mutation in the
-                            // handlers above, NOT React state. Zero re-renders
-                            // during drag.
+                            // Drag visuals painted by CSS rules in
+                            // index.css keyed off data-drag-state +
+                            // data-drag-target — set via DOM mutation in
+                            // the handlers above, NOT React state. Zero
+                            // re-renders during drag.
                             className="relative"
+                            placeholderHeight={100}
                           >
-                            {/* Insertion-line drop indicator is rendered by
-                                CSS ::before pseudo-element on
-                                [data-drag-target="true"] — see index.css. */}
+                            {() => <>
                             {/* Drag handle — visible-by-default vertical
-                                grip strip on the left edge. Big enough to
-                                grab without aiming, purple-tinted on hover
-                                so the affordance reads clearly. Only the
+                                grip strip on the left edge. Only the
                                 handle is draggable so clicks on thumbnails
-                                / name fields keep working. The drag
-                                preview is set to the parent row in
-                                handleClusterDragStart. */}
+                                / name fields keep working. */}
                             <IconTooltip label="Drag to reorder" side="left">
                               <div
                                 draggable
@@ -1935,7 +1928,8 @@ export default function PeopleManager() {
                             showMatched={showMatched}
                             showUnverifiedOnly={showUnverifiedOnly}
                           />
-                          </div>
+                          </>}
+                          </LazyClusterRow>
                           );
                         })}
                       </div>
@@ -1944,18 +1938,17 @@ export default function PeopleManager() {
                         {unnamedClusters.map((cluster) => {
                           const ck = clusterKey(cluster);
                           return (
-                          <div
+                          <LazyClusterRow
                             key={ck}
-                            data-cluster-row
-                            data-cluster-key={ck}
+                            clusterKey={ck}
                             onDragOver={(e) => handleClusterDragOver(e, ck)}
                             onDragLeave={(e) => handleClusterDragLeave(ck, e)}
                             onDrop={(e) => handleClusterDrop(e, ck)}
                             // Drag visuals via CSS / DOM attrs — see other map().
                             className="relative"
+                            placeholderHeight={36}
                           >
-                            {/* Insertion-line drop indicator via CSS ::before
-                                on [data-drag-target="true"]. */}
+                            {() => <>
                             <IconTooltip label="Drag to reorder" side="left">
                               <div
                                 draggable
@@ -1990,7 +1983,8 @@ export default function PeopleManager() {
                             onConfirmUnsure={() => handleUnsureCluster(cluster.cluster_id)}
                             onCancelUnsure={() => setPendingUnsure(null)}
                           />
-                          </div>
+                          </>}
+                          </LazyClusterRow>
                           );
                         })}
                       </div>
@@ -3496,6 +3490,76 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
         </motion.div>
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+/* ─── Lazy cluster row wrapper ──────────────────────────────────────────
+   Defers the expensive inner content (drag handle + PersonCardRow with
+   its ~30 face thumbnails per cluster) until the row scrolls into the
+   viewport (or within 500px of it). The OUTER wrapper div stays mounted
+   for every cluster so drag-drop handlers + querySelector lookups by
+   data-cluster-key keep working even for off-screen rows. Once revealed,
+   the row stays revealed for the lifetime of the list — scrolling back
+   doesn't re-mount, but scrolling further down doesn't keep paying for
+   rows we've already rendered.
+
+   Why function-as-children: the parent's .map() runs for ALL 3624
+   clusters on every render. If we passed the inner JSX directly as
+   children, React would construct 3624 PersonCardRow elements + their
+   ~30 callback closures each on every render. The function child is a
+   single cheap closure that's only called when the row is revealed.
+
+   Terry 2026-05-21: "There are 3624 Unnamed thumbnails to go through,
+   but they shouldn't have have to all load just to make the UX better.
+   There's potentially 200 in view that need to be loaded to allow the
+   rest of it behind the scene (off-view) to render." */
+function LazyClusterRow({
+  clusterKey: ck,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  className,
+  placeholderHeight,
+  children,
+}: {
+  clusterKey: string;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+  className?: string;
+  placeholderHeight: number;
+  children: () => React.ReactNode;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (revealed) return;
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          setRevealed(true);
+          obs.disconnect();
+          break;
+        }
+      }
+    }, { rootMargin: '500px 0px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [revealed]);
+  return (
+    <div
+      ref={ref}
+      data-cluster-row
+      data-cluster-key={ck}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={className}
+    >
+      {revealed ? children() : <div style={{ height: placeholderHeight }} aria-hidden="true" />}
+    </div>
   );
 }
 
