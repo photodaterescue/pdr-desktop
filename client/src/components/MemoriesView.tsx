@@ -421,7 +421,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
   const otdLabel = `${MONTH_NAMES[today.getMonth()]} ${today.getDate()}`;
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background animate-in fade-in-0 duration-300">
       {/* Back-to-album pill moved into TitleBar (v2.0.8 polish pass).
           Terry 2026-05-19: "to the right of 'Photo Date Rescue' in
           the titlebar" — visible regardless of which surface is

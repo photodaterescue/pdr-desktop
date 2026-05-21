@@ -2473,7 +2473,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         independent of which right-pane surface is currently
         rendered. The wrapper is presentational only — h-full so it
         doesn't collapse the panel-group's layout. */}
-    <div ref={albumsRootRef} className="h-full">
+    <div ref={albumsRootRef} className="h-full animate-in fade-in-0 duration-300">
     <ResizablePanelGroup direction="horizontal" className="h-full" autoSaveId="pdr-albums-pane-split">
       {/* LEFT — tree pane (user-resizable, persists size in localStorage
           via autoSaveId on the ResizablePanelGroup). */}

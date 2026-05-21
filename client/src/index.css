@@ -484,6 +484,30 @@ body > .window-resize-hint-tr {
     box-shadow: 0 10px 25px rgba(108, 99, 255, 0.3);
   }
 
+  /* ── App-wide button press feedback ───────────────────────────────── */
+  /* Tactile 0.97 scale-down on every clickable surface — buttons,
+     role="button", anchors, and the radix-dialog close-X. Premium apps
+     all do this (Linear, Notion, Apple HIG). 90ms ease-out is the
+     sweet spot — fast enough to feel like a real press, slow enough
+     to register as motion rather than a flicker.
+
+     Specificity is intentionally higher than Tailwind's hover utility
+     classes (element + pseudo-class = 0,1,1 vs class = 0,1,0) so the
+     press wins over hover lift/scale — when the user is pressing,
+     they expect the button to settle DOWN, not stay lifted up. On
+     release, hover resumes; on mouse-out, baseline transform.
+
+     transition-duration override (75ms) makes the press feel snappy.
+     The browser smoothly interpolates the existing translateY/scale
+     into a flat scale(0.97), so even buttons with hover-lift settle
+     visibly. */
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active,
+  a:not([aria-disabled="true"]):active {
+    transform: scale(0.97);
+    transition-duration: 75ms;
+  }
+
   /* ── Sidebar collapse/expand animation — premium smooth feel ─────── */
   .sidebar-animated {
     transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
