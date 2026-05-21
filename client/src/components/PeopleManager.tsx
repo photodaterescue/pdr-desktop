@@ -1979,18 +1979,22 @@ export default function PeopleManager() {
                               <div
                                 {...(listeners ?? {})}
                                 style={{ touchAction: 'none' }}
-                                // Wider handle (~36px) with a double-
-                                // column grip pattern so it reads as
-                                // substantial instead of a thin sliver
-                                // jammed against the left edge.
-                                className="absolute left-0 top-0 bottom-0 -translate-x-2 w-9 flex items-center justify-center gap-1.5 cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l-md z-10"
+                                // Handle sits OUTSIDE the row to its
+                                // left — `-left-9` puts the right edge
+                                // 8px past the row's left edge (small
+                                // breathing space), no overlap with the
+                                // row number inside the row content.
+                                // gap-0.5 = 2px between the two grip
+                                // glyphs (was 6px — Terry: "bring them
+                                // closer by half").
+                                className="absolute -left-9 top-0 bottom-0 w-7 flex items-center justify-center gap-0.5 cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-md z-10"
                               >
-                                <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
+                                <svg width="10" height="20" viewBox="0 0 12 20" fill="currentColor">
                                   <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
                                   <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
                                   <circle cx="3.5" cy="16" r="1.4" /><circle cx="8.5" cy="16" r="1.4" />
                                 </svg>
-                                <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
+                                <svg width="10" height="20" viewBox="0 0 12 20" fill="currentColor">
                                   <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
                                   <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
                                   <circle cx="3.5" cy="16" r="1.4" /><circle cx="8.5" cy="16" r="1.4" />
