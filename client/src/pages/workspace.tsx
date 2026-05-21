@@ -3213,6 +3213,38 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     }
   });
 
+  // Sidebar transition suppression — fires for 400ms whenever the
+  // Workspace first becomes the live view (URL pathname flips to
+  // /workspace). Without this, the AppShell cross-fade (opacity:0 →
+  // opacity:1 over 300ms, added in batch 1) keeps the sidebar in
+  // continuous layout while the user is on Welcome, so when the
+  // user clicks a Welcome card to land on Memories/Trees/S&D the
+  // sidebar's `.sidebar-animated { transition: width 0.35s }` rule
+  // fires on the URL-driven width change — the user sees the
+  // sidebar shrinking from expanded → collapsed. Before the
+  // cross-fade replaced display:none, the workspace had NO prior
+  // width in layout, so width changes didn't transition on first
+  // reveal. Solution: omit the sidebar-animated class while
+  // sidebarTransitionsSuppressed=true. Later user actions (pin
+  // button, menu button) still get the smooth transition because
+  // it's only suppressed for the brief settle window.
+  const [sidebarTransitionsSuppressed, setSidebarTransitionsSuppressed] = useState(false);
+  const wasOnWorkspaceRef = useRef(false);
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isOnWorkspace = window.location.hash.startsWith('#/workspace');
+    if (isOnWorkspace && !wasOnWorkspaceRef.current) {
+      wasOnWorkspaceRef.current = true;
+      setSidebarTransitionsSuppressed(true);
+      const t = setTimeout(() => setSidebarTransitionsSuppressed(false), 400);
+      return () => clearTimeout(t);
+    }
+    if (!isOnWorkspace) {
+      wasOnWorkspaceRef.current = false;
+    }
+  });
+  const sidebarAnimatedClass = sidebarTransitionsSuppressed ? '' : 'sidebar-animated';
+
   // Dashboard / Workspace doubles as the Source Menu — the sidebar
   // is critical there once sources exist. When the workspace is
   // empty (sources.length === 0) the EmptyState component shows a
@@ -3460,7 +3492,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     return (
       <div
         data-tour="sd-sidebar-collapse"
-        className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 sidebar-animated overflow-y-auto"
+        className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 overflow-y-auto ${sidebarAnimatedClass}`}
         style={{ width: '48px' }}
       >
         {/* Expand button — must ALWAYS expand the sidebar, including
@@ -3609,7 +3641,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       // currently rendered, not vanish when the user has pinned the
       // sidebar open.
       data-tour="sd-sidebar-collapse"
-      className="bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container sidebar-animated overflow-y-auto"
+      className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container overflow-y-auto ${sidebarAnimatedClass}`}
       style={{ width: `${width}px` }}
     >
       {/* Pin / collapse controls — icons sized up from 3.5 to 4, padding
