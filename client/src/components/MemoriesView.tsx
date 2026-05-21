@@ -166,6 +166,24 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     if (typeof localStorage === 'undefined') return false;
     return localStorage.getItem(OTD_HIDDEN_KEY) === '1';
   });
+  // "Ready to render" gate that defers the OTD card's first mount
+  // by one frame after Memories itself mounts. Terry's theory
+  // 2026-05-21: with the OTD card mounting in the same render
+  // cycle as the workspace's activeView change, the heavyweight
+  // OTD work (its IntersectionObservers, thumbnail IPCs, gradient
+  // layout) competes for the first paint and the sidebar's
+  // collapse state-update doesn't land before the browser draws
+  // — so the user sees the wide sidebar for a frame before it
+  // snaps shut. Hiding OTD during initial mount with a one-frame
+  // setTimeout means the sidebar's tempExpanded reset wins the
+  // race and the first visible frame already has the correct
+  // collapsed layout. After that one frame the OTD card mounts
+  // normally; the user doesn't perceive the delay.
+  const [otdReady, setOtdReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setOtdReady(true), 0);
+    return () => clearTimeout(t);
+  }, []);
   const hideOnThisDay = () => {
     setOtdHidden(true);
     try { localStorage.setItem(OTD_HIDDEN_KEY, '1'); } catch { /* localStorage may be unavailable */ }
@@ -618,7 +636,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                 card + AI-suggestion badge + larger heading make the
                 hierarchy obvious. `data-tour="mem-on-this-day"` is
                 the spotlight target for step 3 of the Memories tour. */}
-            {onThisDay.length > 0 && !otdHidden && (
+            {onThisDay.length > 0 && !otdHidden && otdReady && (
               <section
                 className="mx-6 mt-6 mb-4 p-4 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 shadow-sm relative"
                 data-tour="mem-on-this-day"

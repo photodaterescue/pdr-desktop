@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { List, type RowComponentProps } from 'react-window';
+// react-window virtualisation reverted 2026-05-20 (see grid view
+// comment below). The dep stays in package.json for future use.
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { isEditDatesEnabled, EDIT_DATES_RELEASED_SHORTLY_MESSAGE } from '@/lib/feature-flags';
@@ -4313,158 +4314,74 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     });
                   }}
                 >
-                  {/* ── Grid View (virtualised, tile size controlled by slider) ──
-                      v2.0.9 perf pass: replaces the previous full-DOM
-                      CSS Grid (rendering every FileCard regardless of
-                      visibility) with react-window's List. Each
-                      virtualised "row" is a flex container of N
-                      FileCards; only the visible rows plus a small
-                      overscan window stay in the DOM. After several
-                      infinite-scroll pages the DOM stays ~20 cards
-                      instead of growing linearly to 200/500/1000+.
-                      Column count is derived from the live container
-                      width (via the ResizeObserver above) divided by
-                      the tile-size slider's current px target — same
-                      "auto-fill / minmax" semantics as the previous
-                      CSS Grid, recomputed on resize. Infinite scroll
-                      driven by List's onRowsRendered (when the user
-                      gets within 2 rows of the end, fire loadMore).
-                      The separate IntersectionObserver-based sentinel
-                      below still fires for List/Details views which
-                      remain non-virtualised. */}
-                  {viewMode === 'grid' && (() => {
-                    const tilePx = tileSliderToPx(tileSizeSlider);
-                    // Approx per-tile vertical footprint:
-                    //   tilePx (square thumbnail)
-                    //   + ~18px per metadata line shown beneath
-                    //   + 6px breathing room
-                    // The current CSS grid uses `gap-0`, so no extra
-                    // gap to factor in. If the meta-line line-height
-                    // changes in FileCard's CSS, bump the multiplier
-                    // here so virtualisation doesn't clip the last
-                    // line of each tile.
-                    const metaLineHeight = 18;
-                    const rowHeight = tilePx + (tileMetaFields.length * metaLineHeight) + 6;
-                    // Window-size fallback so the List renders even
-                    // when the ResizeObserver hasn't measured the
-                    // container yet (which happens on the very first
-                    // appearance of the grid container — it's only
-                    // mounted to the DOM when results materialise).
-                    // Without the fallback we used to short-circuit
-                    // to an empty placeholder div, which left S&D
-                    // showing "555 results" with a blank grid until
-                    // the next ResizeObserver callback. Terry
-                    // 2026-05-20. Real measurements arrive within a
-                    // frame or two and the List re-renders at the
-                    // correct dims.
-                    const effectiveWidth = gridSize.width || (typeof window !== 'undefined' ? window.innerWidth - 100 : 1200);
-                    const effectiveHeight = gridSize.height || (typeof window !== 'undefined' ? window.innerHeight - 250 : 600);
-                    const columnCount = Math.max(1, Math.floor(effectiveWidth / tilePx));
-                    const rowCount = Math.ceil(displayFiles.length / columnCount);
-                    if (rowCount === 0) {
-                      return null;
-                    }
-                    const Row = ({ index, style }: RowComponentProps<object>) => {
-                      const startIdx = index * columnCount;
-                      return (
-                        <div style={style as React.CSSProperties} className="flex">
-                          {Array.from({ length: columnCount }, (_, col) => {
-                            const idx = startIdx + col;
-                            const file = displayFiles[idx];
-                            if (!file) {
-                              // Pad the last row with empty placeholders so
-                              // the surviving tiles don't stretch to fill.
-                              return <div key={`empty-${col}`} className="flex-1 min-w-0" />;
+                  {/* ── Grid View (CSS grid, tile size controlled by slider) ──
+                      Reverted from react-window virtualisation in
+                      v2.0.9 — Terry 2026-05-20: "Revert S&D's grid
+                      to the pre-virtualised CSS grid (the one that
+                      worked yesterday). Drop react-window from S&D
+                      entirely; keep the perf wins from
+                      infinite-scroll-on-scroll + the contextual-count
+                      debounce." The virtualisation captured a
+                      zero-dimensions measurement when the panel
+                      mounted hidden under the workspace pre-mount,
+                      and never re-measured when the panel later
+                      became visible — the result was 'Showing 60 of
+                      18,744' with no tiles rendering. The CSS grid
+                      has no such measurement gate; tiles render the
+                      moment displayFiles is populated. Infinite
+                      scroll still works via the IntersectionObserver
+                      sentinel below (gated on hasUserScrolledRef so
+                      it can't auto-chain at first paint). */}
+                  {viewMode === 'grid' && (
+                    <div
+                      className="grid gap-0"
+                      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSliderToPx(tileSizeSlider)}px, 1fr))` }}
+                    >
+                      {displayFiles.map((file, idx) => (
+                        <FileCard key={file.id} file={file} thumbnail={thumbnails[file.file_path]}
+                          metaFields={tileMetaFields}
+                          selectionMode={selectionMode}
+                          isSelected={selectedFile?.id === file.id}
+                          isMultiSelected={selectedFiles.has(file.id)}
+                          onCheckboxClick={(e: React.MouseEvent) => {
+                            const multiSelectActive = selectedFiles.size > 0;
+                            if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
+                              const start = Math.min(lastClickedIndexRef.current, idx);
+                              const end = Math.max(lastClickedIndexRef.current, idx);
+                              for (let i = start; i <= end; i++) {
+                                const f = displayFiles[i];
+                                if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
+                              }
+                              lastClickedIndexRef.current = idx;
+                              return;
                             }
-                            return (
-                              <div key={file.id} className="flex-1 min-w-0">
-                                <FileCard file={file} thumbnail={thumbnails[file.file_path]}
-                                  metaFields={tileMetaFields}
-                                  selectionMode={selectionMode}
-                                  isSelected={selectedFile?.id === file.id}
-                                  isMultiSelected={selectedFiles.has(file.id)}
-                                  onCheckboxClick={(e: React.MouseEvent) => {
-                                    // Same handler semantics as the
-                                    // pre-virtualisation CSS Grid. Idx
-                                    // here is the FLAT file index
-                                    // (row * columnCount + col) so
-                                    // shift-range-select still walks
-                                    // displayFiles linearly the way
-                                    // the user perceives the grid.
-                                    const multiSelectActive = selectedFiles.size > 0;
-                                    if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
-                                      const start = Math.min(lastClickedIndexRef.current, idx);
-                                      const end = Math.max(lastClickedIndexRef.current, idx);
-                                      for (let i = start; i <= end; i++) {
-                                        const f = displayFiles[i];
-                                        if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
-                                      }
-                                      lastClickedIndexRef.current = idx;
-                                      return;
-                                    }
-                                    toggleFileSelection(file);
-                                    lastClickedIndexRef.current = idx;
-                                  }}
-                                  onClick={(e: React.MouseEvent) => {
-                                    if (e.ctrlKey || e.metaKey) {
-                                      e.preventDefault();
-                                      toggleFileSelection(file);
-                                      lastClickedIndexRef.current = idx;
-                                      return;
-                                    }
-                                    if (e.shiftKey && lastClickedIndexRef.current !== null) {
-                                      e.preventDefault();
-                                      const start = Math.min(lastClickedIndexRef.current, idx);
-                                      const end = Math.max(lastClickedIndexRef.current, idx);
-                                      for (let i = start; i <= end; i++) {
-                                        const f = displayFiles[i];
-                                        if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
-                                      }
-                                      return;
-                                    }
-                                    setSelectedFile(file);
-                                    lastClickedIndexRef.current = idx;
-                                  }}
-                                  onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined} />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    };
-                    return (
-                      <List
-                        rowCount={rowCount}
-                        rowHeight={rowHeight}
-                        defaultHeight={effectiveHeight}
-                        rowComponent={Row}
-                        rowProps={{}}
-                        overscanCount={2}
-                        onRowsRendered={({ stopIndex }: { stopIndex: number }) => {
-                          // Drive infinite scroll once the user reaches the
-                          // last couple of virtual rows. Mirrors the
-                          // IntersectionObserver-based sentinel used by
-                          // list/details views, but works inside react-window's
-                          // own scroll container (which doesn't trigger the
-                          // sentinel because it's outside the List).
-                          // Gated on `hasUserScrolledRef` for the same reason
-                          // as the sentinel path: on initial render react-window
-                          // synthesises an onRowsRendered for the first batch
-                          // of visible rows, which would auto-fire loadMore
-                          // chain-style and pull a 18k-result library down
-                          // before the user has done anything.
-                          if (
-                            hasUserScrolledRef.current &&
-                            results &&
-                            results.files.length < results.total &&
-                            stopIndex >= rowCount - 2
-                          ) {
-                            void loadMore();
-                          }
-                        }}
-                      />
-                    );
-                  })()}
+                            toggleFileSelection(file);
+                            lastClickedIndexRef.current = idx;
+                          }}
+                          onClick={(e: React.MouseEvent) => {
+                            if (e.ctrlKey || e.metaKey) {
+                              e.preventDefault();
+                              toggleFileSelection(file);
+                              lastClickedIndexRef.current = idx;
+                              return;
+                            }
+                            if (e.shiftKey && lastClickedIndexRef.current !== null) {
+                              e.preventDefault();
+                              const start = Math.min(lastClickedIndexRef.current, idx);
+                              const end = Math.max(lastClickedIndexRef.current, idx);
+                              for (let i = start; i <= end; i++) {
+                                const f = displayFiles[i];
+                                if (f && !selectedFiles.has(f.id)) toggleFileSelection(f, 'add');
+                              }
+                              return;
+                            }
+                            setSelectedFile(file);
+                            lastClickedIndexRef.current = idx;
+                          }}
+                          onDoubleClick={file.file_type === 'photo' ? () => safeOpenViewer(displayFiles.map(x => x.file_path), displayFiles.map(x => x.filename), idx) : undefined} />
+                      ))}
+                    </div>
+                  )}
 
                   {/* ── List View ── */}
                   {viewMode === 'list' && (

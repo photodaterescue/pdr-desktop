@@ -1345,7 +1345,7 @@ app.whenReady().then(() => {
         console.warn('[Startup] background mirror init failed (non-fatal):', e.message);
     }
     // Handle pdr-file:// protocol — serves local files to the viewer window
-    protocol.handle('pdr-file', (request) => {
+    protocol.handle('pdr-file', async (request) => {
         // New canonical form: pdr-file://local/?f=<urlencoded-path>
         // (Query params are never host-parsed, so the drive-letter colon survives.)
         // Legacy form: pdr-file://[/[/]]<path> — still handled for compat.
@@ -1376,6 +1376,40 @@ app.whenReady().then(() => {
         const fileUrl = 'file:///' + encodeURI(raw);
         if (process.env.PDR_DEBUG_PROTOCOL) {
             console.log('[pdr-file] request =', request.url, '→ fetch', fileUrl);
+        }
+        // HEIC / HEIF: Chromium can't decode HEVC-payload HEIC files
+        // natively. The PDR Viewer (and any other surface that loads the
+        // raw file via pdr-file://) would get a broken-image icon if we
+        // served the original bytes. Convert on the fly to JPEG via
+        // pure-JS heic-convert and return that instead. Same library
+        // browser:thumbnail uses for HEIC thumbnails. Larger files take
+        // a couple of seconds the first time; subsequent fetches of the
+        // same file in the same session are served from Chromium's
+        // memory cache. Terry 2026-05-20: "do it... so it can be seen
+        // throughout PDR... not just S&D".
+        const lowerExt = (() => {
+            const i = raw.lastIndexOf('.');
+            return i >= 0 ? raw.slice(i).toLowerCase() : '';
+        })();
+        if (lowerExt === '.heic' || lowerExt === '.heif') {
+            try {
+                const heicConvert = (await import('heic-convert')).default;
+                const inputBuffer = await fs.promises.readFile(toLongPath(raw));
+                const jpeg = await heicConvert({
+                    buffer: inputBuffer,
+                    format: 'JPEG',
+                    quality: 0.9,
+                });
+                return new Response(Buffer.from(jpeg), {
+                    status: 200,
+                    headers: { 'Content-Type': 'image/jpeg' },
+                });
+            }
+            catch (e) {
+                console.warn('[pdr-file] HEIC decode failed for', raw, e.message);
+                // Fall through to the regular fetch so Chromium can show
+                // its broken-image fallback rather than hanging.
+            }
         }
         // Forward Range headers so the <video> element can seek properly.
         return net.fetch(fileUrl, {
@@ -1852,8 +1886,36 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath, size) => {
         }
         let jpegBuffer = null;
         const ext = path.extname(filePath).toLowerCase();
+        // HEIC / HEIF: sharp on Windows can't decode the HEVC pixel
+        // payload (libheif ships without the HEVC plugin under the
+        // standard LGPL distribution because HEVC is patent-encumbered).
+        // Decode via pure-JS heic-convert FIRST and hand the resulting
+        // JPEG bytes to sharp for resize. Slower than native libheif
+        // (~200–400ms per first thumbnail) but the result is cached on
+        // disk after this run, so every subsequent open of the same
+        // photo is instant. Terry 2026-05-20: "do it... so it can be
+        // seen throughout PDR... not just S&D".
+        if (ext === '.heic' || ext === '.heif') {
+            try {
+                const heicConvert = (await import('heic-convert')).default;
+                const inputBuffer = await fs.promises.readFile(filePathLong);
+                const converted = await heicConvert({
+                    buffer: inputBuffer,
+                    format: 'JPEG',
+                    quality: 0.85,
+                });
+                jpegBuffer = await sharp(Buffer.from(converted), { failOnError: false })
+                    .rotate()
+                    .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 80 })
+                    .toBuffer();
+            }
+            catch (e) {
+                console.warn('[heic] decode failed for', filePath, e.message);
+            }
+        }
         // Video: extract a frame via ffmpeg-static, then resize through sharp.
-        if (VIDEO_EXTS.has(ext)) {
+        if (!jpegBuffer && VIDEO_EXTS.has(ext)) {
             try {
                 // Try 1s in first; short clips / MPEG-1 files may fail that seek, so retry at 0.
                 let frame = await extractVideoFrame(filePathLong, 1);
