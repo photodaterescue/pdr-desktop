@@ -3501,7 +3501,18 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 
 /* ─── Card Row — name LEFT, scrollable thumbnails RIGHT ─────────────────── */
 
-function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, existingPersons, onSelectPerson, onDiscard, onRemoveSelected, onVerifySelected, onImproveOne, isImprovingOne, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, globalHoveredFaceId, onHoveredFaceChange, currentTab, rowIndex, onVisible, clusterThreshold, namedSortNewestFirst, showMatched, showUnverifiedOnly }: {
+// PersonCardRow is exported via a React.memo wrapper at the bottom of
+// this file (search for `const PersonCardRow = React.memo(...)`). The
+// raw implementation is named `PersonCardRowImpl`. The memo's custom
+// comparator ignores function props because every callback the row
+// receives is a fresh inline closure on each parent render, but the
+// VALUES those closures need (nameInput, pendingIgnore, etc.) are ALSO
+// passed as plain props — so the memo correctly re-renders when state
+// changes without re-rendering for callback-identity changes. Without
+// this, every parent re-render (slider, hover, etc.) would force all
+// 3624 unnamed-cluster rows to re-render. Terry 2026-05-21: the
+// drag-time fix in batch 1 wasn't enough on its own.
+function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, existingPersons, onSelectPerson, onDiscard, onRemoveSelected, onVerifySelected, onImproveOne, isImprovingOne, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onRestore, displayName, onReassignFace, onSetRepresentative, globalSelectedFaces, onGlobalSelectionChange, globalReassignFaceId, onGlobalReassignChange, globalReassignName, onGlobalReassignNameChange, globalHoveredFaceId, onHoveredFaceChange, currentTab, rowIndex, onVisible, clusterThreshold, namedSortNewestFirst, showMatched, showUnverifiedOnly }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
@@ -4474,9 +4485,32 @@ function PersonCardRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
   );
 }
 
+/* ─── Memoised wrapper around PersonCardRow ─────────────────────────────── */
+/* Custom comparator: shallow-compare every non-function prop, treat
+   all function props as equal. Safe because every closure-captured
+   value in the parent's inline callbacks (nameInput, fullNameInput,
+   cluster identity, pending state, etc.) is ALSO passed as a plain
+   prop, so the memo correctly re-renders when those change without
+   re-rendering for callback-identity-only changes. Drops per-state-
+   change re-renders from O(3624 rows) to O(visible rows). */
+const PersonCardRow = React.memo(PersonCardRowImpl, (prev, next) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = prev as Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const n = next as Record<string, any>;
+  for (const key in p) {
+    if (typeof p[key] === 'function' && typeof n[key] === 'function') continue;
+    if (p[key] !== n[key]) return false;
+  }
+  for (const key in n) {
+    if (!(key in p)) return false;
+  }
+  return true;
+});
+
 /* ─── List View ─────────────────────────────────────────────────────────── */
 
-function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onVisible }: {
+function PersonListRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fullNameInput, onStartEdit, onNameChange, onFullNameChange, onSubmit, onCancel, inputRef, fullInputRef, onDiscard, pendingIgnore, onIgnore, onConfirmIgnore, onCancelIgnore, pendingUnsure, onUnsure, onConfirmUnsure, onCancelUnsure, onVisible }: {
   cluster: PersonCluster;
   cropUrl?: string;
   sampleCrops: Record<string, string>;
@@ -4668,3 +4702,21 @@ function PersonListRow({ cluster, cropUrl, sampleCrops, isEditing, nameInput, fu
     </TooltipProvider>
   );
 }
+
+/* Memoised wrapper around PersonListRow — same rationale as
+   PersonCardRow above. Ignores function prop identity; relies on
+   plain props for all closure-captured state. */
+const PersonListRow = React.memo(PersonListRowImpl, (prev, next) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = prev as Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const n = next as Record<string, any>;
+  for (const key in p) {
+    if (typeof p[key] === 'function' && typeof n[key] === 'function') continue;
+    if (p[key] !== n[key]) return false;
+  }
+  for (const key in n) {
+    if (!(key in p)) return false;
+  }
+  return true;
+});
