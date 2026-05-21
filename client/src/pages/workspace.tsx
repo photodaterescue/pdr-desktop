@@ -3287,19 +3287,39 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const urlForcesCollapse = urlViewForCollapse === 'memories'
     || urlViewForCollapse === 'search'
     || urlViewForCollapse === 'familytree';
+  // Whether the EFFECTIVE current view is one of the full-canvas
+  // surfaces that should always render with a collapsed sidebar.
+  const isFullCanvasView = effectiveViewForCollapse === 'familytree'
+    || effectiveViewForCollapse === 'memories'
+    || effectiveViewForCollapse === 'search';
+  // Collapse precedence:
+  //   1. pinState=closed → collapsed (user explicitly closed)
+  //   2. pinState=open   → expanded  (user explicitly pinned)
+  //   3. urlForcesCollapse (URL still has ?view=…)
+  //   4. isFullCanvasView (activeView is memories/search/familytree)
+  //      — wins over tempExpanded. Earlier order had tempExpanded
+  //      ABOVE this check, which left the sidebar expanded when the
+  //      URL handler's setLocation('/workspace') stripped ?view=
+  //      BEFORE the tempExpanded-reset layout effect could fire on
+  //      the new URL. Symptom: Welcome → Memories opened with the
+  //      full-width sidebar painted (Terry 2026-05-21 screenshot).
+  //      Putting isFullCanvasView before tempExpanded means those
+  //      three views ALWAYS collapse regardless of stale temp state.
+  //      The pin button (pinState='open', above) is the documented
+  //      escape hatch for users who want the sidebar wide on those
+  //      views; the menu button's temp-expand still works for
+  //      Dashboard.
   const collapsed = pinState === 'closed'
     ? true
     : pinState === 'open'
     ? false
     : urlForcesCollapse
     ? true
+    : isFullCanvasView
+    ? true
     : tempExpanded
     ? false
-    : (
-      effectiveViewForCollapse === 'familytree'
-      || effectiveViewForCollapse === 'memories'
-      || effectiveViewForCollapse === 'search'
-    );
+    : false;
 
   // Section-collapse state for Views / Tools / Guidance. Session-only so
   // the sidebar always opens fully expanded in a fresh session. User can

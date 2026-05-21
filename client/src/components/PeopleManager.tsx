@@ -1990,14 +1990,9 @@ export default function PeopleManager() {
                                 // the left disappears. gap-0.5 = 2px
                                 // between the two grip glyphs (was 6px
                                 // — Terry: "bring them closer by half").
-                                className="absolute left-1 top-0 bottom-0 w-6 flex items-center justify-center gap-0.5 cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-md z-10"
+                                className="absolute left-1 top-0 bottom-0 w-4 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-md z-10"
                               >
-                                <svg width="10" height="20" viewBox="0 0 12 20" fill="currentColor">
-                                  <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
-                                  <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
-                                  <circle cx="3.5" cy="16" r="1.4" /><circle cx="8.5" cy="16" r="1.4" />
-                                </svg>
-                                <svg width="10" height="20" viewBox="0 0 12 20" fill="currentColor">
+                                <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
                                   <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
                                   <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
                                   <circle cx="3.5" cy="16" r="1.4" /><circle cx="8.5" cy="16" r="1.4" />
