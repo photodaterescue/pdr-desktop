@@ -584,6 +584,14 @@ body > .window-resize-hint-tr {
   body[data-pm-dragging="true"] [data-state="delayed-open"][role="tooltip"] {
     display: none !important;
   }
+  /* Suppress text/face selection during PM drag. Without this, the
+     browser's default behaviour highlights any element the cursor
+     crosses while a drag is in flight — Terry 2026-05-21 noticed
+     "other faces and text becomes highlighted" while moving rows. */
+  body[data-pm-dragging="true"] {
+    user-select: none;
+    -webkit-user-select: none;
+  }
 
   /* ── Skeleton shimmer for image-loading placeholders ──────────────── */
   /* Replaces the binary opacity-pulse of Tailwind's animate-pulse on

@@ -1,5 +1,30 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+// @dnd-kit — purpose-built for large sortable lists with cross-viewport
+// drag (auto-scroll at edges, knows the full sortable context even
+// when items aren't mounted, drop-indicator handling). Replaces the
+// framer-motion Reorder attempt which couldn't handle 3624 items
+// without major lag. Terry 2026-05-21: row 100 → row 2 is the kind
+// of drag the user has to be able to do.
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
 import {
   Search,
   X,
@@ -1155,16 +1180,59 @@ export default function PeopleManager() {
     clearAllDragAttrs();
   };
 
-  // framer-motion Reorder callback. Called with the NEW ORDER of
-  // unnamed clusters when the user drops a dragged row. Translates
-  // the order back to clusterOrder (key → index) and persists it.
-  // Replaces the HTML5-drag-based reorder path for the Unnamed tab.
-  const handleReorderUnnamed = useCallback((next: PersonCluster[]) => {
+  // @dnd-kit drag state for the Unnamed tab. activeDragClusterId is
+  // the key of the currently-dragged cluster so the DragOverlay knows
+  // what to render. Sensors require a small distance (5px) before a
+  // drag actually starts — without this, clicks on the drag handle
+  // would also trigger a drag.
+  const [activeDragClusterId, setActiveDragClusterId] = useState<string | null>(null);
+  const dndSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
+  const handleDndDragStart = (event: DragStartEvent) => {
+    setActiveDragClusterId(String(event.active.id));
+    // Tells global CSS the PM drag is in flight — disables text
+    // selection across the document + hides Radix tooltips. See
+    // index.css for the body[data-pm-dragging] rules.
+    document.body.setAttribute('data-pm-dragging', 'true');
+  };
+
+  const handleDndDragEnd = (event: DragEndEvent) => {
+    setActiveDragClusterId(null);
+    document.body.removeAttribute('data-pm-dragging');
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = unnamedClusters.findIndex((c) => clusterKey(c) === String(active.id));
+    const newIndex = unnamedClusters.findIndex((c) => clusterKey(c) === String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(unnamedClusters, oldIndex, newIndex);
     const nextOrder: Record<string, number> = {};
     next.forEach((c, i) => { nextOrder[clusterKey(c)] = i; });
     persistClusterOrder(nextOrder);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  };
+
+  const handleDndDragCancel = () => {
+    setActiveDragClusterId(null);
+    document.body.removeAttribute('data-pm-dragging');
+  };
+
+  // Stable items array for SortableContext — just the keys, in
+  // current display order. SortableContext expects strings or numbers.
+  const unnamedSortableIds = useMemo(
+    () => unnamedClusters.map((c) => clusterKey(c)),
+    [unnamedClusters],
+  );
+
+  // Resolves the cluster currently being dragged so DragOverlay can
+  // render a preview of it. Returns null when no drag is in flight.
+  const activeDraggedCluster = useMemo(
+    () => activeDragClusterId
+      ? unnamedClusters.find((c) => clusterKey(c) === activeDragClusterId) ?? null
+      : null,
+    [activeDragClusterId, unnamedClusters],
+  );
 
   const prepareFaces = (cluster: PersonCluster): PersonCluster => {
     if (!cluster.sample_faces) return cluster;
@@ -1880,34 +1948,36 @@ export default function PeopleManager() {
                       </p>
                     </div>
                     {viewMode === 'card' ? (
-                      <Reorder.Group
-                        as="div"
-                        axis="y"
-                        values={unnamedClusters}
-                        onReorder={handleReorderUnnamed}
-                        className="space-y-2"
+                      <DndContext
+                        sensors={dndSensors}
+                        collisionDetection={closestCenter}
+                        onDragStart={handleDndDragStart}
+                        onDragEnd={handleDndDragEnd}
+                        onDragCancel={handleDndDragCancel}
+                        modifiers={[restrictToVerticalAxis]}
                       >
+                        <SortableContext items={unnamedSortableIds} strategy={verticalListSortingStrategy}>
+                          <div className="space-y-2">
                         {unnamedClusters.map((cluster, idx) => {
                           const ck = clusterKey(cluster);
                           return (
-                          <ReorderClusterRow
+                          <SortableClusterRow
                             key={ck}
                             cluster={cluster}
                             clusterKey={ck}
                             className="relative bg-card"
                             placeholderHeight={100}
                           >
-                            {({ dragControls }) => <>
+                            {({ listeners }) => <>
                             {/* Drag handle — vertical grip strip on the
-                                left edge. onPointerDown hands control
-                                to framer-motion's drag system; everywhere
-                                else on the row stays clickable for
-                                thumbnails / name fields. touchAction:none
-                                so the browser doesn't try to scroll
-                                instead. */}
+                                left edge. Spreading @dnd-kit's listeners
+                                here means ONLY this strip starts a drag;
+                                clicks on thumbnails / name fields stay
+                                interactive. touchAction:none keeps the
+                                browser from trying to scroll instead. */}
                             <IconTooltip label="Drag to reorder" side="left">
                               <div
-                                onPointerDown={(e) => dragControls.start(e)}
+                                {...(listeners ?? {})}
                                 style={{ touchAction: 'none' }}
                                 className="absolute left-0 top-0 bottom-0 -translate-x-2 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l-md z-10"
                               >
@@ -1962,32 +2032,55 @@ export default function PeopleManager() {
                             showUnverifiedOnly={showUnverifiedOnly}
                           />
                           </>}
-                          </ReorderClusterRow>
+                          </SortableClusterRow>
                           );
                         })}
-                      </Reorder.Group>
+                          </div>
+                        </SortableContext>
+                        {/* DragOverlay renders the visible "moving" element
+                            that follows the cursor. The source row goes
+                            invisible (opacity 0) while a drag is active
+                            — that's @dnd-kit's recommended pattern for
+                            heavy rows. */}
+                        <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
+                          {activeDraggedCluster && (
+                            <div className="bg-card border-2 border-primary/50 rounded-lg shadow-2xl px-4 py-2 flex items-center gap-3" style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)' }}>
+                              <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300">
+                                <Users className="w-5 h-5" />
+                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-foreground">{activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__') ? activeDraggedCluster.person_name : 'Unknown person'}</span>
+                                <span className="text-xs text-muted-foreground">{activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}</span>
+                              </div>
+                            </div>
+                          )}
+                        </DragOverlay>
+                      </DndContext>
                     ) : (
-                      <Reorder.Group
-                        as="div"
-                        axis="y"
-                        values={unnamedClusters}
-                        onReorder={handleReorderUnnamed}
-                        className="space-y-0.5"
+                      <DndContext
+                        sensors={dndSensors}
+                        collisionDetection={closestCenter}
+                        onDragStart={handleDndDragStart}
+                        onDragEnd={handleDndDragEnd}
+                        onDragCancel={handleDndDragCancel}
+                        modifiers={[restrictToVerticalAxis]}
                       >
+                        <SortableContext items={unnamedSortableIds} strategy={verticalListSortingStrategy}>
+                          <div className="space-y-0.5">
                         {unnamedClusters.map((cluster) => {
                           const ck = clusterKey(cluster);
                           return (
-                          <ReorderClusterRow
+                          <SortableClusterRow
                             key={ck}
                             cluster={cluster}
                             clusterKey={ck}
                             className="relative bg-card"
                             placeholderHeight={36}
                           >
-                            {({ dragControls }) => <>
+                            {({ listeners }) => <>
                             <IconTooltip label="Drag to reorder" side="left">
                               <div
-                                onPointerDown={(e) => dragControls.start(e)}
+                                {...(listeners ?? {})}
                                 style={{ touchAction: 'none' }}
                                 className="absolute left-0 top-0 bottom-0 -translate-x-2 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l z-10"
                               >
@@ -2019,10 +2112,25 @@ export default function PeopleManager() {
                             onCancelUnsure={() => setPendingUnsure(null)}
                           />
                           </>}
-                          </ReorderClusterRow>
+                          </SortableClusterRow>
                           );
                         })}
-                      </Reorder.Group>
+                          </div>
+                        </SortableContext>
+                        <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
+                          {activeDraggedCluster && (
+                            <div className="bg-card border-2 border-primary/50 rounded-lg shadow-2xl px-4 py-2 flex items-center gap-3" style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)' }}>
+                              <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300">
+                                <Users className="w-5 h-5" />
+                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-foreground">{activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__') ? activeDraggedCluster.person_name : 'Unknown person'}</span>
+                                <span className="text-xs text-muted-foreground">{activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}</span>
+                              </div>
+                            </div>
+                          )}
+                        </DragOverlay>
+                      </DndContext>
                     )}
                   </>
                 )}
@@ -3528,36 +3636,59 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
   );
 }
 
-/* ─── Reorderable lazy cluster row ──────────────────────────────────────
+/* ─── Sortable lazy cluster row ────────────────────────────────────────
    Two things rolled into one wrapper component:
 
-   (1) Apple-style drag-to-reorder via framer-motion. The Reorder.Item
-       lifts on pointerdown (scale + shadow), follows the cursor, and
-       framer-motion auto-animates ALL other rows shifting up/down to
-       make space. dragListener=false + useDragControls means only the
-       drag handle starts a drag, so clicks on thumbnails / name fields
-       still work. Terry 2026-05-21: "the row you're moving should
-       literally be moved and taking precedence over the other rows.
-       Other rows will be reshuffling to make way."
+   (1) @dnd-kit/sortable drag-to-reorder. useSortable hooks the row into
+       the parent SortableContext. The drag handle uses the `listeners`
+       prop spread onto it so only the handle starts a drag (clicks on
+       thumbnails / name fields still work). The actual drag preview is
+       rendered by a single DragOverlay at the parent level, so only ONE
+       element moves with the cursor — none of the framer-motion Reorder
+       layout-measurement loop over 3624 items. @dnd-kit handles
+       cross-viewport drag (auto-scroll at edges, knows full sortable
+       context even when items aren't mounted) which is what Terry
+       needs for "row 100 → row 2" reorders.
 
    (2) Lazy inner content via IntersectionObserver. Defers the expensive
        PersonCardRow + ~30 face thumbnails until the row scrolls within
        500px of the viewport. Function-as-children keeps the parent
-       .map() cheap — without it, React would construct 3624
-       PersonCardRow elements + their callback closures on every render.
+       .map() cheap.
 
-   children is a render function that receives `dragControls` so the
-   drag handle inside the row can wire its onPointerDown. */
-const ReorderClusterRow = React.forwardRef<HTMLDivElement, {
+   children is a render function that receives `listeners` from
+   useSortable; spread those onto the drag handle. */
+function SortableClusterRow({
+  cluster,
+  clusterKey: ck,
+  className,
+  placeholderHeight,
+  children,
+}: {
   cluster: PersonCluster;
   clusterKey: string;
   className?: string;
   placeholderHeight: number;
-  children: (args: { dragControls: ReturnType<typeof useDragControls> }) => React.ReactNode;
-}>(function ReorderClusterRow({ cluster, clusterKey: ck, className, placeholderHeight, children }, externalRef) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  children: (args: { listeners: Record<string, any> | undefined }) => React.ReactNode;
+}) {
   const [revealed, setRevealed] = useState(false);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const dragControls = useDragControls();
+  const innerRef = useRef<HTMLDivElement | null>(null);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: ck });
+
+  // Combine @dnd-kit's setNodeRef with our innerRef so the
+  // IntersectionObserver below can observe the same element.
+  const setRefs = useCallback((el: HTMLDivElement | null) => {
+    innerRef.current = el;
+    setNodeRef(el);
+  }, [setNodeRef]);
+
   useEffect(() => {
     if (revealed) return;
     const el = innerRef.current;
@@ -3574,33 +3705,32 @@ const ReorderClusterRow = React.forwardRef<HTMLDivElement, {
     obs.observe(el);
     return () => obs.disconnect();
   }, [revealed]);
+
+  // The dragged row goes INVISIBLE while a drag is active — the
+  // DragOverlay at the parent level renders the visible preview that
+  // follows the cursor. This is @dnd-kit's recommended pattern for
+  // heavy row content (each PersonCardRow has ~30 face thumbnails).
+  // The source row's space is preserved (no layout collapse) so the
+  // sortable can compute drop indices correctly.
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0 : 1,
+  };
+
   return (
-    <Reorder.Item
-      ref={(el: HTMLDivElement | null) => {
-        innerRef.current = el;
-        if (typeof externalRef === 'function') externalRef(el);
-        else if (externalRef) (externalRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-      }}
-      value={cluster}
-      dragListener={false}
-      dragControls={dragControls}
-      // Apple-style in-flight visual: scale up slightly + elevated
-      // lavender shadow + sit above neighbours. Tween is fast so the
-      // lift feels responsive, not floaty.
-      whileDrag={{ scale: 1.02, zIndex: 50, boxShadow: '0 16px 32px rgba(168, 85, 247, 0.28)', cursor: 'grabbing' }}
-      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+    <div
+      ref={setRefs}
+      style={style}
+      {...attributes}
       data-cluster-row
       data-cluster-key={ck}
       className={className}
-      // `layout` is what enables the other rows to smoothly slide up
-      // and down to make space as the user drags. Without this they'd
-      // snap on every reorder tick.
-      layout
     >
-      {revealed ? children({ dragControls }) : <div style={{ height: placeholderHeight }} aria-hidden="true" />}
-    </Reorder.Item>
+      {revealed ? children({ listeners }) : <div style={{ height: placeholderHeight }} aria-hidden="true" />}
+    </div>
   );
-});
+}
 
 /* ─── Card Row — name LEFT, scrollable thumbnails RIGHT ─────────────────── */
 
