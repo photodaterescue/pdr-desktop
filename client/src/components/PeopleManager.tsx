@@ -1979,8 +1979,17 @@ export default function PeopleManager() {
                               <div
                                 {...(listeners ?? {})}
                                 style={{ touchAction: 'none' }}
-                                className="absolute left-0 top-0 bottom-0 -translate-x-2 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l-md z-10"
+                                // Wider handle (~36px) with a double-
+                                // column grip pattern so it reads as
+                                // substantial instead of a thin sliver
+                                // jammed against the left edge.
+                                className="absolute left-0 top-0 bottom-0 -translate-x-2 w-9 flex items-center justify-center gap-1.5 cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-l-md z-10"
                               >
+                                <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
+                                  <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
+                                  <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
+                                  <circle cx="3.5" cy="16" r="1.4" /><circle cx="8.5" cy="16" r="1.4" />
+                                </svg>
                                 <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
                                   <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
                                   <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
@@ -2043,40 +2052,62 @@ export default function PeopleManager() {
                             — that's @dnd-kit's recommended pattern for
                             heavy rows. */}
                         <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
-                          {activeDraggedCluster && (
-                            <div
-                              className="bg-card border-2 border-primary/50 rounded-xl px-4 py-2.5 flex items-center gap-3"
-                              style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)', cursor: 'grabbing' }}
-                            >
-                              {/* Face crop avatar so the user can see
-                                  WHICH cluster they're moving — using
-                                  the same face the cluster row's
-                                  representative shows on its left edge.
-                                  Falls back to a Users icon if the crop
-                                  hasn't loaded yet. */}
-                              {faceCropsMap[clusterKey(activeDraggedCluster)] ? (
-                                <img
-                                  src={faceCropsMap[clusterKey(activeDraggedCluster)]}
-                                  alt=""
-                                  className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400 shrink-0"
-                                />
-                              ) : (
-                                <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 ring-2 ring-amber-400 shrink-0">
-                                  <Users className="w-5 h-5" />
-                                </span>
-                              )}
-                              <div className="flex flex-col min-w-0">
-                                <span className="text-sm font-medium text-foreground italic truncate">
-                                  {activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__')
-                                    ? activeDraggedCluster.person_name
-                                    : 'Unknown person'}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}
-                                </span>
+                          {activeDraggedCluster && (() => {
+                            const samples = activeDraggedCluster.sample_faces ?? [];
+                            const repFace = samples[0];
+                            const repCrop = repFace ? faceCropsMap[repFace.face_id] : undefined;
+                            // Strip of the next few sample faces — gives
+                            // the drag preview the same visual identity as
+                            // the row itself, so Terry can see WHICH
+                            // cluster he grabbed at a glance.
+                            const stripFaces = samples.slice(0, 6);
+                            return (
+                              <div
+                                className="bg-card border-2 border-primary/50 rounded-xl px-4 py-2.5 flex items-center gap-3"
+                                style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)', cursor: 'grabbing' }}
+                              >
+                                {/* Representative face avatar — same
+                                    face the row shows on its left edge.
+                                    Falls back to a Users icon if the
+                                    crop hasn't loaded yet. */}
+                                {repCrop ? (
+                                  <img
+                                    src={repCrop}
+                                    alt=""
+                                    className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400 shrink-0"
+                                  />
+                                ) : (
+                                  <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 ring-2 ring-amber-400 shrink-0">
+                                    <Users className="w-5 h-5" />
+                                  </span>
+                                )}
+                                <div className="flex flex-col min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-foreground italic truncate">
+                                      {activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__')
+                                        ? activeDraggedCluster.person_name
+                                        : 'Unknown person'}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground shrink-0">
+                                      {activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}
+                                    </span>
+                                  </div>
+                                  {stripFaces.length > 1 && (
+                                    <div className="flex items-center gap-0.5 mt-1.5">
+                                      {stripFaces.slice(1).map((f) => {
+                                        const c = faceCropsMap[f.face_id];
+                                        return c ? (
+                                          <img key={f.face_id} src={c} alt="" className="w-6 h-6 rounded-full object-cover ring-1 ring-white shadow-sm" />
+                                        ) : (
+                                          <span key={f.face_id} className="w-6 h-6 rounded-full bg-muted ring-1 ring-white shadow-sm" />
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </DragOverlay>
                       </DndContext>
                     ) : (
@@ -2141,40 +2172,62 @@ export default function PeopleManager() {
                           </div>
                         </SortableContext>
                         <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
-                          {activeDraggedCluster && (
-                            <div
-                              className="bg-card border-2 border-primary/50 rounded-xl px-4 py-2.5 flex items-center gap-3"
-                              style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)', cursor: 'grabbing' }}
-                            >
-                              {/* Face crop avatar so the user can see
-                                  WHICH cluster they're moving — using
-                                  the same face the cluster row's
-                                  representative shows on its left edge.
-                                  Falls back to a Users icon if the crop
-                                  hasn't loaded yet. */}
-                              {faceCropsMap[clusterKey(activeDraggedCluster)] ? (
-                                <img
-                                  src={faceCropsMap[clusterKey(activeDraggedCluster)]}
-                                  alt=""
-                                  className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400 shrink-0"
-                                />
-                              ) : (
-                                <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 ring-2 ring-amber-400 shrink-0">
-                                  <Users className="w-5 h-5" />
-                                </span>
-                              )}
-                              <div className="flex flex-col min-w-0">
-                                <span className="text-sm font-medium text-foreground italic truncate">
-                                  {activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__')
-                                    ? activeDraggedCluster.person_name
-                                    : 'Unknown person'}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}
-                                </span>
+                          {activeDraggedCluster && (() => {
+                            const samples = activeDraggedCluster.sample_faces ?? [];
+                            const repFace = samples[0];
+                            const repCrop = repFace ? faceCropsMap[repFace.face_id] : undefined;
+                            // Strip of the next few sample faces — gives
+                            // the drag preview the same visual identity as
+                            // the row itself, so Terry can see WHICH
+                            // cluster he grabbed at a glance.
+                            const stripFaces = samples.slice(0, 6);
+                            return (
+                              <div
+                                className="bg-card border-2 border-primary/50 rounded-xl px-4 py-2.5 flex items-center gap-3"
+                                style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)', cursor: 'grabbing' }}
+                              >
+                                {/* Representative face avatar — same
+                                    face the row shows on its left edge.
+                                    Falls back to a Users icon if the
+                                    crop hasn't loaded yet. */}
+                                {repCrop ? (
+                                  <img
+                                    src={repCrop}
+                                    alt=""
+                                    className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400 shrink-0"
+                                  />
+                                ) : (
+                                  <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 ring-2 ring-amber-400 shrink-0">
+                                    <Users className="w-5 h-5" />
+                                  </span>
+                                )}
+                                <div className="flex flex-col min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-foreground italic truncate">
+                                      {activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__')
+                                        ? activeDraggedCluster.person_name
+                                        : 'Unknown person'}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground shrink-0">
+                                      {activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}
+                                    </span>
+                                  </div>
+                                  {stripFaces.length > 1 && (
+                                    <div className="flex items-center gap-0.5 mt-1.5">
+                                      {stripFaces.slice(1).map((f) => {
+                                        const c = faceCropsMap[f.face_id];
+                                        return c ? (
+                                          <img key={f.face_id} src={c} alt="" className="w-6 h-6 rounded-full object-cover ring-1 ring-white shadow-sm" />
+                                        ) : (
+                                          <span key={f.face_id} className="w-6 h-6 rounded-full bg-muted ring-1 ring-white shadow-sm" />
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </DragOverlay>
                       </DndContext>
                     )}
