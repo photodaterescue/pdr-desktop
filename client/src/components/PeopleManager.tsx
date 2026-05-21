@@ -2843,12 +2843,36 @@ export default function PeopleManager() {
               const typedShort = globalReassignName.trim();
               const userDiverged = typedShort.length > 0 && typedShort.toLowerCase() !== implicitShortName.toLowerCase();
               const fullPlaceholder = (!userDiverged && implicitFullName) ? implicitFullName : 'Full name — optional';
+              // Autocomplete suggestions for the FULL-name field too —
+              // matches against name OR full_name as a case-insensitive
+              // substring, so typing "Sylvia" in this field surfaces
+              // "Nan · Sylvia Mills" the same way typing it in the
+              // short-name field does. Terry 2026-05-21: "I should be
+              // able to enter her full name... and then select it from
+              // there, and her short name 'nan' will populate."
+              const typedFull = globalReassignFullName.trim().toLowerCase();
+              const fullNameSuggestions = typedFull.length > 0
+                ? existingPersons.filter(p => {
+                    const name = p.name.toLowerCase();
+                    const fullName = (p.full_name ?? '').toLowerCase();
+                    if (name.startsWith('__')) return false;
+                    return name.includes(typedFull) || fullName.includes(typedFull);
+                  })
+                    .sort((a, b) => (b.photo_count ?? 0) - (a.photo_count ?? 0))
+                    .slice(0, 8)
+                : [];
               return (
             <div className="relative">
             <input
               type="text"
               value={globalReassignFullName}
-              onChange={(e) => { setGlobalReassignFullName(e.target.value); setFullNameUserEdited(true); }}
+              onChange={(e) => {
+                setGlobalReassignFullName(e.target.value);
+                setFullNameUserEdited(true);
+                // User is typing → re-open dropdown if previously
+                // dismissed by a suggestion pick.
+                setPanelSuggestionsDismissed(false);
+              }}
               onBlur={(e) => {
                 // Same click-outside-clears semantics as the short-name
                 // field above — only clears when focus moves outside
@@ -2899,6 +2923,38 @@ export default function PeopleManager() {
               autoCorrect="off"
               autoCapitalize="words"
             />
+            {/* Autocomplete dropdown for the FULL-name field. Same
+                people-list as the short-name dropdown, same picking
+                behaviour: clicking an entry locks the candidate by id,
+                fills BOTH the short and full name fields, and closes
+                the dropdown. */}
+            {fullNameSuggestions.length > 0 && !panelSuggestionsDismissed && (
+              <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-background shadow-lg z-10 py-0.5">
+                {fullNameSuggestions.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setGlobalReassignPersonId(p.id);
+                      setGlobalReassignName(p.name);
+                      setGlobalReassignFullName(p.full_name ?? '');
+                      setFullNameUserEdited(false);
+                      setPanelSuggestionsDismissed(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm transition-colors text-left hover:bg-purple-100/50 dark:hover:bg-purple-900/20"
+                  >
+                    <span className="truncate flex-1">
+                      <span className="text-foreground">{p.name}</span>
+                      {p.full_name && (
+                        <span className="text-muted-foreground ml-1.5">· {p.full_name}</span>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{p.photo_count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Disambiguation dropdown — shown when 2+ persons share
                 the typed short name. Sorted by face similarity so the
                 most-likely candidate is at the top. Picking one locks
