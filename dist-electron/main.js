@@ -2390,11 +2390,14 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
             roots.add(currentRoot);
     }
     catch { /* settings unreadable — only %TEMP% root counts */ }
+    log.info(`[orphan-sweep] invoked — checking roots: ${Array.from(roots).join(', ')}`);
     let dirsRemoved = 0;
     let bytesRemoved = 0;
     for (const root of roots) {
-        if (!fs.existsSync(root))
+        if (!fs.existsSync(root)) {
+            log.info(`[orphan-sweep] root does not exist, skipping: ${root}`);
             continue;
+        }
         let rootSize = 0;
         try {
             rootSize = folderSizeBytes(root);
@@ -2408,21 +2411,23 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
             log.warn(`[orphan-sweep] failed to read ${root}: ${err.message}`);
             continue;
         }
+        log.info(`[orphan-sweep] ${root} — ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}, ${rootSize} byte${rootSize === 1 ? '' : 's'}`);
+        let rootRemoved = 0;
         for (const entry of entries) {
             const full = path.join(root, entry);
             try {
                 fs.rmSync(full, { recursive: true, force: true });
                 dirsRemoved++;
+                rootRemoved++;
             }
             catch (err) {
                 log.warn(`[orphan-sweep] failed to remove ${full}: ${err.message}`);
             }
         }
         bytesRemoved += rootSize;
-        if (rootSize > 0) {
-            log.info(`[orphan-sweep] cleaned ${root} — freed ${(rootSize / (1024 ** 3)).toFixed(1)} GB`);
-        }
+        log.info(`[orphan-sweep] ${root} — removed ${rootRemoved}/${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} (${rootSize > 0 ? (rootSize / (1024 ** 3)).toFixed(2) + ' GB' : '0 bytes'})`);
     }
+    log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total, ${bytesRemoved} byte${bytesRemoved === 1 ? '' : 's'} freed`);
     return { success: true, dirsRemoved, bytesRemoved };
 });
 ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOverride) => {
