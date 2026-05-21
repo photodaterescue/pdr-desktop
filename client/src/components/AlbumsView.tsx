@@ -1414,17 +1414,24 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
               </IconTooltip>
               <span className="text-[10px] text-muted-foreground shrink-0">{album.photoCount}</span>
               <div className="hidden group-hover/leaf:flex items-center gap-0.5 shrink-0">
-                {album.source === 'user_created' && (
-                  <IconTooltip content="Rename album">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setRenamingAlbumId(album.id); setRenameAlbumTitle(album.title); }}
-                      className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                  </IconTooltip>
-                )}
+                {/* Rename pencil is shown for albums from EVERY source
+                    (user_created, takeout_imported, future cloud
+                    sources). PDR owns the local title of the album
+                    record regardless of where it was originally
+                    sourced — Terry 2026-05-21: "There must also be the
+                    ability to rename albums from all album sources
+                    since they will live and be managed on PDR." Delete
+                    stays gated to user_created so a Takeout-import
+                    link can't be silently severed. */}
+                <IconTooltip content="Rename album">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setRenamingAlbumId(album.id); setRenameAlbumTitle(album.title); }}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </IconTooltip>
                 {isInUserFolder ? (
                   /* Folder context — pure membership removal, never
                      touches the album record. Works for any album source. */
@@ -1461,12 +1468,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
               <ImageIcon className="w-3.5 h-3.5 mr-2" />
               Open
             </ContextMenuItem>
-            {album.source === 'user_created' && (
-              <ContextMenuItem onSelect={() => { setRenamingAlbumId(album.id); setRenameAlbumTitle(album.title); }}>
-                <Pencil className="w-3.5 h-3.5 mr-2" />
-                Rename
-              </ContextMenuItem>
-            )}
+            {/* Rename available for every source (Terry 2026-05-21). */}
+            <ContextMenuItem onSelect={() => { setRenamingAlbumId(album.id); setRenameAlbumTitle(album.title); }}>
+              <Pencil className="w-3.5 h-3.5 mr-2" />
+              Rename
+            </ContextMenuItem>
             {/* Export-as-Parallel-Library — works from any album row
                 in the tree without first navigating into the album.
                 Lazy-fetches that album's photos via the shared
@@ -2230,18 +2236,18 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             ) : (
               <>
                 <h2 className="text-lg font-medium text-foreground truncate">{selectedAlbum.title}</h2>
-                {selectedAlbum.source === 'user_created' && (
-                  <IconTooltip content="Rename album">
-                    <button
-                      type="button"
-                      onClick={() => { setRenamingAlbumId(selectedAlbum.id); setRenameAlbumTitle(selectedAlbum.title); }}
-                      className="opacity-0 group-hover/album-header:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted/50"
-                      data-testid="button-rename-album-header"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </IconTooltip>
-                )}
+                {/* Rename pencil shown on every album source — Terry
+                    2026-05-21: PDR owns the local title once imported. */}
+                <IconTooltip content="Rename album">
+                  <button
+                    type="button"
+                    onClick={() => { setRenamingAlbumId(selectedAlbum.id); setRenameAlbumTitle(selectedAlbum.title); }}
+                    className="opacity-0 group-hover/album-header:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted/50"
+                    data-testid="button-rename-album-header"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </IconTooltip>
                 <span className="text-xs text-muted-foreground">{selectedAlbum.photoCount} photo{selectedAlbum.photoCount === 1 ? '' : 's'}</span>
                 {selectedAlbum.source === 'takeout_imported' && (
                   <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full shrink-0">From Google Takeout</span>
