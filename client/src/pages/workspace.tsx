@@ -418,21 +418,21 @@ useEffect(() => {
   const orphanSweepFiredRef = useRef(false);
   useEffect(() => {
     if (orphanSweepFiredRef.current) return;
-    if (sources.length > 0) {
-      // Sources present → not empty → no sweep. Mark fired so we
-      // don't trigger later when the user removes everything (that
-      // path has its own per-source cleanup).
-      orphanSweepFiredRef.current = true;
-      return;
-    }
     orphanSweepFiredRef.current = true;
+    // Always run the sweep at launch. Mode depends on whether the
+    // workspace had sources at mount:
+    //   - No sources → full sweep (everything in PDR_Temp is orphan)
+    //   - Has sources → loose-files-only sweep (sub-folders may be
+    //     active extractions and must be left alone; loose files at
+    //     the root are never created by PDR so they're always safe)
+    const looseFilesOnly = sources.length > 0;
     (async () => {
       try {
         const { sweepOrphanedTempDirsIfEmpty } = await import('@/lib/electron-bridge');
-        const result = await sweepOrphanedTempDirsIfEmpty();
-        if (result.success && result.bytesRemoved > 0) {
+        const result = await sweepOrphanedTempDirsIfEmpty({ looseFilesOnly });
+        if (result.success && result.dirsRemoved > 0) {
           const gb = (result.bytesRemoved / (1024 ** 3)).toFixed(1);
-          console.log(`[orphan-sweep] freed ${gb} GB from ${result.dirsRemoved} orphaned temp director${result.dirsRemoved === 1 ? 'y' : 'ies'}`);
+          console.log(`[orphan-sweep] cleaned ${result.dirsRemoved} orphan entr${result.dirsRemoved === 1 ? 'y' : 'ies'} (${gb} GB, mode=${looseFilesOnly ? 'loose-files-only' : 'full'})`);
         }
       } catch (err) {
         console.warn('[orphan-sweep] failed:', err);
@@ -9255,6 +9255,399 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionContent>
                   </AccordionItem>
 
+                  {/* Trees */}
+                  <AccordionItem value="trees" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Trees
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Trees turns your named people into <span className="font-medium text-foreground">family lineage</span>. Parent-child + partner relationships are drawn as a canvas you can zoom, pan and click through, with each person card showing dates, photo count and a sample face.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Building a Tree</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Trees pulls from People Manager — name people there first, then they become available in Trees</li>
+                            <li>Drag people onto the canvas, then connect them with <span className="font-medium text-foreground">parent / child / partner</span> relationships</li>
+                            <li>Generations are calculated automatically — no need to position rows by hand</li>
+                            <li>Inline editors for name + date sit on the canvas, so you can fix details without leaving Trees</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Using it day-to-day</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Click a person → see every photo of them in the library</li>
+                            <li>Multiple Trees: build one per family (Smiths, Joneses, in-laws) — switch between them from the Tree picker</li>
+                            <li>Trees views the whole library by default — Parallel Libraries can be toggled in or out</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Don't try to build Trees before People Manager is named — it'll be a graph of "unknown" nodes</li>
+                            <li>Start with the biggest household first; in-laws and extended family can hang off later</li>
+                            <li>Use the date-editor on the canvas to fix birth/death dates as you go — Trees shows ages automatically</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Date Editor */}
+                  <AccordionItem value="date-editor" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Date Editor
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>The Date Editor is the safety valve for the small percentage of photos PDR couldn't auto-date confidently. You bring the human knowledge ("that's Christmas 2007 — I remember the kitchen"), PDR applies it.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Single-photo edit</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Open a photo in the viewer (from S&amp;D / Memories / Albums)</li>
+                            <li>Click the date pill, set the new date, save</li>
+                            <li>The filename suffix updates accordingly (so a <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">_marked</span> becomes <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">_confirmed</span> if you've supplied the truth)</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Bulk edit</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Select multiple photos in S&amp;D (a folder of holiday shots, a Marked-confidence batch)</li>
+                            <li>Set one date — applied to all selected photos</li>
+                            <li>Every edit is recorded in Reports History — fully undoable later</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">When to use it</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Marked-confidence photos you know the real date for</li>
+                            <li>Hand-cam transfers / scanner outputs with no EXIF</li>
+                            <li>Photos PDR dated wrong because the EXIF was misleading (e.g. camera clock was wrong)</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Pair with Memories By Date — if a year looks wrong, click into the days and Date-Editor the outliers</li>
+                            <li>Originals are never overwritten — the edit creates a new file in the Library Drive with the right date</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Parallel Libraries */}
+                  <AccordionItem value="parallel-libraries" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Parallel Libraries
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>A <span className="font-medium text-foreground">Parallel Library</span> is a second Library Drive managed by PDR, separate from your Master. Curated, portable, optionally smaller — but with the same search, Memories, faces, Trees and album power as the Master.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Why you'd want one</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Gifting</span> — send Mum's 60th to family on a USB stick</li>
+                            <li><span className="font-medium text-foreground">Portability</span> — Holiday 2024 on a small SSD for the trip</li>
+                            <li><span className="font-medium text-foreground">Separation</span> — sensitive collections on their own drive</li>
+                            <li><span className="font-medium text-foreground">Shareable subsets</span> — wedding photos for the photographer's portfolio</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">How to create one</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>From S&amp;D: filter to a subset → <span className="font-medium text-foreground">Send to Parallel Library</span></li>
+                            <li>From an Album: open it → Send to Parallel Library (album-wide)</li>
+                            <li>From a Trees person: open their profile → Send all their photos to Parallel Library</li>
+                            <li>You pick the destination drive + folder; PDR copies and re-indexes</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">How they appear in PDR</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Every PDR view (S&amp;D, Memories, PM, Trees, Albums) has a Library filter — show or hide each Parallel Library independently</li>
+                            <li>The Master never gets polluted — your default view is always the Master</li>
+                            <li>Each Parallel is fully featured: same indexing, AI faces, AI tags, Memories, Trees, Albums</li>
+                            <li>A Parallel survives the Master being unplugged — you can browse and Fix it on its own</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Originals in the Master are NEVER touched when you create a Parallel — copies only</li>
+                            <li>Build the Parallel from a curated S&amp;D filter rather than the whole library, otherwise you've just made another Master</li>
+                            <li>For long-term separate storage of a Parallel, treat it like a Master: back the drive up periodically</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* AI Features */}
+                  <AccordionItem value="ai-features" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      AI Features (Faces, Tags, Scenes)
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Every AI feature in PDR runs <span className="font-medium text-foreground">locally on your machine</span> — no cloud, no uploads, no privacy concerns. Your photos never leave your computer.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Face detection</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Finds every face in every photo</li>
+                            <li>Clusters faces by similarity — same person's faces grouped together</li>
+                            <li>Surfaces clusters in <span className="font-medium text-foreground">People Manager</span> for you to name</li>
+                            <li>Once named, that person becomes filterable in S&amp;D and viewable in Trees</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">AI tags</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Scene / object / colour / activity tags applied to every photo</li>
+                            <li>Examples: "beach", "indoors", "family", "pet", "food", "sunset", "blue", "smiling"</li>
+                            <li>Filterable in S&amp;D — find every beach photo across decades in seconds</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Scene detection</p>
+                          <p>Higher-level scene classifications — "wedding", "birthday party", "landscape", "sport". Surfaces in S&amp;D's Scene filter and powers the "On This Day" suggestions on Memories.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">When AI runs</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Automatically after every Fix — the AI pill at the top of the workspace shows progress</li>
+                            <li>Pauseable + resumeable — close PDR mid-run and it picks up next launch</li>
+                            <li>Re-analyse: if a batch looks wrong, select photos in S&amp;D → Re-analyse AI Tags</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Face clustering works best with 5+ photos per person; very-low-photo people may not cluster reliably</li>
+                            <li>AI can run in the background while you use other PDR views — no need to wait</li>
+                            <li>First-run AI on a multi-thousand-photo library can take hours; subsequent Fixes only process new photos</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Confidence System (deep) */}
+                  <AccordionItem value="confidence-system" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      The Confidence System
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Every dated file in PDR's output carries one of three confidence labels — surfaced as a coloured filename suffix and in the Source Analysis card. The system is what lets PDR handle messy libraries <span className="font-medium text-foreground">without lying about certainty</span>.</p>
+                        </div>
+
+                        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                          <p className="font-medium text-emerald-700 dark:text-emerald-300 mb-2">Confirmed</p>
+                          <p className="mb-2">Real capture or backup metadata found and trusted. Highest confidence — this is the date you'd see if you opened the photo in any tool.</p>
+                          <p>Sources PDR trusts: EXIF DateTimeOriginal, Google Takeout JSON photoTakenTime, Apple Live Photo metadata, video container creation timestamps.</p>
+                        </div>
+
+                        <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg">
+                          <p className="font-medium text-indigo-700 dark:text-indigo-300 mb-2">Recovered</p>
+                          <p className="mb-2">Date extracted from a consistent filename pattern PDR can decode confidently. Strong confidence — the file's metadata is missing but the filename itself encodes the date.</p>
+                          <p>Patterns PDR recognises: <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">IMG_20210315_124530.jpg</span>, <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">Screenshot_2019-08-12.png</span>, WhatsApp date prefixes, common camera naming.</p>
+                        </div>
+
+                        <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
+                          <p className="font-medium text-amber-700 dark:text-amber-300 mb-2">Marked</p>
+                          <p className="mb-2">No trustworthy clue found. PDR has used a conservative fallback (folder dates, file creation dates, last-resort best-guess) and labelled the file so you can find it later.</p>
+                          <p>Marked files are the ones to feed back through the <span className="font-medium text-foreground">Date Editor</span> if you know the real date.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">How to read the suffix</p>
+                          <p>Every output file ends with a confidence suffix before the extension — e.g. <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">2024-01-15_14-30-22_confirmed.jpg</span>. You always know how PDR arrived at the date without having to dig into metadata.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>A high Marked count on a source = that source had little usable metadata. Often worth running smaller grouped Fixes to isolate which folder is the problem.</li>
+                            <li>S&amp;D's Confidence filter lets you pull every Marked file in seconds — perfect for a Date Editor session.</li>
+                            <li>Confirmed + Recovered are the dates PDR stands behind. Marked is PDR saying "I did my best, but you'd know better than me."</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Library Drive moves / portability */}
+                  <AccordionItem value="library-portability" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Library Drive Moves &amp; Portability
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Your Library Drive carries <span className="font-medium text-foreground">everything</span> — photos, dates, faces, names, albums, Trees, search index — inside the drive itself. Plug it into another PC, install PDR there, point at the same drive, and your library is back exactly as it was.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">What lives inside your Library Drive</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Your fixed photo + video files (dated, named, organised by year)</li>
+                            <li>A hidden <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.pdr/</span> folder containing the database: search index, faces, names, albums, Trees, reports</li>
+                            <li>The thumbnail cache (regenerated if missing, but faster if preserved)</li>
+                          </ul>
+                          <p className="mt-2">Don't delete the <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.pdr/</span> folder — it's everything you'd lose if you re-Fixed from scratch.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Moving to a new PC</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Install PDR on the new PC</li>
+                            <li>Plug in the Library Drive</li>
+                            <li>Tell PDR where the library lives (Library Manager → point at the drive)</li>
+                            <li>Everything's there: photos, names, dates, Trees, albums, search</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Copying to a different drive</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Copy the entire Library Drive folder INCLUDING the hidden <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.pdr/</span> folder</li>
+                            <li>Plug in the new drive, point PDR at it</li>
+                            <li>Or: use the in-app Library Manager's "Move Library" if you want PDR to handle the copy</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">What you DON'T need to keep</p>
+                          <p>Your Sources — the original Takeouts, ZIPs, source folders. Once Fixed, everything from them is on the Library Drive. The Sources are just inputs.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Backups should include the entire Library Drive (photos + <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.pdr/</span>). A regular drive-clone tool or even Robocopy works.</li>
+                            <li>Two PCs sharing one Library Drive: don't run PDR on both at the same time — the database isn't designed for concurrent writes.</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* 55 GB Cap + PDR_Temp */}
+                  <AccordionItem value="extraction-cap" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      The 55 GB Extraction Cap &amp; PDR_Temp
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Large archive sources (Google Takeouts, RARs) are pre-extracted into a <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">PDR_Temp/</span> folder on your Library Drive before analysis. The 55 GB cap protects you from queuing more extractions than the drive can hold.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Why pre-extract</p>
+                          <p>PDR's analysis engine streams most archives in-place (no extraction needed) — but multi-GB phone videos inside large Takeouts can't be streamed safely. Those need extraction first. PDR detects this automatically.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">The 55 GB cap</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Total un-Fixed extraction quota allowed at once</li>
+                            <li>Reached? PDR pauses adding new sources until you either Fix the existing ones (which deletes their temp space) or remove them</li>
+                            <li>Friendly toast tells you when the cap is hit</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">PDR_Temp behaviour</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Lives on your Library Drive (so extractions don't fill up <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">C:\</span>)</li>
+                            <li>Per-source sub-folders — one per added source</li>
+                            <li>Auto-deleted when each source's Fix completes</li>
+                            <li>Crash-recovery: if a previous session crashed mid-extraction, the next launch sweeps any orphan sub-folders (when the workspace is empty), and always clears loose files left at the PDR_Temp root</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>If you have 100+ GB of Takeouts to Fix, do them in two passes rather than one giant batch</li>
+                            <li>If PDR_Temp ever has files left after a clean Fix, the next launch will clean them up automatically — no manual action needed</li>
+                            <li>Folders / small ZIPs / drives don't extract at all — only large archives (Takeouts, RARs) hit this path</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Backgroundable Analysis */}
+                  <AccordionItem value="backgroundable-analysis" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Backgroundable Analysis
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Source analysis on a multi-GB Takeout or a full-drive scan can take minutes (sometimes longer). You don't have to sit watching it — minimise the analysis to a small amber pill at the top of the workspace and use PDR's other views while it runs.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">How it works</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Start an analysis as normal</li>
+                            <li>Click the minimise icon on the analysis card — the full card collapses into a slim amber pill at the top</li>
+                            <li>Browse S&amp;D, Memories, People Manager, Trees, Albums or Reports — the analysis keeps running</li>
+                            <li>When analysis completes you get a notification + the pill expands back to the full status card</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">What's gated while analysis runs</p>
+                          <p className="mb-2">A few actions are blocked while analysis is in flight — they'd compete with the engine for the same resources:</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Add Source / Remove Source</li>
+                            <li>Run Fix</li>
+                            <li>Re-analyse AI Tags</li>
+                          </ul>
+                          <p className="mt-2">Everything else — browsing, naming people in PM, building Trees, opening Memories — stays fully available.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Starting a big Takeout analysis is the perfect moment to browse Memories or organise People Manager — productive parallel use of your time</li>
+                            <li>Closing PDR mid-analysis cancels the run — the source stays in the menu and you can resume next launch</li>
+                            <li>The amber pill is intentionally low-key so it doesn't distract from whatever you're browsing</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   {/* People Manager */}
                   <AccordionItem value="people-manager" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
@@ -9639,9 +10032,18 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        <strong className="text-foreground">Viewer rebuilt. Search &amp; Discovery sped up. Memories polished.</strong> A focused release after v2.0.8&apos;s viewer regression — the dedicated viewer window is now sturdy enough for huge Memories months without hanging the graphics card, and Search &amp; Discovery&apos;s open speed and typing responsiveness both got a measurable boost.
+                        <strong className="text-foreground">The biggest v2.x release yet.</strong> Premium boot splash, People Manager rebuilt for huge libraries, Search &amp; Discovery + Memories + Albums tightened up, USB drive wake-up and crash-recovery for libraries living on portable drives, plus a much deeper Best Practices guide covering every PDR feature.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Premium boot splash</strong> — a lavender brand splash with the PDR logo, app name, tagline and a thin progress bar replaces the blank-white launch flash. Staggered entrance animation, adaptive hold (3 s on fast machines, up to 6.5 s on slower ones — it waits until Welcome is genuinely ready), then a cinematic scale-up + fade into the Welcome screen.</li>
+                        <li><strong className="text-foreground font-medium">People Manager handles huge libraries smoothly</strong> — drag-and-drop, scrolling, and merge-by-drag now stay responsive on clusters of 3,000+ faces. Lazy per-row mounting via IntersectionObserver, drag state moved off React state, the @dnd-kit/sortable backend, and the same treatment applied to both Unnamed and Named tabs.</li>
+                        <li><strong className="text-foreground font-medium">People Manager reassign UI tightened</strong> — picking a suggestion from the dropdown now auto-closes it and fills the name immediately. The full-name field gets the same autocomplete as the short-name field, so typing "Sylvia" surfaces "Sylvia Mills" without you needing to type the short name first. Silent assign / name / unname failures now surface as a toast instead of failing invisibly.</li>
+                        <li><strong className="text-foreground font-medium">Memories sidebar no longer widens itself on Welcome → Memories</strong> — a subtle interaction between the workspace cross-fade and the sidebar width transition was making the sidebar visibly grow on the first navigation. Fixed.</li>
+                        <li><strong className="text-foreground font-medium">Search &amp; Discovery Album filter grouped by source</strong> — the Album filter is now a collapsible tree split by where each album came from: Google Photos (auto-imported from Takeouts) above, your own PDR-created albums below. Mirrors the Albums view structure.</li>
+                        <li><strong className="text-foreground font-medium">USB / external Library Drives wake up properly</strong> — sleeping library drives are now woken with a tiny no-op write before PDR queries them for free space, so the destination probe doesn&apos;t return "0 GB free" against a still-spinning-up disk. A retry probe + always-on drive-detail logging make support diagnosis painless when a drive doesn&apos;t cooperate.</li>
+                        <li><strong className="text-foreground font-medium">PDR_Temp orphan-sweep on launch</strong> — a crashed extraction used to leave its per-source temp folder behind, counting against the 55 GB cap until you cleared it manually. PDR now sweeps orphan extraction folders on launch (when the workspace is empty) and always clears any loose files left at the PDR_Temp root, regardless of source state.</li>
+                        <li><strong className="text-foreground font-medium">Best Practices expanded across every PDR feature</strong> — twelve new sections under Detailed Guidance: Search &amp; Discovery, Memories — By Date, Memories — Albums (with Google Takeout auto-organisation highlighted), People Manager, Trees, Date Editor, Parallel Libraries deep-dive, AI Features, the Confidence System, Library Drive moves &amp; portability, the 55 GB extraction cap &amp; PDR_Temp, and Backgroundable Analysis.</li>
+                        <li><strong className="text-foreground font-medium">Developer tools access removed entirely</strong> — defence-in-depth: the F12 / Ctrl+Shift+I keyboard handler is gone in all builds. The renderer&apos;s error-listener bridge still forwards uncaught exceptions into the main-process log, so support diagnosis is unaffected.</li>
                         <li><strong className="text-foreground font-medium">Photo viewer works again in the installed app</strong> — v2.0.8 shipped with a path-resolution bug that stopped the dedicated viewer window from loading its UI in installed builds (it worked fine in development). Photos and videos opened from Search &amp; Discovery, Memories, and Albums now display correctly again. No data was at risk — the viewer just refused to render.</li>
                         <li><strong className="text-foreground font-medium">Viewer filmstrip no longer pegs the graphics card on big Memories months</strong> — opening a 2,000-photo month used to load every photo in the bottom thumbnail strip at full resolution simultaneously, which on phones-on-modern-cameras-worth of multi-megabyte shots could blank the screen as Windows reset the GPU. Each strip tile now pulls a small cached thumbnail via the same handler the rest of PDR uses, only the tiles near the visible area load at all, and the strip itself stays calm and consistent regardless of bucket size.</li>
                         <li><strong className="text-foreground font-medium">No more &quot;zoomed-in corner flash&quot; when opening a photo</strong> — the main image is now hidden until PDR has fitted it to the window, so on slow loads you don&apos;t briefly see the top-left corner of a 4000-pixel-wide phone shot at 100% zoom before it snaps to the proper fit.</li>

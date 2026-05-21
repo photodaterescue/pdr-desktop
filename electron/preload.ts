@@ -21,12 +21,14 @@ contextBridge.exposeInMainWorld('pdr', {
   cleanupTempDirForSource: (sourcePath: string) =>
     ipcRenderer.invoke('analysis:cleanupTempDirForSource', sourcePath),
 
-  // Launch-time orphan sweep. Called by the renderer on FIRST mount
-  // when the source list is empty — any files in PDR_Temp are
-  // necessarily orphans from a previous crashed pre-extract.
+  // Launch-time orphan sweep. Called by the renderer on FIRST mount.
+  // Two modes:
+  //   - looseFilesOnly:false (default) — sources are empty, full sweep
+  //   - looseFilesOnly:true — sources are present, only delete loose
+  //     FILES at the root (sub-folders may be active extractions)
   // Returns { success, dirsRemoved, bytesRemoved }.
-  sweepOrphanedTempDirsIfEmpty: () =>
-    ipcRenderer.invoke('analysis:sweepOrphanedTempDirsIfEmpty'),
+  sweepOrphanedTempDirsIfEmpty: (opts?: { looseFilesOnly?: boolean }) =>
+    ipcRenderer.invoke('analysis:sweepOrphanedTempDirsIfEmpty', opts),
 
   // Pre-flight library-drive readiness probe. Returns
   // { ready, destinationPath, freeBytes, totalBytes }.

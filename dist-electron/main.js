@@ -516,15 +516,14 @@ function createWindow() {
         }
     });
     // Block Electron's native zoom shortcuts — our renderer handles zoom via IPC.
-    // DevTools (F12 / Ctrl+Shift+I) is dev-only so packaged builds can't be
-    // opened up + inspected by end users. !app.isPackaged means: enabled when
-    // running via `npx electron dist-electron/main.js` (dev), disabled in the
-    // installed NSIS build that ships to customers.
+    // DevTools access removed entirely (Terry 2026-05-21): the F12 /
+    // Ctrl+Shift+I shortcut handler was previously gated behind
+    // !app.isPackaged so dev builds could still inspect, but defense-in-
+    // depth wins here — the main-process log file is the canonical
+    // debugging surface and the renderer's error-listener bridge already
+    // forwards uncaught exceptions + unhandled rejections into it. Nothing
+    // in production should ever need DevTools.
     mainWindow.webContents.on('before-input-event', (_event, input) => {
-        if (!app.isPackaged && (input.key === 'F12' || (input.control && input.shift && input.key === 'I'))) {
-            mainWindow?.webContents.toggleDevTools();
-            return;
-        }
         if (input.control && (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0')) {
             _event.preventDefault();
         }
@@ -2381,7 +2380,20 @@ ipcMain.handle('analysis:probeLibraryDrive', async () => {
         totalBytes: space?.totalBytes ?? null,
     };
 });
-ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
+ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts) => {
+    // Two modes:
+    //   full  — workspace was empty at launch, so everything in PDR_Temp
+    //           is an orphan from a crashed/abandoned previous session.
+    //           Delete files AND sub-folders.
+    //   looseFilesOnly — workspace HAS sources, so any sub-folder in
+    //           PDR_Temp might be an active extraction we must not stomp
+    //           on. But loose FILES at the root are never created by PDR
+    //           (the extractor only creates sub-folders), so they're
+    //           always safe orphans. This covers user test files, stray
+    //           bits left by other processes, and anything that's not a
+    //           legitimate extraction directory.
+    const looseFilesOnly = !!opts?.looseFilesOnly;
+    const mode = looseFilesOnly ? 'loose-files-only' : 'full';
     const roots = new Set();
     roots.add(PDR_TEMP_ROOT);
     try {
@@ -2390,7 +2402,7 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
             roots.add(currentRoot);
     }
     catch { /* settings unreadable — only %TEMP% root counts */ }
-    log.info(`[orphan-sweep] invoked — checking roots: ${Array.from(roots).join(', ')}`);
+    log.info(`[orphan-sweep] invoked — mode=${mode}, roots: ${Array.from(roots).join(', ')}`);
     let dirsRemoved = 0;
     let bytesRemoved = 0;
     for (const root of roots) {
@@ -2413,8 +2425,25 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
         }
         log.info(`[orphan-sweep] ${root} — ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}, ${rootSize} byte${rootSize === 1 ? '' : 's'}`);
         let rootRemoved = 0;
+        let rootSkipped = 0;
         for (const entry of entries) {
             const full = path.join(root, entry);
+            // In loose-files-only mode, leave directories alone — they may
+            // be active extractions belonging to a currently-listed source.
+            if (looseFilesOnly) {
+                let isDir = false;
+                try {
+                    isDir = fs.statSync(full).isDirectory();
+                }
+                catch { /* stat failed — assume directory to be safe */
+                    rootSkipped++;
+                    continue;
+                }
+                if (isDir) {
+                    rootSkipped++;
+                    continue;
+                }
+            }
             try {
                 fs.rmSync(full, { recursive: true, force: true });
                 dirsRemoved++;
@@ -2425,9 +2454,10 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async () => {
             }
         }
         bytesRemoved += rootSize;
-        log.info(`[orphan-sweep] ${root} — removed ${rootRemoved}/${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} (${rootSize > 0 ? (rootSize / (1024 ** 3)).toFixed(2) + ' GB' : '0 bytes'})`);
+        const skippedSuffix = looseFilesOnly ? ` (skipped ${rootSkipped} sub-folder${rootSkipped === 1 ? '' : 's'})` : '';
+        log.info(`[orphan-sweep] ${root} — removed ${rootRemoved}/${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}${skippedSuffix}`);
     }
-    log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total, ${bytesRemoved} byte${bytesRemoved === 1 ? '' : 's'} freed`);
+    log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total`);
     return { success: true, dirsRemoved, bytesRemoved };
 });
 ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOverride) => {

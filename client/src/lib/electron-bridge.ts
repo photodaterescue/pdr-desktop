@@ -259,11 +259,18 @@ export async function cleanupTempDirForSource(sourcePath: string): Promise<{ suc
   return { success: false, cleaned: 0 };
 }
 
-/** Launch-time orphan sweep — called when workspace has 0 sources but
- *  PDR_Temp may have files from a previously-crashed extraction. */
-export async function sweepOrphanedTempDirsIfEmpty(): Promise<{ success: boolean; dirsRemoved: number; bytesRemoved: number }> {
+/** Launch-time orphan sweep. Two modes:
+ *  - looseFilesOnly:false → full sweep (workspace was empty at mount,
+ *    so everything in PDR_Temp is necessarily an orphan).
+ *  - looseFilesOnly:true → only delete loose root FILES (workspace
+ *    has sources, sub-folders may be active extractions we must leave
+ *    alone, but loose files at the root are never created by PDR's
+ *    extractor so they're always safe to clean). */
+export async function sweepOrphanedTempDirsIfEmpty(
+  opts?: { looseFilesOnly?: boolean },
+): Promise<{ success: boolean; dirsRemoved: number; bytesRemoved: number }> {
   if (isElectron() && typeof (window as any).pdr?.sweepOrphanedTempDirsIfEmpty === 'function') {
-    return await (window as any).pdr.sweepOrphanedTempDirsIfEmpty();
+    return await (window as any).pdr.sweepOrphanedTempDirsIfEmpty(opts);
   }
   return { success: false, dirsRemoved: 0, bytesRemoved: 0 };
 }
