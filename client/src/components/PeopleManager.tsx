@@ -1979,15 +1979,18 @@ export default function PeopleManager() {
                               <div
                                 {...(listeners ?? {})}
                                 style={{ touchAction: 'none' }}
-                                // Handle sits OUTSIDE the row to its
-                                // left — `-left-9` puts the right edge
-                                // 8px past the row's left edge (small
-                                // breathing space), no overlap with the
-                                // row number inside the row content.
-                                // gap-0.5 = 2px between the two grip
-                                // glyphs (was 6px — Terry: "bring them
-                                // closer by half").
-                                className="absolute -left-9 top-0 bottom-0 w-7 flex items-center justify-center gap-0.5 cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-md z-10"
+                                // Handle sits INSIDE the row (`left-1`
+                                // = 4px breathing space from row's left
+                                // edge), w-6 = 24px wide. The previous
+                                // attempt to sit it OUTSIDE the row via
+                                // -left-9 got clipped by the scrollable
+                                // parent — `overflow-y: auto` quietly
+                                // upgrades horizontal `overflow: visible`
+                                // to `auto`, so anything sticking out
+                                // the left disappears. gap-0.5 = 2px
+                                // between the two grip glyphs (was 6px
+                                // — Terry: "bring them closer by half").
+                                className="absolute left-1 top-0 bottom-0 w-6 flex items-center justify-center gap-0.5 cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-md z-10"
                               >
                                 <svg width="10" height="20" viewBox="0 0 12 20" fill="currentColor">
                                   <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
