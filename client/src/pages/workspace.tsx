@@ -9109,6 +9109,205 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionContent>
                   </AccordionItem>
 
+                  {/* Search & Discovery */}
+                  <AccordionItem value="search-discovery" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Search &amp; Discovery (S&amp;D)
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>S&amp;D is the searchable face of your <span className="font-medium text-foreground">entire</span> library — every photo PDR has indexed across every Fix, in one place. Filters narrow it down, the grid shows you what matched, and you can act on the result without ever opening a file manager.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">What you can filter by</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Text</span> — filenames, captions, EXIF fields</li>
+                            <li><span className="font-medium text-foreground">Date</span> — single day or any range</li>
+                            <li><span className="font-medium text-foreground">People</span> — names from People Manager</li>
+                            <li><span className="font-medium text-foreground">Albums</span> — grouped by source (Google Photos / PDR), collapsible tree</li>
+                            <li><span className="font-medium text-foreground">Confidence</span> — Confirmed / Recovered / Marked</li>
+                            <li><span className="font-medium text-foreground">Source kind</span> — folders, ZIPs, Takeouts, drives</li>
+                            <li><span className="font-medium text-foreground">Camera / device</span> and <span className="font-medium text-foreground">location</span> where EXIF carries them</li>
+                          </ul>
+                          <p className="mt-2">Filters stack — combine a person, a date range, and an album to land on exactly the photos you want.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Acting on results</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Click a thumbnail (or press <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">Enter</span>) to open the full-size viewer</li>
+                            <li>Select photos with the checkboxes to batch-action them</li>
+                            <li>Send a selection to a <span className="font-medium text-foreground">Parallel Library</span> — a curated subset on a separate drive, originals untouched</li>
+                            <li>Add a selection to a PDR Album for ongoing organisation</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Use S&amp;D as your daily entry point once your library is fixed — it's faster than browsing folders</li>
+                            <li>The contextual count next to each filter chip tells you how many matches it would add, so you can see the impact before clicking</li>
+                            <li>When a filter pill looks empty, that's PDR telling you no photos in the current set match — relax another filter to widen the result</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Memories - By Date */}
+                  <AccordionItem value="memories-by-date" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Memories — By Date
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>By Date is the payoff of every Fix you've ever run. Once PDR has restored dates on your library, your timeline finally <span className="font-medium text-foreground">works</span> — year by year, month by month, day by day.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">How it's organised</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Years</span> at the top level — each shows a preview thumb and a photo count</li>
+                            <li><span className="font-medium text-foreground">Months</span> when you open a year</li>
+                            <li><span className="font-medium text-foreground">Days</span> when you open a month — and the day grid is where you flick through photos</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Where the dates come from</p>
+                          <p>Every photo's date in By Date is the one PDR settled on during analysis — EXIF capture date when it was trustworthy, Takeout JSON when EXIF was missing, filename pattern when neither was available, and a fallback Marked date only when nothing reliable existed.</p>
+                          <p className="mt-2">That's why running a Fix matters before relying on this view: it's the difference between "everything is dated 2024 because that's when you copied it" and "everything is dated when it actually happened".</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>If a year looks unexpectedly full, it's usually a Marked-date bucket — those photos didn't have a real date and fell back. The Reports page tells you which.</li>
+                            <li>By Date is one of the strongest ways to find a photo when you remember <em>roughly when</em> but not what it's called.</li>
+                            <li>It updates live as you run more Fixes — no rebuild step needed.</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Memories - Albums */}
+                  <AccordionItem value="memories-albums" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Memories — Albums
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Albums is where your library stops being one long stream of photos and starts being <span className="font-medium text-foreground">collections</span> — Holiday 2018, Mum's 60th, The Wedding, anything you'd want to revisit as a group rather than scroll past.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Album Sources</p>
+                          <p className="mb-2">Every album in PDR belongs to a <span className="font-medium text-foreground">source</span> — where it came from. The two you'll see today:</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Google Photos</span> — albums imported automatically from your Google Takeouts. You don't lift a finger; PDR reads the album metadata baked into the Takeout and recreates every album you'd already curated on Google Photos.</li>
+                            <li><span className="font-medium text-foreground">PDR</span> — albums you create yourself inside PDR, from scratch or by saving an S&amp;D search.</li>
+                          </ul>
+                          <p className="mt-2">Source groups are collapsible headers in the Albums view (and in the S&amp;D Album filter), so Google Photos albums stay distinct from the ones you've built yourself.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Creating your own PDR Albums</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Hit <span className="font-medium text-foreground">New Album</span> in the Albums view, give it a name, and add photos by dragging them in or selecting them from S&amp;D</li>
+                            <li>An album in PDR is a <em>reference</em> — the photos still live on your Library Drive, the album just remembers which ones belong together</li>
+                            <li>Albums survive everything: re-Fixes, library moves, reinstalls. They're part of your library, not a temporary view</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Organising albums into folders</p>
+                          <p className="mb-2">Once you've got a few albums going, group them into <span className="font-medium text-foreground">folders</span> so the list doesn't sprawl:</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Create a folder (e.g. "Family holidays", "Mum &amp; Dad", "Work travel")</li>
+                            <li>Drag albums into it — silent move, the new position is the confirmation</li>
+                            <li>Folders sit inside their Album Source group, so your structure stays tidy</li>
+                          </ul>
+                        </div>
+
+                        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                          <p className="font-medium text-emerald-700 dark:text-emerald-300 mb-2">Google Takeout albums — auto-organised</p>
+                          <p className="mb-2">This is one of PDR's quiet wins. Every album you'd already organised in Google Photos — birthdays, holidays, named collections — appears in Memories &gt; Albums automatically the moment a Takeout is analysed. No re-tagging, no re-curating, no clicking "import album".</p>
+                          <p>If you've spent years curating Google Photos albums, PDR honours that work. They show up under the <span className="font-medium text-foreground">Google Photos</span> source group, ready to browse, drop into folders, or send to a Parallel Library.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Sending albums to Parallel Libraries</p>
+                          <p className="mb-2">Sometimes you want an album to live <span className="font-medium text-foreground">separately</span> from your Master Library — a copy on a portable drive to share with a relative, a curated subset on a smaller drive for travel, or a sensitive collection you'd rather keep on its own disk.</p>
+                          <p className="mb-2">From any album you can send the whole thing to a <span className="font-medium text-foreground">Parallel Library</span> — a second Library Drive that's still managed by PDR, but completely separate from your Master. The originals in your Master stay untouched; the Parallel Library gets its own copy.</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Great for gifting (Mum's 60th on a USB stick for the family)</li>
+                            <li>Great for portability (Holiday 2024 on a small SSD for the trip)</li>
+                            <li>Great for separation (a sensitive collection that doesn't belong on the main drive)</li>
+                          </ul>
+                          <p className="mt-2">All the PDR views — S&amp;D, Memories, People Manager, Trees — can show or hide each Parallel Library independently, so the master experience never gets polluted.</p>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* People Manager */}
+                  <AccordionItem value="people-manager" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      People Manager (PM)
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>People Manager is how PDR turns thousands of anonymous faces into <span className="font-medium text-foreground">named people</span> — the foundation for searching by face, building Trees, and surfacing Memories of the people who matter.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">The two tabs</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Unnamed</span> — clusters of faces PDR thinks are the same person, waiting on you to confirm and name</li>
+                            <li><span className="font-medium text-foreground">Named</span> — verified people. Once a cluster's named and verified it lives here, and powers face search across S&amp;D, Memories and Trees</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Naming a cluster</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Open a cluster from the Unnamed tab to see its faces side-by-side</li>
+                            <li>Type a name — short name (e.g. "Nan") or full name ("Sylvia Mills") both autocomplete against existing people</li>
+                            <li>Pick from the dropdown if you spot a match, or type something brand new</li>
+                            <li>Hit <span className="font-medium text-foreground">Verify</span> to move the cluster into Named</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Reassigning faces</p>
+                          <p className="mb-2">AI clustering is good but not perfect. When a face has been mis-clustered:</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Open the cluster, click the offending face</li>
+                            <li>Reassign it to the right person via the autocomplete dropdown</li>
+                            <li>Or drag the whole cluster row onto a Named person to merge it</li>
+                          </ul>
+                          <p className="mt-2">Silent success — the visual move is the feedback. If something fails (offline drive, locked file), PDR toasts an error so you're never left guessing.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Tips</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Start with the biggest clusters — the people who appear most often. A few high-value names go further than naming every stranger</li>
+                            <li>Drag-to-merge is the fastest way to consolidate "Mum at 30" and "Mum at 60" clusters into a single Mum</li>
+                            <li>The grip handle on the left of each row is for reordering; clicking the row itself opens the cluster</li>
+                            <li>You can rename or unname anyone in the Named tab later — nothing about PM is one-way</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
                 </Accordion>
               </div>
 
