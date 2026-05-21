@@ -977,6 +977,16 @@ export default function PeopleManager() {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem(CLUSTER_ORDER_KEY) || '{}'); } catch { return {}; }
   });
+  // Separate manual-order map for the Named tab. Persisted under its
+  // own key so reordering Named clusters doesn't disturb Unnamed and
+  // vice versa. Manual order takes precedence over the
+  // namedSortNewestFirst toggle: once the user has dragged a cluster
+  // into position, that position sticks until they drag again.
+  const NAMED_CLUSTER_ORDER_KEY = 'pdr-pm-named-cluster-order';
+  const [namedClusterOrder, setNamedClusterOrder] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(NAMED_CLUSTER_ORDER_KEY) || '{}'); } catch { return {}; }
+  });
   // Drag state lives in REFS + DOM mutation, not React state. Each
   // dragOver event used to setState → re-render every one of the
   // 3624 unnamed-cluster rows, which made the drag unusable on a real
@@ -1000,6 +1010,10 @@ export default function PeopleManager() {
   const persistClusterOrder = (next: Record<string, number>) => {
     setClusterOrder(next);
     try { localStorage.setItem(CLUSTER_ORDER_KEY, JSON.stringify(next)); } catch { /* quota — ignore */ }
+  };
+  const persistNamedClusterOrder = (next: Record<string, number>) => {
+    setNamedClusterOrder(next);
+    try { localStorage.setItem(NAMED_CLUSTER_ORDER_KEY, JSON.stringify(next)); } catch { /* quota — ignore */ }
   };
 
   const unnamedClusters = useMemo(() => {
@@ -1224,14 +1238,37 @@ export default function PeopleManager() {
     () => unnamedClusters.map((c) => clusterKey(c)),
     [unnamedClusters],
   );
+  const namedSortableIds = useMemo(
+    () => filteredNamed.map((c) => clusterKey(c)),
+    [filteredNamed],
+  );
+
+  // Named-tab reorder handler. Same shape as handleDndDragEnd above
+  // but persists into namedClusterOrder. Keeps the two tabs' manual
+  // orders independent.
+  const handleNamedDndDragEnd = (event: DragEndEvent) => {
+    setActiveDragClusterId(null);
+    document.body.removeAttribute('data-pm-dragging');
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = filteredNamed.findIndex((c) => clusterKey(c) === String(active.id));
+    const newIndex = filteredNamed.findIndex((c) => clusterKey(c) === String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(filteredNamed, oldIndex, newIndex);
+    const nextOrder: Record<string, number> = {};
+    next.forEach((c, i) => { nextOrder[clusterKey(c)] = i; });
+    persistNamedClusterOrder(nextOrder);
+  };
 
   // Resolves the cluster currently being dragged so DragOverlay can
-  // render a preview of it. Returns null when no drag is in flight.
+  // render a preview of it. Searches across ALL clusters so the
+  // same overlay works for both Unnamed and Named tabs (cluster_id
+  // values are unique across the full clusters[] array).
   const activeDraggedCluster = useMemo(
     () => activeDragClusterId
-      ? unnamedClusters.find((c) => clusterKey(c) === activeDragClusterId) ?? null
+      ? clusters.find((c) => clusterKey(c) === activeDragClusterId) ?? null
       : null,
-    [activeDragClusterId, unnamedClusters],
+    [activeDragClusterId, clusters],
   );
 
   const prepareFaces = (cluster: PersonCluster): PersonCluster => {
@@ -1282,12 +1319,29 @@ export default function PeopleManager() {
   // this, hovering a face thumbnail (which flips globalHoveredFaceId
   // state) re-runs prepareFaces across ALL clusters every time —
   // noticeably sluggish on Unnamed where there can be 100+ clusters.
-  const filteredNamed = useMemo(() => (searchFilter
-    ? namedClusters.filter(c => c.person_name?.toLowerCase().includes(searchFilter.toLowerCase()))
-    : namedClusters
-  ).map(prepareFaces),
+  const filteredNamed = useMemo(() => {
+    const base = (searchFilter
+      ? namedClusters.filter(c => c.person_name?.toLowerCase().includes(searchFilter.toLowerCase()))
+      : namedClusters
+    );
+    // Apply user-defined manual order from drag-reorder if any
+    // namedClusterOrder entries exist for these clusters. Entries
+    // without a manual rank fall to the end (Infinity), so they
+    // keep their natural backend/sort-toggle order relative to
+    // each other but sit BELOW any manually-positioned rows.
+    // Sorting is `arr.sort` (stable in modern engines) so this
+    // overlays the manual order on top of the existing sort.
+    const sorted = [...base];
+    sorted.sort((a, b) => {
+      const ra = namedClusterOrder[clusterKey(a)] ?? Number.POSITIVE_INFINITY;
+      const rb = namedClusterOrder[clusterKey(b)] ?? Number.POSITIVE_INFINITY;
+      if (ra !== rb) return ra - rb;
+      return 0;
+    });
+    return sorted.map(prepareFaces);
+  },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [namedClusters, searchFilter, showUnverifiedOnly, showMatched, namedSortNewestFirst, clusterThreshold]);
+  [namedClusters, namedClusterOrder, searchFilter, showUnverifiedOnly, showMatched, namedSortNewestFirst, clusterThreshold]);
 
   const tabCounts = {
     named: namedClusters.length,
@@ -1786,26 +1840,53 @@ export default function PeopleManager() {
                   /* `data-tour="pm-clusters"` is the spotlight target
                       for step 2 of the PM tour ("Face Clusters"). The
                       whole list highlights, framing the concept "every
-                      row here is a cluster of one person". */
-                  <div className="space-y-2" data-tour="pm-clusters">
-                    {filteredNamed.map((cluster, idx) => (
-                      // First card carries `data-tour="pm-verify"` so
-                      // step 4 ("Verify & Reassign") spotlights one
-                      // concrete row. The wrapper is a real <div> (not
-                      // `display: contents`, which has a 0×0 bounding
-                      // rect and gave the spotlight nothing to anchor
-                      // to — Terry's "Name a cluster doesn't highlight"
-                      // bug from May 7 2026). The wrapper itself adds
-                      // no visible chrome — it inherits the grid gap
-                      // from the parent's `space-y-2`, and the
-                      // PersonCardRow inside still renders as before.
-                      // Direct attribute (not conditional spread) for
-                      // resilience — same canonical pattern used for
-                      // rh-detail / mem-open.
-                      <div
-                        key={clusterKey(cluster)}
-                        data-tour={idx === 0 ? 'pm-verify' : undefined}
+                      row here is a cluster of one person".
+                      Wrapped in DndContext + SortableContext so users
+                      can drag-reorder named clusters into their
+                      preferred order (Terry 2026-05-21: "I would like
+                      this to now be used on the Named tab also").
+                      Manual order persists via persistNamedClusterOrder
+                      and takes precedence over the newest-first sort
+                      toggle. */
+                  <DndContext
+                    sensors={dndSensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDndDragStart}
+                    onDragEnd={handleNamedDndDragEnd}
+                    onDragCancel={handleDndDragCancel}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext items={namedSortableIds} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-2" data-tour="pm-clusters">
+                    {filteredNamed.map((cluster, idx) => {
+                      const ck = clusterKey(cluster);
+                      return (
+                      <SortableClusterRow
+                        key={ck}
+                        cluster={cluster}
+                        clusterKey={ck}
+                        className="relative"
+                        placeholderHeight={100}
+                        // First card carries `data-tour="pm-verify"` so
+                        // step 4 ("Verify & Reassign") spotlights one
+                        // concrete row. Passed through to the wrapper
+                        // <div> rendered by SortableClusterRow.
+                        dataTour={idx === 0 ? 'pm-verify' : undefined}
                       >
+                        {({ listeners }) => <>
+                        <IconTooltip label="Drag to reorder" side="left">
+                          <div
+                            {...(listeners ?? {})}
+                            style={{ touchAction: 'none' }}
+                            className="absolute left-1 top-0 bottom-0 w-4 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors text-muted-foreground/60 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 rounded-md z-10"
+                          >
+                            <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor">
+                              <circle cx="3.5" cy="4" r="1.4" /><circle cx="8.5" cy="4" r="1.4" />
+                              <circle cx="3.5" cy="10" r="1.4" /><circle cx="8.5" cy="10" r="1.4" />
+                              <circle cx="3.5" cy="16" r="1.4" /><circle cx="8.5" cy="16" r="1.4" />
+                            </svg>
+                          </div>
+                        </IconTooltip>
                       <PersonCardRow
                         rowIndex={idx}
                         onVisible={() => ensureClusterCrops(cluster)}
@@ -1874,9 +1955,59 @@ export default function PeopleManager() {
                         showMatched={showMatched}
                         showUnverifiedOnly={showUnverifiedOnly}
                       />
+                      </>}
+                      </SortableClusterRow>
+                      );
+                    })}
                       </div>
-                    ))}
-                  </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
+                      {activeDraggedCluster && (() => {
+                        const samples = activeDraggedCluster.sample_faces ?? [];
+                        const repFace = samples[0];
+                        const repCrop = repFace ? faceCropsMap[repFace.face_id] : undefined;
+                        const stripFaces = samples.slice(0, 6);
+                        return (
+                          <div
+                            className="bg-card border-2 border-primary/50 rounded-xl px-4 py-2.5 flex items-center gap-3"
+                            style={{ boxShadow: '0 20px 40px rgba(168, 85, 247, 0.35), 0 8px 16px rgba(0,0,0,0.15)', cursor: 'grabbing' }}
+                          >
+                            {repCrop ? (
+                              <img src={repCrop} alt="" className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-400 shrink-0" />
+                            ) : (
+                              <span className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 ring-2 ring-amber-400 shrink-0">
+                                <Users className="w-5 h-5" />
+                              </span>
+                            )}
+                            <div className="flex flex-col min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-foreground italic truncate">
+                                  {activeDraggedCluster.person_name && !activeDraggedCluster.person_name.startsWith('__')
+                                    ? activeDraggedCluster.person_name
+                                    : 'Unknown person'}
+                                </span>
+                                <span className="text-xs text-muted-foreground shrink-0">
+                                  {activeDraggedCluster.photo_count.toLocaleString()} photo{activeDraggedCluster.photo_count === 1 ? '' : 's'}
+                                </span>
+                              </div>
+                              {stripFaces.length > 1 && (
+                                <div className="flex items-center gap-0.5 mt-1.5">
+                                  {stripFaces.slice(1).map((f) => {
+                                    const c = faceCropsMap[f.face_id];
+                                    return c ? (
+                                      <img key={f.face_id} src={c} alt="" className="w-6 h-6 rounded-full object-cover ring-1 ring-white shadow-sm" />
+                                    ) : (
+                                      <span key={f.face_id} className="w-6 h-6 rounded-full bg-muted ring-1 ring-white shadow-sm" />
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </DragOverlay>
+                  </DndContext>
                 ) : (
                   <div className="space-y-0.5">
                     {filteredNamed.map((cluster, idx) => (
@@ -3766,10 +3897,12 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
 function SortableClusterRowInner({
   clusterKey: ck,
   className,
+  dataTour,
   children,
 }: {
   clusterKey: string;
   className?: string;
+  dataTour?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   children: (args: { listeners: Record<string, any> | undefined }) => React.ReactNode;
 }) {
@@ -3797,6 +3930,7 @@ function SortableClusterRowInner({
       {...attributes}
       data-cluster-row
       data-cluster-key={ck}
+      data-tour={dataTour}
       className={className}
     >
       {children({ listeners })}
@@ -3813,12 +3947,14 @@ function SortableClusterRow({
   clusterKey: ck,
   className,
   placeholderHeight,
+  dataTour,
   children,
 }: {
   cluster: PersonCluster;
   clusterKey: string;
   className?: string;
   placeholderHeight: number;
+  dataTour?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   children: (args: { listeners: Record<string, any> | undefined }) => React.ReactNode;
 }) {
@@ -3846,13 +3982,14 @@ function SortableClusterRow({
         ref={placeholderRef}
         data-cluster-row
         data-cluster-key={ck}
+        data-tour={dataTour}
         style={{ height: placeholderHeight }}
         aria-hidden="true"
       />
     );
   }
   return (
-    <SortableClusterRowInner clusterKey={ck} className={className}>
+    <SortableClusterRowInner clusterKey={ck} className={className} dataTour={dataTour}>
       {children}
     </SortableClusterRowInner>
   );
