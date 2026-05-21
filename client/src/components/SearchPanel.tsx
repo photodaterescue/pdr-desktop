@@ -4802,7 +4802,14 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
   const hasAnyMeta = fields.length > 0;
   return (
     <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick}
-      className={`group cursor-pointer transition-all duration-200 overflow-hidden ${hasAnyMeta ? 'rounded-xl border' : ''} ${highlighted ? (hasAnyMeta ? 'border-primary ring-2 ring-primary/20 shadow-lg' : 'ring-2 ring-primary/40') : (hasAnyMeta ? 'border-border hover:border-primary/40 hover:shadow-md' : 'hover:ring-2 hover:ring-primary/30')}`}>
+      // Premium hover: subtle 2px lift + softer shadow so the tile
+      // pops out of the dense gap-0 grid. `relative hover:z-10` is
+      // critical — without it the lifted tile's shadow gets clipped
+      // by neighbour tiles. ease-out 200ms feels responsive without
+      // being bouncy. Highlighted (selected/multi-selected) tiles
+      // skip the lift — they're in a settled "I'm chosen" state,
+      // further movement on hover would feel jittery.
+      className={`group cursor-pointer relative transition-all duration-200 ease-out overflow-hidden ${hasAnyMeta ? 'rounded-xl border' : ''} ${highlighted ? (hasAnyMeta ? 'border-primary ring-2 ring-primary/20 shadow-lg' : 'ring-2 ring-primary/40') : (hasAnyMeta ? 'border-border hover:border-primary/40 hover:shadow-lg hover:-translate-y-[2px] hover:z-10' : 'hover:ring-2 hover:ring-primary/30 hover:-translate-y-[2px] hover:z-10')}`}>
       <div className="aspect-square bg-secondary/30 relative overflow-hidden">
         {thumbnail ? <img src={thumbnail} alt={file.filename} className="w-full h-full object-cover" loading="lazy" draggable={false} /> : (
           <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-10 h-10 text-muted-foreground/30" /> : <ImageIcon className="w-10 h-10 text-muted-foreground/30" />}</div>

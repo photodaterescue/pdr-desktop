@@ -1,5 +1,5 @@
 import { HashRouter, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
@@ -32,6 +32,34 @@ function AppShell() {
   const location = useLocation();
   const isWorkspace = location.pathname === '/workspace';
   const [workspaceMounted, setWorkspaceMounted] = useState(false);
+  // Snapshot of the last non-workspace location, so the Routes
+  // block keeps rendering Welcome/SourceSelection while the
+  // workspace fades IN over it. Without this, the moment the route
+  // flips to /workspace the Routes would fall through to NotFound
+  // and the fade-in would happen over an empty page. Updated only
+  // when we're NOT on workspace, so during the entire fade-out the
+  // last-seen Welcome content stays painted underneath.
+  const lastNonWorkspaceLocationRef = useRef(location);
+  useEffect(() => {
+    if (!isWorkspace) {
+      lastNonWorkspaceLocationRef.current = location;
+    }
+  }, [location, isWorkspace]);
+  // Keep the Routes block mounted briefly after navigating INTO
+  // /workspace so the fade-out has something to fade. Unmount it
+  // 320ms later (slightly longer than the 300ms transition so the
+  // last paint frame can complete). On navigating BACK out of
+  // /workspace, the Routes block is re-mounted instantly so the
+  // user sees Welcome content immediately as the workspace fades.
+  const [routesMounted, setRoutesMounted] = useState(!isWorkspace);
+  useEffect(() => {
+    if (!isWorkspace) {
+      setRoutesMounted(true);
+      return;
+    }
+    const t = setTimeout(() => setRoutesMounted(false), 320);
+    return () => clearTimeout(t);
+  }, [isWorkspace]);
   useEffect(() => {
     if (workspaceMounted) return;
     if (isWorkspace) {
@@ -55,19 +83,41 @@ function AppShell() {
       <div className="flex-1 overflow-hidden relative">
         {workspaceMounted && (
           <div
-            className="absolute inset-0"
-            style={{ display: isWorkspace ? 'block' : 'none' }}
+            // Cross-fade workspace in/out instead of the old hard
+            // display:none toggle. 300ms is the sweet spot — fast
+            // enough not to feel sluggish, slow enough to register
+            // as a deliberate transition. ease-out so the fade
+            // settles gently. pointer-events:none prevents the
+            // hidden workspace from intercepting clicks meant for
+            // Welcome during the brief overlap. visibility:hidden
+            // when fully faded keeps the workspace out of the
+            // accessibility tree.
+            className="absolute inset-0 transition-opacity duration-300 ease-out"
+            style={{
+              opacity: isWorkspace ? 1 : 0,
+              pointerEvents: isWorkspace ? 'auto' : 'none',
+              visibility: isWorkspace ? 'visible' : 'hidden',
+            }}
             aria-hidden={!isWorkspace}
           >
             <Workspace />
           </div>
         )}
-        {!isWorkspace && (
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/source-selection" element={<SourceSelection />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+        {routesMounted && (
+          <div
+            className="absolute inset-0 transition-opacity duration-300 ease-out"
+            style={{
+              opacity: !isWorkspace ? 1 : 0,
+              pointerEvents: !isWorkspace ? 'auto' : 'none',
+            }}
+            aria-hidden={isWorkspace}
+          >
+            <Routes location={isWorkspace ? lastNonWorkspaceLocationRef.current : location}>
+              <Route path="/" element={<Home />} />
+              <Route path="/source-selection" element={<SourceSelection />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </div>
         )}
       </div>
       <div className="window-resize-hint-tl" aria-hidden="true" />

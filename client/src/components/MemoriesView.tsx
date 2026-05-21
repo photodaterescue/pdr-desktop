@@ -741,12 +741,13 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                       </span>
                     </div>
                     <div className={`grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] ${gridGap}`}>
-                      {monthBuckets.map((b) => (
+                      {monthBuckets.map((b, idx) => (
                         <MonthTile
                           key={`${b.year}-${b.month}`}
                           bucket={b}
                           onOpen={() => openMonth(b.year, b.month)}
                           density={density}
+                          enterIndex={idx}
                         />
                       ))}
                     </div>
@@ -862,7 +863,7 @@ function LibrarySelector({ libraries, selectedKeys, onChange }: { libraries: Lib
 
 // ─── Month tile ────────────────────────────────────────────────────────────
 
-function MonthTile({ bucket, onOpen, density }: { bucket: MemoriesYearBucket; onOpen: () => void; density: Density }) {
+function MonthTile({ bucket, onOpen, density, enterIndex = 0 }: { bucket: MemoriesYearBucket; onOpen: () => void; density: Density; enterIndex?: number }) {
   const total = (bucket.photoCount || 0) + (bucket.videoCount || 0);
   const tight = density === 'tight';
   // Self-fetched thumbnail. Each tile observes its own visibility
@@ -926,7 +927,23 @@ function MonthTile({ bucket, onOpen, density }: { bucket: MemoriesYearBucket; on
     <button
       ref={tileRef}
       onClick={() => onOpen()}
-      className={`group relative aspect-[4/3] overflow-hidden bg-secondary/30 transition-all text-left ${tight ? '' : 'rounded-xl ring-1 ring-border hover:ring-primary/50'}`}
+      // Premium hover: 2px lift + softer shadow when in spacious
+      // (rounded) mode where the grid has breathing room (gap-2).
+      // Tight mode keeps the flat look — its gap-1 tiles are too
+      // close-packed for a lift to read cleanly. ease-out 200ms
+      // matches the FileCard hover timing for consistency.
+      //
+      // First-paint stagger: each tile fades + rises 4px into
+      // place on mount, delayed by enterIndex * 30ms (capped at 8
+      // cells so the longest delay is 240ms — past that the
+      // stagger becomes a slog). fill-mode-both keeps the tile
+      // invisible BEFORE its delay runs and at the end state
+      // AFTER the animation completes.
+      className={`group relative aspect-[4/3] overflow-hidden bg-secondary/30 transition-all duration-200 ease-out text-left animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both ${tight ? '' : 'rounded-xl ring-1 ring-border hover:ring-primary/50 hover:-translate-y-[2px] hover:shadow-lg hover:z-10'}`}
+      // animationDuration set via style to avoid clashing with the
+      // duration-200 class above (Tailwind's duration utility
+      // affects both transition AND animation in tw-animate-css).
+      style={{ animationDelay: `${Math.min(enterIndex, 8) * 30}ms`, animationDuration: '400ms' }}
     >
       {thumb ? (
         <img src={thumb} alt={`${MONTH_NAMES[bucket.month - 1]} ${bucket.year}`} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105" />

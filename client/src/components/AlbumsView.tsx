@@ -2045,7 +2045,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 className={`grid ${density === 'tight' ? 'gap-1' : 'gap-3'}`}
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumCardTilePx}px, 1fr))` }}
               >
-                {allSorted.map((album) => {
+                {allSorted.map((album, idx) => {
                   const ap = getSourceProfileForAlbum(album);
                   const AIcon = ap.Icon;
                   return (
@@ -2060,7 +2060,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       // groups). Pass null → drop handler falls back
                       // to COPY semantics, which is the safe default.
                       onDragStart={(e) => handleAlbumDragStart(e, album.id, null)}
-                      className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
+                      // Premium hover: 2px lift + softer shadow.
+                      // ease-out 200ms matches FileCard/MonthTile.
+                      // hover:z-10 keeps the shadow above neighbour
+                      // tiles instead of being clipped.
+                      //
+                      // First-paint stagger: capped at 8 cells * 30ms
+                      // so the slowest tile starts at 240ms — past
+                      // that the stagger becomes a slog. Duration via
+                      // inline style to avoid clashing with the
+                      // duration-200 class (Tailwind duration affects
+                      // both transition AND animation).
+                      className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 hover:-translate-y-[2px] hover:shadow-lg hover:z-10 relative transition-all duration-200 ease-out cursor-grab active:cursor-grabbing animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both ${ap.cardBgClass}`}
+                      style={{ animationDelay: `${Math.min(idx, 8) * 30}ms`, animationDuration: '400ms' }}
                     >
                       <div className="aspect-square bg-muted relative">
                         {album.coverPath && thumbs[album.coverPath] ? (
@@ -2125,7 +2137,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 className={`grid ${density === 'tight' ? 'gap-1' : 'gap-3'}`}
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumCardTilePx}px, 1fr))` }}
               >
-                {selectedGroupAlbumIds.map((id) => {
+                {selectedGroupAlbumIds.map((id, idx) => {
                   const album = albumsById.get(id);
                   if (!album) return null;
                   const ap = getSourceProfileForAlbum(album);
@@ -2143,7 +2155,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       // source auto-group (Google Photos / PDR) →
                       // COPY always.
                       onDragStart={(e) => handleAlbumDragStart(e, album.id, selectedGroup.id)}
-                      className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 transition-all cursor-grab active:cursor-grabbing ${ap.cardBgClass}`}
+                      // Premium hover + stagger first-paint — mirrors
+                      // the all-albums grid above.
+                      className={`flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 hover:-translate-y-[2px] hover:shadow-lg hover:z-10 relative transition-all duration-200 ease-out cursor-grab active:cursor-grabbing animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both ${ap.cardBgClass}`}
+                      style={{ animationDelay: `${Math.min(idx, 8) * 30}ms`, animationDuration: '400ms' }}
                     >
                       <div className="aspect-square bg-muted relative">
                         {album.coverPath && thumbs[album.coverPath] ? (
