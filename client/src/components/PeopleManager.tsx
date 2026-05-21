@@ -1238,27 +1238,12 @@ export default function PeopleManager() {
     () => unnamedClusters.map((c) => clusterKey(c)),
     [unnamedClusters],
   );
-  const namedSortableIds = useMemo(
-    () => filteredNamed.map((c) => clusterKey(c)),
-    [filteredNamed],
-  );
-
-  // Named-tab reorder handler. Same shape as handleDndDragEnd above
-  // but persists into namedClusterOrder. Keeps the two tabs' manual
-  // orders independent.
-  const handleNamedDndDragEnd = (event: DragEndEvent) => {
-    setActiveDragClusterId(null);
-    document.body.removeAttribute('data-pm-dragging');
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = filteredNamed.findIndex((c) => clusterKey(c) === String(active.id));
-    const newIndex = filteredNamed.findIndex((c) => clusterKey(c) === String(over.id));
-    if (oldIndex < 0 || newIndex < 0) return;
-    const next = arrayMove(filteredNamed, oldIndex, newIndex);
-    const nextOrder: Record<string, number> = {};
-    next.forEach((c, i) => { nextOrder[clusterKey(c)] = i; });
-    persistNamedClusterOrder(nextOrder);
-  };
+  // namedSortableIds + handleNamedDndDragEnd are declared AFTER
+  // filteredNamed (further down the function body) — they reference
+  // filteredNamed which is itself declared later. Putting them here
+  // triggered a TDZ error ("Cannot access 'filteredNamed' before
+  // initialization") that crashed PM to a blank window. Terry
+  // 2026-05-21.
 
   // Resolves the cluster currently being dragged so DragOverlay can
   // render a preview of it. Searches across ALL clusters so the
@@ -1342,6 +1327,28 @@ export default function PeopleManager() {
   },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [namedClusters, namedClusterOrder, searchFilter, showUnverifiedOnly, showMatched, namedSortNewestFirst, clusterThreshold]);
+
+  // Sortable IDs + reorder handler for the Named tab. Declared HERE
+  // (not next to unnamedSortableIds above) because they depend on
+  // filteredNamed which is itself declared just above. Moving them
+  // earlier triggers a TDZ error.
+  const namedSortableIds = useMemo(
+    () => filteredNamed.map((c) => clusterKey(c)),
+    [filteredNamed],
+  );
+  const handleNamedDndDragEnd = (event: DragEndEvent) => {
+    setActiveDragClusterId(null);
+    document.body.removeAttribute('data-pm-dragging');
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = filteredNamed.findIndex((c) => clusterKey(c) === String(active.id));
+    const newIndex = filteredNamed.findIndex((c) => clusterKey(c) === String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(filteredNamed, oldIndex, newIndex);
+    const nextOrder: Record<string, number> = {};
+    next.forEach((c, i) => { nextOrder[clusterKey(c)] = i; });
+    persistNamedClusterOrder(nextOrder);
+  };
 
   const tabCounts = {
     named: namedClusters.length,
