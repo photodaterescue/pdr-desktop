@@ -578,13 +578,6 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#f6f6fb',
-    // Keep the window hidden until the renderer has painted its first
-    // frame. Without this Electron shows a blank white window for the
-    // 2-3 seconds it takes to load the main JS bundle (~1.1 MB) and
-    // mount React, which reads as "PDR hung at launch". With ready-to-
-    // show the user goes from taskbar-flash directly to a rendered
-    // Welcome — no white flash in between.
-    show: false,
     titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
     thickFrame: true,
     ...(process.platform === 'win32' ? {
@@ -605,17 +598,6 @@ function createWindow() {
     },
   });
   hardenWindowAgainstNavigation(mainWindow);
-
-  // Reveal the window only after the renderer signals it's ready to
-  // paint. Belt-and-braces: also reveal on did-finish-load in case
-  // ready-to-show doesn't fire (some older builds/Electron versions
-  // skip it when the page loads instantly from disk).
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
-  mainWindow.webContents.once('did-finish-load', () => {
-    if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
-  });
 
 	mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
 
