@@ -2632,6 +2632,13 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { 
   //           always safe orphans. This covers user test files, stray
   //           bits left by other processes, and anything that's not a
   //           legitimate extraction directory.
+  //
+  // ALL filesystem work below is async (fs.promises.*). The previous
+  // sync version blocked the main process for several seconds while
+  // deleting tens of thousands of files, which left the title-bar
+  // overlay unresponsive and the window non-draggable. Async I/O runs
+  // on libuv's worker pool so the main thread stays responsive to
+  // window messages throughout.
   const looseFilesOnly = !!opts?.looseFilesOnly;
   const mode = looseFilesOnly ? 'loose-files-only' : 'full';
 
@@ -2647,52 +2654,49 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { 
   let dirsRemoved = 0;
   let bytesRemoved = 0;
   for (const root of roots) {
-    if (!fs.existsSync(root)) {
+    try {
+      await fs.promises.access(root);
+    } catch {
       log.info(`[orphan-sweep] root does not exist, skipping: ${root}`);
       continue;
     }
-    let rootSize = 0;
+    let entries: import('fs').Dirent[] = [];
     try {
-      rootSize = folderSizeBytes(root);
-    } catch { /* size measure failed — proceed with cleanup anyway */ }
-    let entries: string[] = [];
-    try {
-      entries = fs.readdirSync(root);
+      entries = await fs.promises.readdir(root, { withFileTypes: true });
     } catch (err) {
       log.warn(`[orphan-sweep] failed to read ${root}: ${(err as Error).message}`);
       continue;
     }
-    log.info(`[orphan-sweep] ${root} — ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}, ${rootSize} byte${rootSize === 1 ? '' : 's'}`);
+    log.info(`[orphan-sweep] ${root} — ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} to inspect`);
     let rootRemoved = 0;
     let rootSkipped = 0;
+    let rootBytes = 0;
     for (const entry of entries) {
-      const full = path.join(root, entry);
+      const full = path.join(root, entry.name);
       // In loose-files-only mode, leave directories alone — they may
       // be active extractions belonging to a currently-listed source.
-      if (looseFilesOnly) {
-        let isDir = false;
-        try {
-          isDir = fs.statSync(full).isDirectory();
-        } catch { /* stat failed — assume directory to be safe */
-          rootSkipped++;
-          continue;
-        }
-        if (isDir) {
-          rootSkipped++;
-          continue;
-        }
+      if (looseFilesOnly && entry.isDirectory()) {
+        rootSkipped++;
+        continue;
       }
       try {
-        fs.rmSync(full, { recursive: true, force: true });
+        // Measure size before removal so we can report bytes freed.
+        // Best-effort — a stat failure doesn't block the delete.
+        if (entry.isDirectory()) {
+          rootBytes += await asyncFolderSizeBytes(full);
+        } else {
+          try { rootBytes += (await fs.promises.stat(full)).size; } catch { /* ignore */ }
+        }
+        await fs.promises.rm(full, { recursive: true, force: true });
         dirsRemoved++;
         rootRemoved++;
       } catch (err) {
         log.warn(`[orphan-sweep] failed to remove ${full}: ${(err as Error).message}`);
       }
     }
-    bytesRemoved += rootSize;
+    bytesRemoved += rootBytes;
     const skippedSuffix = looseFilesOnly ? ` (skipped ${rootSkipped} sub-folder${rootSkipped === 1 ? '' : 's'})` : '';
-    log.info(`[orphan-sweep] ${root} — removed ${rootRemoved}/${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}${skippedSuffix}`);
+    log.info(`[orphan-sweep] ${root} — removed ${rootRemoved}/${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}${skippedSuffix}, freed ${(rootBytes / (1024 ** 3)).toFixed(2)} GB`);
 
     // Full sweep: also remove the now-empty PDR_Temp folder itself,
     // not just its contents. Leaves zero trace on the filesystem.
@@ -2700,16 +2704,40 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { 
     // skipped may still be in use.)
     if (!looseFilesOnly) {
       try {
-        fs.rmSync(root, { recursive: true, force: true });
+        await fs.promises.rm(root, { recursive: true, force: true });
         log.info(`[orphan-sweep] ${root} — removed PDR_Temp folder itself`);
       } catch (err) {
         log.warn(`[orphan-sweep] failed to remove PDR_Temp root ${root}: ${(err as Error).message}`);
       }
     }
   }
-  log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total`);
+  log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total, ${(bytesRemoved / (1024 ** 3)).toFixed(2)} GB freed`);
   return { success: true, dirsRemoved, bytesRemoved };
 });
+
+/**
+ * Async sibling of folderSizeBytes — same recursive byte-sum, but
+ * uses fs.promises so we don't block the main thread when measuring
+ * a multi-GB PDR_Temp tree before deletion.
+ */
+async function asyncFolderSizeBytes(dir: string): Promise<number> {
+  let total = 0;
+  let entries: import('fs').Dirent[] = [];
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch { return 0; }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    try {
+      if (entry.isDirectory()) {
+        total += await asyncFolderSizeBytes(full);
+      } else {
+        total += (await fs.promises.stat(full)).size;
+      }
+    } catch { /* skip unstatable entries */ }
+  }
+  return total;
+}
 
 ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', tempDirOverride?: string) => {
   let tempDir: string | null = null;
