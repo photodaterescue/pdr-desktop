@@ -3210,6 +3210,14 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // whenever launching for the first time."
   const [tempExpanded, setTempExpanded] = useState(true);
   const tempExpandedMountRef = useRef(true);
+  // Separate flag for "user explicitly clicked the burger to expand the
+  // sidebar". Wins over isFullCanvasView in the precedence (below) so the
+  // burger button still works on S&D / Memories / Trees, without
+  // re-introducing the Welcome → Memories widening regression that
+  // moved isFullCanvasView above the bare tempExpanded check. Reset on
+  // every view change so a burger-click on one view doesn't leak into
+  // the next.
+  const [burgerExpanded, setBurgerExpanded] = useState(false);
   // useLayoutEffect (not useEffect) so that when the user clicks a
   // sidebar link that auto-collapses the sidebar (Memories, S&D,
   // Trees), the tempExpanded → false flip happens BEFORE the
@@ -3230,6 +3238,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       return;
     }
     setTempExpanded(false);
+    setBurgerExpanded(false);
   }, [activeView, searchResultsActive]);
 
   // Same reset, but driven off the URL hash rather than activeView
@@ -3383,26 +3392,31 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // Collapse precedence:
   //   1. pinState=closed → collapsed (user explicitly closed)
   //   2. pinState=open   → expanded  (user explicitly pinned)
-  //   3. urlForcesCollapse (URL still has ?view=…)
-  //   4. isFullCanvasView (activeView is memories/search/familytree)
-  //      — wins over tempExpanded. Earlier order had tempExpanded
-  //      ABOVE this check, which left the sidebar expanded when the
-  //      URL handler's setLocation('/workspace') stripped ?view=
-  //      BEFORE the tempExpanded-reset layout effect could fire on
-  //      the new URL. Symptom: Welcome → Memories opened with the
-  //      full-width sidebar painted (Terry 2026-05-21 screenshot).
-  //      Putting isFullCanvasView before tempExpanded means those
-  //      three views ALWAYS collapse regardless of stale temp state.
-  //      The pin button (pinState='open', above) is the documented
-  //      escape hatch for users who want the sidebar wide on those
-  //      views; the menu button's temp-expand still works for
-  //      Dashboard.
+  //   3. urlForcesCollapse (URL still has ?view=…) → collapsed
+  //   4. burgerExpanded — explicit user click on the burger button.
+  //      Wins over isFullCanvasView so the burger ALWAYS expands the
+  //      sidebar regardless of which view the user is on. Reset to
+  //      false on every view change so the expansion doesn't leak
+  //      into the next view.
+  //   5. isFullCanvasView (memories/search/familytree) → collapsed.
+  //      Wins over the bare tempExpanded check, because tempExpanded
+  //      initialises to true (so Dashboard's first paint is wide)
+  //      and would otherwise leak into the first paint of a full-
+  //      canvas view in the Welcome → Memories transition (the
+  //      tempExpanded-reset layout effect can fire AFTER the URL
+  //      handler strips ?view=, missing its reset window). Symptom
+  //      pre-fix: Welcome → Memories opened with the full-width
+  //      sidebar painted (Terry 2026-05-21 screenshot).
+  //   6. tempExpanded — auto-expand on source-add etc. Only relevant
+  //      for Dashboard now that the burger has its own flag.
   const collapsed = pinState === 'closed'
     ? true
     : pinState === 'open'
     ? false
     : urlForcesCollapse
     ? true
+    : burgerExpanded
+    ? false
     : isFullCanvasView
     ? true
     : tempExpanded
@@ -3565,6 +3579,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             onClick={() => {
               if (pinState === 'closed') setPinStatePersisted('auto');
               setTempExpanded(true);
+              setBurgerExpanded(true);
             }}
             className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
             style={!burgerPulseDisabled ? { animation: 'outline-pulse 2.4s ease-in-out infinite' } : undefined}
