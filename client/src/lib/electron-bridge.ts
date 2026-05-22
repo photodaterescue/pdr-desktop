@@ -1549,6 +1549,24 @@ export async function getMemoriesDayFiles(args: { year: number; month?: number |
   return { success: false, error: 'Not running in Electron' };
 }
 
+/** Set a user-chosen monthly thumbnail for (year, month). The bucket
+ *  grid will show this file instead of the default lowest-id pick. */
+export async function setMonthlyThumbnail(args: { year: number; month: number; fileId: number }): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.setMonthlyThumbnail(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+/** Clear a previously-set monthly thumbnail. Revert to the default
+ *  lowest-id pick. */
+export async function clearMonthlyThumbnail(args: { year: number; month: number }): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.clearMonthlyThumbnail(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Trees v1 — family relationship renderer wrappers
 // ═══════════════════════════════════════════════════════════════

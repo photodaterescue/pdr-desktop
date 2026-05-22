@@ -663,6 +663,19 @@ export function initDatabase() {
             }
             catch { }
         }
+        // Memories — user-selected monthly thumbnail overrides. Right-click
+        // any photo in the month drilldown → "Set as monthly thumbnail" and
+        // the bucket grid will show that photo instead of the default
+        // (lowest-id) sample. One row per (year, month); a re-set overwrites.
+        db.exec(`
+      CREATE TABLE IF NOT EXISTS memories_month_thumbs (
+        year     INTEGER NOT NULL,
+        month    INTEGER NOT NULL,
+        file_id  INTEGER NOT NULL REFERENCES indexed_files(id) ON DELETE CASCADE,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (year, month)
+      );
+    `);
         // Persons life-event + marker columns for Trees.
         if (!personColNames.has('birth_date')) {
             try {
@@ -4087,25 +4100,67 @@ export function getMemoriesYearMonthBuckets(runIds) {
     const database = getDb();
     const outer = runIdsClause(runIds);
     const inner = runIdsClause(runIds, 'f2');
+    const override = runIdsClause(runIds, 'f3');
+    // COALESCE: if the user has chosen an override thumbnail for (year,
+    // month) AND that file still exists in indexed_files AND still
+    // matches the current run-id scope, use it. Otherwise fall through
+    // to the default lowest-id pick. The override join also requires
+    // year/month to match (defensive — handles the edge case where a
+    // photo's date is later corrected, moving it to a different bucket).
     const rows = database.prepare(`
     SELECT
       year,
       month,
       SUM(CASE WHEN file_type = 'photo' THEN 1 ELSE 0 END) AS photoCount,
       SUM(CASE WHEN file_type = 'video' THEN 1 ELSE 0 END) AS videoCount,
-      -- Pick a stable sample file per bucket (lowest id = earliest indexed).
-      (SELECT f2.file_path FROM indexed_files f2
-         WHERE f2.year = f.year AND f2.month = f.month ${inner.sql}
-         ORDER BY f2.id ASC LIMIT 1) AS sampleFilePath,
-      (SELECT f2.id FROM indexed_files f2
-         WHERE f2.year = f.year AND f2.month = f.month ${inner.sql}
-         ORDER BY f2.id ASC LIMIT 1) AS sampleFileId
+      COALESCE(
+        (SELECT f3.file_path FROM memories_month_thumbs o
+           JOIN indexed_files f3 ON f3.id = o.file_id
+           WHERE o.year = f.year AND o.month = f.month
+             AND f3.year = f.year AND f3.month = f.month ${override.sql}),
+        (SELECT f2.file_path FROM indexed_files f2
+           WHERE f2.year = f.year AND f2.month = f.month ${inner.sql}
+           ORDER BY f2.id ASC LIMIT 1)
+      ) AS sampleFilePath,
+      COALESCE(
+        (SELECT f3.id FROM memories_month_thumbs o
+           JOIN indexed_files f3 ON f3.id = o.file_id
+           WHERE o.year = f.year AND o.month = f.month
+             AND f3.year = f.year AND f3.month = f.month ${override.sql}),
+        (SELECT f2.id FROM indexed_files f2
+           WHERE f2.year = f.year AND f2.month = f.month ${inner.sql}
+           ORDER BY f2.id ASC LIMIT 1)
+      ) AS sampleFileId
     FROM indexed_files f
     WHERE year IS NOT NULL AND month IS NOT NULL ${outer.sql}
     GROUP BY year, month
     ORDER BY year DESC, month DESC
-  `).all(...inner.params, ...inner.params, ...outer.params);
+  `).all(...override.params, ...inner.params, ...override.params, ...inner.params, ...outer.params);
     return rows;
+}
+/**
+ * Set a user-chosen monthly thumbnail. Overwrites any prior choice for
+ * the same (year, month) pair. The file must already exist in
+ * indexed_files; foreign-key constraint ensures we don't carry a
+ * dangling override forward.
+ */
+export function setMonthlyThumbnailOverride(year, month, fileId) {
+    const database = getDb();
+    database.prepare(`
+    INSERT INTO memories_month_thumbs (year, month, file_id, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(year, month) DO UPDATE SET
+      file_id = excluded.file_id,
+      updated_at = excluded.updated_at
+  `).run(year, month, fileId);
+}
+/**
+ * Clear the user-chosen monthly thumbnail for (year, month). Subsequent
+ * getMemoriesYearMonthBuckets calls revert to the default lowest-id pick.
+ */
+export function clearMonthlyThumbnailOverride(year, month) {
+    const database = getDb();
+    database.prepare(`DELETE FROM memories_month_thumbs WHERE year = ? AND month = ?`).run(year, month);
 }
 /**
  * Files taken on the same month/day as today across every previous year.

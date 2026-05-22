@@ -241,6 +241,8 @@ contextBridge.exposeInMainWorld('pdr', {
         yearMonthBuckets: (runIds) => ipcRenderer.invoke('memories:yearMonthBuckets', runIds),
         onThisDay: (args) => ipcRenderer.invoke('memories:onThisDay', args),
         dayFiles: (args) => ipcRenderer.invoke('memories:dayFiles', args),
+        setMonthlyThumbnail: (args) => ipcRenderer.invoke('memories:setMonthlyThumbnail', args),
+        clearMonthlyThumbnail: (args) => ipcRenderer.invoke('memories:clearMonthlyThumbnail', args),
     },
     trees: {
         addRelationship: (args) => ipcRenderer.invoke('trees:addRelationship', args),

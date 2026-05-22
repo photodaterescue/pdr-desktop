@@ -243,7 +243,7 @@ import { getLicenseStatus, activateLicense, refreshLicense, deactivateLicense, g
 import { getUsage as getUsageFromWorker, incrementUsage as incrementUsageOnWorker, FREE_TRIAL_FILE_LIMIT, } from './usage-tracker.js';
 import { checkForUpdates, initAutoUpdater, downloadUpdate, quitAndInstall, getUpdateState, } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
-import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getFilterCounts, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, 
+import { initDatabase, closeDatabase, searchFiles, getFilterOptions, getFilterCounts, getIndexStats, clearAllIndexData, removeRun, removeRunByReportId, listRuns, getMemoriesYearMonthBuckets, setMonthlyThumbnailOverride, clearMonthlyThumbnailOverride, getMemoriesOnThisDay, getMemoriesDayFiles, saveFavouriteFilter, listFavouriteFilters, deleteFavouriteFilter, renameFavouriteFilter, 
 // getDb — direct DB handle for ad-hoc aggregation queries that don't
 // fit the existing typed helpers (e.g. library:listIndexedDrives, which
 // GROUP BYs over the drive-letter prefix of file_path). Used sparingly.
@@ -4783,6 +4783,30 @@ ipcMain.handle('memories:onThisDay', async (_event, args) => {
 ipcMain.handle('memories:dayFiles', async (_event, args) => {
     try {
         return { success: true, data: getMemoriesDayFiles(args.year, args.month ?? null, args.day ?? null, args.runIds) };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// Set a user-chosen monthly thumbnail. Right-click a photo in the
+// month drilldown → "Set as monthly thumbnail" pipes through here.
+// The month-bucket query then prefers this file over the default
+// lowest-id pick when rendering the year/month tile grid.
+ipcMain.handle('memories:setMonthlyThumbnail', async (_event, args) => {
+    try {
+        setMonthlyThumbnailOverride(args.year, args.month, args.fileId);
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// Clear a previously-set monthly thumbnail override. After clearing,
+// the bucket grid reverts to the default lowest-id pick for that month.
+ipcMain.handle('memories:clearMonthlyThumbnail', async (_event, args) => {
+    try {
+        clearMonthlyThumbnailOverride(args.year, args.month);
+        return { success: true };
     }
     catch (err) {
         return { success: false, error: err.message };

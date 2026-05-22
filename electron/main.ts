@@ -276,6 +276,8 @@ import {
   removeRunByReportId,
   listRuns,
   getMemoriesYearMonthBuckets,
+  setMonthlyThumbnailOverride,
+  clearMonthlyThumbnailOverride,
   getMemoriesOnThisDay,
   getMemoriesDayFiles,
   saveFavouriteFilter,
@@ -5111,6 +5113,30 @@ ipcMain.handle('memories:onThisDay', async (_event, args: { month: number; day: 
 ipcMain.handle('memories:dayFiles', async (_event, args: { year: number; month?: number | null; day?: number | null; runIds?: number[] }) => {
   try {
     return { success: true, data: getMemoriesDayFiles(args.year, args.month ?? null, args.day ?? null, args.runIds) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Set a user-chosen monthly thumbnail. Right-click a photo in the
+// month drilldown → "Set as monthly thumbnail" pipes through here.
+// The month-bucket query then prefers this file over the default
+// lowest-id pick when rendering the year/month tile grid.
+ipcMain.handle('memories:setMonthlyThumbnail', async (_event, args: { year: number; month: number; fileId: number }) => {
+  try {
+    setMonthlyThumbnailOverride(args.year, args.month, args.fileId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Clear a previously-set monthly thumbnail override. After clearing,
+// the bucket grid reverts to the default lowest-id pick for that month.
+ipcMain.handle('memories:clearMonthlyThumbnail', async (_event, args: { year: number; month: number }) => {
+  try {
+    clearMonthlyThumbnailOverride(args.year, args.month);
+    return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

@@ -19,6 +19,7 @@ import {
   ListChecks,
   ArrowUpToLine,
   RotateCcw,
+  Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -37,6 +38,7 @@ import {
   getThumbnail,
   listSearchRuns,
   openSearchViewer,
+  setMonthlyThumbnail,
   type MemoriesYearBucket,
   type MemoriesOnThisDayItem,
   type IndexedFile,
@@ -45,7 +47,7 @@ import {
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
 import AddToAlbumPopover from './AddToAlbumPopover';
-import { getPrefetchedMemories, getPrefetchedThumb } from '../lib/memories-prefetch';
+import { getPrefetchedMemories, getPrefetchedThumb, invalidatePrefetchedMemories } from '../lib/memories-prefetch';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -408,6 +410,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
         density={density}
         onDensityChange={changeDensity}
         onBack={() => setSelectedRange(null)}
+        onRequestRefresh={() => setRefreshTick((t) => t + 1)}
       />
     );
   }
@@ -968,7 +971,7 @@ function MonthTile({ bucket, onOpen, density, enterIndex = 0 }: { bucket: Memori
 
 // ─── Day drill-down ────────────────────────────────────────────────────────
 
-function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChange, onBack }: { year: number; month?: number; day?: number; runIds: number[] | undefined; density: Density; onDensityChange: (d: Density) => void; onBack: () => void }) {
+function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChange, onBack, onRequestRefresh }: { year: number; month?: number; day?: number; runIds: number[] | undefined; density: Density; onDensityChange: (d: Density) => void; onBack: () => void; onRequestRefresh: () => void }) {
   const [files, setFiles] = useState<IndexedFile[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   // Selection mode toggle — when on, checkboxes are visible by
@@ -1424,6 +1427,36 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
                     Add to album…
                   </ContextMenuItem>
+                  {/* Monthly-thumbnail override — only shown when the user
+                      is inside a month context (month != null). Lets them
+                      override the auto-picked sample shown on the month
+                      tile in the By-Date grid. After a successful set we
+                      invalidate the prefetch cache (so a later visit from
+                      Welcome reads fresh) and bump the parent's refresh
+                      tick (so the month tile updates as soon as the user
+                      goes back). */}
+                  {month != null && (
+                    <>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          const result = await setMonthlyThumbnail({ year, month, fileId: f.id });
+                          if (result.success) {
+                            invalidatePrefetchedMemories();
+                            onRequestRefresh();
+                            toast.success('Monthly thumbnail set', {
+                              description: `${MONTH_NAMES[month - 1]} ${year} now uses this photo`,
+                            });
+                          } else {
+                            toast.error("Couldn't set monthly thumbnail", { description: result.error });
+                          }
+                        }}
+                      >
+                        <Star className="w-3.5 h-3.5 mr-2" />
+                        Set as monthly thumbnail
+                      </ContextMenuItem>
+                    </>
+                  )}
                 </ContextMenuContent>
               </ContextMenu>
               );

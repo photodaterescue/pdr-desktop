@@ -140,3 +140,16 @@ export function getPrefetchedMemories(): {
 export function getPrefetchedThumb(filePath: string): string | undefined {
   return state.thumbs.get(filePath);
 }
+
+/**
+ * Invalidate the prefetch cache so the next consumer fetches fresh.
+ * Called after the user sets/clears a monthly thumbnail override —
+ * the buckets need to be re-read so the new sampleFilePath flows
+ * through to the MemoriesView grid.
+ */
+export function invalidatePrefetchedMemories(): void {
+  state.buckets = null;
+  state.thumbs.clear();
+  state.ready = false;
+  state.inFlight = null;
+}

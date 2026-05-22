@@ -303,6 +303,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     yearMonthBuckets: (runIds?: number[]) => ipcRenderer.invoke('memories:yearMonthBuckets', runIds),
     onThisDay: (args: { month: number; day: number; runIds?: number[]; limit?: number }) => ipcRenderer.invoke('memories:onThisDay', args),
     dayFiles: (args: { year: number; month?: number | null; day?: number | null; runIds?: number[] }) => ipcRenderer.invoke('memories:dayFiles', args),
+    setMonthlyThumbnail: (args: { year: number; month: number; fileId: number }) => ipcRenderer.invoke('memories:setMonthlyThumbnail', args),
+    clearMonthlyThumbnail: (args: { year: number; month: number }) => ipcRenderer.invoke('memories:clearMonthlyThumbnail', args),
   },
 
   trees: {
