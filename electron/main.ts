@@ -1074,21 +1074,26 @@ async function pickPreExtractDir(
   const extractionBytes = Math.ceil(zipSize * EXTRACTION_INFLATION);
   const copyBytes = Math.ceil(zipSize * POST_FIX_COPY_FACTOR);
 
-  // Wake the destination drive via a benign mkdir on its PDR_Temp
-  // directory BEFORE probing free space. Forces Windows to wake the
-  // drive from any sleep / low-power state — the root cause of
-  // Jane's silent-fallback-to-%TEMP% case (USB Library Drive on H:
-  // returned null on the disk-space probe even though H: had
-  // 1.4 TB free; pre-v2.0.8 silently routed her Takeouts to C:).
-  // Idempotent via recursive:true. If the drive's still asleep
-  // after mkdir we retry once with a 1.5s delay below. Terry
-  // 2026-05-21: "Since we're going to be extracting to a PDR_Temp
-  // folder, why not just create this folder? and then we can read
-  // that until it's time to extract to it?"
+  // Wake the destination drive via a benign mkdir BEFORE probing free
+  // space. Forces Windows to wake the drive from any sleep / low-power
+  // state — the root cause of Jane's silent-fallback-to-%TEMP% case
+  // (USB Library Drive on H: returned null on the disk-space probe
+  // even though H: had 1.4 TB free; pre-v2.0.8 silently routed her
+  // Takeouts to C:).
+  //
+  // Uses a hidden .pdr-wake folder rather than PDR_Temp itself — same
+  // pattern as probeLibraryDrive — so the wake-up is decoupled from
+  // extraction state. PDR_Temp is created later when the extraction
+  // actually starts; .pdr-wake exists only for the moment the probe
+  // needs the drive awake, and is cleaned up immediately after.
+  // Idempotent via recursive:true. If the drive's still asleep after
+  // mkdir we retry once with a 1.5s delay below.
   const destLocal = isLocalDir(destinationPath);
+  let wakeDir: string | null = null;
   if (destinationPath !== null && destLocal) {
+    wakeDir = path.join(destinationPath, '.pdr-wake');
     try {
-      fs.mkdirSync(path.join(destinationPath, 'PDR_Temp'), { recursive: true });
+      fs.mkdirSync(wakeDir, { recursive: true });
     } catch (err) {
       log.warn(`[wake-drive] mkdir wake failed on ${destinationPath}: ${(err as Error).message}`);
     }
@@ -1107,6 +1112,13 @@ async function pickPreExtractDir(
     if (destSpace !== null) {
       log.info(`[wake-drive] ${destinationPath} probe succeeded on retry after 1.5s delay`);
     }
+  }
+  // Probe is done — clean up the wake folder. PDR_Temp will be created
+  // later if the extraction actually proceeds; .pdr-wake was only
+  // needed for the moment the drive needed to be spun up.
+  if (wakeDir) {
+    try { fs.rmSync(wakeDir, { recursive: true, force: true }); }
+    catch { /* best-effort cleanup */ }
   }
   const destFree = destSpace?.freeBytes ?? null;
   const destTotal = destSpace?.totalBytes ?? null;
