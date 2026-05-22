@@ -2587,8 +2587,19 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
 // (nothing to check). Terry 2026-05-21: "we don't want the app to stop
 // working just because an old library doesn't answer back."
 ipcMain.handle('analysis:probeLibraryDrive', async () => {
+  // Same precedence as the analysis:run handler and LibraryPanel:
+  // libraryRoot (live attach) wins over settings.destinationPath
+  // (legacy persisted) when they diverge.
   let destinationPath: string | null = null;
-  try { destinationPath = getSettings()?.destinationPath ?? null; } catch { /* settings unreadable */ }
+  try {
+    const status = getLibraryStatus();
+    if (status?.libraryRoot && typeof status.libraryRoot === 'string') {
+      destinationPath = status.libraryRoot;
+    }
+  } catch { /* status unreadable — fall through */ }
+  if (!destinationPath) {
+    try { destinationPath = getSettings()?.destinationPath ?? null; } catch { /* settings unreadable */ }
+  }
   if (!destinationPath) {
     return { ready: true, destinationPath: null, freeBytes: null, totalBytes: null };
   }
@@ -2757,6 +2768,28 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
   let tempDir: string | null = null;
   let claimedExtractInFlight = false;
 
+  // Effective Library Drive path — same precedence the LibraryPanel
+  // uses for its "active drive" display:
+  //   1. getLibraryStatus().libraryRoot   (live attach state — most
+  //      authoritative; updated by attachAsNew / attachFromSidecar)
+  //   2. getSettings().destinationPath    (legacy, persisted setting)
+  // These two can diverge when an LDM action updates the live attach
+  // but doesn't sync settings.destinationPath. Terry's case 2026-05-22:
+  // LDM showed D:\... as active but settings.destinationPath was null,
+  // so source-add saw "no Library Drive" and refused with NO_TEMP_SPACE
+  // against the C: fallback. Reading libraryRoot first closes the gap.
+  const resolveEffectiveDestination = (): string | null => {
+    try {
+      const status = getLibraryStatus();
+      if (status?.libraryRoot && typeof status.libraryRoot === 'string') {
+        return status.libraryRoot;
+      }
+    } catch { /* status unreadable — fall through */ }
+    try {
+      return getSettings()?.destinationPath ?? null;
+    } catch { return null; }
+  };
+
   // Drive-details diagnostic — logged on EVERY source-add regardless
   // of outcome (success OR failure), so we always have the full
   // drive picture for support tickets. Terry 2026-05-21: "Drive
@@ -2766,7 +2799,8 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
   // %TEMP% root, each with letter + total/free if local + classify.
   try {
     const settingsForDiag = (() => { try { return getSettings(); } catch { return null; } })();
-    const destPathForDiag = settingsForDiag?.destinationPath ?? null;
+    const statusForDiag = (() => { try { return getLibraryStatus(); } catch { return null; } })();
+    const destPathForDiag = resolveEffectiveDestination();
     const gbDiag = (b: number | null | undefined): string =>
       (b == null) ? 'null' : `${(b / (1024 ** 3)).toFixed(2)}GB`;
     const driveOf = (p: string | null): string => {
@@ -2786,7 +2820,9 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
       `destLocal=${destLocalDiag} ` +
       `destFree=${gbDiag(destSpaceDiag?.freeBytes)} destTotal=${gbDiag(destSpaceDiag?.totalBytes)} ` +
       `tempDrive=${driveOf(PDR_TEMP_ROOT)} ` +
-      `tempFree=${gbDiag(tempSpaceDiag?.freeBytes)} tempTotal=${gbDiag(tempSpaceDiag?.totalBytes)}`
+      `tempFree=${gbDiag(tempSpaceDiag?.freeBytes)} tempTotal=${gbDiag(tempSpaceDiag?.totalBytes)} ` +
+      `libRoot=${JSON.stringify(statusForDiag?.libraryRoot ?? null)} ` +
+      `settingsDest=${JSON.stringify(settingsForDiag?.destinationPath ?? null)}`
     );
   } catch (logErr) {
     // Never fail the IPC just because logging blew up.
@@ -2808,7 +2844,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
     // a calm modal ("Library Drive isn't connected — Retry / Change
     // Library Drive") instead of leaking the raw ENOENT.
     try {
-      const destinationPath = (() => { try { return getSettings()?.destinationPath ?? null; } catch { return null; } })();
+      const destinationPath = resolveEffectiveDestination();
       if (destinationPath && !fs.existsSync(destinationPath)) {
         throw Object.assign(
           new Error(`Library Drive at ${destinationPath} isn't connected.`),
@@ -2911,8 +2947,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
         chosenTempDir = path.join(baseDir, path.basename(generateTempDirName(sourcePath)));
         chosenLabel = `user-picked temp dir (${tempDirOverride})`;
       } else {
-        const settings = (() => { try { return getSettings(); } catch { return null; } })();
-        const decision = await pickPreExtractDir(sourcePath, settings?.destinationPath ?? null);
+        const decision = await pickPreExtractDir(sourcePath, resolveEffectiveDestination());
         if (!decision.ok) {
           // Surface a structured error so the renderer can drive a
           // smart-prompt modal. Two refusal modes:

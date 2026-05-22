@@ -10036,6 +10036,25 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.10" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.10</span>
+                        {appVersion === '2.0.10' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">Hotfix.</strong> A small but consequential fix for users whose Library Drive showed correctly in the Library Drive Manager but was silently treated as "not set" when adding a Takeout — same family of issue as Jane&apos;s sleep-state bug, but a separate code path.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">&quot;Library Drive — not set&quot; modal on source-add</strong> — the LDM and the source-add flow were reading the Library Drive from two different places (live attach state vs. legacy persisted setting), which could diverge after switching libraries. Add Source now reads the same source of truth the LDM uses, so what you see in the Library Drive Manager is what every operation acts on.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.9" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
