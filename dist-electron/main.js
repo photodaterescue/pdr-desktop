@@ -2353,10 +2353,16 @@ ipcMain.handle('analysis:probeLibraryDrive', async () => {
     if (!isLocalDir(destinationPath)) {
         return { ready: true, destinationPath, freeBytes: null, totalBytes: null };
     }
-    // Wake the drive via mkdir, then probe. Same pattern as
-    // pickPreExtractDir uses at source-add time, but applied earlier.
+    // Wake the drive via mkdir, then probe. We deliberately use a
+    // hidden `.pdr-wake` folder rather than PDR_Temp so the launch-time
+    // orphan-sweep (which permanently deletes PDR_Temp when the
+    // workspace is empty) doesn't end up in a race with this probe
+    // recreating PDR_Temp behind it. The wake folder is cleaned up
+    // immediately after the probe completes — it's purely a wake-up
+    // signal, not a persistent artefact.
+    const wakeDir = path.join(destinationPath, '.pdr-wake');
     try {
-        fs.mkdirSync(path.join(destinationPath, 'PDR_Temp'), { recursive: true });
+        fs.mkdirSync(wakeDir, { recursive: true });
     }
     catch (err) {
         log.warn(`[probe-library] mkdir wake failed on ${destinationPath}: ${err.message}`);
@@ -2369,6 +2375,12 @@ ipcMain.handle('analysis:probeLibraryDrive', async () => {
             log.info(`[probe-library] ${destinationPath} probe succeeded on retry after 1.5s delay`);
         }
     }
+    // Clean up the wake folder — we don't need a persistent artefact on
+    // the user's drive just because we probed.
+    try {
+        fs.rmSync(wakeDir, { recursive: true, force: true });
+    }
+    catch { /* best-effort cleanup */ }
     const ready = space !== null;
     if (!ready) {
         log.warn(`[probe-library] ${destinationPath} probe failed both attempts — drive likely asleep or unplugged`);
@@ -2456,6 +2468,19 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts) => 
         bytesRemoved += rootSize;
         const skippedSuffix = looseFilesOnly ? ` (skipped ${rootSkipped} sub-folder${rootSkipped === 1 ? '' : 's'})` : '';
         log.info(`[orphan-sweep] ${root} — removed ${rootRemoved}/${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}${skippedSuffix}`);
+        // Full sweep: also remove the now-empty PDR_Temp folder itself,
+        // not just its contents. Leaves zero trace on the filesystem.
+        // (In loose-files-only mode the folder stays — sub-folders we
+        // skipped may still be in use.)
+        if (!looseFilesOnly) {
+            try {
+                fs.rmSync(root, { recursive: true, force: true });
+                log.info(`[orphan-sweep] ${root} — removed PDR_Temp folder itself`);
+            }
+            catch (err) {
+                log.warn(`[orphan-sweep] failed to remove PDR_Temp root ${root}: ${err.message}`);
+            }
+        }
     }
     log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total`);
     return { success: true, dirsRemoved, bytesRemoved };
