@@ -1265,27 +1265,30 @@ function getPendingExtractionBytes() {
     }
     return total;
 }
+// v2.0.11 — returns structured success/failure so callers can surface
+// EBUSY ("Windows Search Indexer / preview pane / AV holds a file
+// handle") to the user rather than swallowing it. Pre-v2.0.11 this
+// returned void and only the main.log saw the failure; the renderer
+// thought cleanup had succeeded and showed no indication to the user.
 function cleanupTempDir(tempDir) {
-    // Log success + failure to main.log so post-fix cleanup behaviour
-    // is visible in support diagnostics. v1.0.x silently swallowed
-    // failures, which made it impossible to tell from a user's log
-    // whether the cleanup hook had fired (path-match worked, dir
-    // deleted) or hadn't (path-match skipped this dir entirely).
     try {
         if (fs.existsSync(tempDir)) {
             fs.rmSync(tempDir, { recursive: true, force: true });
             log.info(`[temp-cleanup] removed ${tempDir}`);
+            return { ok: true };
         }
-        else {
-            log.info(`[temp-cleanup] no-op (already gone): ${tempDir}`);
-        }
+        log.info(`[temp-cleanup] no-op (already gone): ${tempDir}`);
+        return { ok: true };
     }
     catch (err) {
-        // Best-effort: a locked file (Explorer window open, antivirus
-        // scanning, etc.) shouldn't fail the user's fix or block the
-        // app from quitting. Subsequent cleanup attempts (next quit /
-        // next startup orphan-sweep) get another chance.
+        const reason = err.message;
+        // Best-effort: a locked file (Explorer window open, Windows
+        // Search Indexer, antivirus scanning, etc.) shouldn't fail the
+        // user's fix or block the app from quitting. Subsequent cleanup
+        // attempts get another chance. But the caller now learns about
+        // the failure so it can tell the user.
         log.warn(`[temp-cleanup] failed to remove ${tempDir}:`, err);
+        return { ok: false, reason };
     }
 }
 function getZipFileSize(zipPath) {
@@ -2420,10 +2423,17 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath) =>
         }
         largeExtractInFlight = null;
     }
+    // v2.0.11 — track actual successes vs failures so the renderer can
+    // tell the user when a temp dir was LOCKED (Windows Search Indexer,
+    // preview pane, AV scanner, etc.) and couldn't be deleted. The old
+    // code incremented `cleaned` regardless of cleanupTempDir's actual
+    // outcome, which meant the IPC always reported success even when a
+    // 50 GB orphan was left on disk. Now: count successes only, return
+    // an array of `failedPaths` with reasons so the renderer can toast
+    // a clear "still locked — close any open Explorer windows + retry"
+    // message instead of silently lying.
     let cleaned = 0;
-    // Compute both candidate temp-dir names (zip and rar style).
-    // Either or both may exist depending on what kind of source it
-    // was; the inverse one will simply not match anything.
+    const failedPaths = [];
     const candidates = [];
     try {
         candidates.push(generateTempDirName(sourcePath));
@@ -2435,22 +2445,35 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath) =>
     catch { /* malformed path */ }
     for (const td of candidates) {
         if (activeTempDirs.has(td)) {
-            cleanupTempDir(td);
-            activeTempDirs.delete(td);
-            cleaned++;
+            const result = cleanupTempDir(td);
+            if (result.ok) {
+                activeTempDirs.delete(td);
+                cleaned++;
+            }
+            else {
+                failedPaths.push({ path: td, reason: result.reason ?? 'unknown' });
+            }
         }
         else if (fs.existsSync(td)) {
             // Edge case: dir exists but isn't tracked (e.g. left over from
             // a prior session that didn't clean up cleanly). Reap it
             // anyway so the user gets the disk space back.
-            cleanupTempDir(td);
-            cleaned++;
+            const result = cleanupTempDir(td);
+            if (result.ok) {
+                cleaned++;
+            }
+            else {
+                failedPaths.push({ path: td, reason: result.reason ?? 'unknown' });
+            }
         }
     }
     if (cleaned > 0) {
         console.log(`[Source remove] Cleaned up ${cleaned} extracted temp dir${cleaned === 1 ? '' : 's'} for source: ${sourcePath}`);
     }
-    return { success: true, cleaned };
+    if (failedPaths.length > 0) {
+        log.warn(`[Source remove] ${failedPaths.length} temp dir(s) failed to remove for ${sourcePath}: ${failedPaths.map(f => f.path).join(', ')}`);
+    }
+    return { success: true, cleaned, failedPaths };
 });
 // Workspace-empty orphan sweep. Called by the renderer on mount when
 // the source list is empty (localStorage.pdr-sources has 0 entries).
@@ -2577,6 +2600,14 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts) => 
     log.info(`[orphan-sweep] invoked — mode=${mode}, roots: ${Array.from(roots).join(', ')}`);
     let dirsRemoved = 0;
     let bytesRemoved = 0;
+    // v2.0.11 — accumulate failures so the renderer can surface them
+    // via toast on launch. Previously the sweep silently swallowed
+    // EBUSY errors (Windows Search Indexer / preview pane / AV holds
+    // a file handle) and the user only discovered the persistent
+    // orphan later via a cap-refused source-add. Terry's case
+    // 2026-05-23: 49.9 GB orphan from yesterday survived two sweep
+    // attempts because an MP4 file inside was locked.
+    const failedPaths = [];
     for (const root of roots) {
         try {
             await fs.promises.access(root);
@@ -2622,7 +2653,9 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts) => 
                 rootRemoved++;
             }
             catch (err) {
-                log.warn(`[orphan-sweep] failed to remove ${full}: ${err.message}`);
+                const reason = err.message;
+                log.warn(`[orphan-sweep] failed to remove ${full}: ${reason}`);
+                failedPaths.push({ path: full, reason });
             }
         }
         bytesRemoved += rootBytes;
@@ -2638,12 +2671,19 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts) => 
                 log.info(`[orphan-sweep] ${root} — removed PDR_Temp folder itself`);
             }
             catch (err) {
-                log.warn(`[orphan-sweep] failed to remove PDR_Temp root ${root}: ${err.message}`);
+                const reason = err.message;
+                log.warn(`[orphan-sweep] failed to remove PDR_Temp root ${root}: ${reason}`);
+                // Only count the root failure if nothing inside also failed
+                // (would be a duplicate signal otherwise — the inner-file
+                // failure is the actionable thing).
+                if (!failedPaths.some(f => f.path.startsWith(root))) {
+                    failedPaths.push({ path: root, reason });
+                }
             }
         }
     }
-    log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total, ${(bytesRemoved / (1024 ** 3)).toFixed(2)} GB freed`);
-    return { success: true, dirsRemoved, bytesRemoved };
+    log.info(`[orphan-sweep] done — ${dirsRemoved} entr${dirsRemoved === 1 ? 'y' : 'ies'} removed total, ${(bytesRemoved / (1024 ** 3)).toFixed(2)} GB freed, ${failedPaths.length} locked`);
+    return { success: true, dirsRemoved, bytesRemoved, failedPaths };
 });
 /**
  * Async sibling of folderSizeBytes — same recursive byte-sum, but

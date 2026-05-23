@@ -251,8 +251,12 @@ export function removeAnalysisDiagnosticListener(): void {
  *  source (large zip / RAR). Called when the user removes a source
  *  from the source menu so their disk doesn't carry a 50 GB
  *  extraction it no longer needs. Safe to call even when there's
- *  nothing to clean — returns `{ success: true, cleaned: 0 }`. */
-export async function cleanupTempDirForSource(sourcePath: string): Promise<{ success: boolean; cleaned: number }> {
+ *  nothing to clean — returns `{ success: true, cleaned: 0 }`.
+ *  v2.0.11: also returns failedPaths with reasons when a temp dir
+ *  couldn't be deleted (Windows Search Indexer / preview pane /
+ *  AV held a lock); renderer surfaces these via toast so the user
+ *  knows to close other apps and retry. */
+export async function cleanupTempDirForSource(sourcePath: string): Promise<{ success: boolean; cleaned: number; failedPaths?: Array<{ path: string; reason: string }> }> {
   if (isElectron() && typeof (window as any).pdr?.cleanupTempDirForSource === 'function') {
     return await (window as any).pdr.cleanupTempDirForSource(sourcePath);
   }
@@ -265,10 +269,13 @@ export async function cleanupTempDirForSource(sourcePath: string): Promise<{ suc
  *  - looseFilesOnly:true → only delete loose root FILES (workspace
  *    has sources, sub-folders may be active extractions we must leave
  *    alone, but loose files at the root are never created by PDR's
- *    extractor so they're always safe to clean). */
+ *    extractor so they're always safe to clean).
+ *  v2.0.11: also returns failedPaths so the renderer can toast the
+ *  user about locked files (Windows Search Indexer / preview pane /
+ *  AV holding a handle) that the sweep couldn't clean. */
 export async function sweepOrphanedTempDirsIfEmpty(
   opts?: { looseFilesOnly?: boolean },
-): Promise<{ success: boolean; dirsRemoved: number; bytesRemoved: number }> {
+): Promise<{ success: boolean; dirsRemoved: number; bytesRemoved: number; failedPaths?: Array<{ path: string; reason: string }> }> {
   if (isElectron() && typeof (window as any).pdr?.sweepOrphanedTempDirsIfEmpty === 'function') {
     return await (window as any).pdr.sweepOrphanedTempDirsIfEmpty(opts);
   }

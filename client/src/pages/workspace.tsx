@@ -434,6 +434,20 @@ useEffect(() => {
           const gb = (result.bytesRemoved / (1024 ** 3)).toFixed(1);
           console.log(`[orphan-sweep] cleaned ${result.dirsRemoved} orphan entr${result.dirsRemoved === 1 ? 'y' : 'ies'} (${gb} GB, mode=${looseFilesOnly ? 'loose-files-only' : 'full'})`);
         }
+        // v2.0.11 — surface launch-time sweep failures (locked files
+        // that survived the deletion attempt). Terry's case
+        // 2026-05-23: 49.9 GB orphan from a previous session
+        // persisted because a Windows process held a video file open;
+        // the sweep failed silently each launch and the user only
+        // discovered the leftover via a cap-refused source-add. Toast
+        // tells the user what's locked + what to try.
+        if (result.failedPaths && result.failedPaths.length > 0) {
+          const firstPath = result.failedPaths[0].path;
+          toast.warning('Some leftover extracted files couldn\'t be cleaned up', {
+            description: `${firstPath} — another program (Windows Search Indexer, preview pane, or antivirus) has a file open. Close any Explorer windows on this folder and relaunch PDR to try again, or retry from the Library Drive Manager.`,
+            duration: 18000,
+          });
+        }
       } catch (err) {
         console.warn('[orphan-sweep] failed:', err);
       }
@@ -1548,10 +1562,24 @@ const handleActivateLicense = () => {
     // Best-effort cleanup of any extracted temp dir associated with
     // this source. Fires for large zips and RARs that pre-extracted
     // during analyse — without this, removing a source leaves its
-    // ~50 GB extraction sitting on the C: drive until app quit.
+    // ~50 GB extraction on disk until app quit. v2.0.11: surface
+    // partial-failure (locked files) via toast so the user knows.
     if (activeSource.path) {
-      cleanupTempDirForSource(activeSource.path).catch((err: unknown) => {
-        console.warn('[Workspace] cleanupTempDirForSource failed during handleRemoveSource for', activeSource.path, err);
+      const removedPath = activeSource.path;
+      cleanupTempDirForSource(removedPath).then((result) => {
+        if (result?.failedPaths && result.failedPaths.length > 0) {
+          const firstPath = result.failedPaths[0].path;
+          toast.warning('Couldn\'t fully delete extracted files', {
+            description: `${firstPath} — another program has a file open. Close any open Explorer windows on this folder, then retry from the Library Drive Manager.`,
+            duration: 15000,
+          });
+        }
+      }).catch((err: unknown) => {
+        console.warn('[Workspace] cleanupTempDirForSource failed during handleRemoveSource for', removedPath, err);
+        toast.error('Cleanup failed', {
+          description: `Couldn\'t remove the extracted temp folder for "${removedPath}".`,
+          duration: 12000,
+        });
       });
     }
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
@@ -1579,10 +1607,23 @@ const handleActivateLicense = () => {
     // Best-effort cleanup of any extracted temp dir associated with
     // this source. Same rationale as handleRemoveSource — Change Source
     // discards the active source, so any pre-extracted ~50 GB on the
-    // temp drive should go with it.
+    // temp drive should go with it. v2.0.11: surface lock-failures.
     if (activeSource.path) {
-      cleanupTempDirForSource(activeSource.path).catch((err: unknown) => {
-        console.warn('[Workspace] cleanupTempDirForSource failed during handleChangeSource for', activeSource.path, err);
+      const removedPath = activeSource.path;
+      cleanupTempDirForSource(removedPath).then((result) => {
+        if (result?.failedPaths && result.failedPaths.length > 0) {
+          const firstPath = result.failedPaths[0].path;
+          toast.warning('Couldn\'t fully delete extracted files', {
+            description: `${firstPath} — another program has a file open. Close any open Explorer windows on this folder, then retry from the Library Drive Manager.`,
+            duration: 15000,
+          });
+        }
+      }).catch((err: unknown) => {
+        console.warn('[Workspace] cleanupTempDirForSource failed during handleChangeSource for', removedPath, err);
+        toast.error('Cleanup failed', {
+          description: `Couldn\'t remove the extracted temp folder for "${removedPath}".`,
+          duration: 12000,
+        });
       });
     }
     const updatedSources = sources.filter(s => s.id !== activeSource.id);
@@ -2467,22 +2508,31 @@ return (
 			setSources(updatedSources);
 			setActiveSource(null);
 
-			// v2.0.11 — Sidebar remove (the "Remove" button next to
-			// Add Source) previously only updated UI state and left
-			// the extracted PDR_Temp folder on disk. Terry's test
-			// 2026-05-23: removed a 50 GB Takeout via this button,
-			// the visible source disappeared but PDR_Temp still held
-			// 49.9 GB, which then refused the re-add via the 55 GB
-			// cap because the cap counts disk-state not visual-state.
-			// Now we fire the same cleanupTempDirForSource IPC the
-			// workspace-level handleRemoveSource uses — for every
-			// selected source, in parallel, best-effort. The IPC
-			// handler also cancels any in-flight extraction owned by
-			// the same source so removing mid-extract is safe.
+			// v2.0.11 — fire cleanup IPC for every removed source.
+			// On a partial failure (lock held by Windows Search
+			// Indexer / preview pane / AV) the IPC returns
+			// failedPaths — surface those via a toast so the user
+			// knows the disk state didn't match the visual state.
+			// Pre-v2.0.11 we silently swallowed failures and the
+			// user discovered the orphan only on the next cap-refused
+			// add. The IPC handler also cancels any in-flight
+			// extraction owned by the same source.
 			for (const src of removedSources) {
 			  if (src.path) {
-				cleanupTempDirForSource(src.path).catch((err: unknown) => {
+				cleanupTempDirForSource(src.path).then((result) => {
+				  if (result?.failedPaths && result.failedPaths.length > 0) {
+					const firstPath = result.failedPaths[0].path;
+					toast.warning('Couldn\'t fully delete extracted files', {
+					  description: `${firstPath} — another program (Windows Search Indexer, preview pane, or antivirus) has a file open. Close any open Explorer windows on this folder, then retry from the Library Drive Manager.`,
+					  duration: 15000,
+					});
+				  }
+				}).catch((err: unknown) => {
 				  console.warn('[Workspace] Sidebar remove cleanup failed for', src.path, err);
+				  toast.error('Cleanup failed', {
+					description: `Couldn\'t remove the extracted temp folder for "${src.path}". The folder may still be on disk.`,
+					duration: 12000,
+				  });
 				});
 			  }
 			}
