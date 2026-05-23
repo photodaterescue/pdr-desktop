@@ -136,6 +136,15 @@ export function UnindexedLibrariesCard() {
       const ts = new Date().toISOString();
       await (window as any).pdr?.settings?.set?.('unindexedLibrariesDismissedAt', ts);
       setDismissedAt(ts);
+      // Tell the user the dismissal isn't permanent and where to re-enter
+      // from — the per-row "Index" pill in the Library Drive Manager
+      // (v2.0.11 addition). Without this hint, dismissing the banner used
+      // to leave users with no obvious way back to indexing. 8-second
+      // duration so it's readable but doesn't linger.
+      toast.message("Hidden — you can index any time from Library Drive Manager", {
+        description: "Each library row shows its indexing status with an Index button next to its connection status.",
+        duration: 8000,
+      });
     } catch (e) {
       console.warn('[UnindexedLibrariesCard] dismiss failed:', e);
     }
@@ -264,7 +273,7 @@ export function UnindexedLibrariesCard() {
         <Button onClick={handleIndexNow} variant="primary" size="sm" disabled={indexing} data-testid="unindexed-libraries-index-now">
           {indexing ? 'Starting…' : 'Index now'}
         </Button>
-        <IconTooltip label="Dismiss" side="left">
+        <IconTooltip label="Dismiss" side="top">
           <button
             onClick={handleDismiss}
             disabled={indexing}

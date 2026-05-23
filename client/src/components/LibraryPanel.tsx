@@ -122,6 +122,13 @@ interface IndexedDrive {
   indexedFileCount: number;
   indexedBytes: number;
   lastIndexedAt: string | null;
+  // v2.0.11 — on-disk media-file count for this row's library root.
+  // Populated by a parallel countOnDiskFiles probe alongside the main
+  // drives fetch. Drives the per-row "Index" pill when the count
+  // exceeds indexedFileCount by more than the 5 % slack used by the
+  // Dashboard banner. null when the path isn't reachable (USB
+  // unplugged etc.) — pill stays hidden in that case.
+  onDiskCount?: number | null;
 }
 
 type Step =
@@ -250,6 +257,18 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // failed; row falls back to the per-letter rollup gracefully.
   type PathCount = { indexedFileCount: number; indexedBytes: number; lastIndexedAt: string | null };
   const [pathCounts, setPathCounts] = useState<Record<string, PathCount | null>>({});
+  // v2.0.11 — on-disk media-file count per library root. Probed in
+  // parallel with pathCounts; powers the per-row "Index" pill that
+  // surfaces when the on-disk count exceeds the indexed count by
+  // more than the 5 % slack the Dashboard banner uses. null when the
+  // path isn't reachable (USB unplugged, network share offline) —
+  // the pill stays hidden in that case to avoid prompting users to
+  // index something we can't even read.
+  const [onDiskCounts, setOnDiskCounts] = useState<Record<string, number | null>>({});
+  // Per-path indexing state — set when a per-row Index pill is
+  // clicked. Disables the pill + shows "Indexing…" until the
+  // rebuildProgress subscription fires its terminal 'complete' event.
+  const [indexingPaths, setIndexingPaths] = useState<Set<string>>(new Set());
   // Refresh affordance. Spinner state for the refresh icon button so the
   // user gets visual feedback when they manually trigger a re-fetch
   // (slow on network drives where PowerShell takes a few seconds).
@@ -448,6 +467,38 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     }
   };
 
+  // v2.0.11 — sibling of refreshPathCounts that walks the filesystem
+  // to count actual media files under each library root. Parallel +
+  // per-path failure-tolerant. Powers the per-row "Index" pill.
+  // Slower than pathCounts (filesystem walk vs single SQL query) so
+  // it runs in the background after the main row data lands —
+  // pills appear progressively as each path's probe resolves.
+  const refreshOnDiskCounts = async (paths: string[]) => {
+    const uniquePaths = Array.from(new Set(paths.filter(p => typeof p === 'string' && p.length > 0)));
+    if (uniquePaths.length === 0) {
+      setOnDiskCounts({});
+      return;
+    }
+    try {
+      const entries = await Promise.all(uniquePaths.map(async (p) => {
+        try {
+          const res = await (window as any).pdr?.library?.countOnDiskFiles?.(p);
+          if (res?.success && res.data?.reachable) {
+            return [p, (res.data.onDiskCount as number) ?? 0] as const;
+          }
+          return [p, null] as const;
+        } catch {
+          return [p, null] as const;
+        }
+      }));
+      const map: Record<string, number | null> = {};
+      entries.forEach(([p, c]) => { map[p] = c; });
+      setOnDiskCounts(map);
+    } catch (e) {
+      console.warn('[LibraryPanel] onDiskCounts refresh failed:', e);
+    }
+  };
+
   const refreshSavedDestinations = async () => {
     try {
       const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
@@ -516,6 +567,12 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       } catch {}
       const paths = [...(attachedRoot ? [attachedRoot] : []), ...currentRoot];
       await refreshPathCounts(paths);
+      // Background-fetch on-disk counts so the per-row "Index" pill
+      // can render whenever there's a gap. Intentionally NOT awaited
+      // here — the LDM stays interactive while the filesystem walks
+      // run in parallel; pills appear progressively as each path's
+      // probe resolves.
+      void refreshOnDiskCounts(paths);
     } finally {
       setIsRefreshing(false);
       setInitialDataLoaded(true);
@@ -756,6 +813,77 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       setSyncResult({ ok: false, message: (e as Error).message });
     } finally {
       setIsBackingUp(false);
+    }
+  };
+
+  // v2.0.11 — index a single library row. Sister of the Dashboard
+  // banner's "Index now" action, but scoped to one path so the user
+  // can pick which library to back-fill without having to index all
+  // stale ones in a single batch. Uses the same search:rebuildFromLibraries
+  // IPC + rebuildProgress subscription as the banner; toast follows
+  // the user across views. On success the on-disk count is refreshed
+  // so the pill disappears (or shrinks) without a manual reload.
+  const handleIndexLibrary = async (targetPath: string) => {
+    if (indexingPaths.has(targetPath)) return;
+    setIndexingPaths(prev => new Set(prev).add(targetPath));
+    const rootName = targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
+    const toastId = toast.loading(`Indexing "${rootName}"…`, { description: 'Starting…' });
+    const unsubscribe = (window as any).pdr?.search?.onRebuildProgress?.((progress: {
+      phase: 'walking' | 'reading-exif' | 'inserting' | 'complete';
+      rootIndex: number;
+      rootCount: number;
+      rootPath: string;
+      current: number;
+      total: number;
+      currentFile: string;
+    }) => {
+      // Filter — only respond to events for THIS path, not other
+      // simultaneous rebuilds.
+      if (progress.rootPath !== targetPath) return;
+      if (progress.phase === 'walking') {
+        toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: 'Scanning…' });
+      } else if (progress.phase === 'reading-exif') {
+        toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: `Reading ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()}` });
+      } else if (progress.phase === 'inserting') {
+        toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: 'Saving…' });
+      } else if (progress.phase === 'complete') {
+        toast.success(`Finished indexing "${rootName}"`, { id: toastId, description: 'Photos are now searchable in S&D, Memories, and the Date Editor.' });
+        // Re-probe the on-disk count so the pill reflects the new
+        // state. The indexed count comes through automatically on
+        // the next refreshPathCounts.
+        void refreshOnDiskCounts([targetPath]);
+        void refreshPathCounts([targetPath]);
+        setIndexingPaths(prev => {
+          const next = new Set(prev);
+          next.delete(targetPath);
+          return next;
+        });
+        // Broadcast so other surfaces refresh their data.
+        window.dispatchEvent(new CustomEvent('pdr:libraryRebuildComplete'));
+        unsubscribe?.();
+      }
+    });
+    try {
+      void (window as any).pdr?.search?.rebuildFromLibraries?.([targetPath])
+        .catch((e: any) => {
+          console.warn('[LibraryPanel] handleIndexLibrary failed:', e);
+          toast.error('Indexing failed', { id: toastId, description: String(e?.message ?? e) });
+          unsubscribe?.();
+          setIndexingPaths(prev => {
+            const next = new Set(prev);
+            next.delete(targetPath);
+            return next;
+          });
+        });
+    } catch (e) {
+      console.warn('[LibraryPanel] handleIndexLibrary kickoff failed:', e);
+      toast.error('Indexing failed to start', { id: toastId });
+      unsubscribe?.();
+      setIndexingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(targetPath);
+        return next;
+      });
     }
   };
 
@@ -1194,6 +1322,12 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       // the drive letter to a physical disk.
       busType: string | null;
       mediaType: string | null;
+      // v2.0.11 — on-disk media-file count for this row's library
+      // root, populated by the background refreshOnDiskCounts probe.
+      // Drives the per-row "Index" pill when it exceeds
+      // indexedFileCount by more than the 5 % slack. null when the
+      // probe hasn't completed yet OR the path isn't reachable.
+      onDiskCount: number | null;
     };
     const allDrives: UnifiedDriveRow[] = [];
     if (currentPath) {
@@ -1228,6 +1362,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         lastIndexedAt: pathCounts[currentPath]?.lastIndexedAt ?? thisDriveIndexed?.lastIndexedAt ?? null,
         busType: driveDetails?.busType ?? null,
         mediaType: driveDetails?.mediaType ?? null,
+        onDiskCount: onDiskCounts[currentPath] ?? null,
       });
     }
     // Compute the set of drive letters already covered by a registered
@@ -1275,6 +1410,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         // Capacity cell shows file-system without the speed badge.
         busType: null,
         mediaType: null,
+        onDiskCount: onDiskCounts[d.path] ?? null,
       });
     });
 
@@ -1325,6 +1461,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         lastIndexedAt: pathCounts[savedPath]?.lastIndexedAt ?? driveIndexed?.lastIndexedAt ?? null,
         busType: details?.busType ?? null,
         mediaType: details?.mediaType ?? null,
+        onDiskCount: onDiskCounts[savedPath] ?? null,
       });
     });
 
@@ -1661,6 +1798,47 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                                 data-testid="pill-db-backup"
                               >
                                 <Download className="w-3 h-3" /> {label}
+                              </button>
+                            </IconTooltip>
+                          );
+                        })()}
+                        {/* v2.0.11 — per-row Index pill.
+                            Surfaces when this library's on-disk count
+                            exceeds its indexed count by more than the
+                            5 % slack (same threshold as the Dashboard
+                            banner). The information IS the affordance —
+                            the gap is the thing the user needs to
+                            know about, AND the trigger to fix it.
+                            When fully indexed, no pill (zero chrome).
+                            During indexing, becomes a disabled
+                            "Indexing…" pill with the same loading
+                            visual language as the rest of PDR's pills.
+                            Click fires the per-library rebuild via
+                            handleIndexLibrary; toast follows the user
+                            across views via the existing
+                            rebuildProgress subscription. */}
+                        {(() => {
+                          if (drive.onDiskCount === null) return null;
+                          const isIndexing = indexingPaths.has(drive.path);
+                          const gap = drive.onDiskCount - drive.indexedFileCount;
+                          const slack = Math.ceil(drive.indexedFileCount * 0.05);
+                          if (!isIndexing && gap <= slack) return null;
+                          const tooltip = isIndexing
+                            ? 'Indexing in progress — toast shows progress; the pill clears when finished.'
+                            : `${gap.toLocaleString()} photo${gap === 1 ? '' : 's'} on disk that aren't in the search index yet. Click to index this library.`;
+                          const label = isIndexing
+                            ? 'Indexing…'
+                            : `+${gap.toLocaleString()} to index`;
+                          return (
+                            <IconTooltip label={tooltip} side="top">
+                              <button
+                                type="button"
+                                onClick={() => handleIndexLibrary(drive.path)}
+                                disabled={isIndexing}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label transition-colors cursor-pointer bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 hover:bg-amber-200/80 dark:hover:bg-amber-900/60 disabled:opacity-60 disabled:cursor-default"
+                                data-testid="pill-index-library"
+                              >
+                                <Database className="w-3 h-3" /> {label}
                               </button>
                             </IconTooltip>
                           );
