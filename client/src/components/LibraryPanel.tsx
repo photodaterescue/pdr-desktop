@@ -267,9 +267,15 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // index something we can't even read.
   const [onDiskCounts, setOnDiskCounts] = useState<Record<string, number | null>>({});
   // Per-path indexing state — set when a per-row Index pill is
-  // clicked. Disables the pill + shows "Indexing…" until the
+  // clicked. Disables the pill + shows progress until the
   // rebuildProgress subscription fires its terminal 'complete' event.
   const [indexingPaths, setIndexingPaths] = useState<Set<string>>(new Set());
+  // Per-path live progress from the rebuildProgress subscription —
+  // drives the pill label so the user sees percentage / phase
+  // directly on the row, not just in the toast. Cleared on
+  // completion.
+  type IndexingProgress = { phase: 'walking' | 'reading-exif' | 'inserting'; current: number; total: number };
+  const [indexingProgress, setIndexingProgress] = useState<Record<string, IndexingProgress>>({});
   // Refresh affordance. Spinner state for the refresh icon button so the
   // user gets visual feedback when they manually trigger a re-fetch
   // (slow on network drives where PowerShell takes a few seconds).
@@ -842,10 +848,13 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       // simultaneous rebuilds.
       if (progress.rootPath !== targetPath) return;
       if (progress.phase === 'walking') {
+        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'walking', current: 0, total: 0 } }));
         toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: 'Scanning…' });
       } else if (progress.phase === 'reading-exif') {
+        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'reading-exif', current: progress.current, total: progress.total } }));
         toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: `Reading ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()}` });
       } else if (progress.phase === 'inserting') {
+        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'inserting', current: progress.current, total: progress.total } }));
         toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: 'Saving…' });
       } else if (progress.phase === 'complete') {
         toast.success(`Finished indexing "${rootName}"`, { id: toastId, description: 'Photos are now searchable in S&D, Memories, and the Date Editor.' });
@@ -857,6 +866,11 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         setIndexingPaths(prev => {
           const next = new Set(prev);
           next.delete(targetPath);
+          return next;
+        });
+        setIndexingProgress(prev => {
+          const next = { ...prev };
+          delete next[targetPath];
           return next;
         });
         // Broadcast so other surfaces refresh their data.
@@ -875,6 +889,11 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             next.delete(targetPath);
             return next;
           });
+          setIndexingProgress(prev => {
+            const next = { ...prev };
+            delete next[targetPath];
+            return next;
+          });
         });
     } catch (e) {
       console.warn('[LibraryPanel] handleIndexLibrary kickoff failed:', e);
@@ -883,6 +902,11 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       setIndexingPaths(prev => {
         const next = new Set(prev);
         next.delete(targetPath);
+        return next;
+      });
+      setIndexingProgress(prev => {
+        const next = { ...prev };
+        delete next[targetPath];
         return next;
       });
     }
@@ -1824,12 +1848,33 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                           const gap = drive.onDiskCount - drive.indexedFileCount;
                           const slack = Math.ceil(drive.indexedFileCount * 0.05);
                           if (!isIndexing && gap <= slack) return null;
+                          // Live progress label. The pill renders the
+                          // phase + percentage so the user sees how
+                          // far the indexer's got without having to
+                          // chase the toast around. Falls back to a
+                          // plain "Indexing…" until the first progress
+                          // event lands.
+                          const progress = indexingProgress[drive.path];
+                          let label: string;
+                          if (isIndexing) {
+                            if (progress?.phase === 'walking') {
+                              label = 'Scanning…';
+                            } else if (progress?.phase === 'reading-exif' && progress.total > 0) {
+                              const pct = Math.min(99, Math.floor((progress.current / progress.total) * 100));
+                              label = `Indexing ${pct}%`;
+                            } else if (progress?.phase === 'inserting') {
+                              label = 'Saving…';
+                            } else {
+                              label = 'Indexing…';
+                            }
+                          } else {
+                            label = `+${gap.toLocaleString()} to index`;
+                          }
                           const tooltip = isIndexing
-                            ? 'Indexing in progress — toast shows progress; the pill clears when finished.'
+                            ? progress?.phase === 'reading-exif' && progress.total > 0
+                              ? `Reading ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()} files. The pill clears when finished.`
+                              : 'Indexing in progress — the pill clears when finished.'
                             : `${gap.toLocaleString()} photo${gap === 1 ? '' : 's'} on disk that aren't in the search index yet. Click to index this library.`;
-                          const label = isIndexing
-                            ? 'Indexing…'
-                            : `+${gap.toLocaleString()} to index`;
                           return (
                             <IconTooltip label={tooltip} side="top">
                               <button
