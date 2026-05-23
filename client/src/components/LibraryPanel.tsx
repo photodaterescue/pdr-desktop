@@ -845,8 +845,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       currentFile: string;
     }) => {
       // Filter — only respond to events for THIS path, not other
-      // simultaneous rebuilds.
-      if (progress.rootPath !== targetPath) return;
+      // simultaneous rebuilds. EXCEPT the 'complete' event, which the
+      // indexer emits with rootPath='' (empty string) at the very end
+      // of rebuildIndexFromLibraries regardless of which roots ran. We
+      // pass exactly one path into the rebuild here, so any complete
+      // event arriving while we're listening means OUR path is done.
+      // Without this carve-out the pill stays stuck on "Saving…"
+      // because the complete event's rootPath doesn't match targetPath.
+      if (progress.phase !== 'complete' && progress.rootPath !== targetPath) return;
       if (progress.phase === 'walking') {
         setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'walking', current: 0, total: 0 } }));
         toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: 'Scanning…' });
