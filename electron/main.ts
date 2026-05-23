@@ -957,6 +957,71 @@ function getDiskSpaceForDirSync(dir: string): { freeBytes: number; totalBytes: n
   }
 }
 
+// v2.0.11 — async sibling of getDiskSpaceForDirSync. The sync version
+// spawns PowerShell (or wmic) and blocks the main thread for the
+// 200–800 ms each probe takes, which froze the title-bar overlay
+// during source-add (Terry 2026-05-23: "Not Responding" + lavender
+// → white during the few seconds between Add Source and the
+// pre-extract decision). This version uses execFile + promisify so
+// the subprocess runs on libuv's worker pool and main stays free to
+// service window messages. Same return shape + same null-on-failure
+// semantics as the sync version.
+async function getDiskSpaceForDir(dir: string): Promise<{ freeBytes: number; totalBytes: number } | null> {
+  try {
+    if (process.platform === 'win32') {
+      const driveLetter = path.parse(dir).root.replace('\\', '').replace(':', '');
+      if (!driveLetter) return null;
+      const execFileAsync = (await import('util')).promisify(execFile);
+      try {
+        const { stdout } = await execFileAsync('powershell.exe', [
+          '-NoProfile',
+          '-Command',
+          `(Get-PSDrive -Name '${driveLetter}' -PSProvider FileSystem | Select-Object Free,Used,@{N='Total';E={$_.Free+$_.Used}}) | ConvertTo-Json`,
+        ], { timeout: 10000, maxBuffer: 1024 * 1024 });
+        const info = JSON.parse(stdout.trim());
+        if (info && info.Free != null && info.Total != null) {
+          return { freeBytes: Number(info.Free), totalBytes: Number(info.Total) };
+        }
+      } catch { /* fall through to wmic */ }
+      try {
+        const { stdout } = await execFileAsync('wmic', [
+          'logicaldisk',
+          'where',
+          `DeviceID='${driveLetter}:'`,
+          'get',
+          'FreeSpace,Size',
+          '/format:csv',
+        ], { timeout: 10000, maxBuffer: 1024 * 1024 });
+        const lines = stdout.trim().split('\n').filter((l: string) => l.trim());
+        if (lines.length >= 2) {
+          const parts = lines[1].split(',');
+          const freeBytes = parseInt(parts[1], 10);
+          const totalBytes = parseInt(parts[2], 10);
+          if (!isNaN(freeBytes) && !isNaN(totalBytes)) {
+            return { freeBytes, totalBytes };
+          }
+        }
+      } catch { /* fall through */ }
+      return null;
+    }
+    // POSIX
+    const execFileAsync = (await import('util')).promisify(execFile);
+    const { stdout } = await execFileAsync('df', ['-k', dir], { timeout: 10000, maxBuffer: 1024 * 1024 });
+    const lines = stdout.trim().split('\n');
+    if (lines.length >= 2) {
+      const parts = lines[1].split(/\s+/);
+      const totalKB = parseInt(parts[1], 10);
+      const availKB = parseInt(parts[3], 10);
+      if (!isNaN(availKB) && !isNaN(totalKB)) {
+        return { freeBytes: availKB * 1024, totalBytes: totalKB * 1024 };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Cheap classifier — true iff `dir` lives on a local volume (not a
 // UNC path or a Windows mapped network drive). Mirrors the renderer
 // classifier's first two checks so we don't drag the whole module in
@@ -1072,7 +1137,16 @@ async function pickPreExtractDir(
   zipPath: string,
   destinationPath: string | null,
 ): Promise<PreExtractDecision | PreExtractRefusal> {
-  const zipSize = getZipFileSize(zipPath);
+  // v2.0.11 — every fs / disk-space op below runs ASYNC. Previously
+  // this function used fs.statSync + getDiskSpaceForDirSync (which
+  // spawns PowerShell or wmic synchronously) + fs.mkdirSync + fs.rmSync.
+  // On the main process those sync ops blocked window-message handling
+  // for the ~1-3 seconds the probes took, freezing the title-bar
+  // overlay (Terry 2026-05-23: "Not Responding" + lavender → white
+  // during source-add). Async versions run on libuv's worker pool so
+  // main stays responsive throughout.
+  const zipStat = await fs.promises.stat(zipPath).catch(() => null);
+  const zipSize = zipStat?.size ?? 0;
   const extractionBytes = Math.ceil(zipSize * EXTRACTION_INFLATION);
   const copyBytes = Math.ceil(zipSize * POST_FIX_COPY_FACTOR);
 
@@ -1095,7 +1169,7 @@ async function pickPreExtractDir(
   if (destinationPath !== null && destLocal) {
     wakeDir = path.join(destinationPath, '.pdr-wake');
     try {
-      fs.mkdirSync(wakeDir, { recursive: true });
+      await fs.promises.mkdir(wakeDir, { recursive: true });
     } catch (err) {
       log.warn(`[wake-drive] mkdir wake failed on ${destinationPath}: ${(err as Error).message}`);
     }
@@ -1106,11 +1180,11 @@ async function pickPreExtractDir(
   // once with a short delay if the first attempt returns null — the
   // drive may still be spinning up from the mkdir wake.
   let destSpace = (destinationPath && destLocal)
-    ? getDiskSpaceForDirSync(destinationPath)
+    ? await getDiskSpaceForDir(destinationPath)
     : null;
   if (destinationPath !== null && destLocal && destSpace === null) {
     await new Promise(resolve => setTimeout(resolve, 1500));
-    destSpace = getDiskSpaceForDirSync(destinationPath);
+    destSpace = await getDiskSpaceForDir(destinationPath);
     if (destSpace !== null) {
       log.info(`[wake-drive] ${destinationPath} probe succeeded on retry after 1.5s delay`);
     }
@@ -1119,13 +1193,13 @@ async function pickPreExtractDir(
   // later if the extraction actually proceeds; .pdr-wake was only
   // needed for the moment the drive needed to be spun up.
   if (wakeDir) {
-    try { fs.rmSync(wakeDir, { recursive: true, force: true }); }
+    try { await fs.promises.rm(wakeDir, { recursive: true, force: true }); }
     catch { /* best-effort cleanup */ }
   }
   const destFree = destSpace?.freeBytes ?? null;
   const destTotal = destSpace?.totalBytes ?? null;
 
-  const tempSpace = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
+  const tempSpace = await getDiskSpaceForDir(PDR_TEMP_ROOT);
   const tempFree = tempSpace?.freeBytes ?? null;
   const tempTotal = tempSpace?.totalBytes ?? null;
 
@@ -2554,6 +2628,26 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
   if (typeof sourcePath !== 'string' || sourcePath.length === 0) {
     return { success: false, cleaned: 0 };
   }
+
+  // v2.0.11 — if the source we're cleaning is currently mid-extraction,
+  // signal the analysis worker to abort BEFORE we wipe the temp folder.
+  // Without this, removing a source mid-extract would race the still-
+  // running worker writing more files into the folder we just cleaned,
+  // leaving an orphan partial folder behind. Cancellation propagates via
+  // the cancelAnalysis() flag the engine checks at each iteration; the
+  // worker exits cleanly within a step or two. The in-flight slot is
+  // also cleared so the LARGE_EXTRACT_IN_FLIGHT gate doesn't keep
+  // blocking the next add. Terry's stress test 2026-05-23: removed a
+  // 50 GB Takeout mid-extract, the visible source vanished but the
+  // worker kept going + the slot stayed claimed, blocking the next add.
+  if (largeExtractInFlight && largeExtractInFlight.zipPath === sourcePath) {
+    log.info(`[Source remove] cancelling in-flight extraction for ${sourcePath}`);
+    try { cancelAnalysis(); } catch (err) {
+      log.warn(`[Source remove] cancelAnalysis() failed (non-fatal): ${(err as Error).message}`);
+    }
+    largeExtractInFlight = null;
+  }
+
   let cleaned = 0;
   // Compute both candidate temp-dir names (zip and rar style).
   // Either or both may exist depending on what kind of source it
@@ -2941,10 +3035,32 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
       const incomingBytes = getZipFileSize(sourcePath);
       if (pendingBytes + incomingBytes > EXTRACTION_CAP_BYTES) {
         const fmtGB = (n: number) => (n / (1024 * 1024 * 1024)).toFixed(1);
+        // v2.0.11 — include the actual PDR_Temp path the cap is measuring
+        // against so the user knows where to look if they want to
+        // investigate or manually free space. Pre-v2.0.11 the message
+        // just dumped numbers ("Currently using 49.9 GB") with no way
+        // for the user to find or act on the files. Terry's stress
+        // test 2026-05-23: the missing path was the reason he had to
+        // hunt through Explorer to figure out where his 49.9 GB was
+        // sitting.
+        const tempRoots: string[] = [];
+        try {
+          const currentRoot = getCurrentPdrTempRoot();
+          if (currentRoot) tempRoots.push(currentRoot);
+        } catch { /* settings unreadable */ }
+        // Always mention the %TEMP% fallback too in case files are
+        // also there from a previous library-drive-offline session.
+        if (!tempRoots.some(r => path.normalize(r).toLowerCase() === path.normalize(PDR_TEMP_ROOT).toLowerCase())) {
+          tempRoots.push(PDR_TEMP_ROOT);
+        }
+        const pathHint = tempRoots.length === 1
+          ? `Extracted files are in ${tempRoots[0]}.`
+          : `Extracted files live in: ${tempRoots.map(r => `"${r}"`).join(' and ')}.`;
         throw Object.assign(
           new Error(
             `PDR keeps up to ${fmtGB(EXTRACTION_CAP_BYTES)} GB of extracted source archives at once. ` +
             `Currently using ${fmtGB(pendingBytes)} GB; this source would add ${fmtGB(incomingBytes)} GB. ` +
+            `${pathHint} ` +
             `Run the fix on what you've already added to free space, then come back to add more.`,
           ),
           {
@@ -2952,6 +3068,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
             pendingBytes,
             incomingBytes,
             capBytes: EXTRACTION_CAP_BYTES,
+            tempRoots,
           },
         );
       }

@@ -2461,11 +2461,32 @@ return (
 		  onAddSource={handleAddSource}
 		  onStartTour={() => { resetTourCompletion(); setShowTour(true); }}
 		  onRemoveSource={() => {
-			const selectedIds = sources.filter(s => s.selected).map(s => s.id);
+			const removedSources = sources.filter(s => s.selected);
+			const selectedIds = removedSources.map(s => s.id);
 			const updatedSources = sources.filter(s => !s.selected);
 			setSources(updatedSources);
 			setActiveSource(null);
-			
+
+			// v2.0.11 — Sidebar remove (the "Remove" button next to
+			// Add Source) previously only updated UI state and left
+			// the extracted PDR_Temp folder on disk. Terry's test
+			// 2026-05-23: removed a 50 GB Takeout via this button,
+			// the visible source disappeared but PDR_Temp still held
+			// 49.9 GB, which then refused the re-add via the 55 GB
+			// cap because the cap counts disk-state not visual-state.
+			// Now we fire the same cleanupTempDirForSource IPC the
+			// workspace-level handleRemoveSource uses — for every
+			// selected source, in parallel, best-effort. The IPC
+			// handler also cancels any in-flight extraction owned by
+			// the same source so removing mid-extract is safe.
+			for (const src of removedSources) {
+			  if (src.path) {
+				cleanupTempDirForSource(src.path).catch((err: unknown) => {
+				  console.warn('[Workspace] Sidebar remove cleanup failed for', src.path, err);
+				});
+			  }
+			}
+
 			// Clean up analysis results for removed sources
 			setSourceAnalysisResults(prev => {
 			  const updated = { ...prev };
@@ -3783,7 +3804,12 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         <div data-tour="sources-panel">
           <div className="flex items-center justify-between mb-3 px-2">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              {sources.length > 0 ? 'Source Menu' : 'Menu'}
+              {/* v2.0.11 — always "Source Menu" regardless of whether
+                  sources are added yet. Pre-v2.0.11 the header flipped
+                  to "Menu" when empty, which was ambiguous (menu of
+                  what?) and confused first-time users. Constant label
+                  + empty-state explainer is clearer. */}
+              Source Menu
             </h3>
             {sources.length > 0 && (
               <IconTooltip
