@@ -51,70 +51,89 @@ export function UnindexedLibrariesCard() {
   // reappears in-session for retry.
   const [hiddenWhileIndexing, setHiddenWhileIndexing] = useState(false);
 
+  // Probe the row data once. Extracted so we can re-run on
+  // pdr:libraryRebuildComplete and reflect the post-index state
+  // (banner clears if the gap closed). cancelledRef guards against
+  // late completions of probes started before unmount.
+  const probeRows = async (cancelledRef: { current: boolean }) => {
+    try {
+      const settings = await (window as any).pdr?.settings?.get?.();
+      const currentPath: string | null = settings?.destinationPath ?? null;
+      let saved: string[] = [];
+      try {
+        const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          saved = parsed.filter((p): p is string => typeof p === 'string' && p.length > 0);
+        }
+      } catch { /* localStorage unavailable / corrupted — empty list */ }
+
+      const allPaths = currentPath ? [currentPath, ...saved] : [...saved];
+      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+      const seen = new Set<string>();
+      const paths: string[] = [];
+      for (const p of allPaths) {
+        const n = norm(p);
+        if (seen.has(n)) continue;
+        seen.add(n);
+        paths.push(p);
+      }
+
+      const probed = await Promise.all(paths.map(async (p): Promise<LibraryRow | null> => {
+        try {
+          const [idxRes, diskRes] = await Promise.all([
+            (window as any).pdr?.library?.countFilesAtPath?.(p),
+            (window as any).pdr?.library?.countOnDiskFiles?.(p),
+          ]);
+          if (!idxRes?.success || !diskRes?.success) return null;
+          return {
+            path: p,
+            indexedCount: idxRes.data?.indexedFileCount ?? 0,
+            onDiskCount: diskRes.data?.reachable ? (diskRes.data?.onDiskCount ?? 0) : null,
+          };
+        } catch { return null; }
+      }));
+      if (cancelledRef.current) return;
+      const valid = probed.filter((r): r is LibraryRow => r !== null);
+      setRows(valid);
+    } catch { /* leaves rows empty — card stays hidden */ }
+  };
+
   useEffect(() => {
-    let cancelled = false;
+    const cancelledRef = { current: false };
     (async () => {
       try {
         const settings = await (window as any).pdr?.settings?.get?.();
-        if (!cancelled && settings) {
+        if (!cancelledRef.current && settings) {
           setDismissedAt(settings.unindexedLibrariesDismissedAt ?? null);
         }
       } catch { /* defaults to not dismissed */ }
 
-      try {
-        // Gather every library root the user has ever picked: current
-        // destination + every entry under pdr-saved-destinations.
-        // Deduplicated case-insensitively to avoid double-counting
-        // when settings + localStorage hold the same path with different
-        // separators.
-        const settings = await (window as any).pdr?.settings?.get?.();
-        const currentPath: string | null = settings?.destinationPath ?? null;
-        let saved: string[] = [];
-        try {
-          const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
-          const parsed = raw ? JSON.parse(raw) : [];
-          if (Array.isArray(parsed)) {
-            saved = parsed.filter((p): p is string => typeof p === 'string' && p.length > 0);
-          }
-        } catch { /* localStorage unavailable / corrupted — empty list */ }
-
-        const allPaths = currentPath ? [currentPath, ...saved] : [...saved];
-        const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
-        const seen = new Set<string>();
-        const paths: string[] = [];
-        for (const p of allPaths) {
-          const n = norm(p);
-          if (seen.has(n)) continue;
-          seen.add(n);
-          paths.push(p);
-        }
-
-        // Probe each library in parallel. Indexed count is fast (single
-        // SQL query); on-disk count walks the folder tree and can take
-        // several seconds on large libraries — but each probe is
-        // independent, so wall time is roughly the slowest single one
-        // rather than the sum.
-        const probed = await Promise.all(paths.map(async (p): Promise<LibraryRow | null> => {
-          try {
-            const [idxRes, diskRes] = await Promise.all([
-              (window as any).pdr?.library?.countFilesAtPath?.(p),
-              (window as any).pdr?.library?.countOnDiskFiles?.(p),
-            ]);
-            if (!idxRes?.success || !diskRes?.success) return null;
-            return {
-              path: p,
-              indexedCount: idxRes.data?.indexedFileCount ?? 0,
-              onDiskCount: diskRes.data?.reachable ? (diskRes.data?.onDiskCount ?? 0) : null,
-            };
-          } catch { return null; }
-        }));
-        if (cancelled) return;
-        const valid = probed.filter((r): r is LibraryRow => r !== null);
-        setRows(valid);
-      } catch { /* leaves rows empty — card stays hidden */ }
-      if (!cancelled) setLoaded(true);
+      await probeRows(cancelledRef);
+      if (!cancelledRef.current) setLoaded(true);
     })();
-    return () => { cancelled = true; };
+
+    // Re-probe whenever any rebuild completes — covers both this
+    // banner's own "Index now" (which fires the event itself) AND
+    // the LDM per-row Index pill (which dispatches the same event).
+    // Without this listener, indexing via the LDM would clear the
+    // LDM pill but leave the Dashboard banner showing the stale
+    // gap until the next mount. Terry 2026-05-23.
+    const onRebuildComplete = () => {
+      void probeRows(cancelledRef);
+      // Also clear the in-session "indexing" hide flag so if the
+      // user returns to this view after indexing finished, the
+      // banner state reflects fresh data rather than the
+      // mid-indexing optimistic hide.
+      setHiddenWhileIndexing(false);
+    };
+    window.addEventListener('pdr:libraryRebuildComplete', onRebuildComplete);
+
+    return () => {
+      cancelledRef.current = true;
+      window.removeEventListener('pdr:libraryRebuildComplete', onRebuildComplete);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!loaded) return null;

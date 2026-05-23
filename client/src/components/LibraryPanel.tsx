@@ -25,6 +25,7 @@ import {
   Copy,
   Download,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
