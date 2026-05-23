@@ -19,6 +19,7 @@ import crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { getDb, closeDatabase } from './search-database.js';
 import { getMachineFingerprint } from './license-manager.js';
+import { setSettings } from './settings-store.js';
 const SIDECAR_DIRNAME = '.pdr';
 const SIDECAR_DB_FILENAME = 'pdr-search.db';
 const SIDECAR_LOCK_FILENAME = 'writer.lock';
@@ -282,6 +283,35 @@ export function writeLibraryState(state) {
     const tmp = p + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
     fs.renameSync(tmp, p);
+    // v2.0.11 — ATOMIC LDM SYNC.
+    //
+    // Every attach / detach updates BOTH the live attach state
+    // (library-state.json) AND the legacy persisted setting
+    // (settings.destinationPath). These two used to drift apart
+    // because the original attach functions only wrote to
+    // library-state.json — settings.destinationPath was set elsewhere
+    // (folder picker, Library Planner) and never re-synced when the
+    // user switched libraries via LDM. Result: LDM displayed one
+    // active library, but source-add (which read settings.destinationPath)
+    // saw a different value, or null. Terry's case 2026-05-22 — LDM
+    // showed D:\ as active but settings.destinationPath was null, so
+    // adding a Takeout refused with "Library Drive — not set".
+    //
+    // With this sync writing them together is now an atomic operation
+    // from the caller's perspective. The LDM is the source of truth;
+    // settings.destinationPath is a mirror that stays consistent on
+    // every attach/detach.
+    //
+    // Best-effort: settings write failures don't fail the attach
+    // (since the attach IS the live source of truth — but the source-add
+    // code in main.ts now reads libraryRoot first anyway, so a settings
+    // write failure no longer causes the silent-route-to-C: regression).
+    try {
+        setSettings({ destinationPath: state.libraryRoot });
+    }
+    catch (err) {
+        console.warn('[LibSidecar] writeLibraryState: settings.destinationPath sync failed (non-fatal):', err.message);
+    }
 }
 export function readLockFile(libraryRoot) {
     const p = getSidecarLockPath(libraryRoot);

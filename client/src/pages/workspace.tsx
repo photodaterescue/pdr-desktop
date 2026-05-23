@@ -1927,6 +1927,21 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         setLibraryOfflineContext('run-fix');
         setLibraryOfflineOpen(true);
         if (destPath) setLibraryOfflineBanner({ path: destPath });
+      } else if (result.code === 'NO_LIBRARY_DRIVE') {
+        // v2.0.11 hotfix — main process refuses source-add when no
+        // Library Drive is configured (both libraryRoot AND
+        // settings.destinationPath null). Pre-v2.0.11 PDR would
+        // silently route the extraction to %TEMP% on C: and let the
+        // analyse step fail downstream with no explanation, which
+        // cost Jane two weeks. Now we surface a clear toast and pop
+        // open the Library Drive Manager so the user can attach a
+        // library and try again. Long duration so the message isn't
+        // missed if the LDM open animation overlaps the toast.
+        toast.error('No Library Drive set', {
+          description: 'Choose a Library Drive in the Library Drive Manager before adding sources.',
+          duration: 12000,
+        });
+        window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'));
       } else if (result.code === 'NO_TEMP_SPACE' && result.details && finalType === 'zip') {
         // Pre-extract resolver couldn't find a drive with enough room.
         // Surface the smart-prompt — user picks a different drive and
@@ -10035,6 +10050,27 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </AccordionContent>
                     </AccordionItem>
                   )}
+
+                  <AccordionItem value="ver-2.0.11" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.11</span>
+                        {appVersion === '2.0.11' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">Important data-integrity hotfix.</strong> A startup cleanup routine was silently shrinking peoples&apos; indexed libraries by treating multiple Fix runs to the same Library Drive as duplicates. Files on disk were never affected, but the database forgot about thousands of photos for users who&apos;d run more than one Fix to their library. v2.0.11 stops the cleanup and tightens up two related issues around Library Drive handling.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Photos no longer disappear from Search &amp; Discovery / Memories after running additional Fixes</strong> — the cleanup routine that ran on every launch was deleting database rows for older Fix runs, on the false assumption that two runs to the same Library Drive must be duplicates. They&apos;re actually additive (every Fix appends new files to the same library). The cleanup is now disabled. The files themselves were never deleted from disk; the catch-up indexer added in v2.0.9 rebuilds the database rows from the on-disk year folders. AI faces / tags / album memberships for the cascade-deleted rows would need re-running AI and re-importing Takeout albums to restore.</li>
+                        <li><strong className="text-foreground font-medium">Library Drive Manager and source-add now stay in lockstep</strong> — picking a Library Drive in the LDM now atomically updates both the live attach state and the persisted setting, so source-add can never see a different value to the one the LDM displays. A one-time startup sync also pulls them back into alignment for users whose state had already drifted apart on a previous version.</li>
+                        <li><strong className="text-foreground font-medium">No more silent diversion to the system drive when no Library Drive is set</strong> — adding a source with no Library Drive configured used to silently fall back to <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">%TEMP%</span> on the system drive, extract tens of GB there, and then disappear from the source list with no explanation when the analyse step failed downstream. PDR now refuses the source-add with a clear &quot;No Library Drive set&quot; message and pops open the Library Drive Manager so you can attach one.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
 
                   <AccordionItem value="ver-2.0.10" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">

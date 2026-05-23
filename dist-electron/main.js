@@ -1385,6 +1385,35 @@ app.whenReady().then(() => {
     catch (e) {
         console.warn('[Startup] background mirror init failed (non-fatal):', e.message);
     }
+    // v2.0.11 — ONE-SHOT LDM-STATE SYNC.
+    //
+    // For users in the divergent state (libraryRoot set, but
+    // settings.destinationPath null or different) — this catches them on
+    // first launch of v2.0.11 and pulls settings.destinationPath into
+    // sync with libraryRoot. Without this, existing affected users would
+    // have to manually re-attach via LDM before source-add would route
+    // to the right drive (because writeLibraryState only fires on attach
+    // actions going forward).
+    //
+    // libraryRoot wins because LDM uses it as the source of truth.
+    // The sync is a no-op when they already match.
+    try {
+        const status = getLibraryStatus();
+        const settingsDest = (() => { try {
+            return getSettings()?.destinationPath ?? null;
+        }
+        catch {
+            return null;
+        } })();
+        const libRoot = status?.libraryRoot ?? null;
+        if (libRoot !== settingsDest) {
+            log.info(`[Startup] LDM-state sync: libraryRoot=${JSON.stringify(libRoot)} vs settings.destinationPath=${JSON.stringify(settingsDest)} — syncing to libraryRoot`);
+            setSettings({ destinationPath: libRoot });
+        }
+    }
+    catch (e) {
+        log.warn(`[Startup] LDM-state sync failed (non-fatal): ${e.message}`);
+    }
     // Handle pdr-file:// protocol — serves local files to the viewer window
     protocol.handle('pdr-file', async (request) => {
         // New canonical form: pdr-file://local/?f=<urlencoded-path>
@@ -2637,12 +2666,35 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
         // Library Drive") instead of leaking the raw ENOENT.
         try {
             const destinationPath = resolveEffectiveDestination();
+            // NO_LIBRARY_DRIVE precheck — v2.0.11 hotfix.
+            //
+            // Pre-v2.0.11, if no Library Drive was configured (both
+            // libraryRoot AND settings.destinationPath null), source-add
+            // silently routed the extraction to %TEMP% on C: as a "fallback".
+            // This was a disaster for users whose library config had been
+            // lost (the cascade bug, a failed re-attach, etc.) — they'd
+            // think their library was attached (the LDM display might still
+            // show their drive listed), but PDR would silently extract
+            // tens of GB to C:, the analyse step would fail with no
+            // destination to write to, the source would disappear from the
+            // menu without explanation, and the user would have no idea
+            // what went wrong. Jane chased this for two weeks.
+            //
+            // Now: refuse source-add outright when no Library Drive is
+            // configured. Renderer surfaces a clear modal pointing the user
+            // to LDM to attach one. Genuine first-time-user flow still
+            // works because the Welcome → Library Planner → DDA path attaches
+            // a Library Drive BEFORE the user ever reaches a state where
+            // they could add a source.
+            if (!destinationPath) {
+                throw Object.assign(new Error("No Library Drive is set. Open Library Drive Manager to attach one before adding sources."), { code: 'NO_LIBRARY_DRIVE' });
+            }
             if (destinationPath && !fs.existsSync(destinationPath)) {
                 throw Object.assign(new Error(`Library Drive at ${destinationPath} isn't connected.`), { code: 'DESTINATION_OFFLINE', destinationPath });
             }
         }
         catch (precheckErr) {
-            if (precheckErr?.code === 'DESTINATION_OFFLINE') {
+            if (precheckErr?.code === 'DESTINATION_OFFLINE' || precheckErr?.code === 'NO_LIBRARY_DRIVE') {
                 throw precheckErr;
             }
             // Anything else in the precheck (settings read failure, etc.)

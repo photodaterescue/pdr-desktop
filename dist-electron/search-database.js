@@ -3739,34 +3739,44 @@ export function clearAllIndexAndAiData() {
 }
 // ─── Data integrity / cleanup ───────────────────────────────────────────────
 /**
- * Purge duplicate indexed_runs pointing to the same destination_path.
- * Keeps only the newest run (MAX id) per destination_path.
- * Older duplicate runs and their associated files/AI data are CASCADE-deleted.
- * This handles the scenario where a user deletes a destination, recreates it, and re-indexes —
- * the old run record would otherwise persist forever as a zombie.
- * Returns the number of duplicate runs removed.
+ * NEUTERED 2026-05-23 (v2.0.11) — DATA-INTEGRITY HOTFIX.
+ *
+ * This function previously deleted any indexed_runs row that wasn't
+ * MAX(id) per destination_path, treating "two runs to the same
+ * Library Drive" as duplicates. CASCADE-delete then wiped all the
+ * indexed_files rows belonging to the deleted runs, taking their
+ * face_detections, ai_tags, and album_files with them.
+ *
+ * The premise was wrong. Multiple Fix runs to the same Library Drive
+ * are ADDITIVE, not duplicate — every Fix appends new files to the
+ * same library. So this function silently shed thousands of real
+ * photo records on every launch for users with active libraries.
+ *
+ * Terry's case 2026-05-22: library went from 13,817 photos in the DB
+ * down to 3,719 in a single launch because purgeDuplicateRuns saw
+ * two indexed_runs rows pointing at D:\1. Photos\1. PDR Library Drive
+ * and cascade-deleted the older one's 10,098 file rows. Jane's case
+ * 2026-05-22 was the same bug fired across multiple launches over
+ * weeks — her DB ended up empty.
+ *
+ * Files on disk were untouched both times. The catch-up indexer in
+ * v2.0.9 rebuilds the file rows from disk. Downstream associations
+ * (faces, AI tags, album memberships) are gone for the cascaded rows
+ * and require re-running AI / re-importing Takeout albums.
+ *
+ * The legitimate "zombie run from a deleted-and-recreated destination"
+ * case this was originally written for is covered by purgeStaleIndexedFiles
+ * (Step 3 of runDatabaseCleanup) — it removes file rows for files that
+ * no longer exist on disk, which is the correct behaviour when a
+ * folder has been deleted. We don't need to delete the run records
+ * themselves, and doing so is destructive in the additive case.
+ *
+ * Kept as an exported function (returning 0) so the call site in
+ * runDatabaseCleanup stays stable without a wider refactor.
  */
 export function purgeDuplicateRuns() {
-    const database = getDb();
-    // Find run IDs to delete: for each destination_path with multiple runs, keep only the newest
-    const duplicateRuns = database.prepare(`
-    SELECT id FROM indexed_runs
-    WHERE id NOT IN (
-      SELECT MAX(id) FROM indexed_runs GROUP BY destination_path
-    )
-  `).all();
-    if (duplicateRuns.length === 0)
-        return 0;
-    // Delete each duplicate run — CASCADE will clean up indexed_files and AI data
-    const deleteStmt = database.prepare(`DELETE FROM indexed_runs WHERE id = ?`);
-    const deleteTx = database.transaction(() => {
-        for (const run of duplicateRuns) {
-            deleteStmt.run(run.id);
-        }
-    });
-    deleteTx();
-    console.log(`[DB Cleanup] Purged ${duplicateRuns.length} duplicate indexed_runs (kept newest per destination_path)`);
-    return duplicateRuns.length;
+    console.log(`[DB Cleanup] purgeDuplicateRuns is a no-op since v2.0.11 (was cascade-deleting real photo rows). See function comment for the full story.`);
+    return 0;
 }
 /**
  * Purge duplicate indexed_files rows — keeps only the latest (MAX id) per file_path.
