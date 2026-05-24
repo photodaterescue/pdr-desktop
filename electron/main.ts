@@ -3070,18 +3070,21 @@ ipcMain.handle('analysis:probeLibraryDrive', async () => {
   };
 });
 
-ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { looseFilesOnly?: boolean }) => {
-  // Two modes:
+ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { looseFilesOnly?: boolean; keepPaths?: string[] }) => {
+  // Three modes (latest one is the v2.0.11 default from the renderer):
+  //   smart (keepPaths provided) — full sweep, but preserve any sub-
+  //           folder whose name matches a deterministic temp-dir name
+  //           derived from one of the user's persisted source paths.
+  //           This deletes loose files AND orphan sub-folders, while
+  //           leaving in-flight extractions belonging to current
+  //           Source Menu entries untouched. Terry 2026-05-24's
+  //           "C: orphan still there" symptom — the previous
+  //           looseFilesOnly mode skipped ALL sub-folders even when
+  //           we knew which ones were orphan.
   //   full  — workspace was empty at launch, so everything in PDR_Temp
-  //           is an orphan from a crashed/abandoned previous session.
-  //           Delete files AND sub-folders.
-  //   looseFilesOnly — workspace HAS sources, so any sub-folder in
-  //           PDR_Temp might be an active extraction we must not stomp
-  //           on. But loose FILES at the root are never created by PDR
-  //           (the extractor only creates sub-folders), so they're
-  //           always safe orphans. This covers user test files, stray
-  //           bits left by other processes, and anything that's not a
-  //           legitimate extraction directory.
+  //           is an orphan. Delete files AND sub-folders.
+  //   looseFilesOnly — legacy fallback for callers that haven't been
+  //           upgraded to pass keepPaths. Skips ALL sub-folders.
   //
   // ALL filesystem work below is async (fs.promises.*). The previous
   // sync version blocked the main process for several seconds while
@@ -3090,7 +3093,20 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { 
   // on libuv's worker pool so the main thread stays responsive to
   // window messages throughout.
   const looseFilesOnly = !!opts?.looseFilesOnly;
-  const mode = looseFilesOnly ? 'loose-files-only' : 'full';
+  const keepPaths = Array.isArray(opts?.keepPaths) ? opts!.keepPaths! : [];
+  // Build the set of basenames we should preserve (matching against
+  // the entry name inside PDR_Temp). Each persisted source path maps
+  // to BOTH a zip-style and a rar-style temp-dir candidate; we keep
+  // either if it matches an on-disk entry.
+  const keepNames = new Set<string>();
+  for (const p of keepPaths) {
+    if (typeof p !== 'string' || p.length === 0) continue;
+    try { keepNames.add(path.basename(generateTempDirName(p))); } catch { /* malformed */ }
+    try { keepNames.add(path.basename(generateRarTempDirName(p))); } catch { /* malformed */ }
+  }
+  const mode = keepNames.size > 0
+    ? `smart (keeping ${keepNames.size} extractions)`
+    : looseFilesOnly ? 'loose-files-only' : 'full';
 
   const roots = new Set<string>();
   roots.add(PDR_TEMP_ROOT);
@@ -3131,9 +3147,17 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { 
     let rootBytes = 0;
     for (const entry of entries) {
       const full = path.join(root, entry.name);
-      // In loose-files-only mode, leave directories alone — they may
-      // be active extractions belonging to a currently-listed source.
-      if (looseFilesOnly && entry.isDirectory()) {
+      // Smart mode: keep entries whose names match a known extraction
+      // for a persisted source. Loose files (no extension match) get
+      // deleted; orphan sub-folders get deleted. Only "this is an
+      // active extraction I know about" entries are preserved.
+      if (entry.isDirectory() && keepNames.has(entry.name)) {
+        rootSkipped++;
+        continue;
+      }
+      // Legacy loose-files-only mode (no keepPaths supplied): skip
+      // every directory unconditionally.
+      if (keepNames.size === 0 && looseFilesOnly && entry.isDirectory()) {
         rootSkipped++;
         continue;
       }
@@ -3155,14 +3179,13 @@ ipcMain.handle('analysis:sweepOrphanedTempDirsIfEmpty', async (_event, opts?: { 
       }
     }
     bytesRemoved += rootBytes;
-    const skippedSuffix = looseFilesOnly ? ` (skipped ${rootSkipped} sub-folder${rootSkipped === 1 ? '' : 's'})` : '';
+    const skippedSuffix = rootSkipped > 0 ? ` (skipped ${rootSkipped} active extraction${rootSkipped === 1 ? '' : 's'})` : '';
     log.info(`[orphan-sweep] ${root} — removed ${rootRemoved}/${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}${skippedSuffix}, freed ${(rootBytes / (1024 ** 3)).toFixed(2)} GB`);
 
-    // Full sweep: also remove the now-empty PDR_Temp folder itself,
-    // not just its contents. Leaves zero trace on the filesystem.
-    // (In loose-files-only mode the folder stays — sub-folders we
-    // skipped may still be in use.)
-    if (!looseFilesOnly) {
+    // Remove the now-empty PDR_Temp folder itself ONLY when we kept
+    // nothing inside it. If any active extraction (or legacy loose-
+    // files-only sub-folder) remains, leave the parent in place.
+    if (rootSkipped === 0) {
       try {
         await fs.promises.rm(root, { recursive: true, force: true });
         log.info(`[orphan-sweep] ${root} — removed PDR_Temp folder itself`);

@@ -543,19 +543,21 @@ useEffect(() => {
   useEffect(() => {
     if (orphanSweepFiredRef.current) return;
     orphanSweepFiredRef.current = true;
-    // Mode depends on whether the workspace had sources at mount:
-    //   - No sources → full sweep (everything in PDR_Temp is orphan)
-    //   - Has sources → loose-files-only sweep (sub-folders may be
-    //     active extractions and must be left alone; loose files at
-    //     the root are never created by PDR so they're always safe)
-    const looseFilesOnly = sources.length > 0;
+    // v2.0.11 (Terry 2026-05-24) — smart sweep. Pass the persisted
+    // source paths so the IPC handler can preserve their active
+    // extractions and delete EVERYTHING ELSE in PDR_Temp (loose files
+    // AND orphan sub-folders). Previously the renderer toggled a
+    // looseFilesOnly flag based on sources.length, which skipped ALL
+    // sub-folders whenever sources were persisted — leaving Terry's
+    // 50 GB C:\…\PDR_Temp orphan untouched on every launch.
+    const keepPaths = sources.map(s => s.path).filter((p): p is string => !!p);
     (async () => {
       try {
         const { sweepOrphanedTempDirsIfEmpty } = await import('@/lib/electron-bridge');
-        const result = await sweepOrphanedTempDirsIfEmpty({ looseFilesOnly });
+        const result = await sweepOrphanedTempDirsIfEmpty({ keepPaths });
         if (result.success && result.dirsRemoved > 0) {
           const gb = (result.bytesRemoved / (1024 ** 3)).toFixed(1);
-          console.log(`[orphan-sweep] cleaned ${result.dirsRemoved} orphan entr${result.dirsRemoved === 1 ? 'y' : 'ies'} (${gb} GB, mode=${looseFilesOnly ? 'loose-files-only' : 'full'})`);
+          console.log(`[orphan-sweep] cleaned ${result.dirsRemoved} orphan entr${result.dirsRemoved === 1 ? 'y' : 'ies'} (${gb} GB, kept ${keepPaths.length} active extraction${keepPaths.length === 1 ? '' : 's'})`);
         }
         if (result.failedPaths && result.failedPaths.length > 0) {
           const firstPath = result.failedPaths[0].path;

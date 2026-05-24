@@ -289,7 +289,7 @@ export async function checkExtractionsForSources(
  *  user about locked files (Windows Search Indexer / preview pane /
  *  AV holding a handle) that the sweep couldn't clean. */
 export async function sweepOrphanedTempDirsIfEmpty(
-  opts?: { looseFilesOnly?: boolean },
+  opts?: { looseFilesOnly?: boolean; keepPaths?: string[] },
 ): Promise<{ success: boolean; dirsRemoved: number; bytesRemoved: number; failedPaths?: Array<{ path: string; reason: string }> }> {
   if (isElectron() && typeof (window as any).pdr?.sweepOrphanedTempDirsIfEmpty === 'function') {
     return await (window as any).pdr.sweepOrphanedTempDirsIfEmpty(opts);
