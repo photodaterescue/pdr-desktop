@@ -2216,13 +2216,25 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
 
   const handleChangeSourceFromModal = () => {
     if (pendingSource) {
+      // v2.0.11 (Terry 2026-05-25) — discard the extracted temp dir
+      // for the pending source too. Without this the user "changes"
+      // the source but the 34 GB extraction sits in PDR_Temp orphan
+      // (source row gone, files still on disk). The launch orphan-
+      // sweep would eventually catch it but we shouldn't ship orphan-
+      // creating UI moves. Fire-and-forget; the user is moving on.
+      const discardedPath = pendingSource.path;
+      if (discardedPath) {
+        cleanupTempDirForSource(discardedPath).catch((err: unknown) => {
+          console.warn('[Workspace] handleChangeSourceFromModal cleanup failed:', err);
+        });
+      }
       // Remove the pending source
       setSources(sources.filter(s => s.id !== pendingSource.id));
       setShowPreScanConfirm(false);
       setPreScanStats(null);
       setPendingSource(null);
       setActiveSource(null);
-      
+
       // Reopen OS picker
       setTimeout(() => {
         // Show source type selector first
@@ -2232,8 +2244,19 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
   };
 
   const handleCancelSourceSelection = () => {
-    // Remove the pending source and close modal
+    // v2.0.11 (Terry 2026-05-25) — same cleanup as handleChangeSource-
+    // FromModal: when the user backs out of the Source Added modal,
+    // the analysed-but-not-Kept source's extraction must go with it.
+    // Otherwise the user ends up with no source row + 34 GB orphan in
+    // PDR_Temp, which is exactly what Terry hit when the modal got
+    // dismissed unexpectedly.
     if (pendingSource) {
+      const discardedPath = pendingSource.path;
+      if (discardedPath) {
+        cleanupTempDirForSource(discardedPath).catch((err: unknown) => {
+          console.warn('[Workspace] handleCancelSourceSelection cleanup failed:', err);
+        });
+      }
       setSources(sources.filter(s => s.id !== pendingSource.id));
       setShowPreScanConfirm(false);
       setPreScanStats(null);
@@ -10931,19 +10954,46 @@ function SourceAddedModal({ source, stats, analysisElapsed, onAddToWorkspace, on
     );
   }
 
+  // v2.0.11 (Terry 2026-05-25) — discard-confirm gate for the
+  // Change Source / Back to workspace buttons. The user just waited
+  // X minutes for the analysis; an accidental click shouldn't throw
+  // it away. Mirrors the same protection the in-flight Analyzing
+  // modal already has for its Cancel button.
+  const confirmDiscardAndContinue = async (next: () => void) => {
+    const elapsedLabel = analysisElapsed != null && analysisElapsed > 0
+      ? formatElapsed(analysisElapsed)
+      : 'this analysis';
+    const ok = await promptConfirm({
+      danger: true,
+      title: 'Discard this analysis?',
+      message: (
+        <>
+          This will throw away <strong className="text-foreground">{elapsedLabel}</strong> of analysis work and delete the extracted files for this source.
+        </>
+      ),
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep open',
+    });
+    if (ok === true) next();
+  };
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onCancel}
+      // v2.0.11 (Terry 2026-05-25) — no backdrop-click-to-close. After
+      // waiting X minutes for the analysis, no errant click on the
+      // dim area should be able to throw away the result. The modal
+      // can ONLY be closed via its own buttons (Keep Source / Change
+      // Source / Back to workspace), and the two destructive options
+      // are gated behind confirmDiscardAndContinue above.
       className="fixed inset-0 bg-black/[0.25] backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
     >
-      <motion.div 
+      <motion.div
         initial={{ scale: 0.95, opacity: 0, y: 10 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: 10 }}
-        onClick={(e) => e.stopPropagation()}
         className="bg-background rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border"
       >
         <div className="mb-6">
@@ -11010,19 +11060,19 @@ function SourceAddedModal({ source, stats, analysisElapsed, onAddToWorkspace, on
             >
               Keep Source
             </Button>
-            <Button 
-              variant="outline" 
-              className="flex-1" 
-              onClick={onChangeSource}
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => confirmDiscardAndContinue(onChangeSource)}
               data-testid="button-change-source"
             >
               Change Source
             </Button>
           </div>
           <div className="flex justify-center mt-2">
-            <button 
-              className="text-sm text-muted-foreground hover:text-foreground hover:underline py-2" 
-              onClick={onCancel}
+            <button
+              className="text-sm text-muted-foreground hover:text-foreground hover:underline py-2"
+              onClick={() => confirmDiscardAndContinue(onCancel)}
               data-testid="button-return-to-workspace"
             >
               Back to workspace
