@@ -542,6 +542,12 @@ useEffect(() => {
     //     active extractions and must be left alone; loose files at
     //     the root are never created by PDR so they're always safe)
     const looseFilesOnly = sources.length > 0;
+    // v2.0.11 — defer the sweep by 2 seconds so the heavy disk walk
+    // (and any locked-file toasts it produces) doesn't compete with
+    // the boot splash and first-paint window of clean responsiveness.
+    // The orphan files have been sitting around since the previous
+    // session — they can wait another 2 s. Terry 2026-05-24.
+    const deferTimer = setTimeout(() => {
     (async () => {
       try {
         const { sweepOrphanedTempDirsIfEmpty } = await import('@/lib/electron-bridge');
@@ -568,6 +574,8 @@ useEffect(() => {
         console.warn('[orphan-sweep] failed:', err);
       }
     })();
+    }, 2000);
+    return () => clearTimeout(deferTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

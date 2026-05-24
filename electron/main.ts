@@ -5065,24 +5065,40 @@ ipcMain.handle('scannerOverride:clear', async (_event, args: { make: string; mod
 
 ipcMain.handle('search:init', async () => {
   const result = initDatabase();
-  // Run data integrity cleanup after database is ready
+  // v2.0.11 — runDatabaseCleanup is now BACKGROUNDED.
+  //
+  // Pre-v2.0.11 this ran synchronously inside the IPC handler, which
+  // meant the renderer's initSearchDatabase() call blocked for the
+  // full 6+ seconds that the cleanup took to walk 26k DB rows checking
+  // each file existed on disk. During that block, every OTHER IPC the
+  // renderer fired (library:status, window drag signals, drive lookups,
+  // etc.) queued up behind it. Combined with the OS-window-shown-before-
+  // renderer gap, this is what made startup feel frozen on Terry's
+  // 2026-05-24 report.
+  //
+  // The cleanup itself doesn't need to block the IPC response — its
+  // outputs are async toasts (staleRuns event) and DB-side cleanup
+  // that doesn't affect query correctness. So we resolve initDatabase
+  // immediately and fire the cleanup 2 seconds later, giving the boot
+  // splash time to render, the window time to settle, and the renderer
+  // its initial useEffect chain a window of clean responsiveness before
+  // the main process gets busy.
   if (result.success) {
-    try {
-      const cleanup = runDatabaseCleanup();
-      if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
-        console.log(`[Startup Cleanup] Removed: ${cleanup.duplicateRunsRemoved} duplicate runs, ${cleanup.ghostRunsRemoved} ghost runs, ${cleanup.orphanRunsRemoved} orphan runs, ${cleanup.duplicatesRemoved} duplicate files, ${cleanup.staleRemoved} stale files (checked ${cleanup.totalChecked} total)`);
-      }
-      // Send stale runs to renderer for user decision (relocate/reconnect/remove)
-      if (cleanup.staleRuns.length > 0) {
-        console.log(`[Startup] ${cleanup.staleRuns.length} indexed run(s) have missing destination folders — prompting user`);
-        // Delay slightly to ensure window is ready
-        setTimeout(() => {
+    setTimeout(() => {
+      try {
+        const cleanup = runDatabaseCleanup();
+        if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
+          console.log(`[Startup Cleanup] Removed: ${cleanup.duplicateRunsRemoved} duplicate runs, ${cleanup.ghostRunsRemoved} ghost runs, ${cleanup.orphanRunsRemoved} orphan runs, ${cleanup.duplicatesRemoved} duplicate files, ${cleanup.staleRemoved} stale files (checked ${cleanup.totalChecked} total)`);
+        }
+        // Send stale runs to renderer for user decision (relocate/reconnect/remove)
+        if (cleanup.staleRuns.length > 0) {
+          console.log(`[Startup] ${cleanup.staleRuns.length} indexed run(s) have missing destination folders — prompting user`);
           mainWindow?.webContents.send('search:staleRuns', cleanup.staleRuns);
-        }, 2000);
+        }
+      } catch (err) {
+        console.error('[Startup Cleanup] Error:', (err as Error).message);
       }
-    } catch (err) {
-      console.error('[Startup Cleanup] Error:', (err as Error).message);
-    }
+    }, 2000);
   }
   return result;
 });

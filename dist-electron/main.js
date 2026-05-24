@@ -429,7 +429,18 @@ function createWindow() {
         height: 800,
         minWidth: 1100,
         minHeight: 700,
-        backgroundColor: '#f6f6fb',
+        // v2.0.11 — show: false + ready-to-show pattern. The OS no longer
+        // paints an empty white-shell window while Chromium loads the HTML
+        // and React boots. Window stays hidden until the renderer signals
+        // it has rendered its first frame (the boot splash), at which
+        // point we show it already painted. Eliminates Terry 2026-05-24's
+        // "unmoveable window + Windows ghosting it white" startup symptom.
+        show: false,
+        // Match the splash's lavender radial-gradient base so any sub-frame
+        // flash between OS-window-shown and renderer-painted is consistent
+        // with the loading state — was '#f6f6fb' (pale lilac) which read
+        // as washed-out / empty against the lavender title bar.
+        backgroundColor: '#a99cff',
         titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
         thickFrame: true,
         ...(process.platform === 'win32' ? {
@@ -450,6 +461,15 @@ function createWindow() {
         },
     });
     hardenWindowAgainstNavigation(mainWindow);
+    // v2.0.11 — surface the window only after Chromium has rendered the
+    // first frame (the inline boot splash from index.html). Without this
+    // the OS draws the window the moment BrowserWindow is constructed,
+    // leaving the user staring at an empty shell while React boots —
+    // worse, on Windows the unmoveable shell gets ghosted to white as
+    // "Not responding" if the user tries to drag it.
+    mainWindow.once('ready-to-show', () => {
+        mainWindow?.show();
+    });
     mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
     // Surface renderer [inline-video] / [video] console messages in main log.
     mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
@@ -4461,7 +4481,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload) => {
         // Licence state — captured (without the key itself) so support
         // can tell at a glance whether the user is licensed, in grace,
         // offline-only, etc. without having to dig through the log.
-        let licenceSummary = '(licence state unavailable)';
+        let licenceSummary = '(license state unavailable)';
         try {
             const status = await getLicenseStatus();
             licenceSummary = [
@@ -4475,7 +4495,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload) => {
             ].join('\n');
         }
         catch (licErr) {
-            licenceSummary = `(error fetching licence: ${licErr.message})`;
+            licenceSummary = `(error fetching license: ${licErr.message})`;
         }
         // Bundle main.log + main.old.log + system-info.txt into a single
         // .zip in the user's Documents folder. Users can drag this one
@@ -4504,7 +4524,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload) => {
                 '─── system info ───',
                 info,
                 '',
-                '─── licence state ───',
+                '─── license state ───',
                 licenceSummary,
                 '',
                 '─── user description ───',
@@ -4525,7 +4545,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload) => {
             info,
             userEmail ? `Return address: ${userEmail}` : '',
             '',
-            '─── licence state ───',
+            '─── license state ───',
             licenceSummary,
             '',
             '─── recent log (last 200 lines) ───',
@@ -4715,25 +4735,41 @@ ipcMain.handle('scannerOverride:clear', async (_event, args) => {
 // ─── Search & Discovery IPC handlers ─────────────────────────────────────────
 ipcMain.handle('search:init', async () => {
     const result = initDatabase();
-    // Run data integrity cleanup after database is ready
+    // v2.0.11 — runDatabaseCleanup is now BACKGROUNDED.
+    //
+    // Pre-v2.0.11 this ran synchronously inside the IPC handler, which
+    // meant the renderer's initSearchDatabase() call blocked for the
+    // full 6+ seconds that the cleanup took to walk 26k DB rows checking
+    // each file existed on disk. During that block, every OTHER IPC the
+    // renderer fired (library:status, window drag signals, drive lookups,
+    // etc.) queued up behind it. Combined with the OS-window-shown-before-
+    // renderer gap, this is what made startup feel frozen on Terry's
+    // 2026-05-24 report.
+    //
+    // The cleanup itself doesn't need to block the IPC response — its
+    // outputs are async toasts (staleRuns event) and DB-side cleanup
+    // that doesn't affect query correctness. So we resolve initDatabase
+    // immediately and fire the cleanup 2 seconds later, giving the boot
+    // splash time to render, the window time to settle, and the renderer
+    // its initial useEffect chain a window of clean responsiveness before
+    // the main process gets busy.
     if (result.success) {
-        try {
-            const cleanup = runDatabaseCleanup();
-            if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
-                console.log(`[Startup Cleanup] Removed: ${cleanup.duplicateRunsRemoved} duplicate runs, ${cleanup.ghostRunsRemoved} ghost runs, ${cleanup.orphanRunsRemoved} orphan runs, ${cleanup.duplicatesRemoved} duplicate files, ${cleanup.staleRemoved} stale files (checked ${cleanup.totalChecked} total)`);
-            }
-            // Send stale runs to renderer for user decision (relocate/reconnect/remove)
-            if (cleanup.staleRuns.length > 0) {
-                console.log(`[Startup] ${cleanup.staleRuns.length} indexed run(s) have missing destination folders — prompting user`);
-                // Delay slightly to ensure window is ready
-                setTimeout(() => {
+        setTimeout(() => {
+            try {
+                const cleanup = runDatabaseCleanup();
+                if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
+                    console.log(`[Startup Cleanup] Removed: ${cleanup.duplicateRunsRemoved} duplicate runs, ${cleanup.ghostRunsRemoved} ghost runs, ${cleanup.orphanRunsRemoved} orphan runs, ${cleanup.duplicatesRemoved} duplicate files, ${cleanup.staleRemoved} stale files (checked ${cleanup.totalChecked} total)`);
+                }
+                // Send stale runs to renderer for user decision (relocate/reconnect/remove)
+                if (cleanup.staleRuns.length > 0) {
+                    console.log(`[Startup] ${cleanup.staleRuns.length} indexed run(s) have missing destination folders — prompting user`);
                     mainWindow?.webContents.send('search:staleRuns', cleanup.staleRuns);
-                }, 2000);
+                }
             }
-        }
-        catch (err) {
-            console.error('[Startup Cleanup] Error:', err.message);
-        }
+            catch (err) {
+                console.error('[Startup Cleanup] Error:', err.message);
+            }
+        }, 2000);
     }
     return result;
 });
