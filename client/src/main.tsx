@@ -12,25 +12,26 @@ createRoot(document.getElementById("root")!).render(
 
 // Boot-splash dismissal — adaptive timing.
 //
-// MIN (3 s): enough time for the staggered entrance animation
-//   (logo + name + tagline + bar) to complete + minimum brand
-//   exposure. Even on a fast machine where React paints in <1 s
-//   the splash holds for the full minimum so it never feels
-//   rushed.
+// MIN (5 s): enough time for the staggered entrance animation
+//   (logo + name + tagline + bar) to complete + a deliberate
+//   2-second buffer so the user has a beat to settle before the
+//   workspace appears. Terry 2026-05-24: extended from 3 s to 5 s
+//   because the previous 3 s minimum was running into the deferred
+//   startup-cleanup work and making the app feel rushed/jittery.
+//   The extra second is invisible cost; the smoothness it buys is
+//   what people remember.
 //
-// MAX (6.5 s): cap for slower machines. If React's heavy work
-//   (Welcome mount, AppShell layout, sidebar measurement) is
-//   still in flight when this hits, dismiss anyway — the user
-//   should never wait longer than this.
+// MAX (8 s): cap for slower machines. Bumped proportionally so the
+//   MIN→MAX adaptive window still has room.
 //
 // READY signal: React calls window.__pdrSplashReady() once
 //   Welcome (home.tsx) has mounted and rendered its first frame.
 //   The splash exits as soon as the MIN floor is satisfied AND
 //   the ready signal has fired — adaptive, so fast machines get
-//   the minimum 3 s and slower machines get the time they need
+//   the minimum 5 s and slower machines get the time they need
 //   up to the MAX ceiling.
-const SPLASH_MIN_DISPLAY_MS = 3000;
-const SPLASH_MAX_DISPLAY_MS = 6500;
+const SPLASH_MIN_DISPLAY_MS = 5000;
+const SPLASH_MAX_DISPLAY_MS = 8000;
 const SPLASH_EXIT_DURATION_MS = 700;
 const splashStartedAt = performance.now();
 let splashReady = false;
