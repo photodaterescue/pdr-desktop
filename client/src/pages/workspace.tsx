@@ -3010,6 +3010,12 @@ return (
 	        data-testid="analysis-progress-chip"
 	        title="Click to restore the analysis view"
 	        onClick={() => handleRestore()}
+	        // v2.0.11 (Terry 2026-05-24) — opt out of the title bar's
+	        // drag region. Without this Windows interprets clicks on
+	        // the pill as title-bar drag-starts, swallows the click,
+	        // and the Open button never fires. FixStatusChip already
+	        // has this same opt-out for the same reason.
+	        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
 	      >
 	        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
 	        <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
