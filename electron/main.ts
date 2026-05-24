@@ -579,7 +579,18 @@ function createWindow() {
     height: 800,
     minWidth: 1100,
     minHeight: 700,
-    backgroundColor: '#f6f6fb',
+    // v2.0.11 — show: false + ready-to-show pattern. The OS no longer
+    // paints an empty white-shell window while Chromium loads the HTML
+    // and React boots. Window stays hidden until the renderer signals
+    // it has rendered its first frame (the boot splash), at which
+    // point we show it already painted. Eliminates Terry 2026-05-24's
+    // "unmoveable window + Windows ghosting it white" startup symptom.
+    show: false,
+    // Match the splash's lavender radial-gradient base so any sub-frame
+    // flash between OS-window-shown and renderer-painted is consistent
+    // with the loading state — was '#f6f6fb' (pale lilac) which read
+    // as washed-out / empty against the lavender title bar.
+    backgroundColor: '#a99cff',
     titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
     thickFrame: true,
     ...(process.platform === 'win32' ? {
@@ -600,6 +611,16 @@ function createWindow() {
     },
   });
   hardenWindowAgainstNavigation(mainWindow);
+
+  // v2.0.11 — surface the window only after Chromium has rendered the
+  // first frame (the inline boot splash from index.html). Without this
+  // the OS draws the window the moment BrowserWindow is constructed,
+  // leaving the user staring at an empty shell while React boots —
+  // worse, on Windows the unmoveable shell gets ghosted to white as
+  // "Not responding" if the user tries to drag it.
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
 
 	mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
 
