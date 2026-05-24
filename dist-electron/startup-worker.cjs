@@ -65,7 +65,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
 // process.parentPort is the utilityProcess messaging channel — same
 // shape as MessagePort.
 const parentPort = process.parentPort;
@@ -188,95 +187,21 @@ async function runDbCleanup(dbPath) {
         catch { /* best-effort */ }
     }
 }
-// ─── Orphan PDR_Temp sweep ────────────────────────────────────────────────
-async function asyncFolderSizeBytes(dir) {
-    let total = 0;
-    let entries;
-    try {
-        entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    }
-    catch {
-        return 0;
-    }
-    for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        try {
-            if (entry.isDirectory()) {
-                total += await asyncFolderSizeBytes(full);
-            }
-            else {
-                const stat = await fs.promises.stat(full);
-                total += stat.size;
-            }
-        }
-        catch {
-            /* ignore individual stat failures */
-        }
-    }
-    return total;
-}
-async function sweepTempRoot(root, looseFilesOnly) {
-    let bytesRemoved = 0;
-    let entriesRemoved = 0;
-    let locked = 0;
-    let entries;
-    try {
-        entries = await fs.promises.readdir(root, { withFileTypes: true });
-    }
-    catch {
-        return { bytesRemoved: 0, entriesRemoved: 0, locked: 0 };
-    }
-    for (const entry of entries) {
-        const full = path.join(root, entry.name);
-        if (looseFilesOnly && entry.isDirectory())
-            continue;
-        try {
-            if (entry.isDirectory()) {
-                bytesRemoved += await asyncFolderSizeBytes(full);
-            }
-            else {
-                try {
-                    const stat = await fs.promises.stat(full);
-                    bytesRemoved += stat.size;
-                }
-                catch { /* ignore */ }
-            }
-            await fs.promises.rm(full, { recursive: true, force: true });
-            entriesRemoved++;
-        }
-        catch {
-            locked++;
-        }
-    }
-    // Remove the now-empty PDR_Temp directory itself when we did a
-    // full sweep. Best-effort; if anything's still in it (locked sub-
-    // folder, etc.) the rmdir simply fails and we move on.
-    if (!looseFilesOnly) {
-        try {
-            await fs.promises.rmdir(root);
-        }
-        catch { /* fine, still has content or already gone */ }
-    }
-    return { bytesRemoved, entriesRemoved, locked };
-}
 // ─── Init handler ─────────────────────────────────────────────────────────
+//
+// The startup worker handles DB cleanup only. The PDR_Temp orphan
+// sweep was moved BACK to the renderer (workspace.tsx) so it has
+// access to the persisted source paths via localStorage and can
+// correctly distinguish "orphan, delete" from "extraction associated
+// with a persisted source, keep". The main thread is no longer the
+// contention point because the splash window is now its own process
+// — the renderer-side sweep can run while the splash stays smooth.
 parentPort?.on?.('message', async (e) => {
     const msg = e.data;
     if (!msg || msg.type !== 'init')
         return;
     const startedAt = Date.now();
     const dbResult = await runDbCleanup(msg.dbPath);
-    let totalBytes = 0;
-    let totalEntries = 0;
-    let totalLocked = 0;
-    postProgress(msg.tempRoots.length > 0 ? 'Cleaning up extracted files…' : 'Almost ready…');
-    for (const root of msg.tempRoots) {
-        const looseFilesOnly = msg.hasPersistedSources;
-        const result = await sweepTempRoot(root, looseFilesOnly);
-        totalBytes += result.bytesRemoved;
-        totalEntries += result.entriesRemoved;
-        totalLocked += result.locked;
-    }
     const done = {
         type: 'done',
         summary: {
@@ -285,9 +210,6 @@ parentPort?.on?.('message', async (e) => {
             dbOrphanRunsRemoved: dbResult.orphanRunsRemoved,
             dbGhostRunsRemoved: dbResult.ghostRunsRemoved,
             dbTotalChecked: dbResult.totalChecked,
-            tempBytesRemoved: totalBytes,
-            tempEntriesRemoved: totalEntries,
-            tempEntriesLocked: totalLocked,
             elapsedMs: Date.now() - startedAt,
         },
     };

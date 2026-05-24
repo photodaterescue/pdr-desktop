@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage, utilityProcess } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage, utilityProcess, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -502,29 +502,11 @@ function spawnStartupWorker() {
         : path.join(__dirname, 'startup-worker.cjs');
     // Resolve runtime config the worker needs. app.getPath() isn't
     // available inside a utilityProcess, so we pass the paths in
-    // explicitly via the 'init' message.
+    // explicitly via the 'init' message. Worker now only does DB
+    // cleanup; the PDR_Temp orphan-sweep moved back to the renderer
+    // (workspace.tsx) so it can use the persisted source paths from
+    // localStorage to distinguish orphans from active extractions.
     const dbPath = path.join(app.getPath('userData'), 'search-index', 'pdr-search.db');
-    const tempRoots = [];
-    tempRoots.push(path.join(os.tmpdir(), 'PDR_Temp'));
-    try {
-        const status = getLibraryStatus();
-        const libRoot = status?.libraryRoot;
-        if (libRoot)
-            tempRoots.push(path.join(libRoot, 'PDR_Temp'));
-    }
-    catch { /* best-effort */ }
-    // Worker only deletes loose files when sources are persisted (sub-
-    // folders may be active extractions); does a full sweep otherwise.
-    // Main process doesn't know what's in renderer-side localStorage,
-    // so we conservatively pass true (loose-files-only) whenever
-    // settings.destinationPath is set — better to skip sub-folders
-    // accidentally than to wipe an in-progress extraction. The
-    // renderer's later check picks up any miss.
-    let hasPersistedSources = false;
-    try {
-        hasPersistedSources = !!getSettings()?.destinationPath;
-    }
-    catch { /* fallback false */ }
     try {
         startupWorker = utilityProcess.fork(workerPath, [], {
             serviceName: 'PDR Startup Worker',
@@ -572,8 +554,6 @@ function spawnStartupWorker() {
     startupWorker.postMessage({
         type: 'init',
         dbPath,
-        tempRoots,
-        hasPersistedSources,
     });
 }
 function maybeFinishStartup() {
@@ -586,7 +566,39 @@ function maybeFinishStartup() {
     if (!workspaceReadyToShow)
         return;
     startupSwapped = true;
+    // v2.0.11 (Terry 2026-05-24) — splash-to-workspace position handoff.
+    // The user can drag/resize the splash while it's up; the workspace
+    // should appear WHERE THEY MOVED IT, not at the workspace's default
+    // centered position. This makes the swap feel like one window
+    // changing content rather than two separate windows.
+    //
+    // Strategy: center the workspace on the same display the splash is
+    // currently on, then nudge so the workspace's center matches the
+    // splash's center (clamped to that display's work area so the
+    // window never lands partly off-screen). Multi-monitor safe via
+    // screen.getDisplayMatching.
     if (mainWindow && !mainWindow.isDestroyed()) {
+        try {
+            if (splashWindow && !splashWindow.isDestroyed()) {
+                const splashBounds = splashWindow.getBounds();
+                const splashCenterX = splashBounds.x + Math.floor(splashBounds.width / 2);
+                const splashCenterY = splashBounds.y + Math.floor(splashBounds.height / 2);
+                const display = screen.getDisplayMatching(splashBounds);
+                const wsBounds = mainWindow.getBounds();
+                // Workspace top-left so its centre matches the splash's centre.
+                let x = splashCenterX - Math.floor(wsBounds.width / 2);
+                let y = splashCenterY - Math.floor(wsBounds.height / 2);
+                // Clamp to the display's work area so the title bar always
+                // ends up draggable on screen.
+                const wa = display.workArea;
+                x = Math.max(wa.x, Math.min(x, wa.x + wa.width - wsBounds.width));
+                y = Math.max(wa.y, Math.min(y, wa.y + wa.height - wsBounds.height));
+                mainWindow.setBounds({ x, y, width: wsBounds.width, height: wsBounds.height });
+            }
+        }
+        catch (err) {
+            log.warn(`[Startup] splash-to-workspace position handoff failed (non-fatal): ${err.message}`);
+        }
         mainWindow.show();
     }
     if (splashWindow && !splashWindow.isDestroyed()) {

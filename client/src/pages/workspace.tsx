@@ -520,15 +520,56 @@ useEffect(() => {
     })();
   }, [sources]);
 
-  // v2.0.11 — orphan-sweep moved to the startup worker (utilityProcess
-  // owned by electron/main.ts). The worker runs the sweep BEFORE the
-  // workspace renderer mounts, so by the time we're here the PDR_Temp
-  // folder is already clean. Eliminates the launch-time main-thread
-  // contention that used to freeze the splash + title-bar drag.
+  // Launch-time orphan sweep. If the workspace is empty at mount, any
+  // files sitting in PDR_Temp (either %TEMP%\PDR_Temp or
+  // <destinationDrive>\PDR_Temp) are necessarily orphans from a
+  // previous extraction that crashed mid-way (no completed fix to
+  // clean them, no source row in the UI to manually remove). They
+  // count against the 55 GB extraction cap, so without this sweep a
+  // crashed extract can permanently shrink the cap until the user
+  // manually deletes the temp folder.
   //
-  // Locked-file toasts that used to surface here are now the worker's
-  // responsibility — it logs failed deletions to main.log; surfacing
-  // them as renderer toasts on the next launch is the v2.0.12 follow-up.
+  // v2.0.11 (Terry 2026-05-24): The earlier "move sweep to startup
+  // worker" attempt didn't work because the worker has no way to tell
+  // which sub-folders belong to currently-persisted sources (which
+  // must be preserved) vs true orphans (which can be deleted). The
+  // renderer DOES have that info via localStorage. With the new
+  // splash-in-its-own-window architecture, the splash stays
+  // interactive even while the renderer's sweep is in flight — main
+  // process is busy with fs.promises.* which yields between every
+  // operation, OS message pump runs, splash drag stays smooth.
+  // Fires once per app session via a ref guard.
+  const orphanSweepFiredRef = useRef(false);
+  useEffect(() => {
+    if (orphanSweepFiredRef.current) return;
+    orphanSweepFiredRef.current = true;
+    // Mode depends on whether the workspace had sources at mount:
+    //   - No sources → full sweep (everything in PDR_Temp is orphan)
+    //   - Has sources → loose-files-only sweep (sub-folders may be
+    //     active extractions and must be left alone; loose files at
+    //     the root are never created by PDR so they're always safe)
+    const looseFilesOnly = sources.length > 0;
+    (async () => {
+      try {
+        const { sweepOrphanedTempDirsIfEmpty } = await import('@/lib/electron-bridge');
+        const result = await sweepOrphanedTempDirsIfEmpty({ looseFilesOnly });
+        if (result.success && result.dirsRemoved > 0) {
+          const gb = (result.bytesRemoved / (1024 ** 3)).toFixed(1);
+          console.log(`[orphan-sweep] cleaned ${result.dirsRemoved} orphan entr${result.dirsRemoved === 1 ? 'y' : 'ies'} (${gb} GB, mode=${looseFilesOnly ? 'loose-files-only' : 'full'})`);
+        }
+        if (result.failedPaths && result.failedPaths.length > 0) {
+          const firstPath = result.failedPaths[0].path;
+          toast.warning('Some leftover extracted files couldn\'t be cleaned up', {
+            description: `${firstPath} — another program (Windows Search Indexer, preview pane, or antivirus) has a file open. Close any Explorer windows on this folder and relaunch PDR to try again, or retry from the Library Drive Manager.`,
+            duration: 18000,
+          });
+        }
+      } catch (err) {
+        console.warn('[orphan-sweep] failed:', err);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Listen for reports history event from EmptyState
   useEffect(() => {
