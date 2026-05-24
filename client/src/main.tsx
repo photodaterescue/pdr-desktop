@@ -10,92 +10,12 @@ createRoot(document.getElementById("root")!).render(
   </Router>
 );
 
-// Boot-splash dismissal — adaptive timing.
-//
-// MIN (5 s): enough time for the staggered entrance animation
-//   (logo + name + tagline + bar) to complete + a deliberate
-//   2-second buffer so the user has a beat to settle before the
-//   workspace appears. Terry 2026-05-24: extended from 3 s to 5 s
-//   because the previous 3 s minimum was running into the deferred
-//   startup-cleanup work and making the app feel rushed/jittery.
-//   The extra second is invisible cost; the smoothness it buys is
-//   what people remember.
-//
-// MAX (8 s): cap for slower machines. Bumped proportionally so the
-//   MIN→MAX adaptive window still has room.
-//
-// READY signal: React calls window.__pdrSplashReady() once
-//   Welcome (home.tsx) has mounted and rendered its first frame.
-//   The splash exits as soon as the MIN floor is satisfied AND
-//   the ready signal has fired — adaptive, so fast machines get
-//   the minimum 5 s and slower machines get the time they need
-//   up to the MAX ceiling.
-const SPLASH_MIN_DISPLAY_MS = 5000;
-const SPLASH_MAX_DISPLAY_MS = 8000;
-const SPLASH_EXIT_DURATION_MS = 700;
-const splashStartedAt = performance.now();
-let splashReady = false;
-let splashDismissed = false;
-let splashRetryTimer: number | null = null;
-
-function performSplashExit() {
-  if (splashDismissed) return;
-  splashDismissed = true;
-  if (splashRetryTimer !== null) {
-    window.clearTimeout(splashRetryTimer);
-    splashRetryTimer = null;
-  }
-  const splash = document.getElementById("pdr-splash");
-  if (!splash) return;
-  splash.classList.add("pdr-splash-exit");
-  window.setTimeout(() => splash.remove(), SPLASH_EXIT_DURATION_MS + 80);
-}
-
-function tryDismissBootSplash() {
-  if (splashDismissed) return;
-  const elapsed = performance.now() - splashStartedAt;
-
-  // Below the floor — schedule a recheck at the floor.
-  if (elapsed < SPLASH_MIN_DISPLAY_MS) {
-    splashRetryTimer = window.setTimeout(
-      tryDismissBootSplash,
-      SPLASH_MIN_DISPLAY_MS - elapsed,
-    );
-    return;
-  }
-
-  // Past the floor, ready signal received — exit now.
-  if (splashReady) {
-    performSplashExit();
-    return;
-  }
-
-  // Past the floor, no ready signal yet, ceiling not hit — wait
-  // and retry in small steps so we exit promptly when ready fires.
-  if (elapsed < SPLASH_MAX_DISPLAY_MS) {
-    splashRetryTimer = window.setTimeout(tryDismissBootSplash, 100);
-    return;
-  }
-
-  // Ceiling hit — exit regardless.
-  performSplashExit();
-}
-
-// Expose the ready signal globally. React (home.tsx) calls this once
-// Welcome has mounted and committed its first paint. If the splash
-// hasn't dismissed yet the call triggers an immediate re-evaluation.
-(window as Window & { __pdrSplashReady?: () => void }).__pdrSplashReady = () => {
-  splashReady = true;
-  tryDismissBootSplash();
-};
-
-requestAnimationFrame(() => {
-  // Two RAFs — the first lets React commit, the second runs after the
-  // browser paints. Kicks off the dismissal state machine which then
-  // honours the min/max/ready constraints.
-  requestAnimationFrame(tryDismissBootSplash);
-});
-
-// Hard safety net: even if the state machine somehow stalls (e.g.
-// React never mounts), force-exit at the ceiling.
-window.setTimeout(performSplashExit, SPLASH_MAX_DISPLAY_MS + 500);
+// v2.0.11 — the splash is now a separate BrowserWindow owned by the
+// main process (see electron/main.ts's createSplashWindow() and
+// maybeFinishStartup()). When the workspace renderer signals
+// 'ready-to-show', the main process flips the workspaceReadyToShow
+// flag in its coordinator; the splash gets closed and the workspace
+// gets shown once the worker has also finished its cleanup. So this
+// file no longer needs the splash-dismissal state machine — the
+// workspace is simply hidden (show: false) until the coordinator
+// reveals it.

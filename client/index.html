@@ -23,120 +23,20 @@
          but adhering to "System-first stack" means we mostly rely on CSS font-family stack. -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
     <!--
-      PDR boot splash — pure inline HTML/CSS so it paints within ~200ms
-      of window-appears (before Vite has even started loading the main
-      JS bundle). Replaces the 2-3 second blank-white flash with a
-      branded lavender splash showing the PDR mark, app name, tagline
-      and a thin indeterminate progress bar. Staggered entrance
-      animation (logo scales+fades in, then name, then tagline, then
-      bar) so it reads as a proper boot sequence rather than just a
-      static placeholder. main.tsx holds it on screen for a minimum of
-      3 seconds, then runs a cinematic scale+fade exit so it transitions
-      gracefully into the Welcome screen behind it.
+      v2.0.11 — the boot splash now lives in its own BrowserWindow
+      (see client/public/splash.html + electron/main.ts's
+      createSplashWindow()). The window stays hidden (show: false)
+      until the main process's coordinator decides it's ready. So
+      this index.html no longer needs the inline splash overlay —
+      the OS shows the splash window in our place during startup.
     -->
     <style>
-      #pdr-splash {
-        position: fixed;
-        inset: 0;
-        background: radial-gradient(ellipse at center, #b8accf 0%, #a99cff 55%, #9385e8 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        opacity: 1;
-        transition: opacity 700ms cubic-bezier(0.4, 0, 0.2, 1);
-        -webkit-app-region: drag;
-      }
-      #pdr-splash.pdr-splash-exit {
-        opacity: 0;
-        pointer-events: none;
-      }
-      #pdr-splash .pdr-splash-stage {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        transition: transform 700ms cubic-bezier(0.4, 0, 0.2, 1);
-      }
-      #pdr-splash.pdr-splash-exit .pdr-splash-stage {
-        transform: scale(1.18);
-      }
-      #pdr-splash .pdr-splash-logo {
-        width: 124px;
-        height: 124px;
-        margin-bottom: 32px;
-        filter: drop-shadow(0 10px 36px rgba(0, 0, 0, 0.28));
-        opacity: 0;
-        transform: translateY(24px) scale(0.85);
-        animation: pdr-splash-logo-in 850ms cubic-bezier(0.34, 1.4, 0.64, 1) 80ms forwards;
-      }
-      #pdr-splash .pdr-splash-name {
-        font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
-        font-weight: 600;
-        font-size: 26px;
-        letter-spacing: 0.1em;
-        color: #ffffff;
-        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-        opacity: 0;
-        transform: translateY(10px);
-        animation: pdr-splash-fade-up 650ms cubic-bezier(0.4, 0, 0.2, 1) 550ms forwards;
-      }
-      #pdr-splash .pdr-splash-tagline {
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        font-weight: 400;
-        font-size: 13px;
-        letter-spacing: 0.06em;
-        color: rgba(255, 255, 255, 0.82);
-        margin-top: 14px;
-        opacity: 0;
-        transform: translateY(10px);
-        animation: pdr-splash-fade-up 650ms cubic-bezier(0.4, 0, 0.2, 1) 800ms forwards;
-      }
-      #pdr-splash .pdr-splash-bar {
-        width: 220px;
-        height: 3px;
-        background: rgba(255, 255, 255, 0.22);
-        border-radius: 999px;
-        overflow: hidden;
-        position: relative;
-        margin-top: 42px;
-        opacity: 0;
-        animation: pdr-splash-fade-in 500ms ease-out 1100ms forwards;
-      }
-      #pdr-splash .pdr-splash-bar::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        height: 100%;
-        width: 40%;
-        background: #ffffff;
-        border-radius: 999px;
-        animation: pdr-splash-progress 1.4s ease-in-out infinite;
-      }
-      @keyframes pdr-splash-logo-in {
-        to { opacity: 1; transform: translateY(0) scale(1); }
-      }
-      @keyframes pdr-splash-fade-up {
-        to { opacity: 1; transform: translateY(0); }
-      }
-      @keyframes pdr-splash-fade-in {
-        to { opacity: 1; }
-      }
-      @keyframes pdr-splash-progress {
-        0%   { transform: translateX(-100%); }
-        100% { transform: translateX(250%); }
-      }
+      /* Lavender base so any sub-frame paint before React commits
+         matches the splash window's gradient. */
+      html, body { margin: 0; background: #a99cff; }
     </style>
   </head>
   <body>
-    <div id="pdr-splash">
-      <div class="pdr-splash-stage">
-        <img class="pdr-splash-logo" src="./assets/pdr-logo_transparent.png" alt="" />
-        <div class="pdr-splash-name">PHOTO DATE RESCUE</div>
-        <div class="pdr-splash-tagline">Bring every photo home</div>
-        <div class="pdr-splash-bar"></div>
-      </div>
-    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

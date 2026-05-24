@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Photo Date Rescue</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Montserrat:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!--
+      PDR splash window — standalone HTML/CSS, no React, no Vite bundle.
+      Lives in its own BrowserWindow on its own renderer process, so
+      drag/resize stay smooth even when the main process is busy with
+      startup cleanup (DB walk, orphan-sweep). The whole surface is a
+      drag region so the user can move the splash from any pixel.
+      Resizing is allowed (BrowserWindow resizable: true) and the
+      content stays centred via flex layout.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        -webkit-app-region: drag;
+        -webkit-user-select: none;
+        user-select: none;
+        background: radial-gradient(
+          ellipse at center,
+          #b8accf 0%,
+          #a99cff 55%,
+          #9385e8 100%
+        );
+        color: #ffffff;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      }
+      .splash-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .splash-logo {
+        width: 124px;
+        height: 124px;
+        margin-bottom: 32px;
+        filter: drop-shadow(0 10px 36px rgba(0, 0, 0, 0.28));
+        opacity: 0;
+        transform: translateY(24px) scale(0.85);
+        animation: splash-logo-in 850ms cubic-bezier(0.34, 1.4, 0.64, 1) 80ms forwards;
+      }
+      .splash-name {
+        font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+        font-weight: 600;
+        font-size: 26px;
+        letter-spacing: 0.1em;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+        opacity: 0;
+        transform: translateY(10px);
+        animation: splash-fade-up 650ms cubic-bezier(0.4, 0, 0.2, 1) 550ms forwards;
+      }
+      .splash-tagline {
+        font-weight: 400;
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        color: rgba(255, 255, 255, 0.82);
+        margin-top: 14px;
+        opacity: 0;
+        transform: translateY(10px);
+        animation: splash-fade-up 650ms cubic-bezier(0.4, 0, 0.2, 1) 800ms forwards;
+      }
+      .splash-bar {
+        width: 220px;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.22);
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+        margin-top: 42px;
+        opacity: 0;
+        animation: splash-fade-in 500ms ease-out 1100ms forwards;
+      }
+      .splash-bar::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        background: #ffffff;
+        border-radius: 999px;
+        animation: splash-progress 1.4s ease-in-out infinite;
+      }
+      .splash-status {
+        font-weight: 400;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        color: rgba(255, 255, 255, 0.6);
+        margin-top: 16px;
+        min-height: 14px;
+        opacity: 0;
+        animation: splash-fade-in 500ms ease-out 1400ms forwards;
+      }
+      @keyframes splash-logo-in {
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      @keyframes splash-fade-up {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes splash-fade-in {
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes splash-progress {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="splash-stage">
+      <img class="splash-logo" src="./assets/pdr-logo_transparent.png" alt="" />
+      <div class="splash-name">PHOTO DATE RESCUE</div>
+      <div class="splash-tagline">Bring every photo home</div>
+      <div class="splash-bar"></div>
+      <div class="splash-status" id="splash-status"></div>
+    </div>
+    <script>
+      // Listen for status updates from the main process via the IPC
+      // channel established in preload-splash.js. The main process posts
+      // progress text (e.g. "Cleaning up extracted files…",
+      // "Verifying library…") so the user has context for what's
+      // happening behind the splash. Silent fallback if the bridge
+      // isn't available — the status line just stays blank.
+      try {
+        if (window.pdrSplash && typeof window.pdrSplash.onStatus === 'function') {
+          window.pdrSplash.onStatus(function (text) {
+            var el = document.getElementById('splash-status');
+            if (el) el.textContent = text || '';
+          });
+        }
+      } catch (err) {
+        // Best-effort — splash works fine without status text.
+      }
+    </script>
+  </body>
+</html>

@@ -423,23 +423,192 @@ async function streamCopyFile(src, dest, computeHash = false) {
         readStream.pipe(writeStream);
     });
 }
+// ─── v2.0.11 startup sequence: splash window + utilityProcess + hidden
+// workspace window, coordinated by maybeFinishStartup().
+//
+// Terry 2026-05-24: the chunked-cleanup approach still froze the
+// startup because too many things competed on the main browser
+// thread. The only architecture that delivers "splash interactive
+// throughout, workspace appears ready-to-use" is the loading-screen
+// pattern from premium native apps:
+//
+//   1. createSplashWindow() — small BrowserWindow with its own
+//      renderer process. Stays interactive (drag/resize) regardless
+//      of what the rest of the app is doing because its renderer
+//      is idle.
+//   2. spawnStartupWorker() — utilityProcess that runs the heavy
+//      cleanup (DB stale-file walk, orphan-sweep on PDR_Temp). Its
+//      own process = main browser thread stays unblocked = message
+//      pump always responsive.
+//   3. createWindow() — workspace BrowserWindow with show: false.
+//      Mounts in the background while the splash is up. Doesn't
+//      reveal until BOTH the renderer's ready-to-show fires AND the
+//      worker has posted 'done' AND the splash min-time has elapsed.
+//
+// maybeFinishStartup() is the gate. Each of the three signals
+// (splashMinElapsed, workerDone, workspaceReadyToShow) calls it; it
+// only swaps when all three are true.
+let splashWindow = null;
+let startupWorker = null;
+let workerDone = false;
+let workspaceReadyToShow = false;
+let splashMinElapsed = false;
+let startupSwapped = false;
+const SPLASH_MIN_MS = 3000;
+const SPLASH_HARD_MAX_MS = 60000;
+function createSplashWindow() {
+    splashWindow = new BrowserWindow({
+        width: 600,
+        height: 400,
+        minWidth: 400,
+        minHeight: 280,
+        frame: false,
+        resizable: true,
+        movable: true,
+        show: true,
+        backgroundColor: '#a99cff',
+        icon: app.isPackaged
+            ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
+            : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
+        webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+        },
+    });
+    const splashHtml = path.join(__dirname, '../dist/public/splash.html');
+    splashWindow.loadFile(splashHtml).catch((err) => {
+        log.warn(`[Startup] splash loadFile failed: ${err.message}`);
+    });
+    splashWindow.center();
+    // Min-time floor — even on a fast machine with nothing to clean up,
+    // the splash should hold for a beat so it never feels rushed.
+    setTimeout(() => {
+        splashMinElapsed = true;
+        maybeFinishStartup();
+    }, SPLASH_MIN_MS);
+    // Hard ceiling — if the worker hangs (e.g. corrupt DB, locked
+    // filesystem), don't trap the user behind the splash forever.
+    setTimeout(() => {
+        if (!startupSwapped) {
+            log.warn(`[Startup] Hard timeout ${SPLASH_HARD_MAX_MS}ms — forcing swap (worker may still be running)`);
+            workerDone = true;
+            maybeFinishStartup();
+        }
+    }, SPLASH_HARD_MAX_MS);
+}
+function spawnStartupWorker() {
+    const workerPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'dist-electron/startup-worker.cjs')
+        : path.join(__dirname, 'startup-worker.cjs');
+    // Resolve runtime config the worker needs. app.getPath() isn't
+    // available inside a utilityProcess, so we pass the paths in
+    // explicitly via the 'init' message.
+    const dbPath = path.join(app.getPath('userData'), 'search-index', 'pdr-search.db');
+    const tempRoots = [];
+    tempRoots.push(path.join(os.tmpdir(), 'PDR_Temp'));
+    try {
+        const status = getLibraryStatus();
+        const libRoot = status?.libraryRoot;
+        if (libRoot)
+            tempRoots.push(path.join(libRoot, 'PDR_Temp'));
+    }
+    catch { /* best-effort */ }
+    // Worker only deletes loose files when sources are persisted (sub-
+    // folders may be active extractions); does a full sweep otherwise.
+    // Main process doesn't know what's in renderer-side localStorage,
+    // so we conservatively pass true (loose-files-only) whenever
+    // settings.destinationPath is set — better to skip sub-folders
+    // accidentally than to wipe an in-progress extraction. The
+    // renderer's later check picks up any miss.
+    let hasPersistedSources = false;
+    try {
+        hasPersistedSources = !!getSettings()?.destinationPath;
+    }
+    catch { /* fallback false */ }
+    try {
+        startupWorker = utilityProcess.fork(workerPath, [], {
+            serviceName: 'PDR Startup Worker',
+            stdio: 'pipe',
+        });
+    }
+    catch (err) {
+        log.warn(`[Startup Worker] fork failed (skipping cleanup): ${err.message}`);
+        workerDone = true;
+        maybeFinishStartup();
+        return;
+    }
+    startupWorker.stdout?.on('data', (chunk) => {
+        log.info(`[startup-worker stdout] ${chunk.toString().trim()}`);
+    });
+    startupWorker.stderr?.on('data', (chunk) => {
+        log.warn(`[startup-worker stderr] ${chunk.toString().trim()}`);
+    });
+    startupWorker.on('message', (msg) => {
+        const m = msg;
+        if (m?.type === 'progress') {
+            try {
+                splashWindow?.webContents.send('splash:status', m.text);
+            }
+            catch { /* best-effort */ }
+        }
+        else if (m?.type === 'done') {
+            log.info(`[Startup Worker] done — ${JSON.stringify(m.summary)}`);
+            workerDone = true;
+            try {
+                startupWorker?.kill();
+            }
+            catch { /* best-effort */ }
+            startupWorker = null;
+            maybeFinishStartup();
+        }
+    });
+    startupWorker.on('exit', (code) => {
+        log.info(`[Startup Worker] exited code=${code}`);
+        if (!workerDone) {
+            workerDone = true;
+            maybeFinishStartup();
+        }
+    });
+    startupWorker.postMessage({
+        type: 'init',
+        dbPath,
+        tempRoots,
+        hasPersistedSources,
+    });
+}
+function maybeFinishStartup() {
+    if (startupSwapped)
+        return;
+    if (!splashMinElapsed)
+        return;
+    if (!workerDone)
+        return;
+    if (!workspaceReadyToShow)
+        return;
+    startupSwapped = true;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+    }
+    if (splashWindow && !splashWindow.isDestroyed()) {
+        try {
+            splashWindow.close();
+        }
+        catch { /* best-effort */ }
+        splashWindow = null;
+    }
+}
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1280,
         height: 800,
         minWidth: 1100,
         minHeight: 700,
-        // v2.0.11 — show: false + ready-to-show pattern. The OS no longer
-        // paints an empty white-shell window while Chromium loads the HTML
-        // and React boots. Window stays hidden until the renderer signals
-        // it has rendered its first frame (the boot splash), at which
-        // point we show it already painted. Eliminates Terry 2026-05-24's
-        // "unmoveable window + Windows ghosting it white" startup symptom.
+        // v2.0.11 — show: false, revealed by maybeFinishStartup() once
+        // the splash min-time has elapsed AND the startup worker has
+        // posted 'done' AND the renderer has fired ready-to-show. See
+        // the comment block above the splash/worker helpers for the full
+        // architecture rationale.
         show: false,
-        // Match the splash's lavender radial-gradient base so any sub-frame
-        // flash between OS-window-shown and renderer-painted is consistent
-        // with the loading state — was '#f6f6fb' (pale lilac) which read
-        // as washed-out / empty against the lavender title bar.
         backgroundColor: '#a99cff',
         titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
         thickFrame: true,
@@ -461,14 +630,14 @@ function createWindow() {
         },
     });
     hardenWindowAgainstNavigation(mainWindow);
-    // v2.0.11 — surface the window only after Chromium has rendered the
-    // first frame (the inline boot splash from index.html). Without this
-    // the OS draws the window the moment BrowserWindow is constructed,
-    // leaving the user staring at an empty shell while React boots —
-    // worse, on Windows the unmoveable shell gets ghosted to white as
-    // "Not responding" if the user tries to drag it.
+    // v2.0.11 — ready-to-show flips the coordinator's
+    // workspaceReadyToShow flag; the actual show() call happens inside
+    // maybeFinishStartup() once the splash min-time + worker-done
+    // signals are also satisfied. See the comment block above
+    // createSplashWindow() for the full sequence.
     mainWindow.once('ready-to-show', () => {
-        mainWindow?.show();
+        workspaceReadyToShow = true;
+        maybeFinishStartup();
     });
     mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
     // Surface renderer [inline-video] / [video] console messages in main log.
@@ -1589,6 +1758,20 @@ app.whenReady().then(() => {
     });
     // Remove default Electron menus — custom title bar replaces them
     Menu.setApplicationMenu(null);
+    // v2.0.11 — three-stage startup sequence (see helpers above for
+    // the full architecture rationale):
+    //   1. Splash window appears IMMEDIATELY in its own process so the
+    //      user always sees a polished, interactive surface from frame
+    //      one (drag, resize, no white shell, no Not Responding).
+    //   2. Startup worker forks as a utilityProcess and runs DB
+    //      cleanup + orphan-sweep on PDR_Temp without ever touching the
+    //      main browser thread.
+    //   3. Workspace window is created with show: false. Its renderer
+    //      mounts in parallel with the worker's cleanup. Both must
+    //      finish before maybeFinishStartup() swaps the splash for the
+    //      workspace.
+    createSplashWindow();
+    spawnStartupWorker();
     createWindow();
     // Wire electron-updater after the main window exists so the updater
     // can broadcast state events to the renderer over webContents.send.
@@ -4735,54 +4918,12 @@ ipcMain.handle('scannerOverride:clear', async (_event, args) => {
 // ─── Search & Discovery IPC handlers ─────────────────────────────────────────
 ipcMain.handle('search:init', async () => {
     const result = initDatabase();
-    // v2.0.11 — runDatabaseCleanup is now BACKGROUNDED.
-    //
-    // Pre-v2.0.11 this ran synchronously inside the IPC handler, which
-    // meant the renderer's initSearchDatabase() call blocked for the
-    // full 6+ seconds that the cleanup took to walk 26k DB rows checking
-    // each file existed on disk. During that block, every OTHER IPC the
-    // renderer fired (library:status, window drag signals, drive lookups,
-    // etc.) queued up behind it. Combined with the OS-window-shown-before-
-    // renderer gap, this is what made startup feel frozen on Terry's
-    // 2026-05-24 report.
-    //
-    // The cleanup itself doesn't need to block the IPC response — its
-    // outputs are async toasts (staleRuns event) and DB-side cleanup
-    // that doesn't affect query correctness. So we resolve initDatabase
-    // immediately and fire the cleanup 2 seconds later, giving the boot
-    // splash time to render, the window time to settle, and the renderer
-    // its initial useEffect chain a window of clean responsiveness before
-    // the main process gets busy.
-    if (result.success) {
-        // v2.0.11 — cleanup fires IMMEDIATELY now. Previous iterations
-        // deferred by 2 s then 5 s out of paranoia that the cleanup would
-        // freeze the boot splash. With the setImmediate-yielding inside
-        // runDatabaseCleanup (chunked batches of 500 rows), the main
-        // thread stays responsive THROUGHOUT the cleanup — the message
-        // pump runs between every batch. So the splash genuinely covers
-        // the work: cleanup starts at ~T+800ms (workspace mount), runs
-        // chunked while the splash is visible, finishes well before or
-        // alongside the splash dismiss at T+5s. Terry 2026-05-24: "Why
-        // isn't it cleaning up the Temp folder while the splash screen
-        // is visible? Isn't the whole reason for the splash screen to
-        // hide the lag from the deletion?"
-        (async () => {
-            try {
-                const cleanup = await runDatabaseCleanup();
-                if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
-                    console.log(`[Startup Cleanup] Removed: ${cleanup.duplicateRunsRemoved} duplicate runs, ${cleanup.ghostRunsRemoved} ghost runs, ${cleanup.orphanRunsRemoved} orphan runs, ${cleanup.duplicatesRemoved} duplicate files, ${cleanup.staleRemoved} stale files (checked ${cleanup.totalChecked} total)`);
-                }
-                // Send stale runs to renderer for user decision (relocate/reconnect/remove)
-                if (cleanup.staleRuns.length > 0) {
-                    console.log(`[Startup] ${cleanup.staleRuns.length} indexed run(s) have missing destination folders — prompting user`);
-                    mainWindow?.webContents.send('search:staleRuns', cleanup.staleRuns);
-                }
-            }
-            catch (err) {
-                console.error('[Startup Cleanup] Error:', err.message);
-            }
-        })();
-    }
+    // v2.0.11 — runDatabaseCleanup no longer runs here. The startup
+    // worker (utilityProcess, see createSplashWindow / spawnStartupWorker
+    // above) handles all the DB stale-file + orphan-run cleanup BEFORE
+    // the workspace renderer mounts. By the time this IPC fires the DB
+    // is already clean. Running it again here would be wasted work +
+    // contention with the main thread.
     return result;
 });
 ipcMain.handle('search:indexRun', async (_event, reportId) => {
