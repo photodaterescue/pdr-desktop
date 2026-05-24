@@ -4128,9 +4128,21 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               );
             })}
           </div>
+          {/* v2.0.11 (Terry 2026-05-24) — one-large-ZIP-at-a-time hint.
+              Appears when at least one ZIP source is already in the
+              menu, sitting between the sources list and the Add Source
+              button so the rule is visible BEFORE the user tries to
+              add a second one. Specific ~50 GB number prevents the
+              ambiguity Terry called out — "Google Takeout's max" so
+              users know their full Takeout fits comfortably. */}
+          {sources.some(s => s.type === 'zip') && (
+            <p className="mt-3 mx-2 text-[11px] leading-snug text-muted-foreground">
+              PDR unpacks one large ZIP at a time (up to ~50 GB — Google Takeout's max) to keep your library safe. You can still add folders or drives alongside. Come back after the Fix to add another big ZIP.
+            </p>
+          )}
           <div className="flex gap-2 mt-2 px-2">
             <IconTooltip
-              label={sourceMutationsBlocked ? sourceMutationsBlockedTooltip + (fixActive ? ' — analyzing a new source mid-fix would compete with the engine.' : ' — adding a new source mid-analysis would race the worker.') : 'Add a folder, drive or zip as a source for PDR'}
+              label={sourceMutationsBlocked ? sourceMutationsBlockedTooltip + (fixActive ? ' — analyzing a new source mid-fix would compete with the engine.' : ' — adding a new source mid-analysis would race the worker.') : 'Add a folder, drive or zip as a source for PDR. PDR unpacks one large ZIP at a time (up to ~50 GB — Google Takeout\'s max).'}
               side="top"
             >
               <Button

@@ -428,7 +428,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'add-source',
     targetSelector: '[data-tour="add-source"]',
     title: 'Add a Source',
-    description: 'Click Add Source to open the Folder Browser — a custom picker that shows every drive on your machine with speed and capacity ratings, plus your Quick Access folders. Pick a folder, drive, or ZIP/RAR archive containing the photos you want to fix. You can add as many Sources as you like.',
+    description: 'Click Add Source to open the Folder Browser — a custom picker that shows every drive on your machine with speed and capacity ratings, plus your Quick Access folders. Pick a folder, drive, or ZIP/RAR archive containing the photos you want to fix. You can add as many folders and drives as you like; PDR unpacks one large ZIP at a time (up to ~50 GB — Google Takeout\'s max size) to keep your library safe.',
     position: 'bottom',
     highlightPadding: 8
   },

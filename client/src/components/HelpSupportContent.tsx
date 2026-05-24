@@ -250,6 +250,10 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                       <dd className="text-muted-foreground mt-0.5">A folder, zip, RAR archive, or drive containing photos and videos you want PDR to process. A Fix can include many Sources at once.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Why one large ZIP at a time?</dt>
+                      <dd className="text-muted-foreground mt-0.5">A large ZIP (e.g. a full Google Photos Takeout — up to ~50 GB, Google's max per download) has to be unpacked into a temporary workspace before PDR can read each photo's metadata. PDR caps that workspace at one large ZIP at a time so a partial extraction can't fill your drive or trip you up if something goes wrong mid-way. Folders, drives, and small archives can still be added alongside the large ZIP for the same Fix — only a SECOND large ZIP needs to wait until the current one is fixed.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Fix / Run Fix</dt>
                       <dd className="text-muted-foreground mt-0.5">A processing pass. PDR analyzes every file across all your Sources, works out the right date, then copies the file to your Library Drive with the corrected date in EXIF, in the filename, and in a clean year-by-year folder.</dd>
                     </div>
