@@ -710,6 +710,17 @@ function spawnStartupWorker(): void {
   });
 }
 
+// v2.0.11 (Terry 2026-05-24) — renderer-side ready signal. Sent from
+// client/src/main.tsx after React has committed its first frame AND
+// the browser has painted it (double-RAF). Replaces the use of the
+// BrowserWindow's ready-to-show event as the workspace-ready signal,
+// which fired too early (on body-background paint, before React).
+ipcMain.on('workspace:first-frame', () => {
+  if (workspaceReadyToShow) return;
+  workspaceReadyToShow = true;
+  maybeFinishStartup();
+});
+
 function maybeFinishStartup(): void {
   if (startupSwapped) return;
   if (!splashMinElapsed) return;
@@ -791,15 +802,20 @@ function createWindow() {
   });
   hardenWindowAgainstNavigation(mainWindow);
 
-  // v2.0.11 — ready-to-show flips the coordinator's
-  // workspaceReadyToShow flag; the actual show() call happens inside
-  // maybeFinishStartup() once the splash min-time + worker-done
-  // signals are also satisfied. See the comment block above
-  // createSplashWindow() for the full sequence.
-  mainWindow.once('ready-to-show', () => {
-    workspaceReadyToShow = true;
-    maybeFinishStartup();
-  });
+  // v2.0.11 (Terry 2026-05-24) — DON'T trigger workspaceReadyToShow
+  // from ready-to-show. Chromium fires that event the moment it paints
+  // the first frame of the document — but the first frame is just the
+  // bare HTML body (lavender background) with React not yet mounted.
+  // Showing the window at that point flashed a single lavender frame
+  // before the workspace UI rendered on top (Terry called it "the old
+  // splash trying to load for a split second").
+  //
+  // Trigger now fires when the renderer sends 'workspace:first-frame'
+  // via IPC — see the ipcMain.on handler below + client/src/main.tsx
+  // which sends the signal after React's first commit + paint. By the
+  // time the splash dismisses and the workspace shows, the workspace
+  // UI is already painted in Chromium's offscreen buffer — no flash.
+  // SPLASH_HARD_MAX_MS is the global safety net if the IPC never fires.
 
 	mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
 

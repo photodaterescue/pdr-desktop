@@ -5,6 +5,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pdr', {
+  // v2.0.11 (Terry 2026-05-24) — renderer-side workspace-ready signal.
+  // Sent from main.tsx after React commits its first frame so the
+  // main process can reveal the workspace BrowserWindow WITHOUT
+  // flashing the bare lavender body background first. Fire-and-forget
+  // (send, not invoke) since main doesn't need to reply.
+  workspaceFirstFrame: () => ipcRenderer.send('workspace:first-frame'),
+
   runAnalysis: (sourcePath: string, sourceType: 'folder' | 'zip' | 'drive', tempDirOverride?: string) =>
   ipcRenderer.invoke('analysis:run', sourcePath, sourceType, tempDirOverride),
 
