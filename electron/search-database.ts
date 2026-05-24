@@ -1241,7 +1241,7 @@ export function getDb(): Database.Database {
   if (!db) {
     const result = initDatabase();
     if (!result.success) {
-      throw new Error(`Database not initialised: ${result.error}`);
+      throw new Error(`Database not initialized: ${result.error}`);
     }
   }
   return db!;

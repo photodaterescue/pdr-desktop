@@ -126,7 +126,13 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
   const mouseDownOnBackdropRef = useRef(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [quickAccess, setQuickAccess] = useState<QuickAccessPaths | null>(null);
-  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
+  // v2.0.11 — Quick Access expanded by default. Users were missing the
+  // shortcut row entirely because the collapsed chevron blended into
+  // the sidebar; expanding by default puts Desktop / Documents /
+  // Pictures / Downloads + saved locations one click away from the
+  // Add Source modal opening. The user can still collapse it if they
+  // want more room for the All Drives grid.
+  const [quickAccessOpen, setQuickAccessOpen] = useState(true);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(false);

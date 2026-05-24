@@ -2099,8 +2099,29 @@ ipcMain.handle('browser:listDrives', async () => {
           type: typeLabel,
           totalBytes: size,
           freeBytes: freeSpace,
+          driveType,
         };
-      }).filter(d => d.letter);
+      }).filter(d => {
+        if (!d.letter) return false;
+        // v2.0.11 — hide non-storage devices that Windows still assigns
+        // a drive letter to. Caught by Techtime with Timmy 2026-05-24:
+        // a wireless keyboard receiver showed up in the Pick Library
+        // Drive picker because its tiny onboard chip is enumerated as
+        // removable storage. Same pattern catches empty SD card reader
+        // slots and any other dongles whose embedded firmware happens
+        // to look like a FAT volume.
+        //
+        // CD/DVD drives: always hide (read-only optical media is never
+        // a viable Library Drive).
+        if (d.driveType === 5) return false;
+        // Removable drives smaller than 1 GB: hide. Real removable
+        // storage (USB sticks, SD cards) has been 4 GB+ for over a
+        // decade — anything sub-1-GB on a removable bus is a peripheral
+        // dongle / empty slot, never a real drive a user would pick.
+        // totalBytes === 0 also caught here (empty card-reader slots).
+        if (d.driveType === 2 && d.totalBytes < 1024 * 1024 * 1024) return false;
+        return true;
+      }).map(({ driveType: _dt, ...rest }) => rest);
     }
     return [];
   } catch (error) {
@@ -2628,6 +2649,45 @@ ipcMain.handle('prescan:run', async (_event, sourcePath: string, sourceType: 'fo
 // possible names (zip-style and rar-style) and clean any that
 // match. Best-effort — never fails the IPC call even if the dir is
 // already gone.
+// v2.0.11 — orphan-source detection. The renderer calls this on
+// Workspace mount with the rehydrated source list. For each archive-
+// type source (zip / rar), we check whether its deterministic
+// extraction folder still exists. If neither candidate folder exists,
+// the source row is an orphan (extraction was deleted or moved) and
+// the renderer drops it from localStorage with a toast.
+//
+// Folder / drive sources are NOT extraction-backed, so they're
+// reported as present regardless. A disconnected SOURCE drive (the
+// drive holding the original .zip) is also reported as present
+// because Fix actually copies from the extraction on the Library
+// Drive — not from the original .zip — so an unreachable source
+// drive is fine as long as the extraction is there.
+ipcMain.handle('analysis:checkExtractionsForSources', async (_event, requests: Array<{ path: string; type: string }>) => {
+  if (!Array.isArray(requests)) return { success: false, results: [] };
+  const results: Array<{ path: string; hasExtraction: boolean; needsExtraction: boolean }> = [];
+  for (const req of requests) {
+    if (!req || typeof req.path !== 'string' || req.path.length === 0) {
+      results.push({ path: req?.path ?? '', hasExtraction: true, needsExtraction: false });
+      continue;
+    }
+    // Folder + drive sources don't need an extraction. The source IS
+    // the data; no PDR_Temp working copy is involved. Report present.
+    if (req.type !== 'zip' && req.type !== 'rar') {
+      results.push({ path: req.path, hasExtraction: true, needsExtraction: false });
+      continue;
+    }
+    const candidates: string[] = [];
+    try { candidates.push(generateTempDirName(req.path)); } catch { /* malformed */ }
+    try { candidates.push(generateRarTempDirName(req.path)); } catch { /* malformed */ }
+    let found = false;
+    for (const td of candidates) {
+      if (activeTempDirs.has(td) || fs.existsSync(td)) { found = true; break; }
+    }
+    results.push({ path: req.path, hasExtraction: found, needsExtraction: true });
+  }
+  return { success: true, results };
+});
+
 ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: string) => {
   if (typeof sourcePath !== 'string' || sourcePath.length === 0) {
     return { success: false, cleaned: 0 };
@@ -2662,16 +2722,24 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
   // a clear "still locked — close any open Explorer windows + retry"
   // message instead of silently lying.
   let cleaned = 0;
+  // v2.0.11 — sum bytes removed so the renderer can show a single
+  // "Reclaimed X GB" toast after a Clear-Sources bulk cleanup (or the
+  // sidebar's bulk remove). Measured BEFORE the delete; size probe
+  // failures are swallowed and contribute 0 — never blocks the clean.
+  let bytesRemoved = 0;
   const failedPaths: Array<{ path: string; reason: string }> = [];
   const candidates: string[] = [];
   try { candidates.push(generateTempDirName(sourcePath)); } catch { /* malformed path */ }
   try { candidates.push(generateRarTempDirName(sourcePath)); } catch { /* malformed path */ }
   for (const td of candidates) {
     if (activeTempDirs.has(td)) {
+      let sizeBytes = 0;
+      try { sizeBytes = await asyncFolderSizeBytes(td); } catch { /* ignore */ }
       const result = cleanupTempDir(td);
       if (result.ok) {
         activeTempDirs.delete(td);
         cleaned++;
+        bytesRemoved += sizeBytes;
       } else {
         failedPaths.push({ path: td, reason: result.reason ?? 'unknown' });
       }
@@ -2679,21 +2747,24 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
       // Edge case: dir exists but isn't tracked (e.g. left over from
       // a prior session that didn't clean up cleanly). Reap it
       // anyway so the user gets the disk space back.
+      let sizeBytes = 0;
+      try { sizeBytes = await asyncFolderSizeBytes(td); } catch { /* ignore */ }
       const result = cleanupTempDir(td);
       if (result.ok) {
         cleaned++;
+        bytesRemoved += sizeBytes;
       } else {
         failedPaths.push({ path: td, reason: result.reason ?? 'unknown' });
       }
     }
   }
   if (cleaned > 0) {
-    console.log(`[Source remove] Cleaned up ${cleaned} extracted temp dir${cleaned === 1 ? '' : 's'} for source: ${sourcePath}`);
+    console.log(`[Source remove] Cleaned up ${cleaned} extracted temp dir${cleaned === 1 ? '' : 's'} for source: ${sourcePath} — freed ${(bytesRemoved / (1024 ** 3)).toFixed(2)} GB`);
   }
   if (failedPaths.length > 0) {
     log.warn(`[Source remove] ${failedPaths.length} temp dir(s) failed to remove for ${sourcePath}: ${failedPaths.map(f => f.path).join(', ')}`);
   }
-  return { success: true, cleaned, failedPaths };
+  return { success: true, cleaned, bytesRemoved, failedPaths };
 });
 
 // Workspace-empty orphan sweep. Called by the renderer on mount when
@@ -4343,28 +4414,19 @@ ipcMain.handle('files:copy', async (_event, data: {
     //  • cleanupTempDir() is best-effort and won't throw if a file is
     //    locked — the existing before-quit + startup-orphan sweeps
     //    are the safety net for the rare locked-file case.
-    try {
-      const usedTempDirs = new Set<string>();
-      for (const tempDir of activeTempDirs) {
-        const tempDirPrefix = tempDir + path.sep;
-        for (const file of files) {
-          const sp = file.sourcePath;
-          if (sp === tempDir || (typeof sp === 'string' && sp.startsWith(tempDirPrefix))) {
-            usedTempDirs.add(tempDir);
-            break;
-          }
-        }
-      }
-      for (const tempDir of usedTempDirs) {
-        console.log(`[Fix] Cleaning up extracted temp dir after successful copy: ${tempDir}`);
-        cleanupTempDir(tempDir);
-        activeTempDirs.delete(tempDir);
-      }
-    } catch (cleanupErr) {
-      // Best-effort — never block the success return on a cleanup
-      // glitch. Worst case: temp dir lingers until app quit.
-      console.warn(`[Fix] Post-copy temp-dir cleanup encountered an error (continuing):`, cleanupErr);
-    }
+    // v2.0.11 (revised) — DO NOT delete the extracted temp dirs here.
+    // The Fix Complete modal then asks the user "Clear sources?" — if
+    // they pick Keep Sources, the source row stays in the menu and is
+    // expected to remain functional (re-analyze, extra Fix, etc.).
+    // Earlier v2.0.11 wiped the temp dir the moment Fix succeeded,
+    // which broke the Keep-Sources path (source row alive but its
+    // backing extraction gone — Terry caught this 2026-05-23).
+    // Cleanup now happens via the existing user-driven paths:
+    //   • Clear Sources modal → pdr-clear-sources event → reapTempDirsForSources
+    //   • Manual remove from Source Menu → analysis:cleanupTempDirForSource
+    //   • App quit / launch orphan sweep → catch-all safety net
+    // Disk space comes back when the user explicitly says they're done
+    // with the source, not as a hidden side effect of a successful Fix.
 
     return { success: true, results, copied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length, duplicatesRemoved, duplicateFiles, skippedExisting };
   } catch (error) {
@@ -4728,7 +4790,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload: { description?: string; 
     // Licence state — captured (without the key itself) so support
     // can tell at a glance whether the user is licensed, in grace,
     // offline-only, etc. without having to dig through the log.
-    let licenceSummary = '(licence state unavailable)';
+    let licenceSummary = '(license state unavailable)';
     try {
       const status = await getLicenseStatus();
       licenceSummary = [
@@ -4741,7 +4803,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload: { description?: string; 
         `customerEmail: ${status.customerEmail ?? 'n/a'}`,
       ].join('\n');
     } catch (licErr) {
-      licenceSummary = `(error fetching licence: ${(licErr as Error).message})`;
+      licenceSummary = `(error fetching license: ${(licErr as Error).message})`;
     }
 
     // Bundle main.log + main.old.log + system-info.txt into a single
@@ -4772,7 +4834,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload: { description?: string; 
         '─── system info ───',
         info,
         '',
-        '─── licence state ───',
+        '─── license state ───',
         licenceSummary,
         '',
         '─── user description ───',
@@ -4793,7 +4855,7 @@ ipcMain.handle('app:reportProblem', async (_e, payload: { description?: string; 
       info,
       userEmail ? `Return address: ${userEmail}` : '',
       '',
-      '─── licence state ───',
+      '─── license state ───',
       licenceSummary,
       '',
       '─── recent log (last 200 lines) ───',

@@ -221,7 +221,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                   <dl className="space-y-2">
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Library Drive</dt>
-                      <dd className="text-muted-foreground mt-0.5">The drive your organised photos and videos live on, picked once during setup. PDR rates each connected drive on speed, capacity and reliability via the Library Drive Advisor so you can choose confidently. Internal motherboard-connected drives are usually the fastest pick.</dd>
+                      <dd className="text-muted-foreground mt-0.5">The drive your organized photos and videos live on, picked once during setup. PDR rates each connected drive on speed, capacity and reliability via the Library Drive Advisor so you can choose confidently. Internal motherboard-connected drives are usually the fastest pick.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Library Database (LDB)</dt>
@@ -229,7 +229,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Master library</dt>
-                      <dd className="text-muted-foreground mt-0.5">Your complete, definitive library — every photo and video PDR has fixed for you, organised year by year on your Library Drive.</dd>
+                      <dd className="text-muted-foreground mt-0.5">Your complete, definitive library — every photo and video PDR has fixed for you, organized year by year on your Library Drive.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Parallel Libraries</dt>
@@ -251,7 +251,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Fix / Run Fix</dt>
-                      <dd className="text-muted-foreground mt-0.5">A processing pass. PDR analyses every file across all your Sources, works out the right date, then copies the file to your Library Drive with the corrected date in EXIF, in the filename, and in a clean year-by-year folder.</dd>
+                      <dd className="text-muted-foreground mt-0.5">A processing pass. PDR analyzes every file across all your Sources, works out the right date, then copies the file to your Library Drive with the corrected date in EXIF, in the filename, and in a clean year-by-year folder.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Confirmed</dt>

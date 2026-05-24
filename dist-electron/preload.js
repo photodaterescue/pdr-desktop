@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('pdr', {
     // { success, cleaned } where cleaned is the number of temp
     // directories actually deleted.
     cleanupTempDirForSource: (sourcePath) => ipcRenderer.invoke('analysis:cleanupTempDirForSource', sourcePath),
+    // v2.0.11 — orphan-source detection on rehydrate. Returns
+    // { success, results: Array<{ path, hasExtraction, needsExtraction }> }
+    // The renderer drops sources where hasExtraction=false AND
+    // needsExtraction=true (zip/rar with the extraction folder gone).
+    checkExtractionsForSources: (requests) => ipcRenderer.invoke('analysis:checkExtractionsForSources', requests),
     // Launch-time orphan sweep. Called by the renderer on FIRST mount.
     // Two modes:
     //   - looseFilesOnly:false (default) — sources are empty, full sweep

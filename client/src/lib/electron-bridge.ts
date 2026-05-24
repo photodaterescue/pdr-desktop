@@ -256,11 +256,26 @@ export function removeAnalysisDiagnosticListener(): void {
  *  couldn't be deleted (Windows Search Indexer / preview pane /
  *  AV held a lock); renderer surfaces these via toast so the user
  *  knows to close other apps and retry. */
-export async function cleanupTempDirForSource(sourcePath: string): Promise<{ success: boolean; cleaned: number; failedPaths?: Array<{ path: string; reason: string }> }> {
+export async function cleanupTempDirForSource(sourcePath: string): Promise<{ success: boolean; cleaned: number; bytesRemoved?: number; failedPaths?: Array<{ path: string; reason: string }> }> {
   if (isElectron() && typeof (window as any).pdr?.cleanupTempDirForSource === 'function') {
     return await (window as any).pdr.cleanupTempDirForSource(sourcePath);
   }
   return { success: false, cleaned: 0 };
+}
+
+/** v2.0.11 — orphan-source detection. Pass the rehydrated source list
+ *  on mount; backend reports which sources have lost their extraction
+ *  folder. Renderer drops orphans from localStorage with a toast.
+ *  Returns success=false in web demo (no backend), in which case the
+ *  caller should treat all sources as non-orphan (preserve existing
+ *  state). */
+export async function checkExtractionsForSources(
+  requests: Array<{ path: string; type: string }>,
+): Promise<{ success: boolean; results: Array<{ path: string; hasExtraction: boolean; needsExtraction: boolean }> }> {
+  if (isElectron() && typeof (window as any).pdr?.checkExtractionsForSources === 'function') {
+    return await (window as any).pdr.checkExtractionsForSources(requests);
+  }
+  return { success: false, results: [] };
 }
 
 /** Launch-time orphan sweep. Two modes:

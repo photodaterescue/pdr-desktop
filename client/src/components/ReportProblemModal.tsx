@@ -124,7 +124,7 @@ export function ReportProblemModal({ onClose, initialDescription }: ReportProble
               </h4>
               <p className="text-xs text-muted-foreground max-w-sm">
                 {diagnosticZipPath
-                  ? 'Drag the diagnostic ZIP from the folder we just opened into the email before sending. It bundles your log + system info + licence state.'
+                  ? 'Drag the diagnostic ZIP from the folder we just opened into the email before sending. It bundles your log + system info + license state.'
                   : 'Drag main.log from the folder we just opened into the email before sending.'}
               </p>
 

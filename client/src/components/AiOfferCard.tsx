@@ -120,10 +120,10 @@ export function AiOfferCard({ surface = 'dashboard' }: AiOfferCardProps) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-h2 text-foreground">
-          {dismissed ? 'Your library has grown — recognise people and content?' : 'Your photos are organised. Take it further?'}
+          {dismissed ? 'Your library has grown — recognize people and content?' : 'Your photos are organized. Take it further?'}
         </p>
         <p className="text-body-muted mt-1">
-          Let PDR recognise people and what's in your photos — searchable by face and by content (sunset, beach, pet…). One-time ~300 MB download, then runs in the background, about a minute per 100 photos. Everything stays on your device.
+          Let PDR recognize people and what's in your photos — searchable by face and by content (sunset, beach, pet…). One-time ~300 MB download, then runs in the background, about a minute per 100 photos. Everything stays on your device.
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">

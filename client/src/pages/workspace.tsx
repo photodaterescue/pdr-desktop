@@ -145,13 +145,39 @@ interface Source {
 // hidden failure here is the bug Terry hit when he found stale folders
 // in PDR_Temp after sources had been cleared.
 function reapTempDirsForSources(toReap: Source[]): void {
-  for (const src of toReap) {
-    if (src.path) {
-      cleanupTempDirForSource(src.path).catch((err: unknown) => {
+  const sourcesWithPaths = toReap.filter(s => !!s.path);
+  if (sourcesWithPaths.length === 0) return;
+  // v2.0.11 — fire all cleanups in parallel, then aggregate bytesRemoved
+  // across the whole batch and toast a single "Reclaimed X GB" message.
+  // Earlier v2.0.11 toasted on Fix complete, which fired even when the
+  // user picked Keep Sources from the post-fix prompt (no cleanup had
+  // happened yet). Tying the toast to the actual cleanup keeps the
+  // message honest. Threshold of 1 MB skips trivial cleanups.
+  void Promise.all(
+    sourcesWithPaths.map(src =>
+      cleanupTempDirForSource(src.path!).catch((err: unknown) => {
         console.warn('[Workspace] cleanupTempDirForSource failed for', src.path, err);
+        return null;
+      })
+    )
+  ).then((results) => {
+    let totalBytes = 0;
+    for (const r of results) {
+      if (r && typeof (r as { bytesRemoved?: number }).bytesRemoved === 'number') {
+        totalBytes += (r as { bytesRemoved: number }).bytesRemoved;
+      }
+    }
+    if (totalBytes > 1024 * 1024) {
+      const gb = totalBytes / (1024 ** 3);
+      const fmt = gb >= 1
+        ? `${gb.toFixed(1)} GB`
+        : `${(totalBytes / (1024 ** 2)).toFixed(0)} MB`;
+      toast.success(`Reclaimed ${fmt} of extracted files`, {
+        description: 'PDR cleaned up the temporary extraction folder for the sources you cleared.',
+        duration: 8000,
       });
     }
-  }
+  });
 }
 
 interface AnalysisProgress {
@@ -343,6 +369,43 @@ useEffect(() => {
     if (!isScanning) setAnalysisMinimized(false);
   }, [isScanning]);
 
+  // Workspace-level elapsed tracker for the in-flight Analysis. Lifted
+  // out of ScanningOverlay so the minimised restore-chip (rendered
+  // OUTSIDE the modal) can show the same running clock the modal does.
+  // Without this the chip would have to start its own timer when it
+  // mounted on minimise — and that would re-set elapsed to zero even
+  // though the analysis had been running for ten minutes already.
+  // Starts the moment isScanning flips true; resets when it flips
+  // false (analysis complete or cancelled).
+  //
+  // NOTE: distinct from the existing analysisStartTimeRef (declared
+  // further down in this same component) which is set imperatively
+  // at the handleSelectSource call site and read once at completion
+  // to populate lastAnalysisElapsed. This chip-side ref is reactive,
+  // driven by isScanning, so it captures EVERY analysis entry path
+  // (handler-call, URL-deeplink, pendingSource handoff) without
+  // each one having to remember to set the ref. They could be merged
+  // — left separate here so the chip refactor is minimally invasive.
+  const analysisChipStartTimeRef = React.useRef<number | null>(null);
+  const [analysisElapsedSeconds, setAnalysisElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!isScanning) {
+      analysisChipStartTimeRef.current = null;
+      setAnalysisElapsedSeconds(0);
+      return;
+    }
+    if (analysisChipStartTimeRef.current === null) {
+      analysisChipStartTimeRef.current = Date.now();
+      setAnalysisElapsedSeconds(0);
+    }
+    const timer = setInterval(() => {
+      if (analysisChipStartTimeRef.current !== null) {
+        setAnalysisElapsedSeconds(Math.floor((Date.now() - analysisChipStartTimeRef.current) / 1000));
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isScanning]);
+
   // Listen for the global TitleBar "?" launcher to fire a tour. The
   // launcher dispatches `pdr:startTour` with the chosen step list;
   // we mirror that into local state so the existing TourOverlay
@@ -402,6 +465,59 @@ useEffect(() => {
     localStorage.setItem("pdr-sources", JSON.stringify(serializableSources));
     // Clean up legacy sessionStorage
     sessionStorage.removeItem("pdr-sources");
+  }, [sources]);
+
+  // v2.0.11 — orphan-source detection on mount. For each rehydrated
+  // zip/rar source, ask the backend whether its extraction folder still
+  // exists in PDR_Temp. If not, the source row is an orphan — its
+  // working files were deleted (by an earlier-build immediate-cleanup,
+  // by a manual user delete, or by an OS-side cleanup) and Run Fix
+  // can't possibly work from it. Drop the row silently from the menu
+  // and toast the user once with a summary.
+  //
+  // Folder/drive sources are NOT checked — they aren't extraction-backed.
+  // A disconnected SOURCE drive (the drive holding the original .zip)
+  // is also fine: Fix copies from the extraction on the Library Drive,
+  // not from the original archive, so the original being unreachable
+  // doesn't break Fix.
+  //
+  // Fires once per mount via a ref guard so it doesn't re-check on
+  // every sources state change.
+  const orphanSourceCheckFiredRef = useRef(false);
+  useEffect(() => {
+    if (orphanSourceCheckFiredRef.current) return;
+    if (sources.length === 0) return; // nothing to check yet
+    orphanSourceCheckFiredRef.current = true;
+    (async () => {
+      try {
+        const { checkExtractionsForSources } = await import('@/lib/electron-bridge');
+        const requests = sources.map(s => ({ path: s.path ?? '', type: s.type }));
+        const res = await checkExtractionsForSources(requests);
+        if (!res.success) return;
+        const orphanPaths = new Set(
+          res.results
+            .filter(r => r.needsExtraction && !r.hasExtraction)
+            .map(r => r.path)
+        );
+        if (orphanPaths.size === 0) return;
+        const droppedSources = sources.filter(s => s.path && orphanPaths.has(s.path));
+        if (droppedSources.length === 0) return;
+        setSources(prev => prev.filter(s => !(s.path && orphanPaths.has(s.path))));
+        setSourceAnalysisResults(prev => {
+          const updated = { ...prev };
+          for (const dropped of droppedSources) delete updated[dropped.id];
+          return updated;
+        });
+        const firstName = droppedSources[0].name || droppedSources[0].path;
+        const restCount = droppedSources.length - 1;
+        const description = droppedSources.length === 1
+          ? `"${firstName}" — its extracted files were no longer on disk. Re-add it to fix again.`
+          : `"${firstName}" + ${restCount} other source${restCount === 1 ? '' : 's'} — their extracted files were no longer on disk. Re-add them to fix again.`;
+        toast.info('Cleaned up orphaned source rows', { description, duration: 12000 });
+      } catch (err) {
+        console.warn('[Workspace] orphan-source check failed (non-fatal):', err);
+      }
+    })();
   }, [sources]);
 
   // Launch-time orphan sweep. If the workspace is empty at mount,
@@ -469,15 +585,20 @@ useEffect(() => {
       // dir before wiping the list. Without this, orphan temp dirs
       // pile up in PDR_Temp and silently consume the 55 GB pre-extract
       // budget on the next session.
+      //
+      // NOTE: this does NOT clear destinationPath — the Library Drive
+      // stays attached across source resets. The drive is the user's
+      // long-lived workspace; sources are transient inputs. To switch
+      // drives, the user goes through the LDM, which then fires
+      // pdr:libraryDriveChanged and the derived-state effect refreshes.
+      // Pre-v2.0.11 this block called setDestinationPath(null) and was
+      // the silent-CTA bug Terry hit on 2026-05-23.
       reapTempDirsForSources(sources);
       setSources([]);
       localStorage.removeItem("pdr-sources");
       localStorage.removeItem("pdr-source-analysis-results");
       setHasCompletedFix(false);
       pendingSourceClearRef.current = false;
-      setDestinationPath(null);
-      setDestinationFreeGB(0);
-      setDestinationTotalGB(0);
     };
     window.addEventListener('pdr-clear-sources', handleClearSources);
     return () => window.removeEventListener('pdr-clear-sources', handleClearSources);
@@ -962,34 +1083,43 @@ const handleActivateLicense = () => {
     return saved !== 'false'; // Default to true
   });
 
-  // Persistent states that should survive panel navigation
+  // Library Drive state — DERIVED from the backend libraryRoot
+  // (LDM-state.json), not held as independent React state.
+  //
+  // SOURCE OF TRUTH: the Library Drive Manager (LDM). The backend
+  // surfaces it via the library:status IPC, and any attach / detach /
+  // switch dispatches a `pdr:libraryDriveChanged` CustomEvent on the
+  // window. We mirror libraryRoot into `destinationPath` here so the
+  // Dashboard render code can stay unchanged, but no other code is
+  // allowed to setDestinationPath out of sync with libraryRoot.
+  //
+  // Why this is derived, not parallel: the v2.0.0–v2.0.10 implementation
+  // held destinationPath as its own React state, and FIVE+ call sites
+  // reset it to null independent of the LDM (handleClearSources,
+  // handleRemoveSource, handleChangeSource, handleAddSource's pending-
+  // clear branch, rememberSources-off rehydrate). Each reset wiped the
+  // local state while libraryRoot stayed correctly set. The Dashboard
+  // then showed the "Select Library Drive" CTA even though the LDM had
+  // a drive attached and the title-bar Library pill was green. The fix
+  // is structural — only the LDM can change destinationPath.
+  //
+  // destinationFreeGB / destinationTotalGB are also derived: whenever
+  // libraryRoot changes (mount + libraryDriveChanged), we re-probe disk
+  // space. Persistence is owned by writeLibraryState (which atomically
+  // syncs settings.destinationPath ← libraryRoot), so there is no
+  // separate persist effect here.
   const [destinationPath, setDestinationPath] = useState<string | null>(null);
   const [destinationFreeGB, setDestinationFreeGB] = useState<number>(0);
   const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
 
-  // Race-guard: the persist effect below would otherwise fire on
-  // first render with the useState initial value (null) BEFORE the
-  // rehydrate effect has read the previously-saved destination,
-  // wiping it out. We only allow writes once the rehydrate read has
-  // resolved.
-  // NOTE: this block MUST come after the destinationPath useState
-  // declaration above. Putting it earlier puts destinationPath in
-  // the temporal dead zone in the persist effect's dep array,
-  // breaking the entire workspace render with a TDZ ReferenceError.
-  const destinationHydratedRef = React.useRef(false);
-
-  // On mount: check rememberSources setting — if OFF, clear persisted sources.
-  // Also rehydrate the persisted Library Drive (destinationPath) from
-  // electron-store so the user lands back into a working workspace
-  // without having to re-pick their drive every session.
+  // On mount: still honour the `rememberSources` setting for the
+  // SOURCES list — but NEVER touch destinationPath here. The library
+  // drive is independent of sources and stays attached across source
+  // resets (this was a key bug in the parallel-state era — clearing
+  // sources also wiped the destination).
   useEffect(() => {
-    getSettings().then(async (settings) => {
+    getSettings().then((settings) => {
       if (!settings.rememberSources) {
-        // Read the previously-persisted sources from localStorage BEFORE
-        // clearing them, so we can reap any extracted temp dirs that
-        // belonged to them. Otherwise this branch (which fires on every
-        // launch when "remember sources" is off) silently leaves a
-        // growing pile of orphan temp dirs in PDR_Temp.
         try {
           const saved = JSON.parse(localStorage.getItem('pdr-sources') || '[]') as Source[];
           if (Array.isArray(saved) && saved.length > 0) {
@@ -1001,46 +1131,56 @@ const handleActivateLicense = () => {
         setSources([]);
         localStorage.removeItem("pdr-sources");
         localStorage.removeItem("pdr-source-analysis-results");
-        setDestinationPath(null);
-        setDestinationFreeGB(0);
-        setDestinationTotalGB(0);
-      } else if (settings.destinationPath) {
-        // Restore sticky destination AND its free/total GB so the
-        // workspace can render the destination chip + space-check
-        // gates without waiting for the user to interact. The
-        // interim screen persists destinationPath but not the GB
-        // counters (those would go stale across sessions anyway), so
-        // we recompute them here on rehydrate.
-        setDestinationPath(settings.destinationPath);
-        try {
-          const { getDiskSpace } = await import('@/lib/electron-bridge');
-          const diskInfo = await getDiskSpace(settings.destinationPath);
-          setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
-          setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
-        } catch {
-          // getDiskSpace failure is non-fatal — counters stay 0
-          // until the user clicks Change Destination, which has its
-          // own getDiskSpace call.
-        }
       }
-    }).finally(() => {
-      // Open the persist gate AFTER the rehydrate read has finished,
-      // regardless of whether it produced a value. From this point
-      // forward, every setDestinationPath change (including explicit
-      // nulls from Remove Source / Change Source) will persist.
-      destinationHydratedRef.current = true;
     });
   }, []);
 
-  // Persist destination changes to electron-store so the choice
-  // survives app restarts. Gated on destinationHydratedRef so the
-  // initial-render null doesn't clobber a previously-saved value.
+  // Derived-state effect: pull libraryRoot from library:status on
+  // mount, then refresh whenever the LDM dispatches
+  // `pdr:libraryDriveChanged` (attach / detach / switch / takeover).
+  // Disk-space counters are re-probed in the same pass.
+  //
+  // This is the ONE place destinationPath is written. Everything else
+  // (cleanup paths, Drive Advisor write, X chip) goes through the
+  // LDM, which then fires the event, which then refreshes here.
   useEffect(() => {
-    if (!destinationHydratedRef.current) return;
-    setSetting('destinationPath', destinationPath).catch((err) => {
-      console.warn('[Workspace] Failed to persist destinationPath:', err);
-    });
-  }, [destinationPath]);
+    let cancelled = false;
+    const refreshFromLibrary = async () => {
+      try {
+        const statusRes = await (window as any).pdr?.library?.status?.();
+        if (cancelled) return;
+        const libRoot: string | null = statusRes?.success ? (statusRes.data?.libraryRoot ?? null) : null;
+        setDestinationPath(libRoot);
+        if (libRoot) {
+          try {
+            const { getDiskSpace } = await import('@/lib/electron-bridge');
+            const diskInfo = await getDiskSpace(libRoot);
+            if (cancelled) return;
+            setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
+            setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+          } catch {
+            // Disk-space probe failed (drive sleeping / unplugged). The
+            // offline banner + row Offline pill drive the user-visible
+            // signal; leave counters at last-known good.
+          }
+        } else {
+          setDestinationFreeGB(0);
+          setDestinationTotalGB(0);
+        }
+      } catch {
+        // library:status IPC failed (web demo, very early init) —
+        // non-fatal, leave state at defaults. Web mode has no LDM so
+        // destinationPath stays null until the demo mock fires.
+      }
+    };
+    void refreshFromLibrary();
+    const handler = () => { void refreshFromLibrary(); };
+    window.addEventListener('pdr:libraryDriveChanged', handler as EventListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('pdr:libraryDriveChanged', handler as EventListener);
+    };
+  }, []);
   const [hasCompletedFix, setHasCompletedFix] = useState(false);
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
@@ -1069,9 +1209,9 @@ const handleActivateLicense = () => {
   // tracks where the user is. NOTE: this useEffect MUST come after
   // activeView, searchResultsActive and setActivePanel are declared
   // — earlier in the function body it hits TDZ on the deps array
-  // and crashes the whole Workspace render with a blank screen
-  // (matches the destinationHydratedRef pattern higher up in this
-  // same file).
+  // and crashes the whole Workspace render with a blank screen. The
+  // same TDZ trap exists for any useEffect that references state from
+  // its deps array before that state has been declared.
   useEffect(() => {
     let primaryId: string;
     let primaryLabel: string;
@@ -1257,7 +1397,7 @@ const handleActivateLicense = () => {
         const initResult = await initSearchDatabase();
         if (!initResult.success) {
           toast.error('Search index unavailable', {
-            description: initResult.error || 'Could not initialise search database. You can manually index from the Library Manager.',
+            description: initResult.error || 'Could not initialize search database. You can manually index from the Library Manager.',
             duration: 8000,
           });
           return;
@@ -1595,10 +1735,10 @@ const handleActivateLicense = () => {
       setActiveSource(updatedSources[0]);
     } else {
       setActiveSource(null);
-      // Clear destination when all sources are removed
-      setDestinationPath(null);
-      setDestinationFreeGB(0);
-      setDestinationTotalGB(0);
+      // NOTE: destinationPath is NOT cleared here. The Library Drive
+      // stays attached when all sources are removed — to switch drives
+      // the user goes through the LDM. Pre-v2.0.11 these three setter
+      // calls wiped the local state behind LDM's back.
     }
   };
 
@@ -1636,12 +1776,11 @@ const handleActivateLicense = () => {
     setActiveSource(null);
     setIsComplete(false);
     setShowSourceTypeSelector(true);
-    // Clear destination when all sources are removed
-    if (updatedSources.length === 0) {
-      setDestinationPath(null);
-      setDestinationFreeGB(0);
-      setDestinationTotalGB(0);
-    }
+    // NOTE: destinationPath is NOT cleared even when all sources are
+    // removed. The Library Drive is independent of sources — to switch
+    // drives the user goes through the LDM. Pre-v2.0.11 these three
+    // setter calls wiped local destinationPath while libraryRoot stayed
+    // correct, surfacing the "Select Library Drive" CTA spuriously.
   };
 
 
@@ -1653,14 +1792,19 @@ const handleActivateLicense = () => {
       // the list — the user implicitly told us they're done with these
       // when they kicked off a new fix or added a new source after one
       // completed with clearSourcesAfterFix on.
+      //
+      // NOTE: destinationPath is NOT cleared here. The Library Drive
+      // is independent of the post-fix source reset — the user picked
+      // it once via the LDM and it stays until they switch drives via
+      // the LDM. The pre-v2.0.11 destinationPath wipe here was the
+      // exact bug Terry hit on 2026-05-23: removing Takeout 003 and
+      // adding Takeout 004 left the Dashboard showing "Select Library
+      // Drive" CTA even though the LDM was still attached.
       reapTempDirsForSources(sources);
       setSources([]);
       localStorage.removeItem("pdr-sources");
       setSourceAnalysisResults({});
       setHasCompletedFix(false);
-      setDestinationPath(null);
-      setDestinationFreeGB(0);
-      setDestinationTotalGB(0);
     }
     if (isElectron()) {
       // Open unified source browser — handles both folders and archives
@@ -2813,21 +2957,61 @@ return (
 	      onMinimize={() => setAnalysisMinimized(true)}
 	    />
 	  )}
-	  {isScanning && analysisMinimized && (
-	    <button
-	      type="button"
-	      onClick={() => setAnalysisMinimized(false)}
-	      className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-3 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta cursor-pointer hover:bg-amber-600 transition-colors"
-	      data-testid="analysis-progress-chip"
-	      title="Click to restore the analysis view"
-	    >
-	      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-	      <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
-	        Analysing
-	        {scanProgress.percent > 0 && ` · ${scanProgress.percent}%`}
-	      </span>
-	    </button>
-	  )}
+	  {isScanning && analysisMinimized && (() => {
+	    // Phase label derived from scanProgress.message — same string
+	    // tests as the modal so chip and overlay stay in sync. Order
+	    // matters: "Unpacked" can appear in the message between batches.
+	    const msg = scanProgress.message || '';
+	    const phaseLabel = msg.includes('Unpacking') || msg.includes('Unpacked')
+	      ? 'Unpacking'
+	      : scanProgress.percent > 0
+	        ? 'Processing'
+	        : 'Preparing';
+	    // Inline formatTime — same shape as FixStatusChip so both
+	    // pills read identically (e.g. "5m 33s", "1h 12m 4s").
+	    const fmtElapsed = (s: number) => {
+	      const h = Math.floor(s / 3600);
+	      const m = Math.floor((s % 3600) / 60);
+	      const sec = s % 60;
+	      if (h > 0) return `${h}h ${m}m ${sec}s`;
+	      if (m > 0) return `${m}m ${sec}s`;
+	      return `${sec}s`;
+	    };
+	    const handleRestore = (e?: React.MouseEvent) => {
+	      if (e) e.stopPropagation();
+	      setAnalysisMinimized(false);
+	    };
+	    return (
+	      <motion.div
+	        initial={{ opacity: 0, y: -8 }}
+	        animate={{ opacity: 1, y: 0 }}
+	        exit={{ opacity: 0, y: -8 }}
+	        className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta cursor-pointer"
+	        data-testid="analysis-progress-chip"
+	        title="Click to restore the analysis view"
+	        onClick={() => handleRestore()}
+	      >
+	        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+	        <span className="text-xs font-semibold tabular-nums whitespace-nowrap">
+	          Analyzing · {phaseLabel}
+	          {scanProgress.percent > 0 && (
+	            <span className="opacity-90"> · {scanProgress.percent}%</span>
+	          )}
+	          {analysisElapsedSeconds > 0 && (
+	            <span className="opacity-90"> · {fmtElapsed(analysisElapsedSeconds)}</span>
+	          )}
+	        </span>
+	        <button
+	          type="button"
+	          onClick={handleRestore}
+	          className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/25 hover:bg-white/40 transition-colors"
+	          aria-label="Restore full progress view"
+	        >
+	          Open
+	        </button>
+	      </motion.div>
+	    );
+	  })()}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       {showLicenseModal && <LicenseModal onClose={() => setShowLicenseModal(false)} />}
@@ -4492,11 +4676,65 @@ function DashboardPanel({
 
   const handleDestBrowserSelect = async (selectedPath: string) => {
     setShowDestBrowser(false);
-    const { getDiskSpace } = await import('@/lib/electron-bridge');
-    setDestinationPath(selectedPath);
-    const diskInfo = await getDiskSpace(selectedPath);
-    setDestinationFreeGB(diskInfo.freeBytes / (1024 * 1024 * 1024));
-    setDestinationTotalGB(diskInfo.totalBytes / (1024 * 1024 * 1024));
+    // Route the picked path through the LDM attach pipeline so the
+    // backend libraryRoot (LDM-state.json) — the source of truth — gets
+    // updated. The Workspace's derived-state effect then refreshes
+    // destinationPath / FreeGB / TotalGB off libraryRoot via
+    // library:status. Pre-v2.0.11 this handler called setDestinationPath
+    // directly, which set local React state while libraryRoot stayed
+    // empty — Source-add and the rest of the backend saw no library.
+    if (!isElectron()) {
+      // Web demo has no LDM — keep the legacy mock-set so the demo
+      // renders a destination chip in the browser.
+      setDestinationPath(selectedPath);
+      setDestinationFreeGB(2400);
+      setDestinationTotalGB(4000);
+      return;
+    }
+    if (!storedLicenseKey) {
+      // No license on device — the LDM owns the licensing prompt UX.
+      // Bounce the user there so attach happens in the proper surface.
+      window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'));
+      return;
+    }
+    try {
+      const statusRes = await (window as any).pdr?.library?.status?.();
+      const thisDeviceId: string = statusRes?.data?.thisDeviceId ?? 'this';
+      const deviceName = (thisDeviceId.slice(0, 8) || 'this') + '-device';
+      // If the picked folder already has a PDR sidecar (e.g. user is
+      // reattaching after a reinstall), attachFromSidecar restores the
+      // existing library. Otherwise treat it as a fresh attach.
+      const detectRes = await (window as any).pdr?.library?.detectSidecar?.(selectedPath);
+      const hasSidecar = !!(detectRes?.success && detectRes.data?.found);
+      const res = hasSidecar
+        ? await (window as any).pdr?.library?.attachFromSidecar({
+            libraryRoot: selectedPath,
+            licenseKey: storedLicenseKey,
+            deviceName,
+          })
+        : await (window as any).pdr?.library?.attachAsNew({
+            libraryRoot: selectedPath,
+            licenseKey: storedLicenseKey,
+            deviceName,
+          });
+      if (res?.success) {
+        // Dispatch the renderer-side event so the workspace's offline
+        // banner + the derived destinationPath effect both refresh
+        // immediately. The backend already synced settings.destinationPath
+        // ← libraryRoot via writeLibraryState.
+        window.dispatchEvent(new CustomEvent('pdr:libraryDriveChanged'));
+      } else {
+        toast.error('Couldn\'t attach Library Drive', {
+          description: res?.error ?? 'Open the Library Drive Manager to retry.',
+        });
+        window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'));
+      }
+    } catch (err) {
+      toast.error('Couldn\'t attach Library Drive', {
+        description: (err as Error)?.message ?? 'Open the Library Drive Manager to retry.',
+      });
+      window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'));
+    }
   };
 
   const handleOpenDestination = async () => {
@@ -4970,9 +5208,18 @@ function DashboardPanel({
                               <IconTooltip label={destinationPath} side="top">
                                 <p className="text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded truncate max-w-full">{destinationPath}</p>
                               </IconTooltip>
-                              <IconTooltip label="Clear destination" side="top">
+                              <IconTooltip label="Change Library Drive in the Library Drive Manager" side="top">
                                 <button
-                                  onClick={() => { setDestinationPath(null); setDestinationFreeGB(0); setDestinationTotalGB(0); }}
+                                  // Opens the LDM so the user can detach
+                                  // / switch / attach a different drive.
+                                  // Pre-v2.0.11 this cleared local
+                                  // destinationPath state directly, which
+                                  // diverged from libraryRoot — the
+                                  // backend still saw the old drive
+                                  // attached and the title-bar Library
+                                  // pill stayed green. LDM is the single
+                                  // write surface for library state.
+                                  onClick={() => window.dispatchEvent(new CustomEvent('pdr:openLibraryPanel'))}
                                   className="p-1 text-muted-foreground hover:text-rose-500 transition-colors shrink-0"
                                 >
                                   <X className="w-3.5 h-3.5" />
@@ -5204,7 +5451,7 @@ function DashboardPanel({
                   </CardInfoTooltip>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalised (.jpeg → .jpg).'}
+                  {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalized (.jpeg → .jpg).'}
                   {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
                   {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
                 </p>
@@ -5319,7 +5566,7 @@ function DashboardPanel({
                    data-tour="apply-fixes"
                  >
                    <Wrench className="w-5 h-5 mr-2 stroke-[2.5]" />
-                   {fixActive ? 'Fix in progress…' : analysisActive ? 'Analysing…' : 'Run Fix'}
+                   {fixActive ? 'Fix in progress…' : analysisActive ? 'Analyzing…' : 'Run Fix'}
                  </Button>
                </IconTooltip>
              </div>
@@ -7278,6 +7525,12 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
 		  await playCompletionSound();
 		  await flashTaskbar();
 		}
+
+      // v2.0.11 — no "Reclaimed X GB" toast here. The post-fix prompt
+      // lets the user choose Keep Sources vs Clear Sources; cleanup
+      // happens on the Clear-Sources branch (or on an explicit Remove
+      // from the Source Menu later). Firing a "reclaimed" toast on Fix
+      // complete would lie about disk state when the user picked Keep.
 
       if (!result.success) {
         console.error('File copy failed:', result.error);
@@ -9246,7 +9499,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                             <li>Click a thumbnail (or press <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">Enter</span>) to open the full-size viewer</li>
                             <li>Select photos with the checkboxes to batch-action them</li>
                             <li>Send a selection to a <span className="font-medium text-foreground">Parallel Library</span> — a curated subset on a separate drive, originals untouched</li>
-                            <li>Add a selection to a PDR Album for ongoing organisation</li>
+                            <li>Add a selection to a PDR Album for ongoing organization</li>
                           </ul>
                         </div>
 
@@ -9274,7 +9527,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         </div>
 
                         <div>
-                          <p className="font-medium text-foreground mb-2">How it's organised</p>
+                          <p className="font-medium text-foreground mb-2">How it's organized</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li><span className="font-medium text-foreground">Years</span> at the top level — each shows a preview thumb and a photo count</li>
                             <li><span className="font-medium text-foreground">Months</span> when you open a year</li>
@@ -9331,7 +9584,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         </div>
 
                         <div>
-                          <p className="font-medium text-foreground mb-2">Organising albums into folders</p>
+                          <p className="font-medium text-foreground mb-2">Organizing albums into folders</p>
                           <p className="mb-2">Once you've got a few albums going, group them into <span className="font-medium text-foreground">folders</span> so the list doesn't sprawl:</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li>Create a folder (e.g. "Family holidays", "Mum &amp; Dad", "Work travel")</li>
@@ -9341,8 +9594,8 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         </div>
 
                         <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
-                          <p className="font-medium text-emerald-700 dark:text-emerald-300 mb-2">Google Takeout albums — auto-organised</p>
-                          <p className="mb-2">This is one of PDR's quiet wins. Every album you'd already organised in Google Photos — birthdays, holidays, named collections — appears in Memories &gt; Albums automatically the moment a Takeout is analysed. No re-tagging, no re-curating, no clicking "import album".</p>
+                          <p className="font-medium text-emerald-700 dark:text-emerald-300 mb-2">Google Takeout albums — auto-organized</p>
+                          <p className="mb-2">This is one of PDR's quiet wins. Every album you'd already organized in Google Photos — birthdays, holidays, named collections — appears in Memories &gt; Albums automatically the moment a Takeout is analyzed. No re-tagging, no re-curating, no clicking "import album".</p>
                           <p>If you've spent years curating Google Photos albums, PDR honours that work. They show up under the <span className="font-medium text-foreground">Google Photos</span> source group, ready to browse, drop into folders, or send to a Parallel Library.</p>
                         </div>
 
@@ -9529,7 +9782,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <div>
                           <p className="font-medium text-foreground mb-2">AI tags</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li>Scene / object / colour / activity tags applied to every photo</li>
+                            <li>Scene / object / color / activity tags applied to every photo</li>
                             <li>Examples: "beach", "indoors", "family", "pet", "food", "sunset", "blue", "smiling"</li>
                             <li>Filterable in S&amp;D — find every beach photo across decades in seconds</li>
                           </ul>
@@ -9545,7 +9798,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                           <ul className="list-disc ml-5 space-y-1">
                             <li>Automatically after every Fix — the AI pill at the top of the workspace shows progress</li>
                             <li>Pauseable + resumeable — close PDR mid-run and it picks up next launch</li>
-                            <li>Re-analyse: if a batch looks wrong, select photos in S&amp;D → Re-analyse AI Tags</li>
+                            <li>Re-analyze: if a batch looks wrong, select photos in S&amp;D → Re-analyze AI Tags</li>
                           </ul>
                         </div>
 
@@ -9569,7 +9822,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <AccordionContent className="pt-2 pb-4">
                       <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
                         <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
-                          <p>Every dated file in PDR's output carries one of three confidence labels — surfaced as a coloured filename suffix and in the Source Analysis card. The system is what lets PDR handle messy libraries <span className="font-medium text-foreground">without lying about certainty</span>.</p>
+                          <p>Every dated file in PDR's output carries one of three confidence labels — surfaced as a colored filename suffix and in the Source Analysis card. The system is what lets PDR handle messy libraries <span className="font-medium text-foreground">without lying about certainty</span>.</p>
                         </div>
 
                         <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
@@ -9581,7 +9834,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg">
                           <p className="font-medium text-indigo-700 dark:text-indigo-300 mb-2">Recovered</p>
                           <p className="mb-2">Date extracted from a consistent filename pattern PDR can decode confidently. Strong confidence — the file's metadata is missing but the filename itself encodes the date.</p>
-                          <p>Patterns PDR recognises: <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">IMG_20210315_124530.jpg</span>, <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">Screenshot_2019-08-12.png</span>, WhatsApp date prefixes, common camera naming.</p>
+                          <p>Patterns PDR recognizes: <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">IMG_20210315_124530.jpg</span>, <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">Screenshot_2019-08-12.png</span>, WhatsApp date prefixes, common camera naming.</p>
                         </div>
 
                         <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
@@ -9621,7 +9874,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <div>
                           <p className="font-medium text-foreground mb-2">What lives inside your Library Drive</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li>Your fixed photo + video files (dated, named, organised by year)</li>
+                            <li>Your fixed photo + video files (dated, named, organized by year)</li>
                             <li>A hidden <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.pdr/</span> folder containing the database: search index, faces, names, albums, Trees, reports</li>
                             <li>The thumbnail cache (regenerated if missing, but faster if preserved)</li>
                           </ul>
@@ -9689,7 +9942,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         </div>
 
                         <div>
-                          <p className="font-medium text-foreground mb-2">PDR_Temp behaviour</p>
+                          <p className="font-medium text-foreground mb-2">PDR_Temp behavior</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li>Lives on your Library Drive (so extractions don't fill up <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">C:\</span>)</li>
                             <li>Per-source sub-folders — one per added source</li>
@@ -9737,7 +9990,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                           <ul className="list-disc ml-5 space-y-1">
                             <li>Add Source / Remove Source</li>
                             <li>Run Fix</li>
-                            <li>Re-analyse AI Tags</li>
+                            <li>Re-analyze AI Tags</li>
                           </ul>
                           <p className="mt-2">Everything else — browsing, naming people in PM, building Trees, opening Memories — stays fully available.</p>
                         </div>
@@ -9745,7 +9998,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <div>
                           <p className="font-medium text-foreground mb-2">Tips</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li>Starting a big Takeout analysis is the perfect moment to browse Memories or organise People Manager — productive parallel use of your time</li>
+                            <li>Starting a big Takeout analysis is the perfect moment to browse Memories or organize People Manager — productive parallel use of your time</li>
                             <li>Closing PDR mid-analysis cancels the run — the source stays in the menu and you can resume next launch</li>
                             <li>The amber pill is intentionally low-key so it doesn't distract from whatever you're browsing</li>
                           </ul>
@@ -9882,7 +10135,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 </div>
                 <div className="ml-10 space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Click <span className="font-medium text-foreground">Add Source</span> to open the custom Folder Browser — every drive on your machine appears with speed and capacity ratings, plus your Quick Access folders. Pick a folder, drive, or ZIP/RAR archive containing the photos you want to fix.</p>
-                  <p>You can keep adding Sources one at a time. PDR analyses them all together as a single Combined Analysis.</p>
+                  <p>You can keep adding Sources one at a time. PDR analyzes them all together as a single Combined Analysis.</p>
                   <p className="font-medium text-foreground">If your Source is a large ZIP or RAR (over 2 GB):</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li>PDR pre-extracts it to a <span className="font-mono text-xs">PDR_Temp/</span> folder on your Library Drive — necessary because the in-place streaming engine can't safely handle multi-GB videos inside zips.</li>
@@ -10009,7 +10262,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
               <section>
                 <h3 className="text-lg font-medium text-foreground mb-3">About</h3>
                 <div className="text-sm text-muted-foreground leading-relaxed space-y-3">
-                  <p>Photo Date Rescue repairs, normalises, and organises photo and video dates from any source — whether that's a Google Takeout export, an iCloud download, a phone backup, or a folder of mixed files.</p>
+                  <p>Photo Date Rescue repairs, normalizes, and organizes photo and video dates from any source — whether that's a Google Takeout export, an iCloud download, a phone backup, or a folder of mixed files.</p>
                   <p>Every file is analyzed for date clues from metadata, filenames, and folder structure. Files are then renamed with confidence-based suffixes so you always know how each date was determined.</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li>Removes duplicates from output automatically</li>
@@ -10138,12 +10391,18 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        <strong className="text-foreground">Important data-integrity hotfix.</strong> A startup cleanup routine was silently shrinking peoples&apos; indexed libraries by treating multiple Fix runs to the same Library Drive as duplicates. Files on disk were never affected, but the database forgot about thousands of photos for users who&apos;d run more than one Fix to their library. v2.0.11 stops the cleanup and tightens up two related issues around Library Drive handling.
+                        <strong className="text-foreground">Important data-integrity hotfix, plus polish.</strong> A startup cleanup routine was silently shrinking peoples&apos; indexed libraries by treating multiple Fix runs to the same Library Drive as duplicates. Files on disk were never affected, but the database forgot about thousands of photos for users who&apos;d run more than one Fix to their library. v2.0.11 stops the cleanup, makes the Library Drive Manager the single source of truth for where photos go, and adds a polished Analyzing pill plus a "Reclaimed X GB" toast to give the in-flight progress and the post-fix cleanup their own moment. Spelling across the app is now consistent American English.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">Photos no longer disappear from Search &amp; Discovery / Memories after running additional Fixes</strong> — the cleanup routine that ran on every launch was deleting database rows for older Fix runs, on the false assumption that two runs to the same Library Drive must be duplicates. They&apos;re actually additive (every Fix appends new files to the same library). The cleanup is now disabled. The files themselves were never deleted from disk; the catch-up indexer added in v2.0.9 rebuilds the database rows from the on-disk year folders. AI faces / tags / album memberships for the cascade-deleted rows would need re-running AI and re-importing Takeout albums to restore.</li>
-                        <li><strong className="text-foreground font-medium">Library Drive Manager and source-add now stay in lockstep</strong> — picking a Library Drive in the LDM now atomically updates both the live attach state and the persisted setting, so source-add can never see a different value to the one the LDM displays. A one-time startup sync also pulls them back into alignment for users whose state had already drifted apart on a previous version.</li>
-                        <li><strong className="text-foreground font-medium">No more silent diversion to the system drive when no Library Drive is set</strong> — adding a source with no Library Drive configured used to silently fall back to <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">%TEMP%</span> on the system drive, extract tens of GB there, and then disappear from the source list with no explanation when the analyse step failed downstream. PDR now refuses the source-add with a clear &quot;No Library Drive set&quot; message and pops open the Library Drive Manager so you can attach one.</li>
+                        <li><strong className="text-foreground font-medium">Library Drive Manager is now structurally the source of truth</strong> — the Workspace no longer holds a separate copy of the Library Drive path that could drift from what the LDM has attached. The Dashboard, the offline banner, source-add, Fix runs and the title-bar Library pill all read from the same single backend value, refreshed live whenever the LDM attaches, detaches or switches a drive. Removing all your sources, clearing them after a Fix, or adding a new source after a previous Fix can no longer silently surface a &quot;Select Library Drive&quot; CTA when a drive is in fact attached.</li>
+                        <li><strong className="text-foreground font-medium">No more silent diversion to the system drive when no Library Drive is set</strong> — adding a source with no Library Drive configured used to silently fall back to <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">%TEMP%</span> on the system drive, extract tens of GB there, and then disappear from the source list with no explanation when the analyze step failed downstream. PDR now refuses the source-add with a clear &quot;No Library Drive set&quot; message and pops open the Library Drive Manager so you can attach one.</li>
+                        <li><strong className="text-foreground font-medium">Polished Analyzing pill</strong> — minimizing the Analyzing modal now drops you to the same rich amber pill style the Fix uses: phase (Unpacking / Processing / Preparing), percent complete, elapsed time, and an Open button to bring the modal back. Same muscle memory as a Fix in progress, no surprises.</li>
+                        <li><strong className="text-foreground font-medium">&quot;Reclaimed X GB&quot; toast on Clear Sources</strong> — when you pick Clear Sources from the post-fix prompt (or clear them later) PDR sums up the disk space the extracted Takeouts were taking and tells you how much was reclaimed. Extracted folders now stay alive while a source is in the menu, so picking Keep Sources keeps the source fully functional for another Fix or re-analysis.</li>
+                        <li><strong className="text-foreground font-medium">Orphaned source rows are now cleaned up at launch</strong> — if you'd already lost an extraction to a previous build's immediate-cleanup, or you manually deleted PDR_Temp contents between sessions, the source row stays in your Source Menu pointing at nothing. v2.0.11 detects this at mount and drops those orphan rows with a single toast so you're never left with a Run Fix button that can't actually copy any files. Folder and drive sources are exempt (no extraction needed), and a disconnected source drive doesn't count as orphan because Fix copies from the extraction on your Library Drive, not from the original archive.</li>
+                        <li><strong className="text-foreground font-medium">Quick Access expanded by default in Add Source</strong> — the Desktop / Documents / Pictures / Downloads + saved-locations row is now open the moment the Add Source modal opens, so the shortcut to your common folders isn't hidden behind a chevron most users miss. The collapse arrow is still there if you want more room for the All Drives grid.</li>
+                        <li><strong className="text-foreground font-medium">Keyboard receivers + empty card readers no longer show up as Library Drives</strong> — Windows assigns a drive letter to any device with a tiny embedded chip, which means wireless-keyboard receivers, empty SD-card-reader slots, and CD/DVD drives used to clutter the Pick Library Drive picker (all flagged "Too small" but still listed). v2.0.11 hides removable drives smaller than 1 GB and CD/DVD drives entirely. Real removable storage stays — USB sticks and SD cards have been 4 GB+ for over a decade.</li>
+                        <li><strong className="text-foreground font-medium">Consistent American spelling across the UI</strong> — words like &quot;analyze&quot;, &quot;organize&quot;, &quot;recognize&quot;, &quot;color&quot; and &quot;favorite&quot; now read the same way everywhere they appear, in modals, tooltips, the Quick Tour, Best Practices, and About PDR.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
@@ -10189,7 +10448,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">USB / external Library Drives wake up properly</strong> — sleeping library drives are now woken with a tiny no-op write before PDR queries them for free space, so the destination probe doesn&apos;t return "0 GB free" against a still-spinning-up disk. A retry probe + always-on drive-detail logging make support diagnosis painless when a drive doesn&apos;t cooperate.</li>
                         <li><strong className="text-foreground font-medium">PDR_Temp orphan-sweep on launch</strong> — a crashed extraction used to leave its per-source temp folder behind, counting against the 55 GB cap until you cleared it manually. PDR now sweeps orphan extraction folders on launch when the workspace is empty (everything in PDR_Temp including the folder itself is permanently deleted), and always clears any loose files left at the PDR_Temp root regardless of source state. The deletion runs asynchronously so the title-bar overlay and window-drag stay responsive even when clearing tens of GB.</li>
                         <li><strong className="text-foreground font-medium">Memories — right-click to set a month&apos;s thumbnail</strong> — by default each month tile on the By Date timeline shows the earliest-indexed photo as its sample. Right-click any photo inside the month drilldown → <em>Set as monthly thumbnail</em> → that bucket tile now uses your chosen photo. Persisted to the library DB so the override travels with your Library Drive.</li>
-                        <li><strong className="text-foreground font-medium">Burger button works everywhere again</strong> — the sidebar&apos;s burger icon now expands the menu on Search &amp; Discovery, Memories and Trees too (it was inadvertently no-op&apos;d on those views by the same fix that stopped the sidebar widening flicker on Welcome → Memories). Explicit user clicks now win over the auto-collapse behaviour, while the original first-paint flicker stays fixed.</li>
+                        <li><strong className="text-foreground font-medium">Burger button works everywhere again</strong> — the sidebar&apos;s burger icon now expands the menu on Search &amp; Discovery, Memories and Trees too (it was inadvertently no-op&apos;d on those views by the same fix that stopped the sidebar widening flicker on Welcome → Memories). Explicit user clicks now win over the auto-collapse behavior, while the original first-paint flicker stays fixed.</li>
                         <li><strong className="text-foreground font-medium">Best Practices expanded across every PDR feature</strong> — twelve new sections under Detailed Guidance: Search &amp; Discovery, Memories — By Date, Memories — Albums (with Google Takeout auto-organisation highlighted), People Manager, Trees, Date Editor, Parallel Libraries deep-dive, AI Features, the Confidence System, Library Drive moves &amp; portability, the 55 GB extraction cap &amp; PDR_Temp, and Backgroundable Analysis.</li>
                         <li><strong className="text-foreground font-medium">Developer tools access removed entirely</strong> — defence-in-depth: the F12 / Ctrl+Shift+I keyboard handler is gone in all builds. The renderer&apos;s error-listener bridge still forwards uncaught exceptions into the main-process log, so support diagnosis is unaffected.</li>
                         <li><strong className="text-foreground font-medium">Photo viewer works again in the installed app</strong> — v2.0.8 shipped with a path-resolution bug that stopped the dedicated viewer window from loading its UI in installed builds (it worked fine in development). Photos and videos opened from Search &amp; Discovery, Memories, and Albums now display correctly again. No data was at risk — the viewer just refused to render.</li>
@@ -10220,14 +10479,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        <strong className="text-foreground">Albums arrive in Memories.</strong> The headline of this release is a complete Memories &rarr; Albums surface, plus automatic album import from Google Photos Takeouts, plus a big polish pass on the Search &amp; Discovery filter ribbon. Curate, organise, and re-share groups of photos without ever leaving PDR.
+                        <strong className="text-foreground">Albums arrive in Memories.</strong> The headline of this release is a complete Memories &rarr; Albums surface, plus automatic album import from Google Photos Takeouts, plus a big polish pass on the Search &amp; Discovery filter ribbon. Curate, organize, and re-share groups of photos without ever leaving PDR.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
-                        <li><strong className="text-foreground font-medium">New: Memories &rarr; Albums tab</strong> — Memories now has two top-level views, <em>By Date</em> and <em>Albums</em>. The Albums view is a two-pane surface: on the left, a tree of every album you have, split into <em>Album Sources</em> (the place each album originally came from — Google Photos, PDR-created, etc.) and <em>Folders</em> (your own organisation). On the right, the contents of whatever you&apos;ve clicked. Pick an album, see its photos. Pick a folder, see its albums. Pick &quot;All albums&quot; and see the lot, sorted alphabetically.</li>
+                        <li><strong className="text-foreground font-medium">New: Memories &rarr; Albums tab</strong> — Memories now has two top-level views, <em>By Date</em> and <em>Albums</em>. The Albums view is a two-pane surface: on the left, a tree of every album you have, split into <em>Album Sources</em> (the place each album originally came from — Google Photos, PDR-created, etc.) and <em>Folders</em> (your own organization). On the right, the contents of whatever you&apos;ve clicked. Pick an album, see its photos. Pick a folder, see its albums. Pick &quot;All albums&quot; and see the lot, sorted alphabetically.</li>
                         <li><strong className="text-foreground font-medium">Google Photos albums import automatically when you Fix a Takeout</strong> — every album folder in your Takeout becomes a real PDR album, complete with all its photos, the original filenames Google replaced (so &quot;IMG_1234(1).jpg&quot; becomes &quot;IMG_1234.jpg&quot; again), and any captions you wrote in Google Photos. A photo that lived in three Google Photos albums lands as one photo in PDR with three album memberships — same as iCloud, no duplication. There&apos;s also a backfill option for users who already Fixed their Takeout in an earlier PDR version: point PDR at the original ZIP and the album structure gets attached after the fact.</li>
                         <li><strong className="text-foreground font-medium">Add to Album from anywhere</strong> — selecting photos in Search &amp; Discovery or in Memories By Date now exposes an &quot;Add to Album&quot; button. One click shows your existing albums (with a live search) or lets you create a new album right there. Pick the destination and the photos drop in without you ever leaving the surface you were on.</li>
                         <li><strong className="text-foreground font-medium">Export an album as a Parallel Library</strong> — every album&apos;s detail view has an <em>Export as Parallel Library</em> button that opens the existing PL wizard with the album&apos;s photos pre-loaded. No new wizard, no new steps — albums are the curation layer, Parallel Library is still the &quot;copy these to another drive&quot; mechanic.</li>
-                        <li><strong className="text-foreground font-medium">Drag albums into folders to organise; right-click to delete</strong> — drag any album from the tree into any user folder to add it there. Folders can nest one level deep. The album always stays in its source group (Google Photos, PDR, etc.) so dragging never loses it. Dragging between user folders <em>moves</em> the album by default; hold <kbd>Ctrl</kbd> to copy instead. Albums and folders both have a right-click context menu for rename / delete / export.</li>
+                        <li><strong className="text-foreground font-medium">Drag albums into folders to organize; right-click to delete</strong> — drag any album from the tree into any user folder to add it there. Folders can nest one level deep. The album always stays in its source group (Google Photos, PDR, etc.) so dragging never loses it. Dragging between user folders <em>moves</em> the album by default; hold <kbd>Ctrl</kbd> to copy instead. Albums and folders both have a right-click context menu for rename / delete / export.</li>
                         <li><strong className="text-foreground font-medium">Undo and Redo for album/folder changes</strong> — moved an album into the wrong folder? Press <kbd>Ctrl</kbd>+<kbd>Z</kbd> (or click the small undo button next to Refresh in the Albums tree toolbar). The last 10 add / remove / move operations are remembered for the session; <kbd>Ctrl</kbd>+<kbd>Y</kbd> redoes.</li>
                         <li><strong className="text-foreground font-medium">Empty album? PDR routes you to pick photos</strong> — open an empty album and you get two clear CTAs: <em>Go to By Date</em> or <em>Go to Search &amp; Discovery</em>. Click either and the destination surface shows a gold &quot;Back to &lt;album name&gt;&quot; pill in the title bar so you can fill the album and return in one click. Pick photos, click <em>Add &amp; go back</em> to drop them in and return — or <em>Add &amp; keep picking more</em> to stay and continue.</li>
                         <li><strong className="text-foreground font-medium">Right-click on photo grid: &quot;Add photos from S&amp;D / By Date&quot;</strong> — any PDR album, even a non-empty one, exposes the same two routes via right-click on the photo grid. Active curation without having to empty the album first.</li>
@@ -10280,7 +10539,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Parallel Library no longer touches your master library</strong> — Parallel Library is now a pure file-copy operation. Earlier versions could silently change Recovered or Marked photos to Confirmed and clear Original Names on your original files when you used the "Add to PDR's search &amp; views" option. That option has been removed; Parallel Library copies stay out of Search &amp; Discovery, Memories, and Trees so your master Library Drive remains the canonical entry for every photo. A deliberate "Re-index a folder" tool is coming in v2.0.7 for anyone who wants to make a specific folder searchable on demand.</li>
                         <li><strong className="text-foreground font-medium">Pre-extract space check now accurate for big ZIPs</strong> — the disk-space precheck before extracting a large ZIP / RAR was under-counting the space needed for the Fix copy that follows. Same-drive Fixes now reserve enough room for both the extracted files and the Fixed copies. Cross-drive Fixes (where extraction lands on your system drive and the copy goes to another drive) now check both drives separately. The headroom is also drive-aware now — small drives get a smaller buffer, big drives get a bigger one.</li>
                         <li><strong className="text-foreground font-medium">Fix Complete file count matches what actually landed on disk</strong> — if a Fix ran out of space mid-copy, the "Output files" total still showed the count from the date analysis (what WOULD have been written if everything succeeded). It now shows the honest number of files that successfully made it to the destination.</li>
-                        <li><strong className="text-foreground font-medium">Welcome screen unlocks for returning users</strong> — if you'd dismissed your Library Drive (or hadn't reattached it yet) the Welcome screen locked you out of the hero card, even though you've used PDR before. PDR now recognises returning users by their saved Library Drives and lets you back in to choose one.</li>
+                        <li><strong className="text-foreground font-medium">Welcome screen unlocks for returning users</strong> — if you'd dismissed your Library Drive (or hadn't reattached it yet) the Welcome screen locked you out of the hero card, even though you've used PDR before. PDR now recognizes returning users by their saved Library Drives and lets you back in to choose one.</li>
                         <li><strong className="text-foreground font-medium">Library Drive Manager shows per-folder photo counts</strong> — two libraries on the same drive used to share the same photo count (both showing the drive's total). Each library row now shows the count for that specific folder.</li>
                         <li><strong className="text-foreground font-medium">Library Planner sits between "set up a separate library" and the folder picker</strong> — the Library Planner now appears for new-library setup from the Library Drive Manager, matching the first-time-setup flow.</li>
                         <li><strong className="text-foreground font-medium">Parallel Library Browse opens the Library Drive Manager</strong> — Browse in the Parallel Library wizard now opens the full Library Drive Manager in pick-mode, so you can pick from your saved Library Drives in one place.</li>
@@ -10302,7 +10561,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <AccordionContent className="pt-2 pb-4">
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">Library Drive Manager</strong> — a new home for every drive in your library. Click the Library pill in the top-right to see your current Library Drive, every other drive that holds indexed photos, free space at a glance, and switch between them in one place.</li>
-                        <li><strong className="text-foreground font-medium">"After Fix" settings tab</strong> — the toggles that decide what happens to your photos after a Fix (make them searchable, recognise people and content, automatically process new photos) now live in one tab. Each one's effect is explained where the decision is made, so no more guessing which toggle does what.</li>
+                        <li><strong className="text-foreground font-medium">"After Fix" settings tab</strong> — the toggles that decide what happens to your photos after a Fix (make them searchable, recognize people and content, automatically process new photos) now live in one tab. Each one's effect is explained where the decision is made, so no more guessing which toggle does what.</li>
                         <li><strong className="text-foreground font-medium">Library DB backup reminder</strong> — your library's "memory" (faces, names, dates, Trees) lives in a single file PDR keeps for you. A new persistent indicator on your Library Drive row and a Dashboard reminder let you save a copy off this PC in one click — so a stolen or broken PC doesn't take your work with it.</li>
                         <li><strong className="text-foreground font-medium">Smarter Library Drive switch</strong> — switching between Library Drives now safely keeps your current work as the source of truth and cleans up old drive sidecars behind the scenes. Fixed a hidden footgun where switching back to an old drive could replace your library with an out-of-date copy.</li>
                         <li><strong className="text-foreground font-medium">Searchable Fixed photos by default</strong> — Fixed photos are now indexed automatically so they appear in Search &amp; Discovery, Memories, and Date Editor right away. The old pre-Fix prompt (one wrong click would silently disable five surfaces) is gone; opt-out lives in Settings → After Fix for the rare power user.</li>
@@ -10310,7 +10569,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Drive type at a glance in LDM</strong> — every drive row shows its interface (NVMe SSD, SATA HDD, USB SSD, etc.) so you can pick a fast drive as your Library Drive without having to benchmark anything.</li>
                         <li><strong className="text-foreground font-medium">Concrete "Coming in v2.1" labels</strong> — locked features (Trees, Date Editor, Photo Format conversion) now say "Coming in v2.1" instead of the vague "Released shortly" so you know exactly which release to wait for.</li>
                         <li><strong className="text-foreground font-medium">Premium Switch-Library-Drive confirmation</strong> — compact two-line confirmation showing exactly which drive you're switching to, with future Fixes going there and past Fixes staying where they are.</li>
-                        <li><strong className="text-foreground font-medium">AI recognition dependency hint</strong> — when AI recognition is on but Fixed-photo indexing is off, PDR now flags the limitation right where the decision is made — new Fixed photos won't be recognised unless indexed first.</li>
+                        <li><strong className="text-foreground font-medium">AI recognition dependency hint</strong> — when AI recognition is on but Fixed-photo indexing is off, PDR now flags the limitation right where the decision is made — new Fixed photos won't be recognized unless indexed first.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
@@ -10326,10 +10585,10 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
-                        <li><strong className="text-foreground font-medium">Manage devices and subscription from inside PDR</strong> — the License modal now lets you see every device your licence is activated on, deactivate one if you've moved machines, and cancel or resume your subscription without leaving the app.</li>
+                        <li><strong className="text-foreground font-medium">Manage devices and subscription from inside PDR</strong> — the License modal now lets you see every device your license is activated on, deactivate one if you've moved machines, and cancel or resume your subscription without leaving the app.</li>
                         <li><strong className="text-foreground font-medium">Smarter cancel flow with retention offers</strong> — clicking Cancel now shows a tailored menu of better-value options (discounted price for 3 months, switch to Yearly, upgrade to Lifetime). One click applies the change with no card re-entry.</li>
                         <li><strong className="text-foreground font-medium">RAR archives work as sources again</strong> — adding a folder containing <code>.rar</code> files would silently fail on some builds; the unpacker is now properly bundled in every build.</li>
-                        <li><strong className="text-foreground font-medium">Faster startup, longer offline grace</strong> — the licence badge no longer freezes on "Checking…" while a slow validate is in flight; cached state shows instantly and refreshes in the background. Offline grace extended from 60 seconds to 24 hours.</li>
+                        <li><strong className="text-foreground font-medium">Faster startup, longer offline grace</strong> — the license badge no longer freezes on "Checking…" while a slow validate is in flight; cached state shows instantly and refreshes in the background. Offline grace extended from 60 seconds to 24 hours.</li>
                         <li><strong className="text-foreground font-medium">Smarter back-button on Guidance pages</strong> — opening Getting Started, Best Practices or What Happens Next from inside Search &amp; Discovery, Memories, or Trees now shows "Back to Search &amp; Discovery" / "Back to Memories" / "Back to Trees" instead of "Back to Workspace", and returns you to that app with your filters and selection still intact. Also fixed an overlap where the guidance content could peek through behind S&amp;D's filter chrome.</li>
                         <li><strong className="text-foreground font-medium">Sticky page headers on Guidance and App panels</strong> — when reading long pages like Getting Started, Best Practices, What Happens Next, About PDR, or Help &amp; Support, the page title and Back button now stay pinned at the top while the content scrolls underneath. No more losing track of which page you're in once the title scrolls off-screen.</li>
                       </ul>
@@ -10413,8 +10672,8 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Automatic updates</strong> — v1.0.1 required manually downloading each new release from the website. v2.0.0 checks in the background every few hours and installs new versions with a single click. Updates are differential — typically a few MB instead of the full 80+ MB installer.</li>
                         <li><strong className="text-foreground font-medium">Cross-drive duplicate detection</strong> — v1.0.1 only flagged duplicate folders when their paths matched exactly. v2.0.0 also catches the same folder content sitting on a different drive (e.g. a backup copy on H: when the original is on F:) and shows a soft-warning modal naming both drive letters.</li>
                         <li><strong className="text-foreground font-medium">Disk-fill safeguards</strong> — v1.0.1 extracted large ZIPs to %TEMP% on C:, slowly filling the system drive across multi-Takeout sessions. v2.0.0 extracts to your Library Drive instead, falls back to a "pick another drive" prompt when neither has room, caps the pre-extract pool at 55 GB to protect free space, warns before adding multiple multi-GB Takeouts in one session, and cleans up temp folders after each Takeout completes.</li>
-                        <li><strong className="text-foreground font-medium">One-click diagnostic ZIP</strong> — v1.0.1's "Report a problem" asked you to find your log file inside %APPDATA% manually. v2.0.0's Help &amp; Support &rarr; Report a problem now bundles your log, system info and licence state into a single .zip in your Documents folder ready to attach. Analysis errors that previously routed back silently now surface a "Send report" toast.</li>
-                        <li><strong className="text-foreground font-medium">More reliable</strong> — v1.0.1 could hang for ~20 s on the licence check when offline, stutter while hashing large videos, and (rarely) run two instances at once after a crash, causing "Tree empty" or "missing source" symptoms. v2.0.0 fixes all three: 5 s offline timeout, async chunked hashing that keeps the UI responsive, and a single-instance lock that prevents the duplicate-process scenario entirely. Settings, AI database and licence are now stored at a single canonical path (<code className="text-xs">%APPDATA%\Photo Date Rescue\</code>) regardless of how PDR was launched.</li>
+                        <li><strong className="text-foreground font-medium">One-click diagnostic ZIP</strong> — v1.0.1's "Report a problem" asked you to find your log file inside %APPDATA% manually. v2.0.0's Help &amp; Support &rarr; Report a problem now bundles your log, system info and license state into a single .zip in your Documents folder ready to attach. Analysis errors that previously routed back silently now surface a "Send report" toast.</li>
+                        <li><strong className="text-foreground font-medium">More reliable</strong> — v1.0.1 could hang for ~20 s on the license check when offline, stutter while hashing large videos, and (rarely) run two instances at once after a crash, causing "Tree empty" or "missing source" symptoms. v2.0.0 fixes all three: 5 s offline timeout, async chunked hashing that keeps the UI responsive, and a single-instance lock that prevents the duplicate-process scenario entirely. Settings, AI database and license are now stored at a single canonical path (<code className="text-xs">%APPDATA%\Photo Date Rescue\</code>) regardless of how PDR was launched.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
@@ -11841,7 +12100,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <div className="flex flex-col pr-3">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-violet-500" />
-                        <span className="text-sm font-medium text-foreground">Recognise people and content</span>
+                        <span className="text-sm font-medium text-foreground">Recognize people and content</span>
                       </div>
                       <span className="text-xs text-muted-foreground ml-6">Searchable by face and by what's in the photo (sunset, beach, pet…). One-time ~300 MB download, then runs in the background — about a minute per 100 photos. Everything stays on your device.</span>
                     </div>
@@ -11867,7 +12126,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <div className="ml-6 flex items-start gap-2 p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 animate-in fade-in slide-in-from-top-1 duration-200">
                       <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                       <p className="text-xs text-amber-800 dark:text-amber-300">
-                        Photos need to be searchable before they can be recognised. With <strong>Make Fixed photos searchable</strong> off, only photos already in your library will be recognised — new Fixed photos won't be.
+                        Photos need to be searchable before they can be recognized. With <strong>Make Fixed photos searchable</strong> off, only photos already in your library will be recognized — new Fixed photos won't be.
                       </p>
                     </div>
                   )}
@@ -11878,7 +12137,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   {aiEnabled && (
                     <label className="ml-6 flex items-center justify-between p-3 rounded-lg border border-violet-100 dark:border-violet-800/40 bg-violet-50/20 dark:bg-violet-950/10 cursor-pointer transition-colors animate-in fade-in slide-in-from-top-1 duration-200">
                       <div className="flex flex-col pr-3">
-                        <span className="text-sm font-medium text-foreground">Recognise new Fixed photos automatically</span>
+                        <span className="text-sm font-medium text-foreground">Recognize new Fixed photos automatically</span>
                         <span className="text-xs text-muted-foreground">PDR works through new photos in the background after every Fix. Turn off to keep recognition on standby — you can run it manually later from Search &amp; Discovery.</span>
                       </div>
                       <Checkbox
@@ -12169,7 +12428,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   Advanced AI controls
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Fine-tune AI behaviour. The main "Recognise people and content" switch lives in the After Fix tab.
+                  Fine-tune AI behavior. The main "Recognize people and content" switch lives in the After Fix tab.
                 </p>
 
                 {/* When AI is off there's nothing to fine-tune — show

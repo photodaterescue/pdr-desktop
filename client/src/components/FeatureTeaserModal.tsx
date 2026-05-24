@@ -110,7 +110,7 @@ export function FeatureTeaserModal({ feature, onClose, onActivate }: FeatureTeas
 
                 <div className="text-center space-y-1">
                   <p className="text-xs text-muted-foreground">
-                    Don't have a licence yet?
+                    Don't have a license yet?
                   </p>
                   <button
                     onClick={async () => {

@@ -420,7 +420,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'sources-panel',
     targetSelector: '[data-tour="sources-panel"]',
     title: 'Your Sources',
-    description: 'Sources appear here once added — folders, ZIP archives, RAR archives or whole drives. Tick a Source\'s checkbox to include it in the analysis, untick to leave it out. Multiple Sources are analysed together as a single Combined Analysis.',
+    description: 'Sources appear here once added — folders, ZIP archives, RAR archives or whole drives. Tick a Source\'s checkbox to include it in the analysis, untick to leave it out. Multiple Sources are analyzed together as a single Combined Analysis.',
     position: 'right',
     highlightPadding: 12
   },
@@ -436,7 +436,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'confidence-cards',
     targetSelector: '[data-tour="confidence-cards"]',
     title: 'Date Confidence Breakdown',
-    description: 'These four cards summarise how dates were determined per Source: Confirmed (embedded EXIF / Takeout metadata), Recovered (structured filename patterns), Marked (no reliable date — fallback rules used), and Duplicates (hash-matched identical copies skipped from output). They\'re initial estimates — the authoritative figures land in your Fix Report.',
+    description: 'These four cards summarize how dates were determined per Source: Confirmed (embedded EXIF / Takeout metadata), Recovered (structured filename patterns), Marked (no reliable date — fallback rules used), and Duplicates (hash-matched identical copies skipped from output). They\'re initial estimates — the authoritative figures land in your Fix Report.',
     position: 'bottom',
     highlightPadding: 12
   },
@@ -444,7 +444,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'combined-analysis',
     targetSelector: '[data-tour="combined-analysis"]',
     title: 'Combined Analysis',
-    description: 'Totals across every ticked Source — photos, videos, total size. The Photos / Videos toggles filter what the fix processes. You can keep adding more Sources from this card too; PDR re-analyses them and folds the new numbers in.',
+    description: 'Totals across every ticked Source — photos, videos, total size. The Photos / Videos toggles filter what the fix processes. You can keep adding more Sources from this card too; PDR re-analyzes them and folds the new numbers in.',
     position: 'left',
     highlightPadding: 12
   },
@@ -452,7 +452,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'destination',
     targetSelector: '[data-tour="destination"]',
     title: 'Your Library Drive',
-    description: 'This is where your fixed photos will live. PDR encourages you to pick a Library Drive before adding Sources — the Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed, capacity and connection type so you don\'t accidentally pick a slow or full drive. The colour-coded indicator confirms there\'s room for the run.',
+    description: 'This is where your fixed photos will live. PDR encourages you to pick a Library Drive before adding Sources — the Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed, capacity and connection type so you don\'t accidentally pick a slow or full drive. The color-coded indicator confirms there\'s room for the run.',
     position: 'left',
     highlightPadding: 8
   },
@@ -468,7 +468,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'guides-panel',
     targetSelector: '[data-tour="guides-panel"]',
     title: 'Guides & Help',
-    description: 'Step-by-step walkthroughs, best practices, and answers to common questions live here. If something goes wrong, Help & Support has a one-click "Report a problem" button that bundles your log, system info and licence state into a single ZIP for our team — no hunting in %APPDATA% required.',
+    description: 'Step-by-step walkthroughs, best practices, and answers to common questions live here. If something goes wrong, Help & Support has a one-click "Report a problem" button that bundles your log, system info and license state into a single ZIP for our team — no hunting in %APPDATA% required.',
     preferredPositions: ['right', 'left', 'top', 'bottom'],
     highlightPadding: 12
   },
@@ -483,7 +483,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'complete',
     title: 'You\'re Ready!',
-    description: 'That\'s the essentials. After your first fix, explore Search & Discovery (find any photo by date, person, location, tag), Memories (a Year/Month timeline + On This Day), and People Manager (AI-detected face clusters you can name). Trees, Edit Dates and Photo Format conversion are released shortly. Your originals are always safe — happy organising.',
+    description: 'That\'s the essentials. After your first fix, explore Search & Discovery (find any photo by date, person, location, tag), Memories (a Year/Month timeline + On This Day), and People Manager (AI-detected face clusters you can name). Trees, Edit Dates and Photo Format conversion are released shortly. Your originals are always safe — happy organizing.',
     position: 'center'
   }
 ];
@@ -503,7 +503,7 @@ export const SD_TOUR_STEPS: TourStep[] = [
     id: 'sd-ribbon-tabs',
     targetSelector: '[data-tour="sd-ribbon-tabs"]',
     title: 'Filter Tabs',
-    description: 'Switch between Favourites, Filters, Camera, Exposure, and AI. Each tab groups related filters so you can narrow down your library by any combination.',
+    description: 'Switch between Favorites, Filters, Camera, Exposure, and AI. Each tab groups related filters so you can narrow down your library by any combination.',
     position: 'bottom',
     highlightPadding: 6
   },
@@ -519,7 +519,7 @@ export const SD_TOUR_STEPS: TourStep[] = [
     id: 'sd-ai-tab',
     targetSelector: '[data-tour="sd-tags-filter"]',
     title: 'AI Filters',
-    description: 'Click the AI tab to filter by faces and AI-detected tags. Single-column face counts = photos of just that person; multi-column = photos shared with multiple selected people. Tag chips narrow your library to scenes, objects or activities the analyser found.',
+    description: 'Click the AI tab to filter by faces and AI-detected tags. Single-column face counts = photos of just that person; multi-column = photos shared with multiple selected people. Tag chips narrow your library to scenes, objects or activities the analyzer found.',
     position: 'bottom',
     highlightPadding: 8
   },
@@ -550,8 +550,8 @@ export const SD_TOUR_STEPS: TourStep[] = [
   {
     id: 'sd-favourites',
     targetSelector: '[data-tour="sd-favourites-tab"]',
-    title: 'Save Your Favourite Searches',
-    description: 'Star a filter combination to save it. Up to 10 favourites can be pinned for quick access on the Favourites tab.',
+    title: 'Save Your Favorite Searches',
+    description: 'Star a filter combination to save it. Up to 10 favorites can be pinned for quick access on the Favorites tab.',
     position: 'bottom',
     highlightPadding: 6
   },
@@ -791,7 +791,7 @@ export const REPORTS_TOUR_STEPS: TourStep[] = [
     id: 'rh-detail',
     targetSelector: '[data-tour="rh-detail"]',
     title: 'Row at a Glance',
-    description: 'Each row summarises one Fix run — confirmed (green), recovered (blue), marked (grey), and duplicates (amber). The numbers tell you at a glance how the run went without opening anything.',
+    description: 'Each row summarizes one Fix run — confirmed (green), recovered (blue), marked (grey), and duplicates (amber). The numbers tell you at a glance how the run went without opening anything.',
     preferredPositions: ['top', 'left', 'right'],
     highlightPadding: 8
   },

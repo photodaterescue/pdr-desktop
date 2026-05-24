@@ -109,7 +109,7 @@ export function ManageDevicesModal({ isOpen, onClose }: ManageDevicesModalProps)
   const handleConfirmRemove = async () => {
     if (!storedLicenseKey || !pendingRemoval) return;
     if (keyInput.trim() !== storedLicenseKey.trim()) {
-      setKeyError('That key does not match the licence on this device.');
+      setKeyError('That key does not match the license on this device.');
       return;
     }
     setKeyError(null);

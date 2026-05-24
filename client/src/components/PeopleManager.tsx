@@ -1435,12 +1435,12 @@ export default function PeopleManager() {
               N/M" indicator so progress is visible while you're looking
               at People Manager (the very place the results land). */}
           {aiProgress && aiProgress.phase === 'processing' && aiProgress.total > 0 && (
-            <IconTooltip label={`Analysing ${aiProgress.currentFile || ''}`} side="bottom">
+            <IconTooltip label={`Analyzing ${aiProgress.currentFile || ''}`} side="bottom">
               <div
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-400/40 text-sm text-violet-700 dark:text-violet-300"
               >
                 <Sparkle className="w-3 h-3 animate-pulse" />
-                <span>Analysing {aiProgress.current}/{aiProgress.total}</span>
+                <span>Analyzing {aiProgress.current}/{aiProgress.total}</span>
               </div>
             </IconTooltip>
           )}

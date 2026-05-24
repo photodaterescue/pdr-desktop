@@ -1774,7 +1774,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     const headerLabel = isSources ? 'Album Sources' : 'Folders';
     const emptyMessage = isSources
       ? 'No sources yet. Run Fix on a Google Photos Takeout, or create an album here, to populate this zone.'
-      : 'No folders yet. Use "New folder" above to start organising your albums.';
+      : 'No folders yet. Use "New folder" above to start organizing your albums.';
 
     return (
       <div

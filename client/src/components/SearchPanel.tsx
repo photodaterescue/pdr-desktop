@@ -1656,7 +1656,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           {/* Left: category tabs */}
           <div className="flex items-end shrink-0">
             {([
-              { key: 'favourites' as RibbonTab, label: 'Favourites', icon: <Star className="w-3 h-3" /> },
+              { key: 'favourites' as RibbonTab, label: 'Favorites', icon: <Star className="w-3 h-3" /> },
               { key: 'filters' as RibbonTab, label: 'Filters' },
               { key: 'camera' as RibbonTab, label: 'Camera' },
               { key: 'exposure' as RibbonTab, label: 'Exposure' },
@@ -1750,7 +1750,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <div className="flex items-center justify-center flex-1 py-4 px-6">
                     <div className="text-center">
                       <Star className="w-6 h-6 text-foreground/20 mx-auto mb-2" />
-                      <p className="text-sm text-foreground/70 font-medium">No favourite filters yet</p>
+                      <p className="text-sm text-foreground/70 font-medium">No favorite filters yet</p>
                       <p className="text-xs text-muted-foreground mt-1">Click the <Star className="w-3 h-3 inline text-amber-500" /> star on any filter group in the other tabs to add it here (max {MAX_FAVOURITE_GROUPS})</p>
                     </div>
                   </div>
@@ -1764,7 +1764,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <input
                         ref={searchInputRef}
                         type="text"
-                        placeholder={dbReady ? 'Search photos, people, tags...' : 'Initialising...'}
+                        placeholder={dbReady ? 'Search photos, people, tags...' : 'Initializing...'}
                         value={searchText}
                         onChange={(e) => { setSearchText(e.target.value); setSearchSuggestionIdx(-1); }}
                         onFocus={() => { if (searchText.trim().length > 0) setShowSearchSuggestions(true); }}
@@ -3246,7 +3246,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           </IconTooltip>
                         )}
                         {hasActiveFilters && !showSaveFavourite && (
-                          <IconTooltip label="Save filters as favourite" side="bottom">
+                          <IconTooltip label="Save filters as favorite" side="bottom">
                             <button onClick={() => setShowSaveFavourite(true)}
                               className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]">
                               <Star className="w-[18px] h-[18px]" />
@@ -3537,7 +3537,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               <button onClick={() => setShowCustomise(false)} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Select up to {MAX_FAVOURITE_GROUPS} filter groups for your Favourites tab. You can also click the <Star className="w-3 h-3 inline text-amber-500" /> star on any filter group label.
+              Select up to {MAX_FAVOURITE_GROUPS} filter groups for your Favorites tab. You can also click the <Star className="w-3 h-3 inline text-amber-500" /> star on any filter group label.
             </p>
             <p className="text-xs text-muted-foreground mb-3">{favouriteGroups.length} / {MAX_FAVOURITE_GROUPS} selected</p>
             {/* Group by tab category */}
@@ -3564,7 +3564,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             ))}
             <div className="mt-4 pt-3 border-t border-border flex justify-between">
               <button onClick={() => { setFavouriteGroups([]); localStorage.setItem('pdr-ribbon-fav-groups', JSON.stringify([])); }}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors">Clear all favourites</button>
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors">Clear all favorites</button>
               <button onClick={() => setShowCustomise(false)} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">Done</button>
             </div>
           </div>

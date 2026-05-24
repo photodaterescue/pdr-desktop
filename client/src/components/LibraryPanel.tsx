@@ -1035,7 +1035,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   const handleConfirmKey = () => {
     if (!storedLicenseKey) return;
     if (keyInput.trim().toUpperCase() !== storedLicenseKey.trim().toUpperCase()) {
-      setKeyError('That key does not match the licence on this device.');
+      setKeyError('That key does not match the license on this device.');
       return;
     }
     setKeyError(null);
@@ -2201,7 +2201,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           <div className="rounded-xl border border-border bg-secondary/20 p-3">
             <p className="text-label uppercase tracking-wider mb-1.5">A separate library makes sense when</p>
             <ul className="space-y-1 list-disc pl-5">
-              <li className="text-body-muted">You're organising someone else's photos on this PC (e.g. a relative's)</li>
+              <li className="text-body-muted">You're organizing someone else's photos on this PC (e.g. a relative's)</li>
               <li className="text-body-muted">You want a fully independent collection that doesn't mix with yours in PDR's views</li>
             </ul>
             <p className="text-caption mt-2">Running out of storage isn't a reason — the Library DB spans drives, so one library's photos can live on multiple drives via Parallel Library.</p>

@@ -378,7 +378,7 @@ export default function Home() {
                 : "Pick up where you left off — your Library Drive is set and ready.")
               : isReturningUser
               ? "No Library Drive is currently selected — pick one from your saved drives in the Workspace, or set up a new one."
-              : "For a quick fix, or your forever library — choose where your organised photos and videos will live."}
+              : "For a quick fix, or your forever library — choose where your organized photos and videos will live."}
             ctaLabel={hasDestination
               ? "Open Workspace"
               : isReturningUser

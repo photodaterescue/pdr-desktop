@@ -299,7 +299,7 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
     if (!storedLicenseKey || !pendingAction) return;
     if (keyInput.trim().toUpperCase() !== storedLicenseKey.trim().toUpperCase()) {
       setKeyError(
-        'That key does not match the licence on this device. Check the email Lemon Squeezy sent you when you purchased.',
+        'That key does not match the license on this device. Check the email Lemon Squeezy sent you when you purchased.',
       );
       return;
     }
