@@ -2999,9 +2999,24 @@ ipcMain.handle('analysis:checkExtractionsForSources', async (_event, requests: A
       results.push({ path: req.path, hasExtraction: true, needsExtraction: false });
       continue;
     }
+    // v2.0.11 (Terry 2026-05-25) — check BOTH possible temp roots so a
+    // source whose extraction landed on the C: fallback isn't mis-
+    // identified as orphan just because the active root is now the
+    // Library Drive. Same rationale as cleanupTempDirForSource above.
+    const baseName = path.basename(req.path, path.extname(req.path));
+    const hashFor = (() => {
+      try { return crypto.createHash('md5').update(req.path).digest('hex').substring(0, 8); } catch { return null; }
+    })();
+    const roots: string[] = [];
+    try { roots.push(getCurrentPdrTempRoot()); } catch { /* fall through */ }
+    if (!roots.includes(PDR_TEMP_ROOT)) roots.push(PDR_TEMP_ROOT);
     const candidates: string[] = [];
-    try { candidates.push(generateTempDirName(req.path)); } catch { /* malformed */ }
-    try { candidates.push(generateRarTempDirName(req.path)); } catch { /* malformed */ }
+    if (hashFor) {
+      const folderName = `${baseName}_${hashFor}`;
+      for (const root of roots) candidates.push(path.join(root, folderName));
+    }
+    try { if (!candidates.includes(generateTempDirName(req.path))) candidates.push(generateTempDirName(req.path)); } catch { /* malformed */ }
+    try { if (!candidates.includes(generateRarTempDirName(req.path))) candidates.push(generateRarTempDirName(req.path)); } catch { /* malformed */ }
     let found = false;
     for (const td of candidates) {
       if (activeTempDirs.has(td) || fs.existsSync(td)) { found = true; break; }
@@ -3051,9 +3066,40 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
   // failures are swallowed and contribute 0 — never blocks the clean.
   let bytesRemoved = 0;
   const failedPaths: Array<{ path: string; reason: string }> = [];
+
+  // v2.0.11 (Terry 2026-05-25) — check BOTH possible temp roots, not
+  // just the one PDR currently considers active. An extraction can
+  // land on either:
+  //   - <LibraryDrive>\PDR_Temp     (preferred when the Lib Drive has
+  //                                  enough headroom at extract-time)
+  //   - %TEMP%\PDR_Temp             (C: fallback when the Lib Drive
+  //                                  doesn't, or when no Lib Drive
+  //                                  was configured at extract-time)
+  // The active root at CURRENT moment may differ from where this
+  // source's extraction actually landed — generateTempDirName /
+  // generateRarTempDirName use the current root, so the candidate
+  // list they produce is incomplete. Build the full cross-product
+  // here so the cleanup hits the extraction wherever it lives.
+  const baseName = path.basename(sourcePath, path.extname(sourcePath));
+  const hashFor = (() => {
+    try { return crypto.createHash('md5').update(sourcePath).digest('hex').substring(0, 8); } catch { return null; }
+  })();
+  const roots: string[] = [];
+  try { roots.push(getCurrentPdrTempRoot()); } catch { /* fall through */ }
+  if (!roots.includes(PDR_TEMP_ROOT)) roots.push(PDR_TEMP_ROOT);
   const candidates: string[] = [];
-  try { candidates.push(generateTempDirName(sourcePath)); } catch { /* malformed path */ }
-  try { candidates.push(generateRarTempDirName(sourcePath)); } catch { /* malformed path */ }
+  if (hashFor) {
+    const folderName = `${baseName}_${hashFor}`;
+    for (const root of roots) {
+      candidates.push(path.join(root, folderName));
+    }
+  }
+  // Also include whatever generateTempDirName / generateRarTempDirName
+  // produce against the current root (covers any divergence between
+  // the inline reconstruction above and the canonical helpers).
+  try { if (!candidates.includes(generateTempDirName(sourcePath))) candidates.push(generateTempDirName(sourcePath)); } catch { /* malformed */ }
+  try { if (!candidates.includes(generateRarTempDirName(sourcePath))) candidates.push(generateRarTempDirName(sourcePath)); } catch { /* malformed */ }
+
   for (const td of candidates) {
     if (activeTempDirs.has(td)) {
       let sizeBytes = 0;
