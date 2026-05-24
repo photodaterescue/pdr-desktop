@@ -542,15 +542,14 @@ useEffect(() => {
     //     active extractions and must be left alone; loose files at
     //     the root are never created by PDR so they're always safe)
     const looseFilesOnly = sources.length > 0;
-    // v2.0.11 — defer the sweep by 5 seconds so it fires AFTER the
-    // boot splash dismisses at the 5 s min hold. Combined with the
-    // chunked-yielding inside runDatabaseCleanup, this means the
-    // splash period is uncontested and the cleanup itself doesn't
-    // monopolise the main thread when it does run. Terry 2026-05-24
-    // reproduced the original 2 s defer still freezing because the
-    // cleanup work itself was synchronous — the chunked async fix in
-    // search-database.ts is the bigger half of the eradication.
-    const deferTimer = setTimeout(() => {
+    // v2.0.11 — sweep fires IMMEDIATELY now (no defer). The splash
+    // is meant to COVER this work, not happen before it. The sweep
+    // already uses fs.promises.* internally so each readdir/stat/rm
+    // yields to the event loop — the main thread stays responsive
+    // throughout, drag works during the splash, and the sweep
+    // finishes alongside or before the splash dismisses. Terry
+    // 2026-05-24: "Isn't the whole reason for the splash screen to
+    // hide the lag from the deletion?"
     (async () => {
       try {
         const { sweepOrphanedTempDirsIfEmpty } = await import('@/lib/electron-bridge');
@@ -577,8 +576,6 @@ useEffect(() => {
         console.warn('[orphan-sweep] failed:', err);
       }
     })();
-    }, 5000);
-    return () => clearTimeout(deferTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -4754,12 +4754,19 @@ ipcMain.handle('search:init', async () => {
     // its initial useEffect chain a window of clean responsiveness before
     // the main process gets busy.
     if (result.success) {
-        // v2.0.11 — defer 5 s (was 2 s) so cleanup fires AFTER the boot
-        // splash has dismissed at the 5 s min hold. Combined with the
-        // setImmediate-yielding inside runDatabaseCleanup, this means the
-        // splash period is uncontested and the cleanup itself doesn't
-        // monopolise the main thread when it does run.
-        setTimeout(async () => {
+        // v2.0.11 — cleanup fires IMMEDIATELY now. Previous iterations
+        // deferred by 2 s then 5 s out of paranoia that the cleanup would
+        // freeze the boot splash. With the setImmediate-yielding inside
+        // runDatabaseCleanup (chunked batches of 500 rows), the main
+        // thread stays responsive THROUGHOUT the cleanup — the message
+        // pump runs between every batch. So the splash genuinely covers
+        // the work: cleanup starts at ~T+800ms (workspace mount), runs
+        // chunked while the splash is visible, finishes well before or
+        // alongside the splash dismiss at T+5s. Terry 2026-05-24: "Why
+        // isn't it cleaning up the Temp folder while the splash screen
+        // is visible? Isn't the whole reason for the splash screen to
+        // hide the lag from the deletion?"
+        (async () => {
             try {
                 const cleanup = await runDatabaseCleanup();
                 if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
@@ -4774,7 +4781,7 @@ ipcMain.handle('search:init', async () => {
             catch (err) {
                 console.error('[Startup Cleanup] Error:', err.message);
             }
-        }, 5000);
+        })();
     }
     return result;
 });
