@@ -580,6 +580,20 @@ useEffect(() => {
     return () => window.removeEventListener('open-reports-history', handleOpenReports);
   }, []);
 
+  // v2.0.11 (Terry 2026-05-24) — sourcesRef mirrors the current sources
+  // state so window event listeners (which are registered ONCE on mount
+  // with empty deps) can read the LATEST sources when they fire. Without
+  // this, the pdr-clear-sources handler below captured `sources` at
+  // mount time (empty array on cold start) and reapTempDirsForSources
+  // would receive that stale empty list — temp dirs survived the Clear
+  // Sources action even though the source list cleared. Terry's symptom:
+  // "I selected Clear Sources after the fix, nothing was deleted from
+  // PDR_Temp."
+  const sourcesRef = useRef<Source[]>(sources);
+  useEffect(() => {
+    sourcesRef.current = sources;
+  });
+
   // Listen for clear sources event from post-fix prompt
   useEffect(() => {
     const handleClearSources = () => {
@@ -588,6 +602,10 @@ useEffect(() => {
       // pile up in PDR_Temp and silently consume the 55 GB pre-extract
       // budget on the next session.
       //
+      // Read from sourcesRef.current (not the closure's `sources`) so
+      // we get the SOURCES AS OF THE CLICK, not as of when this
+      // listener was registered on mount. See sourcesRef comment above.
+      //
       // NOTE: this does NOT clear destinationPath — the Library Drive
       // stays attached across source resets. The drive is the user's
       // long-lived workspace; sources are transient inputs. To switch
@@ -595,7 +613,7 @@ useEffect(() => {
       // pdr:libraryDriveChanged and the derived-state effect refreshes.
       // Pre-v2.0.11 this block called setDestinationPath(null) and was
       // the silent-CTA bug Terry hit on 2026-05-23.
-      reapTempDirsForSources(sources);
+      reapTempDirsForSources(sourcesRef.current);
       setSources([]);
       localStorage.removeItem("pdr-sources");
       localStorage.removeItem("pdr-source-analysis-results");
