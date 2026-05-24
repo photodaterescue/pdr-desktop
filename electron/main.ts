@@ -1819,6 +1819,99 @@ async function extractLargeZip(
   onProgress?.(`Unpacked ${extracted.toLocaleString()} entries`, extracted, totalEntries);
 }
 
+// v2.0.11 (Terry 2026-05-24) — utilityProcess wrapper around
+// extractLargeZip. Forks electron/extract-worker.cjs, posts the
+// {zipPath, tempDir} init, forwards progress messages to onProgress,
+// resolves on 'done', rejects on 'error', polls isAnalysisCancelled()
+// every 250ms and posts {type:'cancel'} when the user clicks Cancel.
+//
+// Why utilityProcess instead of leaving extraction on the main thread:
+// the 18k+ per-entry fs.mkdirSync calls plus unzipper's synchronous
+// central-directory parse (for a 50 GB / 18k-entry Takeout) add up
+// to enough sync time that Windows ghosts the workspace as "Not
+// Responding" during the analyse step. Off-process keeps the main
+// browser thread unblocked throughout — drag, repaint, and IPC
+// responses stay smooth.
+function runExtractInWorker(
+  zipPath: string,
+  tempDir: string,
+  onProgress?: (message: string, current?: number, total?: number) => void,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const workerPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'dist-electron/extract-worker.cjs')
+      : path.join(__dirname, 'extract-worker.cjs');
+
+    let worker: Electron.UtilityProcess | null = null;
+    try {
+      worker = utilityProcess.fork(workerPath, [], {
+        serviceName: 'PDR Extract Worker',
+        stdio: 'pipe',
+      });
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    worker.stdout?.on('data', (chunk: Buffer) => {
+      log.info(`[extract-worker stdout] ${chunk.toString().trim()}`);
+    });
+    worker.stderr?.on('data', (chunk: Buffer) => {
+      log.warn(`[extract-worker stderr] ${chunk.toString().trim()}`);
+    });
+
+    // Poll the in-main analysis-cancel flag and forward as a cancel
+    // message to the worker. Done as a poll rather than wiring a
+    // dedicated IPC because the cancel flag is set from many places
+    // (renderer's analysis:cancel IPC, app quit handlers, source-
+    // remove cleanup) and the flag pattern already aggregates them.
+    const cancelPoller = setInterval(() => {
+      if (isAnalysisCancelled() && worker) {
+        try { worker.postMessage({ type: 'cancel' }); } catch { /* worker may be exiting */ }
+      }
+    }, 250);
+
+    const finish = (resolveErr: Error | null) => {
+      clearInterval(cancelPoller);
+      try { worker?.kill(); } catch { /* best-effort */ }
+      worker = null;
+      if (resolveErr) reject(resolveErr);
+      else resolve();
+    };
+
+    worker.on('message', (msg: unknown) => {
+      const m = msg as { type?: string; current?: number; total?: number; message?: string; code?: string; details?: Record<string, unknown> };
+      if (m?.type === 'progress') {
+        onProgress?.(m.message ?? 'Unpacking...', m.current, m.total);
+      } else if (m?.type === 'done') {
+        finish(null);
+      } else if (m?.type === 'cancelled') {
+        finish(new Error('ANALYSIS_CANCELLED'));
+      } else if (m?.type === 'error') {
+        const err = new Error(m.message ?? 'Extraction failed');
+        if (m.code) (err as Error & { code?: string }).code = m.code;
+        if (m.details) Object.assign(err, m.details);
+        finish(err);
+      }
+    });
+
+    worker.on('exit', (code) => {
+      // If the worker exited without posting 'done' / 'error' /
+      // 'cancelled', synthesise a failure so the awaiting caller
+      // doesn't hang.
+      log.info(`[extract-worker] exited code=${code}`);
+      clearInterval(cancelPoller);
+      // Resolve/reject is idempotent — if we already finished above,
+      // this is a no-op. Otherwise treat as crash.
+      // (Promise can't be checked from outside, so just reject;
+      // the JS engine ignores a second resolve/reject.)
+      reject(new Error(`extract-worker exited unexpectedly (code=${code})`));
+    });
+
+    worker.postMessage({ type: 'extract', zipPath, tempDir });
+  });
+}
+
 // Track active temp dirs so we can clean up on cancel/quit
 const activeTempDirs = new Set<string>();
 
@@ -3543,7 +3636,17 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
         phase: 'scanning'
       });
 
-      await extractLargeZip(sourcePath, tempDir, (message, current, total) => {
+      // v2.0.11 (Terry 2026-05-24) — large-zip extraction runs in a
+      // utilityProcess (electron/extract-worker.ts) so the main
+      // browser thread can't be blocked by the 18k+ per-entry
+      // mkdirSync + unzipper's central-directory parse. Was the
+      // source of "Not Responding" at the start of a 50 GB Takeout
+      // analyse. Worker streams progress messages back, we forward
+      // them to the renderer, and we await the done signal before
+      // continuing to analyzeSource. Same cancellation contract:
+      // analysis:cancel sets isAnalysisCancelled() which we poll
+      // here and post a 'cancel' message to the worker.
+      await runExtractInWorker(sourcePath, tempDir, (message, current, total) => {
         mainWindow?.webContents.send('analysis:progress', {
           current: current || 0,
           total: total || 0,
