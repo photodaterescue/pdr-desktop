@@ -5084,9 +5084,14 @@ ipcMain.handle('search:init', async () => {
   // its initial useEffect chain a window of clean responsiveness before
   // the main process gets busy.
   if (result.success) {
-    setTimeout(() => {
+    // v2.0.11 — defer 5 s (was 2 s) so cleanup fires AFTER the boot
+    // splash has dismissed at the 5 s min hold. Combined with the
+    // setImmediate-yielding inside runDatabaseCleanup, this means the
+    // splash period is uncontested and the cleanup itself doesn't
+    // monopolise the main thread when it does run.
+    setTimeout(async () => {
       try {
-        const cleanup = runDatabaseCleanup();
+        const cleanup = await runDatabaseCleanup();
         if (cleanup.duplicateRunsRemoved > 0 || cleanup.duplicatesRemoved > 0 || cleanup.staleRemoved > 0 || cleanup.orphanRunsRemoved > 0 || cleanup.ghostRunsRemoved > 0) {
           console.log(`[Startup Cleanup] Removed: ${cleanup.duplicateRunsRemoved} duplicate runs, ${cleanup.ghostRunsRemoved} ghost runs, ${cleanup.orphanRunsRemoved} orphan runs, ${cleanup.duplicatesRemoved} duplicate files, ${cleanup.staleRemoved} stale files (checked ${cleanup.totalChecked} total)`);
         }
@@ -5098,7 +5103,7 @@ ipcMain.handle('search:init', async () => {
       } catch (err) {
         console.error('[Startup Cleanup] Error:', (err as Error).message);
       }
-    }, 2000);
+    }, 5000);
   }
   return result;
 });

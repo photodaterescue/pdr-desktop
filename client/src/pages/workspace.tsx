@@ -542,11 +542,14 @@ useEffect(() => {
     //     active extractions and must be left alone; loose files at
     //     the root are never created by PDR so they're always safe)
     const looseFilesOnly = sources.length > 0;
-    // v2.0.11 — defer the sweep by 2 seconds so the heavy disk walk
-    // (and any locked-file toasts it produces) doesn't compete with
-    // the boot splash and first-paint window of clean responsiveness.
-    // The orphan files have been sitting around since the previous
-    // session — they can wait another 2 s. Terry 2026-05-24.
+    // v2.0.11 — defer the sweep by 5 seconds so it fires AFTER the
+    // boot splash dismisses at the 5 s min hold. Combined with the
+    // chunked-yielding inside runDatabaseCleanup, this means the
+    // splash period is uncontested and the cleanup itself doesn't
+    // monopolise the main thread when it does run. Terry 2026-05-24
+    // reproduced the original 2 s defer still freezing because the
+    // cleanup work itself was synchronous — the chunked async fix in
+    // search-database.ts is the bigger half of the eradication.
     const deferTimer = setTimeout(() => {
     (async () => {
       try {
@@ -574,7 +577,7 @@ useEffect(() => {
         console.warn('[orphan-sweep] failed:', err);
       }
     })();
-    }, 2000);
+    }, 5000);
     return () => clearTimeout(deferTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

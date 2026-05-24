@@ -4171,17 +4171,38 @@ export function purgeDuplicateIndexedFiles(): number {
  * Remove indexed_files where the file no longer exists on disk.
  * Returns { removed: number, checked: number }.
  */
-export function purgeStaleIndexedFiles(): { removed: number; checked: number } {
+// v2.0.11 — async + chunked. Previously this was a synchronous
+// for-loop calling fs.existsSync on every indexed_files row (26k+ on
+// Terry's library). Each existsSync is a blocking syscall on the main
+// thread, so 26k of them = 6-15 seconds of pure main-thread block.
+// During that block, Chromium's main browser thread (= Electron's
+// main process) can't pump its message loop, can't respond to OS
+// WM_NCHITTEST drag messages, can't repaint. Windows ghosts the
+// title bar white as "Not Responding" after ~5 s. Terry 2026-05-24
+// reproduced this with a 50 GB orphan staging set in PDR_Temp.
+//
+// Fix: chunk the existsSync loop into batches of 500, yield via
+// setImmediate between batches. Each batch is ~150 ms of work; the
+// message pump runs between batches so window drag, IPC responses,
+// and repaints stay responsive. Total cleanup time is the same; what
+// changes is that the main thread is no longer monopolised.
+export async function purgeStaleIndexedFiles(): Promise<{ removed: number; checked: number }> {
   const database = getDb();
-
-  // Get all unique file paths
   const rows = database.prepare(`SELECT id, file_path FROM indexed_files`).all() as { id: number; file_path: string }[];
   const staleIds: number[] = [];
 
-  for (const row of rows) {
-    if (!fs.existsSync(row.file_path)) {
-      staleIds.push(row.id);
+  const SCAN_BATCH = 500;
+  for (let i = 0; i < rows.length; i += SCAN_BATCH) {
+    const end = Math.min(i + SCAN_BATCH, rows.length);
+    for (let j = i; j < end; j++) {
+      if (!fs.existsSync(rows[j].file_path)) {
+        staleIds.push(rows[j].id);
+      }
     }
+    // Yield to the event loop so the main thread can service OS
+    // messages and IPCs between batches. Without this, Windows
+    // marks the window Not Responding within ~5 s.
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
 
   if (staleIds.length > 0) {
@@ -4191,6 +4212,10 @@ export function purgeStaleIndexedFiles(): { removed: number; checked: number } {
       const batch = staleIds.slice(i, i + batchSize);
       const placeholders = batch.map(() => '?').join(',');
       database.prepare(`DELETE FROM indexed_files WHERE id IN (${placeholders})`).run(...batch);
+      // Yield between DELETE batches too — better-sqlite3 is
+      // synchronous, so a multi-batch delete with no yield can
+      // re-monopolise the thread.
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
 
@@ -4223,7 +4248,11 @@ export function purgeOrphanRuns(): number {
  *   - autoRemoved: runs where folder AND all files are gone (safe to auto-delete)
  *   - promptUser: runs where folder is gone but some files may still exist elsewhere
  */
-export function purgeGhostRuns(): { autoRemoved: number; promptUser: IndexedRun[] } {
+// v2.0.11 — async + yielding (see purgeStaleIndexedFiles for the full
+// rationale). Same main-thread-blocking concern: fs.existsSync inside
+// a for-loop, plus a nested .some() with another fs.existsSync per run.
+// Yields between runs so the main process stays responsive.
+export async function purgeGhostRuns(): Promise<{ autoRemoved: number; promptUser: IndexedRun[] }> {
   const database = getDb();
   const runs = database.prepare(`SELECT * FROM indexed_runs`).all() as IndexedRun[];
   const autoRemoveIds: number[] = [];
@@ -4246,6 +4275,11 @@ export function purgeGhostRuns(): { autoRemoved: number; promptUser: IndexedRun[
         autoRemoveIds.push(run.id);
       }
     }
+    // Yield between runs so the main process can service other work.
+    // indexed_runs is typically small (<100 rows) but each run can
+    // trigger up to 101 existsSync calls via the .some() above, so
+    // yielding here matters when destination paths are unreachable.
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
 
   if (autoRemoveIds.length > 0) {
@@ -4669,7 +4703,12 @@ export function getMemoriesDayFiles(year: number, month?: number | null, day?: n
   `).all(...params) as IndexedFile[];
 }
 
-export function runDatabaseCleanup(): {
+// v2.0.11 — async because purgeStaleIndexedFiles and purgeGhostRuns
+// now yield between batches (see those functions for rationale). The
+// SQL-only steps (purgeDuplicateRuns no-op, purgeDuplicateIndexedFiles,
+// purgeOrphanRuns) stay synchronous — they're single SQL statements
+// that better-sqlite3 finishes in ms, no yielding needed.
+export async function runDatabaseCleanup(): Promise<{
   staleRuns: IndexedRun[];
   duplicateRunsRemoved: number;
   duplicatesRemoved: number;
@@ -4677,7 +4716,7 @@ export function runDatabaseCleanup(): {
   totalChecked: number;
   orphanRunsRemoved: number;
   ghostRunsRemoved: number;
-} {
+}> {
   // Step 1: Remove duplicate runs for the same destination_path (keeps newest)
   const dupeRuns = purgeDuplicateRuns();
 
@@ -4685,7 +4724,8 @@ export function runDatabaseCleanup(): {
   const dupes = purgeDuplicateIndexedFiles();
 
   // Step 3: Remove file entries where the actual file no longer exists on disk
-  const stale = purgeStaleIndexedFiles();
+  //   (async + chunked to keep the main thread responsive)
+  const stale = await purgeStaleIndexedFiles();
 
   // Step 4: Remove runs that now have zero files (orphaned by steps 2-3)
   const orphans = purgeOrphanRuns();
@@ -4693,7 +4733,8 @@ export function runDatabaseCleanup(): {
   // Step 5: Direct ghost-run cleanup — destination folder doesn't exist
   //   Auto-removes runs where folder AND all files are gone (nothing to preserve)
   //   Returns runs for StaleRunsModal where folder is gone but files may be relocatable
-  const ghosts = purgeGhostRuns();
+  //   (async + yielding to keep the main thread responsive)
+  const ghosts = await purgeGhostRuns();
 
   return {
     staleRuns: ghosts.promptUser,
