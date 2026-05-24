@@ -10980,10 +10980,15 @@ function SourceAddedModal({ source, stats, analysisElapsed, onAddToWorkspace, on
 
         <div className="space-y-2">
           <div className="flex gap-3">
-            <Button 
-              className="flex-1 bg-primary hover:bg-primary/90" 
+            <Button
+              className="flex-1 bg-primary hover:bg-primary/90 shadow-md shadow-primary/20"
               onClick={() => setStep('success')}
               data-testid="button-keep-source"
+              // v2.0.11 (Terry 2026-05-24) — primary CTA on the Source
+              // Added card should pulse the same way the "Add Source"
+              // / "Select Library Drive" buttons do on the Workspace,
+              // so the user's eye lands on the obvious next action.
+              style={{ animation: 'outline-pulse 2s ease-in-out infinite' }}
             >
               Keep Source
             </Button>
