@@ -65,6 +65,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 // process.parentPort is the utilityProcess messaging channel — same
 // shape as MessagePort.
 const parentPort = process.parentPort;
@@ -72,11 +73,67 @@ function postProgress(text) {
     const msg = { type: 'progress', text };
     parentPort?.postMessage?.(msg);
 }
-async function runDbCleanup(dbPath) {
+// v2.0.12 — pre-cleanup defence in depth. Before we touch a single row,
+// snapshot the local DB to the Library Drive's sidecar location. If the
+// cleanup misbehaves (the v2.0.10 cascade-delete pattern was a category
+// of bug we now know exists), the user has a fresh backup waiting at
+// <libraryRoot>/.pdr/pdr-search.db that the workspace's recovery banner
+// can offer to restore from.
+//
+// Returns true if a snapshot landed; false on any failure (missing
+// drive, permission denied, disk full). Cleanup proceeds either way —
+// we never block tidying just because the sidecar drive happens to be
+// disconnected, because that would make the app feel locked-up to the
+// majority of users for whom there's no actual cascade risk.
+async function snapshotToSidecarPreCleanup(dbPath, libraryRoot) {
+    try {
+        const sidecarDir = path.join(libraryRoot, '.pdr');
+        const sidecarDbPath = path.join(sidecarDir, 'pdr-search.db');
+        if (!fs.existsSync(sidecarDir)) {
+            fs.mkdirSync(sidecarDir, { recursive: true });
+        }
+        // better-sqlite3's backup() is the right copy primitive — it handles
+        // any in-progress WAL frames, produces a consistent snapshot, and
+        // is faster than a raw file copy on large DBs. Open the source
+        // read-only so a stuck writer lock from a crashed prior session
+        // doesn't block the snapshot.
+        const sourceDb = new better_sqlite3_1.default(dbPath, { readonly: true, fileMustExist: true });
+        const tmpPath = sidecarDbPath + '.precleanup.tmp';
+        try {
+            await sourceDb.backup(tmpPath);
+        }
+        finally {
+            try {
+                sourceDb.close();
+            }
+            catch { /* best-effort */ }
+        }
+        // Atomic rename — readers of the canonical sidecar path never see a
+        // half-written file. Important because the renderer's recovery
+        // banner opens this path read-only on workspace mount.
+        if (fs.existsSync(sidecarDbPath))
+            fs.unlinkSync(sidecarDbPath);
+        fs.renameSync(tmpPath, sidecarDbPath);
+        return true;
+    }
+    catch (err) {
+        postProgress(`(skipped backup: ${err.message.split('\n')[0]})`);
+        return false;
+    }
+}
+async function runDbCleanup(dbPath, libraryRoot) {
     // Open the DB read-write. If the file doesn't exist yet (first
     // launch ever), short-circuit — there's nothing to clean up.
     if (!fs.existsSync(dbPath)) {
-        return { staleRemoved: 0, duplicatesRemoved: 0, orphanRunsRemoved: 0, ghostRunsRemoved: 0, totalChecked: 0 };
+        return { staleRemoved: 0, duplicatesRemoved: 0, orphanRunsRemoved: 0, ghostRunsRemoved: 0, totalChecked: 0, snapshotTaken: false };
+    }
+    // v2.0.12 — pre-cleanup sidecar snapshot. Runs BEFORE we open the
+    // write connection below, so the snapshot is taken against the
+    // pristine on-disk file, not a connection that's about to mutate.
+    let snapshotTaken = false;
+    if (libraryRoot && fs.existsSync(libraryRoot)) {
+        postProgress('Backing up your library…');
+        snapshotTaken = await snapshotToSidecarPreCleanup(dbPath, libraryRoot);
     }
     const db = new better_sqlite3_1.default(dbPath);
     // WAL for less locking contention if the main process opens its
@@ -178,7 +235,7 @@ async function runDbCleanup(dbPath) {
             }
         }
         catch { /* table missing */ }
-        return { staleRemoved, duplicatesRemoved, orphanRunsRemoved, ghostRunsRemoved, totalChecked };
+        return { staleRemoved, duplicatesRemoved, orphanRunsRemoved, ghostRunsRemoved, totalChecked, snapshotTaken };
     }
     finally {
         try {
@@ -201,7 +258,7 @@ parentPort?.on?.('message', async (e) => {
     if (!msg || msg.type !== 'init')
         return;
     const startedAt = Date.now();
-    const dbResult = await runDbCleanup(msg.dbPath);
+    const dbResult = await runDbCleanup(msg.dbPath, msg.libraryRoot ?? null);
     const done = {
         type: 'done',
         summary: {
@@ -210,6 +267,7 @@ parentPort?.on?.('message', async (e) => {
             dbOrphanRunsRemoved: dbResult.orphanRunsRemoved,
             dbGhostRunsRemoved: dbResult.ghostRunsRemoved,
             dbTotalChecked: dbResult.totalChecked,
+            snapshotTaken: dbResult.snapshotTaken,
             elapsedMs: Date.now() - startedAt,
         },
     };

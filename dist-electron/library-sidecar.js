@@ -658,6 +658,61 @@ export function detectSidecar(libraryRoot) {
     }
     return out;
 }
+export function detectRecoveryGap(libraryRoot) {
+    if (!libraryRoot)
+        return null;
+    const sidecarDbPath = getSidecarDbPath(libraryRoot);
+    if (!fs.existsSync(sidecarDbPath))
+        return null;
+    // Open the sidecar read-only — no risk of writing, no chance of
+    // disturbing whatever process is currently the writer on this drive.
+    let sidecarDb = null;
+    try {
+        sidecarDb = new Database(sidecarDbPath, { readonly: true, fileMustExist: true });
+        const sidecarFiles = sidecarDb.prepare(`SELECT COUNT(*) AS c FROM indexed_files`).get().c;
+        const sidecarRuns = sidecarDb.prepare(`SELECT COUNT(*) AS c FROM indexed_runs`).get().c;
+        const sidecarAlbumLinks = sidecarDb.prepare(`SELECT COUNT(*) AS c FROM album_files`).get().c;
+        const localDb = getDb();
+        const localFiles = localDb.prepare(`SELECT COUNT(*) AS c FROM indexed_files`).get().c;
+        const localRuns = localDb.prepare(`SELECT COUNT(*) AS c FROM indexed_runs`).get().c;
+        const localAlbumLinks = localDb.prepare(`SELECT COUNT(*) AS c FROM album_files`).get().c;
+        // Read sidecar-meta.json's writtenAt for the banner — gives the
+        // user a concrete "your backup is from 12:40 today" to anchor the
+        // restore offer to a real point in their timeline.
+        let sidecarWrittenAt = null;
+        try {
+            const meta = readSidecarMeta(libraryRoot);
+            sidecarWrittenAt = meta?.writtenAt ?? null;
+        }
+        catch { /* meta missing — non-fatal */ }
+        // Gap criteria — see function comment.
+        const fileGapMaterial = sidecarFiles >= localFiles * 2 && sidecarFiles - localFiles >= 1000;
+        const runGapMaterial = sidecarRuns > localRuns;
+        if (fileGapMaterial && runGapMaterial) {
+            return {
+                libraryRoot,
+                localFiles,
+                sidecarFiles,
+                localRuns,
+                sidecarRuns,
+                localAlbumLinks,
+                sidecarAlbumLinks,
+                sidecarWrittenAt,
+            };
+        }
+        return null;
+    }
+    catch (e) {
+        console.warn('[LibSidecar] detectRecoveryGap failed:', e.message);
+        return null;
+    }
+    finally {
+        try {
+            sidecarDb?.close();
+        }
+        catch { /* ignore */ }
+    }
+}
 export function getLibraryStatus() {
     const state = readLibraryState();
     const thisDeviceId = getMachineFingerprint();

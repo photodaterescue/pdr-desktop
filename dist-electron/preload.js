@@ -189,6 +189,12 @@ contextBridge.exposeInMainWorld('pdr', {
         checkDestinationOnline: () => ipcRenderer.invoke('library:checkDestinationOnline'),
         attachAsNew: (opts) => ipcRenderer.invoke('library:attachAsNew', opts),
         attachFromSidecar: (opts) => ipcRenderer.invoke('library:attachFromSidecar', opts),
+        // v2.0.12 — recovery-gap detector. Returns the gap detail when the
+        // sidecar DB on the attached Library Drive materially exceeds the
+        // local DB (cascade-delete signature). Returns null when there's
+        // nothing to recover. Used by the workspace's CleanupCascadeRecovery
+        // banner to surface a one-click restoreFromSidecar offer.
+        detectRecoveryGap: () => ipcRenderer.invoke('library:detectRecoveryGap'),
         takeOverWriter: (opts) => ipcRenderer.invoke('library:takeOverWriter', opts),
         mirrorNow: (opts) => ipcRenderer.invoke('library:mirrorNow', opts),
         disconnect: () => ipcRenderer.invoke('library:disconnect'),

@@ -253,7 +253,7 @@ import { loadReport as loadReportForIndex } from './report-storage.js';
 import { gatherTakeoutEnrichmentFromFixResults, gatherTakeoutEnrichmentFromZip, importTakeoutAlbumsFromEnrichment, } from './takeout-album-importer.js';
 import { startAiProcessing, cancelAiProcessing, pauseAiProcessing, resumeAiProcessing, isAiPaused, shutdownAiWorker, isAiProcessing, areModelsDownloaded, setMainWindow as setAiMainWindow, runFaceClustering, redetectSingleFile, } from './ai-manager.js';
 import { listPersons, upsertPerson, assignPersonToCluster, assignPersonToFace, unnameFace, renamePerson, mergePersons, deletePerson, permanentlyDeletePerson, unnamePersonAndDelete, restoreUnnamedPerson, restorePerson, listDiscardedPersons, getPersonById, getVisualSuggestions, getClusterFaceCount, getFacesForFile, getAiTagsForFile, getAiTagOptions, getAiStats, clearAllAiData, resetAllTagAnalysis, getUnprocessedFileIds, listSavedTrees, getSavedTree, createSavedTree, updateSavedTree, deleteSavedTree, toggleHiddenAncestor, undoLastGraphOperation, redoGraphOperation, getGraphHistoryCounts, listGraphHistoryEntries, revertToGraphHistoryEntry, rebuildAiFts, getPersonClusters, getClusterFaces, getPersonsWithCooccurrence, cleanupOrphanedPersons, runDatabaseCleanup, relocateRun, addRelationship, updateRelationship, removeRelationship, listRelationshipsForPerson, listAllRelationships, updatePersonLifeEvents, setPersonCardBackground, setPersonGender, getFamilyGraph, getPersonCooccurrenceStats, getPartnerSuggestionScores, createPlaceholderPerson, createNamedPerson, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, } from './search-database.js';
-import { attachAsNewLibrary, attachFromSidecar, detectDriveType, detectSidecar, disconnectLibrary, getLibraryStatus, markDbDirty, mirrorAllToSidecar, setBackgroundMirrorDeviceName, startBackgroundMirror, takeOverWriter, } from './library-sidecar.js';
+import { attachAsNewLibrary, attachFromSidecar, detectDriveType, detectRecoveryGap, detectSidecar, disconnectLibrary, getLibraryStatus, markDbDirty, mirrorAllToSidecar, setBackgroundMirrorDeviceName, startBackgroundMirror, takeOverWriter, } from './library-sidecar.js';
 // Update checking — see electron/update-checker.ts for the full state
 // machine. The renderer subscribes to push events on the
 // 'updates:state' channel and can trigger lifecycle transitions
@@ -551,9 +551,25 @@ function spawnStartupWorker() {
             maybeFinishStartup();
         }
     });
+    // v2.0.12 — pass the currently-attached Library Drive root so the
+    // worker can snapshot the local DB to <libraryRoot>/.pdr/pdr-search.db
+    // BEFORE running any cleanup. If a cleanup misbehaves (the v2.0.10
+    // cascade-delete category of bug), the recovery banner on the
+    // workspace can offer a one-click restore from that snapshot.
+    // libraryRoot is null when nothing's attached yet — the worker just
+    // skips the snapshot in that case and runs cleanup as normal.
+    let libraryRoot = null;
+    try {
+        const libStatus = getLibraryStatus();
+        libraryRoot = libStatus.attached ? libStatus.libraryRoot : null;
+    }
+    catch (e) {
+        log.warn(`[Startup Worker] could not read library status (continuing without snapshot): ${e.message}`);
+    }
     startupWorker.postMessage({
         type: 'init',
         dbPath,
+        libraryRoot,
     });
 }
 // v2.0.11 (Terry 2026-05-24) — renderer-side ready signal. Sent from
@@ -6676,6 +6692,25 @@ ipcMain.handle('library:attachFromSidecar', async (_event, opts) => {
         }
         const result = await attachFromSidecar(opts);
         return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+// v2.0.12 — recovery-gap detector. Renderer calls this on workspace
+// mount; if the sidecar on the attached Library Drive shows a cascade
+// signature (materially more indexed_files + indexed_runs than the
+// local DB), the workspace surfaces a banner offering a one-click
+// attachFromSidecar restore. Returns null when there's nothing to
+// recover; the renderer hides the banner in that case.
+ipcMain.handle('library:detectRecoveryGap', async () => {
+    try {
+        const status = getLibraryStatus();
+        if (!status.attached || !status.libraryRoot) {
+            return { success: true, data: null };
+        }
+        const gap = detectRecoveryGap(status.libraryRoot);
+        return { success: true, data: gap };
     }
     catch (err) {
         return { success: false, error: err.message };
