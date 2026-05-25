@@ -1615,6 +1615,44 @@ async function extractLargeZip(zipPath, tempDir, onProgress) {
     }
     onProgress?.(`Unpacked ${extracted.toLocaleString()} entries`, extracted, totalEntries);
 }
+// v2.0.11 (Terry 2026-05-25) — pre-warmed extract-worker pool of 1.
+// Forking a utilityProcess on Windows costs 200–500 ms (process
+// spawn + Node + Electron preamble before our script runs). Paying
+// that cost during the user's Add Source click is the bulk of the
+// residual "Not Responding" flash Terry observed at analyse-start.
+// Pre-forking at app start (and again immediately after each use)
+// moves the cost off the user's critical path entirely.
+let prewarmedExtractWorker = null;
+function preforkExtractWorker() {
+    if (prewarmedExtractWorker)
+        return; // already have one ready
+    const workerPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'dist-electron/extract-worker.cjs')
+        : path.join(__dirname, 'extract-worker.cjs');
+    const startedAt = Date.now();
+    try {
+        const w = utilityProcess.fork(workerPath, [], {
+            serviceName: 'PDR Extract Worker (pre-warm)',
+            stdio: 'pipe',
+        });
+        // If the pre-warmed worker exits before we hand it a job, clear
+        // the slot so the next runExtractInWorker() falls back to a fresh
+        // on-demand fork instead of using a dead handle.
+        w.on('exit', (code) => {
+            if (prewarmedExtractWorker === w) {
+                prewarmedExtractWorker = null;
+                log.info(`[extract-worker prewarm] worker exited (code=${code}) before being claimed`);
+            }
+        });
+        w.stdout?.on('data', () => { });
+        w.stderr?.on('data', () => { });
+        prewarmedExtractWorker = w;
+        log.info(`[extract-worker prewarm] ready in ${Date.now() - startedAt}ms`);
+    }
+    catch (err) {
+        log.warn(`[extract-worker prewarm] fork failed (non-fatal): ${err.message}`);
+    }
+}
 // v2.0.11 (Terry 2026-05-24) — utilityProcess wrapper around
 // extractLargeZip. Forks electron/extract-worker.cjs, posts the
 // {zipPath, tempDir} init, forwards progress messages to onProgress,
@@ -1630,19 +1668,45 @@ async function extractLargeZip(zipPath, tempDir, onProgress) {
 // responses stay smooth.
 function runExtractInWorker(zipPath, tempDir, onProgress) {
     return new Promise((resolve, reject) => {
-        const workerPath = app.isPackaged
-            ? path.join(process.resourcesPath, 'dist-electron/extract-worker.cjs')
-            : path.join(__dirname, 'extract-worker.cjs');
-        let worker = null;
-        try {
-            worker = utilityProcess.fork(workerPath, [], {
-                serviceName: 'PDR Extract Worker',
-                stdio: 'pipe',
-            });
+        // v2.0.11 (Terry 2026-05-25) — claim the pre-warmed extract worker
+        // if one is available. The pre-warm is forked at app start (see
+        // preforkExtractWorker() below) so the 200–500 ms utilityProcess
+        // spawn cost is paid up front, not during the user's Add Source
+        // click. Fall back to a fresh on-demand fork if the pre-warm is
+        // missing (e.g. lost to a prior crash, or this is the very first
+        // launch before the prewarm fired).
+        const t0 = Date.now();
+        let worker = prewarmedExtractWorker;
+        prewarmedExtractWorker = null;
+        let usedPrewarm = false;
+        if (worker) {
+            usedPrewarm = true;
+            log.info(`[extract-worker] using pre-warmed worker (claim took ${Date.now() - t0}ms)`);
         }
-        catch (err) {
-            reject(err);
-            return;
+        else {
+            const workerPath = app.isPackaged
+                ? path.join(process.resourcesPath, 'dist-electron/extract-worker.cjs')
+                : path.join(__dirname, 'extract-worker.cjs');
+            try {
+                worker = utilityProcess.fork(workerPath, [], {
+                    serviceName: 'PDR Extract Worker',
+                    stdio: 'pipe',
+                });
+                log.info(`[extract-worker] forked on-demand (no pre-warm available, fork took ${Date.now() - t0}ms)`);
+            }
+            catch (err) {
+                reject(err);
+                return;
+            }
+        }
+        // Replace the pre-warm in the background so the NEXT Add Source
+        // also gets a pre-warmed worker. Fire-and-forget — the user's
+        // current extraction doesn't wait on this.
+        if (usedPrewarm) {
+            setTimeout(() => { try {
+                preforkExtractWorker();
+            }
+            catch { /* best-effort */ } }, 100);
         }
         worker.stdout?.on('data', (chunk) => {
             log.info(`[extract-worker stdout] ${chunk.toString().trim()}`);
@@ -1896,6 +1960,12 @@ app.whenReady().then(() => {
     createSplashWindow();
     spawnStartupWorker();
     createWindow();
+    // v2.0.11 (Terry 2026-05-25) — pre-fork the extract-worker so its
+    // 200–500 ms spawn cost is paid HERE, during app startup, instead
+    // of during the user's Add Source click. Deferred behind setTimeout
+    // so the splash + workspace renderers are first in the queue and
+    // get the main-thread time they need to render.
+    setTimeout(() => preforkExtractWorker(), 1500);
     // Wire electron-updater after the main window exists so the updater
     // can broadcast state events to the renderer over webContents.send.
     // initAutoUpdater is a no-op in dev (app.isPackaged === false) — the
@@ -3226,6 +3296,14 @@ async function asyncFolderSizeBytes(dir) {
     return total;
 }
 ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOverride) => {
+    // v2.0.11 (Terry 2026-05-25) — timing markers so the residual ~2s
+    // "Not Responding" flash at analyse-start can be diagnosed from the
+    // log. Each phase stamped against the IPC entry time so we can see
+    // which step is dominant: pre-extract decision, worker claim, the
+    // extract itself, analyzeSource, etc.
+    const __runT0 = Date.now();
+    const __stamp = (label) => log.info(`[analysis:run timing] ${label} +${Date.now() - __runT0}ms`);
+    __stamp('IPC entry');
     let tempDir = null;
     let claimedExtractInFlight = false;
     // Effective Library Drive path — same precedence the LibraryPanel
@@ -3456,7 +3534,9 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
                 chosenLabel = `user-picked temp dir (${tempDirOverride})`;
             }
             else {
+                __stamp('before pickPreExtractDir');
                 const decision = await pickPreExtractDir(sourcePath, resolveEffectiveDestination());
+                __stamp('after pickPreExtractDir');
                 if (!decision.ok) {
                     // Surface a structured error so the renderer can drive a
                     // smart-prompt modal. Two refusal modes:
@@ -3522,6 +3602,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
             // continuing to analyzeSource. Same cancellation contract:
             // analysis:cancel sets isAnalysisCancelled() which we poll
             // here and post a 'cancel' message to the worker.
+            __stamp('before runExtractInWorker');
             await runExtractInWorker(sourcePath, tempDir, (message, current, total) => {
                 mainWindow?.webContents.send('analysis:progress', {
                     current: current || 0,
@@ -3534,6 +3615,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
             effectivePath = tempDir;
             effectiveType = 'folder';
         }
+        __stamp('before analyzeSource');
         const results = await analyzeSource(effectivePath, effectiveType, (progress) => {
             mainWindow?.webContents.send('analysis:progress', progress);
         }, 
