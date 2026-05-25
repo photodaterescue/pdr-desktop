@@ -116,6 +116,7 @@ import { AiOfferCard } from "@/components/AiOfferCard";
 import { DbBackupReminderCard } from "@/components/DbBackupReminderCard";
 import { LowRamAdvisoryCard } from "@/components/LowRamAdvisoryCard";
 import { UnindexedLibrariesCard } from "@/components/UnindexedLibrariesCard";
+import { CleanupCascadeRecoveryCard } from "@/components/CleanupCascadeRecoveryCard";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -4985,6 +4986,15 @@ function DashboardPanel({
             Hidden permanently once dismissed. v2.0.7 — customer
             Kathr 2026-05-16 on a Pentium N4200 / 4 GB DDR3 laptop. */}
         <LowRamAdvisoryCard />
+        {/* Cleanup-cascade recovery banner — v2.0.12 (Terry 2026-05-25).
+            Detects the v2.0.10 startup-cleanup damage signature
+            (sidecar DB on Library Drive has materially more rows than
+            local DB + more indexed_runs) and offers a one-click
+            attachFromSidecar restore. Sits ABOVE UnindexedLibrariesCard
+            because a real cascade-recovery is more urgent than a
+            catch-up index, and an unrestored cascade would just trigger
+            the unindexed banner downstream anyway. */}
+        <CleanupCascadeRecoveryCard />
         {/* Unindexed-libraries advisory — calm banner that detects
             libraries with files on disk but few/none in the search DB
             (e.g. anyone who Fixed on v2.0.4 or earlier when auto-index
@@ -10444,13 +10454,33 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.12" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.12</span>
+                        {appVersion === '2.0.12' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">Emergency follow-up to v2.0.11.</strong> v2.0.11 packaged its five background worker scripts (AI, cleanup, conversion, extract, startup) inside the app&apos;s compressed bundle where the operating system can&apos;t reach them &mdash; the workers crashed on launch with &quot;module not found&quot;, breaking post-Fix cleanup, AI face detection, ZIP extraction, format conversion, and startup database housekeeping. v2.0.11 was pulled from the public download immediately on discovery; v2.0.12 is the build to use. Plus a real recovery path for anyone whose library was damaged by an older version&apos;s startup cleanup.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Workers fixed</strong> &mdash; the five background scripts now sit outside the compressed app bundle, at a real filesystem path that <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">utilityProcess.fork()</code> can reach. Post-Fix cleanup, AI face detection, ZIP extraction, format conversion, and startup database housekeeping all work in packaged installs again.</li>
+                        <li><strong className="text-foreground font-medium">One-click recovery for v2.0.10 upgrade victims</strong> &mdash; if you upgraded from v2.0.10 in the last 10 days and noticed photos disappearing from Search &amp; Discovery / Memories / Albums, a yellow banner now appears on the Dashboard at launch offering a one-click restore. PDR detects when your Library Drive&apos;s hidden backup database has materially more photos than the local index (the cascade-delete signature), pulls the backup back into the local database including all album memberships / AI faces / tags, and reloads. Photos on disk were never touched by the original bug &mdash; only the database forgot about them.</li>
+                        <li><strong className="text-foreground font-medium">Pre-cleanup database snapshot, every launch</strong> &mdash; every PDR launch now copies the local database to your Library Drive&apos;s hidden <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.pdr</code> folder BEFORE running any startup cleanup. If a future cleanup ever misbehaves, the pre-cleanup snapshot is sitting right there for the recovery banner to offer. Belt-and-braces safety on top of the original cascade-cleanup being disabled.</li>
+                        <li><strong className="text-foreground font-medium">Release pipeline kills running PDR instances before packaging</strong> &mdash; the developer-side release script now closes any open PDR / Electron instances before the build step, so a stale developer session can never lock files the build needs to overwrite. Closes the door on a class of subtle packaging defects.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.11" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
                         <span>v2.0.11</span>
-                        {appVersion === '2.0.11' && (
-                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
-                        )}
+                        <span className="text-xs font-normal text-rose-600 dark:text-rose-400 ml-1">&mdash; pulled (packaging bug, superseded by v2.0.12)</span>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">

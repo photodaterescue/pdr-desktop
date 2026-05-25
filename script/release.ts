@@ -155,11 +155,52 @@ function formatBytes(bytes: number): string {
 
 // ---- pre-flight ----
 
+/**
+ * Kill any running PDR / Electron processes before we start.
+ *
+ * MUST run before npm run build:electron, otherwise the renames inside
+ * the build:electron script (X.js → X.cjs) can fail with EBUSY when
+ * the dev session is holding file handles on the old .cjs files. Worse,
+ * a running PDR can keep native modules (better-sqlite3.node, sharp)
+ * locked, which makes @electron/rebuild fail silently or produce a
+ * half-rebuilt module that ships to users.
+ *
+ * The 2026-05-25 incident — release shipped while Terry's dev session
+ * was still running. The build happened to succeed by luck but
+ * highlighted that no preflight check was preventing the dangerous
+ * state. See feedback_kill_pdr_before_release.md in memory.
+ *
+ * Idempotent: taskkill returns a non-zero exit when no matching
+ * process exists, which is the normal case — we swallow it.
+ */
+async function killRunningPdr(): Promise<void> {
+  if (process.platform !== 'win32') {
+    // Release pipeline is Windows-only (Sectigo signtool, signed NSIS).
+    // If we ever run on macOS for dev/test, a no-op here is correct —
+    // there's nothing to lock the .cjs files in the same way.
+    return;
+  }
+  const candidates = ['electron.exe', 'Photo Date Rescue.exe'];
+  for (const exe of candidates) {
+    try {
+      await execCapture('taskkill', ['/F', '/IM', exe]);
+    } catch {
+      // taskkill exits non-zero when the process isn't running.
+      // That's the success case — nothing to kill.
+    }
+  }
+}
+
 async function preflight(
   env: Record<string, string>,
   version: string,
 ): Promise<void> {
   info('Pre-flight checks');
+
+  // 0. Kill any running PDR / electron instances before anything else.
+  //    See killRunningPdr() comment for the full rationale.
+  await killRunningPdr();
+  success('No running PDR / electron processes (killed any that were)');
 
   // 1. env file has all keys
   for (const key of REQUIRED_ENV) {

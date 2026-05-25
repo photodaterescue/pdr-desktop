@@ -380,6 +380,7 @@ import {
   attachAsNewLibrary,
   attachFromSidecar,
   detectDriveType,
+  detectRecoveryGap,
   detectSidecar,
   disconnectLibrary,
   getLibraryStatus,
@@ -704,9 +705,25 @@ function spawnStartupWorker(): void {
     }
   });
 
+  // v2.0.12 — pass the currently-attached Library Drive root so the
+  // worker can snapshot the local DB to <libraryRoot>/.pdr/pdr-search.db
+  // BEFORE running any cleanup. If a cleanup misbehaves (the v2.0.10
+  // cascade-delete category of bug), the recovery banner on the
+  // workspace can offer a one-click restore from that snapshot.
+  // libraryRoot is null when nothing's attached yet — the worker just
+  // skips the snapshot in that case and runs cleanup as normal.
+  let libraryRoot: string | null = null;
+  try {
+    const libStatus = getLibraryStatus();
+    libraryRoot = libStatus.attached ? libStatus.libraryRoot : null;
+  } catch (e) {
+    log.warn(`[Startup Worker] could not read library status (continuing without snapshot): ${(e as Error).message}`);
+  }
+
   startupWorker.postMessage({
     type: 'init',
     dbPath,
+    libraryRoot,
   });
 }
 
@@ -6909,6 +6926,25 @@ ipcMain.handle('library:attachFromSidecar', async (_event, opts: { libraryRoot: 
     }
     const result = await attachFromSidecar(opts);
     return result.ok ? { success: true, data: result.status } : { success: false, error: result.error };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.0.12 — recovery-gap detector. Renderer calls this on workspace
+// mount; if the sidecar on the attached Library Drive shows a cascade
+// signature (materially more indexed_files + indexed_runs than the
+// local DB), the workspace surfaces a banner offering a one-click
+// attachFromSidecar restore. Returns null when there's nothing to
+// recover; the renderer hides the banner in that case.
+ipcMain.handle('library:detectRecoveryGap', async () => {
+  try {
+    const status = getLibraryStatus();
+    if (!status.attached || !status.libraryRoot) {
+      return { success: true, data: null };
+    }
+    const gap = detectRecoveryGap(status.libraryRoot);
+    return { success: true, data: gap };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

@@ -45,6 +45,14 @@ import * as path from 'path';
 interface InitMessage {
   type: 'init';
   dbPath: string;
+  // v2.0.12 — when the user has a Library Drive attached, the worker
+  // takes a fresh DB snapshot to <libraryRoot>/.pdr/pdr-search.db BEFORE
+  // running any cleanup. If the cleanup misbehaves (the v2.0.10 cascade-
+  // delete kind), the sidecar holds the pre-cleanup state and the
+  // workspace's CleanupCascadeRecoveryCard can offer a one-click restore.
+  // null when no library is attached yet — cleanup still proceeds in
+  // that case (we just don't get the defense-in-depth backup).
+  libraryRoot: string | null;
 }
 
 interface ProgressMessage {
@@ -60,6 +68,11 @@ interface DoneMessage {
     dbOrphanRunsRemoved: number;
     dbGhostRunsRemoved: number;
     dbTotalChecked: number;
+    // v2.0.12 — true when we successfully wrote the pre-cleanup snapshot
+    // to <libraryRoot>/.pdr/pdr-search.db. Surfaced in the main-process
+    // log so post-mortem investigations can see whether the safety net
+    // was in place for a given startup.
+    snapshotTaken: boolean;
     elapsedMs: number;
   };
 }
@@ -85,18 +98,72 @@ interface IndexedRunRow {
   destination_path: string;
 }
 
-async function runDbCleanup(dbPath: string): Promise<{
+// v2.0.12 — pre-cleanup defence in depth. Before we touch a single row,
+// snapshot the local DB to the Library Drive's sidecar location. If the
+// cleanup misbehaves (the v2.0.10 cascade-delete pattern was a category
+// of bug we now know exists), the user has a fresh backup waiting at
+// <libraryRoot>/.pdr/pdr-search.db that the workspace's recovery banner
+// can offer to restore from.
+//
+// Returns true if a snapshot landed; false on any failure (missing
+// drive, permission denied, disk full). Cleanup proceeds either way —
+// we never block tidying just because the sidecar drive happens to be
+// disconnected, because that would make the app feel locked-up to the
+// majority of users for whom there's no actual cascade risk.
+async function snapshotToSidecarPreCleanup(dbPath: string, libraryRoot: string): Promise<boolean> {
+  try {
+    const sidecarDir = path.join(libraryRoot, '.pdr');
+    const sidecarDbPath = path.join(sidecarDir, 'pdr-search.db');
+    if (!fs.existsSync(sidecarDir)) {
+      fs.mkdirSync(sidecarDir, { recursive: true });
+    }
+    // better-sqlite3's backup() is the right copy primitive — it handles
+    // any in-progress WAL frames, produces a consistent snapshot, and
+    // is faster than a raw file copy on large DBs. Open the source
+    // read-only so a stuck writer lock from a crashed prior session
+    // doesn't block the snapshot.
+    const sourceDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const tmpPath = sidecarDbPath + '.precleanup.tmp';
+    try {
+      await sourceDb.backup(tmpPath);
+    } finally {
+      try { sourceDb.close(); } catch { /* best-effort */ }
+    }
+    // Atomic rename — readers of the canonical sidecar path never see a
+    // half-written file. Important because the renderer's recovery
+    // banner opens this path read-only on workspace mount.
+    if (fs.existsSync(sidecarDbPath)) fs.unlinkSync(sidecarDbPath);
+    fs.renameSync(tmpPath, sidecarDbPath);
+    return true;
+  } catch (err) {
+    postProgress(`(skipped backup: ${(err as Error).message.split('\n')[0]})`);
+    return false;
+  }
+}
+
+async function runDbCleanup(dbPath: string, libraryRoot: string | null): Promise<{
   staleRemoved: number;
   duplicatesRemoved: number;
   orphanRunsRemoved: number;
   ghostRunsRemoved: number;
   totalChecked: number;
+  snapshotTaken: boolean;
 }> {
   // Open the DB read-write. If the file doesn't exist yet (first
   // launch ever), short-circuit — there's nothing to clean up.
   if (!fs.existsSync(dbPath)) {
-    return { staleRemoved: 0, duplicatesRemoved: 0, orphanRunsRemoved: 0, ghostRunsRemoved: 0, totalChecked: 0 };
+    return { staleRemoved: 0, duplicatesRemoved: 0, orphanRunsRemoved: 0, ghostRunsRemoved: 0, totalChecked: 0, snapshotTaken: false };
   }
+
+  // v2.0.12 — pre-cleanup sidecar snapshot. Runs BEFORE we open the
+  // write connection below, so the snapshot is taken against the
+  // pristine on-disk file, not a connection that's about to mutate.
+  let snapshotTaken = false;
+  if (libraryRoot && fs.existsSync(libraryRoot)) {
+    postProgress('Backing up your library…');
+    snapshotTaken = await snapshotToSidecarPreCleanup(dbPath, libraryRoot);
+  }
+
   const db = new Database(dbPath);
   // WAL for less locking contention if the main process opens its
   // own connection while this worker is mid-cleanup. Idempotent.
@@ -197,7 +264,7 @@ async function runDbCleanup(dbPath: string): Promise<{
       }
     } catch { /* table missing */ }
 
-    return { staleRemoved, duplicatesRemoved, orphanRunsRemoved, ghostRunsRemoved, totalChecked };
+    return { staleRemoved, duplicatesRemoved, orphanRunsRemoved, ghostRunsRemoved, totalChecked, snapshotTaken };
   } finally {
     try { db.close(); } catch { /* best-effort */ }
   }
@@ -218,7 +285,7 @@ parentPort?.on?.('message', async (e: { data: unknown }) => {
   if (!msg || msg.type !== 'init') return;
 
   const startedAt = Date.now();
-  const dbResult = await runDbCleanup(msg.dbPath);
+  const dbResult = await runDbCleanup(msg.dbPath, msg.libraryRoot ?? null);
 
   const done: DoneMessage = {
     type: 'done',
@@ -228,6 +295,7 @@ parentPort?.on?.('message', async (e: { data: unknown }) => {
       dbOrphanRunsRemoved: dbResult.orphanRunsRemoved,
       dbGhostRunsRemoved: dbResult.ghostRunsRemoved,
       dbTotalChecked: dbResult.totalChecked,
+      snapshotTaken: dbResult.snapshotTaken,
       elapsedMs: Date.now() - startedAt,
     },
   };

@@ -238,6 +238,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('library:attachAsNew', opts),
     attachFromSidecar: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>
       ipcRenderer.invoke('library:attachFromSidecar', opts),
+    // v2.0.12 — recovery-gap detector. Returns the gap detail when the
+    // sidecar DB on the attached Library Drive materially exceeds the
+    // local DB (cascade-delete signature). Returns null when there's
+    // nothing to recover. Used by the workspace's CleanupCascadeRecovery
+    // banner to surface a one-click restoreFromSidecar offer.
+    detectRecoveryGap: () => ipcRenderer.invoke('library:detectRecoveryGap'),
     takeOverWriter: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>
       ipcRenderer.invoke('library:takeOverWriter', opts),
     mirrorNow: (opts?: { snapshotMode?: 'none' | 'recent' | 'all' }) =>

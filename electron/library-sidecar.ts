@@ -718,6 +718,104 @@ export function detectSidecar(libraryRoot: string): SidecarDetection {
   return out;
 }
 
+/**
+ * Recovery-gap detection — v2.0.12.
+ *
+ * Compares row counts in the live local DB against the sidecar DB on the
+ * Library Drive. If the sidecar materially exceeds the local (e.g. the
+ * v2.0.10 startup-cleanup fired and cascade-deleted indexed_runs +
+ * indexed_files + album_files), surface the gap so the renderer can
+ * offer a one-click `attachFromSidecar` restore.
+ *
+ * Why this exists (Terry 2026-05-25):
+ *   v2.0.10's purgeDuplicateRuns kept the newest indexed_run per
+ *   destination_path and dropped the rest. Every dropped run cascade-
+ *   deleted its indexed_files (FK ON DELETE CASCADE), which cascade-
+ *   deleted its album_files. v2.0.11 neutered that purge — but anyone
+ *   upgrading 2.0.10 → 2.0.11/12 still got hit one last time when
+ *   v2.0.10 launched before the installer applied. The sidecar on the
+ *   Library Drive is usually written 10–30 s before that final launch
+ *   (after the morning's Fix completed), so a row-count diff is a
+ *   reliable cascade signature with a usable rescue waiting on disk.
+ *
+ * Gap criteria — we only flag a real cascade, not a normal "haven't
+ * indexed yet" gap. Both must be true:
+ *   1. sidecar has at least 2× the local file count AND the absolute
+ *      diff exceeds 1,000 files (rules out tiny new libraries).
+ *   2. sidecar has at least one more indexed_run than the local DB
+ *      (the cascade signature — a normal "needs indexing" state has
+ *      equal run counts).
+ *
+ * Returns null if no sidecar exists, the sidecar is corrupt, or the
+ * gap criteria don't match. Returns the diagnostic detail when a
+ * recovery is genuinely available.
+ */
+export interface RecoveryGap {
+  libraryRoot: string;
+  localFiles: number;
+  sidecarFiles: number;
+  localRuns: number;
+  sidecarRuns: number;
+  localAlbumLinks: number;
+  sidecarAlbumLinks: number;
+  sidecarWrittenAt: string | null;
+}
+
+export function detectRecoveryGap(libraryRoot: string): RecoveryGap | null {
+  if (!libraryRoot) return null;
+  const sidecarDbPath = getSidecarDbPath(libraryRoot);
+  if (!fs.existsSync(sidecarDbPath)) return null;
+
+  // Open the sidecar read-only — no risk of writing, no chance of
+  // disturbing whatever process is currently the writer on this drive.
+  let sidecarDb: Database.Database | null = null;
+  try {
+    sidecarDb = new Database(sidecarDbPath, { readonly: true, fileMustExist: true });
+
+    const sidecarFiles = (sidecarDb.prepare(`SELECT COUNT(*) AS c FROM indexed_files`).get() as { c: number }).c;
+    const sidecarRuns = (sidecarDb.prepare(`SELECT COUNT(*) AS c FROM indexed_runs`).get() as { c: number }).c;
+    const sidecarAlbumLinks = (sidecarDb.prepare(`SELECT COUNT(*) AS c FROM album_files`).get() as { c: number }).c;
+
+    const localDb = getDb();
+    const localFiles = (localDb.prepare(`SELECT COUNT(*) AS c FROM indexed_files`).get() as { c: number }).c;
+    const localRuns = (localDb.prepare(`SELECT COUNT(*) AS c FROM indexed_runs`).get() as { c: number }).c;
+    const localAlbumLinks = (localDb.prepare(`SELECT COUNT(*) AS c FROM album_files`).get() as { c: number }).c;
+
+    // Read sidecar-meta.json's writtenAt for the banner — gives the
+    // user a concrete "your backup is from 12:40 today" to anchor the
+    // restore offer to a real point in their timeline.
+    let sidecarWrittenAt: string | null = null;
+    try {
+      const meta = readSidecarMeta(libraryRoot);
+      sidecarWrittenAt = meta?.writtenAt ?? null;
+    } catch { /* meta missing — non-fatal */ }
+
+    // Gap criteria — see function comment.
+    const fileGapMaterial =
+      sidecarFiles >= localFiles * 2 && sidecarFiles - localFiles >= 1000;
+    const runGapMaterial = sidecarRuns > localRuns;
+
+    if (fileGapMaterial && runGapMaterial) {
+      return {
+        libraryRoot,
+        localFiles,
+        sidecarFiles,
+        localRuns,
+        sidecarRuns,
+        localAlbumLinks,
+        sidecarAlbumLinks,
+        sidecarWrittenAt,
+      };
+    }
+    return null;
+  } catch (e) {
+    console.warn('[LibSidecar] detectRecoveryGap failed:', (e as Error).message);
+    return null;
+  } finally {
+    try { sidecarDb?.close(); } catch { /* ignore */ }
+  }
+}
+
 export interface LibraryStatus {
   attached: boolean;
   libraryRoot: string | null;
