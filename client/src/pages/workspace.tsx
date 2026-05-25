@@ -510,9 +510,12 @@ useEffect(() => {
         });
         const firstName = droppedSources[0].name || droppedSources[0].path;
         const restCount = droppedSources.length - 1;
+        // v2.0.11 (Terry 2026-05-25) — generic wording covers both
+        // archive orphans (extraction missing) and folder orphans
+        // (source folder moved/deleted by the user outside PDR).
         const description = droppedSources.length === 1
-          ? `"${firstName}" — its extracted files were no longer on disk. Re-add it to fix again.`
-          : `"${firstName}" + ${restCount} other source${restCount === 1 ? '' : 's'} — their extracted files were no longer on disk. Re-add them to fix again.`;
+          ? `"${firstName}" — the source files were no longer where you left them. Re-add it to fix again.`
+          : `"${firstName}" + ${restCount} other source${restCount === 1 ? '' : 's'} — the source files were no longer where you left them. Re-add them to fix again.`;
         toast.info('Cleaned up orphaned source rows', { description, duration: 12000 });
       } catch (err) {
         console.warn('[Workspace] orphan-source check failed (non-fatal):', err);

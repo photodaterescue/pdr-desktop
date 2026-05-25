@@ -2840,8 +2840,21 @@ ipcMain.handle('analysis:checkExtractionsForSources', async (_event, requests) =
             results.push({ path: req?.path ?? '', hasExtraction: true, needsExtraction: false });
             continue;
         }
-        // Folder + drive sources don't need an extraction. The source IS
-        // the data; no PDR_Temp working copy is involved. Report present.
+        // v2.0.11 (Terry 2026-05-25) — folder sources: if the source path
+        // itself is gone (user moved or deleted the folder outside PDR),
+        // treat the row as orphan and drop it on next mount. Same end
+        // result as a missing extraction — the source can't be Fixed,
+        // there's no good reason to keep it in the menu. User can re-add.
+        //
+        // Drive sources are deliberately NOT checked here: unplugging an
+        // external drive is common + temporary; dropping the row would
+        // be too aggressive. The user can manually remove a stale drive
+        // row from the Source Menu if they want.
+        if (req.type === 'folder') {
+            const folderExists = fs.existsSync(req.path);
+            results.push({ path: req.path, hasExtraction: folderExists, needsExtraction: !folderExists });
+            continue;
+        }
         if (req.type !== 'zip' && req.type !== 'rar') {
             results.push({ path: req.path, hasExtraction: true, needsExtraction: false });
             continue;
