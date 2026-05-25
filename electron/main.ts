@@ -1679,23 +1679,107 @@ function getPendingExtractionBytes(): number {
 // handle") to the user rather than swallowing it. Pre-v2.0.11 this
 // returned void and only the main.log saw the failure; the renderer
 // thought cleanup had succeeded and showed no indication to the user.
-function cleanupTempDir(tempDir: string): { ok: boolean; reason?: string } {
+// v2.0.11 (Terry 2026-05-25) — long-running cleanup worker (pool of 1).
+// Recursive deletion of a 50 GB extracted Takeout via fs.rmSync was
+// the residual freeze at Fix-complete → Add Source: the main process
+// blocked for 10–20s while NTFS unlinked thousands of files. Moving
+// the delete off-process keeps the main browser thread free.
+//
+// Unlike the extract-worker (one-shot per extraction), this worker
+// stays alive across many delete requests. Pre-forked at app start
+// (see preforkCleanupWorker below); replaced if it exits unexpectedly.
+let cleanupWorker: Electron.UtilityProcess | null = null;
+let cleanupRequestSeq = 0;
+const cleanupPending = new Map<number, { resolve: (r: { ok: boolean; reason?: string }) => void }>();
+
+function preforkCleanupWorker(): void {
+  if (cleanupWorker) return;
+  const workerPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'dist-electron/cleanup-worker.cjs')
+    : path.join(__dirname, 'cleanup-worker.cjs');
+  const startedAt = Date.now();
   try {
-    if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-      log.info(`[temp-cleanup] removed ${tempDir}`);
+    const w = utilityProcess.fork(workerPath, [], {
+      serviceName: 'PDR Cleanup Worker',
+      stdio: 'pipe',
+    });
+    w.stdout?.on('data', (chunk: Buffer) => {
+      log.info(`[cleanup-worker stdout] ${chunk.toString().trim()}`);
+    });
+    w.stderr?.on('data', (chunk: Buffer) => {
+      log.warn(`[cleanup-worker stderr] ${chunk.toString().trim()}`);
+    });
+    w.on('message', (msg: unknown) => {
+      const m = msg as { type?: string; id?: number; ok?: boolean; reason?: string };
+      if (m?.type === 'done' && typeof m.id === 'number') {
+        const pending = cleanupPending.get(m.id);
+        if (pending) {
+          cleanupPending.delete(m.id);
+          pending.resolve({ ok: !!m.ok, reason: m.reason });
+        }
+      }
+    });
+    w.on('exit', (code) => {
+      log.info(`[cleanup-worker] exited code=${code}`);
+      if (cleanupWorker === w) cleanupWorker = null;
+      // Resolve any pending requests as failures so callers don't hang.
+      for (const [id, pending] of cleanupPending) {
+        pending.resolve({ ok: false, reason: `cleanup-worker exited (code=${code})` });
+        cleanupPending.delete(id);
+      }
+      // Auto-respawn so the next cleanup has a worker available.
+      setTimeout(() => { try { preforkCleanupWorker(); } catch { /* best-effort */ } }, 500);
+    });
+    cleanupWorker = w;
+    log.info(`[cleanup-worker prewarm] ready in ${Date.now() - startedAt}ms`);
+  } catch (err) {
+    log.warn(`[cleanup-worker prewarm] fork failed (non-fatal): ${(err as Error).message}`);
+  }
+}
+
+// v2.0.11 (Terry 2026-05-25) — async now (was sync), delegates the
+// actual recursive delete to the cleanup-worker so the main thread
+// doesn't block on multi-gigabyte unlinks. Same return contract as
+// before so callers don't need to change their result-handling.
+//
+// Falls back to in-main fs.promises.rm if the worker isn't available
+// (e.g. fork failed at startup) — still async, still better than
+// fs.rmSync, just runs on this process.
+async function cleanupTempDir(tempDir: string): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    if (!fs.existsSync(tempDir)) {
+      log.info(`[temp-cleanup] no-op (already gone): ${tempDir}`);
       return { ok: true };
     }
-    log.info(`[temp-cleanup] no-op (already gone): ${tempDir}`);
+  } catch { /* fall through */ }
+
+  if (cleanupWorker) {
+    const id = ++cleanupRequestSeq;
+    const result = await new Promise<{ ok: boolean; reason?: string }>((resolve) => {
+      cleanupPending.set(id, { resolve });
+      try {
+        cleanupWorker!.postMessage({ type: 'delete', id, path: tempDir });
+      } catch (postErr) {
+        cleanupPending.delete(id);
+        resolve({ ok: false, reason: (postErr as Error).message });
+      }
+    });
+    if (result.ok) {
+      log.info(`[temp-cleanup] removed ${tempDir}`);
+    } else {
+      log.warn(`[temp-cleanup] failed to remove ${tempDir}: ${result.reason ?? 'unknown'}`);
+    }
+    return result;
+  }
+
+  // Worker unavailable — async in-main fallback.
+  try {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+    log.info(`[temp-cleanup] removed ${tempDir} (in-main fallback)`);
     return { ok: true };
   } catch (err) {
     const reason = (err as Error).message;
-    // Best-effort: a locked file (Explorer window open, Windows
-    // Search Indexer, antivirus scanning, etc.) shouldn't fail the
-    // user's fix or block the app from quitting. Subsequent cleanup
-    // attempts get another chance. But the caller now learns about
-    // the failure so it can tell the user.
-    log.warn(`[temp-cleanup] failed to remove ${tempDir}:`, err);
+    log.warn(`[temp-cleanup] failed to remove ${tempDir} (in-main fallback): ${reason}`);
     return { ok: false, reason };
   }
 }
@@ -2167,6 +2251,10 @@ app.whenReady().then(() => {
   // so the splash + workspace renderers are first in the queue and
   // get the main-thread time they need to render.
   setTimeout(() => preforkExtractWorker(), 1500);
+  // v2.0.11 (Terry 2026-05-25) — same pre-warm strategy for the
+  // cleanup-worker so post-fix temp deletion of 50 GB extractions
+  // doesn't have to pay the fork cost in addition to the delete time.
+  setTimeout(() => preforkCleanupWorker(), 1500);
 
   // Wire electron-updater after the main window exists so the updater
   // can broadcast state events to the renderer over webContents.send.
@@ -3192,7 +3280,7 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
     if (activeTempDirs.has(td)) {
       let sizeBytes = 0;
       try { sizeBytes = await asyncFolderSizeBytes(td); } catch { /* ignore */ }
-      const result = cleanupTempDir(td);
+      const result = await cleanupTempDir(td);
       if (result.ok) {
         activeTempDirs.delete(td);
         cleaned++;
@@ -3206,7 +3294,7 @@ ipcMain.handle('analysis:cleanupTempDirForSource', async (_event, sourcePath: st
       // anyway so the user gets the disk space back.
       let sizeBytes = 0;
       try { sizeBytes = await asyncFolderSizeBytes(td); } catch { /* ignore */ }
-      const result = cleanupTempDir(td);
+      const result = await cleanupTempDir(td);
       if (result.ok) {
         cleaned++;
         bytesRemoved += sizeBytes;
@@ -3859,9 +3947,10 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
     
     return { success: true, data: results };
   } catch (error: any) {
-    // Clean up temp dir on failure
+    // Clean up temp dir on failure (fire-and-forget — error return is
+    // what the caller cares about; the deletion happens in the worker).
     if (tempDir) {
-      cleanupTempDir(tempDir);
+      void cleanupTempDir(tempDir).catch(() => { /* best-effort */ });
       activeTempDirs.delete(tempDir);
     }
 
