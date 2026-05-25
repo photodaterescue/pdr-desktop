@@ -1,9 +1,26 @@
 /**
- * PDR release pipeline — single command to ship a new version.
+ * PDR release pipeline.
  *
- * Run via: npm run release
+ * STANDARD WORKFLOW (v2.0.12+ — Terry 2026-05-25 after the v2.0.11 yank):
  *
- * What it does
+ *   1.  npm run release:package
+ *         → Build + sign + locate artifacts in release/. STOPS. No R2,
+ *           no git tag. Terry installs the resulting Setup.exe locally
+ *           and verifies it actually works before any user can fetch it.
+ *
+ *   2.  Terry tests the local installer.
+ *
+ *   3.  npm run release:publish
+ *         → Reuses the artifacts in release/, uploads to R2, smoke-tests
+ *           the public manifest, tags + pushes the git tag.
+ *
+ * `npm run release` (no flag) runs everything in one shot — kept for
+ * back-compat but treated as deprecated. v2.0.11 shipped broken to R2
+ * because the full pipeline ran without a test step; don't repeat it.
+ *
+ * What each step actually does
+ *   0.  Kill running PDR/Electron — taskkill so dev sessions can't lock
+ *       files the build needs to overwrite
  *   1.  Pre-flight checks    — env file, git clean, tag not taken
  *   2.  Build                — Vite + server (npm run build:release)
  *   3.  Compile              — Electron TS (npm run build:electron)
@@ -21,6 +38,9 @@
  *                              so the release is anchored in history
  *                              and rollback to a prior commit is one
  *                              `git checkout v1.0.1` away
+ *
+ *   --package-only stops after step 5. --publish-only starts at step 6
+ *   and requires release/ to already contain a built installer.
  *
  * Prerequisites (the script aborts early if any are missing)
  *   - package.json version bumped to the new release version
@@ -241,10 +261,41 @@ async function preflight(
 }
 
 // ---- main pipeline ----
+//
+// Two-stage release flow (v2.0.12+ — Terry 2026-05-25 after the v2.0.11
+// yank). The default `npm run release` runs everything, but the
+// SUPPORTED workflow is now:
+//
+//   1. `npm run release -- --package-only`
+//        → Build + sign + locate artifacts in release/.
+//          No R2 access, no git tag. STOPS so Terry can install the
+//          Setup.exe locally and verify it actually works before any
+//          users see it.
+//   2. Terry tests the local installer (launch, look at logs, smoke
+//      whatever the release changed).
+//   3. `npm run release -- --publish-only`
+//        → Reuses the artifacts in release/, uploads to R2, smoke-
+//          tests the public manifest, tags + pushes.
+//
+// Running `npm run release` with neither flag works (legacy "all in
+// one shot" behaviour) but is now treated as a deprecated path — the
+// two-step flow is mandatory unless we're knowingly accepting the
+// risk. See feedback_package_test_before_publish.md in memory.
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const packageOnly = args.includes('--package-only');
+  const publishOnly = args.includes('--publish-only');
+  if (packageOnly && publishOnly) {
+    fail('--package-only and --publish-only are mutually exclusive.');
+  }
+  const mode: 'package-only' | 'publish-only' | 'all' =
+    packageOnly ? 'package-only' : publishOnly ? 'publish-only' : 'all';
+
   console.log('═══════════════════════════════════════');
   console.log('  Photo Date Rescue — release pipeline');
+  if (mode === 'package-only') console.log('  Mode: PACKAGE ONLY (no R2 upload, no git tag)');
+  else if (mode === 'publish-only') console.log('  Mode: PUBLISH ONLY (skipping build, uploading existing artifacts)');
   console.log('═══════════════════════════════════════\n');
 
   const env = loadDotEnv();
@@ -255,37 +306,42 @@ async function main(): Promise<void> {
 
   await preflight(env, version);
 
-  // ---- build ----
-  info('Step 1/4 — Vite + server bundle');
-  await exec('npm', ['run', 'build:release']);
+  // PUBLISH-ONLY: skip build steps entirely. Jump to artifact location.
+  if (mode === 'publish-only') {
+    info('Skipping build steps (--publish-only) — using existing release/ artifacts');
+  } else {
+    // ---- build ----
+    info(`Step 1/${mode === 'package-only' ? 3 : 4} — Vite + server bundle`);
+    await exec('npm', ['run', 'build:release']);
 
-  info('Step 2/4 — Electron TypeScript');
-  await exec('npm', ['run', 'build:electron']);
+    info(`Step 2/${mode === 'package-only' ? 3 : 4} — Electron TypeScript`);
+    await exec('npm', ['run', 'build:electron']);
 
-  // ---- clean prior release artefacts ----
-  // electron-builder doesn't auto-clean release/ between builds, which
-  // means previous-version .exes (Photo Date Rescue Setup 1.0.1.exe,
-  // intermediate app.exe / signed-exe-tmp dirs, the unpacked
-  // win-unpacked/ tree, etc.) accumulate. Wiping the whole release/
-  // dir before each build keeps things tidy + means our R2 upload
-  // can't accidentally pick up a stale artefact.
-  if (existsSync(RELEASE_DIR)) {
-    info(`Cleaning ${RELEASE_DIR}`);
-    try {
-      rmSync(RELEASE_DIR, { recursive: true, force: true });
-      success('release/ cleaned');
-    } catch (cleanErr) {
-      // Non-fatal — electron-builder will overwrite what it can.
-      // Most often this fails because Explorer has a window open on
-      // a subfolder; the build will still produce the right .exe.
-      console.warn(`  ⚠ couldn't fully clean release/: ${(cleanErr as Error).message}`);
+    // ---- clean prior release artefacts ----
+    // electron-builder doesn't auto-clean release/ between builds, which
+    // means previous-version .exes (Photo Date Rescue Setup 1.0.1.exe,
+    // intermediate app.exe / signed-exe-tmp dirs, the unpacked
+    // win-unpacked/ tree, etc.) accumulate. Wiping the whole release/
+    // dir before each build keeps things tidy + means our R2 upload
+    // can't accidentally pick up a stale artefact.
+    if (existsSync(RELEASE_DIR)) {
+      info(`Cleaning ${RELEASE_DIR}`);
+      try {
+        rmSync(RELEASE_DIR, { recursive: true, force: true });
+        success('release/ cleaned');
+      } catch (cleanErr) {
+        // Non-fatal — electron-builder will overwrite what it can.
+        // Most often this fails because Explorer has a window open on
+        // a subfolder; the build will still produce the right .exe.
+        console.warn(`  ⚠ couldn't fully clean release/: ${(cleanErr as Error).message}`);
+      }
     }
-  }
 
-  // ---- package + sign ----
-  info('Step 3/4 — electron-builder NSIS package + signtool');
-  console.log('  USB fob will prompt for PIN one or more times.\n');
-  await exec('npx', ['electron-builder', '--win', '--publish', 'never']);
+    // ---- package + sign ----
+    info(`Step 3/${mode === 'package-only' ? 3 : 4} — electron-builder NSIS package + signtool`);
+    console.log('  USB fob will prompt for PIN one or more times.\n');
+    await exec('npx', ['electron-builder', '--win', '--publish', 'never']);
+  } // end of build block (skipped for --publish-only)
 
   // ---- locate / create artifacts ----
   const setupExe = `Photo Date Rescue Setup ${version}.exe`;
@@ -361,6 +417,25 @@ async function main(): Promise<void> {
     }
   } else {
     info(`no release-notes/v${version}.md found — manifest ships without releaseNotes`);
+  }
+
+  // PACKAGE-ONLY: stop here. Installer + blockmap + latest.yml are in
+  // release/. Terry installs the Setup.exe and confirms it works
+  // before any user sees it. Once confirmed, re-run with --publish-only.
+  if (mode === 'package-only') {
+    console.log('\n═══════════════════════════════════════');
+    console.log(`  ✓ Package v${version} built locally`);
+    console.log('═══════════════════════════════════════');
+    console.log(`  Installer: ${setupExePath}`);
+    console.log(`  Blockmap:  ${blockmapPath}`);
+    console.log(`  Manifest:  ${latestYmlPath}`);
+    console.log('');
+    console.log('  Next steps:');
+    console.log('    1. Install the Setup.exe above and verify it launches cleanly.');
+    console.log('    2. Once verified, publish with:');
+    console.log('         npm run release -- --publish-only');
+    console.log('');
+    return;
   }
 
   // ---- upload to R2 ----
