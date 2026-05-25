@@ -3347,50 +3347,59 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
     // Drive-details diagnostic — logged on EVERY source-add regardless
     // of outcome (success OR failure), so we always have the full
     // drive picture for support tickets. Terry 2026-05-21: "Drive
-    // details are integral to our analysis." The previous baseDiag
-    // line only logged on the %TEMP% fallback path and on refusals,
-    // not on the happy Option 1 path. Format: source / destination /
-    // %TEMP% root, each with letter + total/free if local + classify.
-    try {
-        const settingsForDiag = (() => { try {
-            return getSettings();
+    // details are integral to our analysis."
+    //
+    // v2.0.11 (Terry 2026-05-25) — DEFERRED via setImmediate. The
+    // getDiskSpaceForDirSync helper runs PowerShell via execSync with
+    // a 10 s timeout per call. Three calls (source + destination +
+    // %TEMP%) easily add up to 10+ seconds of main-thread block when
+    // a drive is sleeping. This was the dominant cost in Terry's
+    // 11.8 s analyse-start freeze (logged via the timing markers).
+    // The diagnostic block is purely informational — its results
+    // aren't consumed by the rest of analysis:run — so deferring it
+    // off the critical path is a free win. The log line still
+    // appears, just slightly later.
+    setImmediate(() => {
+        try {
+            const settingsForDiag = (() => { try {
+                return getSettings();
+            }
+            catch {
+                return null;
+            } })();
+            const statusForDiag = (() => { try {
+                return getLibraryStatus();
+            }
+            catch {
+                return null;
+            } })();
+            const destPathForDiag = resolveEffectiveDestination();
+            const gbDiag = (b) => (b == null) ? 'null' : `${(b / (1024 ** 3)).toFixed(2)}GB`;
+            const driveOf = (p) => {
+                if (!p || p.length < 2 || p[1] !== ':')
+                    return 'unknown';
+                return p.substring(0, 2).toUpperCase();
+            };
+            const srcLocal = isLocalDir(sourcePath);
+            const srcSpace = srcLocal ? getDiskSpaceForDirSync(sourcePath) : null;
+            const destLocalDiag = isLocalDir(destPathForDiag);
+            const destSpaceDiag = (destPathForDiag && destLocalDiag) ? getDiskSpaceForDirSync(destPathForDiag) : null;
+            const tempSpaceDiag = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
+            log.info(`[source-add] sourcePath=${JSON.stringify(sourcePath)} sourceType=${sourceType} ` +
+                `srcDrive=${driveOf(sourcePath)} srcLocal=${srcLocal} ` +
+                `srcFree=${gbDiag(srcSpace?.freeBytes)} srcTotal=${gbDiag(srcSpace?.totalBytes)} ` +
+                `destPath=${JSON.stringify(destPathForDiag)} destDrive=${driveOf(destPathForDiag)} ` +
+                `destLocal=${destLocalDiag} ` +
+                `destFree=${gbDiag(destSpaceDiag?.freeBytes)} destTotal=${gbDiag(destSpaceDiag?.totalBytes)} ` +
+                `tempDrive=${driveOf(PDR_TEMP_ROOT)} ` +
+                `tempFree=${gbDiag(tempSpaceDiag?.freeBytes)} tempTotal=${gbDiag(tempSpaceDiag?.totalBytes)} ` +
+                `libRoot=${JSON.stringify(statusForDiag?.libraryRoot ?? null)} ` +
+                `settingsDest=${JSON.stringify(settingsForDiag?.destinationPath ?? null)}`);
         }
-        catch {
-            return null;
-        } })();
-        const statusForDiag = (() => { try {
-            return getLibraryStatus();
+        catch (logErr) {
+            log.warn(`[source-add] drive-detail logging failed: ${logErr.message}`);
         }
-        catch {
-            return null;
-        } })();
-        const destPathForDiag = resolveEffectiveDestination();
-        const gbDiag = (b) => (b == null) ? 'null' : `${(b / (1024 ** 3)).toFixed(2)}GB`;
-        const driveOf = (p) => {
-            if (!p || p.length < 2 || p[1] !== ':')
-                return 'unknown';
-            return p.substring(0, 2).toUpperCase();
-        };
-        const srcLocal = isLocalDir(sourcePath);
-        const srcSpace = srcLocal ? getDiskSpaceForDirSync(sourcePath) : null;
-        const destLocalDiag = isLocalDir(destPathForDiag);
-        const destSpaceDiag = (destPathForDiag && destLocalDiag) ? getDiskSpaceForDirSync(destPathForDiag) : null;
-        const tempSpaceDiag = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
-        log.info(`[source-add] sourcePath=${JSON.stringify(sourcePath)} sourceType=${sourceType} ` +
-            `srcDrive=${driveOf(sourcePath)} srcLocal=${srcLocal} ` +
-            `srcFree=${gbDiag(srcSpace?.freeBytes)} srcTotal=${gbDiag(srcSpace?.totalBytes)} ` +
-            `destPath=${JSON.stringify(destPathForDiag)} destDrive=${driveOf(destPathForDiag)} ` +
-            `destLocal=${destLocalDiag} ` +
-            `destFree=${gbDiag(destSpaceDiag?.freeBytes)} destTotal=${gbDiag(destSpaceDiag?.totalBytes)} ` +
-            `tempDrive=${driveOf(PDR_TEMP_ROOT)} ` +
-            `tempFree=${gbDiag(tempSpaceDiag?.freeBytes)} tempTotal=${gbDiag(tempSpaceDiag?.totalBytes)} ` +
-            `libRoot=${JSON.stringify(statusForDiag?.libraryRoot ?? null)} ` +
-            `settingsDest=${JSON.stringify(settingsForDiag?.destinationPath ?? null)}`);
-    }
-    catch (logErr) {
-        // Never fail the IPC just because logging blew up.
-        log.warn(`[source-add] drive-detail logging failed: ${logErr.message}`);
-    }
+    });
     try {
         // Destination-online precheck. v2.0.x bug Terry reproduced
         // 2026-05-13: PDR remembers the Library Drive path in settings
