@@ -1202,32 +1202,41 @@ async function pickPreExtractDir(zipPath, destinationPath) {
             log.warn(`[wake-drive] mkdir wake failed on ${destinationPath}: ${err.message}`);
         }
     }
-    // Fetch disk space (with totals) for both candidates up-front so the
-    // headroom math can scale per-drive. Retry the destination probe
-    // once with a short delay if the first attempt returns null — the
-    // drive may still be spinning up from the mkdir wake.
-    let destSpace = (destinationPath && destLocal)
-        ? await getDiskSpaceForDir(destinationPath)
-        : null;
-    if (destinationPath !== null && destLocal && destSpace === null) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        destSpace = await getDiskSpaceForDir(destinationPath);
-        if (destSpace !== null) {
-            log.info(`[wake-drive] ${destinationPath} probe succeeded on retry after 1.5s delay`);
+    // v2.0.11 (Terry 2026-05-25) — parallelise the two disk-space
+    // probes via Promise.all. They're independent (destination and
+    // %TEMP% are different drives), so running them sequentially was
+    // doubling the wait. Each PowerShell exec is 5-7s on a typical
+    // Windows machine; in parallel total time = max(t1, t2) instead
+    // of t1+t2. The destination chain still does wake-retry-rmdir
+    // around its probe — that's all wrapped in the destinationChain
+    // promise below.
+    const destinationChain = (async () => {
+        if (!(destinationPath && destLocal))
+            return null;
+        let space = await getDiskSpaceForDir(destinationPath);
+        if (space === null) {
+            // Drive may still be spinning up from the mkdir wake; retry once.
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            space = await getDiskSpaceForDir(destinationPath);
+            if (space !== null) {
+                log.info(`[wake-drive] ${destinationPath} probe succeeded on retry after 1.5s delay`);
+            }
         }
-    }
-    // Probe is done — clean up the wake folder. PDR_Temp will be created
-    // later if the extraction actually proceeds; .pdr-wake was only
-    // needed for the moment the drive needed to be spun up.
-    if (wakeDir) {
-        try {
-            await fs.promises.rm(wakeDir, { recursive: true, force: true });
+        // Probe is done — clean up the wake folder. PDR_Temp will be
+        // created later if the extraction actually proceeds; .pdr-wake
+        // was only needed for the moment the drive needed to be spun up.
+        if (wakeDir) {
+            try {
+                await fs.promises.rm(wakeDir, { recursive: true, force: true });
+            }
+            catch { /* best-effort cleanup */ }
         }
-        catch { /* best-effort cleanup */ }
-    }
+        return space;
+    })();
+    const tempChain = getDiskSpaceForDir(PDR_TEMP_ROOT);
+    const [destSpace, tempSpace] = await Promise.all([destinationChain, tempChain]);
     const destFree = destSpace?.freeBytes ?? null;
     const destTotal = destSpace?.totalBytes ?? null;
-    const tempSpace = await getDiskSpaceForDir(PDR_TEMP_ROOT);
     const tempFree = tempSpace?.freeBytes ?? null;
     const tempTotal = tempSpace?.totalBytes ?? null;
     const destHeadroom = computeHeadroomBytes(destTotal);
@@ -3359,7 +3368,7 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
     // aren't consumed by the rest of analysis:run — so deferring it
     // off the critical path is a free win. The log line still
     // appears, just slightly later.
-    setImmediate(() => {
+    setImmediate(async () => {
         try {
             const settingsForDiag = (() => { try {
                 return getSettings();
@@ -3381,10 +3390,20 @@ ipcMain.handle('analysis:run', async (_event, sourcePath, sourceType, tempDirOve
                 return p.substring(0, 2).toUpperCase();
             };
             const srcLocal = isLocalDir(sourcePath);
-            const srcSpace = srcLocal ? getDiskSpaceForDirSync(sourcePath) : null;
             const destLocalDiag = isLocalDir(destPathForDiag);
-            const destSpaceDiag = (destPathForDiag && destLocalDiag) ? getDiskSpaceForDirSync(destPathForDiag) : null;
-            const tempSpaceDiag = getDiskSpaceForDirSync(PDR_TEMP_ROOT);
+            // v2.0.11 (Terry 2026-05-25) — async + parallel. Was three
+            // execSync PowerShell calls (10 s timeout each); even after
+            // deferring via setImmediate, those sync execs blocked the
+            // main thread during the user's analyse-start window. Now
+            // each probe uses the async getDiskSpaceForDir and all three
+            // run concurrently via Promise.all — total time = max instead
+            // of sum, AND each await yields to the event loop so the OS
+            // message pump runs throughout.
+            const [srcSpace, destSpaceDiag, tempSpaceDiag] = await Promise.all([
+                srcLocal ? getDiskSpaceForDir(sourcePath) : Promise.resolve(null),
+                (destPathForDiag && destLocalDiag) ? getDiskSpaceForDir(destPathForDiag) : Promise.resolve(null),
+                getDiskSpaceForDir(PDR_TEMP_ROOT),
+            ]);
             log.info(`[source-add] sourcePath=${JSON.stringify(sourcePath)} sourceType=${sourceType} ` +
                 `srcDrive=${driveOf(sourcePath)} srcLocal=${srcLocal} ` +
                 `srcFree=${gbDiag(srcSpace?.freeBytes)} srcTotal=${gbDiag(srcSpace?.totalBytes)} ` +
