@@ -407,7 +407,25 @@ async function main(): Promise<void> {
   if (existsSync(notesPath)) {
     const notes = readFileSync(notesPath, 'utf8').trim();
     if (notes.length > 0) {
-      const existingYml = readFileSync(latestYmlPath, 'utf8');
+      let existingYml = readFileSync(latestYmlPath, 'utf8');
+      // IDEMPOTENCY FIX (Terry 2026-05-26):
+      //   The original logic appended `releaseNotes: |\n...` unconditionally.
+      //   Running release:publish twice (or publish-only after a stale
+      //   package step) would append TWO `releaseNotes:` blocks. YAML
+      //   parsers throw `duplicated mapping key (29:1)` and every
+      //   existing PDR install's auto-update check fails. That happened
+      //   on the v2.0.12 publish — first attempt failed at git-clean
+      //   preflight (left notes injected in release/latest.yml),
+      //   second attempt re-injected on top of the first, manifest
+      //   shipped malformed, took ~9 hours to discover.
+      //
+      //   Strip any existing top-level `releaseNotes:` block (the key
+      //   line + every indented continuation line) BEFORE appending the
+      //   fresh one. Safe to run any number of times.
+      existingYml = existingYml.replace(
+        /^releaseNotes:[^\n]*\n(?:[ \t]+[^\n]*\n?)*/gm,
+        '',
+      );
       // YAML block-scalar (`|`) preserves newlines; indent each line
       // by 2 spaces to keep it a child of `releaseNotes:`.
       const indented = notes.split('\n').map(l => `  ${l}`).join('\n');
@@ -417,6 +435,28 @@ async function main(): Promise<void> {
     }
   } else {
     info(`no release-notes/v${version}.md found — manifest ships without releaseNotes`);
+  }
+
+  // Pre-upload validation — duplicate top-level keys would break every
+  // electron-updater client's YAML parse. Belt and braces; the
+  // idempotency fix above prevents the most common cause, but a
+  // hand-edited manifest, an unexpected build-time injector, or a
+  // future refactor could re-introduce it. Catch it before the upload.
+  {
+    const finalText = readFileSync(latestYmlPath, 'utf8');
+    const topKeys = finalText
+      .split('\n')
+      .filter((l) => /^[a-zA-Z_][a-zA-Z0-9_]*:/.test(l))
+      .map((l) => l.split(':')[0]);
+    const dupes = topKeys.filter((k, i) => topKeys.indexOf(k) !== i);
+    if (dupes.length > 0) {
+      fail(
+        `latest.yml has DUPLICATE top-level keys: ${dupes.join(', ')}.\n` +
+          '  electron-updater will throw "duplicated mapping key" and ' +
+          'every existing PDR install\'s auto-update will fail.\n' +
+          `  Inspect ${latestYmlPath} and re-run.`,
+      );
+    }
   }
 
   // PACKAGE-ONLY: stop here. Installer + blockmap + latest.yml are in
