@@ -3885,7 +3885,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     return (
       <div
         data-tour="sd-sidebar-collapse"
-        className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 overflow-y-auto ${sidebarAnimatedClass}`}
+        className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 overflow-y-auto overflow-x-hidden ${sidebarAnimatedClass}`}
         style={{ width: '48px' }}
       >
         {/* Expand button — must ALWAYS expand the sidebar, including
@@ -4035,7 +4035,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       // currently rendered, not vanish when the user has pinned the
       // sidebar open.
       data-tour="sd-sidebar-collapse"
-      className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container overflow-y-auto ${sidebarAnimatedClass}`}
+      className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container overflow-y-auto overflow-x-hidden ${sidebarAnimatedClass}`}
       style={{ width: `${width}px` }}
     >
       {/* Pin / collapse controls — icons sized up from 3.5 to 4, padding
