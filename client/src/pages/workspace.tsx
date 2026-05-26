@@ -12036,7 +12036,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         <label className="flex items-center justify-between p-3 rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer transition-colors animate-in fade-in slide-in-from-top-2 duration-200">
                           <div className="flex flex-col">
                             <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Thorough duplicate matching</span>
-                            <span className="text-xs text-muted-foreground">Use SHA-256 file hash instead of filename + size. More accurate but significantly slower on network/cloud drives.</span>
+                            <span className="text-xs text-muted-foreground">PDR already uses a file-content hash for duplicate detection on local Library Drives by default. Turn this on to also use a hash on network shares and cloud-sync folders &mdash; catches files that have been renamed but are otherwise identical, at the cost of a slower scan every time PDR reads from those drives. Leave off if your Library Drive lives on a NAS or OneDrive / Google Drive folder and the dedup speed matters more than catching renamed duplicates.</span>
                           </div>
                           <Checkbox
                             checked={thoroughDuplicateMatching}

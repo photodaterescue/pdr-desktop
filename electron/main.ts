@@ -4055,8 +4055,37 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
     console.log(`[Prescan] Starting destination prescan: ${destinationPath}`);
     const prescanStart = Date.now();
     const settings = getSettings();
-    const useHash = settings.thoroughDuplicateMatching;
-    console.log(`[Prescan] thoroughDuplicateMatching=${useHash}`);
+    // v2.0.13 (Terry 2026-05-26) — asymmetry fix. Pre-v2.0.13 this read
+    // `useHash = settings.thoroughDuplicateMatching` directly, which
+    // disagreed with the copy loop's "hash unless network/cloud" rule
+    // a few hundred lines below. With the toggle OFF (the default) the
+    // copy loop hashed every file it copied but the prescan only built
+    // heuristic entries — so the hash comparisons had nothing to match
+    // against and cross-run hash dedup silently didn't work for anyone
+    // who hadn't enabled the toggle.
+    //
+    // The right policy is "hash unless reading from a slow source":
+    //   - Toggle ON  → force hash everywhere (power-user)
+    //   - Toggle OFF → hash if destination is local; heuristic if it's
+    //                  a network share or cloud-sync folder (where the
+    //                  per-file read cost would dominate).
+    //
+    // This matches the copy-loop rule applied to whichever side is
+    // being read (source there, destination here).
+    const forceHash = settings.thoroughDuplicateMatching ?? false;
+    let useHash = forceHash;
+    if (!forceHash) {
+      try {
+        const destClass = classifySource(destinationPath);
+        useHash = destClass.type !== 'network' && destClass.type !== 'cloud-sync';
+      } catch (clsErr) {
+        // Classification failed — assume local (the common case) so
+        // hash dedup stays on rather than silently disabled.
+        useHash = true;
+        console.warn(`[Prescan] classifySource failed for destination; assuming local:`, clsErr);
+      }
+    }
+    console.log(`[Prescan] thoroughDuplicateMatching=${forceHash} → useHash=${useHash}`);
     
     const existingHashes = new Map<string, string>(); // hash -> filename
     const existingHeuristics = new Map<string, string>(); // "filename|size" -> filename
