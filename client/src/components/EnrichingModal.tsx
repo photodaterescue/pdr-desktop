@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Sparkles, X, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -207,7 +208,13 @@ export function EnrichingModal() {
 
   const percent = progress.total > 0 ? Math.min(100, Math.round((progress.inspected / progress.total) * 100)) : 0;
 
-  return (
+  // Portal to document.body — escapes the workspace component
+  // tree's stacking context so this modal can sit ABOVE the Library
+  // Drive Manager (which is also portalled to body at z-50). Without
+  // the portal, "Run Enrichment" in the LDM dispatched the open
+  // event but the modal stacked underneath LDM and looked dead.
+  // Caught by Terry's first test 2026-05-26.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-[520px] mx-4 overflow-hidden">
         <header className="flex items-start justify-between p-6 pb-3 border-b border-border/40">
@@ -355,6 +362,7 @@ export function EnrichingModal() {
           )}
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
