@@ -32,10 +32,11 @@
  * "never overwrite user curation" guards.
  */
 
-import AdmZip from 'adm-zip';
 import fs from 'fs';
 import path from 'path';
+import unzipper from 'unzipper';
 import { getDb } from './search-database.js';
+import { toLongPath } from './long-path.js';
 
 // ─── Group-id detection ──────────────────────────────────────────────────────
 //
@@ -247,9 +248,17 @@ export async function scanSidecarsFromZip(
     return result;
   }
 
-  let zip: AdmZip;
+  // v2.0.13 fix (Terry 2026-05-26): switched from adm-zip to unzipper.
+  // adm-zip reads the entire archive into a Node Buffer at open time,
+  // which fails hard on Buffer's 2 GiB cap — useless for Takeouts that
+  // are 50 GB per part. unzipper streams the central directory only
+  // and pulls per-entry contents on demand via .buffer() / .stream(),
+  // so it handles a 50 GB zip the same as a 5 MB one. The same library
+  // is already used by analysis-engine.ts and extract-worker.ts for
+  // the existing big-Takeout extraction path.
+  let directory: { files: Array<{ path: string; type: string; buffer: () => Promise<Buffer> }> };
   try {
-    zip = new AdmZip(zipPath);
+    directory = await unzipper.Open.file(toLongPath(zipPath)) as { files: Array<{ path: string; type: string; buffer: () => Promise<Buffer> }> };
   } catch (e) {
     console.warn(`[TakeoutSidecar] failed to open zip ${zipPath}:`, (e as Error).message);
     result.errors++;
@@ -257,7 +266,7 @@ export async function scanSidecarsFromZip(
     return result;
   }
 
-  const entries = zip.getEntries();
+  const entries = directory.files;
   const db = getDb();
   const insert = db.prepare(`
     INSERT OR IGNORE INTO takeout_sidecars (
@@ -322,21 +331,22 @@ export async function scanSidecarsFromZip(
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
-    if (entry.isDirectory) continue;
-    if (!isSidecarEntry(entry.entryName)) continue;
+    if (entry.type === 'Directory') continue;
+    if (!isSidecarEntry(entry.path)) continue;
     result.sidecarsSeen++;
 
     // Reject the album-level metadata.json files — they describe
     // FOLDER (album) metadata, not per-photo sidecars. The existing
     // takeout-album-importer handles those.
-    const lowerName = path.basename(entry.entryName).toLowerCase();
+    const lowerName = path.basename(entry.path).toLowerCase();
     if (lowerName === 'metadata.json' || lowerName === 'shared_album_comments.json' || lowerName === 'print-subscriptions.json' || lowerName === 'user-generated-memory-titles.json') {
       continue;
     }
 
     let content: string;
     try {
-      content = entry.getData().toString('utf-8');
+      const buf = await entry.buffer();
+      content = buf.toString('utf-8');
     } catch (e) {
       result.errors++;
       continue;
@@ -357,7 +367,7 @@ export async function scanSidecarsFromZip(
       if (typeof data.title === 'string') titleHint = data.title;
     } catch { /* ignore — parsed succeeded, this is best-effort */ }
 
-    const basename = deriveBasename(entry.entryName, titleHint);
+    const basename = deriveBasename(entry.path, titleHint);
     if (!basename) {
       // Genuinely couldn't tell which photo this sidecar belongs to.
       // Logged but not counted as an error — the JSON parsed fine,
