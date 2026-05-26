@@ -442,6 +442,31 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
+  // v2.0.13 — Enrichment pass: applies the cached Takeout sidecar
+  // metadata to live _RC / _MK rows in indexed_files. Strictly
+  // additive — never overrides user-set person_id, never deletes
+  // album_files rows, never touches Trees data.
+  //   dryRun: cheap pre-flight that returns counts so the modal
+  //     can show "X files have improving metadata, run upgrade?"
+  //     before the user commits.
+  //   run: kicks off the pass. Resolves with the run summary on
+  //     completion (or on cancel — summary.cancelled flag set).
+  //   cancel: flips a module-level cancellation flag the engine
+  //     checks between files.
+  //   onProgress: subscribes to per-batch progress events.
+  enrich: {
+    dryRun: () => ipcRenderer.invoke('enrich:dryRun'),
+    run: () => ipcRenderer.invoke('enrich:run'),
+    cancel: () => ipcRenderer.invoke('enrich:cancel'),
+    onProgress: (
+      cb: (p: { inspected: number; upgraded: number; unchanged: number; skipped: number; total: number; currentFilename?: string }) => void,
+    ) => {
+      const handler = (_e: unknown, p: { inspected: number; upgraded: number; unchanged: number; skipped: number; total: number; currentFilename?: string }) => cb(p);
+      ipcRenderer.on('enrich:progress', handler);
+      return () => ipcRenderer.removeListener('enrich:progress', handler);
+    },
+  },
+
   search: {
     init: () => ipcRenderer.invoke('search:init'),
     indexRun: (reportId: string) => ipcRenderer.invoke('search:indexRun', reportId),

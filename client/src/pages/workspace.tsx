@@ -118,6 +118,8 @@ import { LowRamAdvisoryCard } from "@/components/LowRamAdvisoryCard";
 import { UnindexedLibrariesCard } from "@/components/UnindexedLibrariesCard";
 import { CleanupCascadeRecoveryCard } from "@/components/CleanupCascadeRecoveryCard";
 import { TakeoutMultiPartBanner } from "@/components/TakeoutMultiPartBanner";
+import { EnrichingModal } from "@/components/EnrichingModal";
+import { EnrichingPill } from "@/components/EnrichingPill";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -5015,6 +5017,17 @@ function DashboardPanel({
             so re-indexing never overwrites existing rows. v2.0.9
             (Terry 2026-05-20). */}
         <UnindexedLibrariesCard />
+
+        {/* v2.0.13 Enrichment surfaces — the modal is fixed-position
+            (z-50) so its placement in the JSX tree doesn't affect
+            visual layout; it portals over everything when opened.
+            The pill renders inline in the dashboard's header band
+            and is hidden by default — visible only while a run is
+            minimized. Both listen on window events for lifecycle. */}
+        <EnrichingModal />
+        <div className="mb-4 flex items-center gap-2">
+          <EnrichingPill />
+        </div>
 
         {/* Confidence Summary Section */}
         {hasSelection && (

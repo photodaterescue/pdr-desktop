@@ -270,6 +270,11 @@ import {
   scanSidecarsFromZips,
 } from './takeout-sidecar-cache.js';
 import {
+  cancelEnrichment,
+  dryRunEnrichment,
+  runEnrichment,
+} from './enrichment-engine.js';
+import {
   initDatabase,
   closeDatabase,
   searchFiles,
@@ -6983,6 +6988,46 @@ ipcMain.handle('takeout:getSidecarSummary', async () => {
 ipcMain.handle('takeout:detectGroupId', async (_event, zipPath: string) => {
   try {
     return { success: true, data: extractTakeoutGroupId(zipPath) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── v2.0.13 Enrichment pass ──────────────────────────────────────────────
+//
+// Reads the takeout_sidecars cache + indexed_files, renames _RC and
+// _MK files whose sidecars carry a precise photoTakenTime to _CF,
+// rewrites EXIF date / GPS / description, seeds face-name hints
+// additively, writes an enrichment_log audit row per change.
+// Strictly additive — never touches Trees data, never overrides a
+// user-set person_id, never deletes album_files rows. See the
+// enrichment-engine.ts header for the full additive-only rule.
+
+ipcMain.handle('enrich:dryRun', async () => {
+  try {
+    return { success: true, data: dryRunEnrichment() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('enrich:run', async () => {
+  try {
+    const summary = await runEnrichment((p) => {
+      try {
+        mainWindow?.webContents.send('enrich:progress', p);
+      } catch { /* best-effort */ }
+    });
+    return { success: true, data: summary };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('enrich:cancel', async () => {
+  try {
+    cancelEnrichment();
+    return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

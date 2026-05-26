@@ -48,6 +48,88 @@ function isValidDate(date: Date): boolean {
   return true;
 }
 
+// v2.0.13 — full enrichment EXIF write. Writes date (the original
+// behaviour) plus optional GPS coordinates and description in a
+// single exiftool invocation so a 9 800-file enrichment pass doesn't
+// fork the exiftool subprocess three times per file.
+//
+// Returns a list of which EXIF fields actually landed so the
+// enrichment_log audit row can record exactly what was changed.
+//
+// All non-date fields are skipped when their value is null/undefined,
+// so callers can pass through the sidecar payload as-is without
+// having to gate each field at the call site.
+export interface EnrichmentExifWriteResult {
+  success: boolean;
+  fieldsWritten: ('date' | 'gps' | 'description')[];
+  error?: string;
+}
+
+export async function writeEnrichmentExif(
+  filePath: string,
+  date: Date,
+  options: {
+    gpsLat: number | null;
+    gpsLon: number | null;
+    description: string | null;
+  },
+): Promise<EnrichmentExifWriteResult> {
+  if (!isPhotoFile(filePath)) {
+    // Video / other non-photo file — exiftool can write metadata to
+    // mp4/mov but the field semantics differ and PDR's existing
+    // photo-only restriction holds. Skip silently with success.
+    return { success: true, fieldsWritten: [] };
+  }
+  if (!isValidDate(date)) {
+    return {
+      success: false,
+      fieldsWritten: [],
+      error: 'Invalid date - skipped EXIF write to prevent data corruption',
+    };
+  }
+  try {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const exifDateStr = `${date.getFullYear()}:${pad(date.getMonth() + 1)}:${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+
+    const payload: Record<string, string | number> = {
+      DateTimeOriginal: exifDateStr,
+      CreateDate: exifDateStr,
+      ModifyDate: exifDateStr,
+    };
+    const fieldsWritten: ('date' | 'gps' | 'description')[] = ['date'];
+
+    if (typeof options.gpsLat === 'number' && typeof options.gpsLon === 'number' &&
+        Number.isFinite(options.gpsLat) && Number.isFinite(options.gpsLon)) {
+      payload.GPSLatitude = options.gpsLat;
+      payload.GPSLatitudeRef = options.gpsLat >= 0 ? 'N' : 'S';
+      payload.GPSLongitude = options.gpsLon;
+      payload.GPSLongitudeRef = options.gpsLon >= 0 ? 'E' : 'W';
+      fieldsWritten.push('gps');
+    }
+    if (typeof options.description === 'string' && options.description.length > 0) {
+      payload.ImageDescription = options.description;
+      // XMP-dc:description is what most modern viewers actually read.
+      // Setting both keeps PDR's outputs consistent across EXIF + XMP.
+      payload['XMP-dc:description'] = options.description;
+      fieldsWritten.push('description');
+    }
+
+    const EXIF_TIMEOUT_MS = 15_000;
+    const writePromise = exiftool.write(filePath, payload, ['-overwrite_original']);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`EXIF write timed out after ${EXIF_TIMEOUT_MS / 1000}s`)), EXIF_TIMEOUT_MS),
+    );
+    await Promise.race([writePromise, timeoutPromise]);
+    return { success: true, fieldsWritten };
+  } catch (error) {
+    return {
+      success: false,
+      fieldsWritten: [],
+      error: (error as Error).message,
+    };
+  }
+}
+
 export async function writeExifDate(
   filePath: string,
   date: Date,
