@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Package, Plus, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, Package, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
@@ -43,6 +43,14 @@ interface SidecarSummary {
   groups: SidecarGroup[];
 }
 
+interface LatestEnrichmentRun {
+  finishedAt: string;
+  upgraded: number;
+  dedupedDuplicates: number;
+  distinctCollisions: number;
+  errors: number;
+}
+
 function formatScannedDate(iso: string): string {
   try {
     const d = new Date(iso.replace(' ', 'T') + (iso.endsWith('Z') ? '' : 'Z'));
@@ -73,8 +81,15 @@ function prettyGroupId(groupId: string): string {
 
 export function TakeoutMetadataSection() {
   const [summary, setSummary] = useState<SidecarSummary | null>(null);
+  const [latestRun, setLatestRun] = useState<LatestEnrichmentRun | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [scanning, setScanning] = useState(false);
+  // v2.0.13 (Terry 2026-05-26): the explainer text was too long for a
+  // section that the user has already understood after one read. Show
+  // a one-line summary by default; the full "what is this / can I
+  // delete the zips / what about multiple accounts" detail collapses
+  // behind a "What is this?" toggle.
+  const [showDetail, setShowDetail] = useState(false);
 
   const refresh = async () => {
     try {
@@ -89,30 +104,61 @@ export function TakeoutMetadataSection() {
     } catch (e) {
       console.warn('[TakeoutMetadataSection] refresh failed:', e);
       setSummary({ totalSidecars: 0, groups: [] });
-    } finally {
-      setLoaded(true);
     }
+    // v2.0.13 (Terry 2026-05-26) — fetch the most recent enrichment
+    // run summary so the "Last enriched X ago — N upgraded" line
+    // under the export-group list reflects current state. Hidden
+    // entirely if no run has ever finished.
+    try {
+      const er = await (window as Window & {
+        pdr?: { enrich?: { getLatestRun?: () => Promise<{ success: boolean; data?: LatestEnrichmentRun | null }> } };
+      }).pdr?.enrich?.getLatestRun?.();
+      if (er?.success && er.data) {
+        setLatestRun(er.data);
+      } else {
+        setLatestRun(null);
+      }
+    } catch (e) {
+      console.warn('[TakeoutMetadataSection] latest-run fetch failed:', e);
+      setLatestRun(null);
+    }
+    setLoaded(true);
   };
 
   useEffect(() => {
     refresh();
     // Re-fetch whenever the source-menu banner or any other surface
-    // dispatches the "sidecars updated" event after a successful scan.
+    // dispatches the "sidecars updated" event after a successful scan,
+    // AND when the Enrichment pass finishes (Terry 2026-05-26 — the
+    // section showed "scanned 54m ago" stale data after enrichment
+    // completed because we forgot to invalidate the summary).
     const handler = () => { void refresh(); };
     window.addEventListener('pdr:takeoutSidecarsUpdated', handler);
-    return () => window.removeEventListener('pdr:takeoutSidecarsUpdated', handler);
+    window.addEventListener('pdr:takeoutEnrichmentComplete', handler);
+    return () => {
+      window.removeEventListener('pdr:takeoutSidecarsUpdated', handler);
+      window.removeEventListener('pdr:takeoutEnrichmentComplete', handler);
+    };
   }, []);
 
   const handleScanAddMore = async () => {
-    // Open a multi-select file picker for .zip files. The native
-    // dialog returns paths the renderer can pass straight to the
-    // pre-scan IPC.
-    const res = await (window as Window & {
-      pdr?: { openTakeoutZips?: () => Promise<{ success: boolean; data?: string[] }> };
-    }).pdr?.openTakeoutZips?.();
-    if (!res?.success || !res.data || res.data.length === 0) return;
+    // v2.0.13 (Terry 2026-05-26) — uses PDR's branded FolderBrowserModal
+    // via the workspace's pdr:pickTakeoutZipForCache event bridge.
+    // Single-zip per click; user can click "Scan another Takeout part"
+    // again to add more parts. This replaces the Windows-native
+    // openTakeoutZips dialog that shipped with Phase 2.
+    const pickedPath = await new Promise<string | null>((resolve) => {
+      const handler = (e: Event) => {
+        window.removeEventListener('pdr:takeoutZipForCachePicked', handler);
+        const detail = (e as CustomEvent<{ path: string | null }>).detail ?? {};
+        resolve(typeof detail.path === 'string' && detail.path.length > 0 ? detail.path : null);
+      };
+      window.addEventListener('pdr:takeoutZipForCachePicked', handler);
+      window.dispatchEvent(new CustomEvent('pdr:pickTakeoutZipForCache'));
+    });
+    if (!pickedPath) return;
 
-    const zips = res.data;
+    const zips = [pickedPath];
     setScanning(true);
     const toastId = toast.loading(`Pre-scanning ${zips.length} Takeout part${zips.length === 1 ? '' : 's'}…`, {
       description: 'Reading JSON sidecars only — no photos are extracted.',
@@ -147,10 +193,6 @@ export function TakeoutMetadataSection() {
   };
 
   const handleEnrichLibrary = () => {
-    // Wired in Phase 3 when the Enriching modal exists. For now fire
-    // a custom event so workspace.tsx can intercept and open the
-    // modal once it ships; in the meantime show a tooltip so this
-    // button doesn't look broken when clicked before the modal lands.
     window.dispatchEvent(new CustomEvent('pdr:openEnrichingModal'));
   };
 
@@ -179,12 +221,28 @@ export function TakeoutMetadataSection() {
         <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2.5">
           <div className="flex items-start gap-2.5">
             <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-            <p className="text-body text-foreground leading-snug">
-              <strong className="font-medium">{summary!.totalSidecars.toLocaleString()}</strong> sidecars cached
-              across {summary!.groups.length} export{summary!.groups.length === 1 ? '' : 's'}. Used to fill in
-              precise dates and metadata for photos that don&apos;t carry their own JSON sidecar in the part
-              you&apos;re analysing.
-            </p>
+            <div className="text-body text-foreground leading-snug flex-1 min-w-0">
+              <p>
+                <strong className="font-medium">{summary!.totalSidecars.toLocaleString()}</strong> sidecars cached
+                across {summary!.groups.length} export{summary!.groups.length === 1 ? '' : 's'}.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowDetail((v) => !v)}
+                className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="takeout-metadata-detail-toggle"
+              >
+                {showDetail ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                What is this?
+              </button>
+              {showDetail && (
+                <div className="mt-2 text-xs text-muted-foreground leading-relaxed space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <p>The cache holds Google&apos;s sidecar JSONs &mdash; the dates, GPS, and captions that ride alongside your photos in a Takeout. Used to fill in metadata for photos that don&apos;t carry their own JSON sidecar in the part you&apos;re analysing.</p>
+                  <p>Only the JSON metadata is stored here &mdash; not the photo bytes. You can safely delete the original Takeout zips after they&apos;ve been scanned.</p>
+                  <p>Adding Takeouts from another Google account creates a separate export group below; they never overwrite each other.</p>
+                </div>
+              )}
+            </div>
           </div>
           <ul className="space-y-1 pl-6">
             {summary!.groups.map((g) => (
@@ -197,6 +255,13 @@ export function TakeoutMetadataSection() {
               </li>
             ))}
           </ul>
+          {latestRun && (
+            <p className="text-xs text-muted-foreground pl-6" data-testid="takeout-metadata-last-enriched">
+              Last enriched {formatScannedDate(latestRun.finishedAt)} &mdash;{' '}
+              <span className="text-foreground font-medium">{latestRun.upgraded.toLocaleString()}</span>{' '}
+              file{latestRun.upgraded === 1 ? '' : 's'} upgraded.
+            </p>
+          )}
           <div className="flex items-center gap-2 flex-wrap pt-1">
             <Button onClick={handleScanAddMore} variant="secondary" size="sm" disabled={scanning} data-testid="takeout-metadata-scan-more">
               {scanning ? (

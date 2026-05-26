@@ -72,12 +72,20 @@ import {
   ChevronRight,
   CalendarRange,
   MoreHorizontal,
+  MessageSquareText,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from '@/components/ui/context-menu';
+import { editPhotoCaption } from '@/lib/caption-actions';
 import ParallelStructureModal from '@/components/ParallelStructureModal';
 import AddToAlbumPopover from '@/components/AddToAlbumPopover';
 import StaleRunsModal from '@/components/StaleRunsModal';
@@ -4875,8 +4883,15 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
+  // v2.0.13 — caption preview in the native title so hover reveals
+  // the user's caption without opening the viewer. Matches the same
+  // "native title for tile grids" pattern MemoriesView uses to avoid
+  // forwarding-ref issues with ContextMenuTrigger asChild.
+  const titleText = file.caption ? `${file.filename}\n\n${file.caption}` : file.filename;
   return (
-    <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick}
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+    <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick} title={titleText}
       // Premium hover: subtle 2px lift + softer shadow so the tile
       // pops out of the dense gap-0 grid. `relative hover:z-10` is
       // critical — without it the lifted tile's shadow gets clipped
@@ -4925,6 +4940,21 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
         </div>
       )}
     </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        {/* v2.0.13 — per-photo caption. Pre-fills with the current
+            caption (if any) so the same item handles add / edit /
+            clear. Empty save clears. EXIF ImageDescription + XMP
+            dc:description are written by default. */}
+        <ContextMenuItem
+          onSelect={() => { void editPhotoCaption({ fileId: file.id, filename: file.filename }); }}
+          data-testid={`filecard-caption-${file.id}`}
+        >
+          <MessageSquareText className="w-3.5 h-3.5 mr-2" />
+          {file.caption ? 'Edit caption…' : 'Add caption…'}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

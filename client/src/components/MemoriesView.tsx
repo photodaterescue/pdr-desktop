@@ -20,6 +20,7 @@ import {
   ArrowUpToLine,
   RotateCcw,
   Star,
+  MessageSquareText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -48,6 +49,7 @@ import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
 import AddToAlbumPopover from './AddToAlbumPopover';
 import { getPrefetchedMemories, getPrefetchedThumb, invalidatePrefetchedMemories } from '../lib/memories-prefetch';
+import { editPhotoCaption } from '@/lib/caption-actions';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -897,8 +899,38 @@ function MonthTile({ bucket, onOpen, density, enterIndex = 0 }: { bucket: Memori
   // already supplied a thumb on first render — no point watching
   // for visibility when the image is already correct.
   const requestedRef = useRef<boolean>(thumb !== null);
+  // v2.0.13 (Terry 2026-05-26) — when the user sets a custom monthly
+  // thumbnail via right-click, the parent re-fetches buckets so
+  // `bucket.sampleFilePath` changes for this tile. The useState init
+  // above only runs on mount, and the previous useEffect early-returned
+  // when `requestedRef.current` was true — so the displayed thumb
+  // stayed on the OLD sample (the default auto-picked one). Track the
+  // last-rendered sample path and reset state when it changes; the
+  // observer flow then picks up the new path on visibility, or the
+  // prefetch lookup wins if it's been populated for the new path.
+  const lastSamplePathRef = useRef<string | null | undefined>(bucket.sampleFilePath);
   useEffect(() => {
     const samplePath = bucket.sampleFilePath;
+    const pathChanged = lastSamplePathRef.current !== samplePath;
+    lastSamplePathRef.current = samplePath;
+    if (pathChanged) {
+      // Reset state for the new sample path. Re-read prefetch in case
+      // it's been populated since mount; if not, the observer below
+      // (or an immediate fetch) handles the cold case.
+      if (!samplePath) {
+        setThumb(null);
+        requestedRef.current = false;
+      } else {
+        const prefetched = getPrefetchedThumb(samplePath);
+        if (prefetched) {
+          setThumb(prefetched);
+          requestedRef.current = true;
+        } else {
+          setThumb(null);
+          requestedRef.current = false;
+        }
+      }
+    }
     if (!samplePath) return;
     if (requestedRef.current) return;
     const el = tileRef.current;
@@ -1087,6 +1119,167 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return () => { cancelled = true; };
   }, [year, month, day, runIdsKey]);
 
+  // v2.0.13 (Terry 2026-05-26) — Day grouping + scroll-position
+  // affordances.
+  //
+  // The drilldown used to be a single flat grid of every photo in the
+  // year / month / day filter. Scrolling through a busy month felt
+  // disorienting because there was no visual indication of which day
+  // you were looking at. Three coordinated additions:
+  //
+  //   1. Per-day section with a sticky header showing the long-form
+  //      day ("Tuesday, 7 February 2022 — 23 photos"). Sticks to the
+  //      top of the scroll area as the user scrolls past, so the
+  //      current day's label is always visible.
+  //   2. Floating "current day" pill that fades in while scrolling
+  //      and out a moment after the scroll stops. Anchored to the
+  //      top-right of the scroll area so it never overlaps photos.
+  //   3. Two floating arrow buttons (bottom-right) that jump to the
+  //      next / previous day's header. PageDown / PageUp keyboard
+  //      shortcuts wired to the same handlers.
+  //
+  // The per-day grouping is memoised so we don't rebuild on every
+  // scroll tick.
+  const filesByDay = useMemo(() => {
+    if (!files) return [] as Array<{ dayKey: string; date: Date; files: IndexedFile[]; baseIndex: number }>;
+    const groups: Array<{ dayKey: string; date: Date; files: IndexedFile[]; baseIndex: number }> = [];
+    let currentKey: string | null = null;
+    let baseIndex = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      let d: Date | null = null;
+      if (f.derived_date) {
+        d = new Date(f.derived_date);
+        if (isNaN(d.getTime())) d = null;
+      }
+      // Fallback bucket for files with no parseable date. Rare in a
+      // Memories view (which queries by year/month/day), but defend
+      // against bad data — they cluster at the bottom under a
+      // dedicated header.
+      const key = d
+        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        : '__no-date__';
+      if (key !== currentKey) {
+        baseIndex = i;
+        groups.push({ dayKey: key, date: d ?? new Date(0), files: [f], baseIndex });
+        currentKey = key;
+      } else {
+        groups[groups.length - 1].files.push(f);
+      }
+    }
+    return groups;
+  }, [files]);
+
+  // Format the day header label. Full long form so the user can read
+  // the date without parsing abbreviations.
+  const formatDayHeader = (d: Date, dayKey: string): string => {
+    if (dayKey === '__no-date__') return 'No date';
+    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  // Current visible day — driven by scroll position. The pill at the
+  // top-right shows this label while scrolling.
+  const [currentDayKey, setCurrentDayKey] = useState<string | null>(null);
+  const [scrollIndicatorVisible, setScrollIndicatorVisible] = useState(false);
+  const scrollIndicatorTimeoutRef = useRef<number | null>(null);
+  const dayHeaderElsRef = useRef<Record<string, HTMLElement | null>>({});
+
+  useEffect(() => {
+    const scrollEl = gridScrollRef.current;
+    if (!scrollEl) return;
+    const recompute = () => {
+      let bestKey: string | null = null;
+      let bestDistance = Infinity;
+      const scrollTop = scrollEl.scrollTop;
+      // Find the day header whose top is at or just above the scroll
+      // viewport top — that's the day currently being shown.
+      for (const [key, el] of Object.entries(dayHeaderElsRef.current)) {
+        if (!el) continue;
+        const offsetTop = el.offsetTop;
+        const dist = scrollTop - offsetTop;
+        if (dist >= -10 && dist < bestDistance) {
+          bestDistance = dist;
+          bestKey = key;
+        }
+      }
+      // Edge case: scrolled to the very top before the first header
+      // has been passed — show the first day.
+      if (bestKey === null && filesByDay.length > 0) {
+        bestKey = filesByDay[0].dayKey;
+      }
+      if (bestKey) setCurrentDayKey(bestKey);
+    };
+    const onScroll = () => {
+      recompute();
+      setScrollIndicatorVisible(true);
+      if (scrollIndicatorTimeoutRef.current) {
+        clearTimeout(scrollIndicatorTimeoutRef.current);
+      }
+      scrollIndicatorTimeoutRef.current = window.setTimeout(() => {
+        setScrollIndicatorVisible(false);
+      }, 1200);
+    };
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    // Initial computation once headers are in the DOM.
+    recompute();
+    return () => {
+      scrollEl.removeEventListener('scroll', onScroll);
+      if (scrollIndicatorTimeoutRef.current) clearTimeout(scrollIndicatorTimeoutRef.current);
+    };
+  }, [filesByDay]);
+
+  const goToDayByKey = (dayKey: string) => {
+    const el = dayHeaderElsRef.current[dayKey];
+    const scrollEl = gridScrollRef.current;
+    if (!el || !scrollEl) return;
+    scrollEl.scrollTo({ top: Math.max(0, el.offsetTop - 4), behavior: 'smooth' });
+  };
+  const goToNextDay = () => {
+    if (filesByDay.length === 0) return;
+    const idx = currentDayKey ? filesByDay.findIndex((g) => g.dayKey === currentDayKey) : -1;
+    const next = idx >= 0 && idx < filesByDay.length - 1 ? filesByDay[idx + 1] : null;
+    if (next) goToDayByKey(next.dayKey);
+  };
+  const goToPrevDay = () => {
+    if (filesByDay.length === 0) return;
+    const idx = currentDayKey ? filesByDay.findIndex((g) => g.dayKey === currentDayKey) : -1;
+    const prev = idx > 0 ? filesByDay[idx - 1] : null;
+    if (prev) goToDayByKey(prev.dayKey);
+  };
+
+  // PageDown / PageUp keyboard shortcuts for the same navigation.
+  // Only active while the scroll container has focus (or no other
+  // interactive element claims it) so it doesn't fight with the
+  // browser's default Page behaviour on text inputs.
+  useEffect(() => {
+    const scrollEl = gridScrollRef.current;
+    if (!scrollEl) return;
+    const onKey = (e: KeyboardEvent) => {
+      // Don't hijack when an input / textarea has focus.
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (e.key === 'PageDown') {
+        e.preventDefault();
+        goToNextDay();
+      } else if (e.key === 'PageUp') {
+        e.preventDefault();
+        goToPrevDay();
+      }
+    };
+    scrollEl.addEventListener('keydown', onKey);
+    // Make sure the scroll container is focusable for the keys to land.
+    if (scrollEl.tabIndex < 0) scrollEl.tabIndex = 0;
+    return () => scrollEl.removeEventListener('keydown', onKey);
+  }, [filesByDay, currentDayKey]);
+
+  const currentDayLabel = useMemo(() => {
+    if (!currentDayKey) return '';
+    const g = filesByDay.find((x) => x.dayKey === currentDayKey);
+    if (!g) return '';
+    return formatDayHeader(g.date, g.dayKey);
+  }, [currentDayKey, filesByDay]);
+
   // Per-day grid thumbnail load — same sliding-window pool pattern
   // as the year/month overview. See the comment on that effect for
   // the why.
@@ -1268,7 +1461,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
         )}
       </div>
 
-      <div ref={gridScrollRef} className="flex-1 overflow-y-auto p-6">
+      <div ref={gridScrollRef} className="relative flex-1 overflow-y-auto p-6 outline-none">
         {files == null ? (
           <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Loading…</div>
         ) : files.length === 0 ? (
@@ -1276,11 +1469,46 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             {month == null ? `No files for ${year}.` : day == null ? `No files for ${MONTH_NAMES[month - 1]} ${year}.` : 'No files on this day.'}
           </div>
         ) : (
-          <div
-            className={`grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
-            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${drilldownSliderToPx(tileSizeSlider)}px, 1fr))` }}
-          >
-            {files.map((f, idx) => {
+          <div className="space-y-5">
+            {/* v2.0.13 — floating "current day" pill that fades in
+                while the user is scrolling. Anchored top-right inside
+                the scroll area; pointer-events-none so it never
+                blocks photo clicks. */}
+            {currentDayLabel && (
+              <div
+                className={`pointer-events-none sticky top-2 z-30 flex justify-end transition-opacity duration-200 ${
+                  scrollIndicatorVisible ? 'opacity-100' : 'opacity-0'
+                }`}
+                aria-hidden={!scrollIndicatorVisible}
+              >
+                <div className="px-3 py-1.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-xs font-medium text-foreground">
+                  {currentDayLabel}
+                </div>
+              </div>
+            )}
+            {filesByDay.map((group) => (
+              <section key={group.dayKey} data-day-key={group.dayKey}>
+                {/* Sticky per-day header — visible while scrolling
+                    through that day's photos. Long-form so the user
+                    can read the date without parsing abbreviations.
+                    Backdrop blur keeps the photo bleeding behind it
+                    readable without making it transparent enough to
+                    be illegible. */}
+                <h3
+                  ref={(el) => { dayHeaderElsRef.current[group.dayKey] = el; }}
+                  className="sticky top-0 z-20 -mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground"
+                >
+                  {formatDayHeader(group.date, group.dayKey)}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {group.files.length.toLocaleString()} {group.files.length === 1 ? 'photo' : 'photos'}
+                  </span>
+                </h3>
+                <div
+                  className={`mt-3 grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
+                  style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${drilldownSliderToPx(tileSizeSlider)}px, 1fr))` }}
+                >
+                  {group.files.map((f, dayIdx) => {
+                    const idx = group.baseIndex + dayIdx;
               const isMultiSelected = selectedFileIds.has(f.id);
               return (
               <ContextMenu key={f.id}>
@@ -1299,7 +1527,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       // never reached the button. With native title
                       // the button IS the trigger's direct child, so
                       // right-click works.
-                      title={`${f.filename} · ${formatHumanDate(f.derived_date)}`}
+                      title={f.caption ? `${f.filename} · ${formatHumanDate(f.derived_date)}\n\n${f.caption}` : `${f.filename} · ${formatHumanDate(f.derived_date)}`}
                       // Modifier-key contract mirrors SearchPanel/S&D:
                       //   plain click            → open viewer (jump in at idx)
                       //   selectionMode + click  → toggle selection (Select-button affordance)
@@ -1427,6 +1655,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
                     Add to album…
                   </ContextMenuItem>
+                  {/* v2.0.13 — per-photo caption. Pre-fills with the
+                      current caption (if any) so the same item handles
+                      add / edit / clear. Empty save clears. EXIF
+                      ImageDescription + XMP dc:description are written
+                      by default so the caption travels with the file. */}
+                  <ContextMenuItem
+                    onSelect={() => { void editPhotoCaption({ fileId: f.id, filename: f.filename }); }}
+                    data-testid={`memories-tile-caption-${f.id}`}
+                  >
+                    <MessageSquareText className="w-3.5 h-3.5 mr-2" />
+                    {f.caption ? 'Edit caption…' : 'Add caption…'}
+                  </ContextMenuItem>
                   {/* Monthly-thumbnail override — only shown when the user
                       is inside a month context (month != null). Lets them
                       override the auto-picked sample shown on the month
@@ -1461,6 +1701,41 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               </ContextMenu>
               );
             })}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+        {/* v2.0.13 — floating prev / next day arrows. Visible only
+            when there's more than one day to navigate between.
+            Anchored bottom-right of the scroll area so they're
+            always reachable without competing with the photo grid
+            for click targets. Disabled state at the edges of the
+            day list so the buttons don't no-op silently. */}
+        {files != null && filesByDay.length > 1 && (
+          <div className="pointer-events-none sticky bottom-4 z-20 flex justify-end gap-2 pr-2 -mt-4">
+            <IconTooltip label="Previous day (PageUp)" side="left">
+              <button
+                type="button"
+                onClick={goToPrevDay}
+                disabled={!currentDayKey || filesByDay.findIndex((g) => g.dayKey === currentDayKey) <= 0}
+                className="pointer-events-auto w-9 h-9 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                data-testid="drilldown-prev-day"
+              >
+                <ArrowUpToLine className="w-4 h-4" />
+              </button>
+            </IconTooltip>
+            <IconTooltip label="Next day (PageDown)" side="left">
+              <button
+                type="button"
+                onClick={goToNextDay}
+                disabled={!currentDayKey || filesByDay.findIndex((g) => g.dayKey === currentDayKey) >= filesByDay.length - 1}
+                className="pointer-events-auto w-9 h-9 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                data-testid="drilldown-next-day"
+              >
+                <ArrowUpToLine className="w-4 h-4 rotate-180" />
+              </button>
+            </IconTooltip>
           </div>
         )}
       </div>

@@ -1053,6 +1053,10 @@ export interface IndexedFile {
   geo_city: string | null;
   exif_read_ok: number;
   indexed_at: string;
+  // v2.0.13 — user-applied caption (also populated from Takeout
+  // sidecar.description during Fix / Enrichment). Editable per-photo
+  // via the right-click "Caption…" item in Albums / By Date / S&D.
+  caption?: string | null;
 }
 
 export interface SearchResult {
@@ -1194,6 +1198,14 @@ export async function addPhotosToAlbum(albumId: number, fileIds: number[]): Prom
 }
 export async function removePhotosFromAlbum(albumId: number, fileIds: number[]): Promise<{ success: boolean; removed?: number; error?: string }> {
   if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.removePhotos(albumId, fileIds);
+  return { success: false, error: 'Not running in Electron' };
+}
+// v2.0.13 — user-chosen album cover photo. Pass fileId=null to revert
+// to the default (first photo by date).
+export async function setAlbumCoverPhoto(albumId: number, fileId: number | null): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.setCoverPhoto) {
+    return (window as any).pdr.albums.setCoverPhoto(albumId, fileId);
+  }
   return { success: false, error: 'Not running in Electron' };
 }
 

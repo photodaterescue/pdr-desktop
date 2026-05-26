@@ -575,6 +575,208 @@ function CheckListDialog<T extends string | number>({
   );
 }
 
+/**
+ * promptInput — single-line text editor modal. Mirrors promptConfirm's
+ * visual frame (eyebrow / title / body / footer separator) so PDR's
+ * text-edit affordance feels of-a-piece with every other prompt.
+ *
+ * Returns the entered string (possibly empty), or null if the user
+ * dismissed (X / backdrop / Escape) or clicked Cancel. Callers that
+ * need to distinguish dismissal from cancel can compare strictly to
+ * null. An empty trimmed string is treated as a cancel — most callers
+ * want "you have to type SOMETHING to confirm."
+ *
+ * For "edit existing value", pass `initialValue`; the field pre-fills
+ * and selects on focus so a single keystroke replaces it.
+ *
+ * Added v2.0.13 for the photo-caption add/edit UX.
+ */
+export function promptInput(options: InputOptions): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const close = (result: string | null) => {
+      root.unmount();
+      container.remove();
+      resolve(result);
+    };
+    root.render(
+      <InputDialog
+        title={options.title}
+        eyebrow={options.eyebrow}
+        message={options.message}
+        placeholder={options.placeholder}
+        initialValue={options.initialValue}
+        confirmLabel={options.confirmLabel}
+        cancelLabel={options.cancelLabel}
+        multiline={options.multiline}
+        maxLength={options.maxLength}
+        onConfirm={(v) => close(v)}
+        onCancel={() => close(null)}
+        onDismiss={() => close(null)}
+      />
+    );
+  });
+}
+
+export interface InputOptions {
+  /** Optional caption (small caps). */
+  eyebrow?: string;
+  /** Headline. */
+  title?: string;
+  /** Body — explains what the user's editing. */
+  message?: React.ReactNode;
+  /** Placeholder text when the field is empty. */
+  placeholder?: string;
+  /** Pre-fills the field (for editing an existing value). */
+  initialValue?: string;
+  /** Custom confirm/cancel labels. */
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Render as a <textarea> instead of an <input> for long content
+   *  like photo captions or descriptions. */
+  multiline?: boolean;
+  /** Soft character cap shown as a counter next to the field. */
+  maxLength?: number;
+}
+
+function InputDialog({
+  eyebrow, title, message, placeholder, initialValue, confirmLabel, cancelLabel, multiline, maxLength, onConfirm, onCancel, onDismiss,
+}: InputOptions & { onConfirm: (v: string) => void; onCancel: () => void; onDismiss: () => void }) {
+  const [mounted, setMounted] = useState(false);
+  const [value, setValue] = useState(initialValue ?? '');
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const saveBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Mount-only effect — runs once. Combined with the focus call below,
+  // this ensures the textarea/input gets the cursor immediately on
+  // open without re-focusing on every keystroke (the earlier version
+  // had `value` in the deps which stole focus mid-type and re-selected
+  // initial text repeatedly — Terry caught it 2026-05-26 along with a
+  // request that Tab from the input jump straight to the Save button).
+  useEffect(() => {
+    setMounted(true);
+    const el = inputRef.current;
+    if (el) {
+      el.focus();
+      if (initialValue && initialValue.length > 0) el.select();
+    }
+    // Intentionally empty deps — focus + select belong on mount, not
+    // on every value change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Global key handler — Escape dismisses, Enter (single-line) /
+  // Ctrl+Enter (multiline) confirms. Re-bound when value changes so
+  // the captured value passed to onConfirm is current; this listener
+  // does not touch focus so the cursor stays put while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDismiss();
+      else if (e.key === 'Enter' && !multiline) {
+        e.preventDefault();
+        onConfirm(value);
+      } else if (e.key === 'Enter' && multiline && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        onConfirm(value);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [multiline, onConfirm, onDismiss, value]);
+
+  // Tab from the input goes directly to the Save button so the user
+  // can hit Tab → Enter to commit without reaching for the mouse.
+  // Shift+Tab still walks normally back through the focus order.
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      saveBtnRef.current?.focus();
+    }
+  };
+
+  const overLimit = typeof maxLength === 'number' && value.length > maxLength;
+
+  return (
+    <div
+      className={`fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4 transition-opacity ${mounted ? 'opacity-100' : 'opacity-0'}`}
+      onClick={onDismiss}
+    >
+      <div
+        className={`relative bg-background rounded-2xl shadow-2xl border border-border w-full max-w-[480px] transform transition-all ${mounted ? 'scale-100' : 'scale-95'}`}
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onDismiss}
+          className="absolute right-3 top-3 p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div className="px-6 pt-6 pb-5">
+          {eyebrow && (
+            <p className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground text-center mb-4">
+              {eyebrow}
+            </p>
+          )}
+          {title && (
+            <h3 className="text-lg font-semibold text-foreground text-center mb-2 leading-snug">{title}</h3>
+          )}
+          {message && (
+            <p className="text-sm text-muted-foreground text-center leading-relaxed mb-4">{message}</p>
+          )}
+
+          {multiline ? (
+            <textarea
+              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder={placeholder}
+              rows={4}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm leading-relaxed resize-y focus:outline-none focus:border-primary/60"
+            />
+          ) : (
+            <input
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder={placeholder}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary/60"
+            />
+          )}
+          {typeof maxLength === 'number' && (
+            <p className={`text-[11px] text-right mt-1 ${overLimit ? 'text-red-500' : 'text-muted-foreground'}`}>
+              {value.length} / {maxLength}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-border/60">
+          <button
+            onClick={onCancel}
+            className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors px-1"
+          >
+            {cancelLabel ?? 'Cancel'}
+          </button>
+          <button
+            ref={saveBtnRef}
+            onClick={() => { if (!overLimit) onConfirm(value); }}
+            disabled={overLimit}
+            className="px-5 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {confirmLabel ?? 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Single avatar slot — renders a face crop when src is provided,
  *  falls back to a coloured monogram circle otherwise. Used as a pair
  *  inside the modal's avatar row to anchor relationship questions. */

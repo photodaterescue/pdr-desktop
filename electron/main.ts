@@ -272,6 +272,7 @@ import {
 import {
   cancelEnrichment,
   dryRunEnrichment,
+  getLatestEnrichmentRun,
   runEnrichment,
 } from './enrichment-engine.js';
 import {
@@ -5869,6 +5870,35 @@ ipcMain.handle('albums:removePhotos', async (_event, albumId: number, fileIds: n
   }
 });
 
+// v2.0.13 (Terry 2026-05-26) — user-chosen album cover photo.
+// Mirrors the "Set as monthly thumbnail" affordance on the By-Date
+// surface: right-click any photo inside an album and pick "Set as
+// album thumbnail" to override the auto-picked first-by-date cover.
+// Writes albums.cover_file_id (the schema column already existed from
+// v2.0.8 — it was just never exposed via IPC). Pass fileId=null to
+// revert to the default first-photo behaviour.
+ipcMain.handle('albums:setCoverPhoto', async (_event, args: { albumId: number; fileId: number | null }) => {
+  try {
+    const { albumId, fileId } = args;
+    const db = getDb();
+    // Guard: if a non-null fileId is provided, verify the photo
+    // actually belongs to this album. Setting an external photo as
+    // cover would break the album-list query's join and would
+    // surprise users when removing the photo from the library.
+    if (fileId !== null) {
+      const row = db.prepare(
+        `SELECT 1 FROM album_files WHERE album_id = ? AND file_id = ? LIMIT 1`
+      ).get(albumId, fileId);
+      if (!row) return { success: false, error: 'That photo is not in this album.' };
+    }
+    db.prepare(`UPDATE albums SET cover_file_id = ?, updated_at = datetime('now') WHERE id = ?`).run(fileId, albumId);
+    markDbDirty();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // v2.0.8 — Album group (folder) CRUD + tree listing IPC. Drives the
 // AlbumsView's hierarchical multi-membership tree.
 ipcMain.handle('albumGroups:list', async () => {
@@ -7005,8 +7035,12 @@ ipcMain.handle('takeout:detectGroupId', async (_event, zipPath: string) => {
 
 ipcMain.handle('enrich:dryRun', async () => {
   try {
-    return { success: true, data: dryRunEnrichment() };
+    log.info('[enrich:dryRun] starting');
+    const result = dryRunEnrichment();
+    log.info(`[enrich:dryRun] success — ${JSON.stringify(result)}`);
+    return { success: true, data: result };
   } catch (err) {
+    log.error('[enrich:dryRun] FAILED:', (err as Error).message, (err as Error).stack);
     return { success: false, error: (err as Error).message };
   }
 });
@@ -7024,9 +7058,99 @@ ipcMain.handle('enrich:run', async () => {
   }
 });
 
+ipcMain.handle('enrich:getLatestRun', async () => {
+  try {
+    return { success: true, data: getLatestEnrichmentRun() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('enrich:cancel', async () => {
   try {
     cancelEnrichment();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── captions:* (v2.0.13) ───────────────────────────────────────────────────
+//
+// Per-photo user-applied captions. Stored on indexed_files.caption
+// (column added in v2.0.8 for Takeout import). v2.0.13 adds direct
+// per-photo right-click editing in Albums / By Date / Search & Discovery
+// plus optional EXIF write-through (ImageDescription + XMP dc:description)
+// so the caption travels with the file when it leaves PDR's library.
+//
+// Additive-only rule: the caption column is independent of any auto-
+// enrichment. Setting an empty/null caption is treated as "clear it",
+// not "leave alone". Writing EXIF is opt-in per call; if the user
+// hasn't asked for it, the caption only lives in the DB.
+
+ipcMain.handle('captions:get', async (_event, fileId: number) => {
+  try {
+    const db = getDb();
+    const row = db.prepare(`SELECT caption FROM indexed_files WHERE id = ?`).get(fileId) as { caption: string | null } | undefined;
+    return { success: true, data: row?.caption ?? null };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('captions:set', async (_event, args: { fileId: number; caption: string; writeExif?: boolean }) => {
+  try {
+    const { fileId, caption, writeExif } = args;
+    const db = getDb();
+    const trimmed = (caption ?? '').trim();
+    const value = trimmed.length === 0 ? null : trimmed;
+    const row = db.prepare(`SELECT file_path FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string } | undefined;
+    if (!row) return { success: false, error: 'File not found in index.' };
+    db.prepare(`UPDATE indexed_files SET caption = ? WHERE id = ?`).run(value, fileId);
+    if (writeExif && value && fs.existsSync(row.file_path)) {
+      // Best-effort EXIF write — failure here doesn't roll back the
+      // DB update. The caption is still saved in the index; the user
+      // can retry the EXIF write or just accept that this particular
+      // file format / location couldn't take an ImageDescription.
+      try {
+        const { writeEnrichmentExif } = await import('./exif-writer.js');
+        const stat = fs.statSync(row.file_path);
+        await writeEnrichmentExif(row.file_path, stat.mtime, {
+          gpsLat: null,
+          gpsLon: null,
+          description: value,
+        });
+      } catch (exifErr) {
+        log.warn('[captions:set] EXIF write failed (DB still updated):', (exifErr as Error).message);
+      }
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('captions:clear', async (_event, args: { fileId: number; writeExif?: boolean }) => {
+  try {
+    const { fileId, writeExif } = args;
+    const db = getDb();
+    const row = db.prepare(`SELECT file_path FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string } | undefined;
+    if (!row) return { success: false, error: 'File not found in index.' };
+    db.prepare(`UPDATE indexed_files SET caption = NULL WHERE id = ?`).run(fileId);
+    if (writeExif && fs.existsSync(row.file_path)) {
+      try {
+        const { writeEnrichmentExif } = await import('./exif-writer.js');
+        const stat = fs.statSync(row.file_path);
+        // Empty-string description tells exiftool to clear the field.
+        await writeEnrichmentExif(row.file_path, stat.mtime, {
+          gpsLat: null,
+          gpsLon: null,
+          description: '',
+        });
+      } catch (exifErr) {
+        log.warn('[captions:clear] EXIF clear failed (DB still updated):', (exifErr as Error).message);
+      }
+    }
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };

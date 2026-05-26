@@ -119,7 +119,6 @@ import { UnindexedLibrariesCard } from "@/components/UnindexedLibrariesCard";
 import { CleanupCascadeRecoveryCard } from "@/components/CleanupCascadeRecoveryCard";
 import { TakeoutMultiPartBanner } from "@/components/TakeoutMultiPartBanner";
 import { EnrichingModal } from "@/components/EnrichingModal";
-import { EnrichingPill } from "@/components/EnrichingPill";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -469,6 +468,14 @@ useEffect(() => {
     localStorage.setItem("pdr-sources", JSON.stringify(serializableSources));
     // Clean up legacy sessionStorage
     sessionStorage.removeItem("pdr-sources");
+    // v2.0.13 — broadcast so any Dashboard card that watches the
+    // source list (TakeoutMultiPartBanner, UnindexedLibrariesCard
+    // would-be future use) can re-probe without polling. Fired on
+    // every sources mutation, not just add — removal also affects
+    // whether the Takeout banner should be visible.
+    try {
+      window.dispatchEvent(new CustomEvent('pdr:sourcesChanged'));
+    } catch { /* best-effort */ }
   }, [sources]);
 
   // v2.0.11 — orphan-source detection on mount. For each rehydrated
@@ -1337,10 +1344,10 @@ const handleActivateLicense = () => {
   // existing select callback OR the existing cancel handler (both wired
   // below) so the SettingsModal's await never hangs.
   const pickTakeoutZipResolverRef = useRef<((p: string | null) => void) | null>(null);
-  const handlePickTakeoutZip = useCallback((): Promise<string | null> => {
+  const handlePickTakeoutZip = useCallback((titleOverride?: string): Promise<string | null> => {
     return new Promise<string | null>((resolve) => {
       pickTakeoutZipResolverRef.current = resolve;
-      setFolderBrowserOpts({ title: 'Pick Takeout ZIP', mode: 'archives' });
+      setFolderBrowserOpts({ title: titleOverride ?? 'Pick Takeout ZIP', mode: 'archives' });
       setFolderBrowserCallback(() => (path: string) => {
         const r = pickTakeoutZipResolverRef.current;
         pickTakeoutZipResolverRef.current = null;
@@ -1349,6 +1356,24 @@ const handleActivateLicense = () => {
       setShowFolderBrowser(true);
     });
   }, []);
+
+  // v2.0.13 — bridge for TakeoutMetadataSection. It dispatches
+  // `pdr:pickTakeoutZipForCache`; we open the PDR-branded
+  // FolderBrowserModal in archive mode (matches Terry's call-out
+  // 2026-05-26: "I want you to use the PDR modal for searching for
+  // the Takeout now... I don't want to ask again."), and dispatch
+  // `pdr:takeoutZipForCachePicked` with the picked path (or null
+  // on cancel) so the section can fire the pre-scan IPC.
+  useEffect(() => {
+    const handler = async () => {
+      const path = await handlePickTakeoutZip('Select Takeout');
+      window.dispatchEvent(new CustomEvent('pdr:takeoutZipForCachePicked', {
+        detail: { path },
+      }));
+    };
+    window.addEventListener('pdr:pickTakeoutZipForCache', handler as EventListener);
+    return () => window.removeEventListener('pdr:pickTakeoutZipForCache', handler as EventListener);
+  }, [handlePickTakeoutZip]);
 
   // (outputCardExpanded state lives inside DashboardPanel itself —
   // see that component for the useState. Keeping it here would put
@@ -2591,6 +2616,16 @@ const tourPlaceholderAnalysisResults: Record<string, SourceAnalysisResult> = {
 
 return (
   <>
+    {/* v2.0.13 Enrichment modal — mounted at the actual workspace
+        root fragment so the open-event listener subscribes
+        regardless of which view (Dashboard / S&D / Memories / Trees)
+        is active. Renders nothing when idle; portals to document.body
+        on open so it stacks above the LDM panel. Minimize-to-pill
+        was deliberately dropped 2026-05-26 — for a sub-2-minute
+        operation the modal is short enough that the extra complexity
+        of an Analyzing/Fixing-style pill isn't worth it. */}
+    <EnrichingModal />
+
     {/* Portal anchor for the Fix-in-progress chip. Lives at the very
         top of the workspace render tree, OUTSIDE the zoomable
         wrapper that gets display:none-hidden when the user is on
@@ -5017,17 +5052,6 @@ function DashboardPanel({
             so re-indexing never overwrites existing rows. v2.0.9
             (Terry 2026-05-20). */}
         <UnindexedLibrariesCard />
-
-        {/* v2.0.13 Enrichment surfaces — the modal is fixed-position
-            (z-50) so its placement in the JSX tree doesn't affect
-            visual layout; it portals over everything when opened.
-            The pill renders inline in the dashboard's header band
-            and is hidden by default — visible only while a run is
-            minimized. Both listen on window events for lifecycle. */}
-        <EnrichingModal />
-        <div className="mb-4 flex items-center gap-2">
-          <EnrichingPill />
-        </div>
 
         {/* Confidence Summary Section */}
         {hasSelection && (

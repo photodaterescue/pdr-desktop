@@ -381,6 +381,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     listPhotos: (albumId: number) => ipcRenderer.invoke('albums:listPhotos', albumId),
     addPhotos: (albumId: number, fileIds: number[]) => ipcRenderer.invoke('albums:addPhotos', albumId, fileIds),
     removePhotos: (albumId: number, fileIds: number[]) => ipcRenderer.invoke('albums:removePhotos', albumId, fileIds),
+    // v2.0.13 — set / clear the album's user-chosen cover photo. Pass
+    // fileId=null to revert to the auto-picked first-by-date default.
+    setCoverPhoto: (albumId: number, fileId: number | null) => ipcRenderer.invoke('albums:setCoverPhoto', { albumId, fileId }),
 
     // v2.0.8 — Album group (folder) CRUD. Drives the AlbumsView's
     // hierarchical multi-membership tree.
@@ -458,6 +461,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     dryRun: () => ipcRenderer.invoke('enrich:dryRun'),
     run: () => ipcRenderer.invoke('enrich:run'),
     cancel: () => ipcRenderer.invoke('enrich:cancel'),
+    getLatestRun: () => ipcRenderer.invoke('enrich:getLatestRun'),
     onProgress: (
       cb: (p: { inspected: number; upgraded: number; unchanged: number; skipped: number; total: number; currentFilename?: string }) => void,
     ) => {
@@ -465,6 +469,18 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('enrich:progress', handler);
       return () => ipcRenderer.removeListener('enrich:progress', handler);
     },
+  },
+
+  // v2.0.13 per-photo captions — read/write the indexed_files.caption
+  // column for a single photo. writeExif=true also writes the value
+  // to EXIF ImageDescription + XMP dc:description so it travels with
+  // the file when exported.
+  captions: {
+    get: (fileId: number) => ipcRenderer.invoke('captions:get', fileId),
+    set: (fileId: number, caption: string, writeExif?: boolean) =>
+      ipcRenderer.invoke('captions:set', { fileId, caption, writeExif }),
+    clear: (fileId: number, writeExif?: boolean) =>
+      ipcRenderer.invoke('captions:clear', { fileId, writeExif }),
   },
 
   search: {

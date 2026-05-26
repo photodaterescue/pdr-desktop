@@ -62,19 +62,29 @@ export function TakeoutMultiPartBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  // Probe lives in a callback so we can re-run on source changes,
+  // not just on mount. v2.0.13 fix (Terry 2026-05-26): the original
+  // mount-only probe missed the common flow where the user adds a
+  // Takeout AFTER the Dashboard has already rendered — the banner
+  // never re-evaluated, so it stayed hidden even with Takeout zips
+  // in the source menu.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    const probe = async () => {
       try {
         if (sessionStorage.getItem(DISMISS_KEY)) {
-          setDismissed(true);
-          setLoaded(true);
+          if (!cancelled) {
+            setDismissed(true);
+            setLoaded(true);
+          }
           return;
         }
 
         // Read the live source list. The workspace persists this to
-        // localStorage on every change, so reading it here is the
-        // cheapest way to stay in sync without an event subscription.
+        // localStorage on every sources mutation AND dispatches the
+        // pdr:sourcesChanged event we subscribe to below, so reading
+        // it here is the cheapest way to stay in sync.
         let sources: Source[] = [];
         try {
           const raw = localStorage.getItem(SOURCES_KEY);
@@ -101,6 +111,7 @@ export function TakeoutMultiPartBanner() {
         }
         if (cancelled) return;
         if (candidates.length === 0) {
+          setUnscannedZips([]);
           setLoaded(true);
           return;
         }
@@ -138,8 +149,23 @@ export function TakeoutMultiPartBanner() {
         console.warn('[TakeoutMultiPartBanner] probe failed:', e);
         if (!cancelled) setLoaded(true);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+
+    void probe();
+
+    // Re-probe on every source change (add / remove / clear) and on
+    // every successful pre-scan run (pdr:takeoutSidecarsUpdated fires
+    // from the banner's own scan completion AND from the LDM
+    // Takeout-metadata section's "Scan another part" flow).
+    const onSourcesChange = () => { void probe(); };
+    const onSidecarsUpdated = () => { void probe(); };
+    window.addEventListener('pdr:sourcesChanged', onSourcesChange);
+    window.addEventListener('pdr:takeoutSidecarsUpdated', onSidecarsUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('pdr:sourcesChanged', onSourcesChange);
+      window.removeEventListener('pdr:takeoutSidecarsUpdated', onSidecarsUpdated);
+    };
   }, []);
 
   const handleScanNow = async () => {

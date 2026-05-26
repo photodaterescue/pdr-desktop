@@ -31,7 +31,7 @@ import {
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
   Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
-  ZoomIn, ZoomOut, RotateCcw,
+  ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -60,12 +60,14 @@ import {
   listAlbumPhotos,
   getThumbnail,
   openSearchViewer,
+  setAlbumCoverPhoto,
   type AlbumSummary,
   type AlbumGroupRecord,
   type AlbumGroupMembershipRecord,
   type IndexedFile,
 } from '../lib/electron-bridge';
 import { promptConfirm } from './trees/promptConfirm';
+import { editPhotoCaption } from '@/lib/caption-actions';
 import {
   getSourceProfileForGroup,
   getSourceProfileForAlbum,
@@ -2434,18 +2436,81 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumPhotoTilePx}px, 1fr))` }}
               >
                 {albumPhotos.map((p, i) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handleOpenPhoto(i)}
-                    className={`aspect-square overflow-hidden ${density === 'tight' ? 'rounded-none border-0' : 'rounded-lg border border-border'} hover:ring-2 hover:ring-primary/40 transition-all`}
-                  >
-                    {thumbs[p.file_path] ? (
-                      <img src={thumbs[p.file_path]} alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
-                    ) : (
-                      <div className="w-full h-full skeleton-shimmer" />
-                    )}
-                  </button>
+                  // v2.0.13 — per-photo ContextMenu. The OUTER ContextMenu
+                  // wrapping the whole grid handles right-clicks on the
+                  // empty grid area (Add photos from S&D / By Date). This
+                  // inner ContextMenu takes precedence on a specific
+                  // photo, surfacing the per-photo actions (caption edit
+                  // today; album-membership ops can join later).
+                  <ContextMenu key={p.id}>
+                    <ContextMenuTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPhoto(i)}
+                        title={p.caption ? `${p.filename}\n\n${p.caption}` : p.filename}
+                        className={`aspect-square overflow-hidden ${density === 'tight' ? 'rounded-none border-0' : 'rounded-lg border border-border'} hover:ring-2 hover:ring-primary/40 transition-all`}
+                      >
+                        {thumbs[p.file_path] ? (
+                          <img src={thumbs[p.file_path]} alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="w-full h-full skeleton-shimmer" />
+                        )}
+                      </button>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      {/* v2.0.13 (Terry 2026-05-26) — mirrors MemoriesView's
+                          per-photo menu. "Add to album" lives on the
+                          MemoriesView surface because it needs the multi-
+                          select infra that AlbumsView doesn't carry yet —
+                          if a user wants to copy a photo into another
+                          album they can do it from Search & Discovery. */}
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          try {
+                            await navigator.clipboard.writeText(p.filename);
+                            toast.success('Filename copied', { description: p.filename });
+                          } catch {
+                            toast.error("Couldn't copy filename");
+                          }
+                        }}
+                        data-testid={`album-photo-copy-filename-${p.id}`}
+                      >
+                        <Copy className="w-3.5 h-3.5 mr-2" />
+                        Copy filename
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onSelect={() => { void editPhotoCaption({ fileId: p.id, filename: p.filename }); }}
+                        data-testid={`album-photo-caption-${p.id}`}
+                      >
+                        <MessageSquareText className="w-3.5 h-3.5 mr-2" />
+                        {p.caption ? 'Edit caption…' : 'Add caption…'}
+                      </ContextMenuItem>
+                      {/* v2.0.13 (Terry 2026-05-26) — "Set as album
+                          thumbnail" overrides the auto-picked first-by-
+                          date cover. Writes to albums.cover_file_id and
+                          refreshes the album list so the change is
+                          visible immediately when the user navigates
+                          back to the album grid. */}
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          const result = await setAlbumCoverPhoto(selectedAlbum.id, p.id);
+                          if (result.success) {
+                            void refreshAll();
+                            toast.success('Album thumbnail set', {
+                              description: `“${selectedAlbum.title}” now uses this photo`,
+                            });
+                          } else {
+                            toast.error("Couldn't set album thumbnail", { description: result.error });
+                          }
+                        }}
+                        data-testid={`album-photo-album-thumb-${p.id}`}
+                      >
+                        <Star className="w-3.5 h-3.5 mr-2" />
+                        Set as album thumbnail
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 ))}
               </div>
               </>

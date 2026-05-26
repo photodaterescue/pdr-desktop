@@ -100,9 +100,15 @@ export async function writeEnrichmentExif(
 
     if (typeof options.gpsLat === 'number' && typeof options.gpsLon === 'number' &&
         Number.isFinite(options.gpsLat) && Number.isFinite(options.gpsLon)) {
-      payload.GPSLatitude = options.gpsLat;
+      // EXIF stores GPS as unsigned magnitude + a hemisphere Ref tag
+      // (N/S/E/W). Passing a negative number for southern / western
+      // coords can make exiftool reject the whole payload — which
+      // makes the WHOLE write fail (date included), not just the GPS
+      // field. Diagnosed 2026-05-26 after a run that should have
+      // written ~165 GPS coords landed 0.
+      payload.GPSLatitude = Math.abs(options.gpsLat);
       payload.GPSLatitudeRef = options.gpsLat >= 0 ? 'N' : 'S';
-      payload.GPSLongitude = options.gpsLon;
+      payload.GPSLongitude = Math.abs(options.gpsLon);
       payload.GPSLongitudeRef = options.gpsLon >= 0 ? 'E' : 'W';
       fieldsWritten.push('gps');
     }

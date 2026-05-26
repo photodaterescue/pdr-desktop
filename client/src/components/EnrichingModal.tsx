@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Minimize2 } from 'lucide-react';
+import { Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
@@ -34,6 +34,8 @@ interface DryRun {
   totalCandidates: number;
   sidecarMatches: number;
   dateUpgrades: number;
+  willCollide: number;
+  exifGpsCandidates: number;
   gpsAvailable: number;
   descriptionAvailable: number;
   peopleHintsAvailable: number;
@@ -57,12 +59,14 @@ interface RunSummary {
   exifGpsWrites: number;
   exifDescriptionWrites: number;
   faceHintsAdded: number;
+  dedupedDuplicates: number;
+  distinctCollisions: number;
   errors: number;
   elapsedMs: number;
   cancelled: boolean;
 }
 
-type Phase = 'idle' | 'dryRun' | 'confirm' | 'running' | 'minimized' | 'done';
+type Phase = 'idle' | 'dryRun' | 'confirm' | 'running' | 'done';
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -92,18 +96,11 @@ export function EnrichingModal() {
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Subscribe to the workspace event that opens this modal. Fired by
-  // the LDM "Run Enrichment" button, the Takeout banner's optional
-  // "Enrich after pre-scan" follow-up, etc.
+  // the LDM "Run Enrichment" button. Re-opens ignored while a run is
+  // in flight (one Enrichment at a time, no concurrent invocations).
   useEffect(() => {
     const handler = () => {
-      // Restore from minimized → open. Or, if not yet running, start
-      // a fresh dry-run probe.
-      if (phase === 'minimized') {
-        setPhase('running');
-        window.dispatchEvent(new CustomEvent('pdr:enrichingRestored'));
-        return;
-      }
-      if (phase === 'running') return; // already open
+      if (phase === 'running' || phase === 'dryRun') return;
       void startDryRun();
     };
     window.addEventListener('pdr:openEnrichingModal', handler);
@@ -155,7 +152,12 @@ export function EnrichingModal() {
       if (res?.success && res.data) {
         setSummary(res.data);
         setPhase('done');
-        window.dispatchEvent(new CustomEvent('pdr:enrichingComplete'));
+        // v2.0.13 — notify the LDM Takeout-metadata section + any
+        // other surface that watches sidecar state so it refreshes
+        // its "last enriched" line + per-row file counts without
+        // requiring the user to close and reopen LDM. Per Terry's
+        // feedback 2026-05-26.
+        window.dispatchEvent(new CustomEvent('pdr:takeoutEnrichmentComplete'));
         if (res.data.cancelled) {
           toast.info('Enrichment cancelled', {
             description: `${res.data.upgraded.toLocaleString()} files upgraded before cancel; everything already changed is saved.`,
@@ -168,21 +170,13 @@ export function EnrichingModal() {
       } else {
         toast.error('Enrichment failed', { description: res?.error ?? 'See Help & Support.' });
         setPhase('idle');
-        window.dispatchEvent(new CustomEvent('pdr:enrichingComplete'));
       }
     } catch (e) {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
       toast.error('Enrichment failed', { description: (e as Error).message });
       setPhase('idle');
-      window.dispatchEvent(new CustomEvent('pdr:enrichingComplete'));
     }
-  };
-
-  const handleMinimize = () => {
-    if (phase !== 'running') return;
-    setPhase('minimized');
-    window.dispatchEvent(new CustomEvent('pdr:enrichingMinimized'));
   };
 
   const handleCancel = async () => {
@@ -202,9 +196,8 @@ export function EnrichingModal() {
     setProgress({ inspected: 0, upgraded: 0, unchanged: 0, skipped: 0, total: 0 });
   };
 
-  // Visible states only render the modal; idle and minimized render
-  // nothing here (the pill handles minimized in a separate component).
-  if (phase === 'idle' || phase === 'minimized') return null;
+  // Visible states only render the modal; idle renders nothing.
+  if (phase === 'idle') return null;
 
   const percent = progress.total > 0 ? Math.min(100, Math.round((progress.inspected / progress.total) * 100)) : 0;
 
@@ -213,9 +206,12 @@ export function EnrichingModal() {
   // Drive Manager (which is also portalled to body at z-50). Without
   // the portal, "Run Enrichment" in the LDM dispatched the open
   // event but the modal stacked underneath LDM and looked dead.
-  // Caught by Terry's first test 2026-05-26.
+  // Backdrop matches the rest of PDR's modals
+  // (`bg-black/[0.25] backdrop-blur-[2px]`) — Terry 2026-05-26
+  // caught the earlier `bg-black/40 backdrop-blur-sm` as too dark
+  // and too blurred relative to other surfaces.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/[0.25] backdrop-blur-[2px] p-4 animate-in fade-in duration-200">
       <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-[520px] mx-4 overflow-hidden">
         <header className="flex items-start justify-between p-6 pb-3 border-b border-border/40">
           <div className="flex items-start gap-3">
@@ -239,18 +235,6 @@ export function EnrichingModal() {
               </p>
             </div>
           </div>
-          {phase === 'running' && (
-            <IconTooltip label="Minimize to pill — keep enriching in the background" side="left">
-              <button
-                onClick={handleMinimize}
-                className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Minimize"
-                data-testid="enriching-minimize"
-              >
-                <Minimize2 className="w-4 h-4" />
-              </button>
-            </IconTooltip>
-          )}
           {(phase === 'confirm' || phase === 'done') && (
             <IconTooltip label="Close" side="left">
               <button
@@ -293,6 +277,15 @@ export function EnrichingModal() {
                 <strong className="font-medium">{dryRun.peopleHintsAvailable.toLocaleString()}</strong>{' '}
                 files have face-name hints — written to People Manager as <em className="text-muted-foreground">suggestions only</em>, never overrides a name you&apos;ve set.
               </li>
+              {dryRun.willCollide > 0 && (
+                <li>
+                  <strong className="font-medium">{dryRun.willCollide.toLocaleString()}</strong>{' '}
+                  files won&apos;t upgrade because the target <em>_CF</em> filename is already taken.
+                  <span className="block text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    Enrichment will either remove the duplicate <em>_RC</em> (if the existing <em>_CF</em> is byte-identical) or keep both intact (if they&apos;re genuinely different photos sharing a generated name). Already subtracted from the upgrade count above.
+                  </span>
+                </li>
+              )}
             </ul>
           )}
 
@@ -309,7 +302,7 @@ export function EnrichingModal() {
                 <span>
                   <strong className="text-foreground">{progress.upgraded.toLocaleString()}</strong> upgraded
                 </span>
-                <span>{formatElapsed(Date.now() - startedAt)} · {formatEta(progress, startedAt)}</span>
+                <span>Elapsed {formatElapsed(Date.now() - startedAt)} · {formatEta(progress, startedAt)}</span>
               </div>
             </>
           )}
@@ -320,8 +313,24 @@ export function EnrichingModal() {
               <li><strong className="font-medium">{summary.exifGpsWrites.toLocaleString()}</strong> GPS coordinates written.</li>
               <li><strong className="font-medium">{summary.exifDescriptionWrites.toLocaleString()}</strong> captions written.</li>
               <li><strong className="font-medium">{summary.faceHintsAdded.toLocaleString()}</strong> face-name hints added.</li>
+              {summary.dedupedDuplicates > 0 && (
+                <li>
+                  <strong className="font-medium">{summary.dedupedDuplicates.toLocaleString()}</strong> duplicate <em className="text-muted-foreground">_RC</em> copies removed.
+                  <span className="block text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    These were photos Fixed twice from <strong className="text-foreground">different sources at different times</strong> &mdash; the only way for a duplicate to slip past PDR&apos;s per-run dedup. Detected either as byte-identical to the existing <em>_CF</em>, or by comparing the image data alone after stripping the EXIF metadata (so a photo whose <em>_CF</em> had its EXIF rewritten by an earlier Fix run is still recognised as the same picture). The redundant <em>_RC</em> was deleted to clean up.
+                  </span>
+                </li>
+              )}
+              {summary.distinctCollisions > 0 && (
+                <li>
+                  <strong className="font-medium">{summary.distinctCollisions.toLocaleString()}</strong> true collisions kept.
+                  <span className="block text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    Two different photos that happen to produce the same generated <em>_CF</em> filename (same-second multi-camera shots, etc). Both copies kept intact.
+                  </span>
+                </li>
+              )}
               {summary.skipped > 0 && (
-                <li className="text-muted-foreground">{summary.skipped.toLocaleString()} skipped (filename collisions or rename failures — see enrichment log).</li>
+                <li className="text-muted-foreground">{summary.skipped.toLocaleString()} skipped (rename or unlink failures &mdash; see enrichment log).</li>
               )}
               {summary.errors > 0 && (
                 <li className="text-muted-foreground">{summary.errors.toLocaleString()} errors (logged for support).</li>
@@ -337,23 +346,20 @@ export function EnrichingModal() {
               <Button variant="secondary" size="sm" onClick={handleClose} data-testid="enriching-cancel-confirm">
                 Not now
               </Button>
-              <Button variant="primary" size="sm" onClick={startRun} disabled={!dryRun || dryRun.dateUpgrades === 0} data-testid="enriching-run">
+              <Button variant="primary" size="sm" onClick={startRun} disabled={!dryRun || (dryRun.dateUpgrades === 0 && dryRun.willCollide === 0)} data-testid="enriching-run">
                 <Sparkles className="w-4 h-4 mr-1.5" />
                 {dryRun && dryRun.dateUpgrades > 0
                   ? `Enrich ${dryRun.dateUpgrades.toLocaleString()} file${dryRun.dateUpgrades === 1 ? '' : 's'}`
-                  : 'Nothing to enrich'}
+                  : dryRun && dryRun.willCollide > 0
+                    ? `Resolve ${dryRun.willCollide.toLocaleString()} collision${dryRun.willCollide === 1 ? '' : 's'}`
+                    : 'Nothing to enrich'}
               </Button>
             </>
           )}
           {phase === 'running' && (
-            <>
-              <Button variant="secondary" size="sm" onClick={handleCancel} data-testid="enriching-cancel-run">
-                Cancel
-              </Button>
-              <Button variant="primary" size="sm" onClick={handleMinimize} data-testid="enriching-minimize-cta">
-                Continue working
-              </Button>
-            </>
+            <Button variant="secondary" size="sm" onClick={handleCancel} data-testid="enriching-cancel-run">
+              Cancel
+            </Button>
           )}
           {phase === 'done' && (
             <Button variant="primary" size="sm" onClick={handleClose} data-testid="enriching-done">

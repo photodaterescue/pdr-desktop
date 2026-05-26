@@ -62,6 +62,12 @@ export interface IndexedFile {
   // Indexer metadata
   exif_read_ok: number; // 0/1
   indexed_at: string;
+  // v2.0.13 — user-applied caption (also populated from Google Takeout
+  // sidecar.description during Fix / Enrichment). Editable per-photo
+  // via the right-click "Caption…" item in Albums / By Date / S&D.
+  // Optional in the type so the indexer's insert payload doesn't have
+  // to declare it for every newly-indexed row (DB default is NULL).
+  caption?: string | null;
 }
 
 export interface SearchQuery {
@@ -665,6 +671,30 @@ export function initDatabase(): { success: boolean; error?: string } {
       );
       CREATE INDEX IF NOT EXISTS idx_enrichment_log_file ON enrichment_log(file_id);
       CREATE INDEX IF NOT EXISTS idx_enrichment_log_run_at ON enrichment_log(run_at);
+
+      -- v2.0.13 (Terry 2026-05-26) — one row per Enrichment pass.
+      -- Powers the "Last enriched X ago — N files upgraded" line in
+      -- the Library Drive Manager so the user can see at a glance
+      -- when they last ran the pass without opening the modal. Kept
+      -- separate from enrichment_log because that table has one row
+      -- PER CHANGE — useful for audit detail, not for a "show me the
+      -- last run" summary. enrichment_runs has one row PER RUN.
+      CREATE TABLE IF NOT EXISTS enrichment_runs (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        finished_at          TEXT    NOT NULL DEFAULT (datetime('now')),
+        inspected            INTEGER NOT NULL DEFAULT 0,
+        upgraded             INTEGER NOT NULL DEFAULT 0,
+        deduped_duplicates   INTEGER NOT NULL DEFAULT 0,
+        distinct_collisions  INTEGER NOT NULL DEFAULT 0,
+        exif_date_writes     INTEGER NOT NULL DEFAULT 0,
+        exif_gps_writes      INTEGER NOT NULL DEFAULT 0,
+        exif_desc_writes     INTEGER NOT NULL DEFAULT 0,
+        face_hints_added     INTEGER NOT NULL DEFAULT 0,
+        errors               INTEGER NOT NULL DEFAULT 0,
+        elapsed_ms           INTEGER NOT NULL DEFAULT 0,
+        cancelled            INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_enrichment_runs_finished_at ON enrichment_runs(finished_at);
     `);
 
     // Auto-seed source groups + memberships. Idempotent so every startup
