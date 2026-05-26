@@ -265,6 +265,11 @@ import {
 } from './update-checker.js';
 import { classifySource, checkSameDriveWarning } from './source-classifier.js';
 import {
+  extractTakeoutGroupId,
+  getSidecarSummary,
+  scanSidecarsFromZips,
+} from './takeout-sidecar-cache.js';
+import {
   initDatabase,
   closeDatabase,
   searchFiles,
@@ -6912,6 +6917,50 @@ ipcMain.handle('library:exportDb', async () => {
     }
     fs.copyFileSync(sourceDbPath, result.filePath);
     return { success: true, data: { path: result.filePath } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── v2.0.13 takeout sidecar pre-scan ──────────────────────────────────────
+//
+// Walks a list of multi-part Google Takeout zips, pulls every JSON
+// sidecar out of each zip's central directory (no photo bytes read),
+// and writes them to the takeout_sidecars table. The analysis engine
+// and the Enrichment pass both consult that table so a photo finds
+// its sidecar regardless of which zip in the export the JSON lives
+// in. Closes the 267-file dedup miss Terry diagnosed 2026-05-25.
+
+ipcMain.handle('takeout:preScanSidecars', async (_event, zipPaths: string[]) => {
+  try {
+    if (!Array.isArray(zipPaths) || zipPaths.length === 0) {
+      return { success: false, error: 'zipPaths must be a non-empty array' };
+    }
+    const summary = await scanSidecarsFromZips(zipPaths, (progress) => {
+      try {
+        mainWindow?.webContents.send('takeout:preScanProgress', progress);
+      } catch { /* best-effort */ }
+    });
+    return { success: true, data: summary };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('takeout:getSidecarSummary', async () => {
+  try {
+    return { success: true, data: getSidecarSummary() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Helper for the renderer's source-menu banner: given a path,
+// return the Takeout group id if the filename matches the
+// multi-part Takeout naming pattern, else null.
+ipcMain.handle('takeout:detectGroupId', async (_event, zipPath: string) => {
+  try {
+    return { success: true, data: extractTakeoutGroupId(zipPath) };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

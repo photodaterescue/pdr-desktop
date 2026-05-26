@@ -559,6 +559,112 @@ export function initDatabase(): { success: boolean; error?: string } {
         PRIMARY KEY (album_id, group_id)
       );
       CREATE INDEX IF NOT EXISTS idx_album_group_memberships_group ON album_group_memberships(group_id);
+
+      -- ═══ v2.0.13: Cross-part Google Takeout sidecar cache ═══
+      --
+      -- Google's multi-part Takeout exports split the same photo and
+      -- its JSON sidecar across DIFFERENT zip files. Photo X might be
+      -- in takeout-007 while its sidecar lives in takeout-008. PDR
+      -- analyses one part at a time, so a photo whose sidecar is in
+      -- a different part gets a degraded date (filename pattern or
+      -- mtime, marked _RC or _MK) when it should have had a precise
+      -- _CF date from photoTakenTime.
+      --
+      -- This table holds the FULL contents of every JSON sidecar
+      -- found across every Takeout part the user has registered.
+      -- Populated by takeout:preScanSidecars which walks each zip's
+      -- central directory and reads only the JSON entries (no photo
+      -- bytes touched — minutes, not hours, for an 8-part Takeout).
+      --
+      -- The analysis pipeline consults this table BEFORE falling
+      -- back to the filename-pattern rule, so a photo finds its
+      -- sidecar regardless of which zip it lives in.
+      --
+      -- The Enrichment pass also reads this to retroactively upgrade
+      -- _RC and _MK files whose sidecars arrived in later parts —
+      -- additive only (see additive-only rule below).
+      CREATE TABLE IF NOT EXISTS takeout_sidecars (
+        -- Group key: the shared timestamp prefix of a multi-part
+        -- export (e.g. "20260503T203552Z" from "takeout-20260503T203552Z-3-008.zip").
+        -- Two separate Takeout exports made on different days don't
+        -- mix metadata even if a photo appears in both.
+        takeout_group_id    TEXT    NOT NULL,
+        -- The photo filename the sidecar references — extracted from
+        -- the sidecar's own filename ("IMG-20170118-WA0007.jpeg" from
+        -- "IMG-20170118-WA0007.jpeg.supplemental-metadata.json"), with
+        -- a fallback to the JSON's "title" field if the sidecar name
+        -- was truncated by Google's 47-character cap.
+        photo_basename      TEXT    NOT NULL,
+        -- Which zip the sidecar came out of, for audit / debugging.
+        source_zip          TEXT    NOT NULL,
+        -- Precise photo-taken timestamp (the one we actually want).
+        -- NULL if Google didn't record one for this photo.
+        photo_taken_unix    INTEGER,
+        -- Upload-to-Google timestamp. Fallback when photoTakenTime
+        -- is missing — still better than filename-pattern noon.
+        creation_unix       INTEGER,
+        -- GPS coordinates if Google captured them (camera GPS or
+        -- user-tagged location). NULL when absent.
+        gps_lat             REAL,
+        gps_lon             REAL,
+        -- User-typed caption / description from Google Photos.
+        description         TEXT,
+        -- Origin tag — "googlePhotosOrigin" field, e.g. "mobileUpload",
+        -- "fromPartnerSharing", "scan", "screenshot". Useful for the
+        -- scanner-demotion path we already have in date-extraction.
+        google_origin       TEXT,
+        -- Flags. Stored as 0/1 so SQLite booleans work cleanly.
+        favorited           INTEGER NOT NULL DEFAULT 0,
+        trashed             INTEGER NOT NULL DEFAULT 0,
+        -- People + albums kept as JSON arrays — schema-stable as
+        -- Google adds new fields, and the consumer side (Enrichment
+        -- pass + face_detections seeding) does its own parsing.
+        people_json         TEXT,
+        album_titles_json   TEXT,
+        -- Raw sidecar verbatim. Bytes-cheap insurance — if Google
+        -- adds a new field tomorrow, we don't need a schema
+        -- migration to capture it for old scans.
+        raw_json            TEXT    NOT NULL,
+        scanned_at          TEXT    NOT NULL DEFAULT (datetime('now')),
+        -- One sidecar row per (group, photo). INSERT OR IGNORE is
+        -- safe so re-running the pre-scan after adding more parts
+        -- doesn't bloat the table; only new (group, photo) combos
+        -- land.
+        PRIMARY KEY (takeout_group_id, photo_basename)
+      );
+      -- Lookups: most queries are by basename across all groups
+      -- (analysis-time lookup) or by group (LDM "what's been
+      -- scanned" panel). Index both.
+      CREATE INDEX IF NOT EXISTS idx_takeout_sidecars_basename
+        ON takeout_sidecars(photo_basename);
+      CREATE INDEX IF NOT EXISTS idx_takeout_sidecars_group
+        ON takeout_sidecars(takeout_group_id);
+
+      -- ═══ v2.0.13: Enrichment audit log ═══
+      --
+      -- One row per change applied by the Enrichment pass. Lets the
+      -- user (or support) see exactly what got upgraded and roll
+      -- back if needed. Cheaper than a full undo stack — the entries
+      -- record before/after dates + flags, which is enough to
+      -- reconstruct the rename if anyone ever asks for it.
+      CREATE TABLE IF NOT EXISTS enrichment_log (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id             INTEGER REFERENCES indexed_files(id) ON DELETE CASCADE,
+        run_at              TEXT    NOT NULL DEFAULT (datetime('now')),
+        old_file_path       TEXT,
+        new_file_path       TEXT,
+        old_confidence      TEXT,
+        new_confidence      TEXT,
+        old_derived_date    TEXT,
+        new_derived_date    TEXT,
+        -- What kinds of metadata the upgrade wrote into EXIF.
+        -- Comma-separated subset of: 'date', 'gps', 'description'.
+        exif_fields_written TEXT,
+        -- Why we changed it — e.g. "takeout_sidecar:20260503T203552Z".
+        source              TEXT    NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_enrichment_log_file ON enrichment_log(file_id);
+      CREATE INDEX IF NOT EXISTS idx_enrichment_log_run_at ON enrichment_log(run_at);
     `);
 
     // Auto-seed source groups + memberships. Idempotent so every startup
@@ -694,6 +800,29 @@ export function initDatabase(): { success: boolean; error?: string } {
     // != NULL) carry a score.
     if (!faceColNames.has('match_similarity')) {
       try { db.exec(`ALTER TABLE face_detections ADD COLUMN match_similarity REAL`); } catch {}
+    }
+
+    // v2.0.13 — Takeout people-hint seeds. Google's Takeout JSON
+    // sidecars sometimes include a `people` array — names Google
+    // associated with a photo (via Google Photos face groups + manual
+    // tags). The Enrichment pass writes those names here as a SEED
+    // candidate for PDR's People Manager, NEVER as an override.
+    //
+    // The additive-only rule (Terry 2026-05-26): if face_detections
+    // already has a person_id set OR the face has been verified by
+    // the user, the takeout_name_hint is IGNORED. The hint exists
+    // only to help PDR's existing face-clustering pipeline suggest
+    // names for clusters that don't yet have one. The user always
+    // wins.
+    //
+    // takeout_name_source records which Takeout group the hint came
+    // from, so re-running the Enrichment after adding more parts
+    // can refresh hints without polluting them with stale data.
+    if (!faceColNames.has('takeout_name_hint')) {
+      try { db.exec(`ALTER TABLE face_detections ADD COLUMN takeout_name_hint TEXT`); } catch {}
+    }
+    if (!faceColNames.has('takeout_name_source')) {
+      try { db.exec(`ALTER TABLE face_detections ADD COLUMN takeout_name_source TEXT`); } catch {}
     }
 
     // Trees v1 — relationship edges between persons.

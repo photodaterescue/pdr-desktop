@@ -255,6 +255,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     bumpDirty: () => ipcRenderer.invoke('library:bumpDirty'),
   },
 
+
   // Free Trial file counter — read / increment the Cloudflare
   // KV-backed tally. Renderer reads it for the workspace banner and
   // pre-fix gate; main.ts auto-increments after each successful Fix
@@ -412,6 +413,29 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
           perAlbum: Array<{ externalKey: string; title: string; filesLinked: number; originalFilenamesRecovered: number; captionsApplied: number; unresolvedFiles: number }>;
         } | null;
       }>,
+
+    // v2.0.13 — cross-part Google Takeout sidecar cache.
+    //   preScanSidecars: walk a list of Takeout zip files and pull
+    //     every JSON sidecar out of each zip's central directory into
+    //     the takeout_sidecars table. Photo bytes are NEVER read —
+    //     runtime is bound by JSON count (~10 MB across 8 parts),
+    //     not Takeout size (~400 GB across 8 parts).
+    //   getSidecarSummary: powers the LDM "Takeout metadata" row.
+    //   detectGroupId: helper for the source-menu banner — given a
+    //     path, returns the export's group id or null.
+    //   onPreScanProgress: subscribes to per-zip progress events
+    //     emitted during a long pre-scan. Returns an unsubscribe fn.
+    preScanSidecars: (zipPaths: string[]) =>
+      ipcRenderer.invoke('takeout:preScanSidecars', zipPaths),
+    getSidecarSummary: () => ipcRenderer.invoke('takeout:getSidecarSummary'),
+    detectGroupId: (zipPath: string) => ipcRenderer.invoke('takeout:detectGroupId', zipPath),
+    onPreScanProgress: (
+      cb: (p: { zipPath: string; zipIndex: number; zipCount: number; scanned: number; inserted: number }) => void,
+    ) => {
+      const handler = (_e: unknown, p: { zipPath: string; zipIndex: number; zipCount: number; scanned: number; inserted: number }) => cb(p);
+      ipcRenderer.on('takeout:preScanProgress', handler);
+      return () => ipcRenderer.removeListener('takeout:preScanProgress', handler);
+    },
   },
 
   search: {

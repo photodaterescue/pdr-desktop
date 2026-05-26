@@ -15,6 +15,7 @@ import {
 import { isScannerDevice } from './scanner-detection.js';
 import { getScannerOverride } from './settings-store.js';
 import { classifySource } from './source-classifier.js';
+import { lookupSidecarByBasename } from './takeout-sidecar-cache.js';
 import * as crypto from 'crypto';
 
 // Yield to event loop to keep UI responsive
@@ -304,6 +305,23 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
     }
   }
 
+  // v2.0.13 — cross-part Takeout sidecar lookup. If the in-folder
+  // sidecar isn't there (Google split the JSON into a different zip
+  // of the multi-part export), check the takeout_sidecars cache
+  // populated by takeout:preScanSidecars. Same authority as the
+  // in-folder JSON — confidence stays 'confirmed' — because the
+  // sidecar IS the in-folder JSON, just retrieved from a different
+  // archive part. Closes the 267-file dedup miss Terry diagnosed
+  // on 2026-05-25.
+  if (!derivedDate) {
+    const cached = lookupSidecarByBasename(filename);
+    if (cached?.photoTakenUnix) {
+      derivedDate = new Date(cached.photoTakenUnix * 1000);
+      dateSource = `Google Takeout JSON (cross-part: ${cached.sourceZip})`;
+      dateConfidence = 'confirmed';
+    }
+  }
+
   if (!derivedDate) {
     const exifDate = await extractExifDateFromPath(filePath);
     if (exifDate) {
@@ -403,6 +421,19 @@ async function analyzeFileFromBuffer(
     if (takeoutData?.timestamp) {
       derivedDate = new Date(takeoutData.timestamp * 1000);
       dateSource = 'Google Takeout JSON';
+      dateConfidence = 'confirmed';
+    }
+  }
+
+  // v2.0.13 — cross-part Takeout sidecar lookup (buffer variant).
+  // See analyzeFileFromPath for the full rationale. Same priority
+  // as the in-zip sidecar above — the sidecar exists, just lives in
+  // a different part of the same multi-part export.
+  if (!derivedDate) {
+    const cached = lookupSidecarByBasename(filename);
+    if (cached?.photoTakenUnix) {
+      derivedDate = new Date(cached.photoTakenUnix * 1000);
+      dateSource = `Google Takeout JSON (cross-part: ${cached.sourceZip})`;
       dateConfidence = 'confirmed';
     }
   }
