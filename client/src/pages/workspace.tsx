@@ -10324,6 +10324,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-12 w-auto object-contain" />
                 <div>
                   <h2 className="text-2xl font-semibold text-foreground">Photo Date Rescue</h2>
+                  <p className="text-sm italic text-muted-foreground">Bring every photo home.</p>
                   <p className="text-sm text-muted-foreground">Version {appVersion}</p>
                 </div>
               </div>
