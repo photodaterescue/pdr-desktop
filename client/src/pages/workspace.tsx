@@ -117,6 +117,7 @@ import { DbBackupReminderCard } from "@/components/DbBackupReminderCard";
 import { LowRamAdvisoryCard } from "@/components/LowRamAdvisoryCard";
 import { UnindexedLibrariesCard } from "@/components/UnindexedLibrariesCard";
 import { CleanupCascadeRecoveryCard } from "@/components/CleanupCascadeRecoveryCard";
+import { TakeoutMultiPartBanner } from "@/components/TakeoutMultiPartBanner";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
@@ -4995,6 +4996,17 @@ function DashboardPanel({
             catch-up index, and an unrestored cascade would just trigger
             the unindexed banner downstream anyway. */}
         <CleanupCascadeRecoveryCard />
+        {/* Multi-part Takeout advisory — v2.0.13. Detects Google
+            Takeout zips in the source menu, cross-references against
+            the takeout_sidecars cache, and offers a one-click pre-
+            scan of any zips whose JSON sidecars haven't been
+            extracted into the cache yet. The pre-scan reads ONLY
+            JSON entries from each zip's central directory — no photo
+            bytes — so it costs minutes per part, not hours. Once the
+            cache is populated, the analysis engine uses it before
+            falling back to filename pattern, closing the 267-file
+            dedup miss Terry diagnosed 2026-05-25. */}
+        <TakeoutMultiPartBanner />
         {/* Unindexed-libraries advisory — calm banner that detects
             libraries with files on disk but few/none in the search DB
             (e.g. anyone who Fixed on v2.0.4 or earlier when auto-index

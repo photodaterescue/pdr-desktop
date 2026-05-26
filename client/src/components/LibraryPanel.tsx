@@ -28,6 +28,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { TakeoutMetadataSection } from './TakeoutMetadataSection';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   DropdownMenu,
@@ -2057,6 +2058,16 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               {syncResult.message}
             </p>
           )}
+
+          {/* ── Takeout metadata — v2.0.13 permanent home for the
+                cross-part sidecar cache. Lets the user (a) see what's
+                already been scanned, (b) add more Takeout parts later
+                if Google split their export across many ZIPs, and
+                (c) run the Enrichment pass that retroactively upgrades
+                _RC / _MK files in the library using the cache. Mounts
+                here so users who dismissed the source-menu banner
+                still have a discoverable entry point. */}
+          <TakeoutMetadataSection />
 
           {/* ── Advanced — discouraged-option pattern (link variant +
                 text-muted-foreground override per STYLE_GUIDE.md). */}

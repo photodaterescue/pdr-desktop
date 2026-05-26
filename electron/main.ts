@@ -2364,12 +2364,34 @@ ipcMain.handle('dialog:openZip', async () => {
     filters: [{ name: 'ZIP/RAR Archives', extensions: ['zip', 'rar'] }],
     defaultPath: 'C:\\'
   });
-  
+
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
-  
+
   return result.filePaths[0];
+});
+
+// v2.0.13 — multi-select picker for Takeout zips. Returns the array
+// of selected paths (empty array on cancel) wrapped in the standard
+// { success, data } envelope so the renderer can distinguish "user
+// closed the dialog" from "IPC failure".
+//
+// Distinct from dialog:openZip (single file, source-add flow) because
+// users dragging in a multi-part Takeout will normally want to add
+// 4-8 zips in one go from the LDM Takeout metadata row.
+ipcMain.handle('dialog:openTakeoutZips', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Google Takeout ZIPs', extensions: ['zip'] }],
+      title: 'Select Google Takeout zip(s)',
+    });
+    if (result.canceled) return { success: true, data: [] as string[] };
+    return { success: true, data: result.filePaths };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
 });
 
 ipcMain.handle('source:pick', async (_event, mode: 'folder' | 'zip') => {

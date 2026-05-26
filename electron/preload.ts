@@ -150,6 +150,10 @@ onWindowMove: (callback: () => void) => {
   
   openFolder: (defaultPath?: string) => ipcRenderer.invoke('dialog:openFolder', defaultPath),
 openZip: () => ipcRenderer.invoke('dialog:openZip'),
+  // v2.0.13 — multi-select picker for Takeout zips. Returns the array
+  // of selected paths wrapped in { success, data }. Empty data array
+  // on cancel; non-success only on IPC error.
+  openTakeoutZips: () => ipcRenderer.invoke('dialog:openTakeoutZips') as Promise<{ success: boolean; error?: string; data?: string[] }>,
 
 selectDestination: () => ipcRenderer.invoke('select-destination'),
 
