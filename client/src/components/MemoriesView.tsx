@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   CalendarRange,
   ChevronLeft,
@@ -1172,6 +1173,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return captionedOnly ? files.filter((f) => f.caption && f.caption.length > 0) : files;
   }, [files, captionedOnly]);
 
+  // v2.0.14 (Terry 2026-05-27) — grid virtualisation for the drilldown.
+  // Year drilldowns can hold 6,000+ photos which means 6,000+ React
+  // <button> elements + ContextMenu + CaptionTooltip wrappers. Mounting
+  // that many DOM nodes pegs the renderer for 10-15 s on the way into
+  // the view, and the white-titlebar flash recurs whenever React's
+  // diff runs over the lot (e.g. captioned-only toggle re-render).
+  // The virtualiser keeps only the day-groups currently in viewport
+  // mounted — typically 3-6 groups — so even a year with thousands of
+  // files mounts in tens of milliseconds. Day boundaries stay intact
+  // and the existing per-tile interaction code paths are untouched.
+  const [containerWidth, setContainerWidth] = useState(1400);
+  useEffect(() => {
+    const el = gridScrollRef.current;
+    if (!el) return;
+    const update = () => setContainerWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const filesByDay = useMemo(() => {
     if (!visibleFiles) return [] as Array<{ dayKey: string; date: Date; files: IndexedFile[]; baseIndex: number }>;
     const groups: Array<{ dayKey: string; date: Date; files: IndexedFile[]; baseIndex: number }> = [];
@@ -1202,6 +1224,36 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return groups;
   }, [visibleFiles]);
 
+  // v2.0.14 — drilldown row virtualiser. One virtual row per day group.
+  // Heights vary (a day with 100 photos is taller than a day with 1),
+  // so estimateSize predicts from the photo count + current tile size
+  // and react-virtual refines via measureElement after first mount.
+  const tilePx = drilldownSliderToPx(tileSizeSlider);
+  const tileGap = density === 'tight' ? 0 : 12;
+  const colsPerRow = Math.max(1, Math.floor((containerWidth - 48 + tileGap) / (tilePx + tileGap)));
+  const estimateDayRowHeight = (idx: number): number => {
+    const group = filesByDay[idx];
+    if (!group) return 200;
+    const HEADER_HEIGHT = 44;
+    const ROW_MARGIN_TOP = 12;
+    const SECTION_GAP = 20;
+    const rows = Math.ceil(group.files.length / colsPerRow);
+    const gridHeight = rows * tilePx + Math.max(0, (rows - 1) * tileGap);
+    return HEADER_HEIGHT + ROW_MARGIN_TOP + gridHeight + SECTION_GAP;
+  };
+  const rowVirtualizer = useVirtualizer({
+    count: filesByDay.length,
+    getScrollElement: () => gridScrollRef.current,
+    estimateSize: estimateDayRowHeight,
+    overscan: 2,
+  });
+  // When the inputs to estimateSize change (tile size, density,
+  // container width, or the file list itself), the cached row heights
+  // are stale — force the virtualiser to remeasure.
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [tilePx, tileGap, colsPerRow, filesByDay]);
+
   // Format the day header label. Full long form so the user can read
   // the date without parsing abbreviations.
   const formatDayHeader = (d: Date, dayKey: string): string => {
@@ -1221,26 +1273,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     const scrollEl = gridScrollRef.current;
     if (!scrollEl) return;
     const recompute = () => {
-      let bestKey: string | null = null;
-      let bestDistance = Infinity;
+      if (filesByDay.length === 0) return;
       const scrollTop = scrollEl.scrollTop;
-      // Find the day header whose top is at or just above the scroll
-      // viewport top — that's the day currently being shown.
-      for (const [key, el] of Object.entries(dayHeaderElsRef.current)) {
-        if (!el) continue;
-        const offsetTop = el.offsetTop;
-        const dist = scrollTop - offsetTop;
-        if (dist >= -10 && dist < bestDistance) {
-          bestDistance = dist;
-          bestKey = key;
+      // v2.0.14 — with virtualisation, dayHeaderElsRef only carries
+      // refs for the day groups currently mounted. Use the virtualiser's
+      // own row offsets instead — they're the authoritative positions
+      // for every row, mounted or not. Find the row whose [start, end)
+      // interval straddles the scroll top.
+      const virtualItems = rowVirtualizer.getVirtualItems();
+      for (const item of virtualItems) {
+        if (scrollTop >= item.start && scrollTop < item.start + item.size) {
+          setCurrentDayKey(filesByDay[item.index].dayKey);
+          return;
         }
       }
-      // Edge case: scrolled to the very top before the first header
-      // has been passed — show the first day.
-      if (bestKey === null && filesByDay.length > 0) {
-        bestKey = filesByDay[0].dayKey;
+      // Edge case: scroll is above all mounted items (very top of list)
+      // or past the last mounted item. Default to the first virtual
+      // item (the topmost mounted one) so the pill keeps showing
+      // something sensible.
+      if (virtualItems.length > 0) {
+        setCurrentDayKey(filesByDay[virtualItems[0].index].dayKey);
       }
-      if (bestKey) setCurrentDayKey(bestKey);
     };
     const onScroll = () => {
       recompute();
@@ -1262,10 +1315,14 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   }, [filesByDay]);
 
   const goToDayByKey = (dayKey: string) => {
-    const el = dayHeaderElsRef.current[dayKey];
-    const scrollEl = gridScrollRef.current;
-    if (!el || !scrollEl) return;
-    scrollEl.scrollTo({ top: Math.max(0, el.offsetTop - 4), behavior: 'smooth' });
+    // v2.0.14 — virtualised rows aren't in DOM until they scroll into
+    // view, so rely on the virtualiser's index math instead of the
+    // (possibly absent) header ref. align: 'start' puts the day header
+    // right at the top of the scroll area, matching the previous
+    // offsetTop - 4 behaviour.
+    const idx = filesByDay.findIndex((g) => g.dayKey === dayKey);
+    if (idx < 0) return;
+    rowVirtualizer.scrollToIndex(idx, { align: 'start', behavior: 'smooth' });
   };
   const goToNextDay = () => {
     if (filesByDay.length === 0) return;
@@ -1531,7 +1588,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             {month == null ? `No files for ${year}.` : day == null ? `No files for ${MONTH_NAMES[month - 1]} ${year}.` : 'No files on this day.'}
           </div>
         ) : (
-          <div className="space-y-5">
+          <>
             {/* v2.0.13 — floating "current day" pill that fades in
                 while the user is scrolling. Anchored top-right inside
                 the scroll area; pointer-events-none so it never
@@ -1548,17 +1605,42 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 </div>
               </div>
             )}
-            {filesByDay.map((group) => (
-              <section key={group.dayKey} data-day-key={group.dayKey}>
-                {/* Sticky per-day header — visible while scrolling
-                    through that day's photos. Long-form so the user
-                    can read the date without parsing abbreviations.
-                    Backdrop blur keeps the photo bleeding behind it
-                    readable without making it transparent enough to
-                    be illegible. */}
+            {/* v2.0.14 — virtualised day-group container. Each virtual
+                row holds one day's section (header + photo grid). Only
+                the ~3-6 rows currently in viewport are mounted at a
+                time, so a year drilldown with 6,000+ files mounts in
+                tens of milliseconds instead of locking the renderer
+                for 10-15 seconds while React diffs through all those
+                <button> + ContextMenu + CaptionTooltip subtrees. */}
+            <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const group = filesByDay[virtualRow.index];
+                if (!group) return null;
+                return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
+                data-day-key={group.dayKey}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                  paddingBottom: 20,
+                }}
+              >
+                {/* Per-day header — long-form so the user can read the
+                    date without parsing abbreviations. Sticky top
+                    behaviour was dropped in v2.0.14 because the
+                    virtual rows are absolute-positioned (sticky
+                    doesn't apply inside an absolute container); the
+                    floating "current day" pill above the scroll area
+                    is the cue now. */}
                 <h3
                   ref={(el) => { dayHeaderElsRef.current[group.dayKey] = el; }}
-                  className="sticky top-0 z-20 -mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground"
+                  className="-mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground"
                 >
                   {formatDayHeader(group.date, group.dayKey)}
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -1777,9 +1859,11 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               );
             })}
                 </div>
-              </section>
-            ))}
-          </div>
+              </div>
+                );
+              })}
+            </div>
+          </>
         )}
         {/* v2.0.13 — floating prev / next day arrows. Visible only
             when there's more than one day to navigate between.
