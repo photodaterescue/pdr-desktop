@@ -145,6 +145,10 @@ export interface SearchQuery {
   hasUnnamedFaces?: boolean;
   hasAiTags?: boolean;
   hasNamedPeople?: boolean;
+  /** v2.0.14 — restrict to files whose `caption` is non-empty.
+   *  Powers the gold "Captioned only" chip in S&D's header,
+   *  mirrored from AlbumsView / MemoriesView drilldown. */
+  hasCaption?: boolean;
   aiProcessed?: 'all' | 'unprocessed' | 'faces_only' | 'tags_only' | 'both';
   faceCountMin?: number;
   faceCountMax?: number;
@@ -2113,6 +2117,14 @@ export function searchFiles(query: SearchQuery): SearchResult {
     conditions.push(`f.id IN (SELECT file_id FROM face_detections WHERE person_id IS NOT NULL)`);
   }
 
+  // v2.0.14 — Captioned only. caption is stored on indexed_files itself
+  // (column added in v2.0.8 for Takeout backfill, opened up for user
+  // editing in v2.0.13), so this is a plain column predicate — no
+  // sub-query needed.
+  if (query.hasCaption === true) {
+    conditions.push(`f.caption IS NOT NULL AND f.caption != ''`);
+  }
+
   // AI: Processed filter (analyzed status)
   if (query.aiProcessed) {
     switch (query.aiProcessed) {
@@ -2403,6 +2415,7 @@ export function getFilterCounts(query: SearchQuery): ContextualCounts {
     }
     if (query.hasGps === true) conditions.push(`f.gps_lat IS NOT NULL AND f.gps_lon IS NOT NULL`);
     else if (query.hasGps === false) conditions.push(`(f.gps_lat IS NULL OR f.gps_lon IS NULL)`);
+    if (query.hasCaption === true) conditions.push(`f.caption IS NOT NULL AND f.caption != ''`);
     if (skip !== 'country' && query.country?.length) {
       const c = sentinelClause('f.geo_country', query.country, NO_LOCATION_LABEL); if (c) conditions.push(c);
     }

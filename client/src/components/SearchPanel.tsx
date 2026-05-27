@@ -376,6 +376,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [monthFrom, setMonthFrom] = useState<number | undefined>(undefined);
   const [monthTo, setMonthTo] = useState<number | undefined>(undefined);
   const [hasGps, setHasGps] = useState<boolean | undefined>(undefined);
+  // v2.0.14 — "Captioned only" filter, mirrored from AlbumsView /
+  // MemoriesView. Server-side here (SearchPanel paginates results from
+  // the backend), so the state drives the SearchQuery.hasCaption flag
+  // rather than client-side filtering of the visible page.
+  const [hasCaption, setHasCaption] = useState<boolean | undefined>(undefined);
   const [selectedCountry, setSelectedCountry] = useState<string[]>([]);
   const [selectedCity, setSelectedCity] = useState<string[]>([]);
   const [isoFrom, setIsoFrom] = useState<number | undefined>(undefined);
@@ -1164,7 +1169,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     cameraModel: selectedCameraModel.length > 0 ? selectedCameraModel : undefined,
     lensModel: selectedLensModel.length > 0 ? selectedLensModel : undefined,
     dateFrom: dateFrom || undefined, dateTo: dateTo || undefined,
-    yearFrom, yearTo, monthFrom, monthTo, hasGps,
+    yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption,
     country: selectedCountry.length > 0 ? selectedCountry : undefined,
     city: selectedCity.length > 0 ? selectedCity : undefined,
     isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo,
@@ -1182,7 +1187,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
     } as SearchQuery);
-  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir]);
+  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery, opts?: { silent?: boolean }) => {
     // `silent` keeps the existing results visible during the fetch
@@ -1428,7 +1433,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setResults(null);
       setSearchActive(false);
     }
-  }, [paused, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
+  }, [paused, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
 
   // Contextual counts refresh — debounced so rapid clicks (e.g. the
   // ribbon's Select-all) don't trigger N requests. Calls
@@ -1580,7 +1585,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setSelectedExtension([]); setSelectedCameraMake([]); setSelectedCameraModel([]); setSelectedLensModel([]);
     setDateFrom(''); setDateTo('');
     setYearFrom(undefined); setYearTo(undefined); setMonthFrom(undefined); setMonthTo(undefined);
-    setHasGps(undefined); setSelectedCountry([]); setSelectedCity([]); setIsoFrom(undefined); setIsoTo(undefined);
+    setHasGps(undefined); setHasCaption(undefined); setSelectedCountry([]); setSelectedCity([]); setIsoFrom(undefined); setIsoTo(undefined);
     setApertureFrom(undefined); setApertureTo(undefined);
     setFocalLengthFrom(undefined); setFocalLengthTo(undefined);
     setFlashFired(undefined); setMegapixelsFrom(undefined); setMegapixelsTo(undefined);
@@ -1593,7 +1598,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setShowAllOverride(false);
   };
 
-  const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
+  const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || hasCaption != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
   // Note: selectedAlbums is intentionally NOT in hasActiveFilters.
   // Terry 2026-05-19 confirmed: "Selecting an album alone is not
   // enough to show the results for it, as it needs the confidence
@@ -1652,7 +1657,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setSelectedCameraMake(q.cameraMake || []);
       setSelectedCameraModel(q.cameraModel || []);
       setYearFrom(q.yearFrom); setYearTo(q.yearTo);
-      setHasGps(q.hasGps);
+      setHasGps(q.hasGps); setHasCaption(q.hasCaption);
       setSelectedDestination(q.destinationPath || []);
       setSelectedAlbums(q.albumIds || []);
       setSortBy(q.sortBy || 'derived_date'); setSortDir(q.sortDir || 'desc');
@@ -4114,6 +4119,29 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               )}
               {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin inline ml-2 text-primary" />}
             </span>
+            {/* v2.0.14 — "Captioned only" toggle, mirrored from
+                AlbumsView / MemoriesView drilldown so the affordance is
+                consistent everywhere captions appear. Server-side filter
+                (SearchPanel paginates from the backend), so the click
+                flips hasCaption in state and the existing re-search
+                effect refetches. Sits before the divider, so it visually
+                groups with the result-count cluster rather than with
+                the dismissable filter-status chips on the other side. */}
+            <IconTooltip label={hasCaption ? 'Show all photos' : 'Show only photos with captions'} side="bottom">
+              <button
+                type="button"
+                onClick={() => setHasCaption((v) => v ? undefined : true)}
+                data-testid="sd-captioned-only-toggle"
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border shrink-0 ${
+                  hasCaption
+                    ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
+                    : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+              >
+                <MessageSquareText className="w-3 h-3" />
+                Captioned only
+              </button>
+            </IconTooltip>
             {/* Active filter chips — inline between Edit Dates and view
                 controls. Divider visually separates the selection-action
                 cluster from the filter-status cluster. When more than

@@ -1046,6 +1046,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // referenceable in the new file list.
   useEffect(() => { clearSelection(); }, [year, month, day]);
 
+  // v2.0.14 — "Captioned only" filter, mirrored from AlbumsView. Resets
+  // on year/month/day change so a niche filter doesn't silently follow
+  // the user across the timeline.
+  const [captionedOnly, setCaptionedOnly] = useState(false);
+  useEffect(() => { setCaptionedOnly(false); }, [year, month, day]);
+
   // Tile size — Ctrl+scroll to zoom, persisted across sessions.
   const [tileSizeSlider, setTileSizeSlider] = useState<number>(() => {
     if (typeof localStorage === 'undefined') return 35;
@@ -1157,13 +1163,22 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   //
   // The per-day grouping is memoised so we don't rebuild on every
   // scroll tick.
+  // v2.0.14 — filtered view used by the day-grouping memo + the
+  // "Open in Viewer" target. Header counts and the thumb-prewarm pass
+  // continue to use the unfiltered `files` so the chip's count reflects
+  // the underlying total and we don't re-warm thumbs every toggle.
+  const visibleFiles = useMemo(() => {
+    if (!files) return null;
+    return captionedOnly ? files.filter((f) => f.caption && f.caption.length > 0) : files;
+  }, [files, captionedOnly]);
+
   const filesByDay = useMemo(() => {
-    if (!files) return [] as Array<{ dayKey: string; date: Date; files: IndexedFile[]; baseIndex: number }>;
+    if (!visibleFiles) return [] as Array<{ dayKey: string; date: Date; files: IndexedFile[]; baseIndex: number }>;
     const groups: Array<{ dayKey: string; date: Date; files: IndexedFile[]; baseIndex: number }> = [];
     let currentKey: string | null = null;
     let baseIndex = 0;
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
+    for (let i = 0; i < visibleFiles.length; i++) {
+      const f = visibleFiles[i];
       let d: Date | null = null;
       if (f.derived_date) {
         d = new Date(f.derived_date);
@@ -1185,7 +1200,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       }
     }
     return groups;
-  }, [files]);
+  }, [visibleFiles]);
 
   // Format the day header label. Full long form so the user can read
   // the date without parsing abbreviations.
@@ -1366,6 +1381,32 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </span>
           );
         })()}
+        {/* v2.0.14 — "Captioned only" chip, mirrored from AlbumsView
+            (gold pill, same MessageSquareText icon, same hide-when-zero
+            rule). Filters the drilldown's per-day grid to just photos
+            with a non-empty caption. Only renders when at least one
+            file in the current year/month/day has a caption. */}
+        {files != null && (() => {
+          const captionedCount = files.filter((f) => f.caption && f.caption.length > 0).length;
+          if (captionedCount === 0) return null;
+          return (
+            <IconTooltip label={captionedOnly ? 'Show all photos' : 'Show only photos with captions'} side="bottom">
+              <button
+                type="button"
+                onClick={() => setCaptionedOnly((v) => !v)}
+                data-testid="memories-captioned-only-toggle"
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+                  captionedOnly
+                    ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
+                    : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+              >
+                <MessageSquareText className="w-3 h-3" />
+                Captioned only · {captionedCount.toLocaleString()}
+              </button>
+            </IconTooltip>
+          );
+        })()}
         {/* Add Info — same checkbox dropdown style as S&D's tile
             metadata picker, so muscle-memory transfers. Defaults to
             NONE (clean photo wall) and lets the user opt into
@@ -1462,10 +1503,14 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               // been checked/selected, then it should read 'Open
               // Selected in Viewer' — and obviously only show the
               // selected in the viewer"). Otherwise open the full
-              // year/month/day set.
+              // year/month/day set. When the "Captioned only" chip is
+              // on, the unselected open-all opens just the filtered
+              // subset so arrow-key navigation stays inside what the
+              // user can see (matches AlbumsView's contract).
+              const base = visibleFiles ?? files;
               const target = selectedFileIds.size > 0
-                ? files.filter(f => selectedFileIds.has(f.id))
-                : files;
+                ? base.filter(f => selectedFileIds.has(f.id))
+                : base;
               openSearchViewer(target.map(f => f.file_path), target.map(f => f.filename));
             }}
             className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
@@ -1553,11 +1598,21 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                           lastClickedIndexRef.current = idx;
                           return;
                         }
+                        // v2.0.14 — `idx` is relative to the filtered
+                        // arrangement (filesByDay iterates visibleFiles
+                        // and baseIndex is computed from that walk), so
+                        // shift-range select + viewer-open MUST index
+                        // into the same filtered array, not the raw
+                        // unfiltered `files`. Without this, clicking a
+                        // captioned tile under "Captioned only" opened
+                        // a totally unrelated photo at the same row in
+                        // the unfiltered set.
+                        const baseArr = visibleFiles ?? files;
                         if (e.shiftKey && lastClickedIndexRef.current !== null) {
                           const start = Math.min(lastClickedIndexRef.current, idx);
                           const end = Math.max(lastClickedIndexRef.current, idx);
                           for (let i = start; i <= end; i++) {
-                            const file = files[i];
+                            const file = baseArr[i];
                             if (file) toggleSelection(file, 'add');
                           }
                           lastClickedIndexRef.current = idx;
@@ -1574,7 +1629,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                           return;
                         }
                         lastClickedIndexRef.current = idx;
-                        openSearchViewer(files.map(x => x.file_path), files.map(x => x.filename), idx);
+                        openSearchViewer(baseArr.map(x => x.file_path), baseArr.map(x => x.filename), idx);
                       }}
                       className={`group relative w-full h-full overflow-hidden bg-secondary/30 transition-all ${
                         isMultiSelected ? 'ring-2 ring-primary' :
@@ -1594,8 +1649,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                           if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
                             const start = Math.min(lastClickedIndexRef.current, idx);
                             const end = Math.max(lastClickedIndexRef.current, idx);
+                            // Same captioned-only safety as the body
+                            // click handler above — idx is in visibleFiles
+                            // space when the filter is on.
+                            const checkBase = visibleFiles ?? files;
                             for (let i = start; i <= end; i++) {
-                              const file = files[i];
+                              const file = checkBase[i];
                               if (file && !selectedFileIds.has(file.id)) toggleSelection(file, 'add');
                             }
                             lastClickedIndexRef.current = idx;

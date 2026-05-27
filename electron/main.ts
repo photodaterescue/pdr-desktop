@@ -209,8 +209,15 @@ async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer
   if (!ffmpegPath) return null;
   return new Promise<Buffer | null>((resolve) => {
     const tmp = path.join(os.tmpdir(), `pdr-vthumb-${crypto.randomBytes(6).toString('hex')}.jpg`);
+    // ffmpeg's mov/mp4/mkv demuxers on Windows can't open paths via the
+    // `\\?\` extended-length prefix — they bail with "Invalid argument"
+    // and exit 127. Callers routinely pass us prefixed paths (toLongPath
+    // is applied indiscriminately upstream). Strip the prefix before
+    // handing the path to ffmpeg; paths > 260 chars are an ffmpeg
+    // limitation we can't dodge from this side anyway.
+    const ffmpegSrc = fromLongPath(videoPath);
     // -ss before -i is a fast seek; -frames:v 1 takes a single frame; -y overwrites
-    const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(seekSec), '-i', videoPath, '-frames:v', '1', '-q:v', '3', '-y', tmp];
+    const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(seekSec), '-i', ffmpegSrc, '-frames:v', '1', '-q:v', '3', '-y', tmp];
     const proc = spawn(ffmpegPath!, args, { windowsHide: true });
     let finished = false;
     const done = async (ok: boolean) => {
@@ -240,7 +247,7 @@ import AdmZip from 'adm-zip';
 import * as unzipper from 'unzipper';
 import crypto from 'crypto';
 import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, exportReportToCSV, exportReportToTXT, getExportFilename, writeCatalogue, FixReport } from './report-storage.js';
-import { toLongPath } from './long-path.js';
+import { toLongPath, fromLongPath } from './long-path.js';
 import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import {
@@ -2698,8 +2705,19 @@ fs.mkdirSync(videoCacheDir, { recursive: true });
 // up-front rather than waiting for the <video> element to emit an error.
 const TRANSCODE_EXTS = new Set(['.mpg', '.mpeg', '.avi', '.wmv', '.flv', '.3gp', '.m2ts', '.mts', '.vob', '.rm', '.rmvb', '.asf', '.mpe', '.mpv']);
 
+// Containers whose ext alone doesn't tell us if Chromium can play them —
+// these may hold H.264 (Chromium-fine) OR HEVC (Electron 39's Chromium has
+// no HEVC decoder, plays sound-only over a black frame). Probe the codec
+// before deciding. OnePlus / Samsung / iPhone motion-photo .mp4 side-files
+// are HEVC and trip this path.
+const MAYBE_HEVC_EXTS = new Set(['.mp4', '.m4v', '.mov', '.mkv']);
+
 // Track in-flight transcodes so concurrent calls de-dupe to the same promise.
 const transcodeInFlight = new Map<string, Promise<{ success: boolean; cachePath?: string; error?: string }>>();
+
+// In-memory cache of probed video codec keyed by `path:size:mtimeMs`. Cleared
+// on app restart. Saves ~50ms per repeat play of the same file.
+const probedCodecCache = new Map<string, string | null>();
 
 async function transcodeVideoToMp4(sourcePath: string, cachePath: string): Promise<{ success: boolean; cachePath?: string; error?: string }> {
   if (!ffmpegPath) return { success: false, error: 'ffmpeg binary not found' };
@@ -2707,11 +2725,13 @@ async function transcodeVideoToMp4(sourcePath: string, cachePath: string): Promi
     // Write to a .part file first so a crashed transcode doesn't leave a half-written cache entry.
     const partPath = cachePath + '.part';
     try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch {}
+    // Same long-path caveat as extractVideoFrame — see comment there.
+    const ffmpegSrc = fromLongPath(sourcePath);
     // -f mp4 is REQUIRED because the .part extension means ffmpeg can't
     // infer the container from the filename.
     const args = [
       '-hide_banner', '-loglevel', 'error',
-      '-i', sourcePath,
+      '-i', ffmpegSrc,
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac', '-b:a', '128k',
@@ -2744,6 +2764,30 @@ async function transcodeVideoToMp4(sourcePath: string, cachePath: string): Promi
   });
 }
 
+// Probe the first video stream's codec by running ffmpeg with no output —
+// ffmpeg-static doesn't bundle ffprobe, but `ffmpeg -i FILE` prints the
+// stream summary to stderr regardless, and we can grep for `Video: <codec>`.
+// Returns lowercase codec name ('hevc', 'h264', …) or null on failure.
+async function probeVideoCodec(videoPath: string): Promise<string | null> {
+  if (!ffmpegPath) return null;
+  return new Promise<string | null>((resolve) => {
+    const ffmpegSrc = fromLongPath(videoPath);
+    const proc = spawn(ffmpegPath!, ['-hide_banner', '-i', ffmpegSrc], { windowsHide: true });
+    let stderr = '';
+    proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+    let settled = false;
+    const finish = (codec: string | null) => { if (!settled) { settled = true; resolve(codec); } };
+    proc.on('error', () => finish(null));
+    // `ffmpeg -i FILE` with no output spec exits 1 — but the stream info
+    // is still on stderr, so we parse on close regardless of exit code.
+    proc.on('close', () => {
+      const m = stderr.match(/Video:\s+([A-Za-z0-9_]+)/);
+      finish(m ? m[1].toLowerCase() : null);
+    });
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} finish(null); }, 5000);
+  });
+}
+
 ipcMain.handle('video:prepare', async (_event, filePath: string): Promise<{ success: boolean; playableUrl?: string; cachePath?: string; error?: string }> => {
   try {
     if (!fs.existsSync(filePath)) return { success: false, error: 'File not found' };
@@ -2756,17 +2800,40 @@ ipcMain.handle('video:prepare', async (_event, filePath: string): Promise<{ succ
     // by putting the path in a query parameter, which is never host-parsed.
     const toPdrUrl = (p: string) => 'pdr-file://local/?f=' + encodeURIComponent(p.replace(/\\/g, '/'));
 
-    // Extensions Chromium handles natively — no transcode needed.
-    if (!TRANSCODE_EXTS.has(ext)) {
-      return { success: true, playableUrl: toPdrUrl(filePath) };
-    }
-
     // Derive a deterministic cache key from absolute path + mtime + size so the
-    // cache auto-invalidates if the source is replaced.
+    // cache auto-invalidates if the source is replaced. (Computed up front so
+    // we can short-circuit on an existing cached transcode for HEVC clips
+    // without paying the ffmpeg-probe cost.)
     const stat = await fs.promises.stat(filePath);
     const keySrc = `${filePath}:${stat.size}:${stat.mtimeMs}`;
     const cacheKey = crypto.createHash('md5').update(keySrc).digest('hex');
     const cachePath = path.join(videoCacheDir, `${cacheKey}.mp4`);
+
+    // Three classes of input:
+    //   1. Hopeless extension (.mpg/.avi/…) — always transcode.
+    //   2. Probably-OK extension (.mp4/.mov/.m4v/.mkv) — probe the codec; HEVC
+    //      needs transcoding (Chromium can't decode it under Electron 39),
+    //      H.264/VP9/AV1 plays directly.
+    //   3. Anything else (.webm/.3gp/…) — play directly.
+    let needsTranscode = TRANSCODE_EXTS.has(ext);
+    if (!needsTranscode && MAYBE_HEVC_EXTS.has(ext)) {
+      // If we already transcoded this file in a previous session, the cache
+      // file's existence is itself a record that transcoding was needed —
+      // skip the probe and reuse it.
+      if (fs.existsSync(cachePath)) {
+        return { success: true, playableUrl: toPdrUrl(cachePath), cachePath };
+      }
+      let codec = probedCodecCache.get(keySrc);
+      if (codec === undefined) {
+        codec = await probeVideoCodec(filePath);
+        probedCodecCache.set(keySrc, codec);
+      }
+      if (codec === 'hevc' || codec === 'h265') needsTranscode = true;
+    }
+
+    if (!needsTranscode) {
+      return { success: true, playableUrl: toPdrUrl(filePath) };
+    }
 
     if (fs.existsSync(cachePath)) {
       return { success: true, playableUrl: toPdrUrl(cachePath), cachePath };
