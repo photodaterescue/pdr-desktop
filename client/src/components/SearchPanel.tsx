@@ -84,6 +84,7 @@ import {
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
 } from '@/components/ui/context-menu';
 import { editPhotoCaption } from '@/lib/caption-actions';
 import { CaptionBadge } from '@/components/CaptionBadge';
@@ -4986,6 +4987,26 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
     </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        {/* v2.0.13 (Terry 2026-05-27) — Copy filename to match the
+            same right-click affordance the By-Date / Memories grid
+            has. Useful when you want to paste a filename into File
+            Explorer / chat / a support ticket without opening the
+            viewer. */}
+        <ContextMenuItem
+          onSelect={async () => {
+            try {
+              await navigator.clipboard.writeText(file.filename);
+              toast.success('Filename copied', { description: file.filename });
+            } catch {
+              toast.error("Couldn't copy filename");
+            }
+          }}
+          data-testid={`filecard-copy-filename-${file.id}`}
+        >
+          <Copy className="w-3.5 h-3.5 mr-2" />
+          Copy filename
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         {/* v2.0.13 — per-photo caption. Pre-fills with the current
             caption (if any) so the same item handles add / edit /
             clear. Empty save clears. EXIF ImageDescription + XMP

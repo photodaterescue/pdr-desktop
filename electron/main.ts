@@ -2846,16 +2846,23 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     // Video: extract a frame via ffmpeg-static, then resize through sharp.
     if (!jpegBuffer && VIDEO_EXTS.has(ext)) {
       try {
-        // Try 1s in first; short clips / MPEG-1 files may fail that seek, so retry at 0.
+        // Cascade of seek positions for short clips and codecs that
+        // dislike a 1s pre-seek. v2.0.13 (Terry 2026-05-27) — added
+        // mid-clip + late-clip positions because Samsung Motion-Photo
+        // .mp4 side-files (typically 2 s and HEVC-coded) were
+        // returning blank in S&D / Memories. The cascade short-circuits
+        // as soon as any seek yields a decodable frame.
         let frame = await extractVideoFrame(filePathLong, 1);
         if (!frame) frame = await extractVideoFrame(filePathLong, 0);
+        if (!frame) frame = await extractVideoFrame(filePathLong, 0.5);
+        if (!frame) frame = await extractVideoFrame(filePathLong, 2);
         if (frame) {
           jpegBuffer = await sharp(frame, { failOnError: false })
             .resize(size, size, { fit: 'inside', withoutEnlargement: true })
             .jpeg({ quality: 80 })
             .toBuffer();
         } else {
-          console.warn('[ffmpeg] no frame extracted for', filePath);
+          console.warn('[ffmpeg] no frame extracted for', filePath, '(tried 1s, 0s, 0.5s, 2s — likely HEVC / unsupported codec)');
         }
       } catch (e) {
         console.warn('[ffmpeg] frame→sharp failed for', filePath, (e as Error).message);
