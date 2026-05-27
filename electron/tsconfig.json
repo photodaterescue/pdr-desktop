@@ -13,5 +13,5 @@
     "allowSyntheticDefaultImports": true
   },
   "include": ["./**/*.ts"],
-  "exclude": ["node_modules", "ai-worker.ts"]
+  "exclude": ["node_modules", "ai-worker.ts", "analysis-worker.ts"]
 }
