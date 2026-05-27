@@ -32,14 +32,20 @@
     "files": [
       "dist/**",
       "dist-electron/**",
-      "!dist-electron/*-worker.cjs"
+      "!dist-electron/cleanup-worker.cjs",
+      "!dist-electron/conversion-worker.cjs",
+      "!dist-electron/extract-worker.cjs",
+      "!dist-electron/startup-worker.cjs"
     ],
     "extraResources": [
       {
         "from": "dist-electron",
         "to": "dist-electron",
         "filter": [
-          "*-worker.cjs"
+          "cleanup-worker.cjs",
+          "conversion-worker.cjs",
+          "extract-worker.cjs",
+          "startup-worker.cjs"
         ]
       },
       {

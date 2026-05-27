@@ -479,9 +479,18 @@ async function ensureWorker(settings: ReturnType<typeof getSettings>): Promise<v
   const modelsDir = path.join(app.getPath('userData'), 'ai-models');
 
   return new Promise((resolve, reject) => {
-    const workerPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'dist-electron/ai-worker.cjs')
-      : path.join(__dirname, 'ai-worker.cjs');
+    // v2.0.13 (Terry 2026-05-27) — ai-worker.cjs is loaded as a
+    // worker_threads.Worker (a THREAD in the main process), not via
+    // utilityProcess.fork. Worker threads share the main process's
+    // asar mount, so the worker CAN live inside app.asar where its
+    // `require('sharp')` resolves cleanly via the asar's
+    // node_modules. The v2.0.11 packaging bug only applied to
+    // utility-process workers (cleanup / extract / conversion /
+    // startup) which fork as separate OS processes and need a real
+    // filesystem path; those four stay in resources/dist-electron/
+    // via extraResources. ai-worker is back inside the asar so
+    // sharp / @vladmandic/human / onnxruntime-node resolve normally.
+    const workerPath = path.join(__dirname, 'ai-worker.cjs');
 
     // Resolve the @vladmandic/human models path
     let humanModelsPath: string;

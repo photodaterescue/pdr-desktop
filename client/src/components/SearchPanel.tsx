@@ -2593,13 +2593,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="AI Error">
-                      <div className="flex flex-col gap-1 flex-1 py-1.5">
+                      {/* v2.0.13 (Terry 2026-05-27) — capped at 280px
+                          so the ribbon group doesn't stretch to fill
+                          whatever horizontal space is left after the
+                          other AI ribbon groups. The previous flex-1
+                          made the error panel eat the remaining row. */}
+                      <div className="flex flex-col gap-1 py-1.5 max-w-[280px]">
                         <div className="flex items-center gap-1.5 text-[11px] text-red-500">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                           <span>AI failed to start</span>
                         </div>
-                        <span className="text-[9px] text-muted-foreground break-all">{aiProgress.currentFile}</span>
-                        <button onClick={() => { setAiProcessing(true); setAiProgress(null); startAiProcessing(); }} className="text-[10px] text-purple-500 hover:text-purple-400 transition-colors mt-1">Retry</button>
+                        <span className="text-[9px] text-muted-foreground break-all line-clamp-3">{aiProgress.currentFile}</span>
+                        <button onClick={() => { setAiProcessing(true); setAiProgress(null); startAiProcessing(); }} className="text-[10px] text-purple-500 hover:text-purple-400 transition-colors mt-1 self-start">Retry</button>
                       </div>
                     </RibbonGroup>
                   </>
@@ -4564,16 +4569,36 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   {results.files.length < results.total && (
                     <>
                       <div ref={loadMoreSentinelRef} aria-hidden className="h-1" />
-                      <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground" data-testid="search-load-more-footer">
+                      <div className="flex flex-col items-center gap-2 py-4 text-xs text-muted-foreground" data-testid="search-load-more-footer">
                         {isLoading ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             <span>Loading more…</span>
                           </>
                         ) : (
-                          <span>
-                            Showing {results.files.length.toLocaleString()} of {results.total.toLocaleString()}
-                          </span>
+                          <>
+                            <span>
+                              Showing {results.files.length.toLocaleString()} of {results.total.toLocaleString()}
+                            </span>
+                            {/* v2.0.13 (Terry 2026-05-27) — explicit
+                                Show-more button alongside the existing
+                                IntersectionObserver-driven infinite scroll.
+                                The observer is a "lands while you scroll"
+                                convenience; the button is the deliberate
+                                "I want another page" affordance the user
+                                expects when the count footer says there's
+                                more available. Loads the same backend
+                                page-size as the observer (driven by
+                                loadMore() and query.limit). */}
+                            <button
+                              type="button"
+                              onClick={() => { void loadMore(); }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-background hover:bg-accent text-xs font-medium text-foreground transition-colors"
+                              data-testid="search-show-more"
+                            >
+                              Show more
+                            </button>
+                          </>
                         )}
                       </div>
                     </>
