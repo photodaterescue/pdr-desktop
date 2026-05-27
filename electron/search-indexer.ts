@@ -15,7 +15,7 @@ import {
 } from './search-database.js';
 import type { FixReport, FileChange } from './report-storage.js';
 import { initGeocoder, reverseGeocode } from './reverse-geocoder.js';
-import { isScannerDevice } from './scanner-detection.js';
+import { isScannerDevice } from './scanner-detection.cjs';
 import { getScannerOverride } from './settings-store.js';
 import { toLongPath, fromLongPath } from './long-path.js';
 

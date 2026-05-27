@@ -242,13 +242,13 @@ async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer
 }
 
 // Let sharp use default thread pool (number of CPU cores) for fast encoding
-import { analyzeSource, cancelAnalysis, isAnalysisCancelled } from './analysis-engine.js';
+import { analyzeSource, cancelAnalysis, isAnalysisCancelled, configureDeps as configureAnalysisDeps, AnalysisProgress, SourceAnalysisResult } from './analysis-engine.cjs';
 import AdmZip from 'adm-zip';
 import * as unzipper from 'unzipper';
 import crypto from 'crypto';
 import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, exportReportToCSV, exportReportToTXT, getExportFilename, writeCatalogue, FixReport } from './report-storage.js';
 import { toLongPath, fromLongPath } from './long-path.js';
-import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults } from './settings-store.js';
+import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults, getScannerOverride, listScannerOverrides } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import {
   getLicenseStatus,
@@ -270,12 +270,29 @@ import {
   quitAndInstall,
   getUpdateState,
 } from './update-checker.js';
-import { classifySource, checkSameDriveWarning } from './source-classifier.js';
+import { classifySource, checkSameDriveWarning } from './source-classifier.cjs';
 import {
   extractTakeoutGroupId,
   getSidecarSummary,
   scanSidecarsFromZips,
+  lookupSidecarByBasename,
+  snapshotSidecarMapForWorker,
 } from './takeout-sidecar-cache.js';
+
+// v2.0.14 — wire the real settings-store + DB lookups into the now-
+// shared (CJS) analysis-engine module. Main process runs analysis
+// in-process for now (Phase B will swap this for a utility-process
+// worker fork below). The worker has its own analysis-engine instance
+// and configures it with snapshot-backed lookups, so this assignment
+// doesn't leak across processes.
+configureAnalysisDeps({
+  getScannerOverride,
+  lookupSidecarByBasename: (basename) => {
+    const r = lookupSidecarByBasename(basename);
+    if (!r) return null;
+    return { photoTakenUnix: r.photoTakenUnix, sourceZip: r.sourceZip };
+  },
+});
 import {
   cancelEnrichment,
   dryRunEnrichment,
@@ -2099,6 +2116,148 @@ function runExtractInWorker(
   });
 }
 
+// v2.0.14 (Terry 2026-05-27) — pre-warmed analysis-worker pool of 1.
+// Same rationale as preforkExtractWorker — the utilityProcess fork
+// cost (200-500 ms on Windows) is paid up front so the user's Add
+// Source click doesn't eat it during the analysis spin-up.
+let prewarmedAnalysisWorker: Electron.UtilityProcess | null = null;
+
+function preforkAnalysisWorker(): void {
+  if (prewarmedAnalysisWorker) return;
+  const workerPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'dist-electron/analysis-worker.cjs')
+    : path.join(__dirname, 'analysis-worker.cjs');
+  const startedAt = Date.now();
+  try {
+    const w = utilityProcess.fork(workerPath, [], {
+      serviceName: 'PDR Analysis Worker (pre-warm)',
+      stdio: 'pipe',
+    });
+    w.on('exit', (code) => {
+      if (prewarmedAnalysisWorker === w) {
+        prewarmedAnalysisWorker = null;
+        log.info(`[analysis-worker prewarm] worker exited (code=${code}) before being claimed`);
+      }
+    });
+    w.stdout?.on('data', () => { /* swallow until claimed */ });
+    w.stderr?.on('data', () => { /* swallow until claimed */ });
+    prewarmedAnalysisWorker = w;
+    log.info(`[analysis-worker prewarm] ready in ${Date.now() - startedAt}ms`);
+  } catch (err) {
+    log.warn(`[analysis-worker prewarm] fork failed (non-fatal): ${(err as Error).message}`);
+  }
+}
+
+// v2.0.14 — utilityProcess wrapper around analyzeSource. Forks
+// electron/analysis-worker.cjs, snapshots the main-only deps the
+// worker can't access (scanner overrides + Takeout sidecar map),
+// posts 'start', forwards 'progress' / 'diagnostic' messages to the
+// caller's callbacks, resolves on 'done', rejects on 'error' /
+// 'cancelled'. Polls isAnalysisCancelled() every 250ms (same pattern
+// as runExtractInWorker) so the existing cancel API keeps working
+// unchanged.
+function runAnalysisInWorker(
+  sourcePath: string,
+  sourceType: 'folder' | 'zip' | 'drive',
+  onProgress: (progress: AnalysisProgress) => void,
+  onDiagnostic: (line: string) => void,
+): Promise<SourceAnalysisResult> {
+  return new Promise<SourceAnalysisResult>((resolve, reject) => {
+    const t0 = Date.now();
+    let worker: Electron.UtilityProcess | null = prewarmedAnalysisWorker;
+    prewarmedAnalysisWorker = null;
+    let usedPrewarm = false;
+    if (worker) {
+      usedPrewarm = true;
+      log.info(`[analysis-worker] using pre-warmed worker (claim took ${Date.now() - t0}ms)`);
+    } else {
+      const workerPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'dist-electron/analysis-worker.cjs')
+        : path.join(__dirname, 'analysis-worker.cjs');
+      try {
+        worker = utilityProcess.fork(workerPath, [], {
+          serviceName: 'PDR Analysis Worker',
+          stdio: 'pipe',
+        });
+        log.info(`[analysis-worker] forked on-demand (no pre-warm, fork took ${Date.now() - t0}ms)`);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+    }
+
+    // Replace the pre-warm in the background for the next Add Source.
+    if (usedPrewarm) {
+      setTimeout(() => { try { preforkAnalysisWorker(); } catch { /* best-effort */ } }, 100);
+    }
+
+    worker.stdout?.on('data', (chunk: Buffer) => {
+      log.info(`[analysis-worker stdout] ${chunk.toString().trim()}`);
+    });
+    worker.stderr?.on('data', (chunk: Buffer) => {
+      log.warn(`[analysis-worker stderr] ${chunk.toString().trim()}`);
+    });
+
+    // Same cancel-flag poll pattern as runExtractInWorker.
+    const cancelPoller = setInterval(() => {
+      if (isAnalysisCancelled() && worker) {
+        try { worker.postMessage({ type: 'cancel' }); } catch { /* worker may be exiting */ }
+      }
+    }, 250);
+
+    let settled = false;
+    const finish = (err: Error | null, result?: SourceAnalysisResult) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(cancelPoller);
+      try { worker?.kill(); } catch { /* best-effort */ }
+      worker = null;
+      if (err) reject(err);
+      else resolve(result!);
+    };
+
+    worker.on('message', (msg: unknown) => {
+      const m = msg as { type?: string; progress?: AnalysisProgress; line?: string; result?: SourceAnalysisResult; message?: string; code?: string };
+      if (m?.type === 'progress' && m.progress) {
+        onProgress(m.progress);
+      } else if (m?.type === 'diagnostic' && m.line) {
+        onDiagnostic(m.line);
+      } else if (m?.type === 'done' && m.result) {
+        finish(null, m.result);
+      } else if (m?.type === 'cancelled') {
+        finish(new Error('ANALYSIS_CANCELLED'));
+      } else if (m?.type === 'error') {
+        const err = new Error(m.message ?? 'Analysis failed');
+        if (m.code) (err as Error & { code?: string }).code = m.code;
+        finish(err);
+      }
+    });
+
+    worker.on('exit', (code) => {
+      log.info(`[analysis-worker] exited code=${code}`);
+      if (!settled) finish(new Error(`analysis-worker exited unexpectedly (code=${code})`));
+    });
+
+    // Snapshot the main-only datasets the worker can't access, then
+    // ship them in the start message. Both are small in practice
+    // (scanner overrides: typically <10 rows; sidecar map: 50 KB
+    // for Terry's 267-row case). If they ever grow pathologically,
+    // switch to per-lookup IPC RPC.
+    const overrides = listScannerOverrides();
+    const sidecarMap = snapshotSidecarMapForWorker();
+    const sidecarCount = Object.keys(sidecarMap).length;
+    log.info(`[analysis-worker] start snapshot: ${overrides.length} scanner overrides, ${sidecarCount} sidecar rows`);
+
+    worker.postMessage({
+      type: 'start',
+      sourcePath,
+      sourceType,
+      scannerOverrides: overrides.map(o => ({ make: o.make, model: o.model, isScanner: o.isScanner })),
+      sidecarMapByBasename: sidecarMap,
+    });
+  });
+}
+
 // Track active temp dirs so we can clean up on cancel/quit
 const activeTempDirs = new Set<string>();
 
@@ -2290,6 +2449,10 @@ app.whenReady().then(() => {
   // cleanup-worker so post-fix temp deletion of 50 GB extractions
   // doesn't have to pay the fork cost in addition to the delete time.
   setTimeout(() => preforkCleanupWorker(), 1500);
+  // v2.0.14 (Terry 2026-05-27) — same pre-warm strategy for the
+  // analysis-worker so the user's Add Source click triggers the
+  // analysis instantly instead of after a 200-500 ms fork delay.
+  setTimeout(() => preforkAnalysisWorker(), 1500);
 
   // Wire electron-updater after the main window exists so the updater
   // can broadcast state events to the renderer over webContents.send.
@@ -4037,16 +4200,16 @@ ipcMain.handle('analysis:run', async (_event, sourcePath: string, sourceType: 'f
     }
     
     __stamp('before analyzeSource');
-    const results = await analyzeSource(
+    // v2.0.14 (Terry 2026-05-27) — runs analyzeSource in a utility-
+    // process worker so the heavy per-file CPU work doesn't block the
+    // main browser thread. Renderer-facing IPC contract unchanged —
+    // progress + diagnostic still arrive on the same channels.
+    const results = await runAnalysisInWorker(
       effectivePath,
       effectiveType,
       (progress) => {
         mainWindow?.webContents.send('analysis:progress', progress);
       },
-      // Diagnostic sink — forwards [PDR-DIAG ...] lines to the renderer
-      // so they show up in F12 console alongside whatever else the
-      // renderer is logging. Kept off the progress channel so the
-      // progress UI's existing payload contract isn't muddied.
       (msg) => {
         mainWindow?.webContents.send('analysis:diagnostic', msg);
       },
@@ -8963,4 +9126,10 @@ ipcMain.handle('structure:copy', async (_event, data: {
 // Shutdown AI worker on app quit
 app.on('before-quit', () => {
   shutdownAiWorker();
+  // v2.0.14 — kill the pre-warmed analysis-worker too so it doesn't
+  // outlive PDR's window. The other prewarmed workers (extract,
+  // cleanup) have their own lifecycle that handles this; analysis was
+  // added in v2.0.14 so its cleanup goes here.
+  try { prewarmedAnalysisWorker?.kill(); } catch { /* best-effort */ }
+  prewarmedAnalysisWorker = null;
 });

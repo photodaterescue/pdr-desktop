@@ -513,6 +513,39 @@ export function lookupSidecarByBasename(photoBasename: string): SidecarLookupRes
   };
 }
 
+/**
+ * v2.0.14 — snapshot the basename → minimal-payload sidecar map for the
+ * analysis worker. Used at orchestrator entry so the worker (which
+ * can't open SQLite) gets a structured-clone-safe lookup table in its
+ * 'start' message. Same tie-break rule as lookupSidecarByBasename
+ * (prefer rows with photo_taken_unix, most recently scanned wins).
+ *
+ * Keeps payload minimal: just photoTakenUnix + sourceZip — the only
+ * fields analysis-engine reads. Other sidecar fields (gps, description,
+ * peopleJson) are written elsewhere by Enrichment, not by analysis.
+ */
+export function snapshotSidecarMapForWorker(): Record<string, { photoTakenUnix: number | null; sourceZip: string }> {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT photo_basename, photo_taken_unix, source_zip
+    FROM (
+      SELECT photo_basename, photo_taken_unix, source_zip,
+             ROW_NUMBER() OVER (
+               PARTITION BY photo_basename
+               ORDER BY CASE WHEN photo_taken_unix IS NOT NULL THEN 0 ELSE 1 END,
+                        scanned_at DESC
+             ) AS rn
+      FROM takeout_sidecars
+    )
+    WHERE rn = 1
+  `).all() as Array<{ photo_basename: string; photo_taken_unix: number | null; source_zip: string }>;
+  const out: Record<string, { photoTakenUnix: number | null; sourceZip: string }> = {};
+  for (const r of rows) {
+    out[r.photo_basename] = { photoTakenUnix: r.photo_taken_unix, sourceZip: r.source_zip };
+  }
+  return out;
+}
+
 // ─── LDM summary API ─────────────────────────────────────────────────────────
 //
 // The Library Drive Manager's Takeout-metadata row needs to show

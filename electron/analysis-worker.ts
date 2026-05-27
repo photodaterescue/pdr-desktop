@@ -3,37 +3,51 @@
  * per-file CPU work of `analyzeSource` (folder/zip walk, EXIF parse,
  * hashing, dedup, scanner detect) off the main browser thread.
  *
- * Why this exists (v2.0.14):
+ * Why this exists (v2.0.14, Terry 2026-05-27):
  *   Before this refactor, analyzeSource ran in the main Electron
  *   process. On a 6,000-file library plus the renderer's mount-time
  *   IPCs (AlbumsView's three SQL queries + IntersectionObserver
  *   thumbnail requests), the main thread blocked long enough that
  *   Windows ghosted the renderer as "Not Responding" (white-titlebar
- *   flash for ~5 s). Same architectural fix as cleanup-worker.cjs /
- *   extract-worker.cjs / conversion-worker.cjs — heavy CPU work moves
- *   to its own OS process; main stays free to service the renderer.
+ *   flash for ~5 s) and thumbnails arrived seconds late. Same
+ *   architectural fix as cleanup-worker.cjs / extract-worker.cjs /
+ *   conversion-worker.cjs — heavy CPU work moves to its own OS
+ *   process; main stays free to service the renderer.
  *
  * Lifecycle:
  *   1. Main forks this worker via utilityProcess.fork (typically
  *      pre-forked at app startup so the first Add Source click
  *      doesn't pay the ~200-500 ms spawn cost).
- *   2. Main posts a 'start' message with the source path, type, and
+ *   2. Main posts a 'start' message with sourcePath/sourceType and
  *      snapshots of the two main-only datasets the worker needs
- *      (scanner overrides + Takeout sidecar map).
- *   3. Worker streams 'progress' / 'diagnostic' / 'fileBatch'
- *      messages back; concludes with 'done' (success) or 'cancelled'
- *      / 'error' on failure.
- *   4. Main kills the worker after 'done' / 'cancelled' / 'error'.
+ *      (scanner overrides + Takeout sidecar map). The worker
+ *      configures the shared analysis-engine module with snapshot-
+ *      backed lookups so the same per-file logic runs unchanged.
+ *   3. Worker streams 'progress' / 'diagnostic' messages back; when
+ *      the analyzeSource Promise resolves, posts the full
+ *      SourceAnalysisResult as a single 'done' message. Plain JSON
+ *      shape, structured-clone-safe.
+ *   4. Cancellation: main posts a 'cancel' message; worker calls
+ *      cancelAnalysis() on its analysis-engine instance, which flips
+ *      the engine's internal flag the per-file loops poll.
+ *   5. Main kills the worker after 'done' / 'cancelled' / 'error'.
  *
- * Phase A scaffold:
- *   This stub establishes the IPC contract + packaging plumbing
- *   without porting any analysis logic yet. The orchestrator on the
- *   main side will continue to fall back to in-process analyzeSource
- *   until Phase B lands; once Phase B lands the orchestrator forks
- *   this worker instead. Sending a 'start' to this stub today returns
- *   an immediate 'error' so any accidental wiring during development
- *   surfaces loudly rather than silently failing.
+ * Why analysis-engine itself moved to CJS:
+ *   utilityProcess workers can't require ESM modules, so analysis-
+ *   engine.ts compiles via tsconfig.worker.json (CommonJS) and main
+ *   imports it via the `.cjs` extension with a `.d.cts` shim for
+ *   TypeScript types. date-extraction-engine, scanner-detection, and
+ *   source-classifier follow the same pattern — all four are shared
+ *   between main + worker, no duplication.
  */
+
+import {
+  analyzeSource,
+  cancelAnalysis,
+  configureDeps,
+  AnalysisProgress,
+  SourceAnalysisResult,
+} from './analysis-engine.cjs';
 
 // ─── IPC types — main → worker ─────────────────────────────────────────────
 
@@ -42,15 +56,12 @@ interface StartMessage {
   sourcePath: string;
   sourceType: 'folder' | 'zip' | 'drive';
   /** Snapshot of `listScannerOverrides()` taken on main at orchestrator
-   *  entry, since the worker can't import settings-store. */
+   *  entry. The worker can't import settings-store (electron-store) so
+   *  the data arrives by value. */
   scannerOverrides: Array<{ make: string; model: string; isScanner: boolean }>;
   /** Snapshot of the takeout_sidecars table keyed by photo basename.
-   *  Worker does pure Map.get(basename) lookups instead of round-tripping
-   *  to main's SQLite handle. */
+   *  Worker does pure Map.get(basename) lookups. */
   sidecarMapByBasename: Record<string, { photoTakenUnix: number | null; sourceZip: string }>;
-  largeFileThresholdBytes: number;
-  largeBufferLoadThresholdBytes: number;
-  minHeuristicSizeBytes: number;
 }
 
 interface CancelMessage {
@@ -60,47 +71,20 @@ interface CancelMessage {
 type InboundMessage = StartMessage | CancelMessage;
 
 // ─── IPC types — worker → main ─────────────────────────────────────────────
-// Kept in sync with electron/analysis-engine.ts AnalysisProgress shape so
-// main can forward straight through to the renderer's analysis:progress
-// channel without re-shaping.
 
 interface ProgressMessage {
   type: 'progress';
-  current: number;
-  total: number;
-  currentFile: string;
-  phase: 'scanning' | 'analyzing' | 'complete';
+  progress: AnalysisProgress;
 }
 
 interface DiagnosticMessage {
   type: 'diagnostic';
-  /** A single line of the form `[PDR-DIAG ...]`. Main forwards verbatim
-   *  to analysis:diagnostic so F12 receives them unchanged. */
   line: string;
-}
-
-interface FileBatchMessage {
-  type: 'fileBatch';
-  /** Plain JSON shapes — never class instances. Structured-clone-safe. */
-  results: unknown[];
-  duplicatesInBatch: Array<{ filename: string; duplicateOf: string; type: 'photo' | 'video'; duplicateMethod?: string }>;
-  skippedInBatch: Array<{ filename: string; reason: string }>;
 }
 
 interface DoneMessage {
   type: 'done';
-  totalFiles: number;
-  photoCount: number;
-  videoCount: number;
-  totalSizeBytes: number;
-  earliest: string | null;
-  latest: string | null;
-  confidenceSummary: { confirmed: number; recovered: number; marked: number };
-  duplicatesRemoved: number;
-  duplicateFiles: Array<{ filename: string; duplicateOf: string; type: 'photo' | 'video'; duplicateMethod?: string }>;
-  skippedFiles: Array<{ filename: string; reason: string }>;
-  peakRssMB: number;
-  peakHeapUsedMB: number;
+  result: SourceAnalysisResult;
 }
 
 interface CancelledMessage {
@@ -116,7 +100,6 @@ interface ErrorMessage {
 type OutboundMessage =
   | ProgressMessage
   | DiagnosticMessage
-  | FileBatchMessage
   | DoneMessage
   | CancelledMessage
   | ErrorMessage;
@@ -130,27 +113,77 @@ const parentPort = (process as unknown as {
   };
 }).parentPort;
 
-let cancelled = false;
+let started = false;
 
 parentPort.on('message', (e) => {
   const msg = e.data;
+
   if (msg.type === 'cancel') {
-    cancelled = true;
+    // The worker shares one analysis-engine module instance. Flipping
+    // its cancel flag stops the per-file loops at their next check.
+    // analyzeSource throws ANALYSIS_CANCELLED which our catch below
+    // translates to a 'cancelled' IPC message. The pending fork is
+    // killed by main after that.
+    cancelAnalysis();
     return;
   }
+
   if (msg.type === 'start') {
-    // Phase A: not yet implemented. The main-side orchestrator should
-    // still be using its in-process fallback at this point — receiving
-    // a 'start' here means the wiring is live ahead of Phase B. Reply
-    // loud and clear so it surfaces immediately rather than silently
-    // hanging.
-    parentPort.postMessage({
-      type: 'error',
-      message: 'analysis-worker stub: Phase B port not yet landed',
-      code: 'ANALYSIS_WORKER_STUB',
+    if (started) {
+      parentPort.postMessage({
+        type: 'error',
+        message: 'analysis-worker received a second start before completing the first',
+        code: 'WORKER_BUSY',
+      });
+      return;
+    }
+    started = true;
+
+    // Build the two snapshot-backed lookup functions. Scanner overrides
+    // are a short array (single-digit rows typical) so a linear scan is
+    // fine. Sidecar map is keyed by basename so direct lookup is O(1).
+    const scannerOverrideMap = new Map<string, boolean>();
+    for (const ov of msg.scannerOverrides) {
+      const key = `${(ov.make ?? '').toLowerCase()}|${(ov.model ?? '').toLowerCase()}`;
+      scannerOverrideMap.set(key, ov.isScanner);
+    }
+    const sidecarMap = msg.sidecarMapByBasename;
+
+    configureDeps({
+      getScannerOverride: (make, model) => {
+        const key = `${(make ?? '').toLowerCase()}|${(model ?? '').toLowerCase()}`;
+        return scannerOverrideMap.has(key) ? scannerOverrideMap.get(key)! : null;
+      },
+      lookupSidecarByBasename: (basename) => sidecarMap[basename] ?? null,
     });
+
+    // Run the analysis. analyzeSource is identical to the in-process
+    // version — same code, just executing in a separate OS process. The
+    // result is plain JSON (already structured-clone-safe today), so
+    // posting it whole in 'done' is fine.
+    analyzeSource(
+      msg.sourcePath,
+      msg.sourceType,
+      (progress) => {
+        parentPort.postMessage({ type: 'progress', progress });
+      },
+      (line) => {
+        parentPort.postMessage({ type: 'diagnostic', line });
+      },
+    )
+      .then((result) => {
+        parentPort.postMessage({ type: 'done', result });
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message === 'ANALYSIS_CANCELLED') {
+          parentPort.postMessage({ type: 'cancelled' });
+        } else {
+          parentPort.postMessage({ type: 'error', message });
+        }
+      });
     return;
   }
 });
 
-console.log('[analysis-worker] stub ready (Phase A — no analysis logic yet)');
+console.log('[analysis-worker] ready');

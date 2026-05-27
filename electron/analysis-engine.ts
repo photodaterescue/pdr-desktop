@@ -11,11 +11,35 @@ import {
   parseGoogleTakeoutJsonContent,
   findGoogleTakeoutSidecar,
   generateDateBasedFilename,
-} from './date-extraction-engine.js';
-import { isScannerDevice } from './scanner-detection.js';
-import { getScannerOverride } from './settings-store.js';
-import { classifySource } from './source-classifier.js';
-import { lookupSidecarByBasename } from './takeout-sidecar-cache.js';
+} from './date-extraction-engine.cjs';
+import { isScannerDevice } from './scanner-detection.cjs';
+import { classifySource } from './source-classifier.cjs';
+
+// v2.0.14 — analysis-engine is shared between main (via the
+// orchestrator) and the analysis-worker utility process. It must NOT
+// import settings-store (Electron-only, electron-store inside) or
+// takeout-sidecar-cache (DB-backed). Both lookups are injected via
+// `configureDeps()` from whichever side is running the engine:
+//   • Main / orchestrator passes real getScannerOverride +
+//     lookupSidecarByBasename.
+//   • Worker passes snapshot-backed implementations built from data
+//     received in the 'start' message.
+// The engine is single-use at any moment (one analyze pass at a time),
+// so module-level deps state is safe — but reset on the way out of
+// analyzeSource to avoid stale closures leaking into a subsequent run.
+export interface AnalysisDeps {
+  getScannerOverride: (make: string | null, model: string | null) => boolean | null;
+  lookupSidecarByBasename: (basename: string) => { photoTakenUnix: number | null; sourceZip: string } | null;
+}
+
+let deps: AnalysisDeps = {
+  getScannerOverride: () => null,
+  lookupSidecarByBasename: () => null,
+};
+
+export function configureDeps(next: AnalysisDeps): void {
+  deps = next;
+}
 import * as crypto from 'crypto';
 
 // Yield to event loop to keep UI responsive
@@ -314,7 +338,7 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
   // archive part. Closes the 267-file dedup miss Terry diagnosed
   // on 2026-05-25.
   if (!derivedDate) {
-    const cached = lookupSidecarByBasename(filename);
+    const cached = deps.lookupSidecarByBasename(filename);
     if (cached?.photoTakenUnix) {
       derivedDate = new Date(cached.photoTakenUnix * 1000);
       dateSource = `Google Takeout JSON (cross-part: ${cached.sourceZip})`;
@@ -369,7 +393,7 @@ async function analyzeFileFromPath(filePath: string, filename: string, sizeBytes
   // relying on a later re-classification in the search indexer.
   if (dateConfidence !== 'marked') {
     const { make, model, software } = await extractExifCameraInfoFromPath(filePath);
-    const override = getScannerOverride(make, model);
+    const override = deps.getScannerOverride(make, model);
     const treatAsScanner = override !== null ? override : isScannerDevice(make, model, software);
     if (treatAsScanner) {
       dateConfidence = 'marked';
@@ -430,7 +454,7 @@ async function analyzeFileFromBuffer(
   // as the in-zip sidecar above — the sidecar exists, just lives in
   // a different part of the same multi-part export.
   if (!derivedDate) {
-    const cached = lookupSidecarByBasename(filename);
+    const cached = deps.lookupSidecarByBasename(filename);
     if (cached?.photoTakenUnix) {
       derivedDate = new Date(cached.photoTakenUnix * 1000);
       dateSource = `Google Takeout JSON (cross-part: ${cached.sourceZip})`;
@@ -476,7 +500,7 @@ async function analyzeFileFromBuffer(
   // analyzer so ZIP-archive imports are classified consistently.
   if (dateConfidence !== 'marked') {
     const { make, model, software } = extractExifCameraInfoFromBuffer(buffer);
-    const override = getScannerOverride(make, model);
+    const override = deps.getScannerOverride(make, model);
     const treatAsScanner = override !== null ? override : isScannerDevice(make, model, software);
     if (treatAsScanner) {
       dateConfidence = 'marked';

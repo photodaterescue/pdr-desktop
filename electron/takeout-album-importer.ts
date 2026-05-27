@@ -30,7 +30,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as unzipper from 'unzipper';
-import { parseGoogleTakeoutJson, parseGoogleTakeoutJsonContent } from './date-extraction-engine.js';
+import { parseGoogleTakeoutJson, parseGoogleTakeoutJsonContent } from './date-extraction-engine.cjs';
 import {
   upsertTakeoutAlbum,
   linkAlbumFile,

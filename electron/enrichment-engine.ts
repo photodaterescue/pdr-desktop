@@ -61,7 +61,7 @@ import path from 'path';
 import { getDb } from './search-database.js';
 import { lookupSidecarByBasename } from './takeout-sidecar-cache.js';
 import { writeEnrichmentExif } from './exif-writer.js';
-import { generateDateBasedFilename } from './date-extraction-engine.js';
+import { generateDateBasedFilename } from './date-extraction-engine.cjs';
 import { toLongPath } from './long-path.js';
 
 // v2.0.13 — streaming SHA-256 of a file. Used by the bothExist

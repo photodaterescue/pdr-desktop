@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["ai-worker.ts", "conversion-worker.ts", "startup-worker.ts", "extract-worker.ts", "cleanup-worker.ts", "analysis-worker.ts"],
+  "include": ["ai-worker.ts", "conversion-worker.ts", "startup-worker.ts", "extract-worker.ts", "cleanup-worker.ts", "analysis-worker.ts", "date-extraction-engine.ts", "scanner-detection.ts", "source-classifier.ts", "analysis-engine.ts", "*.d.ts"],
   "exclude": ["node_modules"]
 }
