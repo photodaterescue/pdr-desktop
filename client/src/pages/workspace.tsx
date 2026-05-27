@@ -10504,6 +10504,33 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.13" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.13</span>
+                        {appVersion === '2.0.13' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">Cross-part Google Takeout enrichment, photo captions, and a smarter By-Date timeline.</strong> Three substantial new features plus several robustness fixes from real-library testing.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Cross-part Takeout enrichment</strong> &mdash; Google&apos;s multi-part Takeouts split photos and their JSON sidecars across different ZIP parts. v2.0.13 pre-scans every part&apos;s sidecars into a cross-part cache and runs an Enrichment pass that retroactively upgrades each photo: writes the precise EXIF date, GPS coordinates, the original Google Photos caption, and seeds suggested face names. Strictly additive &mdash; never overrides a date you&apos;ve manually set, a face you&apos;ve named, or a caption you&apos;ve typed. Found under &ldquo;Takeout metadata&rdquo; in the Library Drive Manager.</li>
+                        <li><strong className="text-foreground font-medium">Photo captions</strong> &mdash; right-click any photo in Albums, By Date, or Search &amp; Discovery and pick &ldquo;Add caption&rdquo; to type a note. Saved in your PDR library and (when possible) written into the photo&apos;s EXIF ImageDescription + XMP dc:description so it exports alongside the file. A small gold chat-bubble indicator marks captioned thumbnails; hovering anywhere on the photo reveals the caption in a PDR-gold tooltip &mdash; visually distinct from PDR&apos;s lavender system tooltips so personal notes feel personal. The photo viewer shows a dedicated caption row below the filmstrip.</li>
+                        <li><strong className="text-foreground font-medium">Captioned-only filter in Albums</strong> &mdash; when an album contains any captioned photos, a gold &ldquo;Captioned only &middot; N&rdquo; chip appears in the header. Click to narrow the grid to just the captioned ones.</li>
+                        <li><strong className="text-foreground font-medium">By-Date timeline rebuild</strong> &mdash; the month drilldown now groups photos by day with sticky long-form headers (&ldquo;Tuesday, 7 February 2022 &mdash; 23 photos&rdquo;). A floating &ldquo;current day&rdquo; pill follows your scroll position so you always know what date you&apos;re looking at. Two prev/next arrows in the bottom-right corner (and PageUp / PageDown on the keyboard) jump cleanly between days.</li>
+                        <li><strong className="text-foreground font-medium">Library Drive Manager: &ldquo;Last enriched&rdquo;</strong> &mdash; the Takeout metadata section now shows a &ldquo;Last enriched X ago &mdash; N files upgraded&rdquo; line so you can see at a glance when the pass last ran without opening the modal.</li>
+                        <li><strong className="text-foreground font-medium">Set as album thumbnail</strong> &mdash; right-click any photo in an open album and pick &ldquo;Set as album thumbnail&rdquo; to override the auto-picked first-photo cover. The album list updates immediately.</li>
+                        <li><strong className="text-foreground font-medium">Enrichment dedup</strong> &mdash; when the same photo has been Fixed twice from different sources (one with a sidecar, one without), PDR now SHA-256-compares the two copies and cleans up the redundant one. Same-size copies whose only difference is EXIF metadata get a smarter image-data hash so they&apos;re recognised as the same photo.</li>
+                        <li><strong className="text-foreground font-medium">Custom monthly thumbnail refresh fix</strong> &mdash; setting &ldquo;Set as monthly thumbnail&rdquo; on a photo now refreshes the By-Date grid immediately. Previously the tile kept showing the auto-picked image until the page was reloaded.</li>
+                        <li><strong className="text-foreground font-medium">Caption save no longer freezes the window</strong> &mdash; the EXIF write runs in the background instead of holding the IPC open while exiftool&apos;s subprocess is busy with another caller.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.12" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
