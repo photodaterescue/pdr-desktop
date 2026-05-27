@@ -50,6 +50,8 @@ import { DensityToggle, type Density } from '@/components/ui/density-toggle';
 import AddToAlbumPopover from './AddToAlbumPopover';
 import { getPrefetchedMemories, getPrefetchedThumb, invalidatePrefetchedMemories } from '../lib/memories-prefetch';
 import { editPhotoCaption } from '@/lib/caption-actions';
+import { CaptionBadge } from '@/components/CaptionBadge';
+import { CaptionTooltip } from '@/components/ui/caption-tooltip';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -1119,6 +1121,21 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return () => { cancelled = true; };
   }, [year, month, day, runIdsKey]);
 
+  // v2.0.13 — keep the in-state caption in sync with edits made via
+  // the right-click "Caption…" menu, so the indicator badge appears /
+  // disappears immediately without a manual refresh. The event detail
+  // carries the new caption value so we patch in place rather than
+  // re-fetching the whole files array.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ fileId: number; caption: string }>).detail;
+      if (!detail) return;
+      setFiles((prev) => prev ? prev.map((f) => f.id === detail.fileId ? { ...f, caption: detail.caption || null } : f) : prev);
+    };
+    window.addEventListener('pdr:captionsChanged', handler);
+    return () => window.removeEventListener('pdr:captionsChanged', handler);
+  }, []);
+
   // v2.0.13 (Terry 2026-05-26) — Day grouping + scroll-position
   // affordances.
   //
@@ -1511,23 +1528,19 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     const idx = group.baseIndex + dayIdx;
               const isMultiSelected = selectedFileIds.has(f.id);
               return (
-              <ContextMenu key={f.id}>
+              // v2.0.13 (Terry 2026-05-27) — CaptionTooltip wraps the
+              // whole tile so the gold caption preview fires on any
+              // hover, not just on the corner badge. The wrapping div
+              // is the tooltip's asChild target; ContextMenuTrigger
+              // asChild still forwards to the button inside, so
+              // right-click is unaffected. Caption-less tiles
+              // short-circuit inside CaptionTooltip and render their
+              // children straight through (no wrapper overhead).
+              <CaptionTooltip key={f.id} caption={f.caption} side="top">
+                <div className="aspect-square">
+              <ContextMenu>
                 <ContextMenuTrigger asChild>
                     <button
-                      // Native title attribute (sanctioned by
-                      // IconTooltip's own source comment for tile-
-                      // grid use cases — "Keep native title= only for
-                      // pure overflow/truncation previews ... where
-                      // converting thousands of DOM nodes to Radix
-                      // tooltips would be a perf regression"). The
-                      // previous IconTooltip wrapper broke
-                      // ContextMenuTrigger asChild because Radix
-                      // tried to forward trigger props to the
-                      // TooltipProvider element — context-menu event
-                      // never reached the button. With native title
-                      // the button IS the trigger's direct child, so
-                      // right-click works.
-                      title={f.caption ? `${f.filename} · ${formatHumanDate(f.derived_date)}\n\n${f.caption}` : `${f.filename} · ${formatHumanDate(f.derived_date)}`}
                       // Modifier-key contract mirrors SearchPanel/S&D:
                       //   plain click            → open viewer (jump in at idx)
                       //   selectionMode + click  → toggle selection (Select-button affordance)
@@ -1563,7 +1576,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         lastClickedIndexRef.current = idx;
                         openSearchViewer(files.map(x => x.file_path), files.map(x => x.filename), idx);
                       }}
-                      className={`group relative aspect-square overflow-hidden bg-secondary/30 transition-all ${
+                      className={`group relative w-full h-full overflow-hidden bg-secondary/30 transition-all ${
                         isMultiSelected ? 'ring-2 ring-primary' :
                         density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50'
                       }`}
@@ -1614,6 +1627,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                           <Film className="w-2.5 h-2.5" /> Video
                         </div>
                       )}
+                      <CaptionBadge caption={f.caption} />
                       {/* Footer strip — only rendered when at least one
                           meta field is enabled, so the default view is a
                           clean photo wall with zero overlay. */}
@@ -1699,6 +1713,8 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   )}
                 </ContextMenuContent>
               </ContextMenu>
+                </div>
+              </CaptionTooltip>
               );
             })}
                 </div>

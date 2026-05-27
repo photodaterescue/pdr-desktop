@@ -74,7 +74,7 @@ export async function editPhotoCaption(args: {
     const res = await api.clear(args.fileId, writeExif);
     if (res.success) {
       toast.success('Caption removed');
-      window.dispatchEvent(new CustomEvent('pdr:captionsChanged', { detail: { fileId: args.fileId } }));
+      window.dispatchEvent(new CustomEvent('pdr:captionsChanged', { detail: { fileId: args.fileId, caption: trimmed } }));
       return null;
     }
     toast.error('Couldn’t remove caption', { description: res.error });
@@ -83,7 +83,7 @@ export async function editPhotoCaption(args: {
   const res = await api.set(args.fileId, trimmed, writeExif);
   if (res.success) {
     toast.success(initial.length > 0 ? 'Caption updated' : 'Caption saved');
-    window.dispatchEvent(new CustomEvent('pdr:captionsChanged', { detail: { fileId: args.fileId } }));
+    window.dispatchEvent(new CustomEvent('pdr:captionsChanged', { detail: { fileId: args.fileId, caption: trimmed } }));
     return trimmed;
   }
   toast.error('Couldn’t save caption', { description: res.error });
@@ -107,7 +107,7 @@ export async function removePhotoCaption(args: {
   const res = await api.clear(args.fileId, writeExif);
   if (res.success) {
     toast.success('Caption removed');
-    window.dispatchEvent(new CustomEvent('pdr:captionsChanged', { detail: { fileId: args.fileId } }));
+    window.dispatchEvent(new CustomEvent('pdr:captionsChanged', { detail: { fileId: args.fileId, caption: '' } }));
     return true;
   }
   toast.error('Couldn’t remove caption', { description: res.error });

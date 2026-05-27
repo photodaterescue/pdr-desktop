@@ -68,6 +68,8 @@ import {
 } from '../lib/electron-bridge';
 import { promptConfirm } from './trees/promptConfirm';
 import { editPhotoCaption } from '@/lib/caption-actions';
+import { CaptionBadge } from '@/components/CaptionBadge';
+import { CaptionTooltip } from '@/components/ui/caption-tooltip';
 import {
   getSourceProfileForGroup,
   getSourceProfileForAlbum,
@@ -189,6 +191,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const [selection, setSelection] = useState<Selection>({ type: 'all' });
   const [albumPhotos, setAlbumPhotos] = useState<IndexedFile[]>([]);
   const [albumPhotosLoading, setAlbumPhotosLoading] = useState(false);
+  // v2.0.13 (Terry 2026-05-27) — "Captioned only" filter. Narrows the
+  // album's photo grid to just the rows whose indexed_files.caption is
+  // non-empty. Toggled per-album via a header button; resets to OFF
+  // whenever the user navigates to a different album so a niche
+  // filter doesn't silently follow them around the library.
+  const [captionedOnly, setCaptionedOnly] = useState(false);
+  useEffect(() => { setCaptionedOnly(false); }, [selection]);
 
   // ── "Export as Parallel Library" entry point (v2.0.8 step 6) ─────
   // The PL wizard is re-used as a verb invoked from this album view —
@@ -1135,6 +1144,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return () => { cancelled = true; };
   }, [selection]);
 
+  // v2.0.13 — keep caption state in sync with edits from the right-
+  // click "Caption…" menu so the indicator badge appears / disappears
+  // immediately without a manual refresh.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ fileId: number; caption: string }>).detail;
+      if (!detail) return;
+      setAlbumPhotos((prev) => prev.map((f) => f.id === detail.fileId ? { ...f, caption: detail.caption || null } : f));
+    };
+    window.addEventListener('pdr:captionsChanged', handler);
+    return () => window.removeEventListener('pdr:captionsChanged', handler);
+  }, []);
+
   // ── Thumbnail loader (album photos only — covers are lazy) ───────
   // Album-detail photos (the contents of one opened album) are
   // loaded up-front because there's only ever one album-worth of
@@ -1339,8 +1361,15 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     }
   };
   const handleOpenPhoto = async (idx: number) => {
-    const paths = albumPhotos.map((p) => p.file_path);
-    const names = albumPhotos.map((p) => p.filename);
+    // v2.0.13 — when the "Captioned only" filter is on, the viewer
+    // opens with just the filtered subset so arrow-key navigation
+    // stays within the photos the user can see. Otherwise the
+    // viewer opens with the full album, the way it always did.
+    const source = captionedOnly
+      ? albumPhotos.filter((p) => p.caption && p.caption.length > 0)
+      : albumPhotos;
+    const paths = source.map((p) => p.file_path);
+    const names = source.map((p) => p.filename);
     await openSearchViewer(paths, names, idx);
   };
 
@@ -2274,6 +2303,33 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 {selectedAlbum.source === 'takeout_imported' && (
                   <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full shrink-0">From Google Takeout</span>
                 )}
+                {/* v2.0.13 (Terry 2026-05-27) — Captioned-only filter.
+                    Gold styling when active so it visually links to the
+                    gold caption tooltip / badge across the rest of PDR.
+                    Only rendered when at least one photo in this album
+                    has a caption — otherwise the toggle would just
+                    confuse the user with an empty result set. */}
+                {(() => {
+                  const captionedCount = albumPhotos.filter((p) => p.caption && p.caption.length > 0).length;
+                  if (captionedCount === 0) return null;
+                  return (
+                    <IconTooltip label={captionedOnly ? 'Show all photos' : 'Show only photos with captions'} side="bottom">
+                      <button
+                        type="button"
+                        onClick={() => setCaptionedOnly((v) => !v)}
+                        data-testid="album-captioned-only-toggle"
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+                          captionedOnly
+                            ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
+                            : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                        }`}
+                      >
+                        <MessageSquareText className="w-3 h-3" />
+                        Captioned only · {captionedCount.toLocaleString()}
+                      </button>
+                    </IconTooltip>
+                  );
+                })()}
                 {/* Right-cluster: + (add from elsewhere) + zoom +
                     density + Export-as-PL CTA. Order reads left-to-
                     right as "summon photos → size → spacing →
@@ -2435,26 +2491,31 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 className={`grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumPhotoTilePx}px, 1fr))` }}
               >
-                {albumPhotos.map((p, i) => (
+                {(captionedOnly ? albumPhotos.filter((p) => p.caption && p.caption.length > 0) : albumPhotos).map((p, i) => (
                   // v2.0.13 — per-photo ContextMenu. The OUTER ContextMenu
                   // wrapping the whole grid handles right-clicks on the
                   // empty grid area (Add photos from S&D / By Date). This
                   // inner ContextMenu takes precedence on a specific
-                  // photo, surfacing the per-photo actions (caption edit
-                  // today; album-membership ops can join later).
-                  <ContextMenu key={p.id}>
+                  // photo. CaptionTooltip wraps the whole tile (via the
+                  // intermediate <div>) so hovering anywhere on the
+                  // photo reveals the gold caption preview; the button
+                  // inside is still ContextMenuTrigger's asChild target,
+                  // so right-click is unaffected.
+                  <CaptionTooltip key={p.id} caption={p.caption} side="top">
+                    <div className="aspect-square">
+                  <ContextMenu>
                     <ContextMenuTrigger asChild>
                       <button
                         type="button"
                         onClick={() => handleOpenPhoto(i)}
-                        title={p.caption ? `${p.filename}\n\n${p.caption}` : p.filename}
-                        className={`aspect-square overflow-hidden ${density === 'tight' ? 'rounded-none border-0' : 'rounded-lg border border-border'} hover:ring-2 hover:ring-primary/40 transition-all`}
+                        className={`relative w-full h-full overflow-hidden ${density === 'tight' ? 'rounded-none border-0' : 'rounded-lg border border-border'} hover:ring-2 hover:ring-primary/40 transition-all`}
                       >
                         {thumbs[p.file_path] ? (
                           <img src={thumbs[p.file_path]} alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
                         ) : (
                           <div className="w-full h-full skeleton-shimmer" />
                         )}
+                        <CaptionBadge caption={p.caption} />
                       </button>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
@@ -2511,6 +2572,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
+                    </div>
+                  </CaptionTooltip>
                 ))}
               </div>
               </>

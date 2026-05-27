@@ -405,6 +405,18 @@ export async function runEnrichment(
            confidence = ?, date_source = ?, file_path = ?, filename = ?
      WHERE id = ?
   `);
+  // v2.0.13 (Terry 2026-05-27) — also write the sidecar's caption
+  // into indexed_files.caption so PDR's own surfaces (thumbnail
+  // indicator badge, viewer caption row, right-click "Edit caption"
+  // modal) all see the Takeout-imported caption uniformly with
+  // manually-set ones. Additive only: never overwrites a caption the
+  // user has already typed. The COALESCE keeps the existing value
+  // when it's non-null and non-empty.
+  const captionMergeStmt = db.prepare(`
+    UPDATE indexed_files
+       SET caption = COALESCE(NULLIF(caption, ''), ?)
+     WHERE id = ?
+  `);
   const auditStmt = db.prepare(`
     INSERT INTO enrichment_log (
       file_id, old_file_path, new_file_path,
@@ -675,6 +687,14 @@ export async function runEnrichment(
                 row.id,
               );
             }
+            // Write the sidecar's caption to the SURVIVING row if it
+            // doesn't already have one. additive-only — never
+            // overrides a manually-set caption on the kept copy.
+            if (typeof sidecar.description === 'string' && sidecar.description.length > 0) {
+              try {
+                captionMergeStmt.run(sidecar.description, auditFileId);
+              } catch { /* non-fatal */ }
+            }
             summary.dedupedDuplicates++;
             summary.upgraded++;
             caseCounts.driftAdopted++;
@@ -818,6 +838,16 @@ export async function runEnrichment(
         newFilename,
         row.id,
       );
+
+      // Caption merge — additive only. Skipped when the sidecar
+      // didn't carry a description, OR when the row already has a
+      // non-empty caption (the COALESCE inside the prepared statement
+      // is the actual guard, but skipping the IPC saves a write).
+      if (typeof sidecar.description === 'string' && sidecar.description.length > 0) {
+        try {
+          captionMergeStmt.run(sidecar.description, row.id);
+        } catch { /* non-fatal */ }
+      }
 
       // Face-name hints — additive only.
       if (sidecar.peopleJson) {

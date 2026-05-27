@@ -86,6 +86,8 @@ import {
   ContextMenuItem,
 } from '@/components/ui/context-menu';
 import { editPhotoCaption } from '@/lib/caption-actions';
+import { CaptionBadge } from '@/components/CaptionBadge';
+import { CaptionTooltip } from '@/components/ui/caption-tooltip';
 import ParallelStructureModal from '@/components/ParallelStructureModal';
 import AddToAlbumPopover from '@/components/AddToAlbumPopover';
 import StaleRunsModal from '@/components/StaleRunsModal';
@@ -301,6 +303,19 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   // Notify parent when search results are showing/hiding
   useEffect(() => { onSearchActiveChange?.(searchActive); }, [searchActive, onSearchActiveChange]);
+
+  // v2.0.13 — keep result-row captions in sync with edits via the
+  // right-click "Caption…" menu so the indicator badge appears /
+  // disappears immediately. Surgical patch — no re-query needed.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ fileId: number; caption: string }>).detail;
+      if (!detail) return;
+      setResults((prev) => prev ? { ...prev, files: prev.files.map((f) => f.id === detail.fileId ? { ...f, caption: detail.caption || null } : f) } : prev);
+    };
+    window.addEventListener('pdr:captionsChanged', handler);
+    return () => window.removeEventListener('pdr:captionsChanged', handler);
+  }, []);
 
   // When the parent signals a close (navigating away to Memories /
   // Trees / Dashboard), preserve the filter state + results so the
@@ -4883,15 +4898,18 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
-  // v2.0.13 — caption preview in the native title so hover reveals
-  // the user's caption without opening the viewer. Matches the same
-  // "native title for tile grids" pattern MemoriesView uses to avoid
-  // forwarding-ref issues with ContextMenuTrigger asChild.
-  const titleText = file.caption ? `${file.filename}\n\n${file.caption}` : file.filename;
+  // v2.0.13 (Terry 2026-05-27) — no native title attr. Filename is
+  // available via the meta-fields dropdown (footer strip) or by
+  // opening the photo in the viewer. Caption gets its own PDR-gold
+  // CaptionTooltip on whole-tile hover. The intermediate div is the
+  // tooltip's asChild target; ContextMenuTrigger asChild still
+  // forwards to the file-card div inside so right-click works.
   return (
+    <CaptionTooltip caption={file.caption} side="top">
+      <div>
     <ContextMenu>
       <ContextMenuTrigger asChild>
-    <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick} title={titleText}
+    <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick}
       // Premium hover: subtle 2px lift + softer shadow so the tile
       // pops out of the dense gap-0 grid. `relative hover:z-10` is
       // critical — without it the lifted tile's shadow gets clipped
@@ -4922,6 +4940,7 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
             <div className="p-2 rounded-full bg-black/50 text-white/90"><Maximize2 className="w-4 h-4" /></div>
           </div>
         )}
+        <CaptionBadge caption={file.caption} />
       </div>
       {hasAnyMeta && (
         <div className="p-2 space-y-0.5">
@@ -4955,6 +4974,8 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+      </div>
+    </CaptionTooltip>
   );
 }
 

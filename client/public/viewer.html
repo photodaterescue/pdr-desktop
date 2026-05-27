@@ -209,6 +209,39 @@
       flex-shrink: 0;
     }
     .zoom-level { font-weight: 500; color: #A99CFF; }
+    /* v2.0.13 — caption row. Sits between the photo container and
+       the filmstrip so it's always visible when present without
+       eating any of the photo's viewing space. Dark-theme typography
+       mirrors the info-bar but with a subtle accent border at the
+       left so the user can tell it's the photo's caption rather than
+       a status line. Hidden when the photo has no caption. */
+    .caption-bar {
+      display: none;
+      padding: 8px 16px;
+      background: #12122a;
+      border-top: 1px solid rgba(169, 156, 255, 0.15);
+      border-left: 3px solid rgba(169, 156, 255, 0.55);
+      color: #d4d0e8;
+      font-size: 13px;
+      line-height: 1.45;
+      flex-shrink: 0;
+      max-height: 30vh;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .caption-bar.has-caption { display: block; }
+    .caption-bar .caption-label {
+      display: inline-block;
+      margin-right: 8px;
+      color: #A99CFF;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      vertical-align: middle;
+    }
+    .caption-bar .caption-text { vertical-align: middle; }
     .no-image {
       display: flex;
       flex-direction: column;
@@ -353,6 +386,10 @@
     </div>
   </div>
   <div id="filmstrip" class="filmstrip" style="display:none"></div>
+  <div id="captionBar" class="caption-bar">
+    <span class="caption-label">Caption</span>
+    <span class="caption-text" id="captionText"></span>
+  </div>
   <div class="info-bar">
     <span id="dimensions"></span>
     <span class="zoom-level" id="zoomLabel">100%</span>
@@ -549,6 +586,43 @@
       placeholder.style.display = 'flex';
     }
 
+    // v2.0.13 — caption row state. Fetched per file via IPC so the
+    // viewer doesn't need the captions list passed up-front; any
+    // surface that opens openSearchViewer just needs to pass paths.
+    const captionBarEl = document.getElementById('captionBar');
+    const captionTextEl = document.getElementById('captionText');
+    let captionFetchToken = 0;
+    function loadCaptionFor(filePath) {
+      const token = ++captionFetchToken;
+      try {
+        if (!window.pdr || !window.pdr.captions || !window.pdr.captions.getByPath) {
+          // Bridge not exposed (older preload) — hide row.
+          captionBarEl.classList.remove('has-caption');
+          captionTextEl.textContent = '';
+          return;
+        }
+        window.pdr.captions.getByPath(filePath).then((res) => {
+          // Stale response — user has already navigated to another photo.
+          if (token !== captionFetchToken) return;
+          const caption = res && res.success && typeof res.data === 'string' ? res.data : null;
+          if (caption && caption.length > 0) {
+            captionTextEl.textContent = caption;
+            captionBarEl.classList.add('has-caption');
+          } else {
+            captionTextEl.textContent = '';
+            captionBarEl.classList.remove('has-caption');
+          }
+        }).catch(() => {
+          if (token !== captionFetchToken) return;
+          captionBarEl.classList.remove('has-caption');
+          captionTextEl.textContent = '';
+        });
+      } catch {
+        captionBarEl.classList.remove('has-caption');
+        captionTextEl.textContent = '';
+      }
+    }
+
     function loadMedia(index) {
       if (index < 0 || index >= files.length) return;
       currentIndex = index;
@@ -557,6 +631,8 @@
       // we are now, so their selection ring can follow the viewer
       // arrows without the user having to come back to PM and re-pick.
       try { window.pdr?.search?.notifyViewerIndex?.(currentIndex, filePath); } catch {}
+      // Fetch the caption for this photo in parallel with media load.
+      loadCaptionFor(filePath);
 
       // Remove old media
       if (mediaEl) {

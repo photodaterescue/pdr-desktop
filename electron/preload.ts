@@ -477,6 +477,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // the file when exported.
   captions: {
     get: (fileId: number) => ipcRenderer.invoke('captions:get', fileId),
+    getByPath: (filePath: string) => ipcRenderer.invoke('captions:getByPath', filePath),
     set: (fileId: number, caption: string, writeExif?: boolean) =>
       ipcRenderer.invoke('captions:set', { fileId, caption, writeExif }),
     clear: (fileId: number, writeExif?: boolean) =>

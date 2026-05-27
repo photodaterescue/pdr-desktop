@@ -7098,6 +7098,54 @@ ipcMain.handle('captions:get', async (_event, fileId: number) => {
   }
 });
 
+// v2.0.13 — viewer-friendly lookup. The standalone viewer window
+// only knows file paths (not indexed_files ids) since it's loaded
+// with a flat list of paths via openSearchViewer. This lets it
+// resolve the caption without having to know the DB schema.
+ipcMain.handle('captions:getByPath', async (_event, filePath: string) => {
+  try {
+    if (typeof filePath !== 'string' || !filePath) return { success: true, data: null };
+    const db = getDb();
+    const row = db.prepare(`SELECT caption FROM indexed_files WHERE file_path = ? LIMIT 1`).get(filePath) as { caption: string | null } | undefined;
+    return { success: true, data: row?.caption ?? null };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.0.13 (Terry 2026-05-27) — DB write is synchronous and fast;
+// the EXIF write is async but goes through exiftool-vendored's
+// single subprocess, which serialises against any other exiftool
+// caller (the analysis indexer in particular). Awaiting the EXIF
+// write inside the IPC handler can stall the IPC promise for
+// several seconds when exiftool is busy, which Windows interprets
+// as "Not Responding" and paints the title bar white.
+//
+// Decoupling: update the DB synchronously and return success, then
+// schedule the EXIF write on the next tick. Failures are logged but
+// don't surface back to the user — the DB caption is what powers
+// every PDR surface, and the EXIF write is the "travels with the
+// file when exported" bonus. A future polish could write a small
+// pending-writes table for retry; for now, the practical impact of
+// the rare EXIF-write failure is "caption is in PDR but not in the
+// file's metadata" — recoverable by editing the caption again later.
+function scheduleCaptionExifWrite(filePath: string, description: string | '') {
+  setImmediate(async () => {
+    try {
+      if (!fs.existsSync(filePath)) return;
+      const { writeEnrichmentExif } = await import('./exif-writer.js');
+      const stat = fs.statSync(filePath);
+      await writeEnrichmentExif(filePath, stat.mtime, {
+        gpsLat: null,
+        gpsLon: null,
+        description,
+      });
+    } catch (exifErr) {
+      log.warn('[captions] background EXIF write failed:', (exifErr as Error).message);
+    }
+  });
+}
+
 ipcMain.handle('captions:set', async (_event, args: { fileId: number; caption: string; writeExif?: boolean }) => {
   try {
     const { fileId, caption, writeExif } = args;
@@ -7107,22 +7155,8 @@ ipcMain.handle('captions:set', async (_event, args: { fileId: number; caption: s
     const row = db.prepare(`SELECT file_path FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string } | undefined;
     if (!row) return { success: false, error: 'File not found in index.' };
     db.prepare(`UPDATE indexed_files SET caption = ? WHERE id = ?`).run(value, fileId);
-    if (writeExif && value && fs.existsSync(row.file_path)) {
-      // Best-effort EXIF write — failure here doesn't roll back the
-      // DB update. The caption is still saved in the index; the user
-      // can retry the EXIF write or just accept that this particular
-      // file format / location couldn't take an ImageDescription.
-      try {
-        const { writeEnrichmentExif } = await import('./exif-writer.js');
-        const stat = fs.statSync(row.file_path);
-        await writeEnrichmentExif(row.file_path, stat.mtime, {
-          gpsLat: null,
-          gpsLon: null,
-          description: value,
-        });
-      } catch (exifErr) {
-        log.warn('[captions:set] EXIF write failed (DB still updated):', (exifErr as Error).message);
-      }
+    if (writeExif && value) {
+      scheduleCaptionExifWrite(row.file_path, value);
     }
     return { success: true };
   } catch (err) {
@@ -7137,19 +7171,8 @@ ipcMain.handle('captions:clear', async (_event, args: { fileId: number; writeExi
     const row = db.prepare(`SELECT file_path FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string } | undefined;
     if (!row) return { success: false, error: 'File not found in index.' };
     db.prepare(`UPDATE indexed_files SET caption = NULL WHERE id = ?`).run(fileId);
-    if (writeExif && fs.existsSync(row.file_path)) {
-      try {
-        const { writeEnrichmentExif } = await import('./exif-writer.js');
-        const stat = fs.statSync(row.file_path);
-        // Empty-string description tells exiftool to clear the field.
-        await writeEnrichmentExif(row.file_path, stat.mtime, {
-          gpsLat: null,
-          gpsLon: null,
-          description: '',
-        });
-      } catch (exifErr) {
-        log.warn('[captions:clear] EXIF clear failed (DB still updated):', (exifErr as Error).message);
-      }
+    if (writeExif) {
+      scheduleCaptionExifWrite(row.file_path, '');
     }
     return { success: true };
   } catch (err) {
