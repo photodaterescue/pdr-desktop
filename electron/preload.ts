@@ -541,6 +541,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   viewer: {
     getRotation: (filePath: string) => ipcRenderer.invoke('viewer:getRotation', filePath),
     setRotation: (filePath: string, rotation: number) => ipcRenderer.invoke('viewer:setRotation', filePath, rotation),
+    /** v2.0.14 — viewer asks main for the pending file list on mount.
+     *  Replaces the old URL-query-blob approach that stalled the viewer
+     *  open for ~60s on year-drilldown click (6,000+ file paths
+     *  JSON-stringified into the URL). Returns one-shot — consumed on
+     *  read so a stale list can't leak across opens. */
+    getPendingFileList: () => ipcRenderer.invoke('viewer:getPendingFileList') as Promise<{ files: string[]; startIndex: number }>,
   },
 
   ai: {

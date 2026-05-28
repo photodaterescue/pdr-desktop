@@ -7546,6 +7546,20 @@ let viewerWindow: BrowserWindow | null = null;
 // did-finish-load or did-fail-load), then accepts again. Lifetime
 // is per-handler-invocation — never persists across viewer windows.
 let viewerLoadInFlight = false;
+// v2.0.14 (Terry 2026-05-28) — the previous shape of search:openViewer
+// stuffed every file path into a URL query string. On a year drilldown
+// with 6,000+ photos the URL hit ~1 MB; Chromium's URL parser and the
+// viewer's JSON.parse round trip turned a viewer open into a ~60s
+// freeze before the first pixel rendered. Pass the file list via main-
+// process state instead — the viewer fetches it once on mount via the
+// viewer:getPendingFileList IPC. Cleared after consumption so a stale
+// list can't leak across opens.
+let viewerPendingFiles: { files: string[]; startIndex: number } | null = null;
+ipcMain.handle('viewer:getPendingFileList', () => {
+  const payload = viewerPendingFiles;
+  viewerPendingFiles = null;
+  return payload ?? { files: [], startIndex: 0 };
+});
 
 ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileNames: string[], startIndex?: number) => {
   // Skip if a previous open is mid-flight. Returns success:true on
@@ -7558,11 +7572,13 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
   }
   try {
     viewerLoadInFlight = true;
-    // Support single or multiple files — pass as JSON-encoded array in query param
-    const filesParam = JSON.stringify(filePaths);
     // Clamp the start index defensively so a bad caller can't open
     // the viewer at a non-existent slot.
     const start = (typeof startIndex === 'number' && startIndex >= 0 && startIndex < filePaths.length) ? startIndex : 0;
+    // v2.0.14 — stash the file list in main state; the viewer fetches
+    // it via viewer:getPendingFileList instead of parsing a URL with
+    // a 6,000-element JSON blob in it.
+    viewerPendingFiles = { files: filePaths, startIndex: start };
     const title = filePaths.length === 1
       ? fileNames[0] + ' — PDR Viewer'
       : `${start + 1} of ${filePaths.length} — PDR Viewer`;
@@ -7594,7 +7610,7 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
       // wasn't loading in the live v2.0.8 build. v2.0.9 hotfix.
       const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
       releaseOn(viewerWindow);
-      viewerWindow.loadFile(viewerHtml, { query: { files: filesParam, start: String(start) } });
+      viewerWindow.loadFile(viewerHtml);
       viewerWindow.setTitle(title);
       viewerWindow.focus();
       return { success: true };
@@ -7632,7 +7648,7 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
 
     releaseOn(viewerWindow);
-    viewerWindow.loadFile(viewerHtml, { query: { files: filesParam, start: String(start) } });
+    viewerWindow.loadFile(viewerHtml);
 
     // Log renderer console messages to the main process so we can diagnose
     // preload / prepare failures that wouldn't otherwise be visible.
