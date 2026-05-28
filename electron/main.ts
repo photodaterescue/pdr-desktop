@@ -8909,6 +8909,36 @@ ipcMain.handle('viewer:getRotation', async (_event, filePath: string) => {
   }
 });
 
+// v2.0.14 (Terry 2026-05-28) — native OS drag from PDR tiles to
+// external apps. webContents.startDrag hands the file path(s) over to
+// the OS exactly as File Explorer would, so receivers (WhatsApp,
+// Discord, mail clients, Photoshop, etc.) read the ORIGINAL file from
+// disk, not the cached thumb. The renderer hands us the file paths to
+// drag plus an optional thumbnail data URL for the drag icon — we
+// convert it to a nativeImage (Electron's required icon format) or
+// fall back to a small empty image if not supplied. preventDefault
+// happens on the renderer side so the browser's own HTML5 drag
+// behaviour doesn't compete with the OS-level drag we start here.
+ipcMain.handle('drag:start', (event, args: { files: string[]; iconDataUrl?: string }) => {
+  try {
+    if (!args?.files || args.files.length === 0) return { success: false, error: 'No files supplied' };
+    let icon = nativeImage.createEmpty();
+    if (args.iconDataUrl) {
+      try {
+        const fromUrl = nativeImage.createFromDataURL(args.iconDataUrl);
+        if (!fromUrl.isEmpty()) icon = fromUrl;
+      } catch { /* fall back to empty icon */ }
+    }
+    // Electron's startDrag Item type requires a primary `file` plus
+    // an optional `files` array for multi-file drags. Always pass
+    // both — the primary is just files[0].
+    event.sender.startDrag({ file: args.files[0], files: args.files, icon });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('viewer:setRotation', async (_event, filePath: string, rotation: number) => {
   try {
     const { setUserRotation } = await import('./search-database.js');

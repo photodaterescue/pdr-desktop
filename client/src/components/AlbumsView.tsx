@@ -2532,6 +2532,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     <ContextMenuTrigger asChild>
                       <button
                         type="button"
+                        // v2.0.14 (Terry 2026-05-28) — native OS drag
+                        // to external apps. See MemoriesView for the
+                        // full rationale; same shape here.
+                        draggable
+                        onDragStart={(e) => {
+                          e.preventDefault();
+                          (window as any).pdr?.drag?.start?.([p.file_path], thumbs[p.file_path]);
+                        }}
                         onClick={() => handleOpenPhoto(i)}
                         className={`relative w-full h-full overflow-hidden ${density === 'tight' ? 'rounded-none border-0' : 'rounded-lg border border-border'} hover:ring-2 hover:ring-primary/40 transition-all`}
                       >

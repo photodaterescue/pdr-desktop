@@ -1966,6 +1966,28 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                     <button
+                      // v2.0.14 (Terry 2026-05-28) — native OS drag to
+                      // external apps (WhatsApp, Discord, mail, etc.).
+                      // The browser fires dragstart on draggable=true
+                      // elements when the user mouse-drags past the
+                      // threshold. We preventDefault (so the browser
+                      // doesn't try its own HTML5 drag) and ask main
+                      // to start the OS-level drag via
+                      // webContents.startDrag — receivers get the
+                      // ORIGINAL file from disk, not the cached thumb.
+                      // If the user has a multi-select active and the
+                      // dragged tile is one of the selected, drag the
+                      // whole selection; otherwise just this tile.
+                      draggable
+                      onDragStart={(e) => {
+                        e.preventDefault();
+                        const base = visibleFiles ?? files ?? [];
+                        const dragSet = (selectedFileIds.size > 0 && selectedFileIds.has(f.id))
+                          ? base.filter((x) => selectedFileIds.has(x.id)).map((x) => x.file_path)
+                          : [f.file_path];
+                        const iconUrl = thumbs[f.file_path];
+                        (window as any).pdr?.drag?.start?.(dragSet, iconUrl);
+                      }}
                       // Modifier-key contract mirrors SearchPanel/S&D:
                       //   plain click            → open viewer (jump in at idx)
                       //   selectionMode + click  → toggle selection (Select-button affordance)

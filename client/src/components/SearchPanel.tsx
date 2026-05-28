@@ -4988,6 +4988,18 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
     <ContextMenu>
       <ContextMenuTrigger asChild>
     <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick}
+      // v2.0.14 (Terry 2026-05-28) — native OS drag to external apps
+      // (WhatsApp, Discord, mail, Photoshop, etc.). See MemoriesView
+      // for the full rationale; same shape here. Single-file drag —
+      // S&D doesn't currently expose a multi-select set inside the
+      // FileCard scope, so the drag carries just the dragged file
+      // (matches the experience users have today from File Explorer
+      // when single-clicking).
+      draggable
+      onDragStart={(e) => {
+        e.preventDefault();
+        (window as any).pdr?.drag?.start?.([file.file_path], thumbnail);
+      }}
       // Premium hover: subtle 2px lift + softer shadow so the tile
       // pops out of the dense gap-0 grid. `relative hover:z-10` is
       // critical — without it the lifted tile's shadow gets clipped

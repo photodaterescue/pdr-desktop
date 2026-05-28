@@ -558,6 +558,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
+  /** Native OS drag from PDR tiles to external apps (WhatsApp, Discord,
+   *  email clients, Photoshop, etc.). The renderer intercepts the HTML5
+   *  dragstart event with preventDefault, then asks main to hand the
+   *  file path(s) over to the OS via webContents.startDrag — same drag
+   *  payload the OS sees from File Explorer, so receivers get the
+   *  original file from disk, not the cached thumb. */
+  drag: {
+    start: (files: string[], iconDataUrl?: string) => ipcRenderer.invoke('drag:start', { files, iconDataUrl }),
+  },
+
   ai: {
     start: () => ipcRenderer.invoke('ai:start'),
     cancel: () => ipcRenderer.invoke('ai:cancel'),
