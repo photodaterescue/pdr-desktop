@@ -10504,6 +10504,35 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.14" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.14</span>
+                        {appVersion === '2.0.14' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">Responsiveness across the board, HEVC video playback, and drilldown sidebar navigation.</strong> A speed-focused release plus a handful of features the v2.0.13 dogfood surfaced.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Analysis runs off the main thread</strong> &mdash; adding a source no longer locks up the rest of PDR while it analyses. The white-titlebar flash is gone.</li>
+                        <li><strong className="text-foreground font-medium">Year drilldowns open instantly</strong> &mdash; Memories &mdash; By Date renders only the tiles currently on screen and brings in more as you scroll, instead of mounting every photo on entry. Even years with thousands of photos appear in tens of milliseconds.</li>
+                        <li><strong className="text-foreground font-medium">Thumbnails follow you, not the queue</strong> &mdash; scrolling to mid-year used to leave tiles as empty placeholders while the background load crawled in order from January. Now PDR loads whatever&apos;s on your screen first.</li>
+                        <li><strong className="text-foreground font-medium">PDR Viewer opens the image right away</strong> &mdash; the previous filmstrip-builds-first behaviour stalled the image for up to 18 seconds; now the photo appears in around 100 ms and the filmstrip fills in behind it. Opening a photo from a year drilldown is also near-instant (was 60+ seconds in v2.0.13).</li>
+                        <li><strong className="text-foreground font-medium">HEVC video playback for Motion Photos</strong> &mdash; the short .mp4 clips alongside iPhone Live Photos and Samsung / OnePlus / Pixel Motion Photos used to show blank thumbnails and play sound-only over a black frame. They now thumbnail correctly and play with picture + sound. PDR transcodes on first play and caches the result.</li>
+                        <li><strong className="text-foreground font-medium">Left-column jump sidebar on Memories &mdash; By Date</strong> &mdash; matches the timeline view&apos;s pattern at every depth. Timeline shows years; year drilldown shows months (Jan, Feb, Mar&hellip;); month drilldown shows days (1, 2, 5, 12&hellip;). One click jumps straight to that month or day; the current location highlights.</li>
+                        <li><strong className="text-foreground font-medium">Floating D / M nav cluster</strong> &mdash; small bottom-right pill with arrow buttons for day-step and (on year drilldowns) month-step navigation, useful for jumping a month at a time without scrolling through 30 days.</li>
+                        <li><strong className="text-foreground font-medium">Drilldown sorts newest-first</strong> &mdash; December at the top of a year drilldown, latest photo of the day first. Consistent with the year timeline above it and with Apple Photos, Google Photos, Lightroom.</li>
+                        <li><strong className="text-foreground font-medium">&ldquo;Captioned only&rdquo; filter in By Date + Search &amp; Discovery</strong> &mdash; the gold chip from Albums is now mirrored to the By Date drilldown header and to S&amp;D.</li>
+                        <li><strong className="text-foreground font-medium">Rotation updates everywhere immediately</strong> &mdash; rotating a photo in the viewer now updates that photo&apos;s thumbnail in the Memories grid, Albums tiles, S&amp;D results, and the viewer filmstrip without you having to navigate away first.</li>
+                        <li><strong className="text-foreground font-medium">Video thumbnail extraction fix</strong> &mdash; the blank-thumbnail bug that affected every video regardless of path length is gone (it was a Windows long-path prefix that ffmpeg&apos;s mov/mp4 reader couldn&apos;t open).</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.13" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
