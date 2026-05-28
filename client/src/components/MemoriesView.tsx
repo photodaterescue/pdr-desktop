@@ -5,6 +5,8 @@ import {
   CalendarRange,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Sparkles,
   Film,
   Image as ImageIcon,
@@ -1337,6 +1339,75 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     if (prev) goToDayByKey(prev.dayKey);
   };
 
+  // v2.0.14 (Terry 2026-05-28) — month-step navigation for year
+  // drilldowns. PageUp/PageDown only step by day; punching them 30
+  // times to skip a month is tedious on a year view with thousands
+  // of files. These walk filesByDay until the month boundary changes,
+  // then scroll to that day group. "Prev month" walks UP the list
+  // (lower index) which after the DESC sort flip is the NEWER month;
+  // "Next month" walks DOWN (higher index) = OLDER month.
+  const goToPrevMonth = () => {
+    if (filesByDay.length === 0 || !currentDayKey) return;
+    const currentIdx = filesByDay.findIndex((g) => g.dayKey === currentDayKey);
+    if (currentIdx < 0) return;
+    const currentMonth = filesByDay[currentIdx].date.getMonth();
+    const currentYear = filesByDay[currentIdx].date.getFullYear();
+    for (let i = currentIdx - 1; i >= 0; i--) {
+      const d = filesByDay[i].date;
+      if (d.getMonth() !== currentMonth || d.getFullYear() !== currentYear) {
+        goToDayByKey(filesByDay[i].dayKey);
+        return;
+      }
+    }
+  };
+  const goToNextMonth = () => {
+    if (filesByDay.length === 0 || !currentDayKey) return;
+    const currentIdx = filesByDay.findIndex((g) => g.dayKey === currentDayKey);
+    if (currentIdx < 0) return;
+    const currentMonth = filesByDay[currentIdx].date.getMonth();
+    const currentYear = filesByDay[currentIdx].date.getFullYear();
+    for (let i = currentIdx + 1; i < filesByDay.length; i++) {
+      const d = filesByDay[i].date;
+      if (d.getMonth() !== currentMonth || d.getFullYear() !== currentYear) {
+        goToDayByKey(filesByDay[i].dayKey);
+        return;
+      }
+    }
+  };
+
+  // Whether the drilldown spans more than one calendar month — drives
+  // the visibility of the month-step column. Year drilldowns always
+  // span multiple months; month drilldowns never do; day drilldowns
+  // are single-day so the whole arrow stack already hides via the
+  // `filesByDay.length > 1` guard.
+  const hasMultipleMonths = useMemo(() => {
+    if (filesByDay.length < 2) return false;
+    const firstMonth = filesByDay[0].date.getMonth();
+    const firstYear = filesByDay[0].date.getFullYear();
+    return filesByDay.some((g) => g.date.getMonth() !== firstMonth || g.date.getFullYear() !== firstYear);
+  }, [filesByDay]);
+
+  // Disabled-state computation for the month arrows. Without this the
+  // buttons render enabled while on the first / last month and clicking
+  // does nothing silently.
+  const monthEdges = useMemo(() => {
+    if (!currentDayKey || filesByDay.length === 0) return { hasPrev: false, hasNext: false };
+    const idx = filesByDay.findIndex((g) => g.dayKey === currentDayKey);
+    if (idx < 0) return { hasPrev: false, hasNext: false };
+    const m = filesByDay[idx].date.getMonth();
+    const y = filesByDay[idx].date.getFullYear();
+    let hasPrev = false, hasNext = false;
+    for (let i = 0; i < idx; i++) {
+      const d = filesByDay[i].date;
+      if (d.getMonth() !== m || d.getFullYear() !== y) { hasPrev = true; break; }
+    }
+    for (let i = idx + 1; i < filesByDay.length; i++) {
+      const d = filesByDay[i].date;
+      if (d.getMonth() !== m || d.getFullYear() !== y) { hasNext = true; break; }
+    }
+    return { hasPrev, hasNext };
+  }, [filesByDay, currentDayKey]);
+
   // PageDown / PageUp keyboard shortcuts for the same navigation.
   // Only active while the scroll container has focus (or no other
   // interactive element claims it) so it doesn't fight with the
@@ -1896,36 +1967,77 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </div>
           </>
         )}
-        {/* v2.0.13 — floating prev / next day arrows. Visible only
-            when there's more than one day to navigate between.
-            Anchored bottom-right of the scroll area so they're
-            always reachable without competing with the photo grid
-            for click targets. Disabled state at the edges of the
-            day list so the buttons don't no-op silently. */}
+        {/* v2.0.14 (Terry 2026-05-28) — floating navigation cluster.
+            Single rounded pill at bottom-right of the scroll area
+            holding a D (day) column always, and an M (month) column
+            only when the drilldown spans multiple months (year view).
+            Layout reads vertically as ↑ → label → ↓ in each column,
+            matching the spatial scroll direction and saving the user
+            from punching PageDown 30 times to skip a month. Tooltips
+            stay short (single word + shortcut) because the inline
+            D/M letter labels already disambiguate the columns. */}
         {files != null && filesByDay.length > 1 && (
-          <div className="pointer-events-none sticky bottom-4 z-20 flex justify-end gap-2 pr-2 -mt-4">
-            <IconTooltip label="Previous day (PageUp)" side="left">
-              <button
-                type="button"
-                onClick={goToPrevDay}
-                disabled={!currentDayKey || filesByDay.findIndex((g) => g.dayKey === currentDayKey) <= 0}
-                className="pointer-events-auto w-9 h-9 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                data-testid="drilldown-prev-day"
-              >
-                <ArrowUpToLine className="w-4 h-4" />
-              </button>
-            </IconTooltip>
-            <IconTooltip label="Next day (PageDown)" side="left">
-              <button
-                type="button"
-                onClick={goToNextDay}
-                disabled={!currentDayKey || filesByDay.findIndex((g) => g.dayKey === currentDayKey) >= filesByDay.length - 1}
-                className="pointer-events-auto w-9 h-9 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                data-testid="drilldown-next-day"
-              >
-                <ArrowUpToLine className="w-4 h-4 rotate-180" />
-              </button>
-            </IconTooltip>
+          <div className="pointer-events-none sticky bottom-4 z-20 flex justify-end pr-2 -mt-4">
+            <div className="pointer-events-auto flex items-stretch gap-1 bg-background/95 backdrop-blur-sm border border-border shadow-md rounded-2xl p-1">
+              {/* Day column — always shown when filesByDay.length > 1. */}
+              <div className="flex flex-col items-center">
+                <IconTooltip label="Newer day (PageUp)" side="left">
+                  <button
+                    type="button"
+                    onClick={goToPrevDay}
+                    disabled={!currentDayKey || filesByDay.findIndex((g) => g.dayKey === currentDayKey) <= 0}
+                    className="w-7 h-7 rounded-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                    data-testid="drilldown-prev-day"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                </IconTooltip>
+                <span className="text-[10px] font-semibold tracking-wider text-muted-foreground py-0.5 select-none" aria-hidden="true">D</span>
+                <IconTooltip label="Older day (PageDown)" side="left">
+                  <button
+                    type="button"
+                    onClick={goToNextDay}
+                    disabled={!currentDayKey || filesByDay.findIndex((g) => g.dayKey === currentDayKey) >= filesByDay.length - 1}
+                    className="w-7 h-7 rounded-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                    data-testid="drilldown-next-day"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                </IconTooltip>
+              </div>
+              {/* Month column — only when the drilldown crosses month
+                  boundaries (i.e. the user is on a year drilldown). */}
+              {hasMultipleMonths && (
+                <>
+                  <div className="w-px bg-border/60 mx-0.5" aria-hidden="true" />
+                  <div className="flex flex-col items-center">
+                    <IconTooltip label="Newer month" side="left">
+                      <button
+                        type="button"
+                        onClick={goToPrevMonth}
+                        disabled={!monthEdges.hasPrev}
+                        className="w-7 h-7 rounded-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                        data-testid="drilldown-prev-month"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                    </IconTooltip>
+                    <span className="text-[10px] font-semibold tracking-wider text-muted-foreground py-0.5 select-none" aria-hidden="true">M</span>
+                    <IconTooltip label="Older month" side="left">
+                      <button
+                        type="button"
+                        onClick={goToNextMonth}
+                        disabled={!monthEdges.hasNext}
+                        className="w-7 h-7 rounded-md text-foreground hover:bg-accent transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                        data-testid="drilldown-next-month"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </IconTooltip>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

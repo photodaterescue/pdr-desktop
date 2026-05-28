@@ -4868,10 +4868,16 @@ export function getMemoriesDayFiles(year: number, month?: number | null, day?: n
   if (day != null)   { conditions.push('day = ?');   params.push(day); }
   const whereSql = conditions.join(' AND ') + (clause.sql ? ' ' + clause.sql : '');
   params.push(...clause.params);
+  // v2.0.14 (Terry 2026-05-28) — newest first, consistent with the
+  // year timeline and with what every premium photo app does (Apple
+  // Photos, Google Photos, Lightroom, Mylio): top = most recent at
+  // every scale. Tie-break on id DESC so two photos taken in the same
+  // second still show in a stable order with the newer-imported
+  // record on top.
   return database.prepare(`
     SELECT * FROM indexed_files
     WHERE ${whereSql}
-    ORDER BY derived_date ASC, id ASC
+    ORDER BY derived_date DESC, id DESC
   `).all(...params) as IndexedFile[];
 }
 
