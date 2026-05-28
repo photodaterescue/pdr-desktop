@@ -965,6 +965,40 @@
     console.log('[viewer] window.pdr =', !!window.pdr, '| video.prepare =', !!(window.pdr && window.pdr.video && window.pdr.video.prepare), '| files =', files.length);
     }); // end filesReady.then
 
+    // v2.0.14 (Terry 2026-05-28) — filmstrip refresh on rotate. The
+    // viewer broadcasts pdr:rotationChanged when the user clicks the
+    // rotate buttons, and every renderer (including this one) gets
+    // the message. Find the matching filmstrip tile by data-fp, drop
+    // its loaded flag + visual content, and fire fetchThumb again so
+    // the strip shows the rotated thumb without the user navigating
+    // away and re-opening the viewer. The disk thumb-cache key now
+    // includes user_rotation so the refetch lands on a fresh entry.
+    if (window.pdr?.viewer?.onRotationChanged) {
+      window.pdr.viewer.onRotationChanged((data) => {
+        const fp = data?.filePath;
+        if (!fp) return;
+        const tiles = filmstripEl.querySelectorAll('[data-fp]');
+        for (const tile of tiles) {
+          if (tile.dataset.fp !== fp) continue;
+          tile.dataset.loaded = '';
+          if (tile.tagName === 'IMG') {
+            tile.removeAttribute('src');
+          } else {
+            tile.style.backgroundImage = '';
+          }
+          fetchThumb(fp).then((dataUrl) => {
+            if (!dataUrl) return;
+            if (tile.tagName === 'IMG') {
+              tile.src = dataUrl;
+            } else {
+              tile.style.backgroundImage = 'url(' + dataUrl + ')';
+            }
+            tile.dataset.loaded = '1';
+          });
+        }
+      });
+    }
+
     // Navigation — manual nav stops any running slideshow so the user
     // doesn't fight an auto-advance after taking control.
     btnPrev.addEventListener('click', (e) => { e.stopPropagation(); stopSlideshow(); loadMedia(currentIndex - 1); });

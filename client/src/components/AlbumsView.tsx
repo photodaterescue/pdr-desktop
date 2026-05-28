@@ -177,6 +177,31 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const [loading, setLoading] = useState(true);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
+  // v2.0.14 (Terry 2026-05-28) — refresh on rotate. The viewer's
+  // setRotation broadcasts pdr:rotationChanged to all renderers; we
+  // drop the stale cached thumb and re-fetch so the album cover and
+  // photo tiles update without the user having to navigate away.
+  // The disk thumb-cache key now includes user_rotation so the
+  // refetch lands on a fresh entry.
+  useEffect(() => {
+    const off = (window as any).pdr?.viewer?.onRotationChanged?.((data: { filePath: string; rotation: number }) => {
+      const fp = data?.filePath;
+      if (!fp) return;
+      setThumbs((prev) => {
+        if (!prev[fp]) return prev;
+        const { [fp]: _, ...rest } = prev;
+        return rest;
+      });
+      // AlbumsView fetches album-cover + per-photo tiles both at 200.
+      getThumbnail(fp, 200).then((r) => {
+        if (r.success && r.dataUrl) {
+          setThumbs((prev) => ({ ...prev, [fp]: r.dataUrl }));
+        }
+      });
+    });
+    return () => { if (typeof off === 'function') off(); };
+  }, []);
+
   // ── Selection (drives the right pane) ────────────────────────────
   // Default selection is the "All albums" virtual row so opening
   // Memories → Albums lands on a useful surface (the All-albums

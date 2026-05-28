@@ -524,6 +524,30 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
   // Preview / results
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+
+  // v2.0.14 (Terry 2026-05-28) — refresh on rotate. The viewer's
+  // setRotation broadcasts pdr:rotationChanged to all renderers; we
+  // drop the stale cached thumb and re-fetch so S&D result tiles
+  // update without the user having to re-run the search. The disk
+  // thumb-cache key now includes user_rotation so the refetch lands
+  // on a fresh entry. SearchPanel uses size 180 for result tiles.
+  useEffect(() => {
+    const off = (window as any).pdr?.viewer?.onRotationChanged?.((data: { filePath: string; rotation: number }) => {
+      const fp = data?.filePath;
+      if (!fp) return;
+      setThumbnails((prev) => {
+        if (!prev[fp]) return prev;
+        const { [fp]: _, ...rest } = prev;
+        return rest;
+      });
+      getThumbnail(fp, 180).then((r) => {
+        if (r.success && r.dataUrl) {
+          setThumbnails((prev) => ({ ...prev, [fp]: r.dataUrl }));
+        }
+      });
+    });
+    return () => { if (typeof off === 'function') off(); };
+  }, []);
   const [selectedFile, setSelectedFile] = useState<IndexedFile | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<number>>(new Set());
   // Parallel store of the actual file objects for every checked item,
