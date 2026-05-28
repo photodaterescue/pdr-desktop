@@ -1351,7 +1351,13 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     // offsetTop - 4 behaviour.
     const idx = filesByDay.findIndex((g) => g.dayKey === dayKey);
     if (idx < 0) return;
-    rowVirtualizer.scrollToIndex(idx, { align: 'start', behavior: 'smooth' });
+    // v2.0.14 (Terry 2026-05-28) — 'auto' (instant snap) instead of
+    // 'smooth' because the smooth scroll animation rolls past every
+    // intervening day's tiles in turn, which on a busy year drilldown
+    // looks juddery as the virtualiser mounts/unmounts row after row.
+    // Snap-to-place reads as premium; the user already knows where
+    // they're going.
+    rowVirtualizer.scrollToIndex(idx, { align: 'start', behavior: 'auto' });
   };
   const goToNextDay = () => {
     if (filesByDay.length === 0) return;
@@ -1413,6 +1419,59 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     const firstYear = filesByDay[0].date.getFullYear();
     return filesByDay.some((g) => g.date.getMonth() !== firstMonth || g.date.getFullYear() !== firstYear);
   }, [filesByDay]);
+
+  // v2.0.14 (Terry 2026-05-28) — month-jump rail for the year
+  // drilldown. Mirrors the year-jump rail on the timeline view in
+  // both layout (68 px left column, mono labels, hover lavender) and
+  // intent (one-click jump to the first day of that month). Only the
+  // months that actually have photos in the current drilldown appear,
+  // so a year with zero photos in Feb doesn't show a dead "Feb" row.
+  const monthBoundaries = useMemo(() => {
+    if (filesByDay.length === 0) return [] as Array<{ key: string; month: number; label: string; firstDayKey: string }>;
+    const seen = new Set<string>();
+    const out: Array<{ key: string; month: number; label: string; firstDayKey: string }> = [];
+    for (const g of filesByDay) {
+      const y = g.date.getFullYear();
+      const m = g.date.getMonth();
+      const k = `${y}-${m}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ key: k, month: m, label: MONTH_NAMES[m].slice(0, 3), firstDayKey: g.dayKey });
+    }
+    return out;
+  }, [filesByDay]);
+  // v2.0.14 (Terry 2026-05-28) — day-jump rail for the month
+  // drilldown. Same shape as the month rail above (and the year rail
+  // on the timeline) — sits in the same left-column slot at every
+  // depth so the user always has one-click navigation to whichever
+  // unit is "below" the current view. Year → months, month → days,
+  // day → (nothing, only one day group).
+  const dayBoundaries = useMemo(() => {
+    if (filesByDay.length === 0) return [] as Array<{ key: string; label: string; firstDayKey: string }>;
+    return filesByDay.map((g) => ({
+      key: g.dayKey,
+      label: String(g.date.getDate()),
+      firstDayKey: g.dayKey,
+    }));
+  }, [filesByDay]);
+  // The day rail is the "right depth" only on a month drilldown
+  // (month set, day not set). On a year drilldown the month rail is
+  // the right granularity; on a day drilldown there's only one day
+  // group so no rail. Computed here so the JSX stays a single
+  // ternary instead of a nested if.
+  const isMonthDrilldown = month != null && day == null && filesByDay.length > 1;
+
+  // Active highlight for the month rail — derived from currentDayKey
+  // (which the scroll-listener keeps in sync with the topmost visible
+  // day). Compared as `year-month` so a drilldown that crosses years
+  // (rare but possible if the source row range spans new year's eve)
+  // still highlights correctly.
+  const currentMonthKey = useMemo(() => {
+    if (!currentDayKey) return null;
+    const g = filesByDay.find((x) => x.dayKey === currentDayKey);
+    if (!g) return null;
+    return `${g.date.getFullYear()}-${g.date.getMonth()}`;
+  }, [currentDayKey, filesByDay]);
 
   // Disabled-state computation for the month arrows. Without this the
   // buttons render enabled while on the first / last month and clicking
@@ -1764,6 +1823,61 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
         )}
       </div>
 
+      <div className="flex-1 flex min-h-0">
+        {/* v2.0.14 (Terry 2026-05-28) — left-column jump rail. Three
+            levels deep: timeline shows years, year drilldown shows
+            months, month drilldown shows days. The rail itself is
+            the same 68 px wide aside with the same button class
+            shape (matches the year rail's mono labels, hover
+            lavender, active = bg-primary/10 + text-primary); only
+            the data source and the active-key comparison differ. */}
+        {hasMultipleMonths ? (
+          <aside className="w-[68px] shrink-0 border-r border-border/60 overflow-y-auto py-4 px-1 text-center">
+            {monthBoundaries.map((m) => {
+              const isActive = currentMonthKey === m.key;
+              return (
+                <IconTooltip key={m.key} label={MONTH_NAMES[m.month]} side="right">
+                  <button
+                    type="button"
+                    onClick={() => goToDayByKey(m.firstDayKey)}
+                    className={`w-full px-1 py-1.5 mb-0.5 rounded text-xs font-mono transition-colors ${
+                      isActive
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-muted-foreground hover:text-primary hover:bg-primary/5'
+                    }`}
+                    data-testid={`drilldown-month-jump-${m.month}`}
+                  >
+                    {m.label}
+                  </button>
+                </IconTooltip>
+              );
+            })}
+          </aside>
+        ) : isMonthDrilldown ? (
+          <aside className="w-[68px] shrink-0 border-r border-border/60 overflow-y-auto py-4 px-1 text-center">
+            {dayBoundaries.map((d) => {
+              const isActive = currentDayKey === d.key;
+              const g = filesByDay.find((x) => x.dayKey === d.key);
+              const tooltipLabel = g ? formatDayHeader(g.date, g.dayKey) : d.label;
+              return (
+                <IconTooltip key={d.key} label={tooltipLabel} side="right">
+                  <button
+                    type="button"
+                    onClick={() => goToDayByKey(d.firstDayKey)}
+                    className={`w-full px-1 py-1.5 mb-0.5 rounded text-xs font-mono transition-colors ${
+                      isActive
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-muted-foreground hover:text-primary hover:bg-primary/5'
+                    }`}
+                    data-testid={`drilldown-day-jump-${d.label}`}
+                  >
+                    {d.label}
+                  </button>
+                </IconTooltip>
+              );
+            })}
+          </aside>
+        ) : null}
       <div ref={gridScrollRef} className="relative flex-1 overflow-y-auto p-6 outline-none">
         {files == null ? (
           <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Loading…</div>
@@ -2122,6 +2236,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
