@@ -1398,6 +1398,37 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return () => { cancelled = true; };
   }, [files]);
 
+  // v2.0.14 (Terry 2026-05-27) — foreground prewarm for the filtered
+  // set. The bulk prewarm above iterates `files` in array order (which
+  // is derived_date order, so January files first). On a year drilldown
+  // with 6,000+ files the worker pool takes 10-15 s to crawl from
+  // January through to a captioned photo in the middle of the year.
+  // When the user toggles "Captioned only", their few captioned tiles
+  // are visible immediately but their thumbnails are still queued
+  // behind 3,000+ January-to-mid-year files. This effect jumps the
+  // queue: when the filtered subset is smaller than the full set, we
+  // request its thumbnails sequentially with no concurrency cap so
+  // they arrive at main ahead of the bulk-prewarm's queued items.
+  // Cache hits return in ~10 ms; cache misses still pay the read +
+  // sharp resize cost, but at least they're not also queued behind
+  // a thousand others.
+  useEffect(() => {
+    if (!visibleFiles || !files) return;
+    if (visibleFiles.length === files.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const f of visibleFiles) {
+        if (cancelled) return;
+        try {
+          const r = await getThumbnail(f.file_path, 220);
+          if (cancelled || !r.success || !r.dataUrl) continue;
+          setThumbs((prev) => prev[f.file_path] ? prev : { ...prev, [f.file_path]: r.dataUrl });
+        } catch { /* per-file failures non-fatal */ }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [visibleFiles, files]);
+
   // Title adapts to granularity: "2005" / "February 2005" / "February 1, 2005".
   const title = month == null
     ? `${year}`
