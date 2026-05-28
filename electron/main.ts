@@ -323,6 +323,7 @@ import {
   // fit the existing typed helpers (e.g. library:listIndexedDrives, which
   // GROUP BYs over the drive-letter prefix of file_path). Used sparingly.
   getDb,
+  getUserRotation,
   type SearchQuery,
 } from './search-database.js';
 import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, walkMediaFiles, type IndexProgress, type RebuildProgress } from './search-indexer.js';
@@ -3019,11 +3020,22 @@ ipcMain.handle('video:prepare', async (_event, filePath: string): Promise<{ succ
 
 ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: number) => {
   try {
+    // v2.0.14 (Terry 2026-05-28) — fold user_rotation into the cache
+    // key so a rotated photo doesn't keep serving the pre-rotation
+    // thumb from disk cache forever. The viewer's rotate buttons
+    // already persist rotation to indexed_files.user_rotation; we
+    // now apply it in the sharp pipeline below as well, AND broadcast
+    // pdr:rotationChanged from setRotation so any open thumbnail
+    // surface (Memories grid, Albums tiles, viewer filmstrip) can
+    // refetch with the new key.
+    const userRotation = (() => {
+      try { return getUserRotation(filePath); } catch { return 0; }
+    })();
     // Check disk cache first. Long-path-wrap the cache path defensively
     // even though the userData/thumb-cache root is normally short — the
     // hash-derived filename is short, so the prefix only matters if the
     // user's userData path itself is unusually long.
-    const cacheKey = crypto.createHash('md5').update(`${filePath}:${size}`).digest('hex');
+    const cacheKey = crypto.createHash('md5').update(`${filePath}:${size}:r${userRotation}`).digest('hex');
     const cachePath = path.join(thumbCacheDir, `${cacheKey}.jpg`);
     const cachePathLong = toLongPath(cachePath);
     // Long-path-wrap the source path too: deep library trees on Windows
@@ -3147,6 +3159,21 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
 
     if (!jpegBuffer) {
       return { success: false, dataUrl: '' };
+    }
+
+    // v2.0.14 — apply user_rotation as a post-process on the resized
+    // buffer. Done here rather than chained into each format-specific
+    // pipeline above so HEIC, video frames, sharp-decoded images, and
+    // nativeImage fallbacks all pick it up uniformly. Skipped when
+    // userRotation === 0 so the no-rotation path stays a single sharp
+    // chain. The cache key includes userRotation so this stays sticky
+    // across opens.
+    if (userRotation > 0) {
+      try {
+        jpegBuffer = await sharp(jpegBuffer).rotate(userRotation).jpeg({ quality: 80 }).toBuffer();
+      } catch (e) {
+        console.warn('[thumb] user rotation apply failed for', filePath, (e as Error).message);
+      }
     }
 
     // Save to disk cache (fire and forget). Long-path-wrap so cache
@@ -8885,7 +8912,20 @@ ipcMain.handle('viewer:getRotation', async (_event, filePath: string) => {
 ipcMain.handle('viewer:setRotation', async (_event, filePath: string, rotation: number) => {
   try {
     const { setUserRotation } = await import('./search-database.js');
-    return { success: true, ...setUserRotation(filePath, rotation) };
+    const result = setUserRotation(filePath, rotation);
+    // v2.0.14 (Terry 2026-05-28) — broadcast to every renderer so any
+    // mounted thumbnail surface (Memories grid, Albums tiles, viewer
+    // filmstrip) can drop its stale cache entry and refetch. Without
+    // this the user rotates a photo in the viewer, returns to the
+    // grid, and stares at the pre-rotation thumb until they navigate
+    // away + back. The disk thumb-cache key already includes
+    // user_rotation so the refetch hits a fresh entry.
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) {
+        try { w.webContents.send('pdr:rotationChanged', { filePath, rotation }); } catch { /* per-window failures non-fatal */ }
+      }
+    }
+    return { success: true, ...result };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

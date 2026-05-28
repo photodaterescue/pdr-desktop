@@ -1145,6 +1145,33 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return () => window.removeEventListener('pdr:captionsChanged', handler);
   }, []);
 
+  // v2.0.14 (Terry 2026-05-28) — refresh the in-memory thumb cache
+  // when the user rotates a photo in the viewer. Without this the
+  // grid keeps showing the pre-rotation thumb until navigated away +
+  // back. The disk thumb-cache key already includes user_rotation so
+  // the getThumbnail call lands on a fresh entry (or generates one).
+  useEffect(() => {
+    const off = (window as any).pdr?.viewer?.onRotationChanged?.((data: { filePath: string; rotation: number }) => {
+      const fp = data?.filePath;
+      if (!fp) return;
+      // Drop the stale entry first so the placeholder briefly shows
+      // if the refetch is slow — never serve the old rotation.
+      setThumbs((prev) => {
+        if (!prev[fp]) return prev;
+        const { [fp]: _, ...rest } = prev;
+        return rest;
+      });
+      // Refetch at the drilldown grid's tile size (220 — matches the
+      // bulk-prewarm worker's getThumbnail call).
+      getThumbnail(fp, 220).then((r) => {
+        if (r.success && r.dataUrl) {
+          setThumbs((prev) => ({ ...prev, [fp]: r.dataUrl }));
+        }
+      });
+    });
+    return () => { if (typeof off === 'function') off(); };
+  }, []);
+
   // v2.0.13 (Terry 2026-05-26) — Day grouping + scroll-position
   // affordances.
   //
@@ -1448,7 +1475,16 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     let cancelled = false;
     const missing = files.filter((f) => !thumbs[f.file_path]);
     if (missing.length === 0) return;
-    const CONCURRENCY = 12;
+    // v2.0.14 (Terry 2026-05-28) — dropped from 12 to 4. With 12
+    // concurrent thumbnail requests in flight at any given moment,
+    // main's browser:thumbnail handler + libuv worker pool + disk I/O
+    // were all saturated, and the PDR Viewer's pdr-file:// protocol
+    // handler had to queue behind them on every photo click (~15 s
+    // wait for the first frame). 4 keeps the prewarm itself plenty
+    // fast (most thumbs are disk-cache hits at ~10 ms each) and
+    // leaves bandwidth for viewer opens, IntersectionObserver fetches,
+    // and the AI worker's per-file reads.
+    const CONCURRENCY = 4;
     let cursor = 0;
     const worker = async () => {
       while (!cancelled && cursor < missing.length) {
@@ -1468,6 +1504,52 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     void Promise.allSettled(workers);
     return () => { cancelled = true; };
   }, [files]);
+
+  // v2.0.14 (Terry 2026-05-28) — viewport-driven thumbnail load. The
+  // bulk prewarm above walks `files` in array order, so when the user
+  // scrolls to a day in the middle of a year drilldown the tiles wait
+  // for the prewarm to crawl to that position — Terry saw 3+ minutes
+  // of empty placeholders after scrolling to June 2018. This effect
+  // hooks the virtualiser's visible range: any tile that's currently
+  // on screen but missing a thumb gets its own getThumbnail call
+  // immediately, jumping the queue. Re-fires whenever the range
+  // changes (scroll, resize, filter toggle). thumbsRef avoids putting
+  // `thumbs` in deps (would infinite-loop since every loaded thumb
+  // mutates state).
+  const thumbsRef = useRef(thumbs);
+  useEffect(() => { thumbsRef.current = thumbs; }, [thumbs]);
+  const visibleRangeStart = rowVirtualizer.range?.startIndex ?? -1;
+  const visibleRangeEnd = rowVirtualizer.range?.endIndex ?? -1;
+  useEffect(() => {
+    if (!files || visibleRangeStart < 0 || visibleRangeEnd < 0) return;
+    const visibleFilePaths: string[] = [];
+    for (let idx = visibleRangeStart; idx <= visibleRangeEnd; idx++) {
+      const group = filesByDay[idx];
+      if (!group) continue;
+      for (const f of group.files) {
+        if (!thumbsRef.current[f.file_path]) visibleFilePaths.push(f.file_path);
+      }
+    }
+    if (visibleFilePaths.length === 0) return;
+    let cancelled = false;
+    const VIEWPORT_CONCURRENCY = 8;
+    let cursor = 0;
+    const worker = async () => {
+      while (!cancelled && cursor < visibleFilePaths.length) {
+        const fp = visibleFilePaths[cursor++];
+        if (thumbsRef.current[fp]) continue;
+        try {
+          const r = await getThumbnail(fp, 220);
+          if (cancelled || !r.success || !r.dataUrl) continue;
+          setThumbs((prev) => prev[fp] ? prev : { ...prev, [fp]: r.dataUrl });
+        } catch { /* per-file non-fatal */ }
+      }
+    };
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < VIEWPORT_CONCURRENCY; i++) workers.push(worker());
+    void Promise.allSettled(workers);
+    return () => { cancelled = true; };
+  }, [visibleRangeStart, visibleRangeEnd, filesByDay, files]);
 
   // v2.0.14 (Terry 2026-05-27) — foreground prewarm for the filtered
   // set. The bulk prewarm above iterates `files` in array order (which

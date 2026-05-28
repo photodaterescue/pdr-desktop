@@ -547,6 +547,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
      *  JSON-stringified into the URL). Returns one-shot — consumed on
      *  read so a stale list can't leak across opens. */
     getPendingFileList: () => ipcRenderer.invoke('viewer:getPendingFileList') as Promise<{ files: string[]; startIndex: number }>,
+    /** v2.0.14 — broadcast fired by viewer:setRotation. Renderers that
+     *  hold cached thumbnails (Memories grid, Albums tiles, viewer
+     *  filmstrip) subscribe to drop the stale entry and refetch with
+     *  the new rotation. Returns an unsubscribe callback. */
+    onRotationChanged: (handler: (data: { filePath: string; rotation: number }) => void) => {
+      const listener = (_e: any, data: { filePath: string; rotation: number }) => handler(data);
+      ipcRenderer.on('pdr:rotationChanged', listener);
+      return () => ipcRenderer.removeListener('pdr:rotationChanged', listener);
+    },
   },
 
   ai: {

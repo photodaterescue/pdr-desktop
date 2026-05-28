@@ -845,7 +845,19 @@
     // outside (event listeners further down) reads them lazily on click,
     // so it's safe to leave outside the chain.
     filesReady.then(() => {
-    // Build filmstrip for multi-file
+    // v2.0.14 (Terry 2026-05-28) — order changed so the main image
+    // PAINTS first, then the filmstrip builds. Previously the
+    // filmstrip's synchronous forEach over 6,000+ entries blocked
+    // the JS event loop for ~15-18 s, so the image fetch (already
+    // kicked off by pdr-file://) couldn't paint until the loop
+    // finished. Two changes: (1) loadMedia first; (2) filmstrip
+    // build is chunked into 200-element batches with setTimeout
+    // yields between, so the browser gets a paint cycle every chunk.
+    // First paint of the image happens during the first yield.
+    if (files.length > 0) {
+      loadMedia(startIndex);
+    }
+
     if (files.length > 1) {
       filmstripEl.style.display = 'flex';
 
@@ -899,36 +911,54 @@
         }
       }, { root: filmstripEl, rootMargin: '400px 0px' });
 
-      files.forEach((fp, idx) => {
-        if (isVideoPath(fp)) {
-          const div = document.createElement('div');
-          div.className = 'video-thumb';
-          div.title = getFilename(fp);
-          div.dataset.idx = String(idx);
-          div.dataset.fp = fp;
-          div.addEventListener('click', () => loadMedia(idx));
-          filmstripEl.appendChild(div);
-          lazyObserver.observe(div);
-        } else {
-          const thumb = document.createElement('img');
-          thumb.className = 'thumb';
-          thumb.title = getFilename(fp);
-          thumb.dataset.idx = String(idx);
-          thumb.dataset.fp = fp;
-          thumb.addEventListener('click', () => loadMedia(idx));
-          filmstripEl.appendChild(thumb);
-          lazyObserver.observe(thumb);
+      // v2.0.14 — chunked build so the JS loop yields between batches
+      // and the browser can paint the main image (and the filmstrip's
+      // first row of tiles) before the rest of the strip materialises.
+      // 200 entries per chunk × ~50 µs each = ~10 ms of blocked JS
+      // per chunk; the setTimeout yield gives Chromium its paint slot.
+      // A 6,785-entry strip builds in ~34 chunks ≈ 1-2 s total wall
+      // clock, but the user sees the image + first chunk of tiles
+      // within the first paint cycle (~100 ms).
+      const FILMSTRIP_CHUNK_SIZE = 200;
+      let buildCursor = 0;
+      const buildFilmstripChunk = () => {
+        const end = Math.min(buildCursor + FILMSTRIP_CHUNK_SIZE, files.length);
+        for (let i = buildCursor; i < end; i++) {
+          const fp = files[i];
+          if (isVideoPath(fp)) {
+            const div = document.createElement('div');
+            div.className = 'video-thumb';
+            div.title = getFilename(fp);
+            div.dataset.idx = String(i);
+            div.dataset.fp = fp;
+            div.addEventListener('click', () => loadMedia(i));
+            filmstripEl.appendChild(div);
+            lazyObserver.observe(div);
+          } else {
+            const thumb = document.createElement('img');
+            thumb.className = 'thumb';
+            thumb.title = getFilename(fp);
+            thumb.dataset.idx = String(i);
+            thumb.dataset.fp = fp;
+            thumb.addEventListener('click', () => loadMedia(i));
+            filmstripEl.appendChild(thumb);
+            lazyObserver.observe(thumb);
+          }
         }
-      });
+        buildCursor = end;
+        if (buildCursor < files.length) {
+          setTimeout(buildFilmstripChunk, 0);
+        }
+      };
+      // Kick the first chunk on next tick so the main image's first
+      // paint cycle has a moment to run before we start blocking JS.
+      setTimeout(buildFilmstripChunk, 0);
+
       btnPrev.style.display = 'flex';
       btnNext.style.display = 'flex';
     } else {
       btnPrev.style.display = 'none';
       btnNext.style.display = 'none';
-    }
-
-    if (files.length > 0) {
-      loadMedia(startIndex);
     }
 
     // Diagnostic: confirm preload attached + prepare() available
