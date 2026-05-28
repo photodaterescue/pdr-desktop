@@ -35,3 +35,5 @@ electron-stdout.log
 # (DB-forensics .cjs files, throwaway better-sqlite3 installs, etc).
 # Never part of the shipped product or the source tree.
 .scratch/
+
+release-test-phase-a/
