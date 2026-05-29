@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2 } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
-import { onAiProgress, pauseAi, resumeAi, cancelAi, type AiProgress } from '@/lib/electron-bridge';
+import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, type AiProgress } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
 import { useAlbumReturnSource, setAlbumReturnSource, setPendingAlbumOpen } from '@/lib/album-return-source';
@@ -97,6 +97,41 @@ export function TitleBar() {
   useEffect(() => {
     const unsub = onAiProgress((p) => setAiProgress(p));
     return () => { unsub(); };
+  }, []);
+
+  // v2.0.15 (Terry 2026-05-29) — live Recycle Bin count for the
+  // titlebar badge. Refreshes on every recycle:changed broadcast so
+  // the number stays in sync without polling.
+  const [recycleCount, setRecycleCount] = useState<number>(0);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const r = await getRecycleBinCount();
+      if (!cancelled && r.success) setRecycleCount(r.count ?? 0);
+    };
+    refresh();
+    const off = onRecycleBinChanged(() => { void refresh(); });
+    return () => { cancelled = true; off(); };
+  }, []);
+
+  // v2.0.15 (Terry 2026-05-29) — Settings → General toggle that
+  // controls whether the count badge appears on the titlebar's
+  // Recycle Bin icon. Loaded once at mount; refreshed live via the
+  // `pdr:settingsChanged` window event the Settings modal dispatches
+  // so toggling doesn't require a relaunch. Default OFF — the count
+  // is always available in the hover tooltip regardless.
+  const [showCountBadge, setShowCountBadge] = useState<boolean>(false);
+  useEffect(() => {
+    let cancelled = false;
+    getSettings().then((s) => {
+      if (!cancelled) setShowCountBadge(!!(s as any)?.recycleBinShowCountBadge);
+    }).catch(() => { /* best-effort */ });
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ key: string; value: unknown }>).detail;
+      if (detail?.key === 'recycleBinShowCountBadge') setShowCountBadge(!!detail.value);
+    };
+    window.addEventListener('pdr:settingsChanged', handler as EventListener);
+    return () => { cancelled = true; window.removeEventListener('pdr:settingsChanged', handler as EventListener); };
   }, []);
 
   const aiProcessing = aiProgress != null
@@ -309,6 +344,44 @@ export function TitleBar() {
             </span>
           )
         )}
+        {/* v2.0.15 (Terry 2026-05-29) — Recycle Bin shortcut. Sits
+            JUST LEFT of the TourLauncher "?" so it's reachable from
+            any view (Dashboard, S&D, Memories, Trees) without
+            hunting through the sidebar. Live count badge appears
+            when the bin is non-empty. Dispatches a window event
+            that workspace.tsx listens for (mirrors the
+            pdr:openLicenseModal / pdr:memoriesSwitchTab pattern) so
+            TitleBar doesn't need to know about activeView state.
+            Styling copies the dark-mode toggle below — same w-7 h-7
+            rounded-full hover-on-white pattern that defines the
+            titlebar's button family. */}
+        {/* v2.0.15 (Terry 2026-05-29) — count badge is opt-in via
+            Settings → General → "Show Recycle Bin count on titlebar"
+            (default OFF, so the icon stays clean for everyone by
+            default; power users who want at-a-glance "anything to
+            empty?" visibility can flip it on). The count is always
+            in the hover tooltip regardless of the badge setting.
+            Switching to `relative` on the button only when the badge
+            is showing keeps the icon perfectly centred when the
+            badge is hidden. */}
+        <IconTooltip label={recycleCount > 0 ? `Recycle Bin · ${recycleCount} item${recycleCount === 1 ? '' : 's'}` : 'Recycle Bin'} side="bottom">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('pdr:openRecycleBin'))}
+            className={`${showCountBadge && recycleCount > 0 ? 'relative ' : ''}flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all`}
+            data-testid="titlebar-recycle-bin"
+            aria-label={recycleCount > 0 ? `Recycle Bin, ${recycleCount} items` : 'Recycle Bin'}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {showCountBadge && recycleCount > 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-[var(--color-gold)] text-[#1f1a08] text-[9px] font-bold leading-none border border-primary"
+                aria-hidden
+              >
+                {recycleCount > 99 ? '99+' : recycleCount}
+              </span>
+            )}
+          </button>
+        </IconTooltip>
         {tourMenuItems && tourMenuItems.length > 0 && (
           <TourLauncher
             items={tourMenuItems}

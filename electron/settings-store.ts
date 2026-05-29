@@ -56,6 +56,14 @@ export interface PDRSettings {
    *  main PDR window on launch. Default off — users who rely on PM
    *  daily can opt in once to skip the manual open every session. */
   openPeopleOnStartup: boolean;
+
+  /** When true, the titlebar's Recycle Bin icon shows a small live
+   *  count badge of how many items are sitting in the bin. Default
+   *  OFF — the count is always available in the hover tooltip, and
+   *  an always-visible number at icon scale reads as clutter for
+   *  most users. Power users who want at-a-glance "anything to
+   *  empty?" visibility can flip this on in Settings → General. */
+  recycleBinShowCountBadge: boolean;
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -186,6 +194,7 @@ export const optimisedDefaults: PDRSettings = {
   aiSearchMatchThreshold: 0.72,
   aiSearchMatchMode: 'ai',
   openPeopleOnStartup: false,
+  recycleBinShowCountBadge: false,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -256,6 +265,7 @@ export function getSettings(): PDRSettings {
     aiSearchMatchThreshold: store.get('aiSearchMatchThreshold', optimisedDefaults.aiSearchMatchThreshold),
     aiSearchMatchMode: store.get('aiSearchMatchMode', optimisedDefaults.aiSearchMatchMode),
     openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
+    recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),

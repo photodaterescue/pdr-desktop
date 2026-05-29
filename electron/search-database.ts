@@ -800,6 +800,14 @@ export function initDatabase(): { success: boolean; error?: string } {
       // currently in the files_fts FTS5 index — caption search lands in
       // v2.0.9 alongside the FTS rebuild.
       { name: 'caption', type: 'TEXT' },
+      // v2.0.15 — PDR Recycle Bin (Terry 2026-05-28). Soft-delete
+      // marker: when set to 1, the file is hidden from every view
+      // (Memories, Albums, S&D) but the underlying photo file and
+      // index row stay intact, so Restore is one click. Timestamp
+      // when moved to the bin, in ISO 8601 — used for "Recently
+      // deleted" sort and any future auto-empty policy.
+      { name: 'in_recycle_bin', type: 'INTEGER NOT NULL DEFAULT 0' },
+      { name: 'recycled_at', type: 'TEXT' },
     ];
     for (const col of newCols) {
       if (!colNames.has(col.name)) {
@@ -1807,7 +1815,9 @@ export function consolidateIndexedFilesDuplicates(): { groupsMerged: number; row
 export function searchFiles(query: SearchQuery): SearchResult {
   const database = getDb();
 
-  const conditions: string[] = [];
+  // v2.0.15 — recycled files never appear in S&D results. Bin
+  // visibility is exclusively the Recycle Bin view's job.
+  const conditions: string[] = ['(f.in_recycle_bin IS NULL OR f.in_recycle_bin = 0)'];
   const params: any[] = [];
 
   // Full-text search — queries filename FTS, AI tags FTS, and direct AI tag match
@@ -3421,6 +3431,119 @@ export function getAllFaceEmbeddings(): { id: number; file_id: number; embedding
   return database.prepare(`SELECT id, file_id, embedding, cluster_id FROM face_detections WHERE embedding IS NOT NULL`).all() as any[];
 }
 
+// ─── PDR Recycle Bin (v2.0.15) ─────────────────────────────────────────────
+//
+// Soft-delete model: setting `in_recycle_bin = 1` hides a row from every
+// user-facing query without touching the file on disk or the index row.
+// Restore is a one-statement undo. Permanent delete (separate IPC) sends
+// the file to the OS Trash via shell.trashItem() and then removes the
+// row + sidecar bits.
+
+export interface RecycleBinEntry {
+  id: number;
+  file_path: string;
+  filename: string;
+  file_type: string;
+  derived_date: string | null;
+  recycled_at: string | null;
+  caption: string | null;
+}
+
+/** Move a batch of files into the Recycle Bin. Idempotent. */
+export function moveFilesToRecycleBin(fileIds: number[]): number {
+  if (fileIds.length === 0) return 0;
+  const database = getDb();
+  const now = new Date().toISOString();
+  const stmt = database.prepare(
+    `UPDATE indexed_files SET in_recycle_bin = 1, recycled_at = ? WHERE id = ? AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)`
+  );
+  let updated = 0;
+  const tx = database.transaction((ids: number[]) => {
+    for (const id of ids) {
+      const r = stmt.run(now, id);
+      updated += r.changes;
+    }
+  });
+  tx(fileIds);
+  return updated;
+}
+
+/** Restore files from the Recycle Bin. Idempotent. */
+export function restoreFilesFromRecycleBin(fileIds: number[]): number {
+  if (fileIds.length === 0) return 0;
+  const database = getDb();
+  const stmt = database.prepare(
+    `UPDATE indexed_files SET in_recycle_bin = 0, recycled_at = NULL WHERE id = ? AND in_recycle_bin = 1`
+  );
+  let updated = 0;
+  const tx = database.transaction((ids: number[]) => {
+    for (const id of ids) {
+      const r = stmt.run(id);
+      updated += r.changes;
+    }
+  });
+  tx(fileIds);
+  return updated;
+}
+
+/** Remove index rows for the given files. Cascades to album_files,
+ *  face_detections, ai_tags (via FKs / explicit deletes). Used by
+ *  Permanent Delete after shell.trashItem succeeds. */
+export function deleteIndexedFiles(fileIds: number[]): number {
+  if (fileIds.length === 0) return 0;
+  const database = getDb();
+  const delFile = database.prepare(`DELETE FROM indexed_files WHERE id = ?`);
+  const delAlbumLinks = database.prepare(`DELETE FROM album_files WHERE file_id = ?`);
+  const delFaces = database.prepare(`DELETE FROM face_detections WHERE file_id = ?`);
+  const delTags = database.prepare(`DELETE FROM ai_tags WHERE file_id = ?`);
+  let removed = 0;
+  const tx = database.transaction((ids: number[]) => {
+    for (const id of ids) {
+      delAlbumLinks.run(id);
+      delFaces.run(id);
+      delTags.run(id);
+      const r = delFile.run(id);
+      removed += r.changes;
+    }
+  });
+  tx(fileIds);
+  return removed;
+}
+
+/** List everything in the Recycle Bin, most-recently-recycled first. */
+export function listRecycleBin(limit: number = 5000): RecycleBinEntry[] {
+  const database = getDb();
+  return database.prepare(
+    `SELECT id, file_path, filename, file_type, derived_date, recycled_at, caption
+     FROM indexed_files
+     WHERE in_recycle_bin = 1
+     ORDER BY recycled_at DESC NULLS LAST, id DESC
+     LIMIT ?`
+  ).all(limit) as RecycleBinEntry[];
+}
+
+/** Quick count of recycled items — used by the tab badge. */
+export function getRecycleBinCount(): number {
+  const database = getDb();
+  const row = database.prepare(`SELECT COUNT(*) as n FROM indexed_files WHERE in_recycle_bin = 1`).get() as { n: number };
+  return row?.n ?? 0;
+}
+
+/**
+ * Count faces that have an embedding but no cluster assignment yet.
+ * Used at startup to detect a clustering pass that was interrupted
+ * (e.g. user quit PDR mid-cluster on a large Takeout import) so we
+ * can resume it automatically rather than leaving faces stranded
+ * until the user triggers Re-cluster manually.
+ */
+export function getUnclusteredFaceCount(): number {
+  const database = getDb();
+  const row = database
+    .prepare(`SELECT COUNT(*) as n FROM face_detections WHERE embedding IS NOT NULL AND cluster_id IS NULL`)
+    .get() as { n: number };
+  return row?.n ?? 0;
+}
+
 /**
  * Refine facial recognition by computing per-person average embeddings
  * from verified faces, then matching unnamed faces against those averages.
@@ -3674,6 +3797,23 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
 export function updateFaceCluster(faceId: number, clusterId: number): void {
   const database = getDb();
   database.prepare(`UPDATE face_detections SET cluster_id = ? WHERE id = ?`).run(clusterId, faceId);
+}
+
+/**
+ * Apply a batch of cluster assignments in a single transaction. Used
+ * when clustering runs in the AI worker_thread and main applies the
+ * results in bulk — far faster than N separate UPDATE statements and
+ * keeps the DB lock window tight enough that it doesn't show up as
+ * a "Not Responding" pause on the main thread.
+ */
+export function updateFaceClustersBatch(updates: { faceId: number; clusterId: number }[]): void {
+  if (updates.length === 0) return;
+  const database = getDb();
+  const stmt = database.prepare(`UPDATE face_detections SET cluster_id = ? WHERE id = ?`);
+  const tx = database.transaction((rows: { faceId: number; clusterId: number }[]) => {
+    for (const row of rows) stmt.run(row.clusterId, row.faceId);
+  });
+  tx(updates);
 }
 
 /** Get all face clusters with representative face data for the People management view */
@@ -4787,7 +4927,9 @@ export function getMemoriesYearMonthBuckets(runIds?: number[]): MemoriesYearBuck
            ORDER BY f2.id ASC LIMIT 1)
       ) AS sampleFileId
     FROM indexed_files f
-    WHERE year IS NOT NULL AND month IS NOT NULL ${outer.sql}
+    WHERE year IS NOT NULL AND month IS NOT NULL
+      AND (f.in_recycle_bin IS NULL OR f.in_recycle_bin = 0)
+      ${outer.sql}
     GROUP BY year, month
     ORDER BY year DESC, month DESC
   `).all(
@@ -4837,6 +4979,7 @@ export function getMemoriesOnThisDay(month: number, day: number, runIds?: number
     FROM indexed_files
     WHERE month = ? AND day = ? ${clause.sql}
       AND derived_date IS NOT NULL
+      AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)
     ORDER BY year DESC, derived_date DESC
     LIMIT ?
   `).all(...params) as MemoriesOnThisDayItem[];
@@ -4862,7 +5005,9 @@ export function getMemoriesOnThisDay(month: number, day: number, runIds?: number
 export function getMemoriesDayFiles(year: number, month?: number | null, day?: number | null, runIds?: number[]): IndexedFile[] {
   const database = getDb();
   const clause = runIdsClause(runIds);
-  const conditions: string[] = ['year = ?'];
+  // v2.0.15 — hide files that are sitting in the PDR Recycle Bin.
+  // They reappear if the user restores them from the Recycle Bin view.
+  const conditions: string[] = ['year = ?', '(in_recycle_bin IS NULL OR in_recycle_bin = 0)'];
   const params: any[] = [year];
   if (month != null) { conditions.push('month = ?'); params.push(month); }
   if (day != null)   { conditions.push('day = ?');   params.push(day); }
@@ -6544,18 +6689,30 @@ export interface AlbumSummary {
  */
 export function listAlbums(): AlbumSummary[] {
   const db = getDb();
+  // v2.0.15 — count and cover-pick both exclude recycled files. A
+  // recycled photo can still be a member of an album (the
+  // album_files row stays so Restore puts it back in the album),
+  // but it shouldn't inflate the album's photoCount or appear as
+  // its cover.
   const rows = db.prepare(`
     SELECT
       a.id, a.title, a.source, a.external_album_key AS externalAlbumKey,
       a.description, a.cover_file_id AS coverFileId,
       a.created_at AS createdAt, a.updated_at AS updatedAt,
-      (SELECT COUNT(*) FROM album_files af WHERE af.album_id = a.id) AS photoCount,
+      (SELECT COUNT(*) FROM album_files af
+         JOIN indexed_files ic ON ic.id = af.file_id
+         WHERE af.album_id = a.id
+           AND (ic.in_recycle_bin IS NULL OR ic.in_recycle_bin = 0)
+      ) AS photoCount,
       COALESCE(
-        (SELECT file_path FROM indexed_files WHERE id = a.cover_file_id),
+        (SELECT file_path FROM indexed_files
+           WHERE id = a.cover_file_id
+             AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)),
         (SELECT i.file_path
            FROM album_files af2
            JOIN indexed_files i ON i.id = af2.file_id
           WHERE af2.album_id = a.id
+            AND (i.in_recycle_bin IS NULL OR i.in_recycle_bin = 0)
           ORDER BY i.derived_date ASC, i.id ASC
           LIMIT 1)
       ) AS coverPath
@@ -6630,11 +6787,15 @@ export function deleteAlbum(albumId: number): { success: boolean; error?: string
  */
 export function listAlbumPhotos(albumId: number): IndexedFile[] {
   const db = getDb();
+  // v2.0.15 — recycled photos are hidden from album views. Their
+  // album_files row stays intact so Restore from the Recycle Bin
+  // returns them to every album they were in.
   return db.prepare(`
     SELECT i.*
     FROM album_files af
     JOIN indexed_files i ON i.id = af.file_id
     WHERE af.album_id = ?
+      AND (i.in_recycle_bin IS NULL OR i.in_recycle_bin = 0)
     ORDER BY COALESCE(i.derived_date, '9999-99-99') ASC, i.id ASC
   `).all(albumId) as IndexedFile[];
 }

@@ -26,6 +26,7 @@ import {
   rebuildAiFts,
   getAllFaceEmbeddings,
   updateFaceCluster,
+  updateFaceClustersBatch,
   getAiStats,
   clearAllAiData,
   clearFaceDataForModelUpgrade,
@@ -300,8 +301,12 @@ export async function startAiProcessing(opts?: { tagsOnly?: boolean }): Promise<
       }
     }
 
-    // Run face clustering after all faces are processed — skip in
-    // tagsOnly mode where we didn't touch any face data.
+    // Cluster the freshly-detected faces against existing cluster
+    // centroids — INCREMENTAL, not full rebuild. Preserves every
+    // existing cluster_id so People Manager person↔cluster mappings
+    // stay intact across analysis passes (the old full re-cluster
+    // would renumber every cluster from 1, which silently churned
+    // the "unnamed face" groups even when the user hadn't asked).
     if (!tagsOnly && enableFaces && totalFacesFound > 0 && !shouldCancel) {
       sendProgress({
         phase: 'clustering',
@@ -311,7 +316,7 @@ export async function startAiProcessing(opts?: { tagsOnly?: boolean }): Promise<
         facesFound: totalFacesFound,
         tagsApplied: totalTagsApplied,
       });
-      await runFaceClustering();
+      await runIncrementalClustering();
     }
 
     sendProgress({
@@ -572,82 +577,298 @@ function processFileInWorker(fileId: number, filePath: string): Promise<WorkerMe
   });
 }
 
-// ─── Face clustering (DBSCAN-like) ─────────────────────────────────────────
+// ─── Face clustering (delegated to AI worker thread) ───────────────────────
+//
+// Clustering used to run on main, with time-budgeted setImmediate yields
+// to keep main responsive. That wasn't enough on a 36K-face library: even
+// 50ms work chunks accumulated enough OS-window-message starvation that
+// Windows marked PDR "Not Responding". Now both incremental and full
+// clustering run inside the existing AI worker_thread — main stays
+// fully responsive, and the worker hands back a single batched update
+// that main applies in one DB transaction.
 
 /**
- * Cluster all face embeddings into person groups. The algorithm is
- * O(N²) cosine similarity (every face compared to every cluster
- * centroid + seed), so on 1000+ faces it ran for several seconds
- * synchronously — long enough to block the main process and trigger
- * Windows' "Not Responding" banner on every open BrowserWindow,
- * because input events queue up while main is busy.
+ * INCREMENTAL clustering — assigns only faces with cluster_id IS NULL
+ * to either the best matching existing cluster or a brand-new cluster
+ * seeded from the face itself. Runs in O(U × K) where U is the
+ * unclustered count and K is the existing-cluster count, vs full
+ * re-cluster which is O(N²) over EVERY face — a 100×+ speedup on a
+ * 36K-face library where 4–5K new faces came in from a Takeout import.
  *
- * The fix: yield to the event loop after every CHUNK_SIZE outer-loop
- * iterations using a setImmediate. The total wall time is roughly
- * the same, but main stays responsive to IPC pings and input events
- * between chunks. Now an async function so callers can await it.
+ * Existing cluster_id assignments are preserved, so People Manager
+ * person→cluster mappings stay intact. The full runFaceClustering()
+ * path destroys all assignments and is reserved for the user-triggered
+ * "Re-cluster from scratch" in Settings → AI.
  */
-export async function runFaceClustering(customThreshold?: number): Promise<void> {
-  console.log('[AI] Running face clustering...');
+export async function runIncrementalClustering(customThreshold?: number): Promise<void> {
+  const faces = getAllFaceEmbeddings();
+  if (faces.length === 0) return;
+  const validFaces = faces.filter(f => f.embedding && f.embedding.length > 0);
+  const clustered = validFaces.filter(f => f.cluster_id !== null);
+  const unclustered = validFaces.filter(f => f.cluster_id === null);
+  if (unclustered.length === 0) {
+    console.log('[AI] Incremental clustering: nothing to do');
+    return;
+  }
+
+  // Pull the worker dimension from any face's embedding (all have the same)
+  const dim = unclustered[0].embedding.byteLength / 4;
+
+  // Build centroids on main (one DB read), packed into flat ArrayBuffers
+  // for transferable postMessage to the worker.
+  const centroidMap = new Map<number, { sum: Float32Array; count: number }>();
+  for (const f of clustered) {
+    const vec = new Float32Array(f.embedding.buffer, f.embedding.byteOffset, dim);
+    const c = centroidMap.get(f.cluster_id!);
+    if (c) {
+      for (let d = 0; d < dim; d++) c.sum[d] += vec[d];
+      c.count++;
+    } else {
+      const sum = new Float32Array(dim);
+      for (let d = 0; d < dim; d++) sum[d] = vec[d];
+      centroidMap.set(f.cluster_id!, { sum, count: 1 });
+    }
+  }
+  const K = centroidMap.size;
+  const centroidIds = new Int32Array(K);
+  const centroidCounts = new Int32Array(K);
+  const centroidsFlat = new Float32Array(K * dim);
+  let kIdx = 0;
+  let maxClusterId = 0;
+  for (const [id, { sum, count }] of centroidMap) {
+    centroidIds[kIdx] = id;
+    centroidCounts[kIdx] = count;
+    for (let d = 0; d < dim; d++) centroidsFlat[kIdx * dim + d] = sum[d] / count;
+    if (id > maxClusterId) maxClusterId = id;
+    kIdx++;
+  }
+
+  const N = unclustered.length;
+  const embeddingsFlat = new Float32Array(N * dim);
+  const faceIds = new Int32Array(N);
+  for (let i = 0; i < N; i++) {
+    const f = unclustered[i];
+    const vec = new Float32Array(f.embedding.buffer, f.embedding.byteOffset, dim);
+    for (let d = 0; d < dim; d++) embeddingsFlat[i * dim + d] = vec[d];
+    faceIds[i] = f.id;
+  }
+
+  console.log(`[AI] Incremental clustering: dispatching ${N} faces against ${K} centroids to AI worker`);
+
+  // Ensure worker is up before dispatching
+  const settings = getSettings();
+  try {
+    await ensureWorker(settings);
+  } catch (err) {
+    console.error('[AI] Could not start AI worker for clustering:', err);
+    return;
+  }
+
+  const result = await sendClusteringToWorker({
+    type: 'cluster-incremental',
+    embeddings: embeddingsFlat.buffer,
+    faceIds: faceIds.buffer,
+    existingCentroids: centroidsFlat.buffer,
+    existingCentroidIds: centroidIds.buffer,
+    existingCentroidCounts: centroidCounts.buffer,
+    nextClusterId: maxClusterId + 1,
+    dim,
+    threshold: customThreshold ?? 0.72,
+  });
+  if (!result) return;
+
+  // Apply assignments in a single transaction
+  const assignments = new Int32Array(result.assignments);
+  const returnedFaceIds = new Int32Array(result.faceIds);
+  const updates: { faceId: number; clusterId: number }[] = [];
+  for (let i = 0; i < assignments.length; i++) {
+    updates.push({ faceId: returnedFaceIds[i], clusterId: assignments[i] });
+  }
+  updateFaceClustersBatch(updates);
+  console.log(`[AI] Incremental clustering applied: ${updates.length} face assignments written`);
+}
+
+/**
+ * Send a clustering job to the AI worker and await the result.
+ * Resolves with the assignments + faceIds ArrayBuffers, or null on error.
+ */
+function sendClusteringToWorker(msg: any): Promise<{ assignments: ArrayBuffer; faceIds: ArrayBuffer; nextClusterId: number } | null> {
+  return new Promise((resolve) => {
+    if (!worker) { resolve(null); return; }
+
+    const handler = (response: any) => {
+      if (response?.type === 'cluster-result') {
+        worker?.off('message', handler);
+        resolve({
+          assignments: response.assignments,
+          faceIds: response.faceIds,
+          nextClusterId: response.nextClusterId,
+        });
+      } else if (response?.type === 'cluster-error') {
+        worker?.off('message', handler);
+        console.error('[AI] Worker clustering error:', response.error);
+        resolve(null);
+      } else if (response?.type === 'cluster-progress') {
+        console.log(`[AI] Clustering progress: ${response.current}/${response.total} seeds, ${response.clusters} clusters`);
+      }
+      // Other message types (log, ready) are handled by other listeners
+    };
+    worker.on('message', handler);
+    worker.postMessage(msg, [msg.embeddings, msg.faceIds].concat(
+      msg.existingCentroids ? [msg.existingCentroids, msg.existingCentroidIds, msg.existingCentroidCounts] : []
+    ));
+  });
+}
+
+/** Old in-main implementation kept here for reference of the algorithm —
+ *  now superseded by the worker-side equivalent. Marked unused. */
+async function _legacyRunIncrementalClustering(customThreshold?: number): Promise<void> {
   const faces = getAllFaceEmbeddings();
   if (faces.length === 0) return;
 
-  const embeddings: { id: number; vec: Float32Array }[] = faces
-    .filter(f => f.embedding && f.embedding.length > 0)
-    .map(f => ({
-      id: f.id,
-      vec: new Float32Array(f.embedding.buffer, f.embedding.byteOffset, f.embedding.byteLength / 4),
-    }));
+  const validFaces = faces.filter(f => f.embedding && f.embedding.length > 0);
+  const clustered = validFaces.filter(f => f.cluster_id !== null);
+  const unclustered = validFaces.filter(f => f.cluster_id === null);
 
-  if (embeddings.length === 0) return;
+  if (unclustered.length === 0) {
+    console.log('[AI] Incremental clustering: nothing to do');
+    return;
+  }
+
+  console.log(`[AI] Incremental clustering: ${unclustered.length} unclustered face(s) against ${clustered.length} existing assignment(s)`);
+  const startedAt = Date.now();
 
   const SIMILARITY_THRESHOLD = customThreshold ?? 0.72;
-  const SEED_THRESHOLD = Math.max(0.55, SIMILARITY_THRESHOLD - 0.07);
-  const visited = new Set<number>();
-  let nextClusterId = 1;
 
-  // Yield about every 25 seed iterations so a 1000-face library still
-  // pumps event-loop turns ~40 times during the run.
-  const CHUNK_SIZE = 25;
-  const yieldNow = () => new Promise<void>((r) => setImmediate(r));
-
-  for (let i = 0; i < embeddings.length; i++) {
-    if (i > 0 && i % CHUNK_SIZE === 0) await yieldNow();
-    if (visited.has(i)) continue;
-    visited.add(i);
-
-    const cluster = [i];
-    const seed = embeddings[i].vec;
-    const dim = seed.length;
-    const centroid = new Float32Array(dim);
-    for (let d = 0; d < dim; d++) centroid[d] = seed[d];
-
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let j = 0; j < embeddings.length; j++) {
-        if (visited.has(j)) continue;
-        const simCentroid = cosineSimilarity(centroid, embeddings[j].vec);
-        const simSeed = cosineSimilarity(seed, embeddings[j].vec);
-        if (simCentroid >= SIMILARITY_THRESHOLD && simSeed >= SEED_THRESHOLD) {
-          visited.add(j);
-          cluster.push(j);
-          const n = cluster.length;
-          for (let d = 0; d < dim; d++) {
-            centroid[d] = centroid[d] * ((n - 1) / n) + embeddings[j].vec[d] / n;
-          }
-          changed = true;
-        }
+  // Build cluster centroids from existing assignments using an online
+  // running mean — no need to allocate per-cluster face arrays.
+  const centroids = new Map<number, { vec: Float32Array; count: number }>();
+  for (const f of clustered) {
+    const vec = new Float32Array(f.embedding.buffer, f.embedding.byteOffset, f.embedding.byteLength / 4);
+    const existing = centroids.get(f.cluster_id!);
+    if (existing) {
+      const n = existing.count + 1;
+      const dim = vec.length;
+      for (let d = 0; d < dim; d++) {
+        existing.vec[d] = existing.vec[d] * (existing.count / n) + vec[d] / n;
       }
-    }
-
-    const clusterId = nextClusterId++;
-    for (const idx of cluster) {
-      updateFaceCluster(embeddings[idx].id, clusterId);
+      existing.count = n;
+    } else {
+      const copy = new Float32Array(vec.length);
+      for (let d = 0; d < vec.length; d++) copy[d] = vec[d];
+      centroids.set(f.cluster_id!, { vec: copy, count: 1 });
     }
   }
 
-  console.log(`[AI] Clustering complete: ${nextClusterId - 1} clusters from ${embeddings.length} faces`);
+  let nextClusterId = 1;
+  for (const id of centroids.keys()) {
+    if (id >= nextClusterId) nextClusterId = id + 1;
+  }
+
+  const WORK_BUDGET = 50_000;
+  let workSinceYield = 0;
+  const yieldNow = () => new Promise<void>((r) => setImmediate(r));
+
+  let assignedExisting = 0;
+  let newClustersSeeded = 0;
+
+  for (const face of unclustered) {
+    const vec = new Float32Array(face.embedding.buffer, face.embedding.byteOffset, face.embedding.byteLength / 4);
+    let bestId: number | null = null;
+    let bestSim = SIMILARITY_THRESHOLD;
+
+    for (const [id, c] of centroids) {
+      const sim = cosineSimilarity(vec, c.vec);
+      workSinceYield++;
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestId = id;
+      }
+    }
+
+    if (bestId !== null) {
+      updateFaceCluster(face.id, bestId);
+      assignedExisting++;
+      // Update centroid online so subsequent unclustered faces see the
+      // refined mean.
+      const c = centroids.get(bestId)!;
+      const n = c.count + 1;
+      const dim = vec.length;
+      for (let d = 0; d < dim; d++) {
+        c.vec[d] = c.vec[d] * (c.count / n) + vec[d] / n;
+      }
+      c.count = n;
+    } else {
+      const newId = nextClusterId++;
+      updateFaceCluster(face.id, newId);
+      const copy = new Float32Array(vec.length);
+      for (let d = 0; d < vec.length; d++) copy[d] = vec[d];
+      centroids.set(newId, { vec: copy, count: 1 });
+      newClustersSeeded++;
+    }
+
+    if (workSinceYield >= WORK_BUDGET) {
+      workSinceYield = 0;
+      await yieldNow();
+    }
+  }
+
+  const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+  console.log(`[AI] Incremental clustering done in ${elapsedSec}s: ${assignedExisting} face(s) assigned to existing clusters, ${newClustersSeeded} new cluster(s) seeded`);
+}
+
+
+/**
+ * Full O(N²) re-cluster from scratch. Wipes every existing cluster_id
+ * and rebuilds. Used only when the user explicitly chooses Re-cluster
+ * in Settings → AI. Delegates to the AI worker_thread so main stays
+ * responsive throughout — the work is the same shape as before, just
+ * off the main process.
+ */
+export async function runFaceClustering(customThreshold?: number): Promise<void> {
+  console.log('[AI] Running full face clustering...');
+  const faces = getAllFaceEmbeddings();
+  if (faces.length === 0) return;
+  const validFaces = faces.filter(f => f.embedding && f.embedding.length > 0);
+  if (validFaces.length === 0) return;
+
+  const dim = validFaces[0].embedding.byteLength / 4;
+  const N = validFaces.length;
+  const embeddingsFlat = new Float32Array(N * dim);
+  const faceIds = new Int32Array(N);
+  for (let i = 0; i < N; i++) {
+    const f = validFaces[i];
+    const vec = new Float32Array(f.embedding.buffer, f.embedding.byteOffset, dim);
+    for (let d = 0; d < dim; d++) embeddingsFlat[i * dim + d] = vec[d];
+    faceIds[i] = f.id;
+  }
+
+  console.log(`[AI] Dispatching ${N} faces to AI worker for full re-cluster`);
+  const settings = getSettings();
+  try {
+    await ensureWorker(settings);
+  } catch (err) {
+    console.error('[AI] Could not start AI worker for clustering:', err);
+    return;
+  }
+
+  const result = await sendClusteringToWorker({
+    type: 'cluster-full',
+    embeddings: embeddingsFlat.buffer,
+    faceIds: faceIds.buffer,
+    dim,
+    threshold: customThreshold ?? 0.72,
+  });
+  if (!result) return;
+
+  const assignments = new Int32Array(result.assignments);
+  const returnedFaceIds = new Int32Array(result.faceIds);
+  const updates: { faceId: number; clusterId: number }[] = [];
+  for (let i = 0; i < assignments.length; i++) {
+    updates.push({ faceId: returnedFaceIds[i], clusterId: assignments[i] });
+  }
+  updateFaceClustersBatch(updates);
+  console.log(`[AI] Full clustering applied: ${updates.length} face assignments written`);
 }
 
 function cosineSimilarity(a: Float32Array, b: Float32Array): number {

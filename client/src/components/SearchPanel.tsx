@@ -73,6 +73,7 @@ import {
   CalendarRange,
   MoreHorizontal,
   MessageSquareText,
+  HardDrive,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -4053,22 +4054,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               </Popover>
               {selectedFiles.size > 0 && (
                 <>
-                  {/* Selection count chip with built-in clear affordance.
-                      iOS / macOS dismissable-chip pattern. Neutral muted
-                      palette — this is a STATUS indicator with a dismiss
-                      action, NOT a peer of the lavender CTAs that follow.
-                      The visual contrast is deliberate: the count reads
-                      as state ("you have 12 of these"), the lavender
-                      pills read as actions ("do something with them").
-                      Was lavender-on-lavender-tint which violated the
-                      style guide's "lavender body text reads as faint"
-                      rule and made the chip look washed out next to the
-                      bold CTA pills. */}
+                  {/* v2.0.15 (Terry 2026-05-28) — gold selection chip,
+                      matched across PDR (MemoriesView grid, here, and
+                      the per-tile checkmark circles). Deliberate
+                      override of the "gold = captions only" rule:
+                      users scrolling 100s of results need to see
+                      selection state at a glance. Captioned-only chip
+                      stays gold too; they don't collide visually
+                      because they appear in different header slots
+                      and the caption chip carries the chat-bubble
+                      icon to disambiguate. */}
                   <IconTooltip label="Clear selection" side="top">
                     <button
                       type="button"
                       onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
-                      className="group inline-flex items-center gap-1 text-xs font-medium text-foreground bg-muted hover:bg-muted/80 pl-2.5 pr-1 py-0.5 rounded-full transition-colors"
+                      className="group inline-flex items-center gap-1 text-xs font-medium text-[#1f1a08] bg-[var(--color-gold)] hover:opacity-90 pl-2.5 pr-1 py-0.5 rounded-full transition-colors"
                       data-testid="button-clear-selection"
                       aria-label={`${selectedFiles.size} selected — clear selection`}
                     >
@@ -4097,24 +4097,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <Eye className="w-3 h-3" />
                     Open {Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video').length} in Viewer
                   </button>
-                  {/* Custom-selection toggle — switches the grid between the
-                      current search results and the union of every checked
-                      file across all searches. The filter ribbon above
-                      visually deactivates while this is on so the user
-                      knows the grid is now driven by their selection,
-                      not by their filter. */}
-                  <IconTooltip
-                    label={showSelectedOnly ? 'Show the current search results again' : 'Show ONLY the files you have checked across all searches'}
-                    side="top"
-                  >
-                    <button
-                      onClick={() => setShowSelectedOnly(prev => !prev)}
-                      className={`text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors ${showSelectedOnly ? 'text-white bg-primary hover:bg-primary/90' : 'text-foreground bg-secondary hover:bg-secondary/70 border border-border'}`}
-                    >
-                      <CheckSquare className="w-3 h-3" />
-                      {showSelectedOnly ? 'Show all results' : `Show ${selectedFilesMap.size} selected`}
-                    </button>
-                  </IconTooltip>
+                  {/* v2.0.15 (Terry 2026-05-29) — REMOVED the
+                      "Show N selected" toggle. It was surplus to
+                      requirements: users already see their selection
+                      count in the gold chip + can act on the
+                      selection via Add to Album / Open in Viewer /
+                      Delete without needing the grid to filter down
+                      to it. The showSelectedOnly state + plumbing
+                      stay in place behind it (cheap, and removing
+                      the state would touch ~10 callsites) — just
+                      no UI surface exposes the toggle anymore. If
+                      it's ever wanted back, restore the IconTooltip
+                      + button block from git history. */}
                   {/* v2.0.8 step 4 — Add to Album popover. Sits next to
                       the PL button in the selection bar so the two
                       "do something with this selection" actions are
@@ -4988,15 +4982,12 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
     <ContextMenu>
       <ContextMenuTrigger asChild>
     <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick}
-      // v2.0.14 (Terry 2026-05-28) — native OS drag to external apps
+      // v2.0.15 (Terry 2026-05-28) — native OS drag to external apps
       // (WhatsApp, Discord, mail, Photoshop, etc.). See MemoriesView
-      // for the full rationale; same shape here. Single-file drag —
-      // S&D doesn't currently expose a multi-select set inside the
-      // FileCard scope, so the drag carries just the dragged file
-      // (matches the experience users have today from File Explorer
-      // when single-clicking).
+      // for the full rationale + the File Explorer caveat.
       draggable
       onDragStart={(e) => {
+        try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }
         e.preventDefault();
         (window as any).pdr?.drag?.start?.([file.file_path], thumbnail);
       }}
@@ -5007,7 +4998,12 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
       // being bouncy. Highlighted (selected/multi-selected) tiles
       // skip the lift — they're in a settled "I'm chosen" state,
       // further movement on hover would feel jittery.
-      className={`group cursor-pointer relative transition-all duration-200 ease-out overflow-hidden ${hasAnyMeta ? 'rounded-xl border' : ''} ${highlighted ? (hasAnyMeta ? 'border-primary ring-2 ring-primary/20 shadow-lg' : 'ring-2 ring-primary/40') : (hasAnyMeta ? 'border-border hover:border-primary/40 hover:shadow-lg hover:-translate-y-[2px] hover:z-10' : 'hover:ring-2 hover:ring-primary/30 hover:-translate-y-[2px] hover:z-10')}`}>
+      // v2.0.15 (Terry 2026-05-28) — gold ring/border when a tile is
+      // selected (matches MemoriesView grid + the gold selection chip
+      // up top). Hover stays lavender — lavender = "could interact",
+      // gold = "active user choice". Same border/shadow shape as
+      // before, only the colour token differs.
+      className={`group cursor-pointer relative transition-all duration-200 ease-out overflow-hidden ${hasAnyMeta ? 'rounded-xl border' : ''} ${highlighted ? (hasAnyMeta ? 'border-[var(--color-gold)] ring-2 ring-[var(--color-gold)]/30 shadow-lg' : 'ring-2 ring-[var(--color-gold)]') : (hasAnyMeta ? 'border-border hover:border-primary/40 hover:shadow-lg hover:-translate-y-[2px] hover:z-10' : 'hover:ring-2 hover:ring-primary/30 hover:-translate-y-[2px] hover:z-10')}`}>
       <div className="aspect-square bg-secondary/30 relative overflow-hidden">
         {thumbnail ? <img src={thumbnail} alt={file.filename} className="w-full h-full object-cover" loading="lazy" draggable={false} /> : (
           <div className="w-full h-full flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-10 h-10 text-muted-foreground/30" /> : <ImageIcon className="w-10 h-10 text-muted-foreground/30" />}</div>
@@ -5018,7 +5014,8 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
             onClick={(e) => { e.stopPropagation(); onCheckboxClick?.(e); }}
             className={`absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
               isMultiSelected
-                ? 'bg-primary border-primary text-white'
+                // v2.0.15 — gold checkmark circle when selected.
+                ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
                 : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60'
             }`}>
             {isMultiSelected && <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 6l3 3 5-5" /></svg>}
@@ -5051,6 +5048,17 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
     </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        {/* v2.0.15 (Terry 2026-05-28) — "Show in File Explorer" opens
+            File Explorer at the photo's folder and highlights the
+            file. Mirrors the MemoriesView / AlbumsView right-click. */}
+        <ContextMenuItem
+          onSelect={() => { (window as any).pdr?.shell?.revealInFolder?.(file.file_path); }}
+          data-testid={`filecard-reveal-${file.id}`}
+        >
+          <HardDrive className="w-3.5 h-3.5 mr-2" />
+          Show in File Explorer
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         {/* v2.0.13 (Terry 2026-05-27) — Copy filename to match the
             same right-click affordance the By-Date / Memories grid
             has. Useful when you want to paste a filename into File

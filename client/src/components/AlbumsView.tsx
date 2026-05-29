@@ -31,7 +31,7 @@ import {
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
   Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
-  ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star,
+  ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -2532,11 +2532,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     <ContextMenuTrigger asChild>
                       <button
                         type="button"
-                        // v2.0.14 (Terry 2026-05-28) — native OS drag
+                        // v2.0.15 (Terry 2026-05-28) — native OS drag
                         // to external apps. See MemoriesView for the
-                        // full rationale; same shape here.
+                        // full rationale + the File Explorer caveat.
                         draggable
                         onDragStart={(e) => {
+                          try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }
                           e.preventDefault();
                           (window as any).pdr?.drag?.start?.([p.file_path], thumbs[p.file_path]);
                         }}
@@ -2552,6 +2553,17 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </button>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
+                      {/* v2.0.15 (Terry 2026-05-28) — "Show in File
+                          Explorer" opens File Explorer at the photo's
+                          folder and highlights the file. */}
+                      <ContextMenuItem
+                        onSelect={() => { (window as any).pdr?.shell?.revealInFolder?.(p.file_path); }}
+                        data-testid={`album-photo-reveal-${p.id}`}
+                      >
+                        <HardDrive className="w-3.5 h-3.5 mr-2" />
+                        Show in File Explorer
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
                       {/* v2.0.13 (Terry 2026-05-26) — mirrors MemoriesView's
                           per-photo menu. "Add to album" lives on the
                           MemoriesView surface because it needs the multi-

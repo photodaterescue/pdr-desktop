@@ -2555,6 +2555,61 @@ export async function reclusterFaces(threshold: number): Promise<{ success: bool
   return { success: false };
 }
 
+/**
+ * Cluster only NEW (unclustered) faces against existing clusters.
+ * Preserves People Manager person→cluster mappings; runs in the AI
+ * worker_thread so main stays responsive.
+ */
+export async function clusterNewFaces(threshold?: number): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.ai) {
+    return (window as any).pdr.ai.clusterNewFaces(threshold);
+  }
+  return { success: false };
+}
+
+// ─── PDR Recycle Bin (v2.0.15) ─────────────────────────────────────────────
+
+export interface RecycleBinEntry {
+  id: number;
+  file_path: string;
+  filename: string;
+  file_type: string;
+  derived_date: string | null;
+  recycled_at: string | null;
+  caption: string | null;
+}
+
+export async function moveToRecycleBin(fileIds: number[]): Promise<{ success: boolean; count?: number; error?: string }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.recycle?.move(fileIds); } catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function restoreFromRecycleBin(fileIds: number[]): Promise<{ success: boolean; count?: number; error?: string }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.recycle?.restore(fileIds); } catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function permanentDeleteFromRecycleBin(fileIds: number[]): Promise<{ success: boolean; removed?: number; failed?: { id: number; error: string }[]; error?: string }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.recycle?.permanentDelete(fileIds); } catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function listRecycleBin(): Promise<{ success: boolean; data?: RecycleBinEntry[]; error?: string }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.recycle?.list(); } catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function getRecycleBinCount(): Promise<{ success: boolean; count?: number; error?: string }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.recycle?.count(); } catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export function onRecycleBinChanged(callback: (info: { kind: string; count: number }) => void): () => void {
+  if (!isElectron()) return () => {};
+  try { return (window as any).pdr?.recycle?.onChanged?.(callback) ?? (() => {}); }
+  catch { return () => {}; }
+}
+
 export async function getFaceContext(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240): Promise<{ success: boolean; dataUrl?: string }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.faceContext(filePath, boxX, boxY, boxW, boxH, size);

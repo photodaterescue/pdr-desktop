@@ -486,11 +486,230 @@ parentPort?.on('message', async (msg: any) => {
     case 'process-file':
       await processFile(msg.fileId, msg.filePath);
       break;
+    case 'cluster-incremental':
+      runIncrementalClusteringInWorker(msg);
+      break;
+    case 'cluster-full':
+      runFullClusteringInWorker(msg);
+      break;
     case 'shutdown':
       process.exit(0);
       break;
   }
 });
+
+// ─── Clustering (runs in worker — never blocks main) ────────────────────────
+
+/**
+ * Incremental clustering: match unclustered face embeddings against
+ * existing cluster centroids; seed new clusters from leftovers.
+ *
+ * Runs in worker_thread so main stays fully responsive — no need to
+ * yield to the event loop, no risk of Windows marking PDR "Not
+ * Responding". Reports back a flat list of {faceId, clusterId}
+ * assignments that main applies in a single DB transaction.
+ */
+function runIncrementalClusteringInWorker(msg: {
+  embeddings: ArrayBuffer;       // Flattened N × dim Float32Array
+  faceIds: ArrayBuffer;          // Int32Array of length N — face_detections.id per row
+  existingCentroids: ArrayBuffer; // Flattened K × dim Float32Array
+  existingCentroidIds: ArrayBuffer; // Int32Array of length K — cluster_id per centroid
+  existingCentroidCounts: ArrayBuffer; // Int32Array of length K — member counts
+  nextClusterId: number;
+  dim: number;
+  threshold: number;
+}): void {
+  try {
+    const startedAt = Date.now();
+    const embeddings = new Float32Array(msg.embeddings);
+    const faceIds = new Int32Array(msg.faceIds);
+    const existingCentroidsFlat = new Float32Array(msg.existingCentroids);
+    const existingCentroidIds = new Int32Array(msg.existingCentroidIds);
+    const existingCentroidCounts = new Int32Array(msg.existingCentroidCounts);
+    const { dim, threshold } = msg;
+    let nextClusterId = msg.nextClusterId;
+
+    const n = faceIds.length;
+    const kInitial = existingCentroidIds.length;
+
+    // Working copies — we mutate centroids as new faces are absorbed
+    const centroidIds: number[] = Array.from(existingCentroidIds);
+    const centroidCounts: number[] = Array.from(existingCentroidCounts);
+    const centroidsFlat: number[] = Array.from(existingCentroidsFlat);
+
+    const assignments = new Int32Array(n); // clusterId per face index
+
+    let assignedExisting = 0;
+    let newClustersSeeded = 0;
+
+    for (let i = 0; i < n; i++) {
+      const faceOffset = i * dim;
+      let bestId: number | null = null;
+      let bestSim = threshold;
+
+      const cCount = centroidIds.length;
+      for (let k = 0; k < cCount; k++) {
+        const centOffset = k * dim;
+        let dot = 0, magA = 0, magB = 0;
+        for (let d = 0; d < dim; d++) {
+          const a = embeddings[faceOffset + d];
+          const b = centroidsFlat[centOffset + d];
+          dot += a * b;
+          magA += a * a;
+          magB += b * b;
+        }
+        const mag = Math.sqrt(magA) * Math.sqrt(magB);
+        const sim = mag === 0 ? 0 : dot / mag;
+        if (sim > bestSim) {
+          bestSim = sim;
+          bestId = centroidIds[k];
+        }
+      }
+
+      if (bestId !== null) {
+        assignments[i] = bestId;
+        assignedExisting++;
+        // Update the centroid we matched against — online mean
+        const kIdx = centroidIds.indexOf(bestId);
+        const c = centroidCounts[kIdx];
+        const nNew = c + 1;
+        const centOffset = kIdx * dim;
+        for (let d = 0; d < dim; d++) {
+          centroidsFlat[centOffset + d] =
+            centroidsFlat[centOffset + d] * (c / nNew) + embeddings[faceOffset + d] / nNew;
+        }
+        centroidCounts[kIdx] = nNew;
+      } else {
+        const newId = nextClusterId++;
+        assignments[i] = newId;
+        centroidIds.push(newId);
+        centroidCounts.push(1);
+        for (let d = 0; d < dim; d++) {
+          centroidsFlat.push(embeddings[faceOffset + d]);
+        }
+        newClustersSeeded++;
+      }
+    }
+
+    const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+    log(`[cluster-incremental] done in ${elapsedSec}s — initial centroids=${kInitial}, faces=${n}, assigned=${assignedExisting}, new clusters=${newClustersSeeded}`);
+
+    const buf = assignments.buffer.slice(0);
+    parentPort?.postMessage(
+      { type: 'cluster-result', kind: 'incremental', assignments: buf, faceIds: faceIds.buffer.slice(0), nextClusterId },
+      [buf as unknown as ArrayBuffer],
+    );
+  } catch (err) {
+    parentPort?.postMessage({ type: 'cluster-error', kind: 'incremental', error: (err as Error).message });
+  }
+}
+
+/**
+ * Full re-cluster from scratch (DBSCAN-like): every face compared to
+ * every cluster's centroid + original seed, growing clusters via a
+ * `while (changed)` inner loop. O(N²) but runs in worker — no main
+ * blocking.
+ */
+function runFullClusteringInWorker(msg: {
+  embeddings: ArrayBuffer;
+  faceIds: ArrayBuffer;
+  dim: number;
+  threshold: number;
+}): void {
+  try {
+    const startedAt = Date.now();
+    const embeddings = new Float32Array(msg.embeddings);
+    const faceIds = new Int32Array(msg.faceIds);
+    const { dim, threshold } = msg;
+    const SEED_THRESHOLD = Math.max(0.55, threshold - 0.07);
+
+    const n = faceIds.length;
+    const assignments = new Int32Array(n).fill(-1);
+    const visited = new Uint8Array(n);
+    let nextClusterId = 1;
+
+    let lastHeartbeat = Date.now();
+
+    for (let i = 0; i < n; i++) {
+      if (visited[i]) continue;
+      visited[i] = 1;
+
+      const seedOffset = i * dim;
+      const centroid = new Float32Array(dim);
+      for (let d = 0; d < dim; d++) centroid[d] = embeddings[seedOffset + d];
+      let clusterSize = 1;
+      const clusterId = nextClusterId++;
+      assignments[i] = clusterId;
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let j = 0; j < n; j++) {
+          if (visited[j]) continue;
+          const jOffset = j * dim;
+
+          // Centroid sim
+          let dotC = 0, magCa = 0, magCb = 0;
+          for (let d = 0; d < dim; d++) {
+            const a = centroid[d];
+            const b = embeddings[jOffset + d];
+            dotC += a * b;
+            magCa += a * a;
+            magCb += b * b;
+          }
+          const magC = Math.sqrt(magCa) * Math.sqrt(magCb);
+          const simC = magC === 0 ? 0 : dotC / magC;
+          if (simC < threshold) continue;
+
+          // Seed sim
+          let dotS = 0, magSa = 0, magSb = 0;
+          for (let d = 0; d < dim; d++) {
+            const a = embeddings[seedOffset + d];
+            const b = embeddings[jOffset + d];
+            dotS += a * b;
+            magSa += a * a;
+            magSb += b * b;
+          }
+          const magS = Math.sqrt(magSa) * Math.sqrt(magSb);
+          const simS = magS === 0 ? 0 : dotS / magS;
+          if (simS < SEED_THRESHOLD) continue;
+
+          visited[j] = 1;
+          assignments[j] = clusterId;
+          const nNew = clusterSize + 1;
+          for (let d = 0; d < dim; d++) {
+            centroid[d] = centroid[d] * (clusterSize / nNew) + embeddings[jOffset + d] / nNew;
+          }
+          clusterSize = nNew;
+          changed = true;
+        }
+      }
+
+      const now = Date.now();
+      if (now - lastHeartbeat > 5000) {
+        parentPort?.postMessage({
+          type: 'cluster-progress',
+          kind: 'full',
+          current: i + 1,
+          total: n,
+          clusters: nextClusterId - 1,
+        });
+        lastHeartbeat = now;
+      }
+    }
+
+    const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+    log(`[cluster-full] done in ${elapsedSec}s — ${nextClusterId - 1} clusters from ${n} faces`);
+
+    const buf = assignments.buffer.slice(0);
+    parentPort?.postMessage(
+      { type: 'cluster-result', kind: 'full', assignments: buf, faceIds: faceIds.buffer.slice(0), nextClusterId },
+      [buf as unknown as ArrayBuffer],
+    );
+  } catch (err) {
+    parentPort?.postMessage({ type: 'cluster-error', kind: 'full', error: (err as Error).message });
+  }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

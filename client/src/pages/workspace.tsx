@@ -106,6 +106,7 @@ import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
 import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesPanel from "@/components/MemoriesPanel";
+import RecycleBinView from "@/components/RecycleBinView";
 import { TreesView } from "@/components/trees/TreesView";
 import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
@@ -248,7 +249,7 @@ const handleZoomReset = () => {
 // can't depend on it (because they're declared above the useState
 // for activeView). The sibling effect just below the activeView
 // declaration keeps this ref in sync.
-const activeViewRef = useRef<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
+const activeViewRef = useRef<'dashboard' | 'search' | 'memories' | 'familytree' | 'recycle'>('dashboard');
 
 // Diagnostic stream from the analysis pipeline. The main process
 // emits [PDR-DIAG ...] phase markers, memory snapshots, per-large-
@@ -661,7 +662,13 @@ useEffect(() => {
   // Top-level "view" currently occupying the main content area. Dashboard is
   // the default (the existing workspace/dashboard hybrid); other options are
   // separate destinations in the sidebar.
-  const [activeView, setActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree' | 'recycle'>('dashboard');
+  // v2.0.15 — track the view the user came FROM when they switched to
+  // Recycle Bin, so the bin's Back button can return them there
+  // instead of always defaulting to Dashboard. Only updated when the
+  // outgoing view wasn't 'recycle' itself, so toggling in and out of
+  // the bin doesn't lose the original origin.
+  const [previousActiveView, setPreviousActiveView] = useState<'dashboard' | 'search' | 'memories' | 'familytree'>('memories');
 
   // Keep the early-declared `activeViewRef` in sync with the
   // canonical state. Handlers registered above (where `activeView`
@@ -1010,6 +1017,22 @@ useEffect(() => {
   window.addEventListener('pdr:openAlbumsAlbum', handler as EventListener);
   return () => window.removeEventListener('pdr:openAlbumsAlbum', handler as EventListener);
 }, []);
+
+// v2.0.15 (Terry 2026-05-29) — titlebar Recycle Bin button dispatches
+// pdr:openRecycleBin so it can navigate from any view without
+// needing access to setActiveView. Mirrors the sidebar's behaviour:
+// remember the previous (non-recycle) view so the bin's Back
+// button can return the user there.
+useEffect(() => {
+  const handler = () => {
+    if (activeView !== 'recycle') {
+      setPreviousActiveView(activeView as 'dashboard' | 'search' | 'memories' | 'familytree');
+    }
+    setActiveView('recycle');
+  };
+  window.addEventListener('pdr:openRecycleBin', handler as EventListener);
+  return () => window.removeEventListener('pdr:openRecycleBin', handler as EventListener);
+}, [activeView]);
 
 // AI offer accepted — fires when the user clicks Enable on the
 // AiOfferCard (Dashboard or future S&D placement). AiOfferCard has
@@ -1620,7 +1643,7 @@ const handleActivateLicense = () => {
     // user jump straight to S&D / Memories / Trees without going via
     // Dashboard. People isn't on the list because it's its own
     // BrowserWindow opened by openPeopleWindow().
-    const viewParam = params.get("view") as 'dashboard' | 'search' | 'memories' | 'familytree' | null;
+    const viewParam = params.get("view") as 'dashboard' | 'search' | 'memories' | 'familytree' | 'recycle' | null;
     if (viewParam && (viewParam === 'dashboard' || viewParam === 'search' || viewParam === 'memories' || viewParam === 'familytree')) {
       // Release-gate: refuse navigation to Trees when the feature is
       // disabled (v2.0.0). Falls through to dashboard so the user
@@ -2800,6 +2823,13 @@ return (
 		  activeView={activeView}
 		  onViewChange={(view) => {
 			setActivePanel(null);
+			// Remember the view the user was on BEFORE switching, so
+			// RecycleBinView's Back button can return them there. Only
+			// store non-recycle origins — bouncing in and out of the
+			// bin shouldn't overwrite the original.
+			if (view === 'recycle' && activeView !== 'recycle') {
+			  setPreviousActiveView(activeView as 'dashboard' | 'search' | 'memories' | 'familytree');
+			}
 			setActiveView(view);
 			// Leaving the S&D view — close its results so the sidebar doesn't
 			// stay in the "search-active" collapsed state.
@@ -2959,6 +2989,25 @@ return (
             timeline in a MemoriesPanel that adds the [By Date | Albums]
             tab toggle. AlbumsView is the new Albums branch. */}
         {activeView === 'memories' && <MemoriesPanel />}
+
+        {/* Recycle Bin view (v2.0.15) — top-level system surface
+            triggered from the sidebar TOOLS section. Lives outside
+            MemoriesPanel so it isn't tucked into a "view your photos"
+            tab toggle (which Terry rightly pointed out was the wrong
+            mental model). onBack returns the user to whichever view
+            they were on when they clicked the sidebar's Recycle Bin
+            icon (tracked in previousActiveView). */}
+        {activeView === 'recycle' && (
+          <RecycleBinView
+            onBack={() => setActiveView(previousActiveView)}
+            backLabel={
+              previousActiveView === 'memories' ? 'Back to Memories' :
+              previousActiveView === 'search' ? 'Back to Search & Discovery' :
+              previousActiveView === 'familytree' ? 'Back to Trees' :
+              'Back to Dashboard'
+            }
+          />
+        )}
 
         {/* Trees view — family graph explorer (v1). Deliberately not called
             'Family Tree' because later versions will handle friend groups,
@@ -3512,7 +3561,7 @@ return (
 }
 
 
-type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree';
+type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree' | 'recycle';
 
 function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, burgerPulseDisabled = false, highlightedSourceId = null, analysisActive = false }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, burgerPulseDisabled?: boolean, highlightedSourceId?: string | null, analysisActive?: boolean }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
@@ -3749,7 +3798,8 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   // surfaces that should always render with a collapsed sidebar.
   const isFullCanvasView = effectiveViewForCollapse === 'familytree'
     || effectiveViewForCollapse === 'memories'
-    || effectiveViewForCollapse === 'search';
+    || effectiveViewForCollapse === 'search'
+    || effectiveViewForCollapse === 'recycle';
   // Collapse precedence:
   //   1. pinState=closed → collapsed (user explicitly closed)
   //   2. pinState=open   → expanded  (user explicitly pinned)
@@ -4003,6 +4053,18 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               }
             : () => toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE),
           !isEditDatesEnabled(),
+        )}
+        {/* v2.0.15 (Terry 2026-05-28) — Recycle Bin as a top-level
+            system view, following Google Photos / Apple Photos
+            convention. Lives in the TOOLS cluster because it manages
+            content (alongside People Manager + Date Editor) rather
+            than being a viewing preference like By Date / Albums. */}
+        {iconBtn(
+          'Recycle Bin',
+          <Trash2 className="w-4 h-4 opacity-70" />,
+          gateLocked('recycle-bin', () => onViewChange?.('recycle')),
+          !isLicensed,
+          isActiveView('recycle'),
         )}
 
         {/* Flex spacer — pushes Guidance + App groups to the bottom of
@@ -4353,6 +4415,22 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                   disabled={!isEditDatesEnabled()}
                 />
               </IconTooltip>
+              {/* v2.0.15 — Recycle Bin (sidebar, expanded). Mirrors
+                  the collapsed-rail entry above; rose accent flags
+                  the destructive-content surface without screaming
+                  red the way a top-level "Delete" affordance would. */}
+              <SidebarItem
+                icon={<Trash2 className="w-4 h-4 opacity-70" />}
+                label="Recycle Bin"
+                accent="rose"
+                onClick={() => {
+                  if (!isLicensed) { onFeatureLocked('recycle-bin'); return; }
+                  onViewChange?.('recycle');
+                }}
+                active={activeView === 'recycle'}
+                selectable={false}
+                locked={!isLicensed}
+              />
             </div>
           )}
         </div>
@@ -4435,6 +4513,11 @@ const SIDEBAR_ACCENT: Record<string, string> = {
   amber: '#f8c15c',
   emerald: '#10b981',
   pink: '#ec4899',
+  // v2.0.15 — rose for destructive-content surfaces (Recycle Bin).
+  // Distinct enough from the pink People Manager accent that they
+  // don't read as the same row, matches PDR's destructive-button
+  // family (Button variant="destructive" uses the same rose hue).
+  rose: '#f43f5e',
 };
 
 function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false, locked = false, accent }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean, locked?: boolean, accent?: keyof typeof SIDEBAR_ACCENT }) {
@@ -11393,6 +11476,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [autoSaveCatalogue, setAutoSaveCatalogue] = useState(true);
   const [showManualReportExports, setShowManualReportExports] = useState(false);
   const [openPeopleOnStartup, setOpenPeopleOnStartup] = useState(false);
+  const [recycleBinShowCountBadge, setRecycleBinShowCountBadge] = useState(false);
   // Network upload mode: 'fast' = robocopy /MT:16 staging, 'direct'
   // = legacy fs.createReadStream loop. A/B baseline + kill switch.
   const [networkUploadMode, setNetworkUploadMode] = useState<'fast' | 'direct'>('fast');
@@ -11422,6 +11506,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setAutoSaveCatalogue(settings.autoSaveCatalogue);
       setShowManualReportExports(settings.showManualReportExports);
       setOpenPeopleOnStartup((settings as any).openPeopleOnStartup ?? false);
+      setRecycleBinShowCountBadge((settings as any).recycleBinShowCountBadge ?? false);
       setNetworkUploadMode(((settings as any).networkUploadMode as 'fast' | 'direct') ?? 'fast');
       setBypassLargeZipPreExtract(((settings as any).bypassLargeZipPreExtract as boolean) ?? false);
       setAutoIndexAfterFix(((settings as any).autoIndexAfterFix as boolean) ?? true);
@@ -11515,6 +11600,14 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleOpenPeopleOnStartupToggle = (checked: boolean) => {
     setOpenPeopleOnStartup(checked);
     setSetting('openPeopleOnStartup' as any, checked);
+  };
+  const handleRecycleBinShowCountBadgeToggle = (checked: boolean) => {
+    setRecycleBinShowCountBadge(checked);
+    setSetting('recycleBinShowCountBadge' as any, checked);
+    // Broadcast a settings:changed event so TitleBar's badge can
+    // toggle live without a relaunch — same pattern other settings
+    // use to push updates to consumers outside this Settings modal.
+    window.dispatchEvent(new CustomEvent('pdr:settingsChanged', { detail: { key: 'recycleBinShowCountBadge', value: checked } }));
   };
 
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
@@ -11884,6 +11977,28 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     checked={!burgerPulseDisabled}
                     onCheckedChange={(checked) => onBurgerPulseChange(!checked)}
                     data-testid="checkbox-burger-pulse"
+                  />
+                </label>
+              </div>
+
+              {/* v2.0.15 (Terry 2026-05-29) — Recycle Bin titlebar
+                  count badge. OFF by default — the count lives in the
+                  hover tooltip for everyone, and an always-visible
+                  number at icon scale reads as clutter on the
+                  lavender bar. Power users who want at-a-glance
+                  "anything to permanently delete?" visibility can opt
+                  in here. Lives in General because the titlebar is
+                  view-agnostic. */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Show Recycle Bin count on titlebar</span>
+                    <span className="text-xs text-muted-foreground">Display a small badge on the titlebar's Recycle Bin icon showing how many items are inside. Off by default — the count is always available in the hover tooltip.</span>
+                  </div>
+                  <Checkbox
+                    checked={recycleBinShowCountBadge}
+                    onCheckedChange={(checked) => handleRecycleBinShowCountBadgeToggle(!!checked)}
+                    data-testid="checkbox-recycle-bin-count-badge"
                   />
                 </label>
               </div>
@@ -12526,42 +12641,19 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 </div>
               </div>
 
-              {/* Advanced — re-cluster unnamed groups. This is the
-                  destructive operation that used to live behind PM's
-                  Refresh button. Moved here per Apple/Adobe convention:
-                  rare destructive admin operations don't sit one click
-                  away from the everyday workflow. PM's Refresh now
-                  just reloads (non-destructive); this is the explicit,
-                  deliberate path for re-tuning the unnamed-cluster
-                  topology. */}
-              <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">Advanced</label>
-                <p className="text-xs text-muted-foreground mb-3">Power-user operations on the face-recognition pipeline.</p>
-                <div className="rounded-lg border border-amber-200 dark:border-amber-700/40 bg-amber-50/40 dark:bg-amber-950/15 p-3">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-foreground mb-0.5">Re-cluster unnamed groups</div>
-                      <div className="text-xs text-muted-foreground leading-relaxed">
-                        Re-evaluates how unverified faces group together at your current Match strictness. Verified faces are untouched. Auto-matched faces may shift between groups — Improve Recognition can re-find any that get unlinked. Photos themselves are never affected. Most users never need this; it's here for when you've done a lot of naming and want PDR to redraw the unnamed-cluster boundaries.
-                      </div>
-                    </div>
-                    <IconTooltip
-                      label={fixActive ? FIX_BLOCKED_TOOLTIP + ' — re-clustering competes with the Fix for CPU and face data.' : 'Re-cluster unnamed groups at your current Match strictness'}
-                      side="top"
-                    >
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="shrink-0"
-                        onClick={() => setReclusterModalOpen(true)}
-                        disabled={fixActive}
-                      >
-                        Re-cluster…
-                      </Button>
-                    </IconTooltip>
-                  </div>
-                </div>
-              </div>
+              {/* v2.0.15 (Terry 2026-05-28) — removed Settings →
+                  AI → Re-cluster button. After moving the auto-call
+                  at the end of every analysis pass to incremental
+                  clustering (which preserves cluster_ids and so
+                  preserves People Manager person↔cluster mappings),
+                  the full-rebuild "Re-cluster…" was a footgun with no
+                  legitimate use case left: face detection accuracy is
+                  good enough on the current models that you never
+                  need to wipe and rebuild. The modal + state + IPC
+                  handler stay in the codebase as dormant escape
+                  hatches, but no UI exposes them. If a future case
+                  ever needs it back, wire setReclusterModalOpen(true)
+                  to a button. */}
 
               {/* Reset onboarding — always-visible user setting. Lets a
                   user redo their Library Drive + Library Planner +

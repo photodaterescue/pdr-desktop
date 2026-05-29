@@ -24,6 +24,7 @@ import {
   RotateCcw,
   Star,
   MessageSquareText,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -43,6 +44,8 @@ import {
   listSearchRuns,
   openSearchViewer,
   setMonthlyThumbnail,
+  moveToRecycleBin,
+  onRecycleBinChanged,
   type MemoriesYearBucket,
   type MemoriesOnThisDayItem,
   type IndexedFile,
@@ -110,16 +113,30 @@ function groupRunsIntoLibraries(runs: IndexedRun[]): Library[] {
   const byKey = new Map<string, Library>();
   for (const r of runs) {
     const labels = sourceLabelsOf(r);
-    // Normalise key so order doesn't matter and case is stable.
-    const key = labels.map(l => l.toLowerCase().trim()).sort().join('||') || `__run_${r.id}`;
+    // v2.0.15 (Terry 2026-05-28) — group by DESTINATION PATH, not by
+    // source labels. The previous logic used the ZIP filename list as
+    // the key, which meant every Takeout-part-N.zip import created
+    // its own "library" entry in the dropdown — Terry was seeing the
+    // same folder ("1. PDR Library Drive") repeated 9× because each
+    // ZIP carried a distinct source_labels array. The user-facing
+    // mental model is "a library = a destination folder," not "a
+    // library = the set of source files that originally landed in
+    // it"; grouping by destination_path matches that model and
+    // collapses repeat imports into the same library entry. The
+    // source_labels are still folded into the label when present so
+    // users can see what's landed in each library, but they no longer
+    // split the entry.
+    const destKey = (r.destination_path || '').replace(/[\\/]+$/, '').toLowerCase();
+    const key = destKey || `__run_${r.id}`;
     const existing = byKey.get(key);
     if (existing) {
       existing.runIds.push(r.id);
       existing.fileCount += r.file_count;
     } else {
-      const label = labels.length > 0 ? labels.join(' + ') : (r.destination_path.split(/[\\/]/).filter(Boolean).pop() || `Run #${r.id}`);
+      const label = r.destination_path.split(/[\\/]/).filter(Boolean).pop() || `Run #${r.id}`;
       byKey.set(key, { key, label, runIds: [r.id], fileCount: r.file_count });
     }
+    void labels; // labels currently unused for grouping; kept available if a future UI wants to surface them per-entry
   }
   return Array.from(byKey.values());
 }
@@ -309,6 +326,19 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     })();
     return () => { cancelled = true; };
   }, [selectedRunIdsKey, refreshTick]);
+
+  // v2.0.15 — when any recycle change happens (anywhere), bump the
+  // refresh tick AND invalidate the Welcome-screen prefetch cache so
+  // the next Welcome → Memories navigation reads fresh bucket counts
+  // (otherwise the cached month-card counts include the recycled
+  // items until the cache TTL fires).
+  useEffect(() => {
+    const off = onRecycleBinChanged(() => {
+      invalidatePrefetchedMemories();
+      setRefreshTick(t => t + 1);
+    });
+    return () => off();
+  }, []);
 
   // Load sample thumbnails for each year/month card + on-this-day items.
   // Uses a sliding-window pool (12 concurrent requests) and writes
@@ -1116,6 +1146,13 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
 
   const runIdsKey = runIds ? runIds.join(',') : '';
 
+  // Refetch trigger — local tick that bumps when anything wants the
+  // grid re-pulled (recycle move / restore from anywhere, manual
+  // Refresh button, etc.). Separate from the parent's refreshTick so
+  // the drilldown can react to events that don't bubble through the
+  // bucket layer.
+  const [drilldownRefreshTick, setDrilldownRefreshTick] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     setFiles(null);
@@ -1128,7 +1165,16 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       setFiles(r.success && r.data ? r.data : []);
     })();
     return () => { cancelled = true; };
-  }, [year, month, day, runIdsKey]);
+  }, [year, month, day, runIdsKey, drilldownRefreshTick]);
+
+  // v2.0.15 — when ANY recycle change happens (this view's context
+  // menu, the top-bar Delete button, a restore from the Recycle Bin
+  // tab), re-fetch the visible files. Without this the just-deleted
+  // tile lingered in the grid until the user navigated away and back.
+  useEffect(() => {
+    const off = onRecycleBinChanged(() => setDrilldownRefreshTick(t => t + 1));
+    return () => off();
+  }, []);
 
   // v2.0.13 — keep the in-state caption in sync with edits made via
   // the right-click "Caption…" menu, so the indicator badge appears /
@@ -1756,6 +1802,29 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </p>
           </PopoverContent>
         </Popover>
+        {/* v2.0.15 — manual refresh button (Terry 2026-05-29: monthly
+            refresh should match year-view positioning — to the LEFT
+            of the Spacious/Tight toggle, not inline with the title).
+            Styling copies the year-view refresh button exactly
+            (border-button look used by Jump-to-latest + the
+            collapsed-sidebar burger) so the two surfaces share one
+            visual language. Re-pulls the visible files + bumps the
+            parent's refreshTick so the year-level buckets re-fetch
+            too. Recycle / restore / caption events auto-refresh via
+            the recycle:changed listener; this button covers the
+            "background Fix completed, want to see new photos now"
+            case. */}
+        <IconTooltip label="Refresh — reload this month" side="bottom">
+          <button
+            type="button"
+            onClick={() => { setDrilldownRefreshTick(t => t + 1); onRequestRefresh(); }}
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            data-testid="memories-drilldown-refresh"
+            aria-label="Refresh this month"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+        </IconTooltip>
         {/* Density toggle — same control as the main timeline view,
             so the user can switch spacious/tight while drilled in
             (Terry 2026-05-19: "Spacious - Tight should still be an
@@ -1782,7 +1851,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             <IconTooltip label="Clear selection" side="bottom">
               <button
                 onClick={clearSelection}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-xs font-medium text-foreground transition-colors"
+                // v2.0.15 (Terry 2026-05-28) — DELIBERATE OVERRIDE of
+                // the "gold = captions only" semantic rule. Terry's
+                // call: users scrolling 100s of photos in a year
+                // drilldown absolutely need to see selection state at
+                // a glance, and the lavender-tinted version still
+                // read as passive info. Selection is now gold across
+                // PDR — chip + tile ring + checkmark circle. The
+                // captioned-only chip stays gold too; they don't
+                // collide because they appear in different header
+                // positions and the captioned chip carries the
+                // chat-bubble icon to disambiguate.
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
                 data-testid="memories-selection-chip"
               >
                 {selectedFileIds.size} selected
@@ -1793,6 +1873,34 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               fileIds={Array.from(selectedFileIds)}
               onAdded={clearSelection}
             />
+            {/* v2.0.15 (Terry 2026-05-28) — soft-delete batch action.
+                Moves the selected photos into the PDR Recycle Bin (sets
+                in_recycle_bin = 1; file stays on disk). Reversible
+                from the Recycle Bin view. Uses the destructive variant
+                of custom-button for the rose-tinted "danger" palette
+                that matches the rest of PDR's delete affordances. */}
+            <IconTooltip label={`Move ${selectedFileIds.size} to PDR Recycle Bin`} side="bottom">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={async () => {
+                  const ids = Array.from(selectedFileIds);
+                  if (ids.length === 0) return;
+                  const r = await moveToRecycleBin(ids);
+                  if (r.success) {
+                    toast.success(`Moved ${r.count ?? ids.length} to Recycle Bin`);
+                    clearSelection();
+                    onRequestRefresh();
+                  } else {
+                    toast.error('Couldn’t move to Recycle Bin', { description: r.error });
+                  }
+                }}
+                data-testid="memories-selection-recycle"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                Delete
+              </Button>
+            </IconTooltip>
           </>
         )}
         {files != null && files.length > 1 && (
@@ -1966,7 +2074,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                     <button
-                      // v2.0.14 (Terry 2026-05-28) — native OS drag to
+                      // v2.0.15 (Terry 2026-05-28) — native OS drag to
                       // external apps (WhatsApp, Discord, mail, etc.).
                       // The browser fires dragstart on draggable=true
                       // elements when the user mouse-drags past the
@@ -1978,8 +2086,22 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       // If the user has a multi-select active and the
                       // dragged tile is one of the selected, drag the
                       // whole selection; otherwise just this tile.
+                      //
+                      // effectAllowed = 'copy' is a best-effort hint
+                      // to receivers that this drag is copy-only —
+                      // Chromium-based receivers honour it; File
+                      // Explorer ignores it and uses the Windows shell
+                      // default (MOVE for same-drive, COPY for cross-
+                      // drive). Electron's startDrag doesn't expose a
+                      // way to clamp the OS drag-effect mask at source
+                      // level (longstanding open issue), so File
+                      // Explorer same-drive drops can still MOVE files
+                      // out of the library unless the user holds Ctrl.
+                      // Practical user guidance: drag to apps, never
+                      // to File Explorer windows.
                       draggable
                       onDragStart={(e) => {
+                        try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }
                         e.preventDefault();
                         const base = visibleFiles ?? files ?? [];
                         const dragSet = (selectedFileIds.size > 0 && selectedFileIds.has(f.id))
@@ -2034,7 +2156,11 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         openSearchViewer(baseArr.map(x => x.file_path), baseArr.map(x => x.filename), idx);
                       }}
                       className={`group relative w-full h-full overflow-hidden bg-secondary/30 transition-all ${
-                        isMultiSelected ? 'ring-2 ring-primary' :
+                        // v2.0.15 — gold ring on selected tile (see
+                        // chip comment above for the rationale). Tile
+                        // shape doesn't differ by density when ring
+                        // is on so it stays a solid gold halo.
+                        isMultiSelected ? 'ring-2 ring-[var(--color-gold)]' :
                         density === 'tight' ? '' : 'rounded-lg ring-1 ring-border hover:ring-primary/50'
                       }`}
                     >
@@ -2067,7 +2193,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         }}
                         className={`absolute top-1.5 left-1.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
                           isMultiSelected
-                            ? 'bg-primary border-primary text-primary-foreground opacity-100'
+                            // v2.0.15 — gold checkmark circle when
+                            // selected; matches the gold tile ring +
+                            // selection chip up top. Dark text colour
+                            // for the Check icon so it reads cleanly
+                            // against the gold fill.
+                            ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08] opacity-100'
                             : selectionMode
                               ? 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-100'
                               : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-0 group-hover:opacity-100'
@@ -2101,6 +2232,20 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     </button>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
+                  {/* v2.0.15 (Terry 2026-05-28) — "Show in File
+                      Explorer" — opens File Explorer at the photo's
+                      folder and highlights the file. Lets users see
+                      where in their library the photo actually lives
+                      without having to copy the filename and search
+                      for it. */}
+                  <ContextMenuItem
+                    onSelect={() => { (window as any).pdr?.shell?.revealInFolder?.(f.file_path); }}
+                    data-testid={`memories-tile-reveal-${f.id}`}
+                  >
+                    <HardDrive className="w-3.5 h-3.5 mr-2" />
+                    Show in File Explorer
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
                   {/* Right-click actions — Terry 2026-05-19. "Add to
                       album" adds the photo to the current selection
                       so the user can drive the AddToAlbumPopover in
@@ -2172,6 +2317,37 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       </ContextMenuItem>
                     </>
                   )}
+                  {/* v2.0.15 (Terry 2026-05-28) — PDR Recycle Bin.
+                      Soft-delete: photo stays on disk, hides from
+                      every view, restorable from the Recycle Bin tab.
+                      If the user already has a multi-select that
+                      includes this photo, send the whole selection in
+                      one go (right-click on any tile inside the
+                      selection works like a bulk command); otherwise
+                      just this photo. */}
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    onSelect={async () => {
+                      const ids = selectedFileIds.has(f.id) && selectedFileIds.size > 1
+                        ? Array.from(selectedFileIds)
+                        : [f.id];
+                      const r = await moveToRecycleBin(ids);
+                      if (r.success) {
+                        toast.success(ids.length === 1 ? 'Moved to Recycle Bin' : `Moved ${r.count ?? ids.length} to Recycle Bin`);
+                        if (ids.length > 1) clearSelection();
+                        onRequestRefresh();
+                      } else {
+                        toast.error('Couldn’t move to Recycle Bin', { description: r.error });
+                      }
+                    }}
+                    className="text-red-600 dark:text-red-400 focus:text-red-700 focus:bg-red-50 dark:focus:bg-red-950/30"
+                    data-testid={`memories-tile-recycle-${f.id}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-2" />
+                    {selectedFileIds.has(f.id) && selectedFileIds.size > 1
+                      ? `Move ${selectedFileIds.size} to PDR Recycle Bin`
+                      : 'Move to PDR Recycle Bin'}
+                  </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
                 </div>

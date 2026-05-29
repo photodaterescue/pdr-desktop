@@ -612,6 +612,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     personsCooccurrence: (selectedPersonIds: number[]) => ipcRenderer.invoke('ai:personsCooccurrence', selectedPersonIds),
     clusterFaces: (clusterId: number, page?: number, perPage?: number, personId?: number, sortMode?: 'chronological' | 'confidence-asc') => ipcRenderer.invoke('ai:clusterFaces', clusterId, page, perPage, personId, sortMode),
     recluster: (threshold: number) => ipcRenderer.invoke('ai:recluster', threshold),
+    clusterNewFaces: (threshold?: number) => ipcRenderer.invoke('ai:clusterNewFaces', threshold),
     faceCrop: (filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size?: number) =>
       ipcRenderer.invoke('ai:faceCrop', filePath, boxX, boxY, boxW, boxH, size),
     faceCropBatch: (
@@ -687,6 +688,21 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // re-open the Documents folder showing the diagnostic ZIP if the
   // user accidentally closed the folder window we opened on Send.
   revealInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
+
+  // PDR Recycle Bin (v2.0.15) — soft-delete with restore + permanent
+  // delete via OS Recycle Bin.
+  recycle: {
+    move: (fileIds: number[]) => ipcRenderer.invoke('recycle:move', fileIds),
+    restore: (fileIds: number[]) => ipcRenderer.invoke('recycle:restore', fileIds),
+    permanentDelete: (fileIds: number[]) => ipcRenderer.invoke('recycle:permanentDelete', fileIds),
+    list: () => ipcRenderer.invoke('recycle:list'),
+    count: () => ipcRenderer.invoke('recycle:count'),
+    onChanged: (callback: (info: { kind: string; count: number }) => void) => {
+      const handler = (_event: any, info: { kind: string; count: number }) => callback(info);
+      ipcRenderer.on('recycle:changed', handler);
+      return () => ipcRenderer.removeListener('recycle:changed', handler);
+    },
+  },
 
   dateEditor: {
     open: (seedQuery?: any) => ipcRenderer.invoke('dateEditor:open', seedQuery),

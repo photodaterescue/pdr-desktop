@@ -26,12 +26,18 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import MemoriesView from './MemoriesView';
 import AlbumsView from './AlbumsView';
 
+// v2.0.15 (Terry 2026-05-28) — Recycle Bin moved to the sidebar
+// TOOLS section as a top-level view. The Memories toggle pill is
+// back to two segments (By Date / Albums) since recycling photos is
+// a system function, not a viewing preference.
 type MemoriesTab = 'byDate' | 'albums';
 
 const TAB_STORAGE_KEY = 'pdr-memories-tab';
 
 function loadInitialTab(): MemoriesTab {
   if (typeof localStorage === 'undefined') return 'byDate';
+  // Legacy 'recycle' value from the brief 3-tab era falls back to
+  // 'byDate' — the Recycle Bin now lives in the sidebar.
   return localStorage.getItem(TAB_STORAGE_KEY) === 'albums' ? 'albums' : 'byDate';
 }
 
@@ -97,8 +103,8 @@ export default function MemoriesPanel() {
   // feel rather than the snap-of-two-backgrounds default. Terry
   // 2026-05-18: "Can you make the transition... seem premium? It
   // feels robotic at the moment."
-  const byDateRef = useRef<HTMLSpanElement>(null);
-  const albumsRef = useRef<HTMLSpanElement>(null);
+  const byDateRef = useRef<HTMLButtonElement>(null);
+  const albumsRef = useRef<HTMLButtonElement>(null);
   const [thumbStyle, setThumbStyle] = useState<{ left: number; width: number } | null>(null);
   useLayoutEffect(() => {
     const target = tab === 'byDate' ? byDateRef.current : albumsRef.current;
@@ -130,11 +136,15 @@ export default function MemoriesPanel() {
     <>
       <h1 className="text-2xl font-semibold text-foreground mb-3">Memories</h1>
       <div className="flex items-center gap-4 flex-wrap">
-        <button
-          type="button"
-          onClick={() => handleTabChange(tab === 'byDate' ? 'albums' : 'byDate')}
-          title={tab === 'byDate' ? 'Switch to Albums' : 'Switch to By Date'}
-          className="relative inline-flex items-center h-11 p-1 bg-primary rounded-full cursor-pointer shrink-0"
+        {/* v2.0.15 — two-segment pill (By Date / Albums). Each segment
+            is its own clickable button (refactored from the v2.0.8
+            click-anywhere binary toggle so users can jump directly to
+            either tab) with a sliding background thumb that tracks
+            the active segment. */}
+        <div
+          role="tablist"
+          aria-label="Memories views"
+          className="relative inline-flex items-center h-11 p-1 bg-primary rounded-full shrink-0"
           data-testid="memories-tab-toggle"
         >
           {thumbStyle && (
@@ -144,23 +154,31 @@ export default function MemoriesPanel() {
               style={{ left: `${thumbStyle.left}px`, width: `${thumbStyle.width}px` }}
             />
           )}
-          <span
+          <button
+            type="button"
             ref={byDateRef}
-            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'byDate' ? 'text-primary' : 'text-primary-foreground'}`}
+            role="tab"
+            aria-selected={tab === 'byDate'}
+            onClick={() => handleTabChange('byDate')}
+            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 cursor-pointer ${tab === 'byDate' ? 'text-primary' : 'text-primary-foreground'}`}
             data-testid="tab-memories-by-date"
           >
             <CalendarRange className="w-4 h-4" />
             By Date
-          </span>
-          <span
+          </button>
+          <button
+            type="button"
             ref={albumsRef}
-            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'albums' ? 'text-primary' : 'text-primary-foreground'}`}
+            role="tab"
+            aria-selected={tab === 'albums'}
+            onClick={() => handleTabChange('albums')}
+            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 cursor-pointer ${tab === 'albums' ? 'text-primary' : 'text-primary-foreground'}`}
             data-testid="tab-memories-albums"
           >
             <FolderPlus className="w-4 h-4" />
             Albums
-          </span>
-        </button>
+          </button>
+        </div>
         {/* Slot inline with the toggle pill. Only rendered on the By
             Date tab — Albums has no equivalent controls today. The
             vertical bar divider sits between the toggle and the slot

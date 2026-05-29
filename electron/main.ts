@@ -347,6 +347,7 @@ import {
   areModelsDownloaded,
   setMainWindow as setAiMainWindow,
   runFaceClustering,
+  runIncrementalClustering,
   redetectSingleFile,
 } from './ai-manager.js';
 import {
@@ -373,6 +374,12 @@ import {
   clearAllAiData,
   resetAllTagAnalysis,
   getUnprocessedFileIds,
+  getUnclusteredFaceCount,
+  moveFilesToRecycleBin,
+  restoreFilesFromRecycleBin,
+  deleteIndexedFiles,
+  listRecycleBin,
+  getRecycleBinCount,
   listSavedTrees,
   getSavedTree,
   createSavedTree,
@@ -916,13 +923,26 @@ function createWindow() {
 	      try {
 	        const pendingFaces = getUnprocessedFileIds('faces', 1).length;
 	        const pendingTags = getUnprocessedFileIds('tags', 1).length;
-	        console.log(`[AI] Auto-start check: pendingFaces=${pendingFaces > 0}, pendingTags=${pendingTags > 0}`);
+	        const unclusteredFaces = getUnclusteredFaceCount();
+	        console.log(`[AI] Auto-start check: pendingFaces=${pendingFaces > 0}, pendingTags=${pendingTags > 0}, unclusteredFaces=${unclusteredFaces}`);
 	        if (pendingFaces > 0) {
 	          console.log('[AI] Auto-starting AI processing (faces pending)...');
 	          await startAiProcessing();
 	        } else if (pendingTags > 0) {
 	          console.log('[AI] Auto-starting tags-only processing (resuming previous re-analyze)...');
 	          await startAiProcessing({ tagsOnly: true });
+	        } else if (unclusteredFaces > 0) {
+	          // Detection finished but clustering was interrupted (user
+	          // quit PDR mid-cluster on a large Takeout import).
+	          //
+	          // Auto-resume is DISABLED here: even with time-budgeted
+	          // yielding, running clustering on the main process can
+	          // starve OS window-message handling enough that Windows
+	          // marks the window "Not Responding" — a reputation-grade
+	          // bug. Until clustering moves off main entirely (utility
+	          // process or worker_thread), the user must trigger it
+	          // manually from Settings → AI → Re-cluster.
+	          console.log(`[AI] Skipping auto-resume — ${unclusteredFaces} face(s) still need clustering; user can trigger via Settings → AI`);
 	        } else {
 	          console.log('[AI] Nothing pending, no auto-start needed');
 	        }
@@ -2663,6 +2683,91 @@ ipcMain.handle('shell:openExternal', async (_event, url: string) => {
     await shell.openExternal(url);
   } catch (error) {
     console.error('Error opening external URL:', error);
+  }
+});
+
+// ─── PDR Recycle Bin (v2.0.15) ─────────────────────────────────────────────
+//
+// Two-stage delete: Move to Recycle Bin is a reversible soft delete
+// (sets in_recycle_bin = 1, file stays on disk). Permanent Delete from
+// the Recycle Bin view calls shell.trashItem so the OS Recycle Bin is
+// the actual final stop — that way the user has two layers of safety
+// before anything leaves their disk.
+
+ipcMain.handle('recycle:move', async (_event, fileIds: number[]) => {
+  try {
+    const updated = moveFilesToRecycleBin(fileIds ?? []);
+    // Broadcast so any open view re-fetches and the moved items disappear.
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('recycle:changed', { kind: 'move', count: updated });
+    }
+    return { success: true, count: updated };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('recycle:restore', async (_event, fileIds: number[]) => {
+  try {
+    const updated = restoreFilesFromRecycleBin(fileIds ?? []);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('recycle:changed', { kind: 'restore', count: updated });
+    }
+    return { success: true, count: updated };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('recycle:permanentDelete', async (_event, fileIds: number[]) => {
+  if (!fileIds || fileIds.length === 0) return { success: true, removed: 0, failed: [] };
+  try {
+    // Resolve file paths first — once we delete from the index they're gone.
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    const placeholders = fileIds.map(() => '?').join(',');
+    const rows = database
+      .prepare(`SELECT id, file_path FROM indexed_files WHERE id IN (${placeholders})`)
+      .all(...fileIds) as { id: number; file_path: string }[];
+
+    const failed: { id: number; error: string }[] = [];
+    const trashedIds: number[] = [];
+    for (const row of rows) {
+      try {
+        // shell.trashItem moves to the OS Trash — recoverable from
+        // there as a second safety net. If the file is already gone
+        // from disk we still drop the index row.
+        if (fs.existsSync(row.file_path)) {
+          await shell.trashItem(row.file_path);
+        }
+        trashedIds.push(row.id);
+      } catch (e) {
+        failed.push({ id: row.id, error: (e as Error).message });
+      }
+    }
+    const removed = deleteIndexedFiles(trashedIds);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('recycle:changed', { kind: 'permanentDelete', count: removed });
+    }
+    return { success: true, removed, failed };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('recycle:list', async () => {
+  try {
+    return { success: true, data: listRecycleBin() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('recycle:count', async () => {
+  try {
+    return { success: true, count: getRecycleBinCount() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
   }
 });
 
@@ -8518,6 +8623,21 @@ ipcMain.handle('ai:clusterFaces', async (_event, clusterId: number, page: number
   }
 });
 
+/**
+ * Cluster only NEW faces (cluster_id IS NULL) against existing
+ * clusters. Preserves People Manager person→cluster assignments —
+ * unlike ai:recluster which rebuilds from scratch. Runs in the AI
+ * worker_thread so main stays responsive.
+ */
+ipcMain.handle('ai:clusterNewFaces', async (_event, threshold?: number) => {
+  try {
+    await runIncrementalClustering(threshold);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('ai:recluster', async (_event, threshold: number) => {
   try {
     await runFaceClustering(threshold);
@@ -8909,16 +9029,17 @@ ipcMain.handle('viewer:getRotation', async (_event, filePath: string) => {
   }
 });
 
-// v2.0.14 (Terry 2026-05-28) — native OS drag from PDR tiles to
-// external apps. webContents.startDrag hands the file path(s) over to
-// the OS exactly as File Explorer would, so receivers (WhatsApp,
-// Discord, mail clients, Photoshop, etc.) read the ORIGINAL file from
-// disk, not the cached thumb. The renderer hands us the file paths to
-// drag plus an optional thumbnail data URL for the drag icon — we
-// convert it to a nativeImage (Electron's required icon format) or
-// fall back to a small empty image if not supplied. preventDefault
-// happens on the renderer side so the browser's own HTML5 drag
-// behaviour doesn't compete with the OS-level drag we start here.
+// v2.0.15 (Terry 2026-05-28) — native OS drag from PDR tiles to
+// external apps (WhatsApp, Discord, mail, Photoshop). The renderer
+// preventDefaults the browser's HTML5 drag and asks main to start
+// the OS-level drag via webContents.startDrag. Receivers see the
+// ORIGINAL file from disk, identical drag payload to File Explorer.
+//
+// Item shape: pass BOTH `file` (the primary, required by Electron's
+// runtime even when files is set) AND `files` (the multi-file array).
+// Earlier attempts that passed just `files` caused startDrag to no-op
+// silently — the native side couldn't construct the drag payload
+// without the primary path.
 ipcMain.handle('drag:start', (event, args: { files: string[]; iconDataUrl?: string }) => {
   try {
     if (!args?.files || args.files.length === 0) return { success: false, error: 'No files supplied' };
@@ -8929,9 +9050,6 @@ ipcMain.handle('drag:start', (event, args: { files: string[]; iconDataUrl?: stri
         if (!fromUrl.isEmpty()) icon = fromUrl;
       } catch { /* fall back to empty icon */ }
     }
-    // Electron's startDrag Item type requires a primary `file` plus
-    // an optional `files` array for multi-file drags. Always pass
-    // both — the primary is just files[0].
     event.sender.startDrag({ file: args.files[0], files: args.files, icon });
     return { success: true };
   } catch (err) {
