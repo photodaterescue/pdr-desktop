@@ -392,16 +392,25 @@ export function getExportFilename(report: FixReport, extension: 'csv' | 'txt'): 
 // the destination, the catalogue shrinks to match reality on the next fix.
 
 /** Scan a directory tree once and return a Set of all filenames (lowercase) */
-function collectFilenames(dirPath: string, maxDepth: number = 6, currentDepth: number = 0): Set<string> {
+// v2.0.15 (Terry 2026-05-30) — was SYNC and blocked main for seconds
+// on a 72k-file destination, which triggered Windows "Not Responding"
+// on the Fix Complete modal. Now async with fs.promises.readdir and a
+// setImmediate yield every 200 directories so the event loop pumps
+// IPC + window messages between batches.
+async function collectFilenames(dirPath: string, maxDepth: number = 6, currentDepth: number = 0, dirCounter: { n: number } = { n: 0 }): Promise<Set<string>> {
   const names = new Set<string>();
   if (currentDepth > maxDepth) return names;
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isFile()) {
         names.add(entry.name.toLowerCase());
       } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
-        const sub = collectFilenames(path.join(dirPath, entry.name), maxDepth, currentDepth + 1);
+        dirCounter.n++;
+        if (dirCounter.n % 200 === 0) {
+          await new Promise<void>((r) => setImmediate(r));
+        }
+        const sub = await collectFilenames(path.join(dirPath, entry.name), maxDepth, currentDepth + 1, dirCounter);
         for (const n of sub) names.add(n);
       }
     }
@@ -415,7 +424,7 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
 
   // 1. Scan destination ONCE to build a fast lookup of every filename on disk
   const existingFiles = fs.existsSync(destinationPath)
-    ? collectFilenames(destinationPath)
+    ? await collectFilenames(destinationPath)
     : new Set<string>();
 
   // 2. Load all reports targeting this destination
