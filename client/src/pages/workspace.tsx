@@ -97,6 +97,13 @@ import {
 import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from "@/lib/fix-state";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
@@ -4399,21 +4406,75 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               // "this is what you tried to add" point at the entry
               // itself. Auto-clears after 3 s via the parent's
               // setTimeout in flashSourceHighlight.
+
+              // v2.0.15 (Terry 2026-05-30) — source-row affordances:
+              //   • IconTooltip wraps the row so hovering reveals the
+              //     full filesystem path. The sidebar label alone is
+              //     just the leaf folder name, so two sources with the
+              //     same leaf (e.g. two "Camera Roll" folders on
+              //     different drives) were previously indistinguishable.
+              //   • ContextMenu adds right-click → "Show in File
+              //     Explorer" + "Copy filepath", matching the wording
+              //     and ordering already shipped in MemoriesView and
+              //     SearchPanel. Source rows say "Copy filepath" (not
+              //     "Copy filename") because the source IS a folder and
+              //     the full path is what the user is actually after.
+              //   • Sources without a resolved path (tour-preview /
+              //     placeholder) fall through to the bare SidebarItem
+              //     so the menu can't fire actions on undefined.
+              const sourceRow = (
+                <SidebarItem
+                  icon={source.icon}
+                  label={source.label}
+                  active={false}
+                  selected={source.selected}
+                  selectable={true}
+                  disabled={sourceMutationsBlocked}
+                  onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
+                />
+              );
+              const wrappedRow = source.path ? (
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>
+                    <div>
+                      <IconTooltip label={source.path} side="right">
+                        {sourceRow}
+                      </IconTooltip>
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem
+                      onSelect={() => { (window as any).pdr?.revealInFolder?.(source.path); }}
+                      data-testid={`source-row-reveal-${source.id}`}
+                    >
+                      <HardDrive className="w-3.5 h-3.5 mr-2" />
+                      Show in File Explorer
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onSelect={async () => {
+                        try {
+                          await navigator.clipboard.writeText(source.path || '');
+                          toast.success('Filepath copied', { description: source.path });
+                        } catch {
+                          toast.error("Couldn't copy filepath");
+                        }
+                      }}
+                      data-testid={`source-row-copy-filepath-${source.id}`}
+                    >
+                      <Copy className="w-3.5 h-3.5 mr-2" />
+                      Copy filepath
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              ) : sourceRow;
               return (
                 <div
                   key={source.id}
                   className={isHighlighted ? 'relative rounded-lg ring-2 ring-amber-500/70 ring-offset-1 ring-offset-sidebar' : 'relative'}
                   style={isHighlighted ? { animation: 'outline-pulse-amber 2s ease-in-out 5' } : undefined}
                 >
-                  <SidebarItem
-                    icon={source.icon}
-                    label={source.label}
-                    active={false}
-                    selected={source.selected}
-                    selectable={true}
-                    disabled={sourceMutationsBlocked}
-                    onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
-                  />
+                  {wrappedRow}
                   {isHighlighted && (
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40 pointer-events-none">
                       Already added
