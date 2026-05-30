@@ -45,6 +45,14 @@ function AppShell() {
       lastNonWorkspaceLocationRef.current = location;
     }
   }, [location, isWorkspace]);
+
+  // v2.0.15 (Terry 2026-05-30) — pre-warm the completion chime's
+  // WebAudio buffer at app startup so the first Fix/Analyze chime
+  // doesn't pay the fetch + decode cost on the click. Cheap if
+  // already warmed; no-op outside a browser env.
+  useEffect(() => {
+    void import('@/lib/electron-bridge').then(({ warmCompletionSound }) => warmCompletionSound());
+  }, []);
   // Keep the Routes block mounted briefly after navigating INTO
   // /workspace so the fade-out has something to fade. Unmount it
   // 320ms later (slightly longer than the 300ms transition so the

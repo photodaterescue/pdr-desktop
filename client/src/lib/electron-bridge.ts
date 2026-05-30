@@ -430,62 +430,102 @@ export function onFixProgress(callback: (payload: FixProgressPayload) => void): 
   return () => {};
 }
 
-// v2.0.15 (Terry 2026-05-30) — was a main-process IPC that spawned
-// PowerShell to play the WAV file. PowerShell startup on Windows
-// takes 3–5 seconds (longer with AV interference), so users heard
-// the chime ~7 seconds after a fix or analysis completed. The
-// renderer has direct HTML5 Audio access to the same asset, which
-// plays instantly. Cached audio instance is preloaded once on first
-// call so subsequent chimes don't re-fetch the WAV.
-let _completionAudio: HTMLAudioElement | null = null;
-function getCompletionAudio(): HTMLAudioElement | null {
-  if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
-  if (_completionAudio) return _completionAudio;
+// v2.0.15 (Terry 2026-05-30, revised) — WebAudio path. Previous
+// HTMLAudioElement implementation had unpredictable 4+ second
+// stalls on audio.play() under main-thread load. WebAudio decodes
+// the WAV once into an AudioBuffer; each chime fires a fresh
+// AudioBufferSourceNode that's scheduled on the audio-thread
+// independent of main. Latency: a handful of ms even when main
+// is busy with React renders. Decode happens once on first use
+// (or eagerly on warmCompletionSound()); subsequent calls are
+// just node.start().
+let _audioCtx: AudioContext | null = null;
+let _completionBuffer: AudioBuffer | null = null;
+let _completionBufferPromise: Promise<AudioBuffer | null> | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  if (_audioCtx) return _audioCtx;
   try {
-    _completionAudio = new Audio('./assets/pdr_success_bell.wav');
-    _completionAudio.preload = 'auto';
-    return _completionAudio;
+    const Ctor: typeof AudioContext | undefined =
+      (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    _audioCtx = new Ctor();
+    return _audioCtx;
   } catch {
     return null;
   }
 }
 
+async function loadCompletionBuffer(): Promise<AudioBuffer | null> {
+  if (_completionBuffer) return _completionBuffer;
+  if (_completionBufferPromise) return _completionBufferPromise;
+  const ctx = getAudioContext();
+  if (!ctx) return null;
+  _completionBufferPromise = (async () => {
+    try {
+      const res = await fetch('./assets/pdr_success_bell.wav');
+      const arrayBuffer = await res.arrayBuffer();
+      const decoded = await ctx.decodeAudioData(arrayBuffer);
+      _completionBuffer = decoded;
+      return decoded;
+    } catch {
+      return null;
+    }
+  })();
+  return _completionBufferPromise;
+}
+
+/**
+ * Pre-warm the chime — fetch + decode the WAV ahead of time so the
+ * first call to playCompletionSound() doesn't pay the decode cost.
+ * Safe to call eagerly at app startup; cheap if already warmed.
+ */
+export async function warmCompletionSound(): Promise<void> {
+  void loadCompletionBuffer();
+}
+
 export async function playCompletionSound(): Promise<void> {
-  // v2.0.15 (Terry 2026-05-30) — chime-latency diagnostics. Logs
-  // every transition so [analyze-end-trace] / [chime-trace] can be
-  // matched up in main.log.
   const t0 = performance.now();
   // eslint-disable-next-line no-console
   const mark = (label: string) => { console.log(`[chime-trace] +${(performance.now() - t0).toFixed(0)}ms ${label}`); try { logToFile('info', `[chime-trace] +${(performance.now() - t0).toFixed(0)}ms ${label}`); } catch { /* best-effort */ } };
-  mark('playCompletionSound() called');
-  const audio = getCompletionAudio();
-  mark(`getCompletionAudio() → ${audio ? `Audio (readyState=${audio.readyState})` : 'null'}`);
-  if (audio) {
-    try {
-      // Rewind so successive chimes always start from the top.
-      audio.currentTime = 0;
-      // play() returns a promise that resolves when playback starts;
-      // we don't await it because the chime should fire-and-forget.
-      mark('audio.play() called');
-      void audio.play()
-        .then(() => mark('audio.play() resolved (playback started)'))
-        .catch((e) => mark(`audio.play() rejected: ${(e as Error)?.message ?? 'unknown'}`));
-      return;
-    } catch (e) {
-      mark(`audio.play() threw: ${(e as Error)?.message ?? 'unknown'}`);
-      /* fall through to IPC fallback */
-    }
+  mark('playCompletionSound() called (WebAudio path)');
+  const ctx = getAudioContext();
+  if (!ctx) {
+    mark('no AudioContext — falling back to IPC');
+    return playViaIpc();
   }
-  // Fallback for non-renderer contexts (or if Audio construction
+  // AudioContext may start in 'suspended' state until a user gesture.
+  // resume() is a no-op if already running. Without this, BufferSource
+  // nodes can be created but never produce audible output.
+  if (ctx.state === 'suspended') {
+    try { await ctx.resume(); mark(`AudioContext resumed (state=${ctx.state})`); } catch (e) { mark(`AudioContext resume failed: ${(e as Error)?.message ?? 'unknown'}`); }
+  }
+  const buffer = await loadCompletionBuffer();
+  mark(`buffer ready: ${buffer ? `${buffer.duration.toFixed(2)}s` : 'null'}`);
+  if (!buffer) return playViaIpc();
+  try {
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+    mark('source.start(0) called — playback scheduled');
+    source.onended = () => mark('source ended');
+  } catch (e) {
+    mark(`source.start failed: ${(e as Error)?.message ?? 'unknown'}`);
+    return playViaIpc();
+  }
+}
+
+async function playViaIpc(): Promise<void> {
+  // Fallback for non-renderer contexts (or if WebAudio decoding
   // failed): keep the old IPC route as a safety net. Slower because
   // it spawns PowerShell, but better than no chime.
   if (isElectron() && (window as any).pdr?.playCompletionSound) {
     try {
-      mark('fallback: IPC playCompletionSound() called');
       await (window as any).pdr.playCompletionSound();
-      mark('fallback: IPC resolved');
     } catch {
-      mark('fallback: IPC rejected');
       // eslint-disable-next-line no-console
       console.log('Could not play completion sound');
     }
