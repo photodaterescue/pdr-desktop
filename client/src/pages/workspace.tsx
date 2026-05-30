@@ -2183,8 +2183,25 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         duplicatesRemoved: analysisData.duplicatesRemoved || 0,
       };
       
+      // v2.0.15 (Terry 2026-05-30) — fire the chime FIRST, before the
+      // cascade of state updates that triggers heavy re-renders
+      // (sources list update, source-analysis modal mount, dashboard
+      // cards refresh). Awaiting the dynamic import + state updates
+      // first was delaying the chime by ~5 seconds even though
+      // playCompletionSound() itself is instant. Fix Complete didn't
+      // have this problem because its state updates are lighter.
+      // Fire-and-forget: don't await the chime so the modal opens
+      // immediately afterwards.
+      const soundEnabled = localStorage.getItem('pdr-completion-sound') !== 'false';
+      if (soundEnabled) {
+        void import('@/lib/electron-bridge').then(({ playCompletionSound, flashTaskbar }) => {
+          void playCompletionSound();
+          void flashTaskbar();
+        });
+      }
+
       setSourceAnalysisResults(prev => ({ ...prev, [newSource.id]: analysisData }));
-      
+
       const updatedSources = sources.map(s => ({ ...s, active: false }));
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
@@ -2192,16 +2209,8 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
       setPreScanStats(stats);
       setLastAnalysisElapsed(Math.floor((Date.now() - analysisStartTimeRef.current) / 1000));
       setShowPreScanConfirm(true);
-      
+
       toast.success(`Analyzed ${analysisData.totalFiles.toLocaleString()} files`);
-      
-      // Play completion sound and flash taskbar if enabled
-      const soundEnabled = localStorage.getItem('pdr-completion-sound') !== 'false';
-		if (soundEnabled) {
-		  const { playCompletionSound, flashTaskbar } = await import('@/lib/electron-bridge');
-		  await playCompletionSound();
-		  await flashTaskbar();
-		}
       } else if (result.code === 'DESTINATION_OFFLINE') {
         // The Library Drive in the user's persisted settings isn't
         // reachable on disk right now (unplugged, NAS offline, USB
