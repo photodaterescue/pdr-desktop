@@ -3006,6 +3006,20 @@ return (
               previousActiveView === 'familytree' ? 'Back to Trees' :
               'Back to Dashboard'
             }
+            // v2.0.15 (Terry 2026-05-29) — back-button palette matches
+            // the destination view's sidebar identity (iOS precedent:
+            // back labels tint to the destination's accent). Uses
+            // tailwind's 100 / 500 / 900 triples per colour family
+            // so background is always pale, border is the accent,
+            // text is dark enough to read against the bg. Mirrors
+            // the existing inline-blue "Back to timeline" pattern
+            // in MemoriesView but parameterised by destination.
+            backPalette={
+              previousActiveView === 'memories'   ? { bg: '#fef3c7', border: '#f59e0b', text: '#78350f' } : // amber
+              previousActiveView === 'search'     ? { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' } : // blue
+              previousActiveView === 'familytree' ? { bg: '#d1fae5', border: '#10b981', text: '#064e3b' } : // emerald
+                                                    { bg: '#ede9fe', border: '#a99cff', text: '#4c1d95' }   // lavender
+            }
           />
         )}
 
@@ -3568,6 +3582,61 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
 
+  // v2.0.15 (Terry 2026-05-30) — Recycle Bin live count + the
+  // Settings → General "Show Recycle Bin count" toggle. Mirrors
+  // the titlebar's behaviour so when the user opts into the
+  // visible count, BOTH the titlebar icon AND the sidebar entries
+  // (collapsed-rail and expanded-row) show the badge. Live
+  // updates: recycle:changed for the count, pdr:settingsChanged
+  // for the toggle.
+  const [recycleCount, setRecycleCount] = useState<number>(0);
+  const [showRecycleBadge, setShowRecycleBadge] = useState<boolean>(false);
+  useEffect(() => {
+    let cancelled = false;
+    const refreshCount = async () => {
+      try {
+        const r = await (await import('@/lib/electron-bridge')).getRecycleBinCount();
+        if (!cancelled && r.success) setRecycleCount(r.count ?? 0);
+      } catch { /* best-effort */ }
+    };
+    const refreshSetting = async () => {
+      try {
+        const s = await getSettings();
+        if (!cancelled) setShowRecycleBadge(!!(s as any)?.recycleBinShowCountBadge);
+      } catch { /* best-effort */ }
+    };
+    refreshCount();
+    refreshSetting();
+    const offCount = (async () => (await import('@/lib/electron-bridge')).onRecycleBinChanged(() => { void refreshCount(); }))();
+    const settingsHandler = (e: Event) => {
+      const detail = (e as CustomEvent<{ key: string; value: unknown }>).detail;
+      if (detail?.key === 'recycleBinShowCountBadge') setShowRecycleBadge(!!detail.value);
+    };
+    window.addEventListener('pdr:settingsChanged', settingsHandler as EventListener);
+    return () => {
+      cancelled = true;
+      void offCount.then(off => off?.());
+      window.removeEventListener('pdr:settingsChanged', settingsHandler as EventListener);
+    };
+  }, []);
+
+  // Wrap the Recycle Bin icon with an optional gold count badge.
+  // Same colour treatment as the titlebar badge so the two surfaces
+  // stay consistent.
+  const recycleBinIcon = (className: string) => (
+    <span className="relative inline-flex">
+      <Trash2 className={className} />
+      {showRecycleBadge && recycleCount > 0 && (
+        <span
+          className="absolute -top-1 -right-1.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 rounded-full bg-[var(--color-gold)] text-[#1f1a08] text-[8px] font-bold leading-none"
+          aria-hidden
+        >
+          {recycleCount > 99 ? '99+' : recycleCount}
+        </span>
+      )}
+    </span>
+  );
+
   // Gate Add Source / Remove during a Fix — adding sources mid-fix
   // would kick off a fresh analysis IPC that competes with the fix
   // engine for CPU + the same analysis worker, and removing sources
@@ -3944,25 +4013,39 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       onClick: () => void,
       locked: boolean = false,
       active: boolean = false,
-    ) => (
-      <IconTooltip label={title + (locked ? ' (Premium feature)' : '')} side="right">
-        <button
-          onClick={onClick}
-          className={`w-9 h-9 flex items-center justify-center transition-colors relative ${
-            active
-              // Active app: solid amber-tinted rounded square (rounded-md
-              // is a proper square with softened edges; previously this
-              // used ring-2 which read as a circle because of how the
-              // stroke wrapped the small icon at this size).
-              ? 'bg-amber-500/20 border border-amber-500/60 rounded-md text-foreground'
-              : 'hover:bg-secondary/60 rounded-lg text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          {icon}
-          {locked && <Lock className="absolute top-0.5 right-0.5 w-2 h-2 text-muted-foreground/60" />}
-        </button>
-      </IconTooltip>
-    );
+      accent?: keyof typeof SIDEBAR_ACCENT,
+    ) => {
+      // v2.0.15 (Terry 2026-05-29) — tint the collapsed-rail icon to
+      // match its expanded-sidebar accent crescent so the two
+      // surfaces share one identity per item. Wraps the icon in a
+      // styled span; Lucide icons use stroke="currentColor" and
+      // inherit the colour automatically. Callers must NOT set
+      // explicit text-* on the icon (those classes win the cascade
+      // over the wrapper).
+      const accentColor = accent ? SIDEBAR_ACCENT[accent] : undefined;
+      const tintedIcon = accentColor
+        ? <span style={{ color: accentColor }} className="inline-flex">{icon}</span>
+        : icon;
+      return (
+        <IconTooltip label={title + (locked ? ' (Premium feature)' : '')} side="right">
+          <button
+            onClick={onClick}
+            className={`w-9 h-9 flex items-center justify-center transition-colors relative ${
+              active
+                // Active app: solid amber-tinted rounded square (rounded-md
+                // is a proper square with softened edges; previously this
+                // used ring-2 which read as a circle because of how the
+                // stroke wrapped the small icon at this size).
+                ? 'bg-amber-500/20 border border-amber-500/60 rounded-md text-foreground'
+                : 'hover:bg-secondary/60 rounded-lg text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tintedIcon}
+            {locked && <Lock className="absolute top-0.5 right-0.5 w-2 h-2 text-muted-foreground/60" />}
+          </button>
+        </IconTooltip>
+      );
+    };
     // Active-app resolution: activePanel (guidance pages) wins over
     // activeView (main canvas views) because opening a panel overlays
     // the canvas. Dashboard/Workspace is active only when no panel is
@@ -4013,39 +4096,44 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         )}
         {iconBtn(
           'Search & Discovery',
-          <Search className="w-4 h-4 opacity-70" />,
+          <Search className="w-4 h-4" />,
           gateLocked('search-discovery', () => onViewChange?.('search')),
           !isLicensed,
           isActiveView('search'),
+          'blue',
         )}
         {iconBtn(
           'Memories',
-          <CalendarRange className="w-4 h-4 opacity-70" />,
+          <CalendarRange className="w-4 h-4" />,
           gateLocked('memories', () => onViewChange?.('memories')),
           !isLicensed,
           isActiveView('memories'),
+          'amber',
         )}
         {iconBtn(
           isTreesEnabled() ? 'Trees' : `Trees — ${TREES_RELEASED_SHORTLY_MESSAGE}`,
-          <Network className="w-4 h-4 opacity-70" />,
+          <Network className="w-4 h-4" />,
           isTreesEnabled()
             ? gateLocked('trees', () => onViewChange?.('familytree'))
             : () => toast.info(TREES_RELEASED_SHORTLY_MESSAGE),
           !isLicensed || !isTreesEnabled(),
           isActiveView('familytree'),
+          'emerald',
         )}
         {iconBtn(
           'People Manager',
-          <Users className="w-4 h-4 text-purple-500" />,
+          <Users className="w-4 h-4" />,
           gateLocked('people-manager', () => onOpenPeople()),
           !isLicensed,
           // People Manager opens in a separate window (or toggles the
           // docked drawer). We don't track drawer state here, so no
           // active-highlight state is surfaced to the icon button.
+          false,
+          'pink',
         )}
         {iconBtn(
           isEditDatesEnabled() ? 'Date Editor' : `Date Editor — ${EDIT_DATES_RELEASED_SHORTLY_MESSAGE}`,
-          <Calendar className="w-4 h-4 text-blue-500" />,
+          <Calendar className="w-4 h-4" />,
           isEditDatesEnabled()
             ? async () => {
                 const { openDateEditor } = await import('@/lib/electron-bridge');
@@ -4053,6 +4141,8 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               }
             : () => toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE),
           !isEditDatesEnabled(),
+          false,
+          'blue',
         )}
         {/* v2.0.15 (Terry 2026-05-28) — Recycle Bin as a top-level
             system view, following Google Photos / Apple Photos
@@ -4061,10 +4151,11 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             than being a viewing preference like By Date / Albums. */}
         {iconBtn(
           'Recycle Bin',
-          <Trash2 className="w-4 h-4 opacity-70" />,
+          recycleBinIcon('w-4 h-4'),
           gateLocked('recycle-bin', () => onViewChange?.('recycle')),
           !isLicensed,
           isActiveView('recycle'),
+          'rose',
         )}
 
         {/* Flex spacer — pushes Guidance + App groups to the bottom of
@@ -4420,7 +4511,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                   the destructive-content surface without screaming
                   red the way a top-level "Delete" affordance would. */}
               <SidebarItem
-                icon={<Trash2 className="w-4 h-4 opacity-70" />}
+                icon={recycleBinIcon('w-4 h-4 opacity-70')}
                 label="Recycle Bin"
                 accent="rose"
                 onClick={() => {
@@ -4512,12 +4603,16 @@ const SIDEBAR_ACCENT: Record<string, string> = {
   blue: '#3b82f6',
   amber: '#f8c15c',
   emerald: '#10b981',
-  pink: '#ec4899',
-  // v2.0.15 — rose for destructive-content surfaces (Recycle Bin).
-  // Distinct enough from the pink People Manager accent that they
-  // don't read as the same row, matches PDR's destructive-button
-  // family (Button variant="destructive" uses the same rose hue).
-  rose: '#f43f5e',
+  // v2.0.15 (Terry 2026-05-29) — People Manager's pink and Recycle
+  // Bin's rose were visually identical at the 4-px sidebar crescent
+  // size. Premium ethos: high-frequency surfaces get vivid accents,
+  // background system surfaces get quieter ones. So PM moves to a
+  // vivid magenta (it's a daily-driver tool) and Recycle Bin moves
+  // to a pastel rose (calmer, signals "here when you need it,
+  // destructive but reversible"). The two are now distinct in both
+  // hue and saturation, so the eye separates them instantly.
+  pink: '#d946ef',  // fuchsia/magenta for People Manager
+  rose: '#fda4af',  // pastel rose for Recycle Bin
 };
 
 function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false, locked = false, accent }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean, locked?: boolean, accent?: keyof typeof SIDEBAR_ACCENT }) {
@@ -4548,7 +4643,16 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
         </div>
       )}
       <div className="flex items-center gap-2 overflow-hidden pointer-events-none flex-1">
-        {icon}
+        {/* v2.0.15 (Terry 2026-05-29) — tint the icon to its accent
+            colour so icon + crescent read as one identity. Wraps the
+            passed-in node in a styled span; Lucide icons use
+            stroke="currentColor" so they inherit the colour
+            automatically. Note: per-icon text-* classes on the
+            passed node still take precedence (Lucide writes the
+            colour into the SVG from its className), so the callers
+            must NOT set explicit text-* on icons that should tint
+            with the accent. */}
+        {accentColor ? <span style={{ color: accentColor }} className="inline-flex">{icon}</span> : icon}
         <span className="truncate">{label}</span>
       </div>
       {locked && (
@@ -7953,6 +8057,18 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             <p className="text-muted-foreground mb-1">
               {(fixSnapshotRef.current?.totalScanned ?? 0).toLocaleString()} files scanned → {((fixSnapshotRef.current?.confirmed ?? 0) + (fixSnapshotRef.current?.recovered ?? 0) + (fixSnapshotRef.current?.marked ?? 0)).toLocaleString()} output files
             </p>
+            {/* v2.0.15 (Terry 2026-05-30) — show the destination folder
+                so the user knows WHERE the files just landed. Open
+                Destination is also a button below, but seeing the
+                actual path here removes the "where did they go?"
+                question before it's asked. break-all so long paths
+                wrap cleanly inside the modal. */}
+            {destinationPath && (
+              <p className="text-xs text-muted-foreground mb-1 break-all">
+                <span className="text-foreground/70">Saved to:</span>{' '}
+                <span className="font-mono text-[11px]">{destinationPath}</span>
+              </p>
+            )}
             {totalTime > 0 && (
               <p className="text-xs text-muted-foreground mb-1">
                 Completed in {formatTime(totalTime)}

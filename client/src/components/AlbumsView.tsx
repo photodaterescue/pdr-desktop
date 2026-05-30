@@ -565,6 +565,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   }, []);
   useEffect(() => { refreshAll(); }, [refreshAll]);
 
+  // v2.0.15 (Terry 2026-05-29) — titlebar Refresh button dispatches
+  // pdr:refreshActiveView. AlbumsView re-runs the full refreshAll
+  // pass (listAlbums + groups + memberships) so freshly-imported
+  // albums show up without navigating away.
+  useEffect(() => {
+    const handler = () => { void refreshAll(); };
+    window.addEventListener('pdr:refreshActiveView', handler as EventListener);
+    return () => window.removeEventListener('pdr:refreshActiveView', handler as EventListener);
+  }, [refreshAll]);
+
   useEffect(() => {
     if (expandedGroups.size === 0 && groups.length > 0) {
       const all = new Set(groups.map((g) => g.id));
@@ -2043,27 +2053,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     </div>
   );
 
-  // Manual refresh — re-runs listAlbums + the rest of refreshAll so
-  // the user can pull freshly-imported albums into the grid without
-  // navigating away. Sits inline with the zoom pill + density
-  // toggle on every Albums surface (All / per-folder / per-album).
-  // Terry 2026-05-20: "Why is there not a refresh in S&D? I thought
-  // you were going to add one. There should be a refresh in By Date
-  // and Albums also..."
-  const refreshButton = (
-    <IconTooltip label="Refresh — reload albums" side="bottom">
-      <button
-        type="button"
-        onClick={() => { void refreshAll(); }}
-        disabled={loading}
-        className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-        data-testid="albums-refresh"
-        aria-label="Refresh albums"
-      >
-        <RotateCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-      </button>
-    </IconTooltip>
-  );
+  // v2.0.15 (Terry 2026-05-29) — refresh consolidated into the
+  // titlebar (next to the Recycle Bin icon). AlbumsView listens to
+  // pdr:refreshActiveView via the useEffect below. refreshButton
+  // kept as null so the three existing {refreshButton} render points
+  // don't need to be hunted down and removed individually — gap-2
+  // collapses cleanly when the child renders nothing.
+  const refreshButton: React.ReactNode = null;
 
   const renderRightPane = () => {
     if (loading) {
@@ -2557,7 +2553,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           Explorer" opens File Explorer at the photo's
                           folder and highlights the file. */}
                       <ContextMenuItem
-                        onSelect={() => { (window as any).pdr?.shell?.revealInFolder?.(p.file_path); }}
+                        onSelect={() => { (window as any).pdr?.revealInFolder?.(p.file_path); }}
                         data-testid={`album-photo-reveal-${p.id}`}
                       >
                         <HardDrive className="w-3.5 h-3.5 mr-2" />

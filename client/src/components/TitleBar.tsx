@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2 } from 'lucide-react';
+import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2, RotateCcw } from 'lucide-react';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
@@ -380,6 +380,25 @@ export function TitleBar() {
                 {recycleCount > 99 ? '99+' : recycleCount}
               </span>
             )}
+          </button>
+        </IconTooltip>
+        {/* v2.0.15 (Terry 2026-05-29) — universal Refresh button.
+            Dispatches pdr:refreshActiveView which each view
+            subscribes to and handles its own re-fetch (MemoriesView
+            re-pulls buckets, drilldown re-pulls files, AlbumsView
+            re-runs refreshAll, SearchPanel re-runs the current
+            search). Frees per-view header real estate AND fixes the
+            position inconsistency across Albums / By Date / S&D —
+            same place on every page now. Styling matches the
+            Recycle Bin button next to it. */}
+        <IconTooltip label="Refresh — reload this view" side="bottom">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('pdr:refreshActiveView'))}
+            className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all"
+            data-testid="titlebar-refresh"
+            aria-label="Refresh"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
         </IconTooltip>
         {tourMenuItems && tourMenuItems.length > 0 && (

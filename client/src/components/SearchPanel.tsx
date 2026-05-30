@@ -1263,6 +1263,16 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const executeSearchRef = useRef(executeSearch);
   useEffect(() => { executeSearchRef.current = executeSearch; }, [executeSearch]);
 
+  // v2.0.15 (Terry 2026-05-29) — titlebar Refresh button dispatches
+  // pdr:refreshActiveView. S&D re-runs the current search via the
+  // executeSearchRef so the listener stays stable while the search
+  // function reference can change between renders.
+  useEffect(() => {
+    const handler = () => { void executeSearchRef.current(); };
+    window.addEventListener('pdr:refreshActiveView', handler as EventListener);
+    return () => window.removeEventListener('pdr:refreshActiveView', handler as EventListener);
+  }, []);
+
   // Prevent infinite loop between ribbon ↔ filter sync
   const syncDirectionRef = useRef<'none' | 'textToFilter' | 'filterToText'>('none');
 
@@ -4150,13 +4160,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 type="button"
                 onClick={() => setHasCaption((v) => v ? undefined : true)}
                 data-testid="sd-captioned-only-toggle"
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border shrink-0 ${
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border shrink-0 ${
                   hasCaption
                     ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
                     : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
-                <MessageSquareText className="w-3 h-3" />
+                <MessageSquareText className="w-3.5 h-3.5" />
                 Captioned only
               </button>
             </IconTooltip>
@@ -4252,95 +4262,81 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               // No active filters — spacer keeps right controls pinned right.
               <div className="flex-1" />
             )}
-            <div className="flex items-center gap-3 shrink-0">
-              {/* Tile size slider (grid view only) + List + Details */}
-              <div className="flex items-center gap-2">
-                {/* Grid tile size slider — styled like the People Match slider */}
-                <IconTooltip label="Grid view" side="bottom">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                  >
+            {/* v2.0.15 (Terry 2026-05-30) — unified toolbar rhythm.
+                All right-cluster controls share h-8 / text-xs /
+                gap-2 spacing so the row reads as one toolbar.
+                Specialised radii kept where they signal a different
+                kind of control (zoom stepper, segmented view-mode
+                group). */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* View-mode segmented group — Grid + List + Details
+                  belong together (Terry 2026-05-30: "the Grid button
+                  should surely be next to the other view buttons of
+                  List and Details"). Previously Grid sat separate
+                  from the List/Details group with the zoom pill
+                  splitting them. */}
+              <div className="inline-flex items-center h-8 border border-border rounded-md overflow-hidden">
+                <IconTooltip label="Grid" side="bottom">
+                  <button onClick={() => setViewMode('grid')}
+                    className={`flex items-center justify-center w-8 h-full transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
                     <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
                 </IconTooltip>
-                {/* Workspace-style zoom pill — same triplet pattern
-                    (Zoom in / percent / Zoom out) as the Workspace's
-                    floating zoom control. Terry 2026-05-19: "The same
-                    zoom button icon that is in the Workspace is meant
-                    to be in S&D". Click % to reset to 50 (middle).
-                    Ctrl+wheel on the grid below still works for fast
-                    scaling. */}
-                {viewMode === 'grid' && (
-                  <div className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-lg border border-border bg-background">
-                    <IconTooltip label="Zoom out" side="bottom">
-                      <button
-                        onClick={() => setTileSizeSlider(prev => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
-                        disabled={tileSizeSlider <= TILE_SLIDER_MIN}
-                        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        data-testid="button-sd-zoom-out"
-                        aria-label="Zoom out"
-                      >
-                        <ZoomOut className="w-3.5 h-3.5" />
-                      </button>
-                    </IconTooltip>
-                    <IconTooltip label="Reset to 50%" side="bottom">
-                      <button
-                        onClick={() => setTileSizeSlider(50)}
-                        className="px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
-                        data-testid="button-sd-zoom-reset"
-                        aria-label="Reset zoom"
-                      >
-                        {tileSizeSlider}%
-                      </button>
-                    </IconTooltip>
-                    <IconTooltip label="Zoom in" side="bottom">
-                      <button
-                        onClick={() => setTileSizeSlider(prev => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
-                        disabled={tileSizeSlider >= TILE_SLIDER_MAX}
-                        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        data-testid="button-sd-zoom-in"
-                        aria-label="Zoom in"
-                      >
-                        <ZoomIn className="w-3.5 h-3.5" />
-                      </button>
-                    </IconTooltip>
-                  </div>
-                )}
-                <div className="flex items-center border border-border rounded-lg overflow-hidden">
-                  <IconTooltip label="List" side="bottom">
-                    <button onClick={() => setViewMode('list')}
-                      className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
-                      <List className="w-3.5 h-3.5" />
-                    </button>
-                  </IconTooltip>
-                  <IconTooltip label="Details" side="bottom">
-                    <button onClick={() => setViewMode('details')}
-                      className={`p-1.5 transition-colors border-l border-border ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
-                      <Table2 className="w-3.5 h-3.5" />
-                    </button>
-                  </IconTooltip>
-                </div>
-                {/* Manual refresh button — re-runs the current search
-                    so the user can pull in fresh results after a Fix
-                    completes or photos get added/removed elsewhere.
-                    Sits at the right edge of the view-control cluster
-                    so it's always reachable regardless of view mode.
-                    Terry 2026-05-20: "Why is there not a refresh in
-                    S&D? I thought you were going to add one." */}
-                <IconTooltip label="Refresh — re-run this search" side="bottom">
-                  <button
-                    type="button"
-                    onClick={() => executeSearch()}
-                    disabled={isLoading || !searchActive}
-                    className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-                    data-testid="sd-refresh"
-                    aria-label="Refresh search"
-                  >
-                    <RotateCcw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                <IconTooltip label="List" side="bottom">
+                  <button onClick={() => setViewMode('list')}
+                    className={`flex items-center justify-center w-8 h-full border-l border-border transition-colors ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+                    <List className="w-3.5 h-3.5" />
+                  </button>
+                </IconTooltip>
+                <IconTooltip label="Details" side="bottom">
+                  <button onClick={() => setViewMode('details')}
+                    className={`flex items-center justify-center w-8 h-full border-l border-border transition-colors ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+                    <Table2 className="w-3.5 h-3.5" />
                   </button>
                 </IconTooltip>
               </div>
+              {/* Zoom pill — only relevant in Grid mode. h-8 outer to
+                  match the rest of the toolbar; inner buttons stay
+                  w-6 h-6 since they're nested. */}
+              {viewMode === 'grid' && (
+                <div className="inline-flex items-center gap-0.5 h-8 px-1 rounded-md border border-border bg-background">
+                  <IconTooltip label="Zoom out" side="bottom">
+                    <button
+                      onClick={() => setTileSizeSlider(prev => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
+                      disabled={tileSizeSlider <= TILE_SLIDER_MIN}
+                      className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      data-testid="button-sd-zoom-out"
+                      aria-label="Zoom out"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                  </IconTooltip>
+                  <IconTooltip label="Reset to 50%" side="bottom">
+                    <button
+                      onClick={() => setTileSizeSlider(50)}
+                      className="px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
+                      data-testid="button-sd-zoom-reset"
+                      aria-label="Reset zoom"
+                    >
+                      {tileSizeSlider}%
+                    </button>
+                  </IconTooltip>
+                  <IconTooltip label="Zoom in" side="bottom">
+                    <button
+                      onClick={() => setTileSizeSlider(prev => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
+                      disabled={tileSizeSlider >= TILE_SLIDER_MAX}
+                      className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      data-testid="button-sd-zoom-in"
+                      aria-label="Zoom in"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                  </IconTooltip>
+                </div>
+              )}
+              {/* v2.0.15 (Terry 2026-05-29) — REMOVED per-view
+                  refresh button. Refresh consolidated into the
+                  titlebar (next to the Recycle Bin icon). */}
 
               {/* Metadata display dropdown — customise what info appears below each tile */}
               {viewMode === 'grid' && (
@@ -4348,7 +4344,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <IconTooltip label="Choose which details show below each photo" side="bottom">
                     <PopoverTrigger asChild>
                       <button
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
+                        className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
                       >
                         <Info className="w-3.5 h-3.5" />
                         <span>Add Info{tileMetaFields.length > 0 ? ` (${tileMetaFields.length})` : ''}</span>
@@ -4414,7 +4410,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       return next;
                     });
                   }}
-                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
+                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
                 >
                   <CheckSquare className="w-3.5 h-3.5" />
                   <span>Select{selectedFiles.size > 0 ? ` (${selectedFiles.size})` : ''}</span>
@@ -5052,7 +5048,7 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
             File Explorer at the photo's folder and highlights the
             file. Mirrors the MemoriesView / AlbumsView right-click. */}
         <ContextMenuItem
-          onSelect={() => { (window as any).pdr?.shell?.revealInFolder?.(file.file_path); }}
+          onSelect={() => { (window as any).pdr?.revealInFolder?.(file.file_path); }}
           data-testid={`filecard-reveal-${file.id}`}
         >
           <HardDrive className="w-3.5 h-3.5 mr-2" />
@@ -5335,6 +5331,23 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             )}
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
+            {/* v2.0.15 (Terry 2026-05-30) — Open in Viewer + Show in
+                Folder moved into the header strip as icon-only
+                buttons. Previously they were wide bg-primary CTAs
+                sitting BELOW the preview, eating ~80px of vertical
+                space that the metadata table needed. The header
+                strip was mostly empty anyway, and icon buttons here
+                cluster naturally with Previous / Next / Close. */}
+            {onOpenViewer && (file.file_type === 'photo' || file.file_type === 'video') && (
+              <IconTooltip label={viewerCount && viewerCount > 1 ? `Open ${viewerCount} in Viewer` : 'Open in Viewer'} side="bottom">
+                <button onClick={onOpenViewer} className="p-1.5 rounded-lg hover:bg-primary/15 text-primary transition-colors"><Eye className="w-4 h-4" /></button>
+              </IconTooltip>
+            )}
+            {onOpenInExplorer && (
+              <IconTooltip label="Show in Folder" side="bottom">
+                <button onClick={onOpenInExplorer} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"><FolderOpen className="w-4 h-4" /></button>
+              </IconTooltip>
+            )}
             <IconTooltip label="Previous (←)" side="bottom">
               <button onClick={onPrev} disabled={!onPrev}
                 className={`p-1.5 rounded-lg transition-colors ${onPrev ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}><ArrowLeft className="w-4 h-4" /></button>
@@ -5343,11 +5356,6 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
               <button onClick={onNext} disabled={!onNext}
                 className={`p-1.5 rounded-lg transition-colors ${onNext ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}><ArrowRight className="w-4 h-4" /></button>
             </IconTooltip>
-            {onOpenInExplorer && (
-              <IconTooltip label="Open in Explorer" side="bottom">
-                <button onClick={onOpenInExplorer} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"><ExternalLink className="w-4 h-4" /></button>
-              </IconTooltip>
-            )}
             <IconTooltip label="Close (Esc)" side="bottom">
               <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"><X className="w-4 h-4" /></button>
             </IconTooltip>
@@ -5435,7 +5443,18 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             // is kept as a defensive fallback for the case where width/height are missing on the indexed_files
             // row — in that fallback path the parent's aspect-ratio is undefined, so the parent still sizes
             // around the image and contain prevents distortion.
-            <img src={fullThumbnail || thumbnail} alt={file.filename} className="w-full h-full object-contain block" />
+            //
+            // v2.0.15 (Terry 2026-05-30) — click the preview to open
+            // the viewer. Matches Google Photos / Apple Photos
+            // convention: thumbnail click is the universal "show me
+            // this bigger" gesture. cursor-zoom-in hints at the
+            // affordance without needing a hover overlay.
+            <img
+              src={fullThumbnail || thumbnail}
+              alt={file.filename}
+              className={`w-full h-full object-contain block ${onOpenViewer && file.file_type === 'photo' ? 'cursor-zoom-in' : ''}`}
+              onClick={onOpenViewer && file.file_type === 'photo' ? onOpenViewer : undefined}
+            />
           ) : (
             <div className="w-full aspect-square flex items-center justify-center">{file.file_type === 'video' ? <Film className="w-16 h-16 text-muted-foreground/20" /> : <ImageIcon className="w-16 h-16 text-muted-foreground/20" />}</div>
           )}
@@ -5546,16 +5565,13 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
           )}
         </div>
         </div>
-        {(onOpenViewer || onOpenInExplorer) && (
-          <div className="flex gap-2 mb-4">
-            {onOpenViewer && (file.file_type === 'photo' || file.file_type === 'video') && (
-              <button onClick={onOpenViewer} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-sm hover:bg-primary/90 transition-all">
-                <Eye className="w-3.5 h-3.5" />{viewerCount && viewerCount > 1 ? `Open ${viewerCount} in Viewer` : 'Open in Viewer'}
-              </button>
-            )}
-            {onOpenInExplorer && <button onClick={onOpenInExplorer} data-pdr-variant="information" className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all" style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}><FolderOpen className="w-3.5 h-3.5" />Show in Folder</button>}
-          </div>
-        )}
+        {/* v2.0.15 (Terry 2026-05-30) — REMOVED wide "Open in Viewer"
+            + "Show in Folder" CTAs that used to sit here. Both are
+            now icon-only in the header strip (sticky top of the
+            Details pane), which reclaims ~80px of vertical space
+            for the metadata table below. Clicking the preview image
+            itself ALSO opens the viewer (universal photo-app
+            convention — Google Photos / Apple Photos / Lightroom). */}
 
         {/* No people detected — empty-state line that gives the user
             a way out when Human.js missed every face on the first

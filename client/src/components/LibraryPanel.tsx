@@ -1826,7 +1826,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                               <button
                                 type="button"
                                 onClick={() => setShowBackupExplainer(true)}
-                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label transition-colors cursor-pointer ${pillClass}`}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label whitespace-nowrap transition-colors cursor-pointer ${pillClass}`}
                                 data-testid="pill-db-backup"
                               >
                                 <Download className="w-3 h-3" /> {label}

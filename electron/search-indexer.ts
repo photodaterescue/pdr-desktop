@@ -559,10 +559,34 @@ export async function rebuildIndexFromLibraries(
           total: 0,
           currentFile: '',
         });
-        const files = walkMediaFiles(rootPath);
+        const walked = walkMediaFiles(rootPath);
+
+        if (walked.length === 0) {
+          perRoot.push({ root: rootPath, runId: null, fileCount: 0 });
+          continue;
+        }
+
+        // v2.0.15 (Terry 2026-05-30) — PERFORMANCE FIX. Previously
+        // every walked file went through the EXIF read in Phase 2,
+        // and the "is this already indexed?" check happened only at
+        // the end of Phase 3. On a 72k-file library where only 5k
+        // were new, that meant ExifTool ran 67k pointless times —
+        // a 30-minute scan. Now we filter walked → unindexed BEFORE
+        // Phase 2, so ExifTool only sees the truly new files. The
+        // Phase 3 existing-paths recheck below stays as a defensive
+        // belt-and-braces (cheap on a small newRecords set; covers
+        // the case where another process inserted a row mid-scan).
+        const knownExisting = findExistingFilePaths(walked);
+        const files = walked.filter(p => !knownExisting.has(p));
         const total = files.length;
+        const preFiltered = walked.length - files.length;
+        if (preFiltered > 0) {
+          console.log(`[rebuild] root=${rootPath} — walked ${walked.length}, ${preFiltered} already in index, ${total} new file(s) to EXIF-read`);
+        }
 
         if (total === 0) {
+          // Nothing new to do for this root — record an empty result
+          // and move on. No run row is inserted (would just be empty).
           perRoot.push({ root: rootPath, runId: null, fileCount: 0 });
           continue;
         }
@@ -576,7 +600,8 @@ export async function rebuildIndexFromLibraries(
         const runId = insertRun(reportId, rootPath, sourceLabels);
         runIds.push(runId);
 
-        // Phase 2: read EXIF + build records
+        // Phase 2: read EXIF + build records (only for the new files
+        // after the pre-filter above).
         const records: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'>[] = [];
         for (let i = 0; i < files.length; i++) {
           if (indexCancelled) break;

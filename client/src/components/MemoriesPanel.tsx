@@ -103,8 +103,8 @@ export default function MemoriesPanel() {
   // feel rather than the snap-of-two-backgrounds default. Terry
   // 2026-05-18: "Can you make the transition... seem premium? It
   // feels robotic at the moment."
-  const byDateRef = useRef<HTMLButtonElement>(null);
-  const albumsRef = useRef<HTMLButtonElement>(null);
+  const byDateRef = useRef<HTMLSpanElement>(null);
+  const albumsRef = useRef<HTMLSpanElement>(null);
   const [thumbStyle, setThumbStyle] = useState<{ left: number; width: number } | null>(null);
   useLayoutEffect(() => {
     const target = tab === 'byDate' ? byDateRef.current : albumsRef.current;
@@ -136,15 +136,20 @@ export default function MemoriesPanel() {
     <>
       <h1 className="text-2xl font-semibold text-foreground mb-3">Memories</h1>
       <div className="flex items-center gap-4 flex-wrap">
-        {/* v2.0.15 — two-segment pill (By Date / Albums). Each segment
-            is its own clickable button (refactored from the v2.0.8
-            click-anywhere binary toggle so users can jump directly to
-            either tab) with a sliding background thumb that tracks
-            the active segment. */}
-        <div
-          role="tablist"
-          aria-label="Memories views"
-          className="relative inline-flex items-center h-11 p-1 bg-primary rounded-full shrink-0"
+        {/* v2.0.15 (Terry 2026-05-29) — REVERTED to click-anywhere
+            toggle. The brief 3-tab era needed per-segment buttons,
+            but now that we're back to two segments Terry's original
+            spec applies again: "they just click it anywhere and it
+            toggles the other way". The whole pill is one button;
+            clicking either label OR the empty space between them
+            flips to the other tab. Inner spans are visual labels
+            only (with the sliding white thumb behind whichever is
+            active). */}
+        <button
+          type="button"
+          onClick={() => handleTabChange(tab === 'byDate' ? 'albums' : 'byDate')}
+          title={tab === 'byDate' ? 'Switch to Albums' : 'Switch to By Date'}
+          className="relative inline-flex items-center h-11 p-1 bg-primary rounded-full cursor-pointer shrink-0"
           data-testid="memories-tab-toggle"
         >
           {thumbStyle && (
@@ -154,31 +159,23 @@ export default function MemoriesPanel() {
               style={{ left: `${thumbStyle.left}px`, width: `${thumbStyle.width}px` }}
             />
           )}
-          <button
-            type="button"
+          <span
             ref={byDateRef}
-            role="tab"
-            aria-selected={tab === 'byDate'}
-            onClick={() => handleTabChange('byDate')}
-            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 cursor-pointer ${tab === 'byDate' ? 'text-primary' : 'text-primary-foreground'}`}
+            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'byDate' ? 'text-primary' : 'text-primary-foreground'}`}
             data-testid="tab-memories-by-date"
           >
             <CalendarRange className="w-4 h-4" />
             By Date
-          </button>
-          <button
-            type="button"
+          </span>
+          <span
             ref={albumsRef}
-            role="tab"
-            aria-selected={tab === 'albums'}
-            onClick={() => handleTabChange('albums')}
-            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 cursor-pointer ${tab === 'albums' ? 'text-primary' : 'text-primary-foreground'}`}
+            className={`relative z-10 inline-flex items-center gap-2 px-5 h-9 rounded-full text-sm font-medium transition-colors duration-300 ${tab === 'albums' ? 'text-primary' : 'text-primary-foreground'}`}
             data-testid="tab-memories-albums"
           >
             <FolderPlus className="w-4 h-4" />
             Albums
-          </button>
-        </div>
+          </span>
+        </button>
         {/* Slot inline with the toggle pill. Only rendered on the By
             Date tab — Albums has no equivalent controls today. The
             vertical bar divider sits between the toggle and the slot

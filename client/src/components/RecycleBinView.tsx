@@ -17,14 +17,15 @@
  * File Explorer. Selection styling matches MemoriesView (gold).
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { Trash2, RotateCcw, HardDrive, Check, Film, Image as ImageIcon, Inbox, ChevronLeft } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Trash2, RotateCcw, HardDrive, Check, Film, Image as ImageIcon, Inbox, ChevronLeft, ZoomIn, ZoomOut } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   listRecycleBin,
   restoreFromRecycleBin,
   permanentDeleteFromRecycleBin,
   getThumbnail,
+  openSearchViewer,
   onRecycleBinChanged,
   type RecycleBinEntry,
 } from '../lib/electron-bridge';
@@ -47,13 +48,66 @@ function formatRecycledOn(iso: string | null): string {
   } catch { return ''; }
 }
 
-export default function RecycleBinView({ onBack, backLabel = 'Back' }: { onBack?: () => void; backLabel?: string } = {}) {
+export default function RecycleBinView({
+  onBack,
+  backLabel = 'Back',
+  backPalette = { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' },
+}: {
+  onBack?: () => void;
+  backLabel?: string;
+  // v2.0.15 (Terry 2026-05-29) — back-button palette is parameterised
+  // by destination so the button colour signals where you're going.
+  // Caller passes tailwind 100/500/900 of the destination's accent
+  // family; default is blue (matches the legacy "Back to timeline"
+  // affordance from MemoriesView).
+  backPalette?: { bg: string; border: string; text: string };
+} = {}) {
   const [entries, setEntries] = useState<RecycleBinEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [confirmEmptyOpen, setConfirmEmptyOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // v2.0.15 (Terry 2026-05-30) — zoom-pill state mirrored from
+  // MemoriesView / AlbumsView. 0-100 slider maps to a 120-360px
+  // minmax for the grid columns; default 35 matches the By Date
+  // default so the two surfaces feel related. Persists across
+  // sessions in its own localStorage key.
+  const TILE_KEY = 'pdr-recycle-tile-size';
+  const [tileSizeSlider, setTileSizeSlider] = useState<number>(() => {
+    if (typeof localStorage === 'undefined') return 35;
+    const saved = parseInt(localStorage.getItem(TILE_KEY) || '', 10);
+    return isFinite(saved) ? Math.max(0, Math.min(100, saved)) : 35;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(TILE_KEY, String(tileSizeSlider)); } catch { /* localStorage unavailable */ }
+  }, [tileSizeSlider]);
+  const tilePx = Math.round(120 + (tileSizeSlider / 100) * 240);
+
+  // v2.0.15 (Terry 2026-05-30) — Ctrl+wheel zoom. Same interaction
+  // every other photo surface (Memories By Date, Albums, S&D) uses,
+  // so muscle memory transfers. Attached to the view root so the
+  // wheel works anywhere inside the bin — not just over the grid.
+  // passive: false because we preventDefault to stop the browser's
+  // page-zoom kicking in on Ctrl+wheel.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      setTileSizeSlider((prev) => {
+        const step = 10;
+        return e.deltaY < 0 ? Math.min(100, prev + step) : Math.max(0, prev - step);
+      });
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
 
   const refresh = async () => {
     setLoading(true);
@@ -81,6 +135,16 @@ export default function RecycleBinView({ onBack, backLabel = 'Back' }: { onBack?
   useEffect(() => {
     const off = onRecycleBinChanged(() => { void refresh(); });
     return () => off();
+  }, []);
+
+  // v2.0.15 (Terry 2026-05-29) — titlebar Refresh button dispatches
+  // pdr:refreshActiveView. Re-pulls the bin contents so the list
+  // reflects any out-of-band changes (e.g. another process moving
+  // files, or a future feature that auto-clears old entries).
+  useEffect(() => {
+    const handler = () => { void refresh(); };
+    window.addEventListener('pdr:refreshActiveView', handler as EventListener);
+    return () => window.removeEventListener('pdr:refreshActiveView', handler as EventListener);
   }, []);
 
   // Lazy thumbnail load for currently-visible entries. Cheap pass: ask
@@ -138,7 +202,15 @@ export default function RecycleBinView({ onBack, backLabel = 'Back' }: { onBack?
       const removed = r.removed ?? ids.length;
       const failed = r.failed?.length ?? 0;
       if (failed > 0) {
-        toast.warning(`Deleted ${removed}, ${failed} couldn’t be sent to Trash`);
+        // Surface the first failure's reason so the user has a clue
+        // what went wrong — and log the full list to the console for
+        // diagnostics. main.log also captures each failed id+path.
+        const firstReason = r.failed?.[0]?.error ?? 'unknown';
+        // eslint-disable-next-line no-console
+        console.warn('[recycle] permanent-delete failures:', r.failed);
+        toast.warning(`Deleted ${removed}, ${failed} couldn’t be sent to Trash`, {
+          description: `First reason: ${firstReason}. See main.log for the full list.`,
+        });
       } else {
         toast.success(removed === 1 ? 'Permanently deleted' : `Permanently deleted ${removed} item${removed === 1 ? '' : 's'}`);
       }
@@ -152,7 +224,7 @@ export default function RecycleBinView({ onBack, backLabel = 'Back' }: { onBack?
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div ref={rootRef} className="flex flex-col h-full">
       {/* Header strip — back nav + count + batch actions */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border flex-wrap">
         {/* v2.0.15 (Terry 2026-05-29) — Back button. Mirrors the
@@ -166,9 +238,16 @@ export default function RecycleBinView({ onBack, backLabel = 'Back' }: { onBack?
         {onBack && (
           <button
             onClick={onBack}
-            data-pdr-variant="information"
+            /* v2.0.15 (Terry 2026-05-29) — DELIBERATELY no
+               data-pdr-variant attribute: index.css has !important
+               rules on data-pdr-variant="information" that lock the
+               blue palette, which would override our destination-
+               tinted inline style. Same visual treatment as the
+               MemoriesView "Back to timeline" button, just
+               parameterised so the colour signals where you're
+               going. */
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors"
-            style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+            style={{ backgroundColor: backPalette.bg, borderColor: backPalette.border, color: backPalette.text, borderWidth: '1px', borderStyle: 'solid' }}
             data-testid="recycle-back"
           >
             <ChevronLeft className="w-4 h-4" /> {backLabel}
@@ -225,21 +304,64 @@ export default function RecycleBinView({ onBack, backLabel = 'Back' }: { onBack?
                 </IconTooltip>
               </>
             )}
-            {selected.size === 0 && (
-              <IconTooltip label="Send EVERY item in the bin to the OS Recycle Bin permanently" side="bottom">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setConfirmEmptyOpen(true)}
-                  disabled={busy}
-                  className="ml-auto"
-                  data-testid="recycle-empty"
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                  Empty Recycle Bin
-                </Button>
-              </IconTooltip>
-            )}
+            {/* v2.0.15 (Terry 2026-05-30) — zoom pill mirrored from
+                MemoriesView / AlbumsView so the bin shares the same
+                grid-zoom affordance as every other photo surface.
+                Sits LEFT of the destructive Empty button, both
+                right-aligned together via ml-auto on the wrapper. */}
+            <div className="ml-auto inline-flex items-center gap-2 shrink-0">
+              <div className="inline-flex items-center gap-0.5 h-8 px-1 rounded-md border border-border bg-background">
+                <IconTooltip label="Zoom out" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setTileSizeSlider((prev) => Math.max(0, prev - 10))}
+                    disabled={tileSizeSlider <= 0}
+                    className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    data-testid="button-recycle-zoom-out"
+                    aria-label="Zoom out"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                </IconTooltip>
+                <IconTooltip label="Reset to 35%" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setTileSizeSlider(35)}
+                    className="px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
+                    data-testid="button-recycle-zoom-reset"
+                    aria-label="Reset zoom"
+                  >
+                    {tileSizeSlider}%
+                  </button>
+                </IconTooltip>
+                <IconTooltip label="Zoom in" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setTileSizeSlider((prev) => Math.min(100, prev + 10))}
+                    disabled={tileSizeSlider >= 100}
+                    className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    data-testid="button-recycle-zoom-in"
+                    aria-label="Zoom in"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                </IconTooltip>
+              </div>
+              {selected.size === 0 && (
+                <IconTooltip label="Send EVERY item in the bin to the OS Recycle Bin permanently" side="bottom">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setConfirmEmptyOpen(true)}
+                    disabled={busy}
+                    data-testid="recycle-empty"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Empty Recycle Bin
+                  </Button>
+                </IconTooltip>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -253,21 +375,61 @@ export default function RecycleBinView({ onBack, backLabel = 'Back' }: { onBack?
           </div>
         ) : (
           <div className="grid p-3 gap-2"
-               style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-            {entries.map(e => {
+               style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tilePx}px, 1fr))` }}>
+            {entries.map((e, idx) => {
               const isSelected = selected.has(e.id);
+              // v2.0.15 (Terry 2026-05-30) — click behaviour:
+              //   • Plain click → opens the photo in the viewer so
+              //     the user can make a properly-informed
+              //     "restore vs permanently delete" call without
+              //     squinting at a thumbnail.
+              //   • Ctrl/Cmd+click → toggle selection (universal
+              //     multi-select convention).
+              //   • Checkbox circle click → toggle selection too,
+              //     for mouse-only / accessibility users.
+              const handleTileClick = (ev: React.MouseEvent) => {
+                if (ev.metaKey || ev.ctrlKey) {
+                  toggleOne(e.id);
+                  return;
+                }
+                // Open every photo+video in the bin in the viewer,
+                // starting from the one clicked — so the user can
+                // arrow through the bin's contents and triage in
+                // one pass.
+                const playable = entries.filter(x => x.file_type === 'photo' || x.file_type === 'video');
+                const startIdx = playable.findIndex(x => x.id === e.id);
+                if (startIdx === -1) { toggleOne(e.id); return; }
+                void openSearchViewer(
+                  playable.map(x => x.file_path),
+                  playable.map(x => x.filename),
+                  startIdx,
+                );
+              };
               return (
                 <ContextMenu key={e.id}>
                   <ContextMenuTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => toggleOne(e.id)}
-                      className={`relative aspect-square overflow-hidden rounded-lg border bg-card text-left transition-all group ${isSelected ? 'ring-2 ring-[var(--color-gold)] border-[var(--color-gold)]' : 'border-border hover:ring-2 hover:ring-primary/40'}`}
+                      onClick={handleTileClick}
+                      className={`relative aspect-square overflow-hidden rounded-lg border bg-card text-left transition-all group cursor-zoom-in ${isSelected ? 'ring-2 ring-[var(--color-gold)] border-[var(--color-gold)]' : 'border-border hover:ring-2 hover:ring-primary/40'}`}
                       data-testid={`recycle-tile-${e.id}`}
                     >
-                      {/* Selection check circle */}
+                      {/* Reference idx for any future ordering-aware
+                          handlers (kept to avoid lint while keeping
+                          the entry index available to the closure). */}
+                      <span hidden aria-hidden>{idx}</span>
+                      {/* Selection check circle — now that plain
+                          click opens the viewer, the check circle
+                          becomes the primary toggle-selection
+                          affordance. Intercepts the click + stops
+                          propagation so the tile's onClick doesn't
+                          also fire. */}
                       <div
-                        className={`absolute top-1.5 left-1.5 z-10 w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                        role="button"
+                        tabIndex={0}
+                        aria-label={isSelected ? 'Deselect' : 'Select'}
+                        onClick={(ev) => { ev.stopPropagation(); toggleOne(e.id); }}
+                        className={`absolute top-1.5 left-1.5 z-10 w-5 h-5 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08] opacity-100'
                             : 'border-white/80 bg-black/40 text-transparent group-hover:border-white group-hover:bg-black/60 opacity-0 group-hover:opacity-100'

@@ -25,6 +25,8 @@ import {
   Star,
   MessageSquareText,
   Trash2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -340,6 +342,19 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     return () => off();
   }, []);
 
+  // v2.0.15 (Terry 2026-05-29) — titlebar Refresh button dispatches
+  // pdr:refreshActiveView. Year-level view bumps refreshTick (which
+  // re-pulls buckets + on-this-day) and invalidates the prefetch
+  // cache so a subsequent Welcome → Memories navigation reads fresh.
+  useEffect(() => {
+    const handler = () => {
+      invalidatePrefetchedMemories();
+      setRefreshTick(t => t + 1);
+    };
+    window.addEventListener('pdr:refreshActiveView', handler as EventListener);
+    return () => window.removeEventListener('pdr:refreshActiveView', handler as EventListener);
+  }, []);
+
   // Load sample thumbnails for each year/month card + on-this-day items.
   // Uses a sliding-window pool (12 concurrent requests) and writes
   // each thumbnail to state as soon as it returns, so the grid fills
@@ -531,26 +546,11 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                 saw a centered tooltip and no highlight (Terry's report
                 May 7 2026). */}
             <div className="flex items-center gap-3 shrink-0" data-tour="mem-controls">
-              {/* Manual refresh — to the left of the Spacious/Tight
-                  toggle per Terry's placement spec 2026-05-20. Bumps
-                  the refreshTick state, which re-runs the bucket +
-                  on-this-day fetch. Tooltip via IconTooltip per
-                  style-guide. The icon button matches the muted
-                  border-button look used by Jump-to-latest and the
-                  collapsed-sidebar burger so it visually belongs in
-                  this control cluster. */}
-              <IconTooltip label="Refresh — reload the timeline" side="bottom">
-                <button
-                  type="button"
-                  onClick={() => setRefreshTick(t => t + 1)}
-                  disabled={loading}
-                  className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-                  data-testid="memories-refresh"
-                  aria-label="Refresh Memories"
-                >
-                  <RotateCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                </button>
-              </IconTooltip>
+              {/* v2.0.15 (Terry 2026-05-29) — REMOVED year-level
+                  refresh button. Refresh consolidated into the
+                  titlebar (next to the Recycle Bin icon). This view
+                  subscribes to pdr:refreshActiveView (see the
+                  useEffect below) and bumps refreshTick when fired. */}
               <DensityToggle value={density} onChange={changeDensity} />
               <LibrarySelector libraries={libraries} selectedKeys={libraryKeys} onChange={setLibraryKeys} />
             </div>
@@ -1176,6 +1176,20 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return () => off();
   }, []);
 
+  // v2.0.15 (Terry 2026-05-29) — titlebar Refresh button dispatches
+  // pdr:refreshActiveView. The drilldown listens AND notifies its
+  // parent so the year-level buckets re-fetch too. (The parent
+  // MemoriesView also listens directly, so even without the drilldown
+  // being mounted, refresh still works at the year level.)
+  useEffect(() => {
+    const handler = () => {
+      setDrilldownRefreshTick(t => t + 1);
+      onRequestRefresh();
+    };
+    window.addEventListener('pdr:refreshActiveView', handler as EventListener);
+    return () => window.removeEventListener('pdr:refreshActiveView', handler as EventListener);
+  }, [onRequestRefresh]);
+
   // v2.0.13 — keep the in-state caption in sync with edits made via
   // the right-click "Caption…" menu, so the indicator badge appears /
   // disappears immediately without a manual refresh. The event detail
@@ -1696,16 +1710,23 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
 
   return (
     <div className="h-full flex flex-col bg-background">
-      <div className="shrink-0 px-6 py-4 border-b border-border/60 flex items-center gap-3">
+      {/* v2.0.15 (Terry 2026-05-30) — unified toolbar rhythm.
+          Every control on this row standardises on h-8 height,
+          text-xs typography, and gap-2 spacing so the cluster reads
+          as one toolbar instead of a freehand mix. Specialised
+          radii (rounded-full for the gold selection chip, rounded-lg
+          for the zoom stepper) stay because they signal "this is a
+          different KIND of control" — the height + spacing carry the
+          family resemblance. */}
+      <div className="shrink-0 px-6 py-3 border-b border-border/60 flex items-center gap-2">
         <button
           onClick={onBack}
-          data-pdr-variant="information"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors"
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors"
           style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
         >
-          <ChevronLeft className="w-4 h-4" /> Back to timeline
+          <ChevronLeft className="w-3.5 h-3.5" /> Back to timeline
         </button>
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>
         {files != null && (() => {
           // Break out photos vs videos the same way the month tile
           // on the timeline does — Terry 2026-05-20: "There's NOTHING
@@ -1741,13 +1762,13 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 type="button"
                 onClick={() => setCaptionedOnly((v) => !v)}
                 data-testid="memories-captioned-only-toggle"
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
                   captionedOnly
                     ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
                     : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
-                <MessageSquareText className="w-3 h-3" />
+                <MessageSquareText className="w-3.5 h-3.5" />
                 Captioned only · {captionedCount.toLocaleString()}
               </button>
             </IconTooltip>
@@ -1761,7 +1782,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           <IconTooltip label="Choose which details show below each photo" side="bottom">
             <PopoverTrigger asChild>
               <button
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border transition-colors text-xs font-medium ${metaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${metaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
               >
                 <Info className="w-3.5 h-3.5" />
                 <span>Add Info{metaFields.length > 0 ? ` (${metaFields.length})` : ''}</span>
@@ -1802,29 +1823,55 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </p>
           </PopoverContent>
         </Popover>
-        {/* v2.0.15 — manual refresh button (Terry 2026-05-29: monthly
-            refresh should match year-view positioning — to the LEFT
-            of the Spacious/Tight toggle, not inline with the title).
-            Styling copies the year-view refresh button exactly
-            (border-button look used by Jump-to-latest + the
-            collapsed-sidebar burger) so the two surfaces share one
-            visual language. Re-pulls the visible files + bumps the
-            parent's refreshTick so the year-level buckets re-fetch
-            too. Recycle / restore / caption events auto-refresh via
-            the recycle:changed listener; this button covers the
-            "background Fix completed, want to see new photos now"
-            case. */}
-        <IconTooltip label="Refresh — reload this month" side="bottom">
-          <button
-            type="button"
-            onClick={() => { setDrilldownRefreshTick(t => t + 1); onRequestRefresh(); }}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-            data-testid="memories-drilldown-refresh"
-            aria-label="Refresh this month"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-        </IconTooltip>
+        {/* v2.0.15 (Terry 2026-05-29) — REMOVED per-view refresh
+            button. Refresh consolidated into the titlebar
+            (next to the Recycle Bin icon) — universally recognised
+            position, frees per-view header real estate, fixes
+            positioning inconsistency across Albums/By Date/S&D.
+            The drilldown listens to pdr:refreshActiveView and
+            re-fetches when fired. */}
+        {/* v2.0.15 (Terry 2026-05-29) — zoom pill mirrored from
+            AlbumsView so By Date matches. Mouse Ctrl+wheel still
+            works; the buttons + percentage chip give discoverable
+            access AND show the current zoom level. Click the percent
+            to reset to 35 (the historical default for By Date). */}
+        <div className="inline-flex items-center gap-0.5 h-8 px-1 rounded-md border border-border bg-background shrink-0">
+          <IconTooltip label="Zoom out" side="bottom">
+            <button
+              type="button"
+              onClick={() => setTileSizeSlider((prev) => Math.max(0, prev - 10))}
+              disabled={tileSizeSlider <= 0}
+              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              data-testid="button-bydate-zoom-out"
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+          </IconTooltip>
+          <IconTooltip label="Reset to 35%" side="bottom">
+            <button
+              type="button"
+              onClick={() => setTileSizeSlider(35)}
+              className="px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
+              data-testid="button-bydate-zoom-reset"
+              aria-label="Reset zoom"
+            >
+              {tileSizeSlider}%
+            </button>
+          </IconTooltip>
+          <IconTooltip label="Zoom in" side="bottom">
+            <button
+              type="button"
+              onClick={() => setTileSizeSlider((prev) => Math.min(100, prev + 10))}
+              disabled={tileSizeSlider >= 100}
+              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              data-testid="button-bydate-zoom-in"
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+          </IconTooltip>
+        </div>
         {/* Density toggle — same control as the main timeline view,
             so the user can switch spacious/tight while drilled in
             (Terry 2026-05-19: "Spacious - Tight should still be an
@@ -1835,7 +1882,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
         <IconTooltip label={selectionMode ? 'Exit selection mode' : 'Show checkboxes on every photo'} side="bottom">
           <button
             onClick={() => setSelectionMode(v => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
+            className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
             data-testid="button-selection-mode"
           >
             <ListChecks className="w-3.5 h-3.5" />
@@ -1862,7 +1909,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 // collide because they appear in different header
                 // positions and the captioned chip carries the
                 // chat-bubble icon to disambiguate.
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
                 data-testid="memories-selection-chip"
               >
                 {selectedFileIds.size} selected
@@ -1921,7 +1968,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 : base;
               openSearchViewer(target.map(f => f.file_path), target.map(f => f.filename));
             }}
-            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
+            className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
             data-testid="button-open-in-viewer"
           >
             {selectedFileIds.size > 0
@@ -2239,7 +2286,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       without having to copy the filename and search
                       for it. */}
                   <ContextMenuItem
-                    onSelect={() => { (window as any).pdr?.shell?.revealInFolder?.(f.file_path); }}
+                    onSelect={() => { (window as any).pdr?.revealInFolder?.(f.file_path); }}
                     data-testid={`memories-tile-reveal-${f.id}`}
                   >
                     <HardDrive className="w-3.5 h-3.5 mr-2" />

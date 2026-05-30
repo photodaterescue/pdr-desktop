@@ -2732,25 +2732,40 @@ ipcMain.handle('recycle:permanentDelete', async (_event, fileIds: number[]) => {
 
     const failed: { id: number; error: string }[] = [];
     const trashedIds: number[] = [];
+    console.log(`[recycle:permanentDelete] processing ${rows.length} file(s)`);
     for (const row of rows) {
       try {
-        // shell.trashItem moves to the OS Trash — recoverable from
-        // there as a second safety net. If the file is already gone
-        // from disk we still drop the index row.
-        if (fs.existsSync(row.file_path)) {
-          await shell.trashItem(row.file_path);
+        // v2.0.15 (Terry 2026-05-30) — strip Windows long-path
+        // prefix (\\?\) before calling shell.trashItem. Electron's
+        // shell.trashItem on Windows uses IFileOperation, which
+        // chokes on the long-path prefix and throws "Failed to move
+        // item to trash" with no further detail. The PDR analysis
+        // pipeline writes \\?\-prefixed paths into the DB for files
+        // on long-pathed library drives; normalising the prefix off
+        // here lets trashItem accept them. The fs.existsSync check
+        // accepts either form so it stays accurate.
+        const normalised = row.file_path.replace(/^\\\\\?\\/, '');
+        if (!fs.existsSync(normalised)) {
+          console.log(`[recycle:permanentDelete] file already gone, dropping index row only: ${normalised}`);
+          trashedIds.push(row.id);
+          continue;
         }
+        await shell.trashItem(normalised);
         trashedIds.push(row.id);
       } catch (e) {
-        failed.push({ id: row.id, error: (e as Error).message });
+        const msg = (e as Error).message || String(e);
+        console.error(`[recycle:permanentDelete] failed for id=${row.id} path=${row.file_path}: ${msg}`);
+        failed.push({ id: row.id, error: msg });
       }
     }
     const removed = deleteIndexedFiles(trashedIds);
+    console.log(`[recycle:permanentDelete] done — removed=${removed}, failed=${failed.length}`);
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('recycle:changed', { kind: 'permanentDelete', count: removed });
     }
     return { success: true, removed, failed };
   } catch (err) {
+    console.error('[recycle:permanentDelete] handler error:', err);
     return { success: false, error: (err as Error).message };
   }
 });
@@ -4492,9 +4507,60 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
     const existingHashes = new Map<string, string>(); // hash -> filename
     const existingHeuristics = new Map<string, string>(); // "filename|size" -> filename
     let totalFiles = 0;
-    
+    let dbServed = 0;
+    let fsHashed = 0;
+
     const LARGE_FILE_THRESHOLD = 500 * 1024 * 1024;
-    
+
+    // v2.0.15 (Terry 2026-05-30) — PERFORMANCE FIX. Previously the
+    // prescan re-hashed every file in the destination on disk —
+    // 72k files / 245 GB → ~2.5 hours on a typical HDD. Most of
+    // those files were already in indexed_files with stored hash +
+    // size, so we pull from the DB first and only fall back to the
+    // filesystem for files the DB doesn't know about.
+    //
+    // The DB hash is populated during fix-phase copies (where every
+    // file is hashed at write time), so any file ever processed by
+    // a Fix is already in there. Files indexed via the catchup
+    // index pass (which doesn't hash) fall through to the
+    // filesystem path, get hashed once, and we cache the result by
+    // updating the index row so the next prescan is also fast.
+    let seenPaths = new Set<string>();
+    try {
+      const { getDb } = await import('./search-database.js');
+      const database = getDb();
+      // LIKE matches both forward + backslash paths; both UNIX-style
+      // and Windows-style live under the destinationPath prefix in
+      // practice because path.join always uses the platform separator
+      // when paths are written via the Node.js fs APIs.
+      // SQLite LIKE: % is wildcard, backslashes are literal — pass the
+      // destinationPath as-is and only append the trailing separator +
+      // wildcard. My earlier .replace(/\\/g,'\\\\') was DOUBLE-escaping
+      // backslashes and matching zero rows, so every prescan fell
+      // through to the slow filesystem path. Fix: literal match.
+      const dbStart = Date.now();
+      const likePrefix = destinationPath.endsWith('\\') || destinationPath.endsWith('/')
+        ? destinationPath
+        : destinationPath + path.sep;
+      const rows = database
+        .prepare(`SELECT file_path, filename, size_bytes, hash FROM indexed_files WHERE file_path LIKE ?`)
+        .all(likePrefix + '%') as { file_path: string; filename: string; size_bytes: number; hash: string | null }[];
+      for (const row of rows) {
+        seenPaths.add(row.file_path);
+        totalFiles++;
+        if (row.hash) {
+          existingHashes.set(row.hash, row.filename);
+          dbServed++;
+        } else if (row.filename && row.size_bytes > 0) {
+          existingHeuristics.set(`${row.filename}|${row.size_bytes}`, row.filename);
+        }
+      }
+      console.log(`[Prescan] DB pre-load: ${rows.length} row(s) (${dbServed} with hash) in ${((Date.now() - dbStart) / 1000).toFixed(2)}s — filesystem scan will only cover gaps`);
+    } catch (dbErr) {
+      console.warn('[Prescan] DB pre-load failed, falling back to full filesystem scan:', dbErr);
+      seenPaths = new Set();
+    }
+
     const scanDir = async (dirPath: string): Promise<void> => {
       let entries: fs.Dirent[];
       try {
@@ -4502,22 +4568,24 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
       } catch {
         return;
       }
-      
+
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
-        
+
         if (entry.isDirectory()) {
           await scanDir(fullPath);
         } else if (entry.isFile()) {
+          // Already in DB? Skip — we used the cached hash/size above.
+          if (seenPaths.has(fullPath)) continue;
           const ext = path.extname(entry.name).toLowerCase();
           const isMedia = PHOTO_EXTENSIONS_PRESCAN.has(ext) || VIDEO_EXTENSIONS_PRESCAN.has(ext);
           if (!isMedia) continue;
-          
+
           totalFiles++;
-          
+
           try {
             const stats = await fs.promises.stat(fullPath);
-            
+
             if (!useHash) {
               // Heuristic mode: just filename + size (fast)
               const heuristicKey = `${entry.name}|${stats.size}`;
@@ -4531,12 +4599,13 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
               const hash = await calculateFileHashAsync(fullPath);
               if (hash) {
                 existingHashes.set(hash, entry.name);
+                fsHashed++;
               }
             }
           } catch {
             // Skip files we can't stat
           }
-          
+
           // Yield every 50 files
           if (totalFiles % 50 === 0) {
             await yieldToEventLoop();
@@ -4545,12 +4614,12 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
         }
       }
     };
-    
+
     if (fs.existsSync(destinationPath)) {
       await scanDir(destinationPath);
     }
 
-    console.log(`[Prescan] Complete: ${totalFiles} files scanned in ${((Date.now() - prescanStart) / 1000).toFixed(1)}s (${existingHashes.size} hashes, ${existingHeuristics.size} heuristics)`);
+    console.log(`[Prescan] Complete: ${totalFiles} files (${dbServed} DB-served + ${fsHashed} fs-hashed) in ${((Date.now() - prescanStart) / 1000).toFixed(1)}s (${existingHashes.size} hashes, ${existingHeuristics.size} heuristics)`);
     return {
       success: true,
       data: {
