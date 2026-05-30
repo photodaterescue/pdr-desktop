@@ -454,7 +454,16 @@ async function runCatalogue(args: {
 }
 
 // ─── Message handling ──────────────────────────────────────────────
-port?.on('message', async (msg: any) => {
+// v2.0.15 (Terry 2026-05-30) — Electron's utilityProcess wraps
+// incoming messages in { data: <yourPayload> } on the worker side.
+// Reading msg.type directly (without unwrapping .data) is why the
+// previous worker silently never ran: it booted, logged "booted",
+// then waited for a 'run' message whose .type was always undefined.
+// Outbound messages go un-wrapped (parent reads them directly), so
+// only the inbound side needs unwrapping.
+port?.on('message', async (e: any) => {
+  const msg = (e && typeof e === 'object' && 'data' in e ? (e as { data: any }).data : e);
+  console.log(`[catalogue-worker] received message: type=${msg?.type ?? '<none>'}`);
   if (msg?.type === 'run') {
     try {
       const result = await runCatalogue(msg);
@@ -469,3 +478,4 @@ port?.on('message', async (msg: any) => {
 
 // Tell the parent we're ready to receive work.
 port?.postMessage({ type: 'ready' });
+console.log('[catalogue-worker] posted ready message, waiting for run');
