@@ -4433,40 +4433,50 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                   onClick={(e) => onSourceClick(source.id, e?.shiftKey ?? false)}
                 />
               );
+              // Structure matches the proven SearchPanel / MemoriesView
+              // pattern: Tooltip OUTERMOST → intermediate <div> →
+              // ContextMenu inside. Earlier inverted layering (Context
+              // outside, Tooltip inside) silently swallowed the hover
+              // events on the way up because the ContextMenuTrigger's
+              // asChild wrapper became the Tooltip's trigger target,
+              // and Radix Slot was forwarding refs/props to the wrong
+              // element. The intermediate <div> is required so the
+              // Tooltip has a single forwardable child that isn't a
+              // Radix root component.
               const wrappedRow = source.path ? (
-                <ContextMenu>
-                  <ContextMenuTrigger asChild>
-                    <div>
-                      <IconTooltip label={source.path} side="right">
+                <IconTooltip label={source.path} side="right">
+                  <div>
+                    <ContextMenu>
+                      <ContextMenuTrigger asChild>
                         {sourceRow}
-                      </IconTooltip>
-                    </div>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem
-                      onSelect={() => { (window as any).pdr?.revealInFolder?.(source.path); }}
-                      data-testid={`source-row-reveal-${source.id}`}
-                    >
-                      <HardDrive className="w-3.5 h-3.5 mr-2" />
-                      Show in File Explorer
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      onSelect={async () => {
-                        try {
-                          await navigator.clipboard.writeText(source.path || '');
-                          toast.success('Filepath copied', { description: source.path });
-                        } catch {
-                          toast.error("Couldn't copy filepath");
-                        }
-                      }}
-                      data-testid={`source-row-copy-filepath-${source.id}`}
-                    >
-                      <Copy className="w-3.5 h-3.5 mr-2" />
-                      Copy filepath
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem
+                          onSelect={() => { (window as any).pdr?.revealInFolder?.(source.path); }}
+                          data-testid={`source-row-reveal-${source.id}`}
+                        >
+                          <HardDrive className="w-3.5 h-3.5 mr-2" />
+                          Show in File Explorer
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          onSelect={async () => {
+                            try {
+                              await navigator.clipboard.writeText(source.path || '');
+                              toast.success('Filepath copied', { description: source.path });
+                            } catch {
+                              toast.error("Couldn't copy filepath");
+                            }
+                          }}
+                          data-testid={`source-row-copy-filepath-${source.id}`}
+                        >
+                          <Copy className="w-3.5 h-3.5 mr-2" />
+                          Copy filepath
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  </div>
+                </IconTooltip>
               ) : sourceRow;
               return (
                 <div
