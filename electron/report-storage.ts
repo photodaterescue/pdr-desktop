@@ -433,13 +433,17 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
   trace(`collectFilenames (${existingFiles.size} names)`, tCollect);
 
   // 2. Load all reports targeting this destination
+  // v2.0.15 (Terry 2026-05-30) — was sync fs.readFileSync per report
+  // (1.1s for 23 reports). Now async + yields between reports so
+  // main pumps the event loop while we're I/O-bound on JSON files.
   const tLoad = Date.now();
-  const reportFiles = fs.readdirSync(reportsDir).filter(f => f.endsWith('.json'));
+  const reportFiles = (await fs.promises.readdir(reportsDir)).filter(f => f.endsWith('.json'));
   const matchingReports: FixReport[] = [];
 
-  for (const file of reportFiles) {
+  for (let idx = 0; idx < reportFiles.length; idx++) {
+    const file = reportFiles[idx];
     try {
-      const content = fs.readFileSync(path.join(reportsDir, file), 'utf-8');
+      const content = await fs.promises.readFile(path.join(reportsDir, file), 'utf-8');
       const report = JSON.parse(content) as FixReport;
       // Normalise paths for comparison (case-insensitive on Windows, trailing slash)
       const normDest = report.destinationPath.replace(/[\\/]+$/, '').toLowerCase();
@@ -448,6 +452,8 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
         matchingReports.push(report);
       }
     } catch { /* skip corrupt reports */ }
+    // Yield every 5 reports — keeps main responsive while we batch-load.
+    if (idx > 0 && idx % 5 === 0) await new Promise<void>((r) => setImmediate(r));
   }
   trace(`load ${reportFiles.length} reports (${matchingReports.length} matching)`, tLoad);
 
@@ -488,6 +494,14 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
   txtLines.push(`Fix runs:      ${matchingReports.length}`);
   txtLines.push('');
 
+  // v2.0.15 (Terry 2026-05-30) — the dominant freeze cause measured
+  // at 6.9s for a 21-report / 115k-row build, pure synchronous JS.
+  // Yield to the event loop every YIELD_EVERY files so main keeps
+  // pumping IPC + window messages between batches. 1000 files
+  // ≈ 50ms of CSV+TXT push work on V8, well under the 16ms frame
+  // budget aggregated but tolerable as a single chunk.
+  const YIELD_EVERY = 1000;
+  let fileCounter = 0;
   for (const report of matchingReports) {
     const runScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
     totalScanned += runScanned;
@@ -541,12 +555,21 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
       txtLines.push(`    EXIF Written:${f.exifWritten ? 'Yes' : 'No'}${f.exifSource ? ` (${f.exifSource})` : ''}`);
       txtLines.push(`    Run:         ${report.id}`);
       txtLines.push('');
+
+      fileCounter++;
+      if (fileCounter % YIELD_EVERY === 0) {
+        await new Promise<void>((r) => setImmediate(r));
+      }
     }
 
     // Duplicates (always include — these were never copied so nothing to check)
     if (report.duplicateFiles && report.duplicateFiles.length > 0) {
       for (const dup of report.duplicateFiles) {
         totalDuplicates++;
+        fileCounter++;
+        if (fileCounter % YIELD_EVERY === 0) {
+          await new Promise<void>((r) => setImmediate(r));
+        }
         const ext = dup.filename.split('.').pop()?.toLowerCase() || '';
         const retainedFile = report.files.find(f => f.originalFilename === dup.duplicateOf);
         const retainedNewFilename = retainedFile?.newFilename || dup.duplicateOf;
