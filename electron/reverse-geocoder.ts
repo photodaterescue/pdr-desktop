@@ -118,55 +118,89 @@ let loaded = false;
 /**
  * Load the geodata and build the k-d tree. Call once at startup or first use.
  * Subsequent calls are no-ops.
+ *
+ * v2.0.15 (Terry 2026-05-30) — was fully synchronous: readFileSync of
+ * a multi-MB cities.json, JSON.parse, big .map() transformation, and
+ * KD-tree construction all blocked main for several seconds the first
+ * time it was called. That call happens at the start of every
+ * indexFixRun, which is why the Fix Complete modal still showed a
+ * "Not Responding" titlebar even after the earlier async fixes. Now
+ * async with fs.promises.readFile, and the city-array transformation
+ * yields every 5000 records so main stays responsive throughout.
  */
-export function initGeocoder(): void {
+let loadingPromise: Promise<void> | null = null;
+export async function initGeocoder(): Promise<void> {
   if (loaded) return;
+  // Re-entrancy: if a load is already in flight, await the same Promise
+  // so concurrent callers don't each start their own.
+  if (loadingPromise) return loadingPromise;
 
-  // Try multiple paths — works both in dev and packaged app
-  const possiblePaths = [
-    path.join(__dirname, 'geodata', 'cities.json'),
-    path.join(__dirname, '..', 'electron', 'geodata', 'cities.json'),
-    path.join(process.resourcesPath || '', 'geodata', 'cities.json'),
-  ];
+  loadingPromise = (async () => {
+    // Try multiple paths — works both in dev and packaged app
+    const possiblePaths = [
+      path.join(__dirname, 'geodata', 'cities.json'),
+      path.join(__dirname, '..', 'electron', 'geodata', 'cities.json'),
+      path.join(process.resourcesPath || '', 'geodata', 'cities.json'),
+    ];
 
-  let dataPath: string | null = null;
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      dataPath = p;
-      break;
+    let dataPath: string | null = null;
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        dataPath = p;
+        break;
+      }
     }
+
+    if (!dataPath) {
+      console.warn('[Geocoder] cities.json not found — reverse geocoding disabled');
+      console.warn('[Geocoder] Searched:', possiblePaths.join(', '));
+      loaded = true; // Don't try again
+      return;
+    }
+
+    console.log(`[Geocoder] Loading geodata from ${dataPath}...`);
+    const startTime = Date.now();
+
+    const raw = await fs.promises.readFile(dataPath, 'utf-8');
+    // Yield once before the big JSON.parse so the event loop can pump.
+    await new Promise<void>((r) => setImmediate(r));
+    const data = JSON.parse(raw);
+
+    countries = data.countries || {};
+
+    // Convert compact arrays to CityRecord objects — yield every 5000
+    // records so main keeps pumping IPC + window messages between
+    // chunks. 5000 records ~= 1-2ms of work per chunk on V8.
+    const cityRows = data.cities as any[];
+    const cities: CityRecord[] = new Array(cityRows.length);
+    for (let i = 0; i < cityRows.length; i++) {
+      const c = cityRows[i];
+      cities[i] = {
+        lat: c[0],
+        lon: c[1],
+        name: c[2],
+        countryCode: c[3],
+        admin1: c[4] || '',
+      };
+      if (i > 0 && i % 5000 === 0) {
+        await new Promise<void>((r) => setImmediate(r));
+      }
+    }
+
+    // Yield once more before the KD-tree build (also potentially heavy).
+    await new Promise<void>((r) => setImmediate(r));
+    kdTree = buildKDTree(cities);
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[Geocoder] Loaded ${cities.length} cities in ${elapsed}ms`);
+    loaded = true;
+  })();
+
+  try {
+    await loadingPromise;
+  } finally {
+    loadingPromise = null;
   }
-
-  if (!dataPath) {
-    console.warn('[Geocoder] cities.json not found — reverse geocoding disabled');
-    console.warn('[Geocoder] Searched:', possiblePaths.join(', '));
-    loaded = true; // Don't try again
-    return;
-  }
-
-  console.log(`[Geocoder] Loading geodata from ${dataPath}...`);
-  const startTime = Date.now();
-
-  const raw = fs.readFileSync(dataPath, 'utf-8');
-  const data = JSON.parse(raw);
-
-  countries = data.countries || {};
-
-  // Convert compact arrays to CityRecord objects
-  const cities: CityRecord[] = (data.cities as any[]).map((c: any[]) => ({
-    lat: c[0],
-    lon: c[1],
-    name: c[2],
-    countryCode: c[3],
-    admin1: c[4] || '',
-  }));
-
-  // Build k-d tree
-  kdTree = buildKDTree(cities);
-
-  const elapsed = Date.now() - startTime;
-  console.log(`[Geocoder] Loaded ${cities.length} cities in ${elapsed}ms`);
-  loaded = true;
 }
 
 /**

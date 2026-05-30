@@ -76,8 +76,10 @@ export async function indexFixRun(
   indexCancelled = false;
 
   try {
-    // Init reverse geocoder (loads geodata on first call)
-    initGeocoder();
+    // Init reverse geocoder (loads geodata on first call — now async +
+    // yielding so main stays responsive while the multi-MB cities.json
+    // is read, parsed and KD-tree-built).
+    await initGeocoder();
 
     // Ensure DB is ready
     const dbResult = initDatabase();
@@ -522,7 +524,7 @@ export async function rebuildIndexFromLibraries(
   const perRoot: Array<{ root: string; runId: number | null; fileCount: number }> = [];
 
   try {
-    initGeocoder();
+    await initGeocoder();
 
     const dbResult = initDatabase();
     if (!dbResult.success) {

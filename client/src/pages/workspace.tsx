@@ -5518,7 +5518,7 @@ function DashboardPanel({
                       onClick={() => setShowDestAdvisor(true)}
                       className="gap-1.5 shrink-0"
                     >
-                      <Info className="w-3.5 h-3.5" /> {destinationPath ? 'DA' : 'Drive Advisor'}
+                      <Info className="w-3.5 h-3.5" /> {destinationPath ? 'LDA' : 'Library Drive Advisor'}
                     </Button>
                   </IconTooltip>
                 </div>
