@@ -2896,22 +2896,60 @@ const IMAGE_EXTENSIONS_BROWSER = new Set([
 ]);
 
 ipcMain.handle('browser:listDrives', async () => {
+  // v2.0.15 (Terry 2026-05-30) — PowerShell-FIRST with always-on
+  // Node fallback. The PowerShell route gives rich data (volume
+  // label, total/free bytes, type discrimination) but on a busy
+  // system (AV scan, PDR doing analysis + AI + indexing) it can
+  // exceed the 10s timeout and the user ends up staring at an
+  // empty drives panel. The fallback walks A-Z with fs.statSync,
+  // which is instant + native, so the user ALWAYS sees their
+  // drives — just without free-space / volume labels.
+  const walkDriveLetters = (): Array<{ letter: string; label: string; type: string; totalBytes: number; freeBytes: number }> => {
+    if (process.platform !== 'win32') return [];
+    const drives: Array<{ letter: string; label: string; type: string; totalBytes: number; freeBytes: number }> = [];
+    for (let code = 'A'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
+      const letter = String.fromCharCode(code) + ':';
+      try {
+        // statSync(`${letter}\\`) throws if the drive doesn't exist
+        // or isn't mounted. Cheap: no subprocess, no IPC, no waiting.
+        fs.statSync(`${letter}\\`);
+        drives.push({
+          letter,
+          label: 'Drive',
+          type: 'Drive',
+          totalBytes: 0,
+          freeBytes: 0,
+        });
+      } catch { /* not mounted — skip */ }
+    }
+    return drives;
+  };
+
   try {
     if (process.platform === 'win32') {
-      // Use PowerShell asynchronously instead of wmic (which is deprecated and blocks the main process)
-      const output = await new Promise<string>((resolve, reject) => {
-        execFile('powershell.exe', [
-          '-NoProfile', '-NonInteractive', '-Command',
-          `Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,VolumeName,DriveType,Size,FreeSpace | ConvertTo-Csv -NoTypeInformation`
-        ], { encoding: 'utf8', timeout: 10000 }, (error, stdout) => {
-          if (error) reject(error);
-          else resolve(stdout);
+      let output: string;
+      try {
+        output = await new Promise<string>((resolve, reject) => {
+          execFile('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-Command',
+            `Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,VolumeName,DriveType,Size,FreeSpace | ConvertTo-Csv -NoTypeInformation`
+          ], { encoding: 'utf8', timeout: 10000 }, (error, stdout) => {
+            if (error) reject(error);
+            else resolve(stdout);
+          });
         });
-      });
+      } catch (psErr) {
+        // PowerShell timed out / failed (busy system, AV interference,
+        // missing PS, etc.). Fall back to the drive-letter walk so the
+        // user still sees their drives in the picker.
+        console.warn('[listDrives] PowerShell route failed; falling back to fs.statSync drive-letter walk:', psErr);
+        return walkDriveLetters();
+      }
+
       const lines = output.trim().split('\n').filter(l => l.trim());
-      if (lines.length < 2) return [];
+      if (lines.length < 2) return walkDriveLetters();
       // Parse CSV: header line + data lines
-      return lines.slice(1).map(line => {
+      const parsed = lines.slice(1).map(line => {
         // CSV values may be quoted
         const parts = line.split(',').map(p => p.replace(/^"|"$/g, '').trim());
         const deviceId = parts[0] || '';
@@ -2949,11 +2987,14 @@ ipcMain.handle('browser:listDrives', async () => {
         if (d.driveType === 2 && d.totalBytes < 1024 * 1024 * 1024) return false;
         return true;
       }).map(({ driveType: _dt, ...rest }) => rest);
+      // If parsing produced nothing usable (header-only or all filtered
+      // out), fall back rather than show an empty list.
+      return parsed.length > 0 ? parsed : walkDriveLetters();
     }
     return [];
   } catch (error) {
-    console.error('Error listing drives:', error);
-    return [];
+    console.error('[listDrives] unexpected error; falling back to fs.statSync drive-letter walk:', error);
+    return walkDriveLetters();
   }
 });
 
