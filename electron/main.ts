@@ -4860,21 +4860,58 @@ ipcMain.handle('files:copy', async (_event, data: {
     // Snapshot pre-existing files at the REAL destination (not the
     // staging dir) so cross-run dedupe + collision resolution work
     // correctly even when this run is staging.
+    //
+    // v2.0.15 (Terry 2026-05-30) — PERFORMANCE FIX. Previously this
+    // ALWAYS walked the destination filesystem recursively to build
+    // the preExistingFiles set, even though the prescan IPC that
+    // ran moments earlier ALREADY walked the same tree. On a 72k
+    // file destination that was an 18-second gap between "Applying
+    // Fixes" appearing and the first file actually being processed.
+    //
+    // Now we pull from indexed_files first (DB hit = ms). The DB
+    // has file_path for every file ever Fix-processed or catchup-
+    // indexed into this destination, so the relative-path set is
+    // built without touching disk. Fall back to the filesystem
+    // walk if the DB returns zero rows (first-ever Fix on an empty
+    // index).
     const preExistingFiles = new Set<string>();
-    const scanForExisting = async (dirPath: string, relativePath: string = ''): Promise<void> => {
-      try {
-        const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            await scanForExisting(path.join(dirPath, entry.name), path.join(relativePath, entry.name));
-          } else if (entry.isFile()) {
-            preExistingFiles.add(path.join(relativePath, entry.name).toLowerCase());
+    const fixScanStart = Date.now();
+    try {
+      const { getDb } = await import('./search-database.js');
+      const database = getDb();
+      const likePrefix = destinationPath.endsWith('\\') || destinationPath.endsWith('/')
+        ? destinationPath
+        : destinationPath + path.sep;
+      const rows = database
+        .prepare(`SELECT file_path FROM indexed_files WHERE file_path LIKE ?`)
+        .all(likePrefix + '%') as { file_path: string }[];
+      for (const row of rows) {
+        const rel = path.relative(destinationPath, row.file_path).toLowerCase();
+        if (rel && !rel.startsWith('..')) preExistingFiles.add(rel);
+      }
+      console.log(`[Fix] DB pre-scan: ${preExistingFiles.size} existing relative paths from ${rows.length} indexed rows in ${((Date.now() - fixScanStart) / 1000).toFixed(2)}s`);
+    } catch (dbErr) {
+      console.warn('[Fix] DB pre-scan failed:', dbErr);
+    }
+    // Fall back to filesystem walk only if the DB had nothing to
+    // contribute (first-ever Fix into a destination PDR doesn't yet
+    // know about). Identical to the legacy behaviour in that case.
+    if (preExistingFiles.size === 0) {
+      const scanForExisting = async (dirPath: string, relativePath: string = ''): Promise<void> => {
+        try {
+          const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              await scanForExisting(path.join(dirPath, entry.name), path.join(relativePath, entry.name));
+            } else if (entry.isFile()) {
+              preExistingFiles.add(path.join(relativePath, entry.name).toLowerCase());
+            }
           }
-        }
-      } catch {}
-    };
-    await scanForExisting(destinationPath);
-    console.log(`[Fix] Destination scan complete: ${preExistingFiles.size} existing files found`);
+        } catch {}
+      };
+      await scanForExisting(destinationPath);
+      console.log(`[Fix] Destination filesystem scan complete: ${preExistingFiles.size} existing files found in ${((Date.now() - fixScanStart) / 1000).toFixed(2)}s`);
+    }
 
     // Helper: does a relative path collide with a file at the REAL
     // destination? When staging, fs.existsSync would probe the empty
