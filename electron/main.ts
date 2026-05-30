@@ -4495,18 +4495,17 @@ ipcMain.handle('report:save', async (_event, reportData: Omit<FixReport, 'id' | 
     const savedReport = await saveReport(reportData);
     trace('saveReport', tSave);
 
-    // Auto-catalogue: write cumulative PDR_Catalogue.csv/txt to destination root
+    // Auto-catalogue: write cumulative PDR_Catalogue.csv/txt to
+    // destination root. v2.0.15 (Terry 2026-05-30) — fire-and-forget
+    // via the catalogue-worker utility process. The renderer no
+    // longer waits for this; the chime + Fix Complete modal fire
+    // instantly. Worker uses per-report chunk caching so subsequent
+    // Fixes regenerate only the new chunk (~500ms vs 7s).
     const settings = getSettings();
-    console.log('[Catalogue] autoSaveCatalogue:', settings.autoSaveCatalogue, 'destinationPath:', savedReport.destinationPath);
     if (settings.autoSaveCatalogue && savedReport.destinationPath) {
-      try {
-        const tCat = Date.now();
-        const catResult = await writeCatalogue(savedReport.destinationPath);
-        trace('writeCatalogue total', tCat);
-        console.log('[Catalogue] Write result:', catResult);
-      } catch (catErr) {
-        console.error('[Catalogue] Write failed (non-fatal):', catErr);
-      }
+      void spawnCatalogueWorker(savedReport.destinationPath).catch((err) => {
+        console.error('[Catalogue] worker spawn failed (non-fatal):', err);
+      });
     } else {
       console.log('[Catalogue] Skipped — setting off or no destination');
     }
@@ -4517,6 +4516,47 @@ ipcMain.handle('report:save', async (_event, reportData: Omit<FixReport, 'id' | 
     return { success: false, error: (error as Error).message };
   }
 });
+
+// v2.0.15 (Terry 2026-05-30) — spawn the catalogue-worker utility
+// process and forget. Returns once the worker is dispatched (not when
+// it finishes), so the calling IPC handler can return immediately and
+// the Fix Complete modal renders without blocking on minutes of CSV
+// building.
+async function spawnCatalogueWorker(destinationPath: string): Promise<void> {
+  const workerPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'dist-electron/catalogue-worker.cjs')
+    : path.join(__dirname, 'catalogue-worker.cjs');
+  if (!fs.existsSync(workerPath)) {
+    console.warn('[Catalogue] worker file missing — skipping background catalogue regen');
+    return;
+  }
+  const reportsDir = path.join(app.getPath('userData'), 'pdr-reports');
+  const tSpawn = Date.now();
+  let w: Electron.UtilityProcess;
+  try {
+    w = utilityProcess.fork(workerPath, [], {
+      serviceName: 'PDR Catalogue Worker',
+      stdio: 'pipe',
+    });
+  } catch (forkErr) {
+    console.error('[Catalogue] worker fork failed:', forkErr);
+    return;
+  }
+  w.stdout?.on('data', (chunk: Buffer) => log.info(`[catalogue-worker stdout] ${chunk.toString().trim()}`));
+  w.stderr?.on('data', (chunk: Buffer) => log.warn(`[catalogue-worker stderr] ${chunk.toString().trim()}`));
+  w.on('message', (msg: unknown) => {
+    const m = msg as { type?: string; success?: boolean; error?: string };
+    if (m?.type === 'ready') {
+      w.postMessage({ type: 'run', destinationPath, reportsDir });
+    } else if (m?.type === 'done') {
+      log.info(`[Catalogue] worker done in ${Date.now() - tSpawn}ms — success=${m.success}${m.error ? `, error=${m.error}` : ''}`);
+      try { w.kill(); } catch { /* best-effort */ }
+    }
+  });
+  w.on('exit', (code) => {
+    log.info(`[Catalogue] worker exited code=${code}`);
+  });
+}
 
 // Scan destination for existing files and their hashes (for cross-run duplicate detection)
 ipcMain.handle('destination:prescan', async (_event, destinationPath: string) => {

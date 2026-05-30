@@ -494,14 +494,14 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
   txtLines.push(`Fix runs:      ${matchingReports.length}`);
   txtLines.push('');
 
-  // v2.0.15 (Terry 2026-05-30) — the dominant freeze cause measured
-  // at 6.9s for a 21-report / 115k-row build, pure synchronous JS.
-  // Yield to the event loop every YIELD_EVERY files so main keeps
-  // pumping IPC + window messages between batches. 1000 files
-  // ≈ 50ms of CSV+TXT push work on V8, well under the 16ms frame
-  // budget aggregated but tolerable as a single chunk.
-  const YIELD_EVERY = 1000;
-  let fileCounter = 0;
+  // v2.0.15 (Terry 2026-05-30) — yields removed. The setImmediate
+  // ceremony added 5+ seconds of pure overhead (10s → 15s) without
+  // meaningfully helping the "Not Responding" case because main was
+  // still busy with the work between yields. Real fix: move this
+  // whole generateCatalogue path off main into a worker thread (see
+  // the worker-thread refactor in writeCatalogue + the chunk cache
+  // optimisation that turns 7s of work into <500ms by reusing
+  // immutable per-report renders).
   for (const report of matchingReports) {
     const runScanned = report.totalScanned ?? (report.counts.confirmed + report.counts.recovered + report.counts.marked + (report.duplicatesRemoved || 0));
     totalScanned += runScanned;
@@ -555,21 +555,12 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
       txtLines.push(`    EXIF Written:${f.exifWritten ? 'Yes' : 'No'}${f.exifSource ? ` (${f.exifSource})` : ''}`);
       txtLines.push(`    Run:         ${report.id}`);
       txtLines.push('');
-
-      fileCounter++;
-      if (fileCounter % YIELD_EVERY === 0) {
-        await new Promise<void>((r) => setImmediate(r));
-      }
     }
 
     // Duplicates (always include — these were never copied so nothing to check)
     if (report.duplicateFiles && report.duplicateFiles.length > 0) {
       for (const dup of report.duplicateFiles) {
         totalDuplicates++;
-        fileCounter++;
-        if (fileCounter % YIELD_EVERY === 0) {
-          await new Promise<void>((r) => setImmediate(r));
-        }
         const ext = dup.filename.split('.').pop()?.toLowerCase() || '';
         const retainedFile = report.files.find(f => f.originalFilename === dup.duplicateOf);
         const retainedNewFilename = retainedFile?.newFilename || dup.duplicateOf;
