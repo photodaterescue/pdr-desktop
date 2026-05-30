@@ -4885,6 +4885,31 @@ ipcMain.handle('files:copy', async (_event, data: {
   // — finally needs to know whether the mirror step asked to keep
   // staging around for manual recovery.
   let preserveStagingForRecovery = false;
+  // v2.0.15 (Terry 2026-05-30) — persistent conversion worker
+  // handle, hoisted to handler scope so the finally clause can shut
+  // it down on error / cancellation paths (otherwise a Fix that
+  // bails mid-conversion leaks a utilityProcess + its libvips
+  // memory pool). The ensure* helper that spawns it lives inside
+  // the try block since it's only called from flushConversions.
+  let persistentConvertChild: Electron.UtilityProcess | null = null;
+  const shutdownPersistentConvertChild = async (): Promise<void> => {
+    const child = persistentConvertChild;
+    if (!child) return;
+    await new Promise<void>((resolve) => {
+      // Guard against a worker that already died — resolve
+      // immediately rather than hanging.
+      let settled = false;
+      const onExit = () => { if (settled) return; settled = true; resolve(); };
+      child.once('exit', onExit);
+      try {
+        child.postMessage({ type: 'shutdown' });
+      } catch {
+        // Already dead — fire the resolve manually.
+        if (!settled) { settled = true; resolve(); }
+      }
+    });
+    persistentConvertChild = null;
+  };
   // Honour the user's network-upload-mode setting. 'direct' is the
   // legacy kill switch — even on network destinations, force the
   // old per-file fs.createReadStream loop. Used as the A/B baseline
@@ -5089,18 +5114,63 @@ ipcMain.handle('files:copy', async (_event, data: {
     let convertFilesProcessed = 0;
     const convertPhaseStartedAt = Date.now();
 
-    // Flush pending conversions via a freshly-forked child process.
-    // The child receives the batch, runs sharp with controlled
-    // parallelism, posts task-done messages back as each completes
-    // (so the parent advances its progress bar in real time), then
-    // exits cleanly. OS reclaims its heap + libvips pool on exit.
+    // v2.0.15 (Terry 2026-05-30) — persistent conversion worker. The
+    // pre-v2.0.15 implementation forked a fresh child per batch and
+    // exited it after batch-done so the OS would reclaim its libvips
+    // memory pool. Measured 6,763ms fork+sharp-load+first-decode
+    // latency × 43 batches on a 2,123-file Fix = ~5 minutes wasted
+    // on cold starts alone. The persistent model pays that cost once
+    // per Fix instead of once per batch, and we still reclaim the
+    // libvips pool via an explicit 'shutdown' message at end-of-Fix.
+    // Memory across the run is observable in the per-file mem= line
+    // so a future regression would surface immediately.
+    // (persistentConvertChild + shutdownPersistentConvertChild are
+    // hoisted to handler scope so the finally clause can clean up
+    // on error / cancellation paths.)
+    let persistentConvertChildLifetimeBatches = 0;
+    const ensurePersistentConvertChild = (): Electron.UtilityProcess => {
+      if (persistentConvertChild) return persistentConvertChild;
+      const workerPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'dist-electron/conversion-worker.cjs')
+        : path.join(__dirname, 'conversion-worker.cjs');
+      const child = utilityProcess.fork(workerPath, [], {
+        // serviceName surfaces in Task Manager so the user (and
+        // support) can see "PDR Image Conversion" rather than a
+        // generic Electron Helper.
+        serviceName: 'PDR Image Conversion',
+        stdio: 'pipe',
+      });
+      // Forward stdout/stderr to main.log once per worker lifetime.
+      child.stdout?.on('data', (chunk: Buffer) => {
+        log.info(`[conversion-worker stdout] ${chunk.toString().trim()}`);
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        log.warn(`[conversion-worker stderr] ${chunk.toString().trim()}`);
+      });
+      child.on('exit', (code) => {
+        log.info(`[Convert] Persistent worker exited code=${code} after ${persistentConvertChildLifetimeBatches} batch(es)`);
+        persistentConvertChild = null;
+      });
+      persistentConvertChild = child;
+      log.info(`[Convert] Persistent worker spawned (pid pending)`);
+      return child;
+    };
+
+    // Flush pending conversions to the persistent child. The child
+    // receives the batch, runs sharp at parallelism=4 (post-v2.0.15;
+    // measured to balance CPU oversubscription against per-task
+    // throughput on the PNG encode workload), posts task-done
+    // messages as each completes (so the progress bar advances live),
+    // then posts batch-done. The child stays alive for the next
+    // batch — main calls shutdownPersistentConvertChild() once after
+    // the final flush at end-of-Fix.
     const flushConversions = async () => {
       if (pendingConversions.length === 0) return;
       const batch = pendingConversions.splice(0, pendingConversions.length);
       const batchStartedAt = Date.now();
       convertBatchCount++;
       const batchIndex = convertBatchCount; // closed-over for per-file logs below
-      console.log(`[Convert] Flushing batch #${batchIndex} of ${batch.length} conversions to a child process`);
+      console.log(`[Convert] Flushing batch #${batchIndex} of ${batch.length} conversions to persistent worker`);
 
       // Map task input to a string path. Buffers (small in-memory
       // zip extracts) get spilled to a temp file first; the child
@@ -5127,29 +5197,8 @@ ipcMain.handle('files:copy', async (_event, data: {
         };
       }));
 
-      // Resolve worker path. Production: bundled in extraResources/dist-electron.
-      // Dev: alongside main.js inside dist-electron/.
-      const workerPath = app.isPackaged
-        ? path.join(process.resourcesPath, 'dist-electron/conversion-worker.cjs')
-        : path.join(__dirname, 'conversion-worker.cjs');
-
-      const child = utilityProcess.fork(workerPath, [], {
-        // serviceName surfaces in Task Manager so the user (and
-        // support) can see "PDR Image Conversion" rather than a
-        // generic Electron Helper.
-        serviceName: 'PDR Image Conversion',
-        stdio: 'pipe',
-      });
-
-      // Forward child stdout/stderr to main.log so any sharp /
-      // libvips warnings surface in support diagnostics rather
-      // than being swallowed.
-      child.stdout?.on('data', (chunk: Buffer) => {
-        log.info(`[conversion-worker stdout] ${chunk.toString().trim()}`);
-      });
-      child.stderr?.on('data', (chunk: Buffer) => {
-        log.warn(`[conversion-worker stderr] ${chunk.toString().trim()}`);
-      });
+      const child = ensurePersistentConvertChild();
+      persistentConvertChildLifetimeBatches++;
 
       // Per-task results keyed by id, populated as the child posts
       // 'task-done' messages. The 'batch-done' message tells us when
@@ -5164,19 +5213,33 @@ ipcMain.handle('files:copy', async (_event, data: {
       }>();
 
       let lastMemSnapshot: { rssMB: number; heapUsedMB: number; externalMB: number } | null = null;
-      // v2.0.15 diagnostics — fork-to-first-task latency isolates
-      // the cold-start cost (utilityProcess fork + sharp module load
-      // + first decode) from the steady-state per-file encode time.
-      // If the headline avg looks bad but the first-task latency is
-      // dominating, the fix is fewer larger batches rather than
-      // anything inside sharp.
+      // v2.0.15 diagnostics — first-task latency. On batch #1 this
+      // captures the fork + sharp module load + first decode cost.
+      // On batch #2+ (persistent worker), it captures just the
+      // first decode — should drop to ~hundreds of ms instead of
+      // the ~6.7s we measured pre-persistent.
       let firstTaskAt: number | null = null;
       // Batch totals for the throughput line on batch-done.
       let batchInputBytes = 0;
       let batchOutputBytes = 0;
 
-      const forkAt = Date.now();
+      const postAt = Date.now();
       await new Promise<void>((resolve, reject) => {
+        let resolved = false;
+        const settleResolve = () => {
+          if (resolved) return;
+          resolved = true;
+          child.off('message', onMessage);
+          child.off('exit', onUnexpectedExit);
+          resolve();
+        };
+        const settleReject = (err: Error) => {
+          if (resolved) return;
+          resolved = true;
+          child.off('message', onMessage);
+          child.off('exit', onUnexpectedExit);
+          reject(err);
+        };
         const onMessage = (msg: any) => {
           if (!msg || typeof msg !== 'object') return;
           if (msg.type === 'task-done') {
@@ -5194,7 +5257,7 @@ ipcMain.handle('files:copy', async (_event, data: {
             // First-task latency landed — log once per batch.
             if (firstTaskAt === null) {
               firstTaskAt = Date.now();
-              log.info(`[Convert] Batch #${batchIndex} first-task latency: ${firstTaskAt - forkAt}ms (fork + sharp load + first decode)`);
+              log.info(`[Convert] Batch #${batchIndex} first-task latency: ${firstTaskAt - postAt}ms (post-message → first task-done; batch #1 includes fork + sharp load)`);
             }
             // v2.0.15 diagnostics — per-file rich log so a slow
             // outlier or a giant input doesn't get buried in the
@@ -5221,24 +5284,33 @@ ipcMain.handle('files:copy', async (_event, data: {
             const outMB = batchOutputBytes / (1024 * 1024);
             const throughputMBs = wallMs > 0 ? (inMB / (wallMs / 1000)).toFixed(2) : 'n/a';
             log.info(`[Convert] Batch done — ${msg.succeeded}/${msg.total} succeeded, ${msg.failed} failed, in=${inMB.toFixed(1)}MB out=${outMB.toFixed(1)}MB throughput=${throughputMBs}MB/s${lastMemSnapshot ? `, child mem rss=${lastMemSnapshot.rssMB} MB heap=${lastMemSnapshot.heapUsedMB} MB external=${lastMemSnapshot.externalMB} MB` : ''}`);
-            // Don't resolve here — wait for 'exit' so we know the
-            // child has actually freed its memory before we move on.
+            // Persistent worker — resolve immediately on batch-done.
+            // No exit to wait for; the child stays alive for the
+            // next batch.
+            settleResolve();
           } else if (msg.type === 'fatal-error') {
             log.error(`[Convert] Worker fatal: ${msg.message}`);
+            settleReject(new Error(`Conversion worker fatal: ${msg.message}`));
           }
         };
+        const onUnexpectedExit = (code: number) => {
+          // If the child dies mid-batch the batch-done message will
+          // never arrive — reject so the surrounding flow doesn't
+          // hang the whole Fix waiting forever.
+          log.error(`[Convert] Persistent worker died mid-batch (code=${code}); failing batch #${batchIndex}`);
+          settleReject(new Error(`Conversion worker died mid-batch (code=${code})`));
+        };
         child.on('message', onMessage);
-        child.on('exit', (code) => {
-          if (code !== 0) {
-            log.warn(`[Convert] Worker exited with code ${code}`);
-          }
-          resolve();
-        });
+        child.once('exit', onUnexpectedExit);
         child.postMessage({
           type: 'convert-batch',
           tasks: childTasks,
           perTaskTimeoutMs: 60_000,
-          parallelism: 2,
+          // v2.0.15 — bumped from 2 → 4 tasks in parallel. Per-task
+          // sharp.concurrency stays at 2, so total active libvips
+          // threads = 8, matching a typical 8-core machine without
+          // oversubscribing.
+          parallelism: 4,
         });
       });
 
@@ -5633,6 +5705,13 @@ ipcMain.handle('files:copy', async (_event, data: {
     // Flush any remaining queued conversions (EXIF is written inside flushConversions)
     await flushConversions();
 
+    // v2.0.15 — shut the persistent conversion worker down so the OS
+    // reclaims its libvips memory pool. Best-effort: if the worker
+    // already died (fatal-error, OOM, kill), the helper resolves
+    // immediately. Wrapped in try/catch so a shutdown hiccup never
+    // breaks the Fix's success path.
+    try { await shutdownPersistentConvertChild(); } catch (e) { log.warn(`[Convert] shutdown raised: ${(e as Error).message}`); }
+
     // v2.0.15 — aggregate conversion telemetry. Logged unconditionally
     // even when 0 conversions happened (originals-only Fix) so we can
     // tell apart "no convert phase" from "convert phase silently
@@ -5777,6 +5856,14 @@ ipcMain.handle('files:copy', async (_event, data: {
   } catch (error) {
     return { success: false, error: (error as Error).message, results, duplicatesRemoved, duplicateFiles };
   } finally {
+    // v2.0.15 — safety net: if the Fix bailed before reaching the
+    // post-loop shutdown call, the persistent conversion worker is
+    // still alive. Kill it here so we don't leak a child process
+    // (and its libvips memory) past the Fix's lifetime. No-op when
+    // the worker was never spawned (originals-only Fix) or was
+    // already cleanly shut down on the happy path.
+    try { await shutdownPersistentConvertChild(); } catch { /* best-effort */ }
+
     // Clean up staging dir on the way out — success, cancellation,
     // or thrown error. Skipped only when the mirror step flipped
     // preserveStagingForRecovery ON so the user can salvage the

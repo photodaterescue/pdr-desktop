@@ -45,10 +45,14 @@ import * as fs from 'fs';
 // image many times (we don't), but keeps memory bounded across many
 // distinct images (we do).
 sharp.cache(false);
-// Cap libvips' internal worker threads at 2. Combined with the per-
-// child batching in main, this keeps the per-child memory ceiling
-// predictable: at most 2 in-flight decode/encode buffers + their
-// metadata, regardless of how many tasks the batch contains.
+// v2.0.15 (Terry 2026-05-30) — libvips internal threads bumped from
+// 2 to 2 (unchanged) while the per-batch task parallelism in main
+// goes from 2 → 4. Net active threads per worker = 2 × 4 = 8, which
+// matches an 8-core machine without oversubscribing. The single-
+// libvips-thread + many-parallel-tasks split tends to dominate over
+// many-libvips-threads + few-parallel-tasks for the PNG encode
+// workload we measured (per-file 2–7s, dominated by zlib compression
+// inside libvips, which scales modestly with internal threads).
 sharp.concurrency(2);
 
 // ─── IPC types ─────────────────────────────────────────────────────────────
@@ -64,7 +68,15 @@ interface ConvertBatchMessage {
   type: 'convert-batch';
   tasks: ConvertTask[];
   perTaskTimeoutMs?: number;  // default 60_000
-  parallelism?: number;       // default 2 (matches sharp.concurrency)
+  parallelism?: number;       // default 4 (post-v2.0.15)
+}
+
+// v2.0.15 — persistent-worker shutdown signal. Replaces the
+// per-batch process.exit(0) so we don't pay the 6.7s fork + sharp
+// load cost on every batch. Main posts this once at end-of-Fix; the
+// child exits cleanly so the OS reclaims its libvips memory pool.
+interface ShutdownMessage {
+  type: 'shutdown';
 }
 
 interface TaskDoneMessage {
@@ -265,7 +277,7 @@ async function handleParentMessage(raw: any): Promise<void> {
   if (msg.type === 'convert-batch') {
     const batch = msg as ConvertBatchMessage;
     const timeoutMs = batch.perTaskTimeoutMs ?? 60_000;
-    const parallelism = batch.parallelism ?? 2;
+    const parallelism = batch.parallelism ?? 4;
     try {
       const { succeeded, failed } = await processBatch(batch.tasks, timeoutMs, parallelism);
       postToParent({
@@ -274,17 +286,25 @@ async function handleParentMessage(raw: any): Promise<void> {
         succeeded,
         failed,
       });
+      // v2.0.15 — DO NOT exit. Persistent worker model: main keeps
+      // the child alive across batches so the fork + sharp-load cost
+      // (~6.7s, measured) is paid once per Fix instead of once per
+      // batch. The child exits only on the explicit 'shutdown'
+      // message, posted by main at end-of-Fix.
     } catch (err) {
       postToParent({
         type: 'fatal-error',
         message: (err as Error).message ?? String(err),
         stack: (err as Error).stack,
       });
-    } finally {
-      // Exit so the OS reclaims our heap + libvips memory pool.
-      // Parent will fork a fresh child for the next batch.
-      process.exit(0);
+      // A fatal error means libvips may be in an unrecoverable state;
+      // bail out so main can decide whether to respawn for the next
+      // batch.
+      process.exit(1);
     }
+  } else if (msg.type === 'shutdown') {
+    // Clean shutdown — OS reclaims our heap + libvips memory pool.
+    process.exit(0);
   }
 }
 
