@@ -5099,7 +5099,8 @@ ipcMain.handle('files:copy', async (_event, data: {
       const batch = pendingConversions.splice(0, pendingConversions.length);
       const batchStartedAt = Date.now();
       convertBatchCount++;
-      console.log(`[Convert] Flushing batch #${convertBatchCount} of ${batch.length} conversions to a child process`);
+      const batchIndex = convertBatchCount; // closed-over for per-file logs below
+      console.log(`[Convert] Flushing batch #${batchIndex} of ${batch.length} conversions to a child process`);
 
       // Map task input to a string path. Buffers (small in-memory
       // zip extracts) get spilled to a temp file first; the child
@@ -5157,11 +5158,24 @@ ipcMain.handle('files:copy', async (_event, data: {
         success: boolean;
         durationMs: number;
         error?: string;
+        inputBytes?: number;
+        outputBytes?: number;
         memUsage: { rssMB: number; heapUsedMB: number; externalMB: number };
       }>();
 
       let lastMemSnapshot: { rssMB: number; heapUsedMB: number; externalMB: number } | null = null;
+      // v2.0.15 diagnostics — fork-to-first-task latency isolates
+      // the cold-start cost (utilityProcess fork + sharp module load
+      // + first decode) from the steady-state per-file encode time.
+      // If the headline avg looks bad but the first-task latency is
+      // dominating, the fix is fewer larger batches rather than
+      // anything inside sharp.
+      let firstTaskAt: number | null = null;
+      // Batch totals for the throughput line on batch-done.
+      let batchInputBytes = 0;
+      let batchOutputBytes = 0;
 
+      const forkAt = Date.now();
       await new Promise<void>((resolve, reject) => {
         const onMessage = (msg: any) => {
           if (!msg || typeof msg !== 'object') return;
@@ -5170,16 +5184,43 @@ ipcMain.handle('files:copy', async (_event, data: {
               success: msg.success,
               durationMs: msg.durationMs,
               error: msg.error,
+              inputBytes: msg.inputBytes,
+              outputBytes: msg.outputBytes,
               memUsage: msg.memUsage,
             });
             lastMemSnapshot = msg.memUsage;
+            if (typeof msg.inputBytes === 'number') batchInputBytes += msg.inputBytes;
+            if (typeof msg.outputBytes === 'number') batchOutputBytes += msg.outputBytes;
+            // First-task latency landed — log once per batch.
+            if (firstTaskAt === null) {
+              firstTaskAt = Date.now();
+              log.info(`[Convert] Batch #${batchIndex} first-task latency: ${firstTaskAt - forkAt}ms (fork + sharp load + first decode)`);
+            }
+            // v2.0.15 diagnostics — per-file rich log so a slow
+            // outlier or a giant input doesn't get buried in the
+            // batch average. Format kept on one line for grep-ability.
+            const t = batch[msg.id];
+            const filename = t ? path.basename(t.convertedPath) : `id=${msg.id}`;
+            const inKB = typeof msg.inputBytes === 'number' ? Math.round(msg.inputBytes / 1024) : null;
+            const outKB = typeof msg.outputBytes === 'number' ? Math.round(msg.outputBytes / 1024) : null;
+            const ratio = (inKB && outKB) ? (outKB / inKB).toFixed(2) : 'n/a';
+            const memStr = msg.memUsage ? `mem=${msg.memUsage.rssMB}MB` : '';
+            const status = msg.success ? 'ok' : `FAIL(${msg.error ?? 'unknown'})`;
+            log.info(`[Convert]   #${batchIndex}.${msg.id} ${status} dur=${msg.durationMs}ms in=${inKB ?? '?'}KB out=${outKB ?? '?'}KB ratio=${ratio} ${memStr} "${filename}"`);
             // Advance the progress bar live as each task lands.
             completedFiles++;
             if (mainWindow) {
               mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
             }
           } else if (msg.type === 'batch-done') {
-            log.info(`[Convert] Batch done — ${msg.succeeded}/${msg.total} succeeded, ${msg.failed} failed${lastMemSnapshot ? `, child mem rss=${lastMemSnapshot.rssMB} MB heap=${lastMemSnapshot.heapUsedMB} MB external=${lastMemSnapshot.externalMB} MB` : ''}`);
+            // v2.0.15 — throughput per batch. wall-clock is the
+            // batch's effective serial time; MB/s lets us compare
+            // the converter against the raw drive write speed.
+            const wallMs = Date.now() - batchStartedAt;
+            const inMB = batchInputBytes / (1024 * 1024);
+            const outMB = batchOutputBytes / (1024 * 1024);
+            const throughputMBs = wallMs > 0 ? (inMB / (wallMs / 1000)).toFixed(2) : 'n/a';
+            log.info(`[Convert] Batch done — ${msg.succeeded}/${msg.total} succeeded, ${msg.failed} failed, in=${inMB.toFixed(1)}MB out=${outMB.toFixed(1)}MB throughput=${throughputMBs}MB/s${lastMemSnapshot ? `, child mem rss=${lastMemSnapshot.rssMB} MB heap=${lastMemSnapshot.heapUsedMB} MB external=${lastMemSnapshot.externalMB} MB` : ''}`);
             // Don't resolve here — wait for 'exit' so we know the
             // child has actually freed its memory before we move on.
           } else if (msg.type === 'fatal-error') {

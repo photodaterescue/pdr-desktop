@@ -38,6 +38,7 @@
  */
 
 import sharp from 'sharp';
+import * as fs from 'fs';
 
 // ─── sharp tuning ──────────────────────────────────────────────────────────
 // Disable libvips' operation cache. Useful when you process the same
@@ -72,6 +73,13 @@ interface TaskDoneMessage {
   success: boolean;
   durationMs: number;
   error?: string;
+  // v2.0.15 diagnostics — input bytes (source file size) and
+  // output bytes (encoded file size on disk). Lets main.log show
+  // compression ratio per file and MB/s throughput per batch.
+  // Both undefined on failure paths where we never reach the
+  // post-encode stat.
+  inputBytes?: number;
+  outputBytes?: number;
   // Memory snapshot AFTER this task completed — surfaces a leak in
   // the trajectory across a batch.
   memUsage: {
@@ -118,6 +126,12 @@ async function convertOne(task: ConvertTask, timeoutMs: number): Promise<TaskDon
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  // v2.0.15 diagnostics — capture input size before we start.
+  // stat is cheap (file already on disk), so the overhead is
+  // negligible against the encode cost.
+  let inputBytes: number | undefined;
+  try { inputBytes = fs.statSync(task.input).size; } catch { /* best-effort */ }
+
   try {
     const pipeline = task.format === 'jpg'
       ? sharp(task.input).jpeg({ quality: 92 })
@@ -152,11 +166,19 @@ async function convertOne(task: ConvertTask, timeoutMs: number): Promise<TaskDon
         });
     });
 
+    // v2.0.15 diagnostics — stat the output now that the encode
+    // has landed. Best-effort: a failure to stat doesn't break the
+    // success result, it just leaves outputBytes undefined.
+    let outputBytes: number | undefined;
+    try { outputBytes = fs.statSync(task.output).size; } catch { /* best-effort */ }
+
     return {
       type: 'task-done',
       id: task.id,
       success: true,
       durationMs: Date.now() - start,
+      inputBytes,
+      outputBytes,
       memUsage: memSnapshot(),
     };
   } catch (err) {
@@ -166,6 +188,7 @@ async function convertOne(task: ConvertTask, timeoutMs: number): Promise<TaskDon
       success: false,
       durationMs: Date.now() - start,
       error: (err as Error).message ?? String(err),
+      inputBytes,
       memUsage: memSnapshot(),
     };
   } finally {
