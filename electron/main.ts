@@ -5542,13 +5542,37 @@ ipcMain.handle('files:copy', async (_event, data: {
       })();
       const convertedExt = willConvert ? (photoFormat === 'jpg' ? '.jpg' : '.png') : null;
 
+      // v2.0.15 (Terry 2026-05-31) — infinite-loop fix. The
+      // converted-ext collision checks (Cond C + D below) used the
+      // pre-loop `baseName + convertedExt`, which never changes as
+      // the loop appends _001, _002, ... to `finalFilename`. Once
+      // any earlier file in the run reserved `<base>.<convExt>`
+      // (via the post-loop usedFilenames.add at line 5557 below),
+      // EVERY subsequent file with the same derived date+CF stem
+      // entered an infinite loop and froze the main thread.
+      // Reproduced deterministically on Terry's 2,123-file PNG Fix
+      // at file 196 (IMG_20160103_185837~2.jpg) — a near-duplicate
+      // sharing EXIF date with file 195, hence the same derived
+      // destination stem. The fix recomputes the converted-ext stem
+      // from the CURRENT finalFilename each iteration so it advances
+      // with the counter and the loop terminates.
       let counter = 1;
+      const convertedFilenameFor = (fn: string) => convertedExt ? fn.replace(/\.[^.]+$/, convertedExt) : fn;
       while (usedFilenames.has(path.join(subfolderPath, finalFilename).toLowerCase()) ||
              realDestFileExists(path.join(subfolderPath, finalFilename)) ||
-             (convertedExt && usedFilenames.has(path.join(subfolderPath, baseName + convertedExt).toLowerCase())) ||
-             (convertedExt && counter === 1 && realDestFileExists(path.join(subfolderPath, baseName + convertedExt)))) {
+             (convertedExt && usedFilenames.has(path.join(subfolderPath, convertedFilenameFor(finalFilename)).toLowerCase())) ||
+             (convertedExt && counter === 1 && realDestFileExists(path.join(subfolderPath, convertedFilenameFor(finalFilename))))) {
         finalFilename = `${baseName}_${String(counter).padStart(3, '0')}${ext}`;
         counter++;
+        // Belt-and-braces — even with the per-iteration stem fix
+        // above, never let this loop run away. 10 000 iterations
+        // is unimaginable for a real Fix; if we hit it, something
+        // upstream is broken and we'd rather log + bail than
+        // freeze the main thread.
+        if (counter > 10_000) {
+          log.error(`[Fix] Filename-collision loop runaway for ${file.sourcePath} (baseName=${baseName}); bailing out at counter=${counter}`);
+          break;
+        }
       }
       usedFilenames.add(path.join(subfolderPath, finalFilename).toLowerCase());
       // Also reserve the converted filename to prevent future collisions
