@@ -451,24 +451,41 @@ function getCompletionAudio(): HTMLAudioElement | null {
 }
 
 export async function playCompletionSound(): Promise<void> {
+  // v2.0.15 (Terry 2026-05-30) — chime-latency diagnostics. Logs
+  // every transition so [analyze-end-trace] / [chime-trace] can be
+  // matched up in main.log.
+  const t0 = performance.now();
+  // eslint-disable-next-line no-console
+  const mark = (label: string) => { console.log(`[chime-trace] +${(performance.now() - t0).toFixed(0)}ms ${label}`); try { logToFile('info', `[chime-trace] +${(performance.now() - t0).toFixed(0)}ms ${label}`); } catch { /* best-effort */ } };
+  mark('playCompletionSound() called');
   const audio = getCompletionAudio();
+  mark(`getCompletionAudio() → ${audio ? `Audio (readyState=${audio.readyState})` : 'null'}`);
   if (audio) {
     try {
       // Rewind so successive chimes always start from the top.
       audio.currentTime = 0;
       // play() returns a promise that resolves when playback starts;
       // we don't await it because the chime should fire-and-forget.
-      void audio.play().catch(() => { /* autoplay blocked or device busy */ });
+      mark('audio.play() called');
+      void audio.play()
+        .then(() => mark('audio.play() resolved (playback started)'))
+        .catch((e) => mark(`audio.play() rejected: ${(e as Error)?.message ?? 'unknown'}`));
       return;
-    } catch { /* fall through to IPC fallback */ }
+    } catch (e) {
+      mark(`audio.play() threw: ${(e as Error)?.message ?? 'unknown'}`);
+      /* fall through to IPC fallback */
+    }
   }
   // Fallback for non-renderer contexts (or if Audio construction
   // failed): keep the old IPC route as a safety net. Slower because
   // it spawns PowerShell, but better than no chime.
   if (isElectron() && (window as any).pdr?.playCompletionSound) {
     try {
+      mark('fallback: IPC playCompletionSound() called');
       await (window as any).pdr.playCompletionSound();
+      mark('fallback: IPC resolved');
     } catch {
+      mark('fallback: IPC rejected');
       // eslint-disable-next-line no-console
       console.log('Could not play completion sound');
     }

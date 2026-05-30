@@ -2145,10 +2145,23 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
         return;
       }
     
+    // v2.0.15 (Terry 2026-05-30) — analyze-complete chime latency
+    // diagnostics. We're chasing the gap between this IPC returning
+    // and the actual chime sound arriving in the user's ears.
+    // Tag every step with t-since-IPC-return so we can read the
+    // sequence in DevTools console (open with Ctrl+Shift+I → Console).
+    const __t0 = performance.now();
+    const __mark = (label: string) => {
+      // eslint-disable-next-line no-console
+      console.log(`[analyze-end-trace] +${(performance.now() - __t0).toFixed(0)}ms ${label}`);
+      try { logToFile('info', `[analyze-end-trace] +${(performance.now() - __t0).toFixed(0)}ms ${label}`); } catch { /* best-effort */ }
+    };
+    __mark('IPC returned (start of renderer post-processing)');
+
     removeAnalysisProgressListener();
     setIsAnalyzing(false);
     setIsScanning(false);
-    
+
     if (result.success && result.data) {
       const analysisData = result.data;
       const stats: PreScanStats = {
@@ -2193,24 +2206,32 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
       // Fire-and-forget: don't await the chime so the modal opens
       // immediately afterwards.
       const soundEnabled = localStorage.getItem('pdr-completion-sound') !== 'false';
+      __mark(`sound check: enabled=${soundEnabled}`);
       if (soundEnabled) {
+        __mark('chime fire-and-forget: import() started');
         void import('@/lib/electron-bridge').then(({ playCompletionSound, flashTaskbar }) => {
-          void playCompletionSound();
+          __mark('chime: import() resolved');
+          void playCompletionSound().then(() => __mark('chime: playCompletionSound() resolved'));
           void flashTaskbar();
         });
       }
 
+      __mark('setSourceAnalysisResults');
       setSourceAnalysisResults(prev => ({ ...prev, [newSource.id]: analysisData }));
 
       const updatedSources = sources.map(s => ({ ...s, active: false }));
+      __mark('setSources');
       setSources([...updatedSources, newSource]);
       setActiveSource(newSource);
       setPendingSource(newSource);
       setPreScanStats(stats);
       setLastAnalysisElapsed(Math.floor((Date.now() - analysisStartTimeRef.current) / 1000));
+      __mark('setShowPreScanConfirm(true)');
       setShowPreScanConfirm(true);
 
+      __mark('toast.success');
       toast.success(`Analyzed ${analysisData.totalFiles.toLocaleString()} files`);
+      __mark('end of analyze-complete handler (React commit pending)');
       } else if (result.code === 'DESTINATION_OFFLINE') {
         // The Library Drive in the user's persisted settings isn't
         // reachable on disk right now (unplugged, NAS offline, USB
