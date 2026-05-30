@@ -1877,7 +1877,19 @@ const handleActivateLicense = () => {
     });
     setActiveSource(null);
     setIsComplete(false);
-    setShowSourceTypeSelector(true);
+    // v2.0.15 (Terry 2026-05-30) — mirror handleAddSource: open the
+    // unified folder browser (handles folders + drives + ZIP/RAR in
+    // one source-agnostic picker) instead of the legacy "Select
+    // Source Type" two-button modal. Falls back to the legacy modal
+    // only in non-Electron contexts (web demo).
+    if (isElectron()) {
+      setFolderBrowserCallback(() => (path: string) => {
+        handleUnifiedSourceSelected(path);
+      });
+      setShowFolderBrowser(true);
+    } else {
+      setShowSourceTypeSelector(true);
+    }
     // NOTE: destinationPath is NOT cleared even when all sources are
     // removed. The Library Drive is independent of sources — to switch
     // drives the user goes through the LDM. Pre-v2.0.11 these three
@@ -2347,10 +2359,18 @@ const handleSelectSourceType = async (type: 'folderOrDrive' | 'zip') => {
       setPendingSource(null);
       setActiveSource(null);
 
-      // Reopen OS picker
+      // v2.0.15 (Terry 2026-05-30) — open the unified folder browser
+      // instead of the legacy "Select Source Type" modal. Same change
+      // as in handleChangeSource — see notes there.
       setTimeout(() => {
-        // Show source type selector first
-        setShowSourceTypeSelector(true);
+        if (isElectron()) {
+          setFolderBrowserCallback(() => (path: string) => {
+            handleUnifiedSourceSelected(path);
+          });
+          setShowFolderBrowser(true);
+        } else {
+          setShowSourceTypeSelector(true);
+        }
       }, 0);
     }
   };
