@@ -419,15 +419,21 @@ async function collectFilenames(dirPath: string, maxDepth: number = 6, currentDe
 }
 
 export async function generateCatalogue(destinationPath: string): Promise<{ csv: string; txt: string }> {
+  // v2.0.15 (Terry 2026-05-30) — per-phase timing so we can see
+  // EXACTLY which step in catalogue generation is the freeze culprit.
+  const trace = (label: string, t: number) => console.log(`[fix-end-trace]   generateCatalogue.${label}: ${Date.now() - t}ms`);
   const reportsDir = getReportsDirectory();
   if (!fs.existsSync(reportsDir)) return { csv: '', txt: '' };
 
   // 1. Scan destination ONCE to build a fast lookup of every filename on disk
+  const tCollect = Date.now();
   const existingFiles = fs.existsSync(destinationPath)
     ? await collectFilenames(destinationPath)
     : new Set<string>();
+  trace(`collectFilenames (${existingFiles.size} names)`, tCollect);
 
   // 2. Load all reports targeting this destination
+  const tLoad = Date.now();
   const reportFiles = fs.readdirSync(reportsDir).filter(f => f.endsWith('.json'));
   const matchingReports: FixReport[] = [];
 
@@ -443,9 +449,11 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
       }
     } catch { /* skip corrupt reports */ }
   }
+  trace(`load ${reportFiles.length} reports (${matchingReports.length} matching)`, tLoad);
 
   // Sort oldest first so catalogue reads chronologically
   matchingReports.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const tBuild = Date.now();
 
   // 3. Build CSV + TXT
   const csvHeaders = [
@@ -564,12 +572,16 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
     }
   }
 
+  trace(`build rows (${csvRows.length} csvRows, ${txtLines.length} txtLines)`, tBuild);
+
   // Finalise CSV
+  const tJoin = Date.now();
   let csvContent = [csvHeaders.join(','), ...csvRows].join('\n');
   csvContent += `\n\n# PDR Catalogue — ${totalProcessed} files across ${matchingReports.length} fix runs, ${totalDuplicates} duplicates skipped`;
   if (totalRemoved > 0) {
     csvContent += `, ${totalRemoved} files no longer at destination`;
   }
+  trace(`join CSV (${(csvContent.length / 1024 / 1024).toFixed(2)} MB)`, tJoin);
 
   // Finalise TXT
   txtLines.push('');
@@ -593,18 +605,25 @@ export async function generateCatalogue(destinationPath: string): Promise<{ csv:
 
 /** Write PDR_Catalogue.csv and PDR_Catalogue.txt to destination root */
 export async function writeCatalogue(destinationPath: string): Promise<{ success: boolean; error?: string }> {
+  const trace = (label: string, t: number) => console.log(`[fix-end-trace]   writeCatalogue.${label}: ${Date.now() - t}ms`);
   try {
     if (!fs.existsSync(destinationPath)) {
       return { success: false, error: 'Destination not found' };
     }
 
+    const tGen = Date.now();
     const { csv, txt } = await generateCatalogue(destinationPath);
+    trace('generateCatalogue', tGen);
 
     if (csv) {
+      const tCsv = Date.now();
       fs.writeFileSync(path.join(destinationPath, 'PDR_Catalogue.csv'), csv, 'utf-8');
+      trace(`writeFileSync CSV (${(csv.length / 1024 / 1024).toFixed(2)} MB)`, tCsv);
     }
     if (txt) {
+      const tTxt = Date.now();
       fs.writeFileSync(path.join(destinationPath, 'PDR_Catalogue.txt'), txt, 'utf-8');
+      trace(`writeFileSync TXT (${(txt.length / 1024 / 1024).toFixed(2)} MB)`, tTxt);
     }
 
     return { success: true };

@@ -75,11 +75,16 @@ export async function indexFixRun(
 ): Promise<{ success: boolean; runId?: number; fileCount?: number; error?: string }> {
   indexCancelled = false;
 
+  // v2.0.15 (Terry 2026-05-30) — fix-end freeze diagnostics.
+  const __ifT0 = Date.now();
+  const __trace = (label: string, t: number) => console.log(`[fix-end-trace]   indexFixRun.${label}: ${Date.now() - t}ms`);
   try {
     // Init reverse geocoder (loads geodata on first call — now async +
     // yielding so main stays responsive while the multi-MB cities.json
     // is read, parsed and KD-tree-built).
+    const tGeo = Date.now();
     await initGeocoder();
+    __trace('initGeocoder', tGeo);
 
     // Ensure DB is ready
     const dbResult = initDatabase();
@@ -108,9 +113,12 @@ export async function indexFixRun(
     }
 
     // Read EXIF from each destination file and build records
+    const tExifInit = Date.now();
     const et = getExifTool();
+    __trace('getExifTool (spawn)', tExifInit);
     const records: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'>[] = [];
 
+    const tExifLoop = Date.now();
     try {
       onProgress?.({ phase: 'reading-exif', current: 0, total, currentFile: '' });
 
@@ -166,17 +174,23 @@ export async function indexFixRun(
         }
       }
     } finally {
+      __trace(`EXIF loop (${total} files)`, tExifLoop);
       // Always shut down ExifTool after the EXIF-reading phase completes
       // to free the spawned process — don't leave it running between index runs
+      const tShut = Date.now();
       await shutdownIndexerExiftool();
+      __trace('shutdownIndexerExiftool', tShut);
     }
 
     // Batch insert
+    const tInsert = Date.now();
     onProgress?.({ phase: 'inserting', current: 0, total: records.length, currentFile: '' });
     const inserted = insertFiles(runId, records);
     updateRunFileCount(runId, inserted);
+    __trace(`insertFiles + updateRunFileCount (${inserted} records)`, tInsert);
 
     onProgress?.({ phase: 'complete', current: inserted, total: inserted, currentFile: '' });
+    __trace('TOTAL', __ifT0);
 
     return { success: true, runId, fileCount: inserted };
   } catch (err) {

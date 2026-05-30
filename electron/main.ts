@@ -4484,15 +4484,25 @@ function calculateBufferHash(buffer: Buffer): string {
 }
 
 ipcMain.handle('report:save', async (_event, reportData: Omit<FixReport, 'id' | 'timestamp'>) => {
+  // v2.0.15 (Terry 2026-05-30) — fix-end freeze diagnostics. Times
+  // each phase so we can pinpoint what's blocking main between Fix
+  // Complete modal appearing and the chime/toast firing. Grep
+  // main.log for [fix-end-trace] to read the timeline.
+  const t0 = Date.now();
+  const trace = (label: string, since: number) => console.log(`[fix-end-trace] ${label}: ${Date.now() - since}ms`);
   try {
+    const tSave = Date.now();
     const savedReport = await saveReport(reportData);
+    trace('saveReport', tSave);
 
     // Auto-catalogue: write cumulative PDR_Catalogue.csv/txt to destination root
     const settings = getSettings();
     console.log('[Catalogue] autoSaveCatalogue:', settings.autoSaveCatalogue, 'destinationPath:', savedReport.destinationPath);
     if (settings.autoSaveCatalogue && savedReport.destinationPath) {
       try {
+        const tCat = Date.now();
         const catResult = await writeCatalogue(savedReport.destinationPath);
+        trace('writeCatalogue total', tCat);
         console.log('[Catalogue] Write result:', catResult);
       } catch (catErr) {
         console.error('[Catalogue] Write failed (non-fatal):', catErr);
@@ -4501,6 +4511,7 @@ ipcMain.handle('report:save', async (_event, reportData: Omit<FixReport, 'id' | 
       console.log('[Catalogue] Skipped — setting off or no destination');
     }
 
+    trace('report:save TOTAL', t0);
     return { success: true, data: savedReport };
   } catch (error) {
     return { success: false, error: (error as Error).message };
