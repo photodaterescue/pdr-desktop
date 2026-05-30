@@ -7553,6 +7553,32 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     return () => window.removeEventListener('pdr:fix:restore', handler);
   }, []);
 
+  // v2.0.15 (Terry 2026-05-30) — broadcast whether the modal is
+  // currently visible so the main-window TitleBar's FixStatusChip
+  // can hide itself while the modal is open. Without this the chip
+  // duplicated the modal's "Fix · Preparing · X checked · Ys" status
+  // — same data, two surfaces. PM / Date Editor / Viewer chips
+  // ignore this event because the modal doesn't live in those windows.
+  // Visible = the modal is actually rendered (in-progress + not
+  // minimised). On the complete screen the modal is still rendered
+  // but the chip should also stay hidden until the user dismisses.
+  const modalVisible = !fixMinimized;
+  useEffect(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('pdr:fix:modalVisible', { detail: { visible: modalVisible } }));
+    } catch { /* best-effort */ }
+  }, [modalVisible]);
+  // On unmount (Fix done + modal dismissed) — explicitly tell the
+  // chip it can take over again. Belt-and-braces with the inProgress
+  // state going false.
+  useEffect(() => {
+    return () => {
+      try {
+        window.dispatchEvent(new CustomEvent('pdr:fix:modalVisible', { detail: { visible: false } }));
+      } catch { /* best-effort */ }
+    };
+  }, []);
+
   // Broadcast progress cross-window so PM (separate window) renders
   // a real chip. THROTTLED to once per ~250ms — without throttling,
   // a 391-file fix kicks off ~500+ IPC round-trips for progress

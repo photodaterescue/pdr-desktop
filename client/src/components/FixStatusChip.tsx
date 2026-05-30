@@ -51,7 +51,29 @@ export function FixStatusChip({ interactive = false }: { interactive?: boolean }
     return () => { cancelled = true; unsubscribe(); };
   }, [inProgress]);
 
+  // v2.0.15 (Terry 2026-05-30) — in the main window, the
+  // FixProgressModal is rendered IN ADDITION to this chip. Showing
+  // both at the same time duplicates the same status info on two
+  // surfaces (titlebar chip + centre modal). The modal dispatches
+  // 'pdr:fix:modalVisible' { visible: bool } so the main-window
+  // chip can hide while the modal is open. PM / Date Editor /
+  // Viewer chips (interactive=false) ignore this and stay visible
+  // because the modal doesn't live in their window.
+  const [modalVisible, setModalVisible] = useState(false);
+  useEffect(() => {
+    if (!interactive) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ visible: boolean }>).detail;
+      setModalVisible(!!detail?.visible);
+    };
+    window.addEventListener('pdr:fix:modalVisible', handler as EventListener);
+    return () => window.removeEventListener('pdr:fix:modalVisible', handler as EventListener);
+  }, [interactive]);
+
   if (!inProgress) return null;
+  // Hide the chip when the modal is currently visible in this same
+  // window — it's redundant with the modal's own header status.
+  if (interactive && modalVisible) return null;
 
   const phase = progress?.phase;
   const label = phase === 'prescan'
