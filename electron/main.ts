@@ -4599,6 +4599,7 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
     const existingHashes = new Map<string, string>(); // hash -> filename
     const existingHeuristics = new Map<string, string>(); // "filename|size" -> filename
     let totalFiles = 0;
+    let fsScannedCount = 0; // v2.0.15 — only counts FS-walked files (not DB-loaded). Drives the renderer's "X files checked" progress text so the user doesn't see "72,750 checked" for what was really a 42-file walk.
     let dbServed = 0;
     let fsHashed = 0;
 
@@ -4698,10 +4699,16 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
             // Skip files we can't stat
           }
 
-          // Yield every 50 files
+          // Yield every 50 files. Progress event reports fsScannedCount
+          // (NOT totalFiles) so the renderer's "X files checked" only
+          // ticks for the genuinely-new files we're hashing — not the
+          // tens of thousands the DB pre-load already covered. Without
+          // this, a Fix adding 42 new files showed "72,750 checked"
+          // and looked like a full filesystem scan.
+          fsScannedCount++;
           if (totalFiles % 50 === 0) {
             await yieldToEventLoop();
-            mainWindow?.webContents.send('destination:prescan:progress', { scanned: totalFiles });
+            mainWindow?.webContents.send('destination:prescan:progress', { scanned: fsScannedCount });
           }
         }
       }

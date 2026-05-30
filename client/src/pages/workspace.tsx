@@ -7993,7 +7993,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               <Progress value={progress} className="h-2" />
               <p className="text-xs text-muted-foreground text-left pt-1">
                 {isPrescanning
-                  ? `Scanning destination${prescanCount > 0 ? ` (${prescanCount.toLocaleString()} files checked)` : ''}...`
+                  ? `Scanning destination for new files${prescanCount > 0 ? ` (${prescanCount.toLocaleString()} new)` : ''}...`
                   : copyPhase === 'mirror'
                     ? `Network upload in progress${mirrorFilesTotal > 0 ? ` · ${mirrorFilesDone.toLocaleString()} of ${mirrorFilesTotal.toLocaleString()} files mirrored` : ''}…`
                     : `${processed} of ${totalFiles} files processed`

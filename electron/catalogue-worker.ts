@@ -27,17 +27,19 @@
  * worker, so the Fix Complete modal and chime fire instantly.
  */
 
-import { parentPort } from 'worker_threads';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// utility-process worker uses process.parentPort (Electron's IPC) not
-// the worker_threads parentPort. Use whichever exists. Fall back to
-// process.parentPort for utilityProcess context.
+// utility-process worker uses Electron's process.parentPort (NOT
+// worker_threads.parentPort — that import would also work but is
+// unrelated to the utility-process IPC channel). Skip the
+// worker_threads import entirely: in a utilityProcess context the
+// module is present but its parentPort is always null, and grabbing
+// it caused confusion when debugging silent-no-op failures.
 type AnyPort = { on: (ev: string, cb: (msg: any) => void) => void; postMessage: (m: any) => void };
-const port: AnyPort | undefined =
-  (parentPort as unknown as AnyPort | null) ??
-  ((process as unknown as { parentPort?: AnyPort }).parentPort);
+const port: AnyPort | undefined = (process as unknown as { parentPort?: AnyPort }).parentPort;
+
+console.log(`[catalogue-worker] booted (port=${port ? 'OK' : 'MISSING'}, pid=${process.pid})`);
 
 interface FileChange {
   originalFilename: string;
