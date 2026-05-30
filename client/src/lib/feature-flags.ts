@@ -47,16 +47,18 @@ export function isEditDatesEnabled(): boolean {
 
 /**
  * Whether photo-format conversion (PNG / JPG output) is offered in the
- * Output card. Returns true in dev builds and any non-release
- * production build. Returns false for the v2.0.0 release-gated build:
- * the conversion path has a memory / responsiveness regression on
- * large Takeouts that we couldn't pin down before ship, so the
- * dropdown is greyed off and the fix is forced to use the
- * originals-only path. Re-enabled in v2.1.0 once we've profiled
- * the conversion-worker child-process path against real workloads.
+ * Output card.
+ *
+ * v2.0.15 (Terry 2026-05-30): unlocked unconditionally — the
+ * conversion path now runs in a forked utilityProcess so its libvips
+ * memory pool is reclaimed on exit, and we've added aggregate
+ * [Convert] timing logs (batches, wall-clock, avg ms/file) so we can
+ * measure conversion speed on real workloads in the field. Originally
+ * gated off in v2.0.0 because the inline path leaked memory across
+ * 7,000+ conversions; that's no longer the architecture.
  */
 export function isFormatConversionEnabled(): boolean {
-  return RELEASE_GATE !== 'release';
+  return true;
 }
 
 /**

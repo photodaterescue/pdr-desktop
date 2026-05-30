@@ -5076,6 +5076,19 @@ ipcMain.handle('files:copy', async (_event, data: {
     // Track actual completed files for accurate progress
     let completedFiles = 0;
 
+    // v2.0.15 (Terry 2026-05-30) — conversion-speed telemetry. The
+    // photo-format gate is now open in release builds, so we need
+    // hard numbers to optimise against: total wall-clock spent in
+    // conversion, number of batches, number of files converted, and
+    // an average ms/file figure. Each [Convert] line in main.log is
+    // searchable; the aggregate '[Convert] Phase complete' line below
+    // is what we'll grep for after a real Fix to see whether the
+    // utilityProcess fork is genuinely fast enough.
+    let convertTotalWallMs = 0;
+    let convertBatchCount = 0;
+    let convertFilesProcessed = 0;
+    const convertPhaseStartedAt = Date.now();
+
     // Flush pending conversions via a freshly-forked child process.
     // The child receives the batch, runs sharp with controlled
     // parallelism, posts task-done messages back as each completes
@@ -5084,7 +5097,9 @@ ipcMain.handle('files:copy', async (_event, data: {
     const flushConversions = async () => {
       if (pendingConversions.length === 0) return;
       const batch = pendingConversions.splice(0, pendingConversions.length);
-      console.log(`[Convert] Flushing batch of ${batch.length} conversions to a child process`);
+      const batchStartedAt = Date.now();
+      convertBatchCount++;
+      console.log(`[Convert] Flushing batch #${convertBatchCount} of ${batch.length} conversions to a child process`);
 
       // Map task input to a string path. Buffers (small in-memory
       // zip extracts) get spilled to a temp file first; the child
@@ -5265,6 +5280,13 @@ ipcMain.handle('files:copy', async (_event, data: {
         // sees the progress bar move in real time as each conversion
         // lands rather than in batch-sized jumps.
       }
+
+      const batchWallMs = Date.now() - batchStartedAt;
+      const succeeded = batchResults.filter(r => r.status === 'fulfilled').length;
+      convertTotalWallMs += batchWallMs;
+      convertFilesProcessed += batch.length;
+      const avgPerFile = batch.length > 0 ? Math.round(batchWallMs / batch.length) : 0;
+      console.log(`[Convert] Batch #${convertBatchCount} wall-clock ${batchWallMs}ms — ${succeeded}/${batch.length} ok, avg ${avgPerFile}ms/file`);
 
       await yieldToEventLoop();
     };
@@ -5569,6 +5591,16 @@ ipcMain.handle('files:copy', async (_event, data: {
 
     // Flush any remaining queued conversions (EXIF is written inside flushConversions)
     await flushConversions();
+
+    // v2.0.15 — aggregate conversion telemetry. Logged unconditionally
+    // even when 0 conversions happened (originals-only Fix) so we can
+    // tell apart "no convert phase" from "convert phase silently
+    // broken". Wall-clock totals are the sum of the per-batch wall
+    // clocks; phase-elapsed is the gap from the first batch flush to
+    // the last (includes time spent queuing between flushes).
+    const convertPhaseElapsed = Date.now() - convertPhaseStartedAt;
+    const avgOverall = convertFilesProcessed > 0 ? Math.round(convertTotalWallMs / convertFilesProcessed) : 0;
+    console.log(`[Convert] Phase complete — batches=${convertBatchCount}, files=${convertFilesProcessed}, wall=${convertTotalWallMs}ms, phase-elapsed=${convertPhaseElapsed}ms, avg=${avgOverall}ms/file`);
 
     // ── Mirror staging → real destination ──────────────────────────
     // If we wrote to staging, push the whole tree to the real
