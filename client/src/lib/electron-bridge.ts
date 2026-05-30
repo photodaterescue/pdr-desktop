@@ -430,11 +430,46 @@ export function onFixProgress(callback: (payload: FixProgressPayload) => void): 
   return () => {};
 }
 
+// v2.0.15 (Terry 2026-05-30) — was a main-process IPC that spawned
+// PowerShell to play the WAV file. PowerShell startup on Windows
+// takes 3–5 seconds (longer with AV interference), so users heard
+// the chime ~7 seconds after a fix or analysis completed. The
+// renderer has direct HTML5 Audio access to the same asset, which
+// plays instantly. Cached audio instance is preloaded once on first
+// call so subsequent chimes don't re-fetch the WAV.
+let _completionAudio: HTMLAudioElement | null = null;
+function getCompletionAudio(): HTMLAudioElement | null {
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
+  if (_completionAudio) return _completionAudio;
+  try {
+    _completionAudio = new Audio('./assets/pdr_success_bell.wav');
+    _completionAudio.preload = 'auto';
+    return _completionAudio;
+  } catch {
+    return null;
+  }
+}
+
 export async function playCompletionSound(): Promise<void> {
+  const audio = getCompletionAudio();
+  if (audio) {
+    try {
+      // Rewind so successive chimes always start from the top.
+      audio.currentTime = 0;
+      // play() returns a promise that resolves when playback starts;
+      // we don't await it because the chime should fire-and-forget.
+      void audio.play().catch(() => { /* autoplay blocked or device busy */ });
+      return;
+    } catch { /* fall through to IPC fallback */ }
+  }
+  // Fallback for non-renderer contexts (or if Audio construction
+  // failed): keep the old IPC route as a safety net. Slower because
+  // it spawns PowerShell, but better than no chime.
   if (isElectron() && (window as any).pdr?.playCompletionSound) {
     try {
       await (window as any).pdr.playCompletionSound();
-    } catch (e) {
+    } catch {
+      // eslint-disable-next-line no-console
       console.log('Could not play completion sound');
     }
   }

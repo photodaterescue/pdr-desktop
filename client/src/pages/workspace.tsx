@@ -1106,26 +1106,39 @@ const handleActivateLicense = () => {
   const [showClearSourcesPrompt, setShowClearSourcesPrompt] = useState(false);
 
   // After a Fix completes, once the user has dismissed all post-fix
-  // modals (Reports list + individual Report view), decide what to do
-  // with the source list based on the Settings → Workspace toggle:
+  // modals (Reports list + individual Report view), decide what to
+  // do with the source list:
   //
-  //   clearSourcesAfterFix === true  → auto-clear, no prompt
-  //   clearSourcesAfterFix === false → leave sources, no prompt
+  //   clearSourcesAfterFix === true  → auto-clear, NO prompt
+  //                                    (power-user opt-out — fastest path)
+  //   clearSourcesAfterFix === false → SHOW prompt each time
+  //                                    (default — preserves "I just
+  //                                    analysed this source, don't
+  //                                    make me redo it" safety)
   //
-  // v2.0.15 (Terry 2026-05-30) — previously the prompt fired
-  // unconditionally regardless of the toggle, so the setting did
-  // nothing visible. Now the setting is the single source of truth
-  // and the prompt is retired (the toggle IS the decision; asking
-  // again every Fix is redundant noise).
+  // v2.0.15 (Terry 2026-05-30, revised) — first pass dropped the
+  // modal entirely when the setting was off; Terry pointed out that
+  // analysing a source can be slow and silently dropping it after
+  // every Fix is annoying. The setting now means "skip the prompt
+  // because I already know what I want" — default off means the
+  // modal still appears.
   useEffect(() => {
     if (postFixFlowActive && !showReportsList && !showPostFixReport) {
       setPostFixFlowActive(false);
       getSettings().then((settings) => {
         if (settings.clearSourcesAfterFix) {
+          // Opt-out: skip the prompt and clear immediately.
           setHasCompletedFix(false);
           window.dispatchEvent(new CustomEvent('pdr-clear-sources'));
+        } else {
+          // Default: ask each time so the user can keep the analysed
+          // source around if they want to act on it again.
+          setShowClearSourcesPrompt(true);
         }
-      }).catch(() => { /* best-effort — leave sources if settings read fails */ });
+      }).catch(() => {
+        // Settings read failed — default to safe behaviour (show prompt).
+        setShowClearSourcesPrompt(true);
+      });
     }
   }, [postFixFlowActive, showReportsList, showPostFixReport]);
   const [showSlowStorageWarning, setShowSlowStorageWarning] = useState(false);
@@ -12249,8 +12262,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   </label>
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Clear sources after fix</span>
-                      <span className="text-xs text-muted-foreground">Automatically remove sources from the sidebar after a fix completes</span>
+                      <span className="text-sm font-medium text-foreground">Auto-clear sources after fix</span>
+                      <span className="text-xs text-muted-foreground">Skip the "Clear sources?" prompt and remove sources automatically once a fix finishes. Off by default — keeps the prompt so you can hold onto a slow-to-analyse source for another run.</span>
                     </div>
                     <Checkbox
                       checked={clearSourcesAfterFix}
