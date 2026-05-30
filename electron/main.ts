@@ -2719,7 +2719,7 @@ ipcMain.handle('recycle:restore', async (_event, fileIds: number[]) => {
   }
 });
 
-ipcMain.handle('recycle:permanentDelete', async (_event, fileIds: number[]) => {
+ipcMain.handle('recycle:permanentDelete', async (_event, fileIds: number[], skipOsBin: boolean = false) => {
   if (!fileIds || fileIds.length === 0) return { success: true, removed: 0, failed: [] };
   try {
     // Resolve file paths first — once we delete from the index they're gone.
@@ -2732,25 +2732,34 @@ ipcMain.handle('recycle:permanentDelete', async (_event, fileIds: number[]) => {
 
     const failed: { id: number; error: string }[] = [];
     const trashedIds: number[] = [];
-    console.log(`[recycle:permanentDelete] processing ${rows.length} file(s)`);
+    // v2.0.15 (Terry 2026-05-30) — skipOsBin=true takes the file
+    // straight to fs.unlink, bypassing the OS Recycle Bin. The OS
+    // bin keeps a full byte-for-byte copy until emptied so it
+    // doesn't free disk space; users emptying PDR's own bin to
+    // reclaim space need the true-delete path, not a copy shuffle.
+    console.log(`[recycle:permanentDelete] processing ${rows.length} file(s) — skipOsBin=${skipOsBin}`);
     for (const row of rows) {
       try {
-        // v2.0.15 (Terry 2026-05-30) — strip Windows long-path
-        // prefix (\\?\) before calling shell.trashItem. Electron's
-        // shell.trashItem on Windows uses IFileOperation, which
-        // chokes on the long-path prefix and throws "Failed to move
-        // item to trash" with no further detail. The PDR analysis
-        // pipeline writes \\?\-prefixed paths into the DB for files
-        // on long-pathed library drives; normalising the prefix off
-        // here lets trashItem accept them. The fs.existsSync check
-        // accepts either form so it stays accurate.
+        // Strip Windows long-path prefix (\\?\) before calling
+        // shell.trashItem. Electron's shell.trashItem on Windows uses
+        // IFileOperation, which chokes on the long-path prefix and
+        // throws "Failed to move item to trash" with no further
+        // detail. The PDR analysis pipeline writes \\?\-prefixed
+        // paths into the DB for files on long-pathed library drives;
+        // normalising the prefix off here lets trashItem accept them.
+        // The fs.existsSync check accepts either form so it stays
+        // accurate. fs.promises.unlink also handles either form.
         const normalised = row.file_path.replace(/^\\\\\?\\/, '');
         if (!fs.existsSync(normalised)) {
           console.log(`[recycle:permanentDelete] file already gone, dropping index row only: ${normalised}`);
           trashedIds.push(row.id);
           continue;
         }
-        await shell.trashItem(normalised);
+        if (skipOsBin) {
+          await fs.promises.unlink(normalised);
+        } else {
+          await shell.trashItem(normalised);
+        }
         trashedIds.push(row.id);
       } catch (e) {
         const msg = (e as Error).message || String(e);
@@ -2759,7 +2768,7 @@ ipcMain.handle('recycle:permanentDelete', async (_event, fileIds: number[]) => {
       }
     }
     const removed = deleteIndexedFiles(trashedIds);
-    console.log(`[recycle:permanentDelete] done — removed=${removed}, failed=${failed.length}`);
+    console.log(`[recycle:permanentDelete] done — removed=${removed}, failed=${failed.length}, skipOsBin=${skipOsBin}`);
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('recycle:changed', { kind: 'permanentDelete', count: removed });
     }

@@ -2681,9 +2681,9 @@ export async function restoreFromRecycleBin(fileIds: number[]): Promise<{ succes
   try { return await (window as any).pdr?.recycle?.restore(fileIds); } catch (e) { return { success: false, error: (e as Error).message }; }
 }
 
-export async function permanentDeleteFromRecycleBin(fileIds: number[]): Promise<{ success: boolean; removed?: number; failed?: { id: number; error: string }[]; error?: string }> {
+export async function permanentDeleteFromRecycleBin(fileIds: number[], skipOsBin: boolean = false): Promise<{ success: boolean; removed?: number; failed?: { id: number; error: string }[]; error?: string }> {
   if (!isElectron()) return { success: false };
-  try { return await (window as any).pdr?.recycle?.permanentDelete(fileIds); } catch (e) { return { success: false, error: (e as Error).message }; }
+  try { return await (window as any).pdr?.recycle?.permanentDelete(fileIds, skipOsBin); } catch (e) { return { success: false, error: (e as Error).message }; }
 }
 
 export async function listRecycleBin(): Promise<{ success: boolean; data?: RecycleBinEntry[]; error?: string }> {

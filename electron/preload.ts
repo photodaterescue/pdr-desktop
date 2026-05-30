@@ -694,7 +694,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   recycle: {
     move: (fileIds: number[]) => ipcRenderer.invoke('recycle:move', fileIds),
     restore: (fileIds: number[]) => ipcRenderer.invoke('recycle:restore', fileIds),
-    permanentDelete: (fileIds: number[]) => ipcRenderer.invoke('recycle:permanentDelete', fileIds),
+    permanentDelete: (fileIds: number[], skipOsBin?: boolean) => ipcRenderer.invoke('recycle:permanentDelete', fileIds, skipOsBin === true),
     list: () => ipcRenderer.invoke('recycle:list'),
     count: () => ipcRenderer.invoke('recycle:count'),
     onChanged: (callback: (info: { kind: string; count: number }) => void) => {

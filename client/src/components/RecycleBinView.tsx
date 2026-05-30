@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { Checkbox } from '@/components/ui/checkbox';
 
 function formatRecycledOn(iso: string | null): string {
   if (!iso) return '';
@@ -68,6 +69,12 @@ export default function RecycleBinView({
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [confirmEmptyOpen, setConfirmEmptyOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // v2.0.15 (Terry 2026-05-30) — Skip OS Recycle Bin opt-in.
+  // OFF (default) → files are sent to the Windows OS Recycle Bin
+  // (recoverable, but doesn't reclaim disk space until that bin
+  // is emptied). ON → files are unlink()'d immediately — frees
+  // disk space NOW, but cannot be recovered.
+  const [skipOsRecycleBin, setSkipOsRecycleBin] = useState(false);
 
   // v2.0.15 (Terry 2026-05-30) — zoom-pill state mirrored from
   // MemoriesView / AlbumsView. 0-100 slider maps to a 120-360px
@@ -193,14 +200,15 @@ export default function RecycleBinView({
     }
   };
 
-  const doPermanentDelete = async (ids: number[]) => {
+  const doPermanentDelete = async (ids: number[], skipOsBin: boolean = false) => {
     if (ids.length === 0) return;
     setBusy(true);
-    const r = await permanentDeleteFromRecycleBin(ids);
+    const r = await permanentDeleteFromRecycleBin(ids, skipOsBin);
     setBusy(false);
     if (r.success) {
       const removed = r.removed ?? ids.length;
       const failed = r.failed?.length ?? 0;
+      const target = skipOsBin ? 'deleted from disk' : 'sent to Trash';
       if (failed > 0) {
         // Surface the first failure's reason so the user has a clue
         // what went wrong — and log the full list to the console for
@@ -208,9 +216,11 @@ export default function RecycleBinView({
         const firstReason = r.failed?.[0]?.error ?? 'unknown';
         // eslint-disable-next-line no-console
         console.warn('[recycle] permanent-delete failures:', r.failed);
-        toast.warning(`Deleted ${removed}, ${failed} couldn’t be sent to Trash`, {
+        toast.warning(`Deleted ${removed}, ${failed} couldn’t be ${target}`, {
           description: `First reason: ${firstReason}. See main.log for the full list.`,
         });
+      } else if (skipOsBin) {
+        toast.success(removed === 1 ? 'Deleted from disk' : `Deleted ${removed} from disk`);
       } else {
         toast.success(removed === 1 ? 'Permanently deleted' : `Permanently deleted ${removed} item${removed === 1 ? '' : 's'}`);
       }
@@ -517,9 +527,27 @@ export default function RecycleBinView({
             <h3 className="text-base font-semibold text-foreground mb-2">
               Permanently delete {selected.size > 0 ? selected.size : entries.length} item{(selected.size > 0 ? selected.size : entries.length) === 1 ? '' : 's'}?
             </h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              The selected file{(selected.size > 0 ? selected.size : entries.length) === 1 ? '' : 's'} will be sent to your computer’s Recycle Bin. You can recover from there until you empty the OS Recycle Bin. PDR will remove the index entries and any album / face / tag links.
+            {/* v2.0.15 (Terry 2026-05-30) — truthful copy. By default
+                files go to the WINDOWS OS Recycle Bin via
+                shell.trashItem — recoverable from there, but disk
+                space is NOT reclaimed until that bin is emptied. The
+                checkbox below lets the user skip that safety net and
+                free the space immediately. */}
+            <p className="text-sm text-muted-foreground mb-3">
+              The selected file{(selected.size > 0 ? selected.size : entries.length) === 1 ? '' : 's'} will be sent to your computer’s Recycle Bin. You can recover from there until that bin is emptied — but disk space won’t be reclaimed until you do. PDR will remove the index entries and any album / face / tag links either way.
             </p>
+            <label className="flex items-start gap-2.5 p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors mb-4">
+              <Checkbox
+                checked={skipOsRecycleBin}
+                onCheckedChange={(v) => setSkipOsRecycleBin(!!v)}
+                className="mt-0.5"
+                data-testid="recycle-skip-os-bin"
+              />
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">Skip Windows Recycle Bin — free disk space now</span>
+                <span className="text-xs text-muted-foreground">Files are deleted directly from disk. You won’t be able to recover them from anywhere.</span>
+              </div>
+            </label>
             <div className="flex justify-end gap-2">
               <Button
                 variant="secondary"
@@ -535,13 +563,15 @@ export default function RecycleBinView({
                 onClick={async () => {
                   const ids = selected.size > 0 ? Array.from(selected) : entries.map(e => e.id);
                   setConfirmEmptyOpen(false);
-                  await doPermanentDelete(ids);
+                  await doPermanentDelete(ids, skipOsRecycleBin);
+                  // Reset for next time
+                  setSkipOsRecycleBin(false);
                 }}
                 disabled={busy}
                 data-testid="recycle-confirm-perm-delete"
               >
                 <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                Delete permanently
+                {skipOsRecycleBin ? 'Delete from disk' : 'Delete permanently'}
               </Button>
             </div>
           </div>
