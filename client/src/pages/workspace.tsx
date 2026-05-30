@@ -1106,12 +1106,26 @@ const handleActivateLicense = () => {
   const [showClearSourcesPrompt, setShowClearSourcesPrompt] = useState(false);
 
   // After a Fix completes, once the user has dismissed all post-fix
-  // modals (Reports list + individual Report view), surface the
-  // "Clear Sources?" prompt so they can decide whether to start fresh.
+  // modals (Reports list + individual Report view), decide what to do
+  // with the source list based on the Settings → Workspace toggle:
+  //
+  //   clearSourcesAfterFix === true  → auto-clear, no prompt
+  //   clearSourcesAfterFix === false → leave sources, no prompt
+  //
+  // v2.0.15 (Terry 2026-05-30) — previously the prompt fired
+  // unconditionally regardless of the toggle, so the setting did
+  // nothing visible. Now the setting is the single source of truth
+  // and the prompt is retired (the toggle IS the decision; asking
+  // again every Fix is redundant noise).
   useEffect(() => {
     if (postFixFlowActive && !showReportsList && !showPostFixReport) {
-      setShowClearSourcesPrompt(true);
       setPostFixFlowActive(false);
+      getSettings().then((settings) => {
+        if (settings.clearSourcesAfterFix) {
+          setHasCompletedFix(false);
+          window.dispatchEvent(new CustomEvent('pdr-clear-sources'));
+        }
+      }).catch(() => { /* best-effort — leave sources if settings read fails */ });
     }
   }, [postFixFlowActive, showReportsList, showPostFixReport]);
   const [showSlowStorageWarning, setShowSlowStorageWarning] = useState(false);
