@@ -4511,7 +4511,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 locked={!isLicensed}
               />
               <SidebarItem
-                icon={<CalendarRange className="w-4 h-4 opacity-70" />}
+                icon={<CalendarRange className="w-4 h-4" />}
                 label="Memories"
                 accent="amber"
                 onClick={() => {
@@ -4588,7 +4588,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                   the destructive-content surface without screaming
                   red the way a top-level "Delete" affordance would. */}
               <SidebarItem
-                icon={recycleBinIcon('w-4 h-4 opacity-70')}
+                icon={recycleBinIcon('w-4 h-4')}
                 label="Recycle Bin"
                 accent="rose"
                 onClick={() => {
