@@ -4596,7 +4596,12 @@ async function spawnCatalogueWorker(destinationPath: string): Promise<void> {
     console.warn('[Catalogue] worker file missing — skipping background catalogue regen');
     return;
   }
-  const reportsDir = path.join(app.getPath('userData'), 'pdr-reports');
+  // v2.0.15 (Terry 2026-05-31) — path was 'pdr-reports' which the
+  // catalogue worker logged as 'Reports dir not found' after every
+  // Fix. Real reports live in 'fix-reports' (see
+  // report-storage.ts:getReportsDirectory). One-line typo fix —
+  // catalogues are now regenerated correctly post-Fix.
+  const reportsDir = path.join(app.getPath('userData'), 'fix-reports');
   const tSpawn = Date.now();
   let w: Electron.UtilityProcess;
   try {
