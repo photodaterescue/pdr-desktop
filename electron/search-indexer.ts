@@ -634,15 +634,42 @@ export async function rebuildIndexFromLibraries(
             currentFile: filename,
           });
 
-          // Synthetic FileChange — there's no Fix report for these
-          // discovered files, so we hand buildFileRecord sensible
-          // defaults and let its EXIF logic (scanner detection,
-          // derived-date parsing, geocoding, etc.) do the rest.
+          // v2.0.15 (Terry 2026-05-31) — emergency fix for the
+          // EXIF self-laundering bug. The previous hardcoded
+          // confidence: 'confirmed' silently promoted every walked
+          // file — including ones PDR had earlier marked with
+          // _MK suffix because no real date could be determined —
+          // to "confirmed via embedded EXIF". On a subsequent
+          // re-index the user could no longer distinguish
+          // PDR-fallback dates from genuine ones. The 2026-05-17
+          // findExistingFilePaths fix only protected EXISTING DB
+          // rows; this code path still corrupted any file that
+          // got re-discovered (DB wipe, fresh install, manually
+          // copied into library, etc.).
+          //
+          // Now: read the confidence suffix PDR itself stamped
+          // into the renamed filename and preserve it. PDR's
+          // rename convention since v2.0.x is
+          //   <date>_<CF|RC|MK>(_NNN)?.<ext>
+          // where CF=confirmed, RC=recovered, MK=marked. If the
+          // file doesn't match the pattern (foreign filename, user
+          // manually dropped it in), fall back to 'marked' so we
+          // never falsely report it as confirmed.
+          const suffixMatch = filename.match(/_(CF|RC|MK)(?:_\d+)?\.[^.]+$/i);
+          const suffix = suffixMatch ? suffixMatch[1].toUpperCase() : null;
+          const derivedConfidence: 'confirmed' | 'recovered' | 'marked' =
+            suffix === 'CF' ? 'confirmed'
+            : suffix === 'RC' ? 'recovered'
+            : 'marked';
+          const derivedDateSource =
+            suffix === 'CF' ? 'embedded'
+            : suffix === 'RC' ? 'Filename pattern'
+            : 'unknown';
           const syntheticChange: FileChange = {
             newFilename: filename,
             originalFilename: '',
-            confidence: 'confirmed',
-            dateSource: 'embedded',
+            confidence: derivedConfidence,
+            dateSource: derivedDateSource,
           };
 
           try {
