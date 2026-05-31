@@ -5181,7 +5181,12 @@ ipcMain.handle('files:copy', async (_event, data: {
       const batchStartedAt = Date.now();
       convertBatchCount++;
       const batchIndex = convertBatchCount; // closed-over for per-file logs below
-      console.log(`[Convert] Flushing batch #${batchIndex} of ${batch.length} conversions to persistent worker`);
+      // v2.0.15 (Terry 2026-05-31) — per-batch "Flushing" log
+      // disabled for shipped builds. Was diagnostic during the
+      // perf-testing pass; for end users ~43 of these lines per
+      // 2,123-file Fix is pure noise in main.log. Re-enable when
+      // actively investigating a regression.
+      // console.log(`[Convert] Flushing batch #${batchIndex} of ${batch.length} conversions to persistent worker`);
 
       // Map task input to a string path. Buffers (small in-memory
       // zip extracts) get spilled to a temp file first; the child
@@ -5268,10 +5273,13 @@ ipcMain.handle('files:copy', async (_event, data: {
             lastMemSnapshot = msg.memUsage;
             if (typeof msg.inputBytes === 'number') batchInputBytes += msg.inputBytes;
             if (typeof msg.outputBytes === 'number') batchOutputBytes += msg.outputBytes;
-            // First-task latency landed — log once per batch.
+            // First-task latency landed — disabled for shipped
+            // builds. Useful only when actively diagnosing cold-
+            // start regressions. firstTaskAt is still set so the
+            // log can be re-enabled with one line.
             if (firstTaskAt === null) {
               firstTaskAt = Date.now();
-              log.info(`[Convert] Batch #${batchIndex} first-task latency: ${firstTaskAt - postAt}ms (post-message → first task-done; batch #1 includes fork + sharp load)`);
+              // log.info(`[Convert] Batch #${batchIndex} first-task latency: ${firstTaskAt - postAt}ms (post-message → first task-done; batch #1 includes fork + sharp load)`);
             }
             // v2.0.15 diagnostics — per-file rich log so a slow
             // outlier or a giant input doesn't get buried in the
@@ -5283,7 +5291,14 @@ ipcMain.handle('files:copy', async (_event, data: {
             const ratio = (inKB && outKB) ? (outKB / inKB).toFixed(2) : 'n/a';
             const memStr = msg.memUsage ? `mem=${msg.memUsage.rssMB}MB` : '';
             const status = msg.success ? 'ok' : `FAIL(${msg.error ?? 'unknown'})`;
-            log.info(`[Convert]   #${batchIndex}.${msg.id} ${status} dur=${msg.durationMs}ms in=${inKB ?? '?'}KB out=${outKB ?? '?'}KB ratio=${ratio} ${memStr} "${filename}"`);
+            // v2.0.15 — per-file rich log now only fires on
+            // FAILURE. The ~2,123 success lines per Fix were
+            // diagnostic noise. Failure lines are kept (as warn)
+            // because support genuinely needs to know which file
+            // broke if a user reports a conversion problem.
+            if (!msg.success) {
+              log.warn(`[Convert]   #${batchIndex}.${msg.id} ${status} dur=${msg.durationMs}ms in=${inKB ?? '?'}KB out=${outKB ?? '?'}KB ratio=${ratio} ${memStr} "${filename}"`);
+            }
             // Advance the progress bar live as each task lands.
             completedFiles++;
             if (mainWindow) {
@@ -5297,7 +5312,10 @@ ipcMain.handle('files:copy', async (_event, data: {
             const inMB = batchInputBytes / (1024 * 1024);
             const outMB = batchOutputBytes / (1024 * 1024);
             const throughputMBs = wallMs > 0 ? (inMB / (wallMs / 1000)).toFixed(2) : 'n/a';
-            log.info(`[Convert] Batch done — ${msg.succeeded}/${msg.total} succeeded, ${msg.failed} failed, in=${inMB.toFixed(1)}MB out=${outMB.toFixed(1)}MB throughput=${throughputMBs}MB/s${lastMemSnapshot ? `, child mem rss=${lastMemSnapshot.rssMB} MB heap=${lastMemSnapshot.heapUsedMB} MB external=${lastMemSnapshot.externalMB} MB` : ''}`);
+            // v2.0.15 — per-batch "Batch done" with throughput +
+            // memory disabled for shipped builds. The end-of-Fix
+            // phase-complete line is the headline summary we keep.
+            // log.info(`[Convert] Batch done — ${msg.succeeded}/${msg.total} succeeded, ${msg.failed} failed, in=${inMB.toFixed(1)}MB out=${outMB.toFixed(1)}MB throughput=${throughputMBs}MB/s${lastMemSnapshot ? `, child mem rss=${lastMemSnapshot.rssMB} MB heap=${lastMemSnapshot.heapUsedMB} MB external=${lastMemSnapshot.externalMB} MB` : ''}`);
             // Persistent worker — resolve immediately on batch-done.
             // No exit to wait for; the child stays alive for the
             // next batch.
@@ -5357,7 +5375,11 @@ ipcMain.handle('files:copy', async (_event, data: {
         const task = batch[b];
         const result = batchResults[b];
         if (result.status === 'fulfilled') {
-          console.log(`[Convert] Done: ${path.basename(task.convertedPath)}`);
+          // v2.0.15 — per-file "Done" log disabled for shipped
+          // builds; redundant with the per-file rich log (which
+          // now also only fires on failure). Saves another ~2,123
+          // lines per Fix.
+          // console.log(`[Convert] Done: ${path.basename(task.convertedPath)}`);
 
           const targetExt = task.format === 'jpg' ? '.jpg' : '.png';
           task.file.newFilename = task.finalFilename.replace(/\.[^.]+$/, targetExt);
@@ -5398,7 +5420,10 @@ ipcMain.handle('files:copy', async (_event, data: {
       convertTotalWallMs += batchWallMs;
       convertFilesProcessed += batch.length;
       const avgPerFile = batch.length > 0 ? Math.round(batchWallMs / batch.length) : 0;
-      console.log(`[Convert] Batch #${convertBatchCount} wall-clock ${batchWallMs}ms — ${succeeded}/${batch.length} ok, avg ${avgPerFile}ms/file`);
+      // v2.0.15 — per-batch wall-clock log disabled for shipped
+      // builds; the end-of-Fix phase-complete summary carries the
+      // headline avg ms/file we actually look at.
+      // console.log(`[Convert] Batch #${convertBatchCount} wall-clock ${batchWallMs}ms — ${succeeded}/${batch.length} ok, avg ${avgPerFile}ms/file`);
 
       await yieldToEventLoop();
     };
@@ -5598,7 +5623,11 @@ ipcMain.handle('files:copy', async (_event, data: {
         if (willConvert) {
           const targetExt = photoFormat === 'jpg' ? '.jpg' : '.png';
           const convertedPath = destPath.replace(/\.[^.]+$/, targetExt);
-          console.log(`[Convert] Queuing ${path.basename(file.sourcePath)} → ${path.basename(convertedPath)}`);
+          // v2.0.15 — per-file "Queuing" log disabled for shipped
+          // builds; pre-existing diagnostic that produced ~2,123
+          // lines per Fix without supporting any user-facing
+          // debugging story.
+          // console.log(`[Convert] Queuing ${path.basename(file.sourcePath)} → ${path.basename(convertedPath)}`);
 
           // v2.0.15 (Terry 2026-05-31) — pre-compute the EXIF date
           // string + source-label on the main thread (cheap), then
