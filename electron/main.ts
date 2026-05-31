@@ -4653,20 +4653,27 @@ ipcMain.handle('destination:prescan', async (_event, destinationPath: string) =>
     //
     // This matches the copy-loop rule applied to whichever side is
     // being read (source there, destination here).
+    // v2.0.15 (Terry 2026-05-31) — layered dedup model.
+    //   1. Source-side hash: still computed in-stream during the
+    //      copy loop (zero extra I/O, see streamCopyFile). Locks
+    //      every new file's identity into the index DB at the
+    //      moment it lands. Foundational, never disabled.
+    //   2. Destination side, file IS in index DB: use cached hash
+    //      from DB (instant — zero file I/O). Handled by the DB
+    //      pre-load below.
+    //   3. Destination side, file NOT in index DB: fall back to
+    //      filename+size HEURISTIC instead of re-hashing from disk.
+    //      Library files were already SHA-256'd when first added,
+    //      so re-hashing them every prescan was busy-work that
+    //      caused 80+ second prescan stalls when the destination
+    //      had hundreds of un-indexed files (Terry hit this with
+    //      Photo Format test folders he'd never indexed).
+    //   thoroughDuplicateMatching ON keeps the old "hash everything
+    //   in the destination from disk" behaviour for power users
+    //   who want maximum dedup accuracy at the cost of speed.
     const forceHash = settings.thoroughDuplicateMatching ?? false;
-    let useHash = forceHash;
-    if (!forceHash) {
-      try {
-        const destClass = classifySource(destinationPath);
-        useHash = destClass.type !== 'network' && destClass.type !== 'cloud-sync';
-      } catch (clsErr) {
-        // Classification failed — assume local (the common case) so
-        // hash dedup stays on rather than silently disabled.
-        useHash = true;
-        console.warn(`[Prescan] classifySource failed for destination; assuming local:`, clsErr);
-      }
-    }
-    console.log(`[Prescan] thoroughDuplicateMatching=${forceHash} → useHash=${useHash}`);
+    const useHash = forceHash;
+    console.log(`[Prescan] thoroughDuplicateMatching=${forceHash} → useHash=${useHash} (DB pre-load always uses cached hashes; fs-scan ${useHash ? 'hashes new files' : 'falls back to filename+size heuristic'})`);
     
     const existingHashes = new Map<string, string>(); // hash -> filename
     const existingHeuristics = new Map<string, string>(); // "filename|size" -> filename

@@ -88,7 +88,16 @@ interface FolderBrowserModalProps {
 }
 
 const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
-const MAX_SAVED_DESTINATIONS = 3;
+// v2.0.15 (Terry 2026-05-31) — bumped from 3 to 20. The list was
+// originally sized for a short picker-recents dropdown, but the
+// Library Drive Manager also reads from it as its source of
+// "drives in your library", and a cap of 3 meant any user who
+// tried out a few destinations (e.g. test folders for the Photo
+// Format converter) silently lost their real library from the
+// LDM as the test folders pushed it off. 20 gives plenty of
+// headroom for normal usage AND test cycles while still bounding
+// localStorage growth.
+const MAX_SAVED_DESTINATIONS = 20;
 
 function loadSavedDestinations(): string[] {
   try {
