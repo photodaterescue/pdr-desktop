@@ -45,15 +45,17 @@ import * as fs from 'fs';
 // image many times (we don't), but keeps memory bounded across many
 // distinct images (we do).
 sharp.cache(false);
-// v2.0.15 (Terry 2026-05-30) — libvips internal threads bumped from
-// 2 to 2 (unchanged) while the per-batch task parallelism in main
-// goes from 2 → 4. Net active threads per worker = 2 × 4 = 8, which
-// matches an 8-core machine without oversubscribing. The single-
-// libvips-thread + many-parallel-tasks split tends to dominate over
-// many-libvips-threads + few-parallel-tasks for the PNG encode
-// workload we measured (per-file 2–7s, dominated by zlib compression
-// inside libvips, which scales modestly with internal threads).
-sharp.concurrency(2);
+// v2.0.15 (Terry 2026-05-31) — sharp.concurrency dropped from 2 to
+// 1 to pair with the new dual-worker model: main spawns 2 worker
+// children and splits each batch across both. Per-task libvips
+// threads = 1 × per-worker parallelism (8) × workers (2) = 16
+// active threads — saturates an 8-core CPU with ~2× scheduling
+// headroom so I/O-blocking tasks don't leave a core idle. Each
+// task being single-threaded inside libvips removes the intra-task
+// mutex contention that was hurting the previous concurrency=2
+// path; on the PNG-encode workload (zlib DEFLATE dominating CPU)
+// many-single-threaded-tasks beats few-multi-threaded-tasks.
+sharp.concurrency(1);
 
 // ─── IPC types ─────────────────────────────────────────────────────────────
 
