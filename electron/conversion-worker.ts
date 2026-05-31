@@ -61,7 +61,12 @@ interface ConvertTask {
   id: number;
   input: string;            // absolute path to the input image
   output: string;           // absolute path to write the converted image
-  format: 'jpg' | 'png';
+  // v2.0.15 (Terry 2026-05-31) — WebP added as a fourth option in
+  // the dropdown. Lossless WebP is ~25% smaller than PNG with
+  // similar encode speed, and the format is supported by every
+  // modern browser/OS/photo app. JPG and PNG remain the defaults;
+  // WebP is the "modern, smaller files" alternative.
+  format: 'jpg' | 'png' | 'webp';
   // v2.0.15 (Terry 2026-05-31) — optional EXIF date metadata embedded
   // during the sharp encode instead of being written by a separate
   // post-batch exiftool pass. dateExif is the EXIF-formatted string
@@ -166,9 +171,18 @@ async function convertOne(task: ConvertTask, timeoutMs: number): Promise<TaskDon
     // typically 3–5× faster encode for ~10–15% larger output.
     // For PNG this is a quality-neutral trade (PNG is lossless at
     // every level) — only file size and encode speed change.
-    let pipeline = task.format === 'jpg'
-      ? sharp(task.input).jpeg({ quality: 92 })
-      : sharp(task.input).png({ compressionLevel: 1, effort: 1 });
+    // v2.0.15 — three encode paths: JPEG (lossy, smallest), PNG
+    // (lossless, largest), WebP (lossless mode here to match PNG's
+    // "no quality loss" guarantee, ~25% smaller files than PNG with
+    // similar encode speed at effort: 0, fastest).
+    let pipeline: import('sharp').Sharp;
+    if (task.format === 'jpg') {
+      pipeline = sharp(task.input).jpeg({ quality: 92 });
+    } else if (task.format === 'webp') {
+      pipeline = sharp(task.input).webp({ lossless: true, effort: 0 });
+    } else {
+      pipeline = sharp(task.input).png({ compressionLevel: 1, effort: 1 });
+    }
 
     // v2.0.15 (Terry 2026-05-31) — embed EXIF dates during the
     // encode pipeline so the post-batch exiftool serial loop (the
