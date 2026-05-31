@@ -7954,18 +7954,31 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
       let confirmedCount = 0;
       let recoveredCount = 0;
       let markedCount = 0;
-      
+      // v2.0.15 (Terry 2026-05-31) — dedupe by file.path so the same
+      // source file can't get counted twice. Terry hit a case where
+      // 12 source files reported as "24 output files" because
+      // fileResults contained two entries that both held the same
+      // 12 Blackberry files (likely from analysis running twice on
+      // the same source under different keys). On-disk count was
+      // correctly 12 — only the report counter was doubled. This
+      // Set-based gate ensures every unique file.path contributes
+      // at most ONE increment regardless of how many fileResults
+      // entries reference it.
+      const countedPaths = new Set<string>();
+
       Object.values(fileResults || {}).forEach((sourceData, index) => {
         // Get source key to check selection
         const sourceKeys = Object.keys(fileResults || {});
         const sourceKey = sourceKeys[index];
         const source = sources?.find(s => s.id === sourceKey || s.path === sourceData.sourcePath);
         if (!source?.selected) return;
-        
+
         (sourceData.files || []).forEach(file => {
           if (file.isDuplicate) return;
           if (file.type === 'photo' && !includePhotos) return;
           if (file.type === 'video' && !includeVideos) return;
+          if (countedPaths.has(file.path)) return;
+          countedPaths.add(file.path);
 
           // ONLY count files that were actually copied to the
           // destination this run. exifResultMap is populated from
