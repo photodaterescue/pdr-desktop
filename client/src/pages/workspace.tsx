@@ -5866,7 +5866,17 @@ function DashboardPanel({
                             const estGB = (() => {
                               if (stats.photos === 0 && stats.videos === 0) return 0;
                               let bytes = 0;
-                              const PNG_X = 1.6, JPG_X = 0.2;
+                              // v2.0.15 (Terry 2026-05-31) — recalibrated against
+              // ground truth from Terry's 2,123-file PNG conversion
+              // test: 5.09 GB JPG source → 10.8 GB PNG output at
+              // compressionLevel:6 (ratio 2.12×). The shipped worker
+              // now runs at compressionLevel:1 (~10-15% larger files
+              // for ~3-5× faster encode) so the real ratio sits
+              // around 2.3×. Old 1.6× was a pre-v2.0.x guess that
+              // bore no resemblance to actual output. JPG_X (the
+              // reverse direction, PNG → JPG) is rarer; 0.15 is the
+              // typical compression ratio for a quality-92 JPEG.
+              const PNG_X = 2.3, JPG_X = 0.15;
                               for (const source of selectedSources) {
                                 const ad = fileResults?.[source.id];
                                 if (ad?.files) {
@@ -8251,7 +8261,17 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             {photoFormat !== 'original' && (() => {
               // Estimate output size for the report
               let srcBytes = 0, outBytes = 0;
-              const PNG_X = 1.6, JPG_X = 0.2;
+              // v2.0.15 (Terry 2026-05-31) — recalibrated against
+              // ground truth from Terry's 2,123-file PNG conversion
+              // test: 5.09 GB JPG source → 10.8 GB PNG output at
+              // compressionLevel:6 (ratio 2.12×). The shipped worker
+              // now runs at compressionLevel:1 (~10-15% larger files
+              // for ~3-5× faster encode) so the real ratio sits
+              // around 2.3×. Old 1.6× was a pre-v2.0.x guess that
+              // bore no resemblance to actual output. JPG_X (the
+              // reverse direction, PNG → JPG) is rarer; 0.15 is the
+              // typical compression ratio for a quality-92 JPEG.
+              const PNG_X = 2.3, JPG_X = 0.15;
               const sourceIds = new Set((sources || []).map(s => s.id));
               Object.entries(fileResults || {}).forEach(([sourceId, sd]) => {
                 if (!sourceIds.has(sourceId)) return; // Only count selected sources
