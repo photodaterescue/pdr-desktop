@@ -7624,6 +7624,54 @@ ipcMain.handle('library:getDriveDetails', async (_event, libraryRoot: string) =>
 // Non-letter paths (UNC, mounted volumes) are bucketed under a single
 // "Network / mounted" row for now — those are rare enough not to need
 // per-share breakdown in v2.0.5.
+// v2.0.15 (Terry 2026-05-31) — list every distinct destinationPath
+// recorded in saved Fix reports, sorted most-recent-first by the
+// report file's mtime. Used by the renderer to silently reconcile
+// the LDM's pdr-saved-destinations localStorage list on app start:
+// any destination the user has ever fixed to but that's missing
+// from the cap-bounded localStorage list (e.g. evicted by the old
+// MAX_SAVED_DESTINATIONS=3 cap) gets restored. Failure-tolerant —
+// a corrupt or unreadable report file is skipped, not fatal.
+ipcMain.handle('library:listReportDestinations', async () => {
+  try {
+    const reportsDir = path.join(app.getPath('userData'), 'fix-reports');
+    if (!fs.existsSync(reportsDir)) return { success: true, data: { paths: [] as string[] } };
+    const entries = await fs.promises.readdir(reportsDir, { withFileTypes: true });
+    const candidates: { path: string; mtimeMs: number }[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      const filePath = path.join(reportsDir, entry.name);
+      try {
+        const [stat, raw] = await Promise.all([
+          fs.promises.stat(filePath),
+          fs.promises.readFile(filePath, 'utf-8'),
+        ]);
+        const parsed = JSON.parse(raw) as { destinationPath?: string };
+        const dest = (parsed.destinationPath || '').trim();
+        if (dest) candidates.push({ path: dest, mtimeMs: stat.mtimeMs });
+      } catch {
+        // Skip unreadable / corrupt report; reconcile is best-effort.
+      }
+    }
+    // Sort newest-first by mtime so the most-recent destination
+    // ends up at the front of the merged list in the renderer.
+    candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    // Dedupe by normalised path (case-insensitive, trailing-sep
+    // stripped) while keeping the first occurrence (newest).
+    const seen = new Set<string>();
+    const uniquePaths: string[] = [];
+    for (const c of candidates) {
+      const norm = c.path.replace(/[\\/]+$/, '').toLowerCase();
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      uniquePaths.push(c.path);
+    }
+    return { success: true, data: { paths: uniquePaths } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('library:listIndexedDrives', async () => {
   try {
     const db = getDb();

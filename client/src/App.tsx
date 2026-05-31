@@ -53,6 +53,53 @@ function AppShell() {
   useEffect(() => {
     void import('@/lib/electron-bridge').then(({ warmCompletionSound }) => warmCompletionSound());
   }, []);
+
+  // v2.0.15 (Terry 2026-05-31) — silent reconcile of
+  // pdr-saved-destinations from saved Fix reports. Restores any
+  // destination paths the user has ever fixed to but that got
+  // evicted by the historical MAX_SAVED_DESTINATIONS=3 cap (now
+  // 20). One-shot per session, idempotent — running twice with no
+  // missing entries leaves localStorage unchanged. Failure-tolerant:
+  // if the IPC errors or returns nothing, the LDM list just stays
+  // as-is. Capped at MAX_SAVED_DESTINATIONS on write so we don't
+  // unbounded-grow localStorage.
+  useEffect(() => {
+    const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
+    const MAX_SAVED_DESTINATIONS = 20;
+    const reconcile = async () => {
+      try {
+        const api = (window as any).pdr?.library;
+        if (!api?.listReportDestinations) return;
+        const res = await api.listReportDestinations();
+        if (!res?.success || !Array.isArray(res?.data?.paths)) return;
+        const reportPaths: string[] = res.data.paths;
+        if (reportPaths.length === 0) return;
+        const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
+        let existing: string[] = [];
+        try {
+          const parsed = raw ? JSON.parse(raw) : [];
+          existing = Array.isArray(parsed) ? parsed : [];
+        } catch { existing = []; }
+        const seen = new Set(existing.map(p => p.replace(/[\\/]+$/, '').toLowerCase()));
+        const additions: string[] = [];
+        for (const p of reportPaths) {
+          const norm = p.replace(/[\\/]+$/, '').toLowerCase();
+          if (!seen.has(norm)) {
+            seen.add(norm);
+            additions.push(p);
+          }
+        }
+        if (additions.length === 0) return; // already up-to-date
+        // Newest report paths first, then existing entries, capped.
+        const merged = [...additions, ...existing].slice(0, MAX_SAVED_DESTINATIONS);
+        localStorage.setItem(SAVED_DESTINATIONS_KEY, JSON.stringify(merged));
+        console.log(`[LDM reconcile] restored ${additions.length} destination(s) from Fix Reports`);
+      } catch (e) {
+        console.warn('[LDM reconcile] failed (non-fatal):', e);
+      }
+    };
+    void reconcile();
+  }, []);
   // Keep the Routes block mounted briefly after navigating INTO
   // /workspace so the fade-out has something to fade. Unmount it
   // 320ms later (slightly longer than the 300ms transition so the

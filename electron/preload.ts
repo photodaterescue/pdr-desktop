@@ -211,6 +211,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // volume labels. Premium LDM shows the WHOLE library shape, not just
     // the one sidecar-host drive.
     listIndexedDrives: () => ipcRenderer.invoke('library:listIndexedDrives'),
+    // v2.0.15 — list every distinct destinationPath in saved Fix
+    // reports (most-recent-first). Renderer uses this on app start
+    // to reconcile pdr-saved-destinations, restoring any entries
+    // evicted by the historical MAX_SAVED_DESTINATIONS=3 cap.
+    listReportDestinations: () => ipcRenderer.invoke('library:listReportDestinations'),
     // Per-path indexed-file count (count + total bytes + last
     // indexed timestamp) for a specific library root. Lets the LDM
     // show accurate per-folder counts on library-root rows instead
