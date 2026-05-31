@@ -5096,6 +5096,17 @@ ipcMain.handle('files:copy', async (_event, data: {
       subfolderPath: string;
       file: typeof files[0];
       finalFilename: string;
+      // v2.0.15 — EXIF date string to embed during sharp encode in
+      // the worker (replaces the serial post-batch exiftool loop
+      // that was the 35-min main-thread bottleneck on Terry's
+      // 2,123-file PNG Fix). Computed at queue time so the caller's
+      // settings + per-file confidence gate run on the main thread
+      // once; the worker just embeds the string into the encoded
+      // file. Empty/undefined means no EXIF write requested.
+      dateExif?: string;
+      // The "Confirmed (Google Takeout JSON)" style label we'd have
+      // returned from writeExifDate, used to mark the results row.
+      exifSourceLabel?: string;
     }> = [];
 
     // Track actual completed files for accurate progress
@@ -5194,6 +5205,9 @@ ipcMain.handle('files:copy', async (_event, data: {
           input: inputPath,
           output: task.convertedPath,
           format: task.format,
+          // v2.0.15 — embed EXIF in-pipeline. See queue-push site
+          // above for the gating logic. Undefined = no embed.
+          dateExif: task.dateExif,
         };
       }));
 
@@ -5334,7 +5348,11 @@ ipcMain.handle('files:copy', async (_event, data: {
         return { status: 'rejected', reason: { message: r.error ?? 'Unknown conversion error' } };
       });
 
-      // Process results + EXIF + push to results
+      // v2.0.15 (Terry 2026-05-31) — EXIF is now embedded by the
+      // worker during the sharp encode pipeline. The previous post-
+      // batch serial exiftool loop was the 35-min main-thread
+      // bottleneck on Terry's 2,123-file PNG Fix (~1s per file ×
+      // 2,123). This loop is now a fast no-IO result-mark.
       for (let b = 0; b < batch.length; b++) {
         const task = batch[b];
         const result = batchResults[b];
@@ -5346,37 +5364,18 @@ ipcMain.handle('files:copy', async (_event, data: {
           usedFilenames.delete(path.join(task.subfolderPath, path.basename(task.destPath)).toLowerCase());
           usedFilenames.add(path.join(task.subfolderPath, task.file.newFilename).toLowerCase());
 
-          // EXIF write immediately after writing to disk
-          let exifWritten = false;
-          let exifSource: string | undefined;
-          let exifError: string | undefined;
-          if (data.settings?.writeExif && task.file.derivedDate && task.file.dateConfidence) {
-            const derivedDate = new Date(task.file.derivedDate);
-            const exifResult = await writeExifDate(
-              task.convertedPath,
-              derivedDate,
-              task.file.dateConfidence,
-              task.file.dateSource || 'Unknown',
-              {
-                writeExif: data.settings.writeExif,
-                exifWriteConfirmed: data.settings.exifWriteConfirmed ?? true,
-                exifWriteRecovered: data.settings.exifWriteRecovered ?? true,
-                exifWriteMarked: data.settings.exifWriteMarked ?? false,
-              }
-            );
-            exifWritten = exifResult.written;
-            exifSource = exifResult.source;
-            if (!exifResult.success) exifError = exifResult.error;
-          }
-
+          // EXIF was either embedded in-pipeline by the worker (if
+          // dateExif was set) or intentionally skipped (writeExif
+          // off / confidence-gated). Either way the result row is
+          // accurate without doing any further I/O here.
           results.push({
             success: true,
             sourcePath: task.file.sourcePath,
             destPath: task.convertedPath,
             finalFilename: task.file.newFilename,
-            exifWritten,
-            exifSource,
-            exifError
+            exifWritten: !!task.dateExif,
+            exifSource: task.exifSourceLabel,
+            exifError: undefined,
           });
         } else {
           console.warn(`[Convert] Failed: ${path.basename(task.destPath)}:`, result.reason);
@@ -5601,6 +5600,37 @@ ipcMain.handle('files:copy', async (_event, data: {
           const convertedPath = destPath.replace(/\.[^.]+$/, targetExt);
           console.log(`[Convert] Queuing ${path.basename(file.sourcePath)} → ${path.basename(convertedPath)}`);
 
+          // v2.0.15 (Terry 2026-05-31) — pre-compute the EXIF date
+          // string + source-label on the main thread (cheap), then
+          // hand them to the worker so the encode pipeline can
+          // embed them directly. Mirrors the gating logic that used
+          // to live inside writeExifDate(): only embed if the master
+          // writeExif setting is on AND the per-confidence sub-toggle
+          // for this file's confidence level is on. Invalid dates
+          // (pre-1971 / future) get skipped here for safety.
+          let dateExifStr: string | undefined;
+          let exifSourceLabel: string | undefined;
+          if (
+            data.settings?.writeExif &&
+            file.derivedDate &&
+            file.dateConfidence &&
+            (
+              (file.dateConfidence === 'confirmed' && (data.settings.exifWriteConfirmed ?? true)) ||
+              (file.dateConfidence === 'recovered' && (data.settings.exifWriteRecovered ?? true)) ||
+              (file.dateConfidence === 'marked' && (data.settings.exifWriteMarked ?? false))
+            )
+          ) {
+            const d = new Date(file.derivedDate);
+            const year = d.getFullYear();
+            const validDate = !isNaN(d.getTime()) && year >= 1971 && d.getTime() <= Date.now() + 24 * 60 * 60 * 1000;
+            if (validDate) {
+              const pad = (n: number) => String(n).padStart(2, '0');
+              dateExifStr = `${year}:${pad(d.getMonth() + 1)}:${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+              const conf = file.dateConfidence;
+              exifSourceLabel = `${conf.charAt(0).toUpperCase() + conf.slice(1)} (${file.dateSource || 'Unknown'})`;
+            }
+          }
+
           const sourceInput = isZipWithBuffer ? fileBuffer! : file.sourcePath;
           pendingConversions.push({
             sourceInput,
@@ -5611,6 +5641,8 @@ ipcMain.handle('files:copy', async (_event, data: {
             subfolderPath,
             file,
             finalFilename,
+            dateExif: dateExifStr,
+            exifSourceLabel,
           });
 
           // Flush when batch is full

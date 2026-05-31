@@ -62,6 +62,13 @@ interface ConvertTask {
   input: string;            // absolute path to the input image
   output: string;           // absolute path to write the converted image
   format: 'jpg' | 'png';
+  // v2.0.15 (Terry 2026-05-31) — optional EXIF date metadata embedded
+  // during the sharp encode instead of being written by a separate
+  // post-batch exiftool pass. dateExif is the EXIF-formatted string
+  // 'YYYY:MM:DD HH:MM:SS'. When present, the worker writes
+  // DateTimeOriginal / DateTime / DateTimeDigitized inside the same
+  // encode operation — no extra file read/write needed.
+  dateExif?: string;
 }
 
 interface ConvertBatchMessage {
@@ -92,6 +99,12 @@ interface TaskDoneMessage {
   // post-encode stat.
   inputBytes?: number;
   outputBytes?: number;
+  // v2.0.15 — true when the task included a dateExif and the
+  // pipeline successfully embedded it. Main uses this to mark the
+  // result row's exifWritten without doing a separate exiftool
+  // pass (which used to be the bottleneck — ~1s per file × 2123 =
+  // 35 minutes of serial main-thread work).
+  exifEmbedded?: boolean;
   // Memory snapshot AFTER this task completed — surfaces a leak in
   // the trajectory across a batch.
   memUsage: {
@@ -145,9 +158,38 @@ async function convertOne(task: ConvertTask, timeoutMs: number): Promise<TaskDon
   try { inputBytes = fs.statSync(task.input).size; } catch { /* best-effort */ }
 
   try {
-    const pipeline = task.format === 'jpg'
+    // v2.0.15 (Terry 2026-05-31) — compressionLevel dropped from 6
+    // to 1. Level 6 was libvips' default and triggered an
+    // expensive zlib search at every encode (the per-file cost
+    // measured 2–7s for typical 1–2MB JPG → 3–6MB PNG inputs).
+    // Level 1 skips the search and uses fixed-Huffman DEFLATE,
+    // typically 3–5× faster encode for ~10–15% larger output.
+    // For PNG this is a quality-neutral trade (PNG is lossless at
+    // every level) — only file size and encode speed change.
+    let pipeline = task.format === 'jpg'
       ? sharp(task.input).jpeg({ quality: 92 })
-      : sharp(task.input).png({ compressionLevel: 6, effort: 1 });
+      : sharp(task.input).png({ compressionLevel: 1, effort: 1 });
+
+    // v2.0.15 (Terry 2026-05-31) — embed EXIF dates during the
+    // encode pipeline so the post-batch exiftool serial loop (the
+    // 35-minute bottleneck on Terry's 2,123-file PNG Fix) can be
+    // deleted entirely. Sharp writes EXIF as an APP1 segment for
+    // JPEG and an eXIf chunk for PNG (PNG spec 1.5+) — both are
+    // read by exiftool, Windows Photos, macOS Preview, Lightroom,
+    // Google Photos, and PDR's own date-editor surface. Three
+    // fields match the previous writeExifDate() output exactly:
+    //   DateTimeOriginal  (Exif IFD, when the photo was taken)
+    //   DateTimeDigitized (Exif IFD, alias for CreateDate)
+    //   DateTime          (IFD0, alias for ModifyDate)
+    if (task.dateExif) {
+      pipeline = pipeline.withExif({
+        IFD0: { DateTime: task.dateExif },
+        IFD2: {
+          DateTimeOriginal: task.dateExif,
+          DateTimeDigitized: task.dateExif,
+        },
+      });
+    }
 
     // sharp's toFile doesn't natively take an AbortSignal in older
     // versions, but throwing inside a downstream .pipe will propagate
@@ -191,6 +233,7 @@ async function convertOne(task: ConvertTask, timeoutMs: number): Promise<TaskDon
       durationMs: Date.now() - start,
       inputBytes,
       outputBytes,
+      exifEmbedded: !!task.dateExif,
       memUsage: memSnapshot(),
     };
   } catch (err) {
