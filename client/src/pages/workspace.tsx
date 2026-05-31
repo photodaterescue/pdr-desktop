@@ -4443,12 +4443,29 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
               // element. The intermediate <div> is required so the
               // Tooltip has a single forwardable child that isn't a
               // Radix root component.
+              // v2.0.15 (Terry 2026-05-31) — REAL fix for the
+              // missing right-click menu. Previous structure had
+              // ContextMenuTrigger asChild wrapping SidebarItem
+              // directly. Radix's asChild uses React.cloneElement to
+              // merge onContextMenu onto the child; cloneElement on
+              // a function-component element passes it as a PROP,
+              // not a DOM attribute. SidebarItem doesn't spread
+              // {...rest} onto its rendered <div>, so onContextMenu
+              // was silently dropped and the menu never bound. The
+              // tooltip worked because IconTooltip's asChild target
+              // is a plain <div>, where cloneElement does emit a
+              // DOM attribute. Fix: wrap sourceRow in its own plain
+              // <div> so ContextMenuTrigger gets a real DOM element
+              // to attach onContextMenu to — matches the proven
+              // SearchPanel / MemoriesView pattern verbatim.
               const wrappedRow = source.path ? (
                 <IconTooltip label={source.path} side="right">
                   <div>
                     <ContextMenu>
                       <ContextMenuTrigger asChild>
-                        {sourceRow}
+                        <div>
+                          {sourceRow}
+                        </div>
                       </ContextMenuTrigger>
                       <ContextMenuContent>
                         <ContextMenuItem
