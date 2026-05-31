@@ -219,6 +219,18 @@ async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer
     // -ss before -i is a fast seek; -frames:v 1 takes a single frame; -y overwrites
     const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(seekSec), '-i', ffmpegSrc, '-frames:v', '1', '-q:v', '3', '-y', tmp];
     const proc = spawn(ffmpegPath!, args, { windowsHide: true });
+    // v2.0.15 (Terry 2026-05-31) — capture stderr so we can surface
+    // the actual ffmpeg failure reason when extraction fails (instead
+    // of the previous blind "no frame extracted" log). Critical for
+    // diagnosing OnePlus / Samsung Motion Photo HEVC variants that
+    // bundled ffmpeg-static currently can't decode for thumbnails.
+    let stderrBuf = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      // Cap at ~4KB so a chatty error doesn't fill main.log.
+      if (stderrBuf.length < 4096) {
+        stderrBuf += chunk.toString('utf8');
+      }
+    });
     let finished = false;
     const done = async (ok: boolean) => {
       if (finished) return;
@@ -232,6 +244,16 @@ async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer
         }
       } catch {}
       fs.promises.unlink(tmp).catch(() => {});
+      // Log the real ffmpeg error if we have one — single line, file +
+      // seek position prefixed so the cascade's 4 attempts are
+      // distinguishable in main.log. Empty stderr means ffmpeg
+      // crashed before printing anything; we still log a marker line.
+      const trimmed = stderrBuf.trim().replace(/\s+/g, ' ');
+      if (trimmed) {
+        log.warn(`[ffmpeg] extract failed seek=${seekSec}s file="${path.basename(ffmpegSrc)}": ${trimmed.slice(0, 500)}`);
+      } else {
+        log.warn(`[ffmpeg] extract failed seek=${seekSec}s file="${path.basename(ffmpegSrc)}": <no stderr — likely killed / crashed>`);
+      }
       resolve(null);
     };
     proc.on('error', () => done(false));
