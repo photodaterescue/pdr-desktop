@@ -33,6 +33,7 @@
       "dist/**",
       "dist-electron/**",
       "!dist-electron/analysis-worker.cjs",
+      "!dist-electron/catalogue-worker.cjs",
       "!dist-electron/cleanup-worker.cjs",
       "!dist-electron/conversion-worker.cjs",
       "!dist-electron/extract-worker.cjs",
@@ -44,6 +45,7 @@
         "to": "dist-electron",
         "filter": [
           "analysis-worker.cjs",
+          "catalogue-worker.cjs",
           "cleanup-worker.cjs",
           "conversion-worker.cjs",
           "extract-worker.cjs",

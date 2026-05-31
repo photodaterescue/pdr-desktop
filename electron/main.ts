@@ -473,6 +473,35 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 
+// v2.0.15 (Terry 2026-05-31) — utilityProcess workers live OUTSIDE
+// the asar archive (in resources/dist-electron/, declared via
+// electron-builder's extraResources). Their require('better-sqlite3')
+// chain walks Node's standard module-resolution path UP from the
+// worker file's location — but in a packaged install those parent
+// dirs (resources/dist-electron/node_modules/, resources/node_modules/)
+// don't exist. electron-builder unpacks native modules to
+// resources/app.asar.unpacked/node_modules/, but that path isn't on
+// the worker's default search list.
+//
+// Setting NODE_PATH adds it as a secondary lookup root, so a worker's
+// `require('better-sqlite3')` finds the unpacked .node binary. In
+// dev (app.isPackaged === false), workers resolve normally against
+// the workspace's node_modules and NODE_PATH is left untouched.
+//
+// MUST be passed to EVERY utilityProcess.fork call site, otherwise
+// that worker silently fails on first DB access with
+//   Error: Cannot find module 'better-sqlite3'
+// — the exact regression that broke v2.0.15 packaging the first time.
+function workerEnv(): NodeJS.ProcessEnv {
+  if (!app.isPackaged) return process.env as NodeJS.ProcessEnv;
+  const unpacked = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
+  const existing = process.env.NODE_PATH || '';
+  return {
+    ...process.env,
+    NODE_PATH: existing ? `${existing}${path.delimiter}${unpacked}` : unpacked,
+  } as NodeJS.ProcessEnv;
+}
+
 // Yield to event loop to keep UI responsive
 function yieldToEventLoop(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
@@ -712,6 +741,7 @@ function spawnStartupWorker(): void {
     startupWorker = utilityProcess.fork(workerPath, [], {
       serviceName: 'PDR Startup Worker',
       stdio: 'pipe',
+      env: workerEnv(),
     });
   } catch (err) {
     log.warn(`[Startup Worker] fork failed (skipping cleanup): ${(err as Error).message}`);
@@ -1775,6 +1805,7 @@ function preforkCleanupWorker(): void {
     const w = utilityProcess.fork(workerPath, [], {
       serviceName: 'PDR Cleanup Worker',
       stdio: 'pipe',
+      env: workerEnv(),
     });
     w.stdout?.on('data', (chunk: Buffer) => {
       log.info(`[cleanup-worker stdout] ${chunk.toString().trim()}`);
@@ -2003,6 +2034,7 @@ function preforkExtractWorker(): void {
     const w = utilityProcess.fork(workerPath, [], {
       serviceName: 'PDR Extract Worker (pre-warm)',
       stdio: 'pipe',
+      env: workerEnv(),
     });
     // If the pre-warmed worker exits before we hand it a job, clear
     // the slot so the next runExtractInWorker() falls back to a fresh
@@ -2063,6 +2095,7 @@ function runExtractInWorker(
         worker = utilityProcess.fork(workerPath, [], {
           serviceName: 'PDR Extract Worker',
           stdio: 'pipe',
+          env: workerEnv(),
         });
         log.info(`[extract-worker] forked on-demand (no pre-warm available, fork took ${Date.now() - t0}ms)`);
       } catch (err) {
@@ -2153,6 +2186,7 @@ function preforkAnalysisWorker(): void {
     const w = utilityProcess.fork(workerPath, [], {
       serviceName: 'PDR Analysis Worker (pre-warm)',
       stdio: 'pipe',
+      env: workerEnv(),
     });
     w.on('exit', (code) => {
       if (prewarmedAnalysisWorker === w) {
@@ -2199,6 +2233,7 @@ function runAnalysisInWorker(
         worker = utilityProcess.fork(workerPath, [], {
           serviceName: 'PDR Analysis Worker',
           stdio: 'pipe',
+          env: workerEnv(),
         });
         log.info(`[analysis-worker] forked on-demand (no pre-warm, fork took ${Date.now() - t0}ms)`);
       } catch (err) {
@@ -4546,6 +4581,7 @@ async function spawnCatalogueWorker(destinationPath: string): Promise<void> {
     w = utilityProcess.fork(workerPath, [], {
       serviceName: 'PDR Catalogue Worker',
       stdio: 'pipe',
+      env: workerEnv(),
     });
   } catch (forkErr) {
     console.error('[Catalogue] worker fork failed:', forkErr);
@@ -5150,6 +5186,7 @@ ipcMain.handle('files:copy', async (_event, data: {
         // generic Electron Helper.
         serviceName: 'PDR Image Conversion',
         stdio: 'pipe',
+        env: workerEnv(),
       });
       // Forward stdout/stderr to main.log once per worker lifetime.
       child.stdout?.on('data', (chunk: Buffer) => {
