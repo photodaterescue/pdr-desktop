@@ -937,6 +937,40 @@ export function initDatabase(): { success: boolean; error?: string } {
       console.error('[DB] Relationships migration failed:', migErr);
     }
 
+    // v2.0.15 (Terry 2026-05-31) — one-shot demotion of EXIF-laundered
+    // rows. The rebuildIndexFromLibraries regression (now fixed via
+    // filename-suffix preservation) had been silently promoting rows
+    // whose PDR-renamed filename ends in _MK (PDR marked it because
+    // no real date was found) to confidence='confirmed' on every
+    // re-index. Terry's library had 199+ such files. This migration
+    // walks indexed_files, identifies rows whose CURRENT filename
+    // suffix is _MK but DB confidence is NOT 'marked', and demotes
+    // them back. Idempotent — the UPDATE only touches matching rows,
+    // so running twice is a no-op on the second pass.
+    //
+    // Matches PDR's rename convention since v2.0.x:
+    //   <date>_<CF|RC|MK>(_NNN)?.<ext>
+    // The regex covers the bare suffix and the disambiguation-counter
+    // form (e.g. 2026-05-04_02-36-50_MK_001.jpg).
+    try {
+      const tDemote = Date.now();
+      const demoteRes = db.prepare(`
+        UPDATE indexed_files
+        SET confidence = 'marked',
+            date_source = 'unknown'
+        WHERE confidence != 'marked'
+          AND (
+            filename LIKE '%\\_MK.%' ESCAPE '\\'
+            OR filename LIKE '%\\_MK\\_%' ESCAPE '\\'
+          )
+      `).run();
+      if (demoteRes.changes > 0) {
+        console.log(`[DB] Demoted ${demoteRes.changes} laundered _MK row(s) back to confidence='marked' (${Date.now() - tDemote}ms)`);
+      }
+    } catch (demoteErr) {
+      console.warn('[DB] Laundered-MK demotion migration failed (non-fatal):', demoteErr);
+    }
+
     // Graph history — every relationship mutation (add / update / remove)
     // is logged with a reversible payload so the user can undo/redo
     // across sessions. Entries include a `forward` op (the mutation
