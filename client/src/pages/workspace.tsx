@@ -10914,6 +10914,35 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionItem>
                   )}
 
+                  <AccordionItem value="ver-2.0.15" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v2.0.15</span>
+                        {appVersion === '2.0.15' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">A Recycle Bin, a working Photo Format converter, and a smoother end-of-Fix experience.</strong> A quality-of-life release that closes out v2.0.x — a proper Recycle Bin, unlocked PNG / JPG conversion, source-path visibility in the sidebar, and the removal of the freezes and chime stalls that bookended every Fix.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Recycle Bin</strong> &mdash; deleted files now go to a recoverable PDR Recycle Bin instead of straight to disk. Restore them, permanently delete a selection, or empty the bin entirely. Empty-Bin offers a &ldquo;Skip Windows Recycle Bin&rdquo; option so you can actually reclaim the disk space (the OS bin keeps a full copy until that&apos;s emptied too).</li>
+                        <li><strong className="text-foreground font-medium">Photo Format conversion unlocked and usable</strong> &mdash; was previously gated as &ldquo;Coming in v2.1&rdquo;. The PNG path now runs in a persistent encode worker with EXIF dates embedded directly into the encode pipeline (no slow post-pass), and uses faster libvips compression. An infinite-loop bug on near-duplicate files (same EXIF date) is fixed. JPG output is also available.</li>
+                        <li><strong className="text-foreground font-medium">Source rows show where they came from</strong> &mdash; hover any source in the sidebar to see its full filesystem path; right-click for &ldquo;Show in File Explorer&rdquo; and &ldquo;Copy filepath&rdquo;. Disambiguates sources with the same leaf folder name (two &ldquo;Camera Roll&rdquo; folders on different drives, an OneDrive sync folder vs an OneDrive Takeout extract, etc.).</li>
+                        <li><strong className="text-foreground font-medium">Fix Complete no longer freezes the app</strong> &mdash; the several-second hang at the end of a Fix is gone. Catalogue / CSV generation moved off the main thread to a dedicated worker with per-report chunk caching.</li>
+                        <li><strong className="text-foreground font-medium">Completion chime is instant</strong> &mdash; moved to the WebAudio API and pre-warmed at app startup, killing the 4-second <code>play()</code> stalls that previously made the end of a Fix feel laggy.</li>
+                        <li><strong className="text-foreground font-medium">Drives panel always populated</strong> &mdash; added a Node-native fallback for when PowerShell&apos;s drive query times out, so the &ldquo;Add Source &rarr; Drive&rdquo; surface never appears empty.</li>
+                        <li><strong className="text-foreground font-medium">Indexer, prescan, and analysis run off the main thread</strong> &mdash; adding a source no longer locks the UI; the white-titlebar &ldquo;Not Responding&rdquo; flash is gone.</li>
+                        <li><strong className="text-foreground font-medium">Sidebar icon brightness polish</strong> &mdash; Memories and Recycle Bin icons brightened to match the other sidebar tints.</li>
+                        <li><strong className="text-foreground font-medium">&ldquo;Change source&rdquo; opens the unified folder browser</strong> &mdash; replaces the legacy Select Source Type modal for consistency with the main Add Source flow.</li>
+                        <li><strong className="text-foreground font-medium">Settings &rarr; After Fix toggles fixed</strong> &mdash; &ldquo;Clear sources after Fix&rdquo; was previously a no-op; now actually clears the source list when the Fix completes. The Clear-Sources confirmation prompt is back too.</li>
+                        <li><strong className="text-foreground font-medium">Async geocoder load</strong> &mdash; city / country lookups initialise off the main thread so the workspace opens faster.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.0.14" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
