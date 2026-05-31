@@ -8168,35 +8168,13 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
 
             <div className="space-y-2 mb-6">
               <div className="flex justify-between text-sm font-medium">
-                <span>
-                  {isPrescanning
-                    ? 'Scanning...'
-                    : copyPhase === 'mirror' ? 'Uploading…' : 'Processing...'}
-                </span>
-                <span>
-                  {isPrescanning
-                    ? (prescanCount > 0 ? `${prescanCount.toLocaleString()} checked` : '…')
-                    : `${Math.round(progress)}%`}
-                </span>
+                <span>{copyPhase === 'mirror' ? 'Uploading…' : 'Processing...'}</span>
+                <span>{Math.round(progress)}%</span>
               </div>
-              {/* v2.0.15 (Terry 2026-05-31) — during prescan the
-                  determinate Progress sat permanently at 0% (we don't
-                  know the total upfront — the walk discovers it as
-                  it goes), so the user perceived the app as frozen
-                  even though prescanCount was ticking on the right.
-                  Swap in a continuous-sweep indeterminate bar
-                  during prescan so the visual signal matches the
-                  fact that work IS happening. Falls back to the
-                  normal determinate Progress for the copy / mirror
-                  phases where we do have a total. */}
-              <Progress
-                value={progress}
-                indeterminate={isPrescanning}
-                className="h-2"
-              />
+              <Progress value={progress} className="h-2" />
               <p className="text-xs text-muted-foreground text-left pt-1">
                 {isPrescanning
-                  ? `Scanning destination for existing files to skip on copy${prescanCount > 0 ? ` — ${prescanCount.toLocaleString()} checked so far` : ''}…`
+                  ? `Scanning destination for new files${prescanCount > 0 ? ` (${prescanCount.toLocaleString()} new)` : ''}...`
                   : copyPhase === 'mirror'
                     ? `Network upload in progress${mirrorFilesTotal > 0 ? ` · ${mirrorFilesDone.toLocaleString()} of ${mirrorFilesTotal.toLocaleString()} files mirrored` : ''}…`
                     : `${processed} of ${totalFiles} files processed`
