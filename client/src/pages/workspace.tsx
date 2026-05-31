@@ -5082,7 +5082,7 @@ function DashboardPanel({
     }
     return null;
   });
-  const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg' | 'webp'>('original');
+  const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg'>('original');
   const [photoFormatOpen, setPhotoFormatOpen] = useState(false);
   const photoFormatBtnRef = React.useRef<HTMLButtonElement>(null);
 
@@ -5854,7 +5854,7 @@ function DashboardPanel({
                         <FileImage className="w-4 h-4 brightness-200" />
                         {!isFormatConversionEnabled()
                           ? 'Photo Format — Coming in v2.1'
-                          : photoFormat === 'original' ? 'Select Photo Format' : photoFormat === 'png' ? 'PNG Selected' : photoFormat === 'webp' ? 'WebP Selected' : 'JPG Selected'}
+                          : photoFormat === 'original' ? 'Select Photo Format' : photoFormat === 'png' ? 'PNG Selected' : 'JPG Selected'}
                         <ChevronDown className={`w-3.5 h-3.5 brightness-200 transition-transform duration-200 ${photoFormatOpen ? 'rotate-180' : ''}`} />
                       </Button>
                     </IconTooltip>
@@ -5878,14 +5878,6 @@ function DashboardPanel({
                             { value: 'original' as const, label: 'Keep Originals', desc: 'No conversion' },
                             { value: 'png' as const, label: 'PNG', desc: 'Highest quality, lossless' },
                             { value: 'jpg' as const, label: 'JPG', desc: 'Reduced file size, universal' },
-                            // v2.0.15 (Terry 2026-05-31) — WebP added
-                            // as the "modern, smaller files"
-                            // alternative. Lossless mode (matches
-                            // PNG's quality guarantee) at ~25% smaller
-                            // file sizes. Supported by every modern
-                            // browser, Windows Photos, macOS Preview,
-                            // iOS, and Android.
-                            { value: 'webp' as const, label: 'WebP', desc: 'Smaller files, modern support' },
                           ]).map(opt => {
                             // Compute estimated output size for this format option
                             const estGB = (() => {
@@ -5901,12 +5893,7 @@ function DashboardPanel({
               // bore no resemblance to actual output. JPG_X (the
               // reverse direction, PNG → JPG) is rarer; 0.15 is the
               // typical compression ratio for a quality-92 JPEG.
-              // WEBP_X (lossless): ~75% of PNG output size based on
-              // libvips/libwebp benchmarks; for a JPG source that
-              // means ~1.7× source size. JPG → WebP-lossless is the
-              // common case here; PNG → WebP-lossless is ~0.75 of
-              // source so still smaller.
-              const PNG_X = 2.3, JPG_X = 0.15, WEBP_X = 1.7;
+              const PNG_X = 2.3, JPG_X = 0.15;
                               for (const source of selectedSources) {
                                 const ad = fileResults?.[source.id];
                                 if (ad?.files) {
@@ -5917,8 +5904,6 @@ function DashboardPanel({
                                     const ext = f.extension?.toLowerCase() || '';
                                     if (opt.value === 'png') {
                                       bytes += ext === '.png' ? f.sizeBytes : f.sizeBytes * PNG_X;
-                                    } else if (opt.value === 'webp') {
-                                      bytes += ext === '.webp' ? f.sizeBytes : ext === '.png' ? f.sizeBytes * 0.75 : f.sizeBytes * WEBP_X;
                                     } else {
                                       bytes += (ext === '.jpg' || ext === '.jpeg') ? f.sizeBytes : ext === '.png' ? f.sizeBytes * JPG_X : f.sizeBytes;
                                     }
@@ -5947,7 +5932,6 @@ function DashboardPanel({
                   <CardInfoTooltip onNavigateToBestPractices={onNavigateToBestPractices}>
                     <p><strong className="text-foreground">PNG</strong> preserves every pixel with zero loss — ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
                     <p className="mt-1.5"><strong className="text-foreground">JPG</strong> compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across all devices and apps.</p>
-                    <p className="mt-1.5"><strong className="text-foreground">WebP</strong> is a modern format that's lossless like PNG but produces files ~25% smaller. Supported in every modern browser, Windows Photos, macOS Preview, iOS and Android; a small minority of older / niche tools (specialised print shops, legacy camera viewers) may not read it.</p>
                     <p className="mt-1.5 text-muted-foreground/70 italic">Files already in your chosen format will not be re-converted.</p>
                   </CardInfoTooltip>
                 </div>
@@ -5955,7 +5939,6 @@ function DashboardPanel({
                   {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalized (.jpeg → .jpg).'}
                   {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
                   {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
-                  {photoFormat === 'webp' && 'All photos converted to WebP. Lossless quality, ~25% smaller than PNG.'}
                 </p>
               </Card>
             </div>
@@ -7583,7 +7566,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   onReportSaved?: (reportId: string) => void,
   includePhotos: boolean,
   includeVideos: boolean,
-  photoFormat: 'original' | 'png' | 'jpg' | 'webp'
+  photoFormat: 'original' | 'png' | 'jpg'
 }) {
   // useLicense IS valid inside FixProgressModal even though the
   // component is declared at module top-level alongside DashboardPanel
@@ -8305,11 +8288,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
               // bore no resemblance to actual output. JPG_X (the
               // reverse direction, PNG → JPG) is rarer; 0.15 is the
               // typical compression ratio for a quality-92 JPEG.
-              // WEBP_X (lossless): ~75% of PNG output size; for a JPG
-              // source ~1.7× source bytes. Mirror of the dashboard
-              // estimator above so the report number matches what
-              // the user saw before running.
-              const PNG_X = 2.3, JPG_X = 0.15, WEBP_X = 1.7;
+              const PNG_X = 2.3, JPG_X = 0.15;
               const sourceIds = new Set((sources || []).map(s => s.id));
               Object.entries(fileResults || {}).forEach(([sourceId, sd]) => {
                 if (!sourceIds.has(sourceId)) return; // Only count selected sources
@@ -8321,8 +8300,6 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                   const ext = f.extension?.toLowerCase() || '';
                   if (photoFormat === 'png') {
                     outBytes += ext === '.png' ? f.sizeBytes : f.sizeBytes * PNG_X;
-                  } else if (photoFormat === 'webp') {
-                    outBytes += ext === '.webp' ? f.sizeBytes : ext === '.png' ? f.sizeBytes * 0.75 : f.sizeBytes * WEBP_X;
                   } else {
                     outBytes += (ext === '.jpg' || ext === '.jpeg') ? f.sizeBytes : ext === '.png' ? f.sizeBytes * JPG_X : f.sizeBytes;
                   }

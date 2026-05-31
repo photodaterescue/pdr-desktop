@@ -4859,7 +4859,7 @@ ipcMain.handle('files:copy', async (_event, data: {
   };
   existingDestinationHashes?: Record<string, string>;
   existingDestinationHeuristics?: Record<string, string>;
-  photoFormat?: 'original' | 'png' | 'jpg' | 'webp';
+  photoFormat?: 'original' | 'png' | 'jpg';
 }) => {
   const { files, destinationPath, zipPaths = {}, photoFormat = 'original' } = data;
   console.log(`[Fix] Starting copy: ${files.length} files to ${destinationPath}, format=${photoFormat}`);
@@ -5090,7 +5090,7 @@ ipcMain.handle('files:copy', async (_event, data: {
     const pendingConversions: Array<{
       sourceInput: string | Buffer;
       convertedPath: string;
-      format: 'jpg' | 'png' | 'webp';
+      format: 'jpg' | 'png';
       fileIndex: number;
       destPath: string;
       subfolderPath: string;
@@ -5359,7 +5359,7 @@ ipcMain.handle('files:copy', async (_event, data: {
         if (result.status === 'fulfilled') {
           console.log(`[Convert] Done: ${path.basename(task.convertedPath)}`);
 
-          const targetExt = task.format === 'jpg' ? '.jpg' : task.format === 'webp' ? '.webp' : '.png';
+          const targetExt = task.format === 'jpg' ? '.jpg' : '.png';
           task.file.newFilename = task.finalFilename.replace(/\.[^.]+$/, targetExt);
           usedFilenames.delete(path.join(task.subfolderPath, path.basename(task.destPath)).toLowerCase());
           usedFilenames.add(path.join(task.subfolderPath, task.file.newFilename).toLowerCase());
@@ -5533,19 +5533,13 @@ ipcMain.handle('files:copy', async (_event, data: {
 
       // When converting formats, also check for collisions against the target extension
       // e.g., IMG_001.jpg and IMG_001.tif would both become IMG_001.png
-      // v2.0.15 — WebP added as a fourth output format. extOfFormat
-      // centralises the 'photoFormat → file extension' mapping so the
-      // collision-check, willConvert, and convertedExt all stay in
-      // sync as more formats land.
-      const extOfFormat = (fmt: string): string =>
-        fmt === 'jpg' ? '.jpg' : fmt === 'webp' ? '.webp' : '.png';
       const willConvert = photoFormat !== 'original' && (() => {
         const srcExt = path.extname(finalFilename).toLowerCase();
         const photoExts = new Set(['.jpg','.jpeg','.png','.bmp','.tiff','.tif','.webp','.heic','.heif','.gif','.avif']);
-        const targetExt = extOfFormat(photoFormat || 'png');
+        const targetExt = photoFormat === 'jpg' ? '.jpg' : '.png';
         return photoExts.has(srcExt) && srcExt !== targetExt && !(srcExt === '.jpeg' && targetExt === '.jpg');
       })();
-      const convertedExt = willConvert ? extOfFormat(photoFormat || 'png') : null;
+      const convertedExt = willConvert ? (photoFormat === 'jpg' ? '.jpg' : '.png') : null;
 
       // v2.0.15 (Terry 2026-05-31) — infinite-loop fix. The
       // converted-ext collision checks (Cond C + D below) used the
@@ -5602,7 +5596,7 @@ ipcMain.handle('files:copy', async (_event, data: {
 
         // If converting format, go directly from source → converted destination
         if (willConvert) {
-          const targetExt = extOfFormat(photoFormat || 'png');
+          const targetExt = photoFormat === 'jpg' ? '.jpg' : '.png';
           const convertedPath = destPath.replace(/\.[^.]+$/, targetExt);
           console.log(`[Convert] Queuing ${path.basename(file.sourcePath)} → ${path.basename(convertedPath)}`);
 
@@ -5641,7 +5635,7 @@ ipcMain.handle('files:copy', async (_event, data: {
           pendingConversions.push({
             sourceInput,
             convertedPath,
-            format: photoFormat as 'jpg' | 'png' | 'webp',
+            format: photoFormat as 'jpg' | 'png',
             fileIndex: i,
             destPath,
             subfolderPath,
