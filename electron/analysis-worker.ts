@@ -136,8 +136,31 @@ const parentPort = (process as unknown as {
 let started = false;
 
 parentPort.on('message', (e) => {
-  const msg = e.data;
+  // v2.0.15 (Terry 2026-06-01) — defensive try/catch around the
+  // entire message handler. analyzeSource is invoked via .then/.catch
+  // (catches async rejection) but the lead-up code (scanner-override
+  // map build, configureDeps call, even the synchronous part of
+  // analyzeSource before its first await) can throw. Without this
+  // catch, those throws bubble to the EventEmitter and either crash
+  // the worker or get swallowed silently. Now any sync throw is
+  // reported back to main as an 'error' message so the user sees
+  // why their source failed instead of "exited unexpectedly".
+  try {
+    handleMessage(e.data);
+  } catch (err) {
+    const message = err instanceof Error ? (err.stack || err.message) : String(err);
+    try {
+      parentPort.postMessage({
+        type: 'error',
+        message: `Worker message handler threw: ${message}`,
+      });
+    } catch { /* parent might have died */ }
+    // eslint-disable-next-line no-console
+    console.error(`[analysis-worker FATAL sync throw] ${message}`);
+  }
+});
 
+function handleMessage(msg: InboundMessage): void {
   if (msg.type === 'cancel') {
     // The worker shares one analysis-engine module instance. Flipping
     // its cancel flag stops the per-file loops at their next check.
@@ -204,6 +227,6 @@ parentPort.on('message', (e) => {
       });
     return;
   }
-});
+}
 
 console.log('[analysis-worker] ready');

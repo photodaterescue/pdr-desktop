@@ -2209,6 +2209,14 @@ function preforkAnalysisWorker(): void {
       serviceName: 'PDR Analysis Worker (pre-warm)',
       stdio: 'pipe',
       env: workerEnv(),
+      // v2.0.15 (Terry 2026-06-01) — bump V8 heap to 4 GB. Default
+      // ~1.5 GB was crashing the worker (native exit code=1, no JS
+      // exception caught) on Terry's 7 GB HTC One_M8 source —
+      // folder walk + per-file EXIF parse over thousands of files
+      // pushed past the default ceiling. 4 GB matches the practical
+      // ceiling for a 32-bit-pointer V8 process and covers the
+      // largest libraries we've seen in the field.
+      execArgv: ['--max-old-space-size=4096'],
     });
     w.on('exit', (code) => {
       if (prewarmedAnalysisWorker === w) {
@@ -2256,6 +2264,10 @@ function runAnalysisInWorker(
           serviceName: 'PDR Analysis Worker',
           stdio: 'pipe',
           env: workerEnv(),
+          // v2.0.15 — see preforkAnalysisWorker for the heap-bump
+          // rationale. Same flag here so on-demand forks also get
+          // the 4 GB ceiling.
+          execArgv: ['--max-old-space-size=4096'],
         });
         log.info(`[analysis-worker] forked on-demand (no pre-warm, fork took ${Date.now() - t0}ms)`);
       } catch (err) {
