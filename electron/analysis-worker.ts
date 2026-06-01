@@ -41,6 +41,26 @@
  *   between main + worker, no duplication.
  */
 
+// v2.0.15 (Terry 2026-06-01) — uncaughtException + unhandledRejection
+// handlers. Without these, any unhandled error in the worker
+// terminates the process with exit code 1 and (depending on the
+// error type) potentially no stderr output — exactly what Terry
+// hit when adding a 7 GB HTC One_M8 source: worker forked, accepted
+// the start message, ran for 6 seconds, exited code=1 silently.
+// Main captures stderr via runAnalysisInWorker's stderr handler so
+// these stack-trace prints will land in main.log next time.
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error(`[analysis-worker FATAL uncaughtException] ${err && err.stack ? err.stack : String(err)}`);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  const detail = reason && (reason as Error).stack ? (reason as Error).stack : String(reason);
+  // eslint-disable-next-line no-console
+  console.error(`[analysis-worker FATAL unhandledRejection] ${detail}`);
+  process.exit(1);
+});
+
 import {
   analyzeSource,
   cancelAnalysis,
