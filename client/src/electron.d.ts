@@ -149,7 +149,7 @@ export interface ElectronAPI {
     destinationPath: string;
     zipPaths?: Record<string, string>;
   }) => Promise<{ success: boolean; copied?: number; failed?: number; error?: string; duplicatesRemoved?: number; duplicateFiles?: Array<{ filename: string; duplicateOf: string }> }>;
-  onCopyProgress: (callback: (progress: { current: number; total: number }) => void) => void;
+  onCopyProgress: (callback: (progress: { current: number; total: number; bytesDone?: number; totalBytes?: number }) => void) => void;
 
   pickSource: (mode: 'folder' | 'zip') => Promise<{
   path: string;

@@ -74,6 +74,7 @@ import {
   MoreHorizontal,
   MessageSquareText,
   HardDrive,
+  FolderPlus,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -298,6 +299,19 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [searchText, setSearchText] = useState('');
   const [query, setQuery] = useState<SearchQuery>({ sortBy: 'derived_date', sortDir: 'desc', limit: 60 });
   const [results, setResults] = useState<SearchResult | null>(null);
+  // v2.0.15 (Terry 2026-06-01) — Memories pile. When a user right-clicks
+  // in Memories and chooses "Send to S&D", we land here with a fixed
+  // list of file IDs and all other filters cleared. Threaded into
+  // buildQuery so auto-reruns preserve the pile, and surfaced as a
+  // chip in the filter row with a Clear action that returns S&D to
+  // its empty-prompt state.
+  const [memoriesPile, setMemoriesPile] = useState<number[] | null>(null);
+
+  // v2.0.15 (Terry 2026-06-02) — open trigger for the AddToAlbumPopover.
+  // Bumped by the per-tile context menu's "Add to album…" item so the
+  // popover opens directly instead of forcing the user to find the
+  // pill in the selection bar. Same pattern as MemoriesView.
+  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [stats, setStats] = useState<IndexStats | null>(null);
@@ -1208,11 +1222,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     orientation: selectedOrientation.length > 0 ? selectedOrientation : undefined,
     destinationPath: selectedDestination.length > 0 ? selectedDestination : undefined,
     albumIds: selectedAlbums.length > 0 ? selectedAlbums : undefined,
+    // v2.0.15 (Terry 2026-06-01) — pile from Memories' Send-to-S&D.
+    // Threaded through buildQuery so auto-reruns triggered by people
+    // / library / dependency changes don't drop the pile mid-session.
+    fileIds: memoriesPile && memoriesPile.length > 0 ? memoriesPile : undefined,
     aiTag: combinedTags.length > 0 ? combinedTags : undefined,
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
     } as SearchQuery);
-  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir]);
+  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, memoriesPile, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery, opts?: { silent?: boolean }) => {
     // `silent` keeps the existing results visible during the fetch
@@ -1262,6 +1280,97 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // now searching for Mel.
   const executeSearchRef = useRef(executeSearch);
   useEffect(() => { executeSearchRef.current = executeSearch; }, [executeSearch]);
+
+  // v2.0.15 (Terry 2026-06-01) — listen for the Memories "Send to S&D"
+  // event. Dispatched by MemoriesView + AlbumsView's per-photo
+  // context menu (and the workspace also catches it to flip the
+  // active view to 'search'). Two modes:
+  //   • 'accumulate' (default) — merge incoming IDs into the existing
+  //     pile, de-duping via Set. Lets the user build up a pile
+  //     across multiple visits to Memories without losing earlier
+  //     additions.
+  //   • 'replace' — clear everything (filters + existing pile) and
+  //     start fresh with just the incoming IDs. Used when the user
+  //     explicitly picks "Send to S&D as new selection" from the
+  //     Memories context menu.
+  // Always read the LATEST pile via the ref so the merge sees the
+  // committed value, not the closure-captured one from when the
+  // listener was registered.
+  const memoriesPileRef = useRef<number[] | null>(null);
+  useEffect(() => { memoriesPileRef.current = memoriesPile; }, [memoriesPile]);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { fileIds?: number[]; source?: string; mode?: 'accumulate' | 'replace' } | undefined;
+      const ids = detail?.fileIds ?? [];
+      if (ids.length === 0) return;
+      const mode = detail?.mode === 'replace' ? 'replace' : 'accumulate';
+      const priorPile = memoriesPileRef.current ?? [];
+      let next: number[];
+      if (mode === 'accumulate' && priorPile.length > 0) {
+        // Dedupe in iteration order: existing pile entries first,
+        // then any new IDs that aren't already in the pile. Preserves
+        // the user's earlier additions on top of the strip.
+        next = Array.from(new Set([...priorPile, ...ids]));
+      } else {
+        next = ids;
+        // v2.0.15 (Terry 2026-06-02) — also clear the per-file
+        // selection state when REPLACING the pile. Without this, the
+        // checkbox + ring stayed on the OLD photos from a previous
+        // pile, so the new arrivals visually inherited a 5-tile
+        // selection that referenced photos the user couldn't even
+        // see any more. Accumulate mode preserves selection since
+        // the old tiles are still on screen.
+        setSelectedFiles(new Set());
+        setSelectedFilesMap(new Map());
+        setSelectedFile(null);
+        // v2.0.15 (Terry 2026-06-01) — INLINE filter clears (not
+        // clearFilters() — that function also nulls results +
+        // searchActive, which collapses the result grid mid-swap and
+        // briefly showed nothing on screen). These setters reset just
+        // the filter-shape state so the pile becomes the only active
+        // constraint; executeSearch below populates results when the
+        // searchFiles IPC returns. Skipped entirely in accumulate mode
+        // so filters the user added on top of the pile survive.
+        setSearchText('');
+        setSelectedConfidence([]);
+        setSelectedFileType([]);
+        setSelectedDateSource([]);
+        setSelectedExtension([]);
+        setSelectedCameraMake([]); setSelectedCameraModel([]); setSelectedLensModel([]);
+        setDateFrom(''); setDateTo('');
+        setYearFrom(undefined); setYearTo(undefined); setMonthFrom(undefined); setMonthTo(undefined);
+        setHasGps(undefined); setHasCaption(undefined); setSelectedCountry([]); setSelectedCity([]);
+        setIsoFrom(undefined); setIsoTo(undefined);
+        setApertureFrom(undefined); setApertureTo(undefined);
+        setFocalLengthFrom(undefined); setFocalLengthTo(undefined);
+        setFlashFired(undefined); setMegapixelsFrom(undefined); setMegapixelsTo(undefined);
+        setSelectedScene([]); setSelectedExposureProgram([]); setSelectedWhiteBalance([]);
+        setSelectedCameraPosition([]); setSelectedOrientation([]);
+        setSizeFromMB(undefined); setSizeToMB(undefined);
+        setSelectedAiTags([]); setSelectedAlbums([]);
+        // selectedDestination is deliberately NOT cleared — the user's
+        // library-drive picks aren't really "filters" in the same way.
+      }
+      // eslint-disable-next-line no-console
+      console.log(`[sd-pile] mode=${mode} incoming=${ids.length} prior=${priorPile.length} next=${next.length}`);
+      setMemoriesPile(next);
+      // Run with an explicit customQuery — buildQuery would still
+      // see the OLD memoriesPile until the next render after
+      // setMemoriesPile commits, so we can't rely on it here.
+      // executeSearch sets searchActive=true + results=data when the
+      // searchFiles IPC resolves, so we don't have to pre-flip those
+      // here (and doing so synchronously was making the result grid
+      // briefly disappear in the swap window).
+      void executeSearchRef.current({
+        fileIds: next,
+        sortBy: 'derived_date',
+        sortDir: 'desc',
+        limit: 5000,
+      });
+    };
+    window.addEventListener('pdr:sendToSearchPile', handler as EventListener);
+    return () => window.removeEventListener('pdr:sendToSearchPile', handler as EventListener);
+  }, []);
 
   // v2.0.15 (Terry 2026-05-29) — titlebar Refresh button dispatches
   // pdr:refreshActiveView. S&D re-runs the current search via the
@@ -3677,7 +3786,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
            has been issued) ALSO needs this landing, otherwise the
            workspace's "Your workspace is empty" state from MainContent
            leaks through and reads wrong in the S&D context. */}
-      {!results && !hasActiveFilters && !searchText.trim() && (
+      {!results && !hasActiveFilters && !searchText.trim() && !(memoriesPile && memoriesPile.length > 0) && (
         <div className="flex-1 min-h-0 overflow-y-auto">
           {/* Two-column grid layout — examples on the left, prereqs +
               Parallel Structures on the right — uses the available
@@ -3859,6 +3968,12 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         if (selectedFileType.length === 0) empties.push('File Type');
         if (driveEmpty) empties.push('Library Drive');
         if (empties.length === 0) return null;
+        // v2.0.15 (Terry 2026-06-01) — suppress while a Memories pile
+        // is active. The pile filters by explicit file IDs, so the
+        // Confidence / File Type / Library Drive gates are irrelevant
+        // — banner would be a misleading "no results will show" when
+        // results ARE going to show.
+        if (memoriesPile && memoriesPile.length > 0) return null;
         const restoreAll = () => {
           if (selectedConfidence.length === 0) setSelectedConfidence(['confirmed', 'recovered', 'marked']);
           if (selectedFileType.length === 0) setSelectedFileType(['photo', 'video']);
@@ -3918,6 +4033,20 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               return `${values[0]} + ${values.length - 1} more`;
             };
 
+            // v2.0.15 (Terry 2026-06-01) — Memories pile chip. Shown
+            // first so it's the most prominent thing in the row when
+            // S&D was opened via "Send to S&D" from Memories /
+            // Albums. Clearing it drops the pile AND clears any
+            // filters the user has since layered on top, returning
+            // S&D to its empty-prompt state.
+            if (memoriesPile && memoriesPile.length > 0) {
+              chips.push({
+                id: 'memoriesPile',
+                label: 'From Memories',
+                value: `${memoriesPile.length} photo${memoriesPile.length === 1 ? '' : 's'}`,
+                onClear: () => { setMemoriesPile(null); clearFilters(); },
+              });
+            }
             if (searchText.trim()) {
               chips.push({ id: 'search', label: 'Search', value: searchText.trim(), onClear: () => setSearchText('') });
             }
@@ -4128,6 +4257,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     fileIds={Array.from(selectedFiles)}
                     disabled={fixActive}
                     disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
+                    openTrigger={addToAlbumOpenTick}
                   />
                   {/* Create Parallel Library moved into the kebab
                       "More actions" menu next to the results count
@@ -4183,21 +4313,37 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto"
                   data-testid="active-filters-inline"
                 >
-                  {visibleChips.map(chip => (
+                  {visibleChips.map(chip => {
+                    // v2.0.15 (Terry 2026-06-02) — Memories pile chip
+                    // takes the Memories gold (var(--color-gold) =
+                    // #f8c15c) to match the Back-to-Memories pill in
+                    // the title bar and the Captioned-only chip beside
+                    // it. The neutral lavender treatment was too faint
+                    // for Terry to notice the × clear button.
+                    const isMemoriesPile = chip.id === 'memoriesPile';
+                    return (
                     <div
                       key={chip.id}
-                      className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full border border-border bg-secondary/40 text-xs shrink-0"
+                      className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full border text-xs shrink-0 ${
+                        isMemoriesPile
+                          ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
+                          : 'border-border bg-secondary/40'
+                      }`}
                       data-testid={`active-filter-chip-${chip.id}`}
                     >
-                      <span className="text-foreground whitespace-nowrap">
+                      <span className={`whitespace-nowrap ${isMemoriesPile ? 'text-[#1f1a08]' : 'text-foreground'}`}>
                         <span className="font-semibold">{chip.label}:</span>{' '}
-                        <span className="text-muted-foreground">{chip.value}</span>
+                        <span className={isMemoriesPile ? 'text-[#1f1a08]/75' : 'text-muted-foreground'}>{chip.value}</span>
                       </span>
                       <IconTooltip label={`Clear ${chip.label}`} side="bottom">
                         <button
                           type="button"
                           onClick={chip.onClear}
-                          className="text-muted-foreground hover:text-foreground rounded-full p-0.5 hover:bg-secondary transition-colors"
+                          className={`rounded-full p-0.5 transition-colors ${
+                            isMemoriesPile
+                              ? 'text-[#1f1a08]/75 hover:text-[#1f1a08] hover:bg-black/10'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                          }`}
                           data-testid={`active-filter-chip-clear-${chip.id}`}
                           aria-label={`Clear ${chip.label} filter`}
                         >
@@ -4205,7 +4351,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         </button>
                       </IconTooltip>
                     </div>
-                  ))}
+                    );
+                  })}
                   {overflowChips.length > 0 && (
                     <Popover>
                       <IconTooltip
@@ -4229,21 +4376,36 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           More active filters
                         </p>
                         <div className="flex flex-col gap-0.5">
-                          {overflowChips.map(chip => (
+                          {overflowChips.map(chip => {
+                            // v2.0.15 (Terry 2026-06-02) — Memories
+                            // pile carries the same gold treatment in
+                            // the overflow popover as inline, so the
+                            // brand association stays intact even when
+                            // the row is crowded with other filters.
+                            const isMemoriesPile = chip.id === 'memoriesPile';
+                            return (
                             <div
                               key={chip.id}
-                              className="flex items-center justify-between gap-2 px-2 py-1 rounded-md hover:bg-secondary/50 text-xs"
+                              className={`flex items-center justify-between gap-2 px-2 py-1 rounded-md text-xs ${
+                                isMemoriesPile
+                                  ? 'bg-[var(--color-gold)] text-[#1f1a08]'
+                                  : 'hover:bg-secondary/50'
+                              }`}
                               data-testid={`active-filter-overflow-${chip.id}`}
                             >
                               <span className="min-w-0 truncate">
-                                <span className="font-semibold text-foreground">{chip.label}:</span>{' '}
-                                <span className="text-muted-foreground">{chip.value}</span>
+                                <span className={`font-semibold ${isMemoriesPile ? 'text-[#1f1a08]' : 'text-foreground'}`}>{chip.label}:</span>{' '}
+                                <span className={isMemoriesPile ? 'text-[#1f1a08]/75' : 'text-muted-foreground'}>{chip.value}</span>
                               </span>
                               <IconTooltip label={`Clear ${chip.label}`} side="left">
                                 <button
                                   type="button"
                                   onClick={chip.onClear}
-                                  className="text-muted-foreground hover:text-foreground rounded-full p-0.5 hover:bg-secondary transition-colors shrink-0"
+                                  className={`rounded-full p-0.5 transition-colors shrink-0 ${
+                                    isMemoriesPile
+                                      ? 'text-[#1f1a08]/75 hover:text-[#1f1a08] hover:bg-black/10'
+                                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                                  }`}
                                   data-testid={`active-filter-overflow-clear-${chip.id}`}
                                   aria-label={`Clear ${chip.label} filter`}
                                 >
@@ -4251,7 +4413,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                                 </button>
                               </IconTooltip>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </PopoverContent>
                     </Popover>
@@ -4489,6 +4652,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           selectionMode={selectionMode}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.has(file.id)}
+                          onAddToAlbum={() => {
+                            // v2.0.15 (Terry 2026-06-02) — context menu
+                            // "Add to album". If the right-clicked tile
+                            // isn't part of an active multi-select,
+                            // replace the selection with just this
+                            // file so the popover targets the right
+                            // set. If it IS in the selection, keep
+                            // the multi-select. Bump the trigger tick
+                            // so the popover opens on next render.
+                            if (!(selectedFiles.size > 0 && selectedFiles.has(file.id))) {
+                              setSelectedFiles(new Set([file.id]));
+                              setSelectedFilesMap(new Map([[file.id, file]]));
+                            }
+                            setAddToAlbumOpenTick(t => t + 1);
+                          }}
                           onCheckboxClick={(e: React.MouseEvent) => {
                             const multiSelectActive = selectedFiles.size > 0;
                             if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
@@ -4962,7 +5140,7 @@ function FilterCheckbox({ label, checked, onChange, color, icon, count }: { labe
 // Metadata field keys that users can toggle on for tile footers
 type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean }) {
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void }) {
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
@@ -5086,6 +5264,26 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
           <MessageSquareText className="w-3.5 h-3.5 mr-2" />
           {file.caption ? 'Edit caption…' : 'Add caption…'}
         </ContextMenuItem>
+        {/* v2.0.15 (Terry 2026-06-02) — Add to album. Mirrors the
+            MemoriesView / AlbumsView per-tile context menu's
+            equivalent item. Parent (SearchPanel) wires the actual
+            open-popover behaviour: if the right-clicked file isn't
+            part of an active multi-select, the parent replaces
+            selection with just this file; either way it bumps the
+            AddToAlbumPopover's openTrigger so the picker opens on
+            next render. */}
+        {onAddToAlbum && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onSelect={() => onAddToAlbum()}
+              data-testid={`filecard-add-to-album-${file.id}`}
+            >
+              <FolderPlus className="w-3.5 h-3.5 mr-2" />
+              Add to album…
+            </ContextMenuItem>
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
       </div>

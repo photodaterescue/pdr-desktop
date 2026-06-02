@@ -27,6 +27,7 @@ import {
   Trash2,
   ZoomIn,
   ZoomOut,
+  Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -227,7 +228,49 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
   //   { year }                → whole year (clicking the year heading)
   //   { year, month }         → whole month (clicking a month tile)
   //   { year, month, day }    → single day (reserved for future per-day drill-in)
-  const [selectedRange, setSelectedRange] = useState<{ year: number; month?: number; day?: number } | null>(null);
+  // v2.0.15 (Terry 2026-06-02) — read the back-pill drilldown latch
+  // at useState init time so the very first render lands on the
+  // right month/day. The previous useEffect-based listener approach
+  // missed historical events (MemoriesView mounts AFTER the back-pill
+  // click dispatches `pdr:memoriesSwitchTab`), so the listener never
+  // caught the drilldown info. useState(init) runs synchronously
+  // during the very first construction, BEFORE any effects, so the
+  // localStorage read can never race the click. removeItem clears
+  // it so a stale value can't hijack a future mount.
+  const [selectedRange, setSelectedRange] = useState<{ year: number; month?: number; day?: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem('pdr-memories-pending-drilldown');
+      if (raw) {
+        localStorage.removeItem('pdr-memories-pending-drilldown');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.year === 'number') {
+          return {
+            year: parsed.year,
+            month: typeof parsed.month === 'number' ? parsed.month : undefined,
+            day: typeof parsed.day === 'number' ? parsed.day : undefined,
+          };
+        }
+      }
+    } catch { /* localStorage may be unavailable / corrupted */ }
+    return null;
+  });
+
+  // v2.0.15 (Terry 2026-06-02) — restore the drilldown when the user
+  // clicks the TitleBar "Back to Memories — Dates" pill. TitleBar
+  // dispatches pdr:memoriesSwitchTab with detail = { tab, drilldown }
+  // where drilldown carries the year/month/day they were viewing when
+  // they did Send-to-S&D. Setting selectedRange triggers the existing
+  // drilldown render path so the user lands back on the same view
+  // they came from instead of the timeline top.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tab?: string; drilldown?: { year: number; month?: number; day?: number } } | undefined;
+      if (detail?.tab !== 'byDate' || !detail.drilldown) return;
+      setSelectedRange(detail.drilldown);
+    };
+    window.addEventListener('pdr:memoriesSwitchTab', handler as EventListener);
+    return () => window.removeEventListener('pdr:memoriesSwitchTab', handler as EventListener);
+  }, []);
   // Gap density — some users prefer a dense wall of photos with no gaps,
   // others prefer breathing room. Persist across sessions for this surface.
   const [density, setDensity] = useState<Density>(() => {
@@ -463,6 +506,8 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
         onDensityChange={changeDensity}
         onBack={() => setSelectedRange(null)}
         onRequestRefresh={() => setRefreshTick((t) => t + 1)}
+        allYearBuckets={buckets}
+        onNavigateToRange={(year, month, day) => setSelectedRange({ year, month, day })}
       />
     );
   }
@@ -1038,8 +1083,13 @@ function MonthTile({ bucket, onOpen, density, enterIndex = 0 }: { bucket: Memori
 
 // ─── Day drill-down ────────────────────────────────────────────────────────
 
-function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChange, onBack, onRequestRefresh }: { year: number; month?: number; day?: number; runIds: number[] | undefined; density: Density; onDensityChange: (d: Density) => void; onBack: () => void; onRequestRefresh: () => void }) {
+function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChange, onBack, onRequestRefresh, allYearBuckets, onNavigateToRange }: { year: number; month?: number; day?: number; runIds: number[] | undefined; density: Density; onDensityChange: (d: Density) => void; onBack: () => void; onRequestRefresh: () => void; allYearBuckets: MemoriesYearBucket[]; onNavigateToRange: (year: number, month?: number, day?: number) => void }) {
   const [files, setFiles] = useState<IndexedFile[] | null>(null);
+  // v2.0.15 (Terry 2026-06-02) — controlled open state for the month
+  // picker Popover so clicking a month closes the dropdown
+  // immediately. Without this Radix kept the popover open until the
+  // user clicked outside.
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   // Selection mode toggle — when on, checkboxes are visible by
   // default (not only on hover). Mirrors the S&D "Select" button
@@ -1060,6 +1110,11 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // also toggles. Mirrors SearchPanel's FileCard contract.
   const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
   const lastClickedIndexRef = useRef<number | null>(null);
+  // v2.0.15 (Terry 2026-06-01) — open trigger for AddToAlbumPopover.
+  // Bumped by the per-tile context menu's "Add to album…" item so
+  // the picker opens directly instead of requiring the user to then
+  // hunt down the pill in the header.
+  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
   const toggleSelection = (file: IndexedFile, mode?: 'add' | 'remove') => {
     setSelectedFileIds(prev => {
       const next = new Set(prev);
@@ -1342,6 +1397,32 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   useEffect(() => {
     rowVirtualizer.measure();
   }, [tilePx, tileGap, colsPerRow, filesByDay]);
+
+  // v2.0.15 (Terry 2026-06-02) — scroll-to-tile after files load.
+  // Back-pill flow latches the file id the user right-clicked from
+  // into localStorage; after the day groups land we find which day
+  // contains that file and scrollToIndex the virtualiser to it.
+  // One-shot: removeItem after read so a stale value can't hijack
+  // a future drilldown visit. Day-level granularity is fine because
+  // a single day's grid is short enough that the user sees their
+  // photo without further scrolling.
+  useEffect(() => {
+    if (filesByDay.length === 0) return;
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem('pdr-memories-pending-scroll-to');
+      if (raw) localStorage.removeItem('pdr-memories-pending-scroll-to');
+    } catch { return; }
+    if (!raw) return;
+    const targetId = parseInt(raw, 10);
+    if (!Number.isFinite(targetId)) return;
+    const groupIndex = filesByDay.findIndex((g) => g.files.some((f) => f.id === targetId));
+    if (groupIndex < 0) return;
+    const id = requestAnimationFrame(() => {
+      rowVirtualizer.scrollToIndex(groupIndex, { align: 'start', behavior: 'auto' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [filesByDay, rowVirtualizer]);
 
   // Format the day header label. Full long form so the user can read
   // the date without parsing abbreviations.
@@ -1726,7 +1807,64 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
         >
           <ChevronLeft className="w-3.5 h-3.5" /> Back to timeline
         </button>
-        <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>
+        {/* v2.0.15 (Terry 2026-06-02) — month picker dropdown. The
+            title doubles as a Popover trigger; opening it lists all
+            months in the current year that have photos, so the user
+            can jump to a sibling month without going back to the
+            timeline and re-scrolling. Reuses the same Popover primitive
+            as Memories' Add-to-Album / On-This-Day / month sample
+            popovers. Title remains static when only the year is in
+            scope (no month-level navigation makes sense at that
+            depth) or when the parent failed to supply allYearBuckets. */}
+        {(() => {
+          if (month == null || !allYearBuckets || allYearBuckets.length === 0) {
+            return <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>;
+          }
+          const monthsForYear = allYearBuckets
+            .filter((b) => b.year === year)
+            .sort((a, b) => a.month - b.month);
+          if (monthsForYear.length <= 1) {
+            return <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>;
+          }
+          return (
+            <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-2 py-1 -mx-2 -my-1 rounded-md text-base font-semibold text-foreground leading-none hover:bg-secondary/60 transition-colors"
+                  data-testid="memories-drilldown-month-picker"
+                >
+                  {title}
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-1">
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
+                  Jump to month in {year}
+                </p>
+                {monthsForYear.map((b) => {
+                  const isCurrent = b.month === month;
+                  const total = (b.photoCount || 0) + (b.videoCount || 0);
+                  return (
+                    <button
+                      key={b.month}
+                      type="button"
+                      onClick={() => {
+                        setMonthPickerOpen(false);
+                        onNavigateToRange(year, b.month);
+                      }}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left rounded-md text-sm transition-colors ${isCurrent ? 'bg-secondary text-foreground font-semibold' : 'text-foreground hover:bg-muted/50'}`}
+                      data-testid={`memories-drilldown-month-${b.month}`}
+                    >
+                      <span>{MONTH_NAMES[b.month - 1]}</span>
+                      <span className="text-xs text-muted-foreground">{total.toLocaleString()}</span>
+                    </button>
+                  );
+                })}
+              </PopoverContent>
+            </Popover>
+          );
+        })()}
         {files != null && (() => {
           // Break out photos vs videos the same way the month tile
           // on the timeline does — Terry 2026-05-20: "There's NOTHING
@@ -1919,6 +2057,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             <AddToAlbumPopover
               fileIds={Array.from(selectedFileIds)}
               onAdded={clearSelection}
+              openTrigger={addToAlbumOpenTick}
             />
             {/* v2.0.15 (Terry 2026-05-28) — soft-delete batch action.
                 Moves the selected photos into the PDR Recycle Bin (sets
@@ -2292,6 +2431,59 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     <HardDrive className="w-3.5 h-3.5 mr-2" />
                     Show in File Explorer
                   </ContextMenuItem>
+                  {/* v2.0.15 (Terry 2026-06-01) — Send to S&D. If the
+                      right-clicked tile is part of a multi-select,
+                      send the whole selection; otherwise send just
+                      this one file. Default mode is ACCUMULATE — the
+                      incoming photos merge into any existing pile in
+                      S&D so the user can build up a review set
+                      across multiple visits. "Send as new selection"
+                      below replaces the pile from scratch. */}
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const fileIds = selectedFileIds.size > 0 && selectedFileIds.has(f.id)
+                        ? Array.from(selectedFileIds)
+                        : [f.id];
+                      // v2.0.15 (Terry 2026-06-02) — record where the
+                      // pile came from so the TitleBar's back-pill can
+                      // return the user to the same drilldown view
+                      // (year / month / day) instead of dropping them
+                      // at the top of the timeline.
+                      void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({
+                        tab: 'byDate',
+                        label: 'Memories — Dates',
+                        drilldown: { year, month, day },
+                        scrollToFileId: f.id,
+                      }));
+                      window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                        detail: { fileIds, source: 'memories', mode: 'accumulate' },
+                      }));
+                    }}
+                    data-testid={`memories-tile-send-to-sd-${f.id}`}
+                  >
+                    <Search className="w-3.5 h-3.5 mr-2" />
+                    Send to S&amp;D{selectedFileIds.size > 0 && selectedFileIds.has(f.id) ? ` (${selectedFileIds.size})` : ''}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const fileIds = selectedFileIds.size > 0 && selectedFileIds.has(f.id)
+                        ? Array.from(selectedFileIds)
+                        : [f.id];
+                      void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({
+                        tab: 'byDate',
+                        label: 'Memories — Dates',
+                        drilldown: { year, month, day },
+                        scrollToFileId: f.id,
+                      }));
+                      window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                        detail: { fileIds, source: 'memories', mode: 'replace' },
+                      }));
+                    }}
+                    data-testid={`memories-tile-send-to-sd-replace-${f.id}`}
+                  >
+                    <Search className="w-3.5 h-3.5 mr-2" />
+                    Send to S&amp;D as new selection
+                  </ContextMenuItem>
                   <ContextMenuSeparator />
                   {/* Right-click actions — Terry 2026-05-19. "Add to
                       album" adds the photo to the current selection
@@ -2314,9 +2506,21 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     onSelect={() => {
-                      toggleSelection(f, 'add');
+                      // v2.0.15 (Terry 2026-06-01) — open the picker
+                      // directly. If the right-clicked tile isn't
+                      // part of an active multi-select, treat the
+                      // operation as single-photo: replace the
+                      // selection with just this file so the
+                      // popover targets the right set. If it IS
+                      // already in the selection, keep the existing
+                      // multi-select. Either way bump the trigger
+                      // tick so the popover opens on next render.
+                      const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
+                      if (!alreadyInMulti) {
+                        setSelectedFileIds(new Set([f.id]));
+                      }
                       lastClickedIndexRef.current = idx;
-                      toast.message('Added to selection', { description: 'Use "Add to album" in the header to pick the album.' });
+                      setAddToAlbumOpenTick(t => t + 1);
                     }}
                   >
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />

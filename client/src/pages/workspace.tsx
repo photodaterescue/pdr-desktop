@@ -984,6 +984,18 @@ useEffect(() => {
   return () => window.removeEventListener('pdr:openSearchDiscovery', handler as EventListener);
 }, []);
 
+// v2.0.15 (Terry 2026-06-01) — "Send to S&D" pile bridge.
+// MemoriesView and AlbumsView's right-click context menu fires
+// `pdr:sendToSearchPile` with the selected file IDs. We just need
+// to flip the active view to 'search'; SearchPanel has its own
+// listener on the same event that clears its filters, stores the
+// pile, and renders the pile chip.
+useEffect(() => {
+  const handler = () => { setActiveView('search'); setActivePanel(null); };
+  window.addEventListener('pdr:sendToSearchPile', handler as EventListener);
+  return () => window.removeEventListener('pdr:sendToSearchPile', handler as EventListener);
+}, []);
+
 // Memories tab switch bridge — same dual purpose as the S&D
 // handler above. When the empty-album "Go to By Date" CTA fires,
 // stash the source album so MemoriesView can render a return
@@ -1013,14 +1025,30 @@ useEffect(() => {
   void import('@/lib/album-return-source').then((mod) => {
     if (mod.getAlbumReturnSource() !== null) mod.setAlbumReturnSource(null);
   });
+  // v2.0.15 (Terry 2026-06-02) — same dismissal rule for the
+  // Memories-return source. Once the user opens any non-Search /
+  // non-Memories view, the back-to-Memories pill drops.
+  void import('@/lib/memories-return-source').then((mod) => {
+    if (mod.getMemoriesReturnSource() !== null) mod.setMemoriesReturnSource(null);
+  });
 }, [activeView]);
 
 // Return-to-album bridge — back-pill click in SearchPanel /
 // MemoriesView dispatches `pdr:openAlbumsAlbum` with the album id.
 // Workspace routes to Memories; MemoriesPanel switches to the
 // Albums tab; AlbumsView selects the album.
+//
+// v2.0.15 (Terry 2026-06-02) — also write the tab persistence key
+// SYNCHRONOUSLY so MemoriesPanel's loadInitialTab reads 'albums'
+// when it mounts. Without this, mounting MemoriesPanel after the
+// view flips picked up the prior 'byDate' value, AlbumsView never
+// mounted, and consumePendingAlbumOpen never fired — back-pill
+// landed the user on the By Date timeline instead of the album.
 useEffect(() => {
-  const handler = () => { setActiveView('memories'); };
+  const handler = () => {
+    try { localStorage.setItem('pdr-memories-tab', 'albums'); } catch { /* localStorage may be unavailable */ }
+    setActiveView('memories');
+  };
   window.addEventListener('pdr:openAlbumsAlbum', handler as EventListener);
   return () => window.removeEventListener('pdr:openAlbumsAlbum', handler as EventListener);
 }, []);
@@ -6601,11 +6629,30 @@ function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConf
     return `${s}s`;
   };
 
+  // v2.0.15 (Terry 2026-06-01) — same rolling-window ETA as the
+  // main progress modal. See the explainer comment there. Mirrored
+  // here so the FixStatusChip's "~X remaining" matches the modal
+  // exactly when the user collapses the modal to the chip mid-Fix.
+  const chipProgressSamplesRef = React.useRef<Array<{ t: number; p: number }>>([]);
   const estimatedRemaining = React.useMemo(() => {
     if (!percent || percent < 3) return null;
-    const elapsedMs = Date.now() - startTimeRef.current;
-    const totalEstMs = (elapsedMs / percent) * 100;
-    const remainMs = totalEstMs - elapsedMs;
+    const now = Date.now();
+    const samples = chipProgressSamplesRef.current;
+    samples.push({ t: now, p: percent });
+    const WINDOW_MS = 15_000;
+    const cutoff = now - WINDOW_MS;
+    while (samples.length > 0 && samples[0].t < cutoff) {
+      samples.shift();
+    }
+    if (samples.length < 2) return null;
+    const oldest = samples[0];
+    const latest = samples[samples.length - 1];
+    const deltaP = latest.p - oldest.p;
+    const deltaT = latest.t - oldest.t;
+    if (deltaP <= 0 || deltaT <= 0) return null;
+    const ratePerMs = deltaP / deltaT;
+    const remainPct = 100 - percent;
+    const remainMs = remainPct / ratePerMs;
     return Math.max(0, Math.round(remainMs / 1000));
   }, [percent, elapsed]);
 
@@ -7590,6 +7637,17 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [processed, setProcessed] = useState(0);
+  // v2.0.15 (Terry 2026-06-01) — STUCK-INDICATOR. Replaces the
+  // Windows ghost overlay (now disabled process-wide via
+  // DisableProcessWindowsGhosting at app startup). Main fires a 1 Hz
+  // heartbeat progress event while the Fix is running, so a gap
+  // greater than ~10 s here means something has actually stalled —
+  // either an unusually large in-flight copy holding all 4 slots OR
+  // a genuine hang. UI surfaces a calm "PDR is taking a while —
+  // still working…" notice in the Fix modal so the user gets an
+  // app-level signal instead of the title bar flashing white.
+  const lastProgressAtRef = React.useRef<number>(Date.now());
+  const [isTakingLong, setIsTakingLong] = useState(false);
   const [isElectronEnv, setIsElectronEnv] = useState(false);
   const [reportSaved, setReportSaved] = useState(false);
   const [skippedExisting, setSkippedExisting] = useState(0);
@@ -7749,11 +7807,38 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     return `${s}s`;
   };
 
+  // v2.0.15 (Terry 2026-06-01) — ROLLING-WINDOW ETA.
+  // The previous since-start linear extrapolation locked in whatever
+  // rate the photo phase ran at (~5 MB/s, EXIF-write bound) and
+  // projected it across the video phase (~40+ MB/s, pure I/O). Result:
+  // at 10–20 % the ETA said "10 minutes" but the actual finish was
+  // under 4 min as the rate jumped. A rolling window of the last ~15 s
+  // of samples reflects the CURRENT rate, so the ETA self-corrects in
+  // real time when the workload shifts phase. Min two samples in the
+  // window before we trust the math; below that, fall back to null
+  // (UI hides the ETA pill for the first few seconds).
+  const progressSamplesRef = React.useRef<Array<{ t: number; p: number }>>([]);
   const estimatedRemaining = React.useMemo(() => {
     if (progress < 3) return null;
-    const elapsedMs = Date.now() - startTimeRef.current;
-    const totalEstMs = (elapsedMs / progress) * 100;
-    const remainMs = totalEstMs - elapsedMs;
+    const now = Date.now();
+    const samples = progressSamplesRef.current;
+    // Append current sample. We don't dedupe on equal progress because
+    // a flat segment is informative — it tells us the rate is near zero.
+    samples.push({ t: now, p: progress });
+    const WINDOW_MS = 15_000;
+    const cutoff = now - WINDOW_MS;
+    while (samples.length > 0 && samples[0].t < cutoff) {
+      samples.shift();
+    }
+    if (samples.length < 2) return null;
+    const oldest = samples[0];
+    const latest = samples[samples.length - 1];
+    const deltaP = latest.p - oldest.p;
+    const deltaT = latest.t - oldest.t;
+    if (deltaP <= 0 || deltaT <= 0) return null;
+    const ratePerMs = deltaP / deltaT; // percentage points per ms
+    const remainPct = 100 - progress;
+    const remainMs = remainPct / ratePerMs;
     return Math.max(0, Math.round(remainMs / 1000));
   }, [progress, elapsed]);
 
@@ -7822,7 +7907,15 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             dateSource: file.dateSource,
             isDuplicate: file.isDuplicate,
             duplicateOf: file.duplicateOf,
-            originSourcePath: sourceData.sourcePath
+            originSourcePath: sourceData.sourcePath,
+            // v2.0.15 (Terry 2026-06-01) — ship the analysis-known size
+            // through to main so the Fix copy loop can advance the
+            // progress bar by BYTES rather than by file-count. A 100 KB
+            // photo and a 200 MB video were both worth "1/829" in the
+            // old math, so a Fix's % would stick at ~98% for half a
+            // minute while the trailing big videos copied. Byte-based
+            // progress moves smoothly through the same wall-clock time.
+            sizeBytes: file.sizeBytes,
           });
         });
     });
@@ -7834,8 +7927,25 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
 
       // Listen for progress updates
       onCopyProgress((prog) => {
+        // v2.0.15 — refresh the stuck-indicator's last-event timestamp.
+        // Heartbeat fires this every 1 s while Fix is running, so any
+        // gap >10 s here is a real stall (handled by the poll effect
+        // below).
+        lastProgressAtRef.current = Date.now();
+        if (isTakingLong) setIsTakingLong(false);
         setProcessed(prog.current);
-        setProgress(Math.round((prog.current / prog.total) * 100));
+        // v2.0.15 (Terry 2026-06-01) — prefer byte-based progress when
+        // main has supplied totals. File-count math left big trailing
+        // videos contributing 1/829 (~0.1%) of progress each while
+        // taking 10–30 % of total wall time, so the bar would stick
+        // at ~98 % for the final 30 s. Bytes track wall time much
+        // more faithfully. Fallback to the file-count math when
+        // totals are missing so older flows / legacy code keep working.
+        if (typeof prog.totalBytes === 'number' && prog.totalBytes > 0 && typeof prog.bytesDone === 'number') {
+          setProgress(Math.min(100, Math.round((prog.bytesDone / prog.totalBytes) * 100)));
+        } else {
+          setProgress(Math.round((prog.current / prog.total) * 100));
+        }
       });
       // Phase + mirror-progress listeners — only fire when the
       // backend chose the network-staging path. Outside Electron or
@@ -8075,6 +8185,31 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     if (isComplete) setProcessed(totalFiles);
   }, [isComplete, totalFiles]);
 
+  // v2.0.15 (Terry 2026-06-01) — STUCK-INDICATOR GAP POLL.
+  // Heartbeat from main fires every 1 s; any gap >10 s means
+  // something has actually stalled. Poll every 2 s while the Fix
+  // is in progress (gated on `processed` so we don't tick before
+  // the copy phase begins and after isComplete is set). Clears
+  // automatically when the next real progress event arrives via
+  // the onCopyProgress handler above.
+  useEffect(() => {
+    if (isComplete) {
+      setIsTakingLong(false);
+      return;
+    }
+    if (processed === 0 && progress === 0) return; // Fix hasn't started
+    const STUCK_GAP_MS = 10_000;
+    const POLL_MS = 2_000;
+    const id = window.setInterval(() => {
+      const gap = Date.now() - lastProgressAtRef.current;
+      setIsTakingLong(prev => {
+        const next = gap >= STUCK_GAP_MS;
+        return prev === next ? prev : next;
+      });
+    }, POLL_MS);
+    return () => window.clearInterval(id);
+  }, [isComplete, processed, progress]);
+
   useEffect(() => {
     if (isComplete && !reportSaved && destinationPath && fixSnapshotRef.current) {
       setReportSaved(true);
@@ -8200,7 +8335,21 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                 )}
               </div>
             </div>
-            
+
+            {/* v2.0.15 (Terry 2026-06-01) — stuck-indicator. Surfaces
+                when no progress event has fired for 10+ s (heartbeat
+                fires every 1 s, so this is a real stall). Matches the
+                cancel-confirm block's bg-muted/50 + border-border +
+                rounded-xl shape so the modal stays visually consistent. */}
+            {isTakingLong && !isComplete && (
+              <div className="bg-muted/50 border border-border rounded-xl p-4 text-left space-y-2 mb-6">
+                <h4 className="text-sm font-semibold text-foreground">Still working — large file in progress</h4>
+                <p className="text-xs text-muted-foreground">
+                  PDR is copying a particularly large video or photo. High-resolution files can take a minute or two each. The progress bar will catch up once the file finishes — feel free to leave this running.
+                </p>
+              </div>
+            )}
+
             {!showCancelFixConfirm ? (
               <Button
                 variant="outline"
@@ -10945,11 +11094,24 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        <strong className="text-foreground">A Recycle Bin, a working Photo Format converter, and a smoother end-of-Fix experience.</strong> A quality-of-life release that closes out v2.0.x — a proper Recycle Bin, unlocked PNG / JPG conversion, source-path visibility in the sidebar, and the removal of the freezes and chime stalls that bookended every Fix.
+                        <strong className="text-foreground">A Recycle Bin, a working Photo Format converter, a smoother end-of-Fix experience, and a Memories &harr; Search &amp; Discovery bridge.</strong> A quality-of-life release that closes out v2.0.x &mdash; a proper Recycle Bin, unlocked PNG / JPG conversion, source-path visibility in the sidebar, the removal of the freezes and chime stalls that bookended every Fix, and a new round-trip between Memories and S&amp;D so you can pull selections out of a month or album for ad-hoc filtering and jump straight back to where you came from.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">Recycle Bin</strong> &mdash; deleted files now go to a recoverable PDR Recycle Bin instead of straight to disk. Restore them, permanently delete a selection, or empty the bin entirely. Empty-Bin offers a &ldquo;Skip Windows Recycle Bin&rdquo; option so you can actually reclaim the disk space (the OS bin keeps a full copy until that&apos;s emptied too).</li>
                         <li><strong className="text-foreground font-medium">Photo Format conversion unlocked and usable</strong> &mdash; was previously gated as &ldquo;Coming in v2.1&rdquo;. The PNG path now runs in a persistent encode worker with EXIF dates embedded directly into the encode pipeline (no slow post-pass), and uses faster libvips compression. An infinite-loop bug on near-duplicate files (same EXIF date) is fixed. JPG output is also available.</li>
+                        <li><strong className="text-foreground font-medium">Send to Search &amp; Discovery from Memories</strong> &mdash; right-click any photo or selection inside a Memories &mdash; Dates drilldown or an album and choose &ldquo;Send to Search &amp; Discovery&rdquo; (or &ldquo;Add to S&amp;D pile&rdquo; to accumulate). The chosen files appear as a Memories chip in the S&amp;D filter row and can then be filtered, ranked, or acted on like any other result set.</li>
+                        <li><strong className="text-foreground font-medium">Back-to-Memories and Back-to-Album pills</strong> &mdash; once you&apos;ve sent files to S&amp;D, a gold pill appears in the title bar (&ldquo;Back to Dates &mdash; March 2018&rdquo; or &ldquo;Back to Album &lsquo;Sinta&rsquo;&rdquo;). One click returns you to the exact month / album you came from and scrolls back to the photo you last touched, no manual nav required.</li>
+                        <li><strong className="text-foreground font-medium">Add to Album from Search &amp; Discovery</strong> &mdash; right-click any file in S&amp;D and choose &ldquo;Add to album&hellip;&rdquo; to drop it (or the current selection) into an existing album or a new one. Previously you had to switch to Memories first.</li>
+                        <li><strong className="text-foreground font-medium">Multi-select inside an album</strong> &mdash; Ctrl-click and Shift-click now work inside Albums the same way they do in Memories &mdash; Dates. Gold ring + checkbox styling matches across both views.</li>
+                        <li><strong className="text-foreground font-medium">Ungrouped user albums in the Folders tree</strong> &mdash; albums you create without a folder used to disappear from the Folders section of the Albums sidebar. They now appear alongside the System / Auto folders so every album you make stays reachable.</li>
+                        <li><strong className="text-foreground font-medium">Month picker on Dates drilldowns</strong> &mdash; the month name at the top of a Memories &mdash; Dates drilldown is now a dropdown showing every month with photos in that year and the photo count for each. Jump between months without going back to the year timeline.</li>
+                        <li><strong className="text-foreground font-medium">&ldquo;By Date&rdquo; renamed to &ldquo;Dates&rdquo;</strong> &mdash; tighter label on the Memories sub-nav.</li>
+                        <li><strong className="text-foreground font-medium">Video timeline scrubbing</strong> &mdash; dragging the playhead on a video in the PDR Viewer now seeks correctly instead of restarting from the beginning. The internal protocol handler now honours HTTP Range requests so the video element can fetch arbitrary byte spans for instant seeks.</li>
+                        <li><strong className="text-foreground font-medium">Filmstrip no longer shows ghosted slots</strong> &mdash; the brief flash of dark placeholders while the filmstrip built itself is gone; the strip now centres on the selected thumb the moment you open a photo.</li>
+                        <li><strong className="text-foreground font-medium">Fix progress reports bytes, not file counts</strong> &mdash; the Fix progress bar and ETA are now driven by bytes copied, not files-completed. ETA uses a rolling sample window so it stays accurate when the next batch of files is much larger or smaller than what came before; copies of large files run in parallel using the OS-native copy primitive (much faster than Node&apos;s default).</li>
+                        <li><strong className="text-foreground font-medium">Stuck-job indicator</strong> &mdash; if Fix progress stalls for more than 10 seconds (a slow USB drive, a giant video being verified, antivirus scanning the destination), a notice appears with a heartbeat clock so you know PDR is still working rather than hung. Replaces the Windows &ldquo;Not Responding&rdquo; white-titlebar flash, which has also been suppressed entirely &mdash; PDR&apos;s titlebar never goes white now, even during heavy work.</li>
+                        <li><strong className="text-foreground font-medium">Faster Memories warm-up after a Google Takeout import</strong> &mdash; the multi-second freeze before analysis started on a fresh Takeout source is gone. The sidecar JSON map is now snapshotted to disk and pre-warmed at app start.</li>
+                        <li><strong className="text-foreground font-medium">Analysis worker memory bump</strong> &mdash; the analysis worker now runs with a 4 GB heap so very large libraries no longer hit V8&apos;s default 2 GB ceiling mid-run.</li>
                         <li><strong className="text-foreground font-medium">Source rows show where they came from</strong> &mdash; hover any source in the sidebar to see its full filesystem path; right-click for &ldquo;Show in File Explorer&rdquo; and &ldquo;Copy filepath&rdquo;. Disambiguates sources with the same leaf folder name (two &ldquo;Camera Roll&rdquo; folders on different drives, an OneDrive sync folder vs an OneDrive Takeout extract, etc.).</li>
                         <li><strong className="text-foreground font-medium">Fix Complete no longer freezes the app</strong> &mdash; the several-second hang at the end of a Fix is gone. Catalogue / CSV generation moved off the main thread to a dedicated worker with per-report chunk caching.</li>
                         <li><strong className="text-foreground font-medium">Completion chime is instant</strong> &mdash; moved to the WebAudio API and pre-warmed at app startup, killing the 4-second <code>play()</code> stalls that previously made the end of a Fix feel laggy.</li>

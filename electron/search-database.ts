@@ -157,6 +157,13 @@ export interface SearchQuery {
    *  one of these albums. Empty/undefined = no album filter.
    *  Multi-select uses IN — photos in ANY of the listed albums. */
   albumIds?: number[];
+  /** v2.0.15 (Terry 2026-06-01) — pile filter from Memories' "Send
+   *  to S&D" action. When set to a non-empty array, restricts the
+   *  result set to exactly these indexed_files.id values via
+   *  `f.id IN (...)`. Distinct from a normal filter — UI clears all
+   *  other filters when the pile is active so the user sees the
+   *  hand-picked set as-is. */
+  fileIds?: number[];
   sortBy?: 'derived_date' | 'filename' | 'size_bytes' | 'confidence' | 'camera_model' | 'iso' | 'aperture' | 'focal_length' | 'megapixels';
   sortDir?: 'asc' | 'desc';
   limit?: number;
@@ -2065,6 +2072,19 @@ export function searchFiles(query: SearchQuery): SearchResult {
       `f.id IN (SELECT file_id FROM album_files WHERE album_id IN (${query.albumIds.map(() => '?').join(',')}))`
     );
     params.push(...query.albumIds);
+  }
+
+  // v2.0.15 (Terry 2026-06-01) — pile filter from Memories'
+  // "Send to S&D" action. Restricts the result set to exactly the
+  // listed indexed_files.id values. Renderer clears other filters
+  // when the pile is active so this is the lone non-sort constraint.
+  // SQLite's IN-list size is bounded by SQLITE_MAX_VARIABLE_NUMBER
+  // (32766 in modern builds) — Terry's library would have to send a
+  // list bigger than that for this to overflow; the UI multi-select
+  // could realistically reach a few hundred at most.
+  if (query.fileIds && query.fileIds.length > 0) {
+    conditions.push(`f.id IN (${query.fileIds.map(() => '?').join(',')})`);
+    params.push(...query.fileIds);
   }
 
   // AI: Person + Tag filters. Rendered as two SQL fragments first so we

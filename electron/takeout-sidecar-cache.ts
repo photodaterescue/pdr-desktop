@@ -327,6 +327,11 @@ export async function scanSidecarsFromZip(
     });
     tx(batch);
     batch = [];
+    // v2.0.15 (Terry 2026-06-01) — bust the snapshot cache so the
+    // next Add Source picks up the rows we just inserted. Cheap, and
+    // safe to do per-batch even though only the final inserted row
+    // would change the snapshot's logical content.
+    invalidateSidecarSnapshotCache();
   };
 
   for (let i = 0; i < entries.length; i++) {
@@ -523,8 +528,34 @@ export function lookupSidecarByBasename(photoBasename: string): SidecarLookupRes
  * Keeps payload minimal: just photoTakenUnix + sourceZip — the only
  * fields analysis-engine reads. Other sidecar fields (gps, description,
  * peopleJson) are written elsewhere by Enrichment, not by analysis.
+ *
+ * v2.0.15 (Terry 2026-06-01) — RESULT CACHE.
+ * Before the cache: every Add Source ran the window-function SQL over
+ * the full takeout_sidecars table + iterated 74k rows into a JS object
+ * on the main thread, blocking it for ~6 seconds before the analysis
+ * worker could even start. Visible to the user as the title bar going
+ * white (Windows "Not Responding" ghosting at the 5-second threshold).
+ * After the cache: built ONCE per session and reused across every Add
+ * Source. Invalidated only when new sidecars are inserted (additive-only
+ * table; no UPDATE/DELETE paths to worry about). Pre-warmed shortly
+ * after app start so the first Add Source rarely pays the build cost.
  */
+let cachedSidecarSnapshot: Record<string, { photoTakenUnix: number | null; sourceZip: string }> | null = null;
+
+/** Called from `flushBatch` after every successful insert into
+ *  takeout_sidecars so the next snapshot rebuild picks up the new
+ *  rows. Cheap (null assignment), safe to call frequently. */
+function invalidateSidecarSnapshotCache(): void {
+  cachedSidecarSnapshot = null;
+}
+
 export function snapshotSidecarMapForWorker(): Record<string, { photoTakenUnix: number | null; sourceZip: string }> {
+  if (cachedSidecarSnapshot !== null) {
+    // eslint-disable-next-line no-console
+    console.log(`[sidecar-snapshot] cache HIT (${Object.keys(cachedSidecarSnapshot).length} rows)`);
+    return cachedSidecarSnapshot;
+  }
+  const t0 = Date.now();
   const db = getDb();
   const rows = db.prepare(`
     SELECT photo_basename, photo_taken_unix, source_zip
@@ -539,11 +570,39 @@ export function snapshotSidecarMapForWorker(): Record<string, { photoTakenUnix: 
     )
     WHERE rn = 1
   `).all() as Array<{ photo_basename: string; photo_taken_unix: number | null; source_zip: string }>;
+  const tSqlMs = Date.now() - t0;
   const out: Record<string, { photoTakenUnix: number | null; sourceZip: string }> = {};
   for (const r of rows) {
     out[r.photo_basename] = { photoTakenUnix: r.photo_taken_unix, sourceZip: r.source_zip };
   }
+  const tBuildMs = Date.now() - t0 - tSqlMs;
+  cachedSidecarSnapshot = out;
+  // eslint-disable-next-line no-console
+  console.log(`[sidecar-snapshot] cache MISS — built ${rows.length} rows in ${tSqlMs + tBuildMs}ms (sql=${tSqlMs}ms, build=${tBuildMs}ms)`);
   return out;
+}
+
+/**
+ * v2.0.15 — fire-and-forget pre-warm of the snapshot cache. Called
+ * from main.ts shortly after the window is ready so the heavy
+ * SQL + JS-object build runs while the user is still reading the
+ * dashboard, NOT during their first Add Source click. Wrapped in a
+ * setImmediate so the call site doesn't block — but the actual SQL
+ * still runs on main, just deferred to the next tick.
+ *
+ * If the cache is already warm (e.g. an earlier code path already
+ * needed it) this is a no-op.
+ */
+export function warmSidecarSnapshotCache(): void {
+  if (cachedSidecarSnapshot !== null) return;
+  setImmediate(() => {
+    try {
+      snapshotSidecarMapForWorker();
+    } catch {
+      // Best-effort warm — if it fails, the lazy path on first real
+      // Add Source will surface the error then.
+    }
+  });
 }
 
 // ─── LDM summary API ─────────────────────────────────────────────────────────

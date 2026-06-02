@@ -919,8 +919,31 @@
       // A 6,785-entry strip builds in ~34 chunks ≈ 1-2 s total wall
       // clock, but the user sees the image + first chunk of tiles
       // within the first paint cycle (~100 ms).
+      // v2.0.15 (Terry 2026-06-01) — transparent placeholder src.
+      // Without this, an <img> with no src + a title attribute
+      // rendered the title text inside the empty 80×60 box as the
+      // browser's accessibility fallback — visible as ugly gray
+      // boxes filled with filenames flashing for ~100ms before
+      // each thumbnail actually loaded. A 1×1 transparent GIF as
+      // initial src means the image "loads" instantly with nothing
+      // visible, then the IntersectionObserver swaps in the real
+      // thumbnail when the tile scrolls into view. The .thumb's
+      // background:#1a1a2e shows through cleanly during that gap.
+      const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
       const FILMSTRIP_CHUNK_SIZE = 200;
       let buildCursor = 0;
+      // v2.0.15 (Terry 2026-06-01) — track whether we've scrolled to
+      // the active thumbnail yet. updateFilmstripActive() running
+      // synchronously at loadMedia time was a no-op because the strip
+      // was still empty (chunks build asynchronously below). We now
+      // re-run it once the chunk containing currentIndex has landed,
+      // so the active tile is both marked .active AND scrolled to
+      // the centre of the viewport. Flag stays true after the first
+      // successful scroll so we don't keep re-centring as later
+      // chunks land (which would fight the user's manual scroll).
+      let activeScrolled = false;
+
       const buildFilmstripChunk = () => {
         const end = Math.min(buildCursor + FILMSTRIP_CHUNK_SIZE, files.length);
         for (let i = buildCursor; i < end; i++) {
@@ -937,6 +960,11 @@
           } else {
             const thumb = document.createElement('img');
             thumb.className = 'thumb';
+            // Transparent placeholder so the empty box shows the dark
+            // .thumb background instead of the filename-as-alt-text
+            // fallback that was making the strip look "wrong" for the
+            // ~100 ms before each tile's real thumbnail resolved.
+            thumb.src = TRANSPARENT_PIXEL;
             thumb.title = getFilename(fp);
             thumb.dataset.idx = String(i);
             thumb.dataset.fp = fp;
@@ -946,6 +974,13 @@
           }
         }
         buildCursor = end;
+        // If the chunk we just placed contains the active index AND
+        // we haven't centred yet, do it now. Works whether the active
+        // thumb is in the first chunk or several chunks in.
+        if (!activeScrolled && currentIndex >= 0 && currentIndex < buildCursor) {
+          updateFilmstripActive();
+          activeScrolled = true;
+        }
         if (buildCursor < files.length) {
           setTimeout(buildFilmstripChunk, 0);
         }

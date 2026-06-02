@@ -148,7 +148,7 @@ export default function MemoriesPanel() {
         <button
           type="button"
           onClick={() => handleTabChange(tab === 'byDate' ? 'albums' : 'byDate')}
-          title={tab === 'byDate' ? 'Switch to Albums' : 'Switch to By Date'}
+          title={tab === 'byDate' ? 'Switch to Albums' : 'Switch to Dates'}
           className="relative inline-flex items-center h-11 p-1 bg-primary rounded-full cursor-pointer shrink-0"
           data-testid="memories-tab-toggle"
         >
@@ -165,7 +165,7 @@ export default function MemoriesPanel() {
             data-testid="tab-memories-by-date"
           >
             <CalendarRange className="w-4 h-4" />
-            By Date
+            Dates
           </span>
           <span
             ref={albumsRef}

@@ -299,6 +299,7 @@ import {
   scanSidecarsFromZips,
   lookupSidecarByBasename,
   snapshotSidecarMapForWorker,
+  warmSidecarSnapshotCache,
 } from './takeout-sidecar-cache.js';
 
 // v2.0.14 — wire the real settings-store + DB lookups into the now-
@@ -649,6 +650,27 @@ async function streamCopyFile(src: string, dest: string, computeHash = false): P
   // No-op on macOS/Linux.
   const srcLong = toLongPath(src);
   const destLong = toLongPath(dest);
+
+  // v2.0.15 (Terry 2026-06-01) — OS-NATIVE COPY FAST PATH.
+  // When we don't need to compute a hash during the copy (the common
+  // case: skipDuplicates off, OR heuristic dedup, OR a file larger
+  // than LARGE_FILE_THRESHOLD where we always heuristic), let the OS
+  // do the copy via fs.promises.copyFile. On Windows that routes
+  // through libuv → CopyFileExW which is a single kernel-level
+  // syscall — much faster than the user-mode stream copy below
+  // which sends bytes through 64 KB chunks (3 125 chunks for a 200
+  // MB video × ~3 ms syscall round-trip ≈ 10 s of pure scheduling
+  // overhead). Measured locally: stream copy ran VIDEO0057 (~200 MB)
+  // at 12.5 MB/s; fs.copyFile takes it through the kernel zero-copy
+  // path at the full drive write speed (typically 200–500 MB/s on
+  // SSD). Stream path retained below for the hash branch — we still
+  // need the byte stream there to compute SHA-256 inline without a
+  // second I/O pass.
+  if (!computeHash) {
+    await fs.promises.copyFile(srcLong, destLong);
+    return null;
+  }
+
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       readStream.destroy();
@@ -2406,6 +2428,34 @@ app.whenReady().then(() => {
     log.info(`[log] app version ${app.getVersion()} starting on ${process.platform} ${os.release()}`);
   } catch {}
 
+  // v2.0.15 (Terry 2026-06-01) — DISABLE WINDOWS GHOSTING.
+  // Windows ghosts (paints a white "Not Responding" overlay) on any
+  // window whose process hasn't pumped messages for ~5 s. PDR's own
+  // busy stretches are handled by the heartbeat in files:copy, but
+  // EXTERNAL OS load — clipboard paste into another Electron app,
+  // antivirus scan, disk contention from File Explorer — can still
+  // stall PDR's message pump briefly and trigger the ghost. Calling
+  // user32!DisableProcessWindowsGhosting() once at startup turns the
+  // overlay off process-wide so PDR never visually flashes "Not
+  // Responding" regardless of the cause. The trade-off — the OS no
+  // longer signals genuine hangs through the ghost — is covered by
+  // the renderer's stuck-indicator (Fix modal surfaces a "PDR is
+  // taking a while…" notice if heartbeat gaps exceed 10 s).
+  if (process.platform === 'win32') {
+    try {
+      // Use the existing esmRequire (defined above for CJS modules
+      // that need to load from this ESM-compiled file). Lazy +
+      // try/catch'd so a missing prebuilt binary doesn't tank startup.
+      const koffi = esmRequire('koffi');
+      const user32 = koffi.load('user32.dll');
+      const disableGhosting = user32.func('void DisableProcessWindowsGhosting()');
+      disableGhosting();
+      log.info('[ghost] DisableProcessWindowsGhosting() called — title-bar ghost overlay suppressed for this process');
+    } catch (err) {
+      log.warn(`[ghost] DisableProcessWindowsGhosting unavailable (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   // Library-portable DB: kick off the background sidecar-mirror loop
   // and seed the device name with the OS hostname so any mirror written
   // before the renderer has a chance to set a friendlier name still
@@ -2503,11 +2553,97 @@ app.whenReady().then(() => {
       }
     }
 
-    // Forward Range headers so the <video> element can seek properly.
-    return net.fetch(fileUrl, {
-      headers: request.headers,
-      method: request.method,
-    });
+    // v2.0.15 (Terry 2026-06-01) — RANGE-AWARE FILE SERVING.
+    // Was: `net.fetch(file://...)` with forwarded headers. Despite
+    // the old comment claiming Range support, Electron's net.fetch
+    // does NOT honour Range requests on file:// URLs — it returns
+    // the full file with 200 every time. That broke HTML5 <video>
+    // seek: Chromium needs a 206 Partial Content response to a
+    // Range request before it will let the user drag the timeline.
+    // Without it, the scrubber bar paints (because duration is in
+    // the metadata) but dragging it does nothing.
+    //
+    // Now: parse the Range header ourselves, read only the requested
+    // byte slice with fs.createReadStream({start, end}), and return
+    // a 206 with proper Content-Range + Accept-Ranges headers.
+    // Falls back to a 200 with Accept-Ranges:bytes when no Range
+    // header is present (first request, or non-video fetches).
+    try {
+      const fsPath = toLongPath(raw);
+      const stats = await fs.promises.stat(fsPath);
+      const fileSize = stats.size;
+      const rangeHeader = request.headers.get('range') || request.headers.get('Range');
+
+      // Best-effort MIME detection — Chromium needs the right type
+      // on the response or it refuses to treat the body as seekable
+      // video. Falls through to application/octet-stream for unknown
+      // extensions so a misnamed file at least downloads.
+      const ext = lowerExt;
+      const mime =
+        ext === '.mp4' ? 'video/mp4' :
+        ext === '.m4v' ? 'video/mp4' :
+        ext === '.mov' ? 'video/quicktime' :
+        ext === '.mkv' ? 'video/x-matroska' :
+        ext === '.webm' ? 'video/webm' :
+        ext === '.avi' ? 'video/x-msvideo' :
+        ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+        ext === '.png' ? 'image/png' :
+        ext === '.gif' ? 'image/gif' :
+        ext === '.webp' ? 'image/webp' :
+        'application/octet-stream';
+
+      const { Readable } = await import('node:stream');
+
+      if (rangeHeader) {
+        const match = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader);
+        if (match) {
+          let start = parseInt(match[1], 10);
+          let end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+          if (isNaN(start) || start < 0) start = 0;
+          if (isNaN(end) || end >= fileSize) end = fileSize - 1;
+          if (start > end) {
+            return new Response(null, {
+              status: 416,
+              headers: { 'Content-Range': `bytes */${fileSize}` },
+            });
+          }
+          const chunkSize = end - start + 1;
+          const nodeStream = fs.createReadStream(fsPath, { start, end });
+          const webStream = Readable.toWeb(nodeStream) as ReadableStream;
+          return new Response(webStream, {
+            status: 206,
+            headers: {
+              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+              'Accept-Ranges': 'bytes',
+              'Content-Length': String(chunkSize),
+              'Content-Type': mime,
+              'Cache-Control': 'no-cache',
+            },
+          });
+        }
+      }
+
+      // No (or malformed) Range header — serve the whole file but
+      // advertise Accept-Ranges so Chromium knows to use Range on
+      // subsequent seek attempts.
+      const nodeStream = fs.createReadStream(fsPath);
+      const webStream = Readable.toWeb(nodeStream) as ReadableStream;
+      return new Response(webStream, {
+        status: 200,
+        headers: {
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(fileSize),
+          'Content-Type': mime,
+          'Cache-Control': 'no-cache',
+        },
+      });
+    } catch (err) {
+      console.warn('[pdr-file] serve failed for', raw, (err as Error).message);
+      // Last-resort fallback to the previous behaviour so a broken
+      // serve path doesn't worsen the UX — at least the file might
+      // still load even if it can't be seeked.
+      return net.fetch(fileUrl, { headers: request.headers, method: request.method });
+    }
   });
 
   // Remove default Electron menus — custom title bar replaces them
@@ -2543,6 +2679,17 @@ app.whenReady().then(() => {
   // analysis-worker so the user's Add Source click triggers the
   // analysis instantly instead of after a 200-500 ms fork delay.
   setTimeout(() => preforkAnalysisWorker(), 1500);
+  // v2.0.15 (Terry 2026-06-01) — pre-warm the Takeout sidecar
+  // snapshot too. The first Add Source after launch used to block
+  // the main thread for ~6 s while it ran the snapshot SQL over the
+  // 74k-row takeout_sidecars table + iterated the result into a JS
+  // object — long enough for Windows to ghost the title bar white
+  // (the "Not Responding" threshold is 5 s). Running it here, off
+  // the click path, means the cost is paid while the user is still
+  // reading the dashboard. Subsequent Add Sources hit the cache.
+  setTimeout(() => {
+    try { warmSidecarSnapshotCache(); } catch { /* best-effort */ }
+  }, 3000);
 
   // Wire electron-updater after the main window exists so the updater
   // can broadcast state events to the renderer over webContents.send.
@@ -4917,9 +5064,9 @@ ipcMain.handle('folder:fingerprint', async (_event, dirPath: string) => {
 });
 
 ipcMain.handle('files:copy', async (_event, data: {
-  files: Array<{ 
-    sourcePath: string; 
-    newFilename: string; 
+  files: Array<{
+    sourcePath: string;
+    newFilename: string;
     sourceType: 'folder' | 'zip';
     derivedDate?: string;
     dateConfidence?: 'confirmed' | 'recovered' | 'marked';
@@ -4927,6 +5074,11 @@ ipcMain.handle('files:copy', async (_event, data: {
     isDuplicate?: boolean;
     duplicateOf?: string;
     originSourcePath?: string;
+    // v2.0.15 — analysis-known source size, used by the progress
+    // reporter to advance the bar by bytes instead of file count.
+    // Optional so callers that didn't supply it (legacy code paths)
+    // fall back to file-count progress without breaking.
+    sizeBytes?: number;
   }>;
   destinationPath: string;
   zipPaths?: Record<string, string>;
@@ -4943,8 +5095,23 @@ ipcMain.handle('files:copy', async (_event, data: {
   existingDestinationHeuristics?: Record<string, string>;
   photoFormat?: 'original' | 'png' | 'jpg';
 }) => {
-  const { files, destinationPath, zipPaths = {}, photoFormat = 'original' } = data;
-  console.log(`[Fix] Starting copy: ${files.length} files to ${destinationPath}, format=${photoFormat}`);
+  const { destinationPath, zipPaths = {}, photoFormat = 'original' } = data;
+  // v2.0.15 (Terry 2026-06-01) — SORT FILES BY SIZE DESCENDING.
+  // Default alphabetical order clustered all the big videos at the
+  // end of the run (HTC One filenames: IMAG*.jpg first, VIDEO*.mp4
+  // last). With 4-wide parallel copy, four big videos ended up in
+  // flight together and no log/progress event fired for 15-20 s
+  // while libuv worked — long enough for Windows to ghost the title
+  // bar white. Starting biggest files first means the slow files are
+  // running THROUGHOUT the Fix alongside continuously-completing
+  // small photos, so the main thread always has a near-term file
+  // completion to log/emit progress for. As a side effect this also
+  // smooths the tail latency that made the bar appear stuck at ~86%
+  // near the end. Sorts a shallow copy so we don't mutate the
+  // caller's array. Files without sizeBytes (legacy path) sort to
+  // the end of the queue.
+  const files = [...data.files].sort((a, b) => (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0));
+  console.log(`[Fix] Starting copy: ${files.length} files to ${destinationPath}, format=${photoFormat} (sorted by size DESC)`);
   copyFilesCancelled = false;
 
   // ── Network destination → stage-then-mirror via robocopy ──
@@ -5058,7 +5225,13 @@ ipcMain.handle('files:copy', async (_event, data: {
   const duplicateFiles: Array<{ filename: string; duplicateOf: string; duplicateMethod: 'hash' | 'heuristic'; wasExisting?: boolean }> = [];
   let duplicatesRemoved = 0;
   let skippedExisting = 0;
-  
+
+  // v2.0.15 — hoisted out of the try block so the finally clause can
+  // clear it on error / cancellation paths too. Started inside the
+  // try block once the copy loop's prerequisites exist; remains null
+  // on the abort-before-loop paths.
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+
   try {
     // mkdir BOTH the real destination (so robocopy has a parent
     // when mirroring) AND, when staging, the writeRoot is already
@@ -5193,6 +5366,111 @@ ipcMain.handle('files:copy', async (_event, data: {
 
     // Track actual completed files for accurate progress
     let completedFiles = 0;
+
+    // v2.0.15 (Terry 2026-06-01) — byte-based progress. A 100 KB photo
+    // and a 200 MB video both used to be "1/829" in file-count math,
+    // so the % would stick at ~98% for half a minute while the
+    // trailing big video files copied. Byte progress moves smoothly
+    // across the same wall-clock time because the bar advances in
+    // proportion to data actually transferred. totalCopyBytes is the
+    // sum of every file's analysis-known sizeBytes; bytesDone
+    // increments in the same places completedFiles increments.
+    // Falls back to 0 if no sizes are supplied (legacy / IPC mismatch)
+    // and the renderer's progress code uses file-count math instead.
+    const totalCopyBytes = data.files.reduce(
+      (sum, f) => sum + (typeof f.sizeBytes === 'number' && f.sizeBytes > 0 ? f.sizeBytes : 0),
+      0,
+    );
+    let bytesDone = 0;
+    /** Helper — adds size to bytesDone for whichever file just landed.
+     *  Called immediately before the existing `webContents.send`. */
+    const advanceBytes = (file: { sizeBytes?: number } | undefined): void => {
+      if (file && typeof file.sizeBytes === 'number' && file.sizeBytes > 0) {
+        bytesDone += file.sizeBytes;
+      }
+    };
+    /** Helper — the progress payload all the send sites use. Kept in
+     *  one place so the contract stays consistent across the 8 emit
+     *  points in this handler.
+     *
+     *  v2.0.15 (Terry 2026-06-01) — reverted to committed-bytes-only.
+     *  An in-flight estimator was tried (filesInProgressMeta +
+     *  per-file rate × elapsed) but the first completed file is
+     *  cache-aided and finishes in ~6 s; the rate computed from that
+     *  one sample was 5–10× higher than steady-state, so the bar
+     *  shot to ~31 % in the first 11 s while reality was at ~7 %.
+     *  Reverted to honest committed bytes — the bar moves in steps
+     *  as files complete, which is mathematically truthful. Visual
+     *  smoothness comes from (a) the heartbeat keeping the message
+     *  pump warm and (b) the size-DESC sort spreading big files
+     *  across the run. If the bar plateaus during a big-video gap,
+     *  the renderer's stuck-indicator surfaces an explicit "still
+     *  working" notice. */
+    const progressPayload = () => ({
+      current: completedFiles,
+      total: data.files.length,
+      bytesDone,
+      totalBytes: totalCopyBytes,
+    });
+
+    // v2.0.15 (Terry 2026-06-01) — PARALLEL COPY POOL.
+    // Was a serial for-loop where each file's streamCopyFile + EXIF
+    // write blocked the next file. A single 200 MB video copy could
+    // sit on the main thread for 10–16 s with no event-loop ticks,
+    // long enough for Windows to ghost the title bar white. With a
+    // 4-wide pool, fast small photos and slow big videos overlap so
+    // the end-of-Fix wall clock drops AND the OS keeps getting
+    // window messages.
+    //
+    // Layout: the SYNC PREP per file (cancellation check, stat,
+    // heuristic dedup, mkdir, filename-collision loop) stays in the
+    // sequential for-loop body so the shared maps + sets
+    // (usedFilenames, writtenHeuristics, preExistingFiles) don't
+    // race. Once a unique destination filename is reserved, the
+    // ASYNC HEAVY work — streamCopyFile, hash-dedup post-check, EXIF
+    // write, results.push, progress emit — is wrapped in an IIFE
+    // and launched into a pool capped at COPY_CONCURRENCY.
+    //
+    // Why the shared mutations are safe: JavaScript runs the IIFE
+    // synchronously up to its first `await`, so Map.get + Map.set
+    // pairs (writtenHashes) and Array.push (results, duplicateFiles)
+    // can't interleave between different IIFEs. The only state the
+    // IIFE TOUCHES that another IIFE could also touch is
+    // writtenHashes, and its single-shot get-then-set is atomic from
+    // the event-loop's perspective. Worst case: two identical files
+    // copy in parallel, both complete near-simultaneously, whichever
+    // post-checks first wins the hash slot; the loser unlinks its
+    // just-written file. That's the same outcome as serial order.
+    const COPY_CONCURRENCY = 4;
+    const inFlightCopies = new Set<Promise<void>>();
+    const waitForCopySlot = async (): Promise<void> => {
+      while (inFlightCopies.size >= COPY_CONCURRENCY) {
+        // Promise.race resolves the moment any in-flight copy
+        // settles; we then re-check the size to allow for multiple
+        // settling on the same tick.
+        await Promise.race([...inFlightCopies]);
+      }
+    };
+
+    // v2.0.15 (Terry 2026-06-01) — PROGRESS HEARTBEAT.
+    // When 4 big videos are in flight at once and each takes 15–30 s
+    // to complete, no progress event fires for the whole wait —
+    // Windows ghosts the title bar white after 5 s of no message-pump
+    // activity (seen as the "86 % freeze" symptom on Terry's HTC
+    // source, confirmed in main.log as a 19.6 s log gap between
+    // 12:25:44 and 12:26:03). This timer fires a duplicate progress
+    // event every second while ANY copy is in flight, keeping the
+    // renderer + Windows DWM aware that the process is alive. The
+    // bytesDone / completedFiles numbers don't change between real
+    // file completions; the event is just a liveness signal. Stored
+    // on the hoisted `heartbeatTimer` so the finally clause can also
+    // clear it on error / cancellation paths.
+    heartbeatTimer = setInterval(() => {
+      if (inFlightCopies.size > 0 && mainWindow) {
+        mainWindow.webContents.send('files:copy:progress', progressPayload());
+      }
+    }, 1000);
+
 
     // v2.0.15 (Terry 2026-05-30) — conversion-speed telemetry. The
     // photo-format gate is now open in release builds, so we need
@@ -5383,9 +5661,10 @@ ipcMain.handle('files:copy', async (_event, data: {
               log.warn(`[Convert]   #${batchIndex}.${msg.id} ${status} dur=${msg.durationMs}ms in=${inKB ?? '?'}KB out=${outKB ?? '?'}KB ratio=${ratio} ${memStr} "${filename}"`);
             }
             // Advance the progress bar live as each task lands.
+            advanceBytes(t?.file);
             completedFiles++;
             if (mainWindow) {
-              mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+              mainWindow.webContents.send('files:copy:progress', progressPayload());
             }
           } else if (msg.type === 'batch-done') {
             // v2.0.15 — throughput per batch. wall-clock is the
@@ -5549,8 +5828,9 @@ ipcMain.handle('files:copy', async (_event, data: {
           fileSize = stats.size;
         } catch {
           results.push({ success: false, sourcePath: file.sourcePath, destPath: '', finalFilename: file.newFilename, error: 'File not found' });
+          advanceBytes(file);
           completedFiles++;
-          if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+          if (mainWindow) mainWindow.webContents.send('files:copy:progress', progressPayload());
           continue;
         }
       }
@@ -5580,8 +5860,9 @@ ipcMain.handle('files:copy', async (_event, data: {
               duplicateMethod: 'heuristic',
               wasExisting
             });
+            advanceBytes(file);
             completedFiles++;
-            if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+            if (mainWindow) mainWindow.webContents.send('files:copy:progress', progressPayload());
             continue; // Skip — duplicate found via heuristic
           }
           writtenHeuristics.set(heuristicKey, file.newFilename);
@@ -5634,8 +5915,9 @@ ipcMain.handle('files:copy', async (_event, data: {
           wasExisting: true
         });
         usedFilenames.add(path.join(subfolderPath, finalFilename).toLowerCase());
+        advanceBytes(file);
         completedFiles++;
-        if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+        if (mainWindow) mainWindow.webContents.send('files:copy:progress', progressPayload());
         continue;
       }
 
@@ -5690,6 +5972,10 @@ ipcMain.handle('files:copy', async (_event, data: {
       
       const destPath = path.join(targetDir, finalFilename);
       
+      // SYNC outer try wraps the conversion-enqueue and zip-error
+      // branches only. The real-copy branch hands off to the parallel
+      // pool (see the IIFE further down) — that path has its own
+      // try/catch inside the IIFE.
       try {
         // Determine the source data for this file
         const isZipWithBuffer = file.sourceType === 'zip' && fileBuffer;
@@ -5697,8 +5983,9 @@ ipcMain.handle('files:copy', async (_event, data: {
 
         if (isZipWithoutBuffer) {
           results.push({ success: false, sourcePath: file.sourcePath, destPath, finalFilename, error: 'Entry not found in zip' });
+          advanceBytes(file);
           completedFiles++;
-          if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+          if (mainWindow) mainWindow.webContents.send('files:copy:progress', progressPayload());
           continue;
         }
 
@@ -5764,111 +6051,179 @@ ipcMain.handle('files:copy', async (_event, data: {
 
           // Skip EXIF and results for now — handled after loop for converted files
           continue;
-        } else {
-          // No conversion needed — straight copy (compute hash during copy if needed)
-          let copyHash: string | null = null;
-          if (isZipWithBuffer) {
-            if (skipDuplicates && useHashForThisFile) {
-              copyHash = crypto.createHash('sha256').update(fileBuffer!).digest('hex');
+        }
+
+        // ─── Non-conversion path — launch into the parallel copy pool ─
+        // Everything from here to the end of this iteration runs
+        // CONCURRENTLY with up to 3 other in-flight copies. The
+        // sequential for-loop continues issuing the next file as
+        // soon as a slot opens.
+        await waitForCopySlot();
+
+        // Capture the per-iteration state the IIFE needs. JS closures
+        // capture by reference, so plain identifier captures of
+        // `file`, `destPath`, `finalFilename`, etc. are fine — each
+        // for-iteration creates its own `const` bindings.
+        const indexForLog = i + 1;
+        const fileForCopy = file;
+        const destPathForCopy = destPath;
+        const finalFilenameForCopy = finalFilename;
+        const subfolderPathForCopy = subfolderPath;
+        const useHashForCopy = useHashForThisFile;
+        const isZipBufferCopy = isZipWithBuffer;
+        const skipDuplicatesForCopy = skipDuplicates;
+
+        const copyWork: Promise<void> = (async () => {
+          const copyStartedAt = Date.now();
+          let currentDestPath = destPathForCopy;
+          let currentFinalFilename = finalFilenameForCopy;
+          try {
+            // ── Copy + hash ──────────────────────────────────────────
+            let copyHash: string | null = null;
+            if (isZipBufferCopy) {
+              // v2.0.15 — switched from fs.writeFileSync (blocking) to
+              // fs.promises.writeFile so the pool's parallelism
+              // actually parallelises the in-memory ZIP-buffer branch
+              // too. Rare path in practice; most ZIPs get extracted
+              // up front by extract-worker and arrive as folder files.
+              if (skipDuplicatesForCopy && useHashForCopy) {
+                copyHash = crypto.createHash('sha256').update(fileBuffer!).digest('hex');
+              }
+              await fs.promises.writeFile(currentDestPath, fileBuffer!);
+            } else {
+              copyHash = await streamCopyFile(fileForCopy.sourcePath, currentDestPath, skipDuplicatesForCopy && useHashForCopy);
             }
-            fs.writeFileSync(destPath, fileBuffer!);
-          } else {
-            copyHash = await streamCopyFile(file.sourcePath, destPath, skipDuplicates && useHashForThisFile);
-          }
 
-          // Post-copy hash-based duplicate check (hash was computed during copy, zero extra I/O)
-          if (skipDuplicates && useHashForThisFile && copyHash) {
-            const existingFile = writtenHashes.get(copyHash);
-            if (existingFile) {
-              // Duplicate found — remove the just-written file
-              try { await fs.promises.unlink(destPath); } catch {}
-              const wasExisting = existingFile.startsWith('[existing] ');
-              duplicatesRemoved++;
-              duplicateFiles.push({
-                filename: path.basename(file.sourcePath),
-                duplicateOf: existingFile.replace('[existing] ', ''),
-                duplicateMethod: 'hash',
-                wasExisting
-              });
-              completedFiles++;
-              if (mainWindow) mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
-              continue;
+            // ── Hash-based duplicate post-check ──────────────────────
+            // Map.get + Map.set are sync — no event-loop yield
+            // between the check and the reserve, so a second IIFE
+            // running the same hash through here will SEE the first
+            // one's set() call (whichever lands first).
+            if (skipDuplicatesForCopy && useHashForCopy && copyHash) {
+              const existingFile = writtenHashes.get(copyHash);
+              if (existingFile) {
+                try { await fs.promises.unlink(currentDestPath); } catch {}
+                const wasExisting = existingFile.startsWith('[existing] ');
+                duplicatesRemoved++;
+                duplicateFiles.push({
+                  filename: path.basename(fileForCopy.sourcePath),
+                  duplicateOf: existingFile.replace('[existing] ', ''),
+                  duplicateMethod: 'hash',
+                  wasExisting,
+                });
+                advanceBytes(fileForCopy);
+                completedFiles++;
+                if (mainWindow) mainWindow.webContents.send('files:copy:progress', progressPayload());
+                return;
+              }
+              writtenHashes.set(copyHash, fileForCopy.newFilename);
             }
-            writtenHashes.set(copyHash, file.newFilename);
-          }
-        }
 
-        console.log(`[Fix] File ${i + 1} copy+hash took ${Date.now() - fileStartTime}ms`);
+            console.log(`[Fix] File ${indexForLog} copy+hash took ${Date.now() - copyStartedAt}ms`);
 
-        // Normalise extension (.jpeg → .jpg, .tiff → .tif) even if no format conversion
-        if (photoFormat === 'original') {
-          const srcExt = path.extname(destPath).toLowerCase();
-          const normMap: Record<string, string> = { '.jpeg': '.jpg', '.tiff': '.tif' };
-          if (normMap[srcExt]) {
-            const normPath = destPath.replace(/\.[^.]+$/, normMap[srcExt]);
-            try {
-              await fs.promises.rename(destPath, normPath);
-              finalFilename = finalFilename.replace(/\.[^.]+$/, normMap[srcExt]);
-              usedFilenames.delete(path.join(subfolderPath, path.basename(destPath)).toLowerCase());
-              usedFilenames.add(path.join(subfolderPath, finalFilename).toLowerCase());
-              Object.defineProperty(file, '_convertedPath', { value: normPath });
-            } catch {}
-          }
-        }
-
-        // Resolve actual destPath for EXIF and results
-        const actualDestPath = (file as any)._convertedPath || destPath;
-
-        // Attempt EXIF write if enabled
-        let exifWritten = false;
-        let exifSource: string | undefined;
-        let exifError: string | undefined;
-        
-        if (data.settings?.writeExif && file.derivedDate && file.dateConfidence) {
-          const derivedDate = new Date(file.derivedDate);
-          const exifResult = await writeExifDate(
-            actualDestPath,
-            derivedDate,
-            file.dateConfidence,
-            file.dateSource || 'Unknown',
-            {
-              writeExif: data.settings.writeExif,
-              exifWriteConfirmed: data.settings.exifWriteConfirmed ?? true,
-              exifWriteRecovered: data.settings.exifWriteRecovered ?? true,
-              exifWriteMarked: data.settings.exifWriteMarked ?? false,
+            // ── Extension normalisation (.jpeg → .jpg, .tiff → .tif) ─
+            if (photoFormat === 'original') {
+              const srcExt = path.extname(currentDestPath).toLowerCase();
+              const normMap: Record<string, string> = { '.jpeg': '.jpg', '.tiff': '.tif' };
+              if (normMap[srcExt]) {
+                const normPath = currentDestPath.replace(/\.[^.]+$/, normMap[srcExt]);
+                try {
+                  await fs.promises.rename(currentDestPath, normPath);
+                  const newFinal = currentFinalFilename.replace(/\.[^.]+$/, normMap[srcExt]);
+                  usedFilenames.delete(path.join(subfolderPathForCopy, path.basename(currentDestPath)).toLowerCase());
+                  usedFilenames.add(path.join(subfolderPathForCopy, newFinal).toLowerCase());
+                  currentDestPath = normPath;
+                  currentFinalFilename = newFinal;
+                } catch { /* normalisation is best-effort */ }
+              }
             }
-          );
-          exifWritten = exifResult.written;
-          exifSource = exifResult.source;
-          if (!exifResult.success) {
-            exifError = exifResult.error;
+
+            // ── EXIF write ───────────────────────────────────────────
+            let exifWritten = false;
+            let exifSource: string | undefined;
+            let exifError: string | undefined;
+            if (data.settings?.writeExif && fileForCopy.derivedDate && fileForCopy.dateConfidence) {
+              const derivedDate = new Date(fileForCopy.derivedDate);
+              const exifResult = await writeExifDate(
+                currentDestPath,
+                derivedDate,
+                fileForCopy.dateConfidence,
+                fileForCopy.dateSource || 'Unknown',
+                {
+                  writeExif: data.settings.writeExif,
+                  exifWriteConfirmed: data.settings.exifWriteConfirmed ?? true,
+                  exifWriteRecovered: data.settings.exifWriteRecovered ?? true,
+                  exifWriteMarked: data.settings.exifWriteMarked ?? false,
+                }
+              );
+              exifWritten = exifResult.written;
+              exifSource = exifResult.source;
+              if (!exifResult.success) {
+                exifError = exifResult.error;
+              }
+            }
+
+            console.log(`[Fix] File ${indexForLog} total took ${Date.now() - copyStartedAt}ms (exif=${exifWritten})`);
+            results.push({
+              success: true,
+              sourcePath: fileForCopy.sourcePath,
+              destPath: currentDestPath,
+              finalFilename: currentFinalFilename,
+              exifWritten,
+              exifSource,
+              exifError,
+            });
+            advanceBytes(fileForCopy);
+            completedFiles++;
+            if (mainWindow) {
+              mainWindow.webContents.send('files:copy:progress', progressPayload());
+            }
+          } catch (err) {
+            results.push({
+              success: false,
+              sourcePath: fileForCopy.sourcePath,
+              destPath: currentDestPath,
+              finalFilename: currentFinalFilename,
+              error: (err as Error).message,
+            });
+            advanceBytes(fileForCopy);
+            completedFiles++;
+            if (mainWindow) {
+              mainWindow.webContents.send('files:copy:progress', progressPayload());
+            }
           }
-        }
-        
-        console.log(`[Fix] File ${i + 1} total took ${Date.now() - fileStartTime}ms (exif=${exifWritten})`);
-        results.push({
-          success: true,
-          sourcePath: file.sourcePath,
-          destPath: actualDestPath,
-          finalFilename,
-          exifWritten,
-          exifSource,
-          exifError
-        });
-        // Update progress for non-converted files
-        completedFiles++;
-        if (mainWindow) {
-          mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
-        }
+        })();
+
+        inFlightCopies.add(copyWork);
+        copyWork.finally(() => { inFlightCopies.delete(copyWork); });
       } catch (err) {
+        // Errors from the sync-prep + conversion-enqueue + ZIP-error
+        // branches above (the parallel-pool branch handles its own
+        // errors inside the IIFE).
         results.push({ success: false, sourcePath: file.sourcePath, destPath, finalFilename, error: (err as Error).message });
+        advanceBytes(file);
         completedFiles++;
         if (mainWindow) {
-          mainWindow.webContents.send('files:copy:progress', { current: completedFiles, total: files.length });
+          mainWindow.webContents.send('files:copy:progress', progressPayload());
         }
       }
-      
+
     }
+
+    // v2.0.15 — DRAIN THE PARALLEL COPY POOL before any post-loop
+    // work (conversion flush, network mirror, audit log). All file
+    // results need to land in `results` first so flushConversions
+    // and the report writers see the complete picture.
+    if (inFlightCopies.size > 0) {
+      log.info(`[Fix] Draining copy pool — ${inFlightCopies.size} files still in flight`);
+      await Promise.all([...inFlightCopies]);
+      log.info(`[Fix] Copy pool drained`);
+    }
+
+    // v2.0.15 — stop the liveness heartbeat now that nothing's
+    // running in the pool. The finally clause clears it again as a
+    // safety net if any earlier error skipped this happy path.
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 
     // Flush any remaining queued conversions (EXIF is written inside flushConversions)
     await flushConversions();
@@ -6031,6 +6386,12 @@ ipcMain.handle('files:copy', async (_event, data: {
     // the worker was never spawned (originals-only Fix) or was
     // already cleanly shut down on the happy path.
     try { await shutdownPersistentConvertChild(); } catch { /* best-effort */ }
+
+    // v2.0.15 — same safety net for the progress-heartbeat timer.
+    // If we threw before reaching the post-drain clearInterval, the
+    // 1Hz timer would otherwise fire forever (holding mainWindow
+    // + inFlightCopies refs, preventing GC of either).
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 
     // Clean up staging dir on the way out — success, cancellation,
     // or thrown error. Skipped only when the mirror step flipped

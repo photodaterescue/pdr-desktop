@@ -213,7 +213,27 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // they manually clicked into a row. Terry 2026-05-19: "it should
   // automatically have All Albums highlighted, because I keep
   // wanting to change the zoom by using my mouse when I enter."
-  const [selection, setSelection] = useState<Selection>({ type: 'all' });
+  // v2.0.15 (Terry 2026-06-02) — read the back-pill album latch at
+  // useState init time so the very first render lands on the right
+  // album. The previous useEffect-based consume approach was missing
+  // the historical event (AlbumsView mounts AFTER the back-pill click
+  // dispatches `pdr:openAlbumsAlbum`) and the mount-effect consume
+  // was returning null intermittently across remount cycles.
+  // useState(init) runs synchronously during the very first
+  // construction, BEFORE any effects, so the localStorage read can
+  // never race the click. removeItem clears it so a stale value
+  // can't hijack a future mount.
+  const [selection, setSelection] = useState<Selection>(() => {
+    try {
+      const raw = localStorage.getItem('pdr-albums-pending-open');
+      if (raw) {
+        localStorage.removeItem('pdr-albums-pending-open');
+        const parsed = parseInt(raw, 10);
+        if (Number.isFinite(parsed)) return { type: 'album', id: parsed };
+      }
+    } catch { /* localStorage may be unavailable */ }
+    return { type: 'all' };
+  });
   const [albumPhotos, setAlbumPhotos] = useState<IndexedFile[]>([]);
   const [albumPhotosLoading, setAlbumPhotosLoading] = useState(false);
   // v2.0.13 (Terry 2026-05-27) — "Captioned only" filter. Narrows the
@@ -616,6 +636,22 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     }
     return m;
   }, [memberships, albumsById]);
+
+  // v2.0.15 (Terry 2026-06-02) — surface user-created albums that
+  // aren't a member of any folder. Without this, an album created
+  // via the Memories "Add to album → Create new" path lands in the
+  // database with no group membership and would be invisible in the
+  // tree (only "All albums" or direct selection would surface it).
+  // Rendered at the bottom of the "Folders" section as bare album
+  // rows. Auto-imported albums (Takeout) are deliberately excluded
+  // here — they live under their own auto group in the Sources zone.
+  const ungroupedUserAlbums = useMemo(() => {
+    const grouped = new Set<number>();
+    for (const mb of memberships) grouped.add(mb.album_id);
+    return albums
+      .filter((a) => a.source === 'user_created' && !grouped.has(a.id))
+      .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  }, [albums, memberships]);
 
   // ── Drag-drop ────────────────────────────────────────────────────
   const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null);
@@ -1150,8 +1186,30 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // Mount-time consume of any latched album-open target. Handles
   // path B above (AlbumsView wasn't mounted when the back-pill
   // fired). Runs once per mount; the singleton's read clears it.
+  //
+  // v2.0.15 (Terry 2026-06-02) — also read the localStorage
+  // fallback that TitleBar writes alongside the singleton. The
+  // singleton was failing intermittently (consume returned null
+  // by the time this effect ran across remount cycles when the
+  // user came from S&D back into Memories), landing the user on
+  // All Albums instead of the specific album they came from.
+  // localStorage survives those timing quirks and is single-shot
+  // (we removeItem after reading) so it can't accidentally land
+  // the user on the album twice.
   useEffect(() => {
-    const id = consumePendingAlbumOpen();
+    let id = consumePendingAlbumOpen();
+    if (id === null) {
+      try {
+        const raw = localStorage.getItem('pdr-albums-pending-open');
+        if (raw) {
+          const parsed = parseInt(raw, 10);
+          if (Number.isFinite(parsed)) id = parsed;
+        }
+      } catch { /* localStorage may be unavailable */ }
+    }
+    // Always clear the localStorage latch so a stale value can't
+    // hijack a future mount.
+    try { localStorage.removeItem('pdr-albums-pending-open'); } catch { /* localStorage may be unavailable */ }
     if (id !== null) navigateSelection({ type: 'album', id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1178,6 +1236,32 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     })();
     return () => { cancelled = true; };
   }, [selection]);
+
+  // v2.0.15 (Terry 2026-06-02) — scroll-to-tile after photos load.
+  // Back-pill flow latches the file id the user right-clicked from
+  // into localStorage; after the album's photo grid mounts we find
+  // the matching tile and scroll it into view so the user lands at
+  // their exact starting point. One-shot: removeItem after read so
+  // a stale value can't hijack a future visit. requestAnimationFrame
+  // gives the tile DOM time to commit before the scroll math runs.
+  useEffect(() => {
+    if (selection?.type !== 'album') return;
+    if (albumPhotos.length === 0 || albumPhotosLoading) return;
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem('pdr-memories-pending-scroll-to');
+      if (raw) localStorage.removeItem('pdr-memories-pending-scroll-to');
+    } catch { return; }
+    if (!raw) return;
+    const targetId = parseInt(raw, 10);
+    if (!Number.isFinite(targetId)) return;
+    if (!albumPhotos.some((p) => p.id === targetId)) return;
+    const id = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-testid="album-tile-checkbox-${targetId}"]`)?.closest('button');
+      if (el) el.scrollIntoView({ behavior: 'auto', block: 'center' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [albumPhotos, albumPhotosLoading, selection]);
 
   // v2.0.13 — keep caption state in sync with edits from the right-
   // click "Caption…" menu so the indicator badge appears / disappears
@@ -1406,6 +1490,57 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     const paths = source.map((p) => p.file_path);
     const names = source.map((p) => p.filename);
     await openSearchViewer(paths, names, idx);
+  };
+
+  // v2.0.15 (Terry 2026-06-01) — per-photo selection inside the
+  // album detail view. Mirrors MemoriesView's contract: plain click
+  // opens the viewer; Ctrl/Cmd+click toggles a single tile; Shift+
+  // click range-selects from the last anchor. Tiles render a check
+  // overlay when in the selectedAlbumPhotoIds set. Selection is the
+  // basis for multi-photo "Send to S&D" and (later) other batch
+  // actions on AlbumsView. Cleared whenever the user navigates to a
+  // different album so we never carry a stale selection across views.
+  const [selectedAlbumPhotoIds, setSelectedAlbumPhotoIds] = useState<Set<number>>(new Set());
+  const lastAlbumClickedIndexRef = useRef<number | null>(null);
+  useEffect(() => { setSelectedAlbumPhotoIds(new Set()); lastAlbumClickedIndexRef.current = null; }, [selection]);
+  const handleAlbumPhotoClick = (
+    visibleList: Array<{ id: number }>,
+    idx: number,
+    e: React.MouseEvent,
+  ) => {
+    const photo = visibleList[idx];
+    if (!photo) return;
+    const isModifier = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+    if (isShift && lastAlbumClickedIndexRef.current != null) {
+      const a = Math.min(lastAlbumClickedIndexRef.current, idx);
+      const b = Math.max(lastAlbumClickedIndexRef.current, idx);
+      setSelectedAlbumPhotoIds(prev => {
+        const next = new Set(prev);
+        for (let i = a; i <= b; i++) {
+          const ph = visibleList[i];
+          if (ph) next.add(ph.id);
+        }
+        return next;
+      });
+      return;
+    }
+    if (isModifier) {
+      setSelectedAlbumPhotoIds(prev => {
+        const next = new Set(prev);
+        if (next.has(photo.id)) next.delete(photo.id);
+        else next.add(photo.id);
+        return next;
+      });
+      lastAlbumClickedIndexRef.current = idx;
+      return;
+    }
+    // Plain click — open viewer. Clear any active selection so the
+    // user's next plain click on a different tile doesn't surprise
+    // them by leaving stale highlights behind.
+    if (selectedAlbumPhotoIds.size > 0) setSelectedAlbumPhotoIds(new Set());
+    lastAlbumClickedIndexRef.current = idx;
+    void handleOpenPhoto(idx);
   };
 
   // ─────────────────────────────────────────────────────────────────
@@ -1871,10 +2006,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             </span>
           </IconTooltip>
         </div>
-        {groupsForCard.length === 0 ? (
+        {groupsForCard.length === 0 && !(!isSources && ungroupedUserAlbums.length > 0) ? (
           <p className="text-[11px] text-muted-foreground italic px-2 py-1">{emptyMessage}</p>
         ) : (
-          groupsForCard.map((g) => renderGroupRow(g, 0))
+          <>
+            {groupsForCard.map((g) => renderGroupRow(g, 0))}
+            {/* v2.0.15 (Terry 2026-06-02) — ungrouped user-created
+                albums rendered as bare rows in the Folders section.
+                Without this an album created via Memories' "Create
+                new album" was orphaned (no folder membership) and
+                invisible in the tree. Auto-imported albums (Takeout)
+                are routed to the Sources section by their own group
+                — they never need this fallback. parentGroupId=0 is
+                the "no folder" sentinel (real group IDs are > 0):
+                renderAlbumLeaf's hover-actions skip the folder-minus
+                affordance in that case. */}
+            {!isSources && ungroupedUserAlbums.map((a) => renderAlbumLeaf(a, 0, 0))}
+          </>
         )}
       </div>
     );
@@ -2403,7 +2551,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           data-testid="album-add-from-bydate"
                         >
                           <CalendarRange className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <span className="font-medium">By Date</span>
+                          <span className="font-medium">Dates</span>
                         </button>
                       </PopoverContent>
                     </Popover>
@@ -2512,7 +2660,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 className={`grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumPhotoTilePx}px, 1fr))` }}
               >
-                {(captionedOnly ? albumPhotos.filter((p) => p.caption && p.caption.length > 0) : albumPhotos).map((p, i) => (
+                {(() => {
+                  // v2.0.15 (Terry 2026-06-01) — capture the visible
+                  // photo list once so the click handler can do
+                  // shift+click range select against the SAME indexing
+                  // as the rendered grid (captionedOnly filtering
+                  // changes the index space).
+                  const visiblePhotos = captionedOnly ? albumPhotos.filter((p) => p.caption && p.caption.length > 0) : albumPhotos;
+                  return visiblePhotos.map((p, i) => {
+                    const isSelected = selectedAlbumPhotoIds.has(p.id);
+                    return (
                   // v2.0.13 — per-photo ContextMenu. The OUTER ContextMenu
                   // wrapping the whole grid handles right-clicks on the
                   // empty grid area (Add photos from S&D / By Date). This
@@ -2537,9 +2694,57 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           e.preventDefault();
                           (window as any).pdr?.drag?.start?.([p.file_path], thumbs[p.file_path]);
                         }}
-                        onClick={() => handleOpenPhoto(i)}
-                        className={`relative w-full h-full overflow-hidden ${density === 'tight' ? 'rounded-none border-0' : 'rounded-lg border border-border'} hover:ring-2 hover:ring-primary/40 transition-all`}
+                        onClick={(e) => handleAlbumPhotoClick(visiblePhotos, i, e)}
+                        className={`group relative w-full h-full overflow-hidden transition-all ${
+                          // v2.0.15 (Terry 2026-06-01) — match Memories'
+                          // gold ring on selected tile. Was using
+                          // ring-primary (lavender) which clashed with
+                          // the existing By Date selection language.
+                          isSelected
+                            ? 'ring-2 ring-[var(--color-gold)]'
+                            : density === 'tight' ? '' : 'rounded-lg border border-border hover:ring-2 hover:ring-primary/40'
+                        }`}
                       >
+                        {/* v2.0.15 (Terry 2026-06-01) — hover-revealed
+                            checkbox, gold fill when selected. Lifted
+                            verbatim from MemoriesView so the two
+                            surfaces use one selection language. */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const multiActive = selectedAlbumPhotoIds.size > 0;
+                            if (e.shiftKey && multiActive && lastAlbumClickedIndexRef.current !== null) {
+                              const start = Math.min(lastAlbumClickedIndexRef.current, i);
+                              const end = Math.max(lastAlbumClickedIndexRef.current, i);
+                              setSelectedAlbumPhotoIds(prev => {
+                                const next = new Set(prev);
+                                for (let k = start; k <= end; k++) {
+                                  const ph = visiblePhotos[k];
+                                  if (ph) next.add(ph.id);
+                                }
+                                return next;
+                              });
+                              lastAlbumClickedIndexRef.current = i;
+                              return;
+                            }
+                            setSelectedAlbumPhotoIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(p.id)) next.delete(p.id);
+                              else next.add(p.id);
+                              return next;
+                            });
+                            lastAlbumClickedIndexRef.current = i;
+                          }}
+                          className={`absolute top-1.5 left-1.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
+                            isSelected
+                              ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08] opacity-100'
+                              : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-0 group-hover:opacity-100'
+                          }`}
+                          data-testid={`album-tile-checkbox-${p.id}`}
+                        >
+                          {isSelected && <Check className="w-3 h-3" />}
+                        </div>
                         {thumbs[p.file_path] ? (
                           <img src={thumbs[p.file_path]} alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
                         ) : (
@@ -2558,6 +2763,49 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       >
                         <HardDrive className="w-3.5 h-3.5 mr-2" />
                         Show in File Explorer
+                      </ContextMenuItem>
+                      {/* v2.0.15 (Terry 2026-06-01) — Send to S&D.
+                          When the right-clicked tile is part of an
+                          active multi-select, sends the whole
+                          selection; otherwise sends just this one.
+                          Default ACCUMULATE merges into the pile;
+                          the sibling "as new selection" clears the
+                          pile and starts fresh. */}
+                      <ContextMenuItem
+                        onSelect={() => {
+                          const fileIds = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)
+                            ? Array.from(selectedAlbumPhotoIds)
+                            : [p.id];
+                          // v2.0.15 (Terry 2026-06-02) — back-pill source.
+                          // Label is the album title so the user sees
+                          // exactly which album they'll return to;
+                          // albumId is needed so the back pill can
+                          // actually drill back into THIS album, not
+                          // just dump the user at All Albums.
+                          void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({ tab: 'albums', label: `Album "${selectedAlbum.title}"`, albumId: selectedAlbum.id, scrollToFileId: p.id }));
+                          window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                            detail: { fileIds, source: 'albums', mode: 'accumulate' },
+                          }));
+                        }}
+                        data-testid={`album-photo-send-to-sd-${p.id}`}
+                      >
+                        <SearchIcon className="w-3.5 h-3.5 mr-2" />
+                        Send to S&amp;D{selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id) ? ` (${selectedAlbumPhotoIds.size})` : ''}
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={() => {
+                          const fileIds = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)
+                            ? Array.from(selectedAlbumPhotoIds)
+                            : [p.id];
+                          void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({ tab: 'albums', label: `Album "${selectedAlbum.title}"`, albumId: selectedAlbum.id, scrollToFileId: p.id }));
+                          window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                            detail: { fileIds, source: 'albums', mode: 'replace' },
+                          }));
+                        }}
+                        data-testid={`album-photo-send-to-sd-replace-${p.id}`}
+                      >
+                        <SearchIcon className="w-3.5 h-3.5 mr-2" />
+                        Send to S&amp;D as new selection
                       </ContextMenuItem>
                       <ContextMenuSeparator />
                       {/* v2.0.13 (Terry 2026-05-26) — mirrors MemoriesView's
@@ -2615,7 +2863,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   </ContextMenu>
                     </div>
                   </CaptionTooltip>
-                ))}
+                    );
+                  });
+                })()}
               </div>
               </>
             )}

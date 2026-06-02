@@ -337,7 +337,15 @@ export async function copyFiles(data: {
   return { success: false, error: 'Not in Electron environment' };
 }
 
-export function onCopyProgress(callback: (progress: { current: number; total: number }) => void): void {
+/**
+ * v2.0.15 (Terry 2026-06-01) — `bytesDone` / `totalBytes` are now included
+ * in the progress payload. When `totalBytes > 0` callers should compute
+ * the percentage as `bytesDone / totalBytes` so big trailing videos
+ * advance the bar smoothly instead of leaving it stuck at ~98% for the
+ * final 5–10 seconds. Both old fields stay so the file-count display
+ * (e.g. "453/829 files") still works.
+ */
+export function onCopyProgress(callback: (progress: { current: number; total: number; bytesDone?: number; totalBytes?: number }) => void): void {
   if (isElectron()) {
     (window as any).pdr.onCopyProgress(callback);
   }
@@ -1104,6 +1112,14 @@ export interface SearchQuery {
    *  one of these albums. Empty/undefined = no album filter. Multi
    *  select uses IN — photos in ANY of the listed albums. */
   albumIds?: number[];
+  /** v2.0.15 (Terry 2026-06-01) — "Send to S&D" pile filter. When
+   *  set to a non-empty array, S&D restricts the result set to
+   *  these specific indexed_files.id values and ignores all other
+   *  filter fields. Used to land a hand-picked set from Memories
+   *  in S&D for closer inspection (right-click a tile / select
+   *  multiple → "Send to S&D"). UI surfaces a pile chip "N photos
+   *  from Memories — clear" that clears the field back to undefined. */
+  fileIds?: number[];
   sortBy?: 'derived_date' | 'filename' | 'size_bytes' | 'confidence' | 'camera_model';
   sortDir?: 'asc' | 'desc';
   limit?: number;

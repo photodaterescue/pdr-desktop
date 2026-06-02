@@ -14,7 +14,7 @@
  * the Button primitive together in step 7's PL discoverability pass.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FolderPlus, Search, Plus, Check, X, ImageIcon, Sparkles, PencilLine, ArrowLeft, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -41,10 +41,45 @@ interface AddToAlbumPopoverProps {
   /** Optional tooltip-style label that callers can use to explain WHY
    *  the action is unavailable (mirrors the PL button's pattern). */
   disabledReason?: string;
+  /** v2.0.15 (Terry 2026-06-01) — increment to open the popover from
+   *  the outside. Lets the Memories tile context menu open the
+   *  picker directly without forcing the user to find the pill in
+   *  the header. Each new value opens once; closing is handled by
+   *  the popover's own onOpenChange. */
+  openTrigger?: number;
 }
 
-export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, disabledReason }: AddToAlbumPopoverProps) {
+export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, disabledReason, openTrigger }: AddToAlbumPopoverProps) {
   const [open, setOpen] = useState(false);
+  // v2.0.15 (Terry 2026-06-01) — bridge for openTrigger. Watching
+  // the value (skip null/undefined) lets the parent reopen the
+  // popover by bumping it — even from a state it had already been
+  // opened+closed in. A 250 ms setTimeout defers the open until well
+  // past any pointer-up / click events from the dismissing right-
+  // click context menu — otherwise Radix's "outside click" detector
+  // on the popover sees the trailing pointer event from the menu
+  // dismissal and immediately closes the popover that just opened.
+  // 50 ms wasn't enough in practice (Terry confirmed 2026-06-02 the
+  // modal still flashed); 250 ms is the conservative ceiling that
+  // still feels instant to the user.
+  //
+  // v2.0.15 (Terry 2026-06-02) — only react to openTrigger CHANGES,
+  // not to a stale value present at mount. SearchPanel conditionally
+  // mounts the popover (selectedFiles.size > 0 gate). When the user
+  // unchecked everything then re-checked one tile, the popover
+  // remounted with openTrigger still at the value from an earlier
+  // right-click → the effect fired immediately on mount and opened
+  // the popover with no user action. The ref tracks the value seen
+  // at mount; only later bumps trigger the open.
+  const lastSeenTriggerRef = useRef<number | undefined>(openTrigger);
+  useEffect(() => {
+    if (typeof openTrigger !== 'number' || openTrigger <= 0) return;
+    if (openTrigger === lastSeenTriggerRef.current) return;
+    lastSeenTriggerRef.current = openTrigger;
+    let cancelled = false;
+    const tId = setTimeout(() => { if (!cancelled) setOpen(true); }, 250);
+    return () => { cancelled = true; clearTimeout(tId); };
+  }, [openTrigger]);
   const [albums, setAlbums] = useState<AlbumSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
