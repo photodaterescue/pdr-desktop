@@ -37,17 +37,16 @@
  *   without having to add ad-hoc logging.
  */
 
-// v2.0.15 (Terry 2026-06-02) — VIPS_FOREIGN_PNG_FILTER_NONE forces
-// libvips to use the PNG "None" filter for every row instead of
-// scanning all 5 filter types (None / Sub / Up / Average / Paeth) to
-// pick the best one per row. The per-row scan adds modest CPU cost
-// for a modest size win — but we already accept ~10–15% larger PNGs
-// from compressionLevel: 1 (no zlib search), so saving a bit more
-// CPU at the cost of another few percent on output size is the same
-// trade in the same direction. Expected win 5–10% on the encode
-// path. This MUST be set before `require('sharp')` runs, because
-// libvips reads its environment variables once at load time.
-process.env.VIPS_FOREIGN_PNG_FILTER_NONE = '1';
+// v2.0.15 (Terry 2026-06-02) — VIPS_FOREIGN_PNG_FILTER_NONE was
+// tried (expected 5–10% encode win) but the real-world result on
+// Terry's Ivy Bridge + HDD setup went the OTHER way: 2,123-file run
+// went from 48.07 min (FILTER_NONE off) to 52.93 min (on) — ~+10%
+// SLOWER. Hypothesis: turning off adaptive filtering produces a less
+// compressible byte stream → encoder writes more bytes per file →
+// HDD I/O wait dominates and exceeds the CPU saved on the per-row
+// filter search. Reverted 2026-06-02. Leaving the line in commented
+// form so future me / future hardware can re-test:
+//   process.env.VIPS_FOREIGN_PNG_FILTER_NONE = '1';
 
 import sharp from 'sharp';
 import * as fs from 'fs';

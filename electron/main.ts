@@ -5876,7 +5876,12 @@ ipcMain.handle('files:copy', async (_event, data: {
             });
             const srcPath = (t?.file as any)?.sourcePath;
             if (typeof srcPath === 'string' && srcPath) {
-              conversionBenchmark.sourceFolders.add(srcPath);
+              // Bucket by parent folder, not full file path — otherwise
+              // the Sources: field in summary.txt becomes a 375-entry
+              // list. path.dirname collapses every file in a flat
+              // source to one entry; for nested sources it gives one
+              // entry per leaf folder (still useful).
+              conversionBenchmark.sourceFolders.add(path.dirname(srcPath));
             }
             // Advance the progress bar live as each task lands.
             advanceBytes(t?.file);
