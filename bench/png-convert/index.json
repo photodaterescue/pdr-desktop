@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-02T12:26:09.635Z",
+  "generatedBy": "script/extract-png-baseline.mjs",
+  "runs": [
+    {
+      "runId": "2026-05-31T0157",
+      "phase": "v2.0.15-post-optimisation",
+      "file": "bench/png-convert/2026-05-31T0157_v2.0.15-post-optimisation.json",
+      "startedAt": "2026-05-31T01:57:41.383Z",
+      "endedAt": "2026-05-31T02:19:37.181Z",
+      "fileCount": 556,
+      "wallClockMinutes": 21.93,
+      "totalInputGB": 1.545,
+      "totalOutputGB": 3.065,
+      "sizeRatio": 1.984,
+      "throughputMBps": 2.33,
+      "perFileDurP50ms": 5303,
+      "perFileDurP95ms": 7083
+    },
+    {
+      "runId": "2026-05-31T0916",
+      "phase": "v2.0.15-post-optimisation",
+      "file": "bench/png-convert/2026-05-31T0916_v2.0.15-post-optimisation.json",
+      "startedAt": "2026-05-31T09:16:51.275Z",
+      "endedAt": "2026-05-31T10:04:55.540Z",
+      "fileCount": 2123,
+      "wallClockMinutes": 48.07,
+      "totalInputGB": 5.47,
+      "totalOutputGB": 15.876,
+      "sizeRatio": 2.902,
+      "throughputMBps": 5.5,
+      "perFileDurP50ms": 5687,
+      "perFileDurP95ms": 7810
+    },
+    {
+      "runId": "2026-05-31T1250",
+      "phase": "v2.0.15-post-optimisation",
+      "file": "bench/png-convert/2026-05-31T1250_v2.0.15-post-optimisation.json",
+      "startedAt": "2026-05-31T12:50:39.086Z",
+      "endedAt": "2026-05-31T13:32:24.697Z",
+      "fileCount": 650,
+      "wallClockMinutes": 41.76,
+      "totalInputGB": 2.162,
+      "totalOutputGB": 5.284,
+      "sizeRatio": 2.444,
+      "throughputMBps": 2.11,
+      "perFileDurP50ms": 13589,
+      "perFileDurP95ms": 31560
+    }
+  ]
+}
