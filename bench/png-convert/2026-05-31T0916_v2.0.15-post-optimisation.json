@@ -1,15 +1,20 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-06-02T12:41:02.344Z",
+  "capturedAt": "2026-06-02T12:50:49.844Z",
   "extractedFrom": [
     "main.old.log",
     "main.log"
   ],
-  "source": "PDR main.log [Convert] telemetry",
+  "telemetrySource": "PDR main.log [Convert] lines",
   "runId": "2026-05-31T0916",
   "phase": "v2.0.15-post-optimisation",
   "startedAt": "2026-05-31T09:16:51.275Z",
   "endedAt": "2026-05-31T10:04:55.540Z",
+  "sourceFolder": {
+    "sourcePath": "F:\\OneDrive Copied to Computer\\Camera Roll\\Pictures OneDrive",
+    "sourceType": "OneDrive sync folder",
+    "confirmedBy": "Terry 2026-06-02"
+  },
   "metadata": {
     "sharp": "0.34.5",
     "libvips": null,

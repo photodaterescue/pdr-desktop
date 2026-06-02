@@ -282,6 +282,18 @@ function classifyPhase(startIso) {
   return 'unknown';
 }
 
+// Hand-maintained source-path map for runs whose [source-add] line is
+// no longer in the available logs. Confirmed by Terry 2026-06-02:
+// the 2026-05-31T09:16 / 2,123-file run came from the OneDrive folder.
+// Adjacent runs on 2026-05-31 (01:57 and 12:50) sit before the
+// preserved [source-add] lines and we can't determine their source
+// from the log alone — keep them explicit-unknown rather than guess.
+const KNOWN_SOURCES = {
+  '2026-05-31T0157': { sourcePath: 'unknown — predates preserved [source-add] lines in current log files', sourceType: 'unknown' },
+  '2026-05-31T0916': { sourcePath: 'F:\\OneDrive Copied to Computer\\Camera Roll\\Pictures OneDrive', sourceType: 'OneDrive sync folder', confirmedBy: 'Terry 2026-06-02' },
+  '2026-05-31T1250': { sourcePath: 'unknown — predates preserved [source-add] lines in current log files', sourceType: 'unknown' },
+};
+
 const rawLines = readLogLines();
 console.log(`Read ${rawLines.length} [Convert] lines from logs.`);
 const events = classifyLines(rawLines);
@@ -302,15 +314,17 @@ for (const run of runs) {
   }
   const tag = dateTag(run.startMs);
   const phase = classifyPhase(new Date(run.startMs).toISOString());
+  const knownSource = KNOWN_SOURCES[tag] ?? { sourcePath: 'unknown', sourceType: 'unknown' };
   const out = {
     schemaVersion: 1,
     capturedAt: new Date().toISOString(),
     extractedFrom: ['main.old.log', 'main.log'],
-    source: 'PDR main.log [Convert] telemetry',
+    telemetrySource: 'PDR main.log [Convert] lines',
     runId: tag,
     phase,
     startedAt: new Date(run.startMs).toISOString(),
     endedAt: new Date(run.lastMs).toISOString(),
+    sourceFolder: knownSource,
     metadata: meta,
     aggregate: agg,
     perFile: run.events

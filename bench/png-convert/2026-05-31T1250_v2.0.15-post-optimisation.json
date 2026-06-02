@@ -1,15 +1,19 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-06-02T12:41:02.351Z",
+  "capturedAt": "2026-06-02T12:50:49.861Z",
   "extractedFrom": [
     "main.old.log",
     "main.log"
   ],
-  "source": "PDR main.log [Convert] telemetry",
+  "telemetrySource": "PDR main.log [Convert] lines",
   "runId": "2026-05-31T1250",
   "phase": "v2.0.15-post-optimisation",
   "startedAt": "2026-05-31T12:50:39.086Z",
   "endedAt": "2026-05-31T13:32:24.697Z",
+  "sourceFolder": {
+    "sourcePath": "unknown — predates preserved [source-add] lines in current log files",
+    "sourceType": "unknown"
+  },
   "metadata": {
     "sharp": "0.34.5",
     "libvips": null,
