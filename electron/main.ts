@@ -5141,8 +5141,201 @@ ipcMain.handle('files:copy', async (_event, data: {
   // memory pool). The ensure* helper that spawns it lives inside
   // the try block since it's only called from flushConversions.
   let persistentConvertChild: Electron.UtilityProcess | null = null;
+
+  // v2.0.15 (Terry 2026-06-02) — benchmark accumulator. Captures every
+  // per-file conversion timing + every per-batch summary the worker
+  // emits, then writes a human-readable summary.txt + machine-readable
+  // per-file.csv at end-of-Fix. Replaces the rotating main.log as the
+  // permanent home of conversion telemetry. main.log's per-file
+  // [Convert] lines are trimmed in shipped builds (commit 948bd44) —
+  // this file gets the full detail unconditionally so we never have
+  // to scramble to capture a benchmark before logs rotate.
+  const conversionBenchmark = {
+    startedAtMs: 0,
+    sourceFolders: new Set<string>(),
+    perFile: [] as Array<{
+      ts: string;
+      batch: number;
+      id: number;
+      ok: boolean;
+      durMs: number;
+      inKB: number | null;
+      outKB: number | null;
+      ratio: number | null;
+      memMB: number | null;
+      filename: string;
+      error: string | null;
+    }>,
+    perBatch: [] as Array<{
+      ts: string;
+      batch: number;
+      succeeded: number;
+      failed: number;
+      total: number;
+      wallMs: number;
+      inMB: number;
+      outMB: number;
+      throughputMBps: number | null;
+      childRssMB: number | null;
+    }>,
+  };
+
+  const writeConversionBenchmark = async (): Promise<void> => {
+    if (conversionBenchmark.perFile.length === 0) return; // nothing to write
+    try {
+      const endedAtMs = Date.now();
+      const wallMs = endedAtMs - conversionBenchmark.startedAtMs;
+      const startedIso = new Date(conversionBenchmark.startedAtMs).toISOString();
+      const endedIso = new Date(endedAtMs).toISOString();
+      const tag = startedIso.replace(/[:.]/g, '-').replace('Z', '');
+
+      const okFiles = conversionBenchmark.perFile.filter(f => f.ok);
+      const failedFiles = conversionBenchmark.perFile.filter(f => !f.ok);
+      const sumIn = okFiles.reduce((a, b) => a + (b.inKB ?? 0), 0);
+      const sumOut = okFiles.reduce((a, b) => a + (b.outKB ?? 0), 0);
+      const durs = okFiles.map(f => f.durMs).sort((a, b) => a - b);
+      const ratios = okFiles.map(f => f.ratio ?? 0).filter(r => r > 0).sort((a, b) => a - b);
+      const mems = okFiles.map(f => f.memMB ?? 0).filter(m => m > 0).sort((a, b) => a - b);
+      const pct = (arr: number[], p: number) =>
+        arr.length === 0 ? null : arr[Math.min(arr.length - 1, Math.floor(arr.length * p))];
+
+      const totalInBytes = sumIn * 1024;
+      const totalOutBytes = sumOut * 1024;
+      const throughputMBps = wallMs > 0 ? +(totalOutBytes / 1e6 / (wallMs / 1000)).toFixed(2) : null;
+
+      // Active optimisations — track each PNG-encode tweak so the
+      // summary file caption matches what was actually running on
+      // disk for this run. Manual list (no introspection in worker).
+      const optimisations = [
+        'compressionLevel=1',
+        'effort=1',
+        'EXIF inline (.withExif)',
+        'persistent worker (no per-batch fork)',
+        // VIPS_FOREIGN_PNG_FILTER_NONE is set in conversion-worker.ts.
+        // Reflect it here when toggling.
+        process.env.VIPS_FOREIGN_PNG_FILTER_NONE === '1' ? 'VIPS_FOREIGN_PNG_FILTER_NONE' : null,
+      ].filter(Boolean) as string[];
+
+      const cpuModel = (os.cpus()[0]?.model ?? 'unknown').trim();
+      const totalRamGB = (os.totalmem() / 1e9).toFixed(2);
+
+      // Build the human-readable summary.
+      const summary = [
+        '═══════════════════════════════════════════════════════════',
+        '  PDR Conversion Benchmark',
+        '═══════════════════════════════════════════════════════════',
+        '',
+        `Started:        ${startedIso}`,
+        `Ended:          ${endedIso}`,
+        `Wall-clock:     ${(wallMs / 60000).toFixed(2)} min  (${(wallMs / 1000).toFixed(1)} s)`,
+        '',
+        `Files OK:       ${okFiles.length}`,
+        `Files failed:   ${failedFiles.length}`,
+        `Batches:        ${conversionBenchmark.perBatch.length}`,
+        '',
+        `Input total:    ${(totalInBytes / 1e9).toFixed(3)} GB`,
+        `Output total:   ${(totalOutBytes / 1e9).toFixed(3)} GB`,
+        `Size ratio:     ${totalInBytes === 0 ? 'n/a' : (totalOutBytes / totalInBytes).toFixed(3)}`,
+        `Throughput:     ${throughputMBps ?? 'n/a'} MB/s`,
+        '',
+        `Per-file dur (ms):  p50=${pct(durs, 0.5) ?? 'n/a'}  p95=${pct(durs, 0.95) ?? 'n/a'}  max=${durs[durs.length - 1] ?? 'n/a'}`,
+        `Per-file ratio:     p50=${pct(ratios, 0.5) ?? 'n/a'}  p95=${pct(ratios, 0.95) ?? 'n/a'}  max=${ratios[ratios.length - 1] ?? 'n/a'}`,
+        `Per-file mem (MB):  p50=${pct(mems, 0.5) ?? 'n/a'}  p95=${pct(mems, 0.95) ?? 'n/a'}  peak=${mems[mems.length - 1] ?? 'n/a'}`,
+        '',
+        `Sources:        ${conversionBenchmark.sourceFolders.size > 0 ? Array.from(conversionBenchmark.sourceFolders).join(', ') : '(not recorded — older Fix path)'}`,
+        `Destination:    ${destinationPath}`,
+        '',
+        `Optimisations active:`,
+        ...optimisations.map(o => `  • ${o}`),
+        '',
+        `Machine:        ${cpuModel}  ·  ${os.cpus().length} cores  ·  ${totalRamGB} GB RAM`,
+        `OS:             ${os.platform()} ${os.release()}  (${os.arch()})`,
+        `Node:           ${process.version}`,
+        '',
+        '───────────────────────────────────────────────────────────',
+        'Per-file timings: see per-file.csv next to this file.',
+        'Per-batch totals: see per-batch.csv next to this file.',
+        '───────────────────────────────────────────────────────────',
+        '',
+      ].join('\r\n');
+
+      // CSV builders — Excel-friendly, one row per file / batch.
+      const perFileCsv = [
+        'timestamp,batch,id,ok,duration_ms,input_kb,output_kb,ratio,mem_mb,filename,error',
+        ...conversionBenchmark.perFile.map(f =>
+          [
+            f.ts,
+            f.batch,
+            f.id,
+            f.ok ? 'true' : 'false',
+            f.durMs,
+            f.inKB ?? '',
+            f.outKB ?? '',
+            f.ratio ?? '',
+            f.memMB ?? '',
+            `"${(f.filename ?? '').replace(/"/g, '""')}"`,
+            f.error ? `"${f.error.replace(/"/g, '""')}"` : '',
+          ].join(',')
+        ),
+      ].join('\r\n');
+
+      const perBatchCsv = [
+        'timestamp,batch,succeeded,failed,total,wall_ms,input_mb,output_mb,throughput_mbps,child_rss_mb',
+        ...conversionBenchmark.perBatch.map(b =>
+          [
+            b.ts,
+            b.batch,
+            b.succeeded,
+            b.failed,
+            b.total,
+            b.wallMs,
+            b.inMB.toFixed(2),
+            b.outMB.toFixed(2),
+            b.throughputMBps ?? '',
+            b.childRssMB ?? '',
+          ].join(',')
+        ),
+      ].join('\r\n');
+
+      // Write to userData/benchmarks/<tag>/ and (when available) mirror
+      // into <libraryRoot>/.pdr/benchmarks/<tag>/ so the trail travels
+      // with the library, like the sidecar DB.
+      const userDataDir = path.join(app.getPath('userData'), 'benchmarks', `conversion-${tag}`);
+      await fs.promises.mkdir(userDataDir, { recursive: true });
+      const writeAll = async (dir: string) => {
+        await fs.promises.writeFile(path.join(dir, 'summary.txt'), summary, 'utf8');
+        await fs.promises.writeFile(path.join(dir, 'per-file.csv'), perFileCsv, 'utf8');
+        await fs.promises.writeFile(path.join(dir, 'per-batch.csv'), perBatchCsv, 'utf8');
+      };
+      await writeAll(userDataDir);
+      log.info(`[Convert] Benchmark saved: ${userDataDir}`);
+
+      try {
+        const libStatus = getLibraryStatus();
+        const libRoot = libStatus.attached ? libStatus.libraryRoot : null;
+        if (libRoot) {
+          const libDir = path.join(libRoot, '.pdr', 'benchmarks', `conversion-${tag}`);
+          await fs.promises.mkdir(libDir, { recursive: true });
+          await writeAll(libDir);
+          log.info(`[Convert] Benchmark mirrored to library: ${libDir}`);
+        }
+      } catch (mirrorErr) {
+        // Mirror failure is non-fatal — the userData copy is the
+        // authoritative one. Just log so we know if it's a recurring
+        // problem (e.g. library drive disconnected).
+        log.warn(`[Convert] Benchmark mirror to library failed: ${(mirrorErr as Error).message}`);
+      }
+    } catch (err) {
+      log.warn(`[Convert] Failed to write benchmark: ${(err as Error).message}`);
+    }
+  };
+
   const shutdownPersistentConvertChild = async (): Promise<void> => {
     const child = persistentConvertChild;
+    // Write the benchmark before tearing the worker down. Safe even
+    // if no conversion ran — the function short-circuits on empty
+    // accumulator.
+    await writeConversionBenchmark();
     if (!child) return;
     await new Promise<void>((resolve) => {
       // Guard against a worker that already died — resolve
@@ -5660,6 +5853,31 @@ ipcMain.handle('files:copy', async (_event, data: {
             if (!msg.success) {
               log.warn(`[Convert]   #${batchIndex}.${msg.id} ${status} dur=${msg.durationMs}ms in=${inKB ?? '?'}KB out=${outKB ?? '?'}KB ratio=${ratio} ${memStr} "${filename}"`);
             }
+            // v2.0.15 (Terry 2026-06-02) — push the per-file row into
+            // the conversionBenchmark accumulator so it gets written
+            // to disk at end-of-Fix. Replaces the old reliance on
+            // main.log's [Convert] lines (which were trimmed in
+            // shipped builds and rotated daily).
+            if (conversionBenchmark.startedAtMs === 0) {
+              conversionBenchmark.startedAtMs = Date.now() - msg.durationMs;
+            }
+            conversionBenchmark.perFile.push({
+              ts: new Date().toISOString(),
+              batch: batchIndex,
+              id: msg.id,
+              ok: !!msg.success,
+              durMs: msg.durationMs,
+              inKB,
+              outKB,
+              ratio: (inKB && outKB) ? +(outKB / inKB).toFixed(3) : null,
+              memMB: msg.memUsage?.rssMB ?? null,
+              filename,
+              error: msg.success ? null : (msg.error ?? 'unknown'),
+            });
+            const srcPath = (t?.file as any)?.sourcePath;
+            if (typeof srcPath === 'string' && srcPath) {
+              conversionBenchmark.sourceFolders.add(srcPath);
+            }
             // Advance the progress bar live as each task lands.
             advanceBytes(t?.file);
             completedFiles++;
@@ -5678,6 +5896,20 @@ ipcMain.handle('files:copy', async (_event, data: {
             // memory disabled for shipped builds. The end-of-Fix
             // phase-complete line is the headline summary we keep.
             // log.info(`[Convert] Batch done — ${msg.succeeded}/${msg.total} succeeded, ${msg.failed} failed, in=${inMB.toFixed(1)}MB out=${outMB.toFixed(1)}MB throughput=${throughputMBs}MB/s${lastMemSnapshot ? `, child mem rss=${lastMemSnapshot.rssMB} MB heap=${lastMemSnapshot.heapUsedMB} MB external=${lastMemSnapshot.externalMB} MB` : ''}`);
+            // v2.0.15 (Terry 2026-06-02) — push per-batch row into
+            // the benchmark accumulator.
+            conversionBenchmark.perBatch.push({
+              ts: new Date().toISOString(),
+              batch: batchIndex,
+              succeeded: msg.succeeded,
+              failed: msg.failed,
+              total: msg.total,
+              wallMs,
+              inMB: +inMB.toFixed(2),
+              outMB: +outMB.toFixed(2),
+              throughputMBps: wallMs > 0 ? +(inMB / (wallMs / 1000)).toFixed(2) : null,
+              childRssMB: lastMemSnapshot?.rssMB ?? null,
+            });
             // Persistent worker — resolve immediately on batch-done.
             // No exit to wait for; the child stays alive for the
             // next batch.
