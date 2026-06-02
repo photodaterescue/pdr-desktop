@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-06-02T12:26:09.622Z",
+  "capturedAt": "2026-06-02T12:41:02.344Z",
   "extractedFrom": [
     "main.old.log",
     "main.log"
@@ -17,11 +17,26 @@
     "os": {
       "platform": "win32",
       "release": "10.0.19045",
+      "friendly": "Windows 10 22H2 / 21H2 / 21H1 / 20H2 (build 19045)",
       "arch": "x64"
     },
     "cpu": "Intel(R) Core(TM) i7-3770 CPU @ 3.40GHz",
     "cpuCount": 8,
-    "totalRamGB": 25.68
+    "totalRamGB": 25.68,
+    "machineDetail": {
+      "machineName": "Terry / H67MA-UD2H-B3",
+      "gpu": "AMD Radeon HD 6450 (497 MB) + Intel HD Graphics 4000 (32 MB)",
+      "ramSpeed": "1600 MHz DDR3",
+      "osEdition": "Windows 10 Enterprise 22H2",
+      "osBuildLong": "19045.6456",
+      "drives": [
+        "932 GB WDC WD10EARS-00MVWB0 (HDD)",
+        "932 GB WDC WD10EARS-00MVWB0 (HDD)",
+        "447 GB SanDisk SDSSDHII480G (SSD)",
+        "1.82 TB ST2000NM0033-9ZM175 (HDD)",
+        "466 GB STM3500418AS (HDD)"
+      ]
+    }
   },
   "aggregate": {
     "fileCount": 2123,

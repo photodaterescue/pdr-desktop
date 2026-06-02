@@ -195,6 +195,19 @@ function aggregate(run) {
 
 // ─── run metadata (sharp/libvips/os/cpu) ───────────────────────────────────
 
+// Build numbers map to friendly Windows version strings. Maintained
+// by hand — keep current as new Win10 builds ship.
+function windowsBuildLabel(release) {
+  // release example: "10.0.19045"
+  const m = /^10\.0\.(\d+)/.exec(release);
+  if (!m) return null;
+  const build = Number(m[1]);
+  if (build >= 22000) return `Windows 11 (build ${build})`;
+  if (build >= 19041) return `Windows 10 22H2 / 21H2 / 21H1 / 20H2 (build ${build})`;
+  if (build >= 18362) return `Windows 10 1909 / 1903 (build ${build})`;
+  return `Windows 10 (build ${build})`;
+}
+
 function runMetadata() {
   let sharpVersion = null, libvipsVersion = null;
   try {
@@ -216,10 +229,32 @@ function runMetadata() {
     sharp: sharpVersion,
     libvips: libvipsVersion,
     node: process.version,
-    os: { platform: os.platform(), release: os.release(), arch: os.arch() },
+    os: {
+      platform: os.platform(),
+      release: os.release(),
+      friendly: windowsBuildLabel(os.release()) ?? `${os.platform()} ${os.release()}`,
+      arch: os.arch(),
+    },
     cpu: os.cpus()[0]?.model ?? 'unknown',
     cpuCount: os.cpus().length,
     totalRamGB: +(os.totalmem() / 1e9).toFixed(2),
+    // Hand-augmented from Terry's Settings → System screenshot (2026-06-02).
+    // Captures detail os.* can't reach. Edit the constants below if
+    // running on a different machine.
+    machineDetail: {
+      machineName: 'Terry / H67MA-UD2H-B3',
+      gpu: 'AMD Radeon HD 6450 (497 MB) + Intel HD Graphics 4000 (32 MB)',
+      ramSpeed: '1600 MHz DDR3',
+      osEdition: 'Windows 10 Enterprise 22H2',
+      osBuildLong: '19045.6456',
+      drives: [
+        '932 GB WDC WD10EARS-00MVWB0 (HDD)',
+        '932 GB WDC WD10EARS-00MVWB0 (HDD)',
+        '447 GB SanDisk SDSSDHII480G (SSD)',
+        '1.82 TB ST2000NM0033-9ZM175 (HDD)',
+        '466 GB STM3500418AS (HDD)',
+      ],
+    },
   };
 }
 
