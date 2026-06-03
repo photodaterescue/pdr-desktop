@@ -7002,12 +7002,35 @@ ipcMain.handle('system:topMemoryConsumers', async (_e, limit: number = 5) => {
     );
     const parsed = JSON.parse(stdout.trim() || '[]');
     const rows = Array.isArray(parsed) ? parsed : [parsed];
-    // Filter out PDR's own processes (electron + Photo Date Rescue) —
-    // not actionable to suggest closing ourselves.
+    // v2.0.15 (Terry 2026-06-03) — exclude OS-essential processes
+    // from the list shown to the user. svchost / Memory Compression
+    // / lsass / dwm / etc. ARE often huge memory consumers, but
+    // suggesting users close them would be dangerous — these run
+    // Windows itself, killing them is destructive. Filter so the
+    // UI only ever shows apps the user CAN safely close. Maintained
+    // as a denylist of well-known Windows process names; anything
+    // not on it (genuine user apps like Chrome, Photoshop, etc.)
+    // passes through.
+    const SYSTEM_PROCESSES = new Set([
+      'electron', 'photo date rescue',                     // PDR itself
+      'system', 'registry', 'idle', 'secure system',       // kernel-level
+      'memory compression',                                 // OS memory mgr
+      'smss', 'csrss', 'wininit', 'winlogon', 'lsass', 'lsm', 'services',
+      'svchost', 'spoolsv', 'searchindexer', 'searchprotocolhost',
+      'searchapp', 'searchhost', 'searchui', 'startmenuexperiencehost',
+      'shellexperiencehost', 'sihost', 'taskhostw', 'fontdrvhost',
+      'wmiprvse', 'wudfhost', 'unsecapp', 'dllhost', 'audiodg',
+      'conhost', 'dwm', 'ctfmon', 'runtimebroker', 'backgroundtaskhost',
+      'taskmgr', 'msdtc', 'wmiapsrv',
+      'msmpeng', 'mpdefendercoreservice', 'antimalwareserviceexecutable',
+      'nissrv', 'nvcontainer', 'nvidiawebhelper', 'nvtelemetry',
+      'amddvr', 'amduiservice', 'realtekaudioservice', 'rtkauduservice64',
+      'igfxhk', 'igfxext', 'igfxtray', 'igfxcuiservice',
+    ]);
     const filtered = rows
       .filter((r: any) => {
         const n = String(r?.name ?? '').toLowerCase();
-        return n !== 'electron' && n !== 'photo date rescue';
+        return !SYSTEM_PROCESSES.has(n);
       })
       .slice(0, limit)
       .map((r: any) => ({
@@ -7015,7 +7038,26 @@ ipcMain.handle('system:topMemoryConsumers', async (_e, limit: number = 5) => {
         memMB: Number(r.memMB),
         procCount: Number(r.procCount),
       }));
-    return { success: true, data: filtered };
+    // v2.0.15 (Terry 2026-06-03) — also return current system memory
+    // snapshot so the modal can show context: total, free, and the
+    // "below 30% free" gap (the same threshold used by the callout
+    // visibility check). Lets the modal say "free 2.3 GB more to
+    // hit the optimal zone" instead of just showing a list.
+    const totalBytes = os.totalmem();
+    const freeBytes = os.freemem();
+    const targetFreeBytes = totalBytes * 0.30;
+    const gapBytes = Math.max(0, targetFreeBytes - freeBytes);
+    return {
+      success: true,
+      data: filtered,
+      memory: {
+        totalGB: Number((totalBytes / (1024 ** 3)).toFixed(1)),
+        freeGB: Number((freeBytes / (1024 ** 3)).toFixed(1)),
+        targetFreeGB: Number((targetFreeBytes / (1024 ** 3)).toFixed(1)),
+        freeUpGB: Number((gapBytes / (1024 ** 3)).toFixed(1)),
+        freePct: Math.round((freeBytes / totalBytes) * 100),
+      },
+    };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

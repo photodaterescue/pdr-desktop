@@ -5181,9 +5181,16 @@ function DashboardPanel({
   // Lite Tier 3 (Terry 2026-06-03) — top RAM consumers modal state.
   // Triggered by the "See which apps are using your RAM →" link inside
   // the RAM-pressure callout. Lazy-fetched on open via the
-  // system:topMemoryConsumers IPC.
+  // system:topMemoryConsumers IPC. State holds both the safe-to-close
+  // process list AND the system memory snapshot so the modal can
+  // render an actionable "free up X GB to hit the optimal zone"
+  // banner alongside the list.
+  type TopMemPayload = {
+    list: Array<{ name: string; memMB: number; procCount: number }>;
+    memory: { totalGB: number; freeGB: number; targetFreeGB: number; freeUpGB: number; freePct: number } | null;
+  };
   const [topMemConsumersOpen, setTopMemConsumersOpen] = useState(false);
-  const [topMemConsumers, setTopMemConsumers] = useState<Array<{ name: string; memMB: number; procCount: number }> | null>(null);
+  const [topMemConsumers, setTopMemConsumers] = useState<TopMemPayload | null>(null);
   const [topMemConsumersLoading, setTopMemConsumersLoading] = useState(false);
   const openTopMemConsumers = async () => {
     setTopMemConsumersOpen(true);
@@ -5191,16 +5198,33 @@ function DashboardPanel({
     try {
       const res = await (window as any).pdr?.system?.topMemoryConsumers?.(5);
       if (res?.success && Array.isArray(res.data)) {
-        setTopMemConsumers(res.data);
+        setTopMemConsumers({ list: res.data, memory: res.memory ?? null });
       } else {
-        setTopMemConsumers([]);
+        setTopMemConsumers({ list: [], memory: null });
       }
     } catch {
-      setTopMemConsumers([]);
+      setTopMemConsumers({ list: [], memory: null });
     } finally {
       setTopMemConsumersLoading(false);
     }
   };
+
+  // v2.0.15 (Terry 2026-06-03) — auto-scroll the format-card description
+  // + RAM-pressure callout into view whenever the user picks PNG or JPG
+  // from the dropdown. Without this, the description text appears below
+  // the visible viewport (the format card sits near the bottom of the
+  // dashboard) and the user has to manually scroll to read it. Terry:
+  // "the scroll should automatically move down when the text appears
+  // after selecting it, that way it is all instantly viewable".
+  const formatDescriptionRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (photoFormat === 'original') return;
+    // Small delay so the layout settles after the dropdown closes.
+    const t = setTimeout(() => {
+      formatDescriptionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 80);
+    return () => clearTimeout(t);
+  }, [photoFormat]);
 
   // v2.0.15 (Terry 2026-06-03) — passive RAM info for PNG-format
   // selection. Queries the existing system:memoryInfo IPC once on
@@ -6162,7 +6186,7 @@ function DashboardPanel({
                     <p className="mt-1.5 text-muted-foreground/70 italic">Files already in your chosen format are not re-converted.</p>
                   </CardInfoTooltip>
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p ref={formatDescriptionRef} className="text-xs text-muted-foreground">
                   {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalized (.jpeg → .jpg).'}
                   {photoFormat === 'png' && 'All photos converted to PNG. Full quality preserved, larger files.'}
                   {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality to PNG.'}
@@ -6181,17 +6205,27 @@ function DashboardPanel({
                     callouts in PDR. Info icon uses text-primary
                     (lavender) per the style guide. */}
                 {photoFormat === 'png' && ramPressureLow && memoryInfo && (
-                  <div className="mt-2 flex gap-2 items-start border border-primary/20 bg-primary/5 rounded-md px-3 py-2">
-                    <Info className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+                  /* v2.0.15 (Terry 2026-06-03) — strengthened callout
+                     visibility. Was bg-primary/5 + border-primary/20
+                     + muted body text — too faint, "hard to see you've
+                     even done it at all" (Terry). Bumped tint to
+                     bg-primary/[0.08] + border-primary/40 + ring-1 of
+                     primary/15 + slight shadow + body text upgraded
+                     from muted-foreground to foreground for readability.
+                     Still uses lavender (info-tone), still NOT a CTA —
+                     no pulse, no warning red. Just more weight on the
+                     same primary-opacity vocabulary already in use. */
+                  <div className="mt-2 flex gap-2.5 items-start border border-primary/40 bg-primary/[0.08] rounded-md px-3 py-2.5 shadow-sm ring-1 ring-primary/15">
+                    <Info className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                        <li>Free RAM: {memoryInfo.freeGB.toFixed(1)} GB of {memoryInfo.totalGB.toFixed(1)} GB</li>
+                      <ul className="text-xs text-foreground list-disc list-inside space-y-1">
+                        <li>Free RAM: <strong className="font-semibold">{memoryInfo.freeGB.toFixed(1)} GB</strong> of {memoryInfo.totalGB.toFixed(1)} GB</li>
                         <li>Closing memory-heavy apps (browser tabs, video editors, trading platforms) speeds up PNG conversion</li>
                       </ul>
                       <button
                         type="button"
                         onClick={openTopMemConsumers}
-                        className="mt-1.5 text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-0.5"
+                        className="mt-2 text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-0.5"
                         data-testid="dashboard-top-mem-consumers-trigger"
                       >
                         See which apps are using your RAM
@@ -6215,22 +6249,59 @@ function DashboardPanel({
             <Dialog open={topMemConsumersOpen} onOpenChange={setTopMemConsumersOpen}>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>What's using your RAM right now</DialogTitle>
+                  {/* v2.0.15 (Terry 2026-06-03) — renamed from
+                      "What's using your RAM right now" (Terry: that was
+                      a question without a question mark) to a noun
+                      label. Description rewritten to set up the safety
+                      promise (OS-essential processes filtered out at
+                      the source so the user only sees apps they can
+                      safely close). */}
+                  <DialogTitle>Biggest RAM users you can safely close</DialogTitle>
                   <DialogDescription>
-                    Top apps by memory use. Closing the heaviest ones before starting a PNG-format Fix frees the OS file cache, which is what the conversion path leans on. Read-only — close apps from their own windows or Task Manager.
+                    Windows-essential processes (svchost, Memory Compression, dwm, etc.) are filtered out — only apps you actually opened are shown. Closing them from their own windows frees the OS file cache that PNG conversion leans on.
                   </DialogDescription>
                 </DialogHeader>
+
+                {/* v2.0.15 (Terry 2026-06-03) — system memory context
+                    banner. Anchors the per-app numbers below in the
+                    total system picture: how much RAM you have, how
+                    much is free, how much you'd need to close to hit
+                    the optimal zone. Without this the per-app figures
+                    feel "irrelevant and out of context" (Terry). */}
+                {!topMemConsumersLoading && topMemConsumers?.memory && (
+                  <div className="mt-1 rounded-md border border-border bg-secondary/30 px-3 py-2.5 space-y-1 text-sm">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-muted-foreground">Total system RAM</span>
+                      <span className="font-semibold text-foreground tabular-nums">{topMemConsumers.memory.totalGB.toFixed(1)} GB</span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-muted-foreground">Currently free</span>
+                      <span className="font-semibold text-foreground tabular-nums">{topMemConsumers.memory.freeGB.toFixed(1)} GB ({topMemConsumers.memory.freePct}%)</span>
+                    </div>
+                    {topMemConsumers.memory.freeUpGB > 0 ? (
+                      <div className="flex justify-between items-baseline pt-1 border-t border-border/60">
+                        <span className="text-foreground">To hit the optimal zone</span>
+                        <span className="font-semibold text-foreground tabular-nums">free ~{topMemConsumers.memory.freeUpGB.toFixed(1)} GB more</span>
+                      </div>
+                    ) : (
+                      <div className="pt-1 border-t border-border/60 text-xs text-muted-foreground italic">
+                        You&apos;re already in the optimal zone for PNG conversion (above 30% free).
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="mt-2 space-y-1.5" data-testid="top-mem-consumers-list">
                   {topMemConsumersLoading && (
-                    <p className="text-sm text-muted-foreground">Reading process list…</p>
+                    <p className="text-sm text-muted-foreground">Reading your running apps…</p>
                   )}
-                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.length === 0 && (
+                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.list.length === 0 && (
                     <div className="text-sm text-muted-foreground space-y-2">
-                      <p>PDR couldn't read your running-app list from Windows just now. This usually means a security policy on the machine is blocking <code className="text-xs px-1 py-0.5 rounded bg-secondary/60">Get-Process</code> from PowerShell.</p>
+                      <p>PDR couldn&apos;t read your running-app list from Windows just now. This usually means a security policy on the machine is blocking <code className="text-xs px-1 py-0.5 rounded bg-secondary/60">Get-Process</code> from PowerShell.</p>
                       <p>You can still get the same information from Windows&apos; built-in Task Manager — press <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Ctrl</kbd> + <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Shift</kbd> + <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Esc</kbd>, click the <strong className="text-foreground">Memory</strong> column to sort, and close anything heavy you don&apos;t need running.</p>
                     </div>
                   )}
-                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.map((p, i) => (
+                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.list.map((p, i) => (
                     <div
                       key={`${p.name}-${i}`}
                       className="flex items-baseline justify-between gap-3 px-3 py-2 rounded-md bg-secondary/30 border border-border"
