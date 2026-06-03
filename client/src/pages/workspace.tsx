@@ -5217,19 +5217,32 @@ function DashboardPanel({
   // "the scroll should automatically move down when the text appears
   // after selecting it, that way it is all instantly viewable".
   //
-  // 2026-06-03 second pass: was using block:'end' on the <p> which over-
-  // scrolled past the callout when the callout rendered later. Switched
-  // to block:'nearest' so the browser scrolls the minimum needed to
-  // bring the element into view. Ref also re-targeted to a sentinel
-  // <div> placed AFTER the callout (declared below in JSX) so the
-  // scroll lands on the very bottom of the card — capturing both the
-  // description AND the conditional callout.
+  // 2026-06-03 third pass: 'nearest' under-scrolled (Terry: "the scroll
+  // hasn't gone to the bottom, which is where I want it to go"). The
+  // earlier 'end' over-scrolled because the ref was on the <p> not the
+  // callout. Now ref is on a sentinel at the BOTTOM of the format card,
+  // but scrollIntoView still doesn't reach the page bottom because the
+  // workspace has a scrollable ancestor that isn't the document.
+  //
+  // Real fix: walk up to find the nearest scrollable ancestor and set
+  // its scrollTop to its scrollHeight directly. That scrolls all the
+  // way to the bottom regardless of how deep the ref sits in nested
+  // overflow containers.
   const formatDescriptionRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (photoFormat === 'original') return;
-    // Small delay so the layout settles after the dropdown closes.
     const t = setTimeout(() => {
-      formatDescriptionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      let el = formatDescriptionRef.current?.parentElement as HTMLElement | null;
+      while (el) {
+        const style = window.getComputedStyle(el);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+          return;
+        }
+        el = el.parentElement;
+      }
+      // Fallback: no scrollable ancestor found — try window scroll.
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     }, 120);
     return () => clearTimeout(t);
   }, [photoFormat]);
@@ -6213,17 +6226,26 @@ function DashboardPanel({
                     callouts in PDR. Info icon uses text-primary
                     (lavender) per the style guide. */}
                 {photoFormat === 'png' && ramPressureLow && memoryInfo && (
-                  /* v2.0.15 (Terry 2026-06-03) — strengthened callout
-                     visibility. Was bg-primary/5 + border-primary/20
-                     + muted body text — too faint, "hard to see you've
-                     even done it at all" (Terry). Bumped tint to
-                     bg-primary/[0.08] + border-primary/40 + ring-1 of
-                     primary/15 + slight shadow + body text upgraded
-                     from muted-foreground to foreground for readability.
-                     Still uses lavender (info-tone), still NOT a CTA —
-                     no pulse, no warning red. Just more weight on the
-                     same primary-opacity vocabulary already in use. */
-                  <div className="mt-2 flex gap-2.5 items-start border border-primary/40 bg-primary/[0.08] rounded-md px-3 py-2.5 shadow-sm ring-1 ring-primary/15">
+                  /* v2.0.15 (Terry 2026-06-03) — strengthened callout +
+                     attention pulse. Visibility chrome: bg-primary/[0.08]
+                     + border-primary/40 + ring-1 + shadow-sm + body in
+                     text-foreground. On selection, a 3-pulse scale
+                     animation runs once via framer-motion (motion is
+                     already imported in this file). The animation
+                     replays whenever photoFormat changes because the
+                     motion.div is keyed on photoFormat — fresh mount,
+                     fresh animation. Scale 1.02 is subtle enough not
+                     to feel flamboyant (Terry: "I don't know if
+                     pulsating is the right call, but it might be... it
+                     should really show some stand-out quality without
+                     being flamboyant"). */
+                  <motion.div
+                    key={photoFormat}
+                    initial={{ scale: 1 }}
+                    animate={{ scale: [1, 1.02, 1, 1.02, 1, 1.02, 1] }}
+                    transition={{ duration: 2.4, ease: 'easeInOut' }}
+                    className="mt-2 flex gap-2.5 items-start border border-primary/40 bg-primary/[0.08] rounded-md px-3 py-2.5 shadow-sm ring-1 ring-primary/15"
+                  >
                     <Info className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <ul className="text-xs text-foreground list-disc list-inside space-y-1">
@@ -6240,7 +6262,7 @@ function DashboardPanel({
                         <ChevronRight className="w-3 h-3" />
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
                 {/* v2.0.15 (Terry 2026-06-03) — auto-scroll sentinel.
                     Sits at the very bottom of the format card, after
@@ -6301,16 +6323,22 @@ function DashboardPanel({
                         <span className="font-semibold text-foreground tabular-nums">free ~{topMemConsumers.memory.freeUpGB.toFixed(1)} GB more</span>
                       </div>
                     ) : (
-                      <div className="pt-1 border-t border-border/60 flex items-center gap-1.5">
-                        {/* v2.0.15 (Terry 2026-06-03) — emerald palette
-                            verbatim from the "Analysis complete" badge
-                            at line 5666 (text-emerald-700 + CheckCircle2
-                            icon) for visual consistency: same "green tick
-                            = a positive system check" language across PDR. */}
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 shrink-0" />
-                        <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                          You&apos;re already in the optimal zone for PNG conversion (above 30% free).
-                        </span>
+                      <div className="pt-1 border-t border-border/60">
+                        {/* v2.0.15 (Terry 2026-06-03) — full pill treatment
+                            copied verbatim from the "Analysis complete"
+                            badge at line 5666 (bg-emerald-100/50 + text-
+                            emerald-700 + border-emerald-200/50 + rounded
+                            -full + CheckCircle2). Earlier pass only had
+                            the dark text — Terry: "you still have the
+                            light green that's used in Combined Analysis
+                            to use for this text in the RAM modal." Light
+                            background reads as a positive system check. */}
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100/50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-700/50">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span className="text-xs font-medium">
+                            Already in the optimal zone for PNG conversion
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
