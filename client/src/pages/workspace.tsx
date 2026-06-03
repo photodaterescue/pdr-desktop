@@ -8061,10 +8061,26 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
   const [skippedExisting, setSkippedExisting] = useState(0);
   const [showCancelFixConfirm, setShowCancelFixConfirm] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
-  const [showMasterLibMsg, setShowMasterLibMsg] = useState(() => {
-    return localStorage.getItem('pdr-master-lib-dismissed') !== 'true';
+  // v2.0.15 (Terry 2026-06-03) — per-library first-shot tracking.
+  // Was: shown on every Fix Complete modal until the user manually
+  // dismissed it (and the dismiss link only appeared after the 3rd
+  // showing — so users saw it 3+ times). Terry: "This should only
+  // appear the first time the library is used and not afterwards."
+  // Now: shown exactly ONCE per library destination, then auto-
+  // suppressed for that library forever (a new Library Drive gets a
+  // fresh shot). Tracked in a single localStorage key holding a
+  // {libraryPath: true} map so the LDM reset can clear with one call.
+  const [showMasterLibMsg, setShowMasterLibMsg] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || !destinationPath) return true;
+    try {
+      const raw = localStorage.getItem('pdr-master-lib-shown-libs');
+      if (!raw) return true;
+      const map = JSON.parse(raw);
+      return !(map && typeof map === 'object' && map[destinationPath] === true);
+    } catch {
+      return true;
+    }
   });
-  const masterLibCountedRef = React.useRef(false);
   const [elapsed, setElapsed] = useState(0);
   const [totalTime, setTotalTime] = useState(0);
   const [isPrescanning, setIsPrescanning] = useState(true);
@@ -8121,13 +8137,25 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
     });
   }, []);
 
-  // Increment master library message seen count when fix completes
+  // v2.0.15 (Terry 2026-06-03) — when Fix completes AND the master-lib
+  // message is being shown for this destination, write the
+  // destination into the per-library "shown" map so the next Fix to
+  // the same library suppresses the callout. The message stays
+  // visible for THIS Fix Complete; the suppression takes effect on
+  // the next one. Single localStorage key holds {libPath: true} map
+  // so the LDM "reset settings" path can clear with one removeItem
+  // call (see line ~12644).
   useEffect(() => {
-    if (!isComplete || masterLibCountedRef.current) return;
-    masterLibCountedRef.current = true;
-    const count = parseInt(localStorage.getItem('pdr-master-lib-seen-count') || '0', 10);
-    localStorage.setItem('pdr-master-lib-seen-count', String(count + 1));
-  }, [isComplete]);
+    if (!isComplete || !showMasterLibMsg || !destinationPath) return;
+    try {
+      const raw = localStorage.getItem('pdr-master-lib-shown-libs');
+      const map = raw ? JSON.parse(raw) : {};
+      if (map && typeof map === 'object' && map[destinationPath] !== true) {
+        map[destinationPath] = true;
+        localStorage.setItem('pdr-master-lib-shown-libs', JSON.stringify(map));
+      }
+    } catch { /* best-effort — localStorage full / unavailable */ }
+  }, [isComplete, showMasterLibMsg, destinationPath]);
   
   useEffect(() => {
     if (isComplete) return;
@@ -8924,7 +8952,16 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
 			  )}
 			</div>
             
-            {/* Destination permanence warning — shown first 3 times without dismiss option, then dismissable */}
+            {/* v2.0.15 (Terry 2026-06-03) — destination permanence
+                advisory. Shown exactly ONCE per library destination, then
+                auto-suppressed for that destination forever. No manual
+                dismiss link needed (the previous "Don't show again"
+                button was only visible after the 3rd showing — Terry:
+                "this should only appear the first time the library is
+                used and not afterwards"). Same amber chrome as before
+                (advisory tone, matches the LowRamAdvisoryCard amber
+                vocabulary already in PDR) — only the gating logic
+                changed. */}
             {showMasterLibMsg && (
               <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-4">
                 <div className="flex items-start gap-2.5">
@@ -8935,17 +8972,6 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                       Moving, renaming, or deleting this folder will break Search & Discovery indexing and AI analysis.
                       Keep the same Library Drive for all future fixes to build a single, organized collection.
                     </p>
-                    {parseInt(localStorage.getItem('pdr-master-lib-seen-count') || '0', 10) >= 3 && (
-                      <button
-                        onClick={() => {
-                          localStorage.setItem('pdr-master-lib-dismissed', 'true');
-                          setShowMasterLibMsg(false);
-                        }}
-                        className="text-[10px] text-amber-600/60 dark:text-amber-400/60 hover:text-amber-600 dark:hover:text-amber-400 mt-1.5 underline transition-colors"
-                      >
-                        Don't show this again
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -12641,8 +12667,13 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     localStorage.removeItem('pdr-allow-report-removal');
     localStorage.removeItem('pdr-allow-index-removal');
     localStorage.removeItem('pdr-show-library-manager');
+    // v2.0.15 (Terry 2026-06-03) — master-lib tracking now uses a
+    // single per-library map (pdr-master-lib-shown-libs) instead of
+    // the previous dismissed+seen-count pair. Old keys still removed
+    // for backward-compat cleanup on machines that have them lingering.
     localStorage.removeItem('pdr-master-lib-dismissed');
     localStorage.removeItem('pdr-master-lib-seen-count');
+    localStorage.removeItem('pdr-master-lib-shown-libs');
     localStorage.removeItem('pdr-library-planner-complete');
     localStorage.removeItem('pdr-library-planner-size');
     localStorage.removeItem('pdr-library-planner-multi');
