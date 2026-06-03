@@ -5148,7 +5148,13 @@ function DashboardPanel({
     })();
     return () => { cancelled = true; };
   }, []);
-  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.3;
+  // v2.0.15 (Terry 2026-06-03) — temporary test threshold: 0.5
+  // (shows the info when free RAM is below 50% of total) so Terry can
+  // see and review the wording/placement. Revert to 0.3 (free < 30%
+  // of total, i.e. "system used > 70%") once he confirms the look —
+  // that's the threshold where Windows actually starts page-swapping
+  // to the HDDs that PDR writes to during conversion.
+  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.5;
 
   // Post-fix flow lives at workspace top-level — DashboardPanel only
   // signals the start of the flow via the setPostFixFlowActive prop.
@@ -5994,7 +6000,7 @@ function DashboardPanel({
                             <button
                               key={opt.value}
                               onClick={() => { setPhotoFormat(opt.value); setPhotoFormatOpen(false); }}
-                              className={`w-full text-left px-3 py-2.5 text-sm hover:bg-primary/5 transition-colors flex items-center justify-between ${photoFormat === opt.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
+                              className={`w-full text-left px-3 py-2.5 text-sm hover:bg-primary/5 transition-colors flex flex-col items-start gap-0.5 ${photoFormat === opt.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
                             >
                               <span>{opt.label}</span>
                               <span className="text-xs text-muted-foreground">{opt.desc}{sizeLabel ? ` · ${sizeLabel}` : ''}</span>
