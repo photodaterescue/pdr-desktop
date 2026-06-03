@@ -8969,8 +8969,7 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
                   <div className="flex-1">
                     <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mb-0.5">This is now your master photo library</p>
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Moving, renaming, or deleting this folder will break Search & Discovery indexing and AI analysis.
-                      Keep the same Library Drive for all future fixes to build a single, organized collection.
+                      Keep this folder where it is so Search &amp; Discovery and AI analysis stay intact.
                     </p>
                   </div>
                 </div>
