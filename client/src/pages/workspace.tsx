@@ -5148,13 +5148,13 @@ function DashboardPanel({
     })();
     return () => { cancelled = true; };
   }, []);
-  // v2.0.15 (Terry 2026-06-03) — temporary test threshold: 0.5
-  // (shows the info when free RAM is below 50% of total) so Terry can
-  // see and review the wording/placement. Revert to 0.3 (free < 30%
-  // of total, i.e. "system used > 70%") once he confirms the look —
-  // that's the threshold where Windows actually starts page-swapping
-  // to the HDDs that PDR writes to during conversion.
-  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.5;
+  // v2.0.15 (Terry 2026-06-03) — fires when free RAM is below 30% of
+  // total (equivalent to "system used > 70%"). That's the threshold
+  // where Windows starts page-swapping to the HDDs PDR writes to
+  // during conversion — confirmed today on Terry's 24 GB box: same
+  // code, same files, dropping memory pressure from 77% used to 64%
+  // used took the 1 GB PNG conversion from 13:42 to 9:44.
+  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.3;
 
   // Post-fix flow lives at workspace top-level — DashboardPanel only
   // signals the start of the flow via the setPostFixFlowActive prop.
