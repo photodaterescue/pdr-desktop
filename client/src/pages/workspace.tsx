@@ -59,6 +59,7 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   Accordion,
   AccordionContent,
@@ -5117,9 +5118,89 @@ function DashboardPanel({
     }
     return null;
   });
-  const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg'>('original');
+  // v2.0.15 (Terry 2026-06-03) — format choice + lock-in checkbox.
+  //
+  // Default behaviour: photoFormat starts at 'original' on every app
+  // launch (Terry's primary-selection principle: "Keep Originals is
+  // always selected by default, then users can decide if they'll
+  // choose an alternative").
+  //
+  // Lock-in opt-in: a small Pin toggle next to the format dropdown
+  // sets `formatLocked = true` and persists the current choice to
+  // localStorage. When locked, the format choice survives both app
+  // restarts and end-of-Fix. When unlocked (default), the choice is
+  // session-only and resets to 'original' when the user dismisses the
+  // Fix Complete modal — so the next Fix starts fresh.
+  //
+  // Two localStorage keys:
+  //   pdr-format-locked  = 'true' | 'false'  — sticky preference
+  //   pdr-format-choice  = 'original' | 'png' | 'jpg' — value when locked
+  const [formatLocked, setFormatLocked] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('pdr-format-locked') === 'true';
+  });
+  const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg'>(() => {
+    if (typeof window === 'undefined') return 'original';
+    if (localStorage.getItem('pdr-format-locked') !== 'true') return 'original';
+    const saved = localStorage.getItem('pdr-format-choice');
+    if (saved === 'png' || saved === 'jpg' || saved === 'original') return saved;
+    return 'original';
+  });
   const [photoFormatOpen, setPhotoFormatOpen] = useState(false);
   const photoFormatBtnRef = React.useRef<HTMLButtonElement>(null);
+
+  // Sync helper — call instead of setPhotoFormat directly so the
+  // locked-choice persistence stays in sync with the React state.
+  const updatePhotoFormat = (value: 'original' | 'png' | 'jpg') => {
+    setPhotoFormat(value);
+    if (formatLocked && typeof window !== 'undefined') {
+      try { localStorage.setItem('pdr-format-choice', value); } catch { /* localStorage full / unavailable */ }
+    }
+  };
+
+  // Toggle the lock. When turning ON, persist the current choice so
+  // the next session opens to it. When turning OFF, clear the persisted
+  // choice so it doesn't ghost back later — and reset the live state
+  // to 'original' if the user was on a non-default format (Terry's
+  // "primary selection" principle: unlock means back to defaults).
+  const toggleFormatLock = () => {
+    const next = !formatLocked;
+    setFormatLocked(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pdr-format-locked', String(next));
+        if (next) {
+          localStorage.setItem('pdr-format-choice', photoFormat);
+        } else {
+          localStorage.removeItem('pdr-format-choice');
+        }
+      } catch { /* best-effort */ }
+    }
+  };
+
+  // Lite Tier 3 (Terry 2026-06-03) — top RAM consumers modal state.
+  // Triggered by the "See which apps are using your RAM →" link inside
+  // the RAM-pressure callout. Lazy-fetched on open via the
+  // system:topMemoryConsumers IPC.
+  const [topMemConsumersOpen, setTopMemConsumersOpen] = useState(false);
+  const [topMemConsumers, setTopMemConsumers] = useState<Array<{ name: string; memMB: number; procCount: number }> | null>(null);
+  const [topMemConsumersLoading, setTopMemConsumersLoading] = useState(false);
+  const openTopMemConsumers = async () => {
+    setTopMemConsumersOpen(true);
+    setTopMemConsumersLoading(true);
+    try {
+      const res = await (window as any).pdr?.system?.topMemoryConsumers?.(5);
+      if (res?.success && Array.isArray(res.data)) {
+        setTopMemConsumers(res.data);
+      } else {
+        setTopMemConsumers([]);
+      }
+    } catch {
+      setTopMemConsumers([]);
+    } finally {
+      setTopMemConsumersLoading(false);
+    }
+  };
 
   // v2.0.15 (Terry 2026-06-03) — passive RAM info for PNG-format
   // selection. Queries the existing system:memoryInfo IPC once on
@@ -6005,7 +6086,7 @@ function DashboardPanel({
                             return (
                             <button
                               key={opt.value}
-                              onClick={() => { setPhotoFormat(opt.value); setPhotoFormatOpen(false); }}
+                              onClick={() => { updatePhotoFormat(opt.value); setPhotoFormatOpen(false); }}
                               className={`w-full text-left px-3 py-2.5 text-sm hover:bg-primary/5 transition-colors flex flex-col items-start gap-0.5 ${photoFormat === opt.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
                             >
                               {/* v2.0.15 (Terry 2026-06-03) — top row holds
@@ -6029,6 +6110,33 @@ function DashboardPanel({
                       document.body
                     )}
                   </div>
+                  {/* v2.0.15 (Terry 2026-06-03) — format-lock toggle.
+                      Pin icon (lucide-react Pin, already imported) sits
+                      between the format dropdown and the (i) tooltip.
+                      Click toggles formatLocked + persists the current
+                      choice to localStorage. Locked state: text-primary
+                      + bg-primary/10 (lavender tint signals "stuck");
+                      unlocked: Button variant="icon" defaults (text-
+                      foreground + hover:bg-secondary). Uses existing
+                      IconTooltip + Button primitives only — no freehand
+                      chrome. */}
+                  <IconTooltip
+                    label={formatLocked
+                      ? 'Choice locked — will persist between Fixes. Click to unlock.'
+                      : 'Lock this choice for future Fixes'
+                    }
+                    side="bottom"
+                  >
+                    <Button
+                      variant="icon"
+                      onClick={toggleFormatLock}
+                      aria-label={formatLocked ? 'Unlock format choice' : 'Lock format choice'}
+                      className={formatLocked ? 'text-primary bg-primary/10' : ''}
+                      data-testid="format-lock-toggle"
+                    >
+                      <Pin className="w-4 h-4" />
+                    </Button>
+                  </IconTooltip>
                   <CardInfoTooltip onNavigateToBestPractices={onNavigateToBestPractices}>
                     <p><strong className="text-foreground">PNG (Full Quality)</strong> — preserves every pixel with zero loss. Ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
                     <p className="mt-1.5"><strong className="text-foreground">JPG</strong> — compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across every device and app.</p>
@@ -6040,23 +6148,92 @@ function DashboardPanel({
                   {photoFormat === 'png' && 'All photos converted to PNG. Full quality preserved, larger files.'}
                   {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality to PNG.'}
                 </p>
-                {/* v2.0.15 (Terry 2026-06-03) — Tier 2 passive RAM info.
-                    Bullet-style list (Terry's preference over the prose
-                    paragraph it replaced — "this is some pretty heavy duty
-                    reading just for selecting something from a dropdown menu").
-                    Same muted-foreground colour as the description above; no
-                    new icon, no banner, no warning tint. Only renders when PNG
-                    is selected AND free RAM is below the threshold (currently
-                    50% for Terry's visual test, will revert to 30% before
-                    ship). */}
+                {/* v2.0.15 (Terry 2026-06-03) — Tier 2 RAM info as a
+                    soft lavender callout. Bullets stay scannable
+                    (Terry's preference over prose); the box's tinted
+                    background + left-aligned Info icon give it just
+                    enough visual weight to stand out from the format
+                    description above, without going amber/warning.
+                    Lite Tier 3 link beneath ("See which apps are using
+                    your RAM →") opens a small modal listing the top 5
+                    memory consumers — read-only, no kill button.
+                    Box chrome: bg-primary/5 + border-primary/20 +
+                    rounded-md, lifted from the existing info-tone
+                    callouts in PDR. Info icon uses text-primary
+                    (lavender) per the style guide. */}
                 {photoFormat === 'png' && ramPressureLow && memoryInfo && (
-                  <ul className="text-xs text-muted-foreground list-disc list-inside mt-2 space-y-0.5">
-                    <li>Free RAM: {memoryInfo.freeGB.toFixed(1)} GB of {memoryInfo.totalGB.toFixed(1)} GB</li>
-                    <li>Closing memory-heavy apps (browser tabs, video editors, trading platforms) speeds up PNG conversion</li>
-                  </ul>
+                  <div className="mt-2 flex gap-2 items-start border border-primary/20 bg-primary/5 rounded-md px-3 py-2">
+                    <Info className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                        <li>Free RAM: {memoryInfo.freeGB.toFixed(1)} GB of {memoryInfo.totalGB.toFixed(1)} GB</li>
+                        <li>Closing memory-heavy apps (browser tabs, video editors, trading platforms) speeds up PNG conversion</li>
+                      </ul>
+                      <button
+                        type="button"
+                        onClick={openTopMemConsumers}
+                        className="mt-1.5 text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 inline-flex items-center gap-0.5"
+                        data-testid="dashboard-top-mem-consumers-trigger"
+                      >
+                        See which apps are using your RAM
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
                 )}
               </Card>
             </div>
+
+            {/* v2.0.15 (Terry 2026-06-03) — Lite Tier 3 modal.
+                Read-only "top memory consumers" list. Triggered by the
+                "See which apps are using your RAM →" link inside the
+                RAM-pressure callout above. Uses the existing Dialog
+                primitive from @/components/ui/dialog — no freehand
+                modal chrome. Footer Close uses Button variant="secondary"
+                per the style guide's Cancel-button rule. PDR's own
+                electron processes are filtered server-side in the IPC
+                handler so the list shows actionable items only. */}
+            <Dialog open={topMemConsumersOpen} onOpenChange={setTopMemConsumersOpen}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>What's using your RAM right now</DialogTitle>
+                  <DialogDescription>
+                    Top apps by memory use. Closing the heaviest ones before starting a PNG-format Fix frees the OS file cache, which is what the conversion path leans on. Read-only — close apps from their own windows or Task Manager.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-2 space-y-1.5" data-testid="top-mem-consumers-list">
+                  {topMemConsumersLoading && (
+                    <p className="text-sm text-muted-foreground">Reading process list…</p>
+                  )}
+                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Couldn't read the process list right now — try again in a moment.</p>
+                  )}
+                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.map((p, i) => (
+                    <div
+                      key={`${p.name}-${i}`}
+                      className="flex items-baseline justify-between gap-3 px-3 py-2 rounded-md bg-secondary/30 border border-border"
+                    >
+                      <span className="text-sm font-medium text-foreground truncate">
+                        {p.name}
+                        {p.procCount > 1 && (
+                          <span className="text-xs text-muted-foreground font-normal ml-1.5">
+                            ({p.procCount} processes)
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-sm text-foreground tabular-nums shrink-0">
+                        {p.memMB >= 1024 ? `${(p.memMB / 1024).toFixed(1)} GB` : `${p.memMB} MB`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter className="mt-4">
+                  <Button variant="secondary" onClick={() => setTopMemConsumersOpen(false)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
         </section>
       </motion.div>
       </div>

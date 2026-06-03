@@ -687,6 +687,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // to gate a one-shot guidance card for budget-laptop users.
   system: {
     memoryInfo: () => ipcRenderer.invoke('system:memoryInfo'),
+    // Lite Tier 3 (Terry 2026-06-03) — top RAM consumers list, used
+    // by the format-card's "See which apps are using your RAM →" link
+    // when the Tier 2 RAM-pressure bullets are visible. Read-only.
+    topMemoryConsumers: (limit: number = 5) => ipcRenderer.invoke('system:topMemoryConsumers', limit),
   },
   // Reveal an arbitrary file path in Explorer (highlights it inside
   // its folder). Used by ReportProblemModal's success state to

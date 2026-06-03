@@ -6958,6 +6958,63 @@ ipcMain.handle('system:memoryInfo', async () => {
   }
 });
 
+// ─── system:topMemoryConsumers ────────────────────────────────────
+// Lite Tier 3 (Terry 2026-06-03) — read-only "what's using my RAM?"
+// list. Surfaces when the Tier 2 RAM-pressure bullets are visible in
+// the format-dropdown card, behind a "See which apps are using your
+// RAM →" link. Returns the top N processes by working-set size, with
+// PDR's own electron processes filtered out (showing the user "Photo
+// Date Rescue: 230 MB" isn't actionable — they can't close us). NOT a
+// kill switch — read-only, premium-feel respect for user agency. They
+// pick what to close in Task Manager themselves.
+ipcMain.handle('system:topMemoryConsumers', async (_e, limit: number = 5) => {
+  try {
+    if (process.platform !== 'win32') {
+      return { success: true, data: [] };
+    }
+    const execFileAsync = (await import('util')).promisify(execFile);
+    // PowerShell: enumerate processes, group by name (Chrome / Electron
+    // spawn many child processes — group so the user sees one "Chrome
+    // (53 procs, 3.4 GB)" line instead of 53 separate Chrome rows),
+    // sort by total memory desc, take top N. ConvertTo-Json so the
+    // renderer can parse cleanly.
+    const ps = [
+      'Get-Process',
+      '| Group-Object -Property ProcessName',
+      '| ForEach-Object {',
+      '  $sum = ($_.Group | Measure-Object WorkingSet64 -Sum).Sum',
+      '  [PSCustomObject]@{ name = $_.Name; memMB = [math]::Round($sum / 1MB, 0); procCount = $_.Count }',
+      '}',
+      '| Sort-Object memMB -Descending',
+      `| Select-Object -First ${Math.max(1, Math.min(20, limit + 4))}`,
+      '| ConvertTo-Json -Compress',
+    ].join(' ');
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', ps],
+      { timeout: 8000, maxBuffer: 256 * 1024 }
+    );
+    const parsed = JSON.parse(stdout.trim() || '[]');
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    // Filter out PDR's own processes (electron + Photo Date Rescue) —
+    // not actionable to suggest closing ourselves.
+    const filtered = rows
+      .filter((r: any) => {
+        const n = String(r?.name ?? '').toLowerCase();
+        return n !== 'electron' && n !== 'photo date rescue';
+      })
+      .slice(0, limit)
+      .map((r: any) => ({
+        name: String(r.name),
+        memMB: Number(r.memMB),
+        procCount: Number(r.procCount),
+      }));
+    return { success: true, data: filtered };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('app:reportProblem', async (_e, payload: { description?: string; userEmail?: string }) => {
   try {
     const supportEmail = 'admin@photodaterescue.com';
