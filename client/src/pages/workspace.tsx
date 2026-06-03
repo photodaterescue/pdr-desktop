@@ -5118,64 +5118,44 @@ function DashboardPanel({
     }
     return null;
   });
-  // v2.0.15 (Terry 2026-06-03) — format choice + lock-in checkbox.
+  // v2.0.15 (Terry 2026-06-03) — format choice + transient lock-in.
+  //
+  // Lock semantics (Terry's clarification 2026-06-03): the pin lock is
+  // a TRANSIENT, per-selection toggle, NOT a persisted preference. It
+  // turns ON only for the duration of the current non-original
+  // selection. Going back to Keep Originals automatically resets the
+  // lock to OFF; coming back to PNG/JPG later defaults to unlocked
+  // again, requiring a fresh pin click. Lock state never persists
+  // across app restarts either.
   //
   // Default behaviour: photoFormat starts at 'original' on every app
   // launch (Terry's primary-selection principle: "Keep Originals is
   // always selected by default, then users can decide if they'll
   // choose an alternative").
-  //
-  // Lock-in opt-in: a small Pin toggle next to the format dropdown
-  // sets `formatLocked = true` and persists the current choice to
-  // localStorage. When locked, the format choice survives both app
-  // restarts and end-of-Fix. When unlocked (default), the choice is
-  // session-only and resets to 'original' when the user dismisses the
-  // Fix Complete modal — so the next Fix starts fresh.
-  //
-  // Two localStorage keys:
-  //   pdr-format-locked  = 'true' | 'false'  — sticky preference
-  //   pdr-format-choice  = 'original' | 'png' | 'jpg' — value when locked
-  const [formatLocked, setFormatLocked] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('pdr-format-locked') === 'true';
-  });
-  const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg'>(() => {
-    if (typeof window === 'undefined') return 'original';
-    if (localStorage.getItem('pdr-format-locked') !== 'true') return 'original';
-    const saved = localStorage.getItem('pdr-format-choice');
-    if (saved === 'png' || saved === 'jpg' || saved === 'original') return saved;
-    return 'original';
-  });
+  const [formatLocked, setFormatLocked] = useState<boolean>(false);
+  const [photoFormat, setPhotoFormat] = useState<'original' | 'png' | 'jpg'>('original');
   const [photoFormatOpen, setPhotoFormatOpen] = useState(false);
   const photoFormatBtnRef = React.useRef<HTMLButtonElement>(null);
 
-  // Sync helper — call instead of setPhotoFormat directly so the
-  // locked-choice persistence stays in sync with the React state.
+  // Sync helper — kept for the dropdown's onClick to call instead of
+  // setPhotoFormat directly. Currently a pass-through, but reserved
+  // for future side-effects (e.g. analytics on format selection).
   const updatePhotoFormat = (value: 'original' | 'png' | 'jpg') => {
     setPhotoFormat(value);
-    if (formatLocked && typeof window !== 'undefined') {
-      try { localStorage.setItem('pdr-format-choice', value); } catch { /* localStorage full / unavailable */ }
-    }
   };
 
-  // Toggle the lock. When turning ON, persist the current choice so
-  // the next session opens to it. When turning OFF, clear the persisted
-  // choice so it doesn't ghost back later — and reset the live state
-  // to 'original' if the user was on a non-default format (Terry's
-  // "primary selection" principle: unlock means back to defaults).
-  const toggleFormatLock = () => {
-    const next = !formatLocked;
-    setFormatLocked(next);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('pdr-format-locked', String(next));
-        if (next) {
-          localStorage.setItem('pdr-format-choice', photoFormat);
-        } else {
-          localStorage.removeItem('pdr-format-choice');
-        }
-      } catch { /* best-effort */ }
+  // Reset the lock whenever the user picks Keep Originals. Terry:
+  // "if the user deselects it, and then comes back again, they will
+  // have to pin lock it again". Auto-clears the lock without the user
+  // having to also click the pin.
+  useEffect(() => {
+    if (photoFormat === 'original' && formatLocked) {
+      setFormatLocked(false);
     }
+  }, [photoFormat, formatLocked]);
+
+  const toggleFormatLock = () => {
+    setFormatLocked(prev => !prev);
   };
 
   // Lite Tier 3 (Terry 2026-06-03) — top RAM consumers modal state.
@@ -6354,24 +6334,49 @@ function DashboardPanel({
                       <p>You can still get the same information from Windows&apos; built-in Task Manager — press <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Ctrl</kbd> + <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Shift</kbd> + <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Esc</kbd>, click the <strong className="text-foreground">Memory</strong> column to sort, and close anything heavy you don&apos;t need running.</p>
                     </div>
                   )}
-                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.list.map((p, i) => (
-                    <div
-                      key={`${p.name}-${i}`}
-                      className="flex items-baseline justify-between gap-3 px-3 py-2 rounded-md bg-secondary/30 border border-border"
-                    >
-                      <span className="text-sm font-medium text-foreground truncate">
-                        {p.name}
-                        {p.procCount > 1 && (
-                          <span className="text-xs text-muted-foreground font-normal ml-1.5">
-                            ({p.procCount} processes)
+                  {!topMemConsumersLoading && topMemConsumers && topMemConsumers.list.map((p, i) => {
+                    // v2.0.15 (Terry 2026-06-03) — browser hint. For
+                    // browser-engine apps with many processes (each tab
+                    // is its own process), suggest closing just heavy
+                    // tabs rather than the whole app. Less disruptive
+                    // to the user's flow. Terry: "some tabs could be
+                    // closed on Chrome (or any browser), without having
+                    // to close the whole app... as this could really
+                    // disrupt user's flow." Browsers detected by name
+                    // — the list covers all the Chromium / Firefox /
+                    // Safari variants users actually run on Windows.
+                    const BROWSERS = new Set([
+                      'chrome', 'msedge', 'firefox', 'brave', 'opera',
+                      'vivaldi', 'arc', 'chromium', 'iexplore', 'safari',
+                      'msedgewebview2',
+                    ]);
+                    const isBrowser = BROWSERS.has(p.name.toLowerCase()) && p.procCount > 1;
+                    return (
+                      <div
+                        key={`${p.name}-${i}`}
+                        className="px-3 py-2 rounded-md bg-secondary/30 border border-border"
+                      >
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-sm font-medium text-foreground truncate">
+                            {p.name}
+                            {p.procCount > 1 && (
+                              <span className="text-xs text-muted-foreground font-normal ml-1.5">
+                                ({p.procCount} processes)
+                              </span>
+                            )}
                           </span>
+                          <span className="text-sm text-foreground tabular-nums shrink-0">
+                            {p.memMB >= 1024 ? `${(p.memMB / 1024).toFixed(1)} GB` : `${p.memMB} MB`}
+                          </span>
+                        </div>
+                        {isBrowser && (
+                          <p className="text-xs text-muted-foreground mt-1 italic">
+                            Closing heavy tabs is usually enough — no need to quit the whole browser.
+                          </p>
                         )}
-                      </span>
-                      <span className="text-sm text-foreground tabular-nums shrink-0">
-                        {p.memMB >= 1024 ? `${(p.memMB / 1024).toFixed(1)} GB` : `${p.memMB} MB`}
-                      </span>
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
                 <DialogFooter className="mt-4">
                   <Button variant="secondary" onClick={() => setTopMemConsumersOpen(false)}>
