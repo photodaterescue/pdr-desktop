@@ -5963,7 +5963,7 @@ function DashboardPanel({
                         >
                           {([
                             { value: 'original' as const, label: 'Keep Originals', desc: 'No conversion' },
-                            { value: 'png' as const, label: 'PNG', desc: 'Highest quality, lossless · ~4× slower than JPG' },
+                            { value: 'png' as const, label: 'PNG', desc: 'Full Quality · ~4× slower than JPG' },
                             { value: 'jpg' as const, label: 'JPG', desc: 'Reduced file size, universal' },
                           ]).map(opt => {
                             // Compute estimated output size for this format option
@@ -6008,8 +6008,19 @@ function DashboardPanel({
                               onClick={() => { setPhotoFormat(opt.value); setPhotoFormatOpen(false); }}
                               className={`w-full text-left px-3 py-2.5 text-sm hover:bg-primary/5 transition-colors flex flex-col items-start gap-0.5 ${photoFormat === opt.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
                             >
-                              <span>{opt.label}</span>
-                              <span className="text-xs text-muted-foreground">{opt.desc}{sizeLabel ? ` · ${sizeLabel}` : ''}</span>
+                              {/* v2.0.15 (Terry 2026-06-03) — top row holds
+                                  label LEFT + size estimate RIGHT (consistent
+                                  position regardless of description length);
+                                  description gets its own row below. Replaces
+                                  the previous inline " · ~3.0 GB" tail that
+                                  drifted to a new line when the PNG description
+                                  got long, making the size position "random"
+                                  across the three options. */}
+                              <div className="flex w-full justify-between items-baseline gap-3">
+                                <span>{opt.label}</span>
+                                {sizeLabel && <span className="text-xs text-muted-foreground shrink-0">{sizeLabel}</span>}
+                              </div>
+                              <span className="text-xs text-muted-foreground">{opt.desc}</span>
                             </button>
                             );
                           })}
@@ -6019,15 +6030,15 @@ function DashboardPanel({
                     )}
                   </div>
                   <CardInfoTooltip onNavigateToBestPractices={onNavigateToBestPractices}>
-                    <p><strong className="text-foreground">PNG</strong> preserves every pixel with zero loss — ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
-                    <p className="mt-1.5"><strong className="text-foreground">JPG</strong> compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across all devices and apps.</p>
-                    <p className="mt-1.5 text-muted-foreground/70 italic">Files already in your chosen format will not be re-converted.</p>
+                    <p><strong className="text-foreground">PNG (Full Quality)</strong> — preserves every pixel with zero loss. Ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
+                    <p className="mt-1.5"><strong className="text-foreground">JPG</strong> — compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across every device and app.</p>
+                    <p className="mt-1.5 text-muted-foreground/70 italic">Files already in your chosen format are not re-converted.</p>
                   </CardInfoTooltip>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalized (.jpeg → .jpg).'}
-                  {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
-                  {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
+                  {photoFormat === 'png' && 'All photos converted to PNG. Full quality preserved, larger files.'}
+                  {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality to PNG.'}
                 </p>
                 {/* v2.0.15 (Terry 2026-06-03) — Tier 2 passive RAM info.
                     Bullet-style list (Terry's preference over the prose

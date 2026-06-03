@@ -277,6 +277,24 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                 </div>
 
                 <div>
+                  <p className="font-medium text-foreground mb-2">Output formats</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Full Quality (PNG)</dt>
+                      <dd className="text-muted-foreground mt-0.5">PDR's plain-language label for PNG output. Every pixel of the source photo is preserved exactly during conversion — no detail is dropped, no smudging on fine edges or text. The trade-off is larger files (typically 2.5–3× the JPG equivalent) and slower conversion (about 4× slower than JPG on the same hardware). Best for photos you may want to edit, print, or archive long-term.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Lossless</dt>
+                      <dd className="text-muted-foreground mt-0.5">The technical term for compression that doesn't drop any picture data. PNG is lossless — saved and re-saved a thousand times, it stays identical to the original. PDR's "Full Quality" PNG output IS lossless; the two terms describe the same thing. Contrast with JPG, which uses <em className="text-muted-foreground/80">lossy</em> compression — files shrink dramatically by discarding tiny (usually invisible) detail.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">JPG (lossy)</dt>
+                      <dd className="text-muted-foreground mt-0.5">The universally-supported photo format. Uses lossy compression to shrink files to a fraction of PNG's size, accepting tiny (usually invisible) detail loss in return. PDR exports JPG at quality 92 — close enough to PNG that the difference is virtually impossible to see without zooming to pixel level.</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
                   <p className="font-medium text-foreground mb-2">Faces, people and Trees</p>
                   <dl className="space-y-2">
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
