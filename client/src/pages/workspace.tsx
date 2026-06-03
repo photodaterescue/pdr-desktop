@@ -5262,8 +5262,19 @@ function DashboardPanel({
     // Estimate output size based on included file types AND format conversion
     // Use per-file data from analysis results for accurate format-aware estimation
     let estimatedBytes = 0;
-    const PNG_EXPANSION = 1.6; // JPG→PNG typically expands ~1.1-1.5x; using 1.6 to avoid underestimating
-    const JPG_COMPRESSION = 0.2; // PNG→JPG typically shrinks to ~20%
+    // v2.0.15 (Terry 2026-06-03) — recalibrated from measured data.
+    // The previous 1.6× was a pre-v2.0.x guess that bore no resemblance
+    // to actual output. Real-world JPG → PNG ratios measured this
+    // session: 1 GB → 2.72 GB (375 files), 5.47 GB → 15.876 GB (2,123
+    // files) — so 2.7–2.9× is the honest range. Using 3.0× as a safe
+    // over-estimate covers the measured range plus headroom for non-JPG
+    // inputs (HEIC → PNG, TIFF → PNG ratios not yet measured but
+    // unlikely to exceed 3×). JPG output direction (PNG → JPG at
+    // quality 92) bumped from 0.15 → 0.25 on the same over-estimate
+    // principle. NOTE: there is a second copy of these constants in the
+    // format-dropdown estimator below — keep them in sync.
+    const PNG_EXPANSION = 3.0;
+    const JPG_COMPRESSION = 0.25;
 
     for (const source of selectedSources) {
       const analysisData = fileResults?.[source.id];
@@ -5918,17 +5929,19 @@ function DashboardPanel({
                             const estGB = (() => {
                               if (stats.photos === 0 && stats.videos === 0) return 0;
                               let bytes = 0;
-                              // v2.0.15 (Terry 2026-05-31) — recalibrated against
-              // ground truth from Terry's 2,123-file PNG conversion
-              // test: 5.09 GB JPG source → 10.8 GB PNG output at
-              // compressionLevel:6 (ratio 2.12×). The shipped worker
-              // now runs at compressionLevel:1 (~10-15% larger files
-              // for ~3-5× faster encode) so the real ratio sits
-              // around 2.3×. Old 1.6× was a pre-v2.0.x guess that
-              // bore no resemblance to actual output. JPG_X (the
-              // reverse direction, PNG → JPG) is rarer; 0.15 is the
-              // typical compression ratio for a quality-92 JPEG.
-              const PNG_X = 2.3, JPG_X = 0.15;
+                              // v2.0.15 (Terry 2026-06-03) — recalibrated AGAIN
+              // to match measured output. Earlier value of 2.3× was
+              // based on the 5.09 GB → 10.8 GB headline number from
+              // the v2.0.15 PNG perf cycle, but the per-file [Convert]
+              // telemetry summed to 5.47 GB → 15.876 GB (real ratio
+              // 2.90×). Terry's 1 GB sample confirmed 2.72× actual
+              // output (1.0 GB → 2.72 GB on disk after Fix). Using
+              // 3.0× as a safe over-estimate covers both runs plus
+              // headroom for non-JPG inputs (HEIC, TIFF). JPG_X bumped
+              // 0.15 → 0.25 on the same over-estimate principle.
+              // MUST stay in sync with the PNG_EXPANSION/JPG_COMPRESSION
+              // constants in getStats() above and in the report block below.
+              const PNG_X = 3.0, JPG_X = 0.25;
                               for (const source of selectedSources) {
                                 const ad = fileResults?.[source.id];
                                 if (ad?.files) {
@@ -8447,17 +8460,17 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             {photoFormat !== 'original' && (() => {
               // Estimate output size for the report
               let srcBytes = 0, outBytes = 0;
-              // v2.0.15 (Terry 2026-05-31) — recalibrated against
-              // ground truth from Terry's 2,123-file PNG conversion
-              // test: 5.09 GB JPG source → 10.8 GB PNG output at
-              // compressionLevel:6 (ratio 2.12×). The shipped worker
-              // now runs at compressionLevel:1 (~10-15% larger files
-              // for ~3-5× faster encode) so the real ratio sits
-              // around 2.3×. Old 1.6× was a pre-v2.0.x guess that
-              // bore no resemblance to actual output. JPG_X (the
-              // reverse direction, PNG → JPG) is rarer; 0.15 is the
-              // typical compression ratio for a quality-92 JPEG.
-              const PNG_X = 2.3, JPG_X = 0.15;
+              // v2.0.15 (Terry 2026-06-03) — recalibrated AGAIN to
+              // match actual measured output. The earlier 2.3× was
+              // a headline-figure estimate; per-file [Convert] data
+              // summed to 5.47 GB → 15.876 GB on the 2,123-file run
+              // (2.90×) and Terry's 1 GB sample produced 1.0 GB →
+              // 2.72 GB on disk. Using 3.0× as a safe over-estimate
+              // covers both runs plus headroom for non-JPG inputs.
+              // JPG_X bumped 0.15 → 0.25 on the same principle.
+              // MUST stay in sync with PNG_EXPANSION/JPG_COMPRESSION
+              // in getStats() and the dropdown-estimator above.
+              const PNG_X = 3.0, JPG_X = 0.25;
               const sourceIds = new Set((sources || []).map(s => s.id));
               Object.entries(fileResults || {}).forEach(([sourceId, sd]) => {
                 if (!sourceIds.has(sourceId)) return; // Only count selected sources
