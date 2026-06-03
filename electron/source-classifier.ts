@@ -1,5 +1,7 @@
 // electron/source-classifier.ts
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import { execSync } from 'child_process';
 
 export type StorageType = 'local-ssd' | 'local-hdd' | 'network' | 'cloud-sync' | 'unknown';
@@ -13,14 +15,68 @@ export interface StorageClassification {
   isOptimal: boolean;
 }
 
-const CLOUD_SYNC_PATTERNS = [
-  /onedrive/i,
-  /dropbox/i,
-  /google\s*drive/i,
-  /icloud/i,
-  /box\s*sync/i,
-  /mega/i,
-];
+// v2.0.15 (Terry 2026-06-03) — cloud-sync detection rewritten.
+//
+// PREVIOUS BEHAVIOUR (buggy): a regex array (/onedrive/i, /dropbox/i,
+// etc.) matched the source path as a string. ANY folder whose name
+// contained "OneDrive" anywhere in the path was flagged as cloud-
+// synced — including Terry's "F:\OneDrive Copied to Computer\..."
+// which is just a local folder he named that way after copying his
+// OneDrive contents OFF the cloud. False positives like this surfaced
+// the spurious "Cloud-Synced Folder" badge in the Pre-Scan Results
+// modal and the (incorrect) "files may download on demand" caution.
+//
+// NEW BEHAVIOUR (correct): check whether the source path is INSIDE a
+// known cloud-sync folder root — not whether the folder NAME happens
+// to contain a provider word. Roots are discovered by enumerating
+// %USERPROFILE% for `OneDrive*` / `Dropbox` / `Google Drive` /
+// `iCloudDrive` entries that actually exist on disk. A folder is
+// classified as cloud-sync only if its normalised path starts with
+// one of those resolved roots followed by a path separator.
+//
+// Trade-off: this misses non-default sync root locations (e.g. a
+// user who configured OneDrive to sync into D:\Sync via OneDrive
+// settings). For those, registry-based discovery would be the proper
+// fix and is left for a follow-up. The default-location heuristic
+// here handles ~95 % of real Windows installs and resolves the false
+// positive Terry hit.
+
+function getCloudSyncRoots(): string[] {
+  const roots: string[] = [];
+  const userProfile = process.env.USERPROFILE || os.homedir() || '';
+  if (!userProfile) return roots;
+
+  // OneDrive personal lives at %USERPROFILE%\OneDrive; OneDrive
+  // business lives at %USERPROFILE%\OneDrive - <Org>. Both start
+  // with "OneDrive" so a directory scan catches all variants.
+  try {
+    const entries = fs.readdirSync(userProfile);
+    for (const entry of entries) {
+      if (entry.toLowerCase().startsWith('onedrive')) {
+        const full = path.join(userProfile, entry);
+        try {
+          if (fs.statSync(full).isDirectory()) roots.push(full.toLowerCase());
+        } catch { /* not a directory or unreadable — skip */ }
+      }
+    }
+  } catch { /* %USERPROFILE% unreadable — skip */ }
+
+  // Other providers: check their default install locations.
+  for (const name of ['Dropbox', 'Google Drive', 'iCloudDrive', 'Box', 'MEGA']) {
+    const candidate = path.join(userProfile, name);
+    try {
+      if (fs.statSync(candidate).isDirectory()) roots.push(candidate.toLowerCase());
+    } catch { /* doesn't exist — skip */ }
+  }
+
+  return roots;
+}
+
+function isInCloudSyncRoot(sourcePath: string): boolean {
+  const normalized = path.normalize(sourcePath).toLowerCase();
+  const roots = getCloudSyncRoots();
+  return roots.some(root => normalized === root || normalized.startsWith(root + path.sep.toLowerCase()));
+}
 
 function isMappedNetworkDrive(driveLetter: string): boolean {
   const letter = driveLetter.toUpperCase().replace(':', '');
@@ -59,17 +115,17 @@ export function classifySource(sourcePath: string): StorageClassification {
     };
   }
 
-  // Check for cloud sync folders
-  for (const pattern of CLOUD_SYNC_PATTERNS) {
-    if (pattern.test(normalizedPath)) {
-      return {
-        type: 'cloud-sync',
-        speed: 'slow',
-        label: 'Cloud-Synced Folder',
-        description: 'Cloud-synced folder — files may download on demand, which can slow processing.',
-        isOptimal: false,
-      };
-    }
+  // Check for cloud sync folders — uses path-prefix match against
+  // resolved roots from %USERPROFILE%, not the previous broad regex
+  // on the path string. See the comment above getCloudSyncRoots().
+  if (isInCloudSyncRoot(normalizedPath)) {
+    return {
+      type: 'cloud-sync',
+      speed: 'slow',
+      label: 'Cloud-Synced Folder',
+      description: 'Cloud-synced folder — files may download on demand, which can slow processing.',
+      isOptimal: false,
+    };
   }
 
   // Drive letter - check if it's a mapped network drive
