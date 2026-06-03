@@ -5229,13 +5229,12 @@ function DashboardPanel({
     })();
     return () => { cancelled = true; };
   }, []);
-  // v2.0.15 (Terry 2026-06-03) — fires when free RAM is below 30% of
-  // total (equivalent to "system used > 70%"). That's the threshold
-  // where Windows starts page-swapping to the HDDs PDR writes to
-  // during conversion — confirmed today on Terry's 24 GB box: same
-  // code, same files, dropping memory pressure from 77% used to 64%
-  // used took the 1 GB PNG conversion from 13:42 to 9:44.
-  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.3;
+  // v2.0.15 (Terry 2026-06-03) — temporary test threshold 0.5 (free
+  // RAM < 50% of total) so Terry can see the Tier 3 modal flow on
+  // his current system state. Revert to 0.3 (production threshold —
+  // matches the actual page-swap point: free < 30% / used > 70%)
+  // once he confirms the look.
+  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.5;
 
   // Post-fix flow lives at workspace top-level — DashboardPanel only
   // signals the start of the flow via the setPostFixFlowActive prop.
@@ -6127,14 +6126,25 @@ function DashboardPanel({
                     }
                     side="bottom"
                   >
+                    {/* v2.0.15 (Terry 2026-06-03) — visibility fix: the
+                        bare variant="icon" Button (no border, no background)
+                        disappeared on the format card's pale background.
+                        Added a visible border in both states + slightly
+                        thicker Pin stroke. Locked = lavender (text-primary
+                        bg-primary/10 border-primary/40), unlocked = neutral
+                        (border-border text-foreground). Same primitive,
+                        just more discoverable. */}
                     <Button
                       variant="icon"
                       onClick={toggleFormatLock}
                       aria-label={formatLocked ? 'Unlock format choice' : 'Lock format choice'}
-                      className={formatLocked ? 'text-primary bg-primary/10' : ''}
+                      className={formatLocked
+                        ? 'text-primary bg-primary/10 border border-primary/40 hover:bg-primary/15'
+                        : 'border border-border text-foreground hover:bg-secondary'
+                      }
                       data-testid="format-lock-toggle"
                     >
-                      <Pin className="w-4 h-4" />
+                      <Pin className="w-[18px] h-[18px]" strokeWidth={2.2} />
                     </Button>
                   </IconTooltip>
                   <CardInfoTooltip onNavigateToBestPractices={onNavigateToBestPractices}>
