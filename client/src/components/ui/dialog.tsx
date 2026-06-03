@@ -19,7 +19,12 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      // v2.0.15 (Terry 2026-06-03) — lighter backdrop + 2px blur to
+      // match the rest of PDR's modal aesthetic (FixProgressModal,
+      // ScanningOverlay, etc. all use bg-black/[0.25] backdrop-blur-[2px]).
+      // Was bg-black/80 which is much darker than every other modal in
+      // the app — felt jarring next to PDR's lighter chrome.
+      "fixed inset-0 z-50 bg-black/[0.25] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}

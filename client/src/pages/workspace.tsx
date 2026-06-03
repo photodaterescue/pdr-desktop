@@ -6119,34 +6119,43 @@ function DashboardPanel({
                       foreground + hover:bg-secondary). Uses existing
                       IconTooltip + Button primitives only — no freehand
                       chrome. */}
-                  <IconTooltip
-                    label={formatLocked
-                      ? 'Choice locked — will persist between Fixes. Click to unlock.'
-                      : 'Lock this choice for future Fixes'
-                    }
-                    side="bottom"
-                  >
-                    {/* v2.0.15 (Terry 2026-06-03) — visibility fix: the
-                        bare variant="icon" Button (no border, no background)
-                        disappeared on the format card's pale background.
-                        Added a visible border in both states + slightly
-                        thicker Pin stroke. Locked = lavender (text-primary
-                        bg-primary/10 border-primary/40), unlocked = neutral
-                        (border-border text-foreground). Same primitive,
-                        just more discoverable. */}
-                    <Button
-                      variant="icon"
-                      onClick={toggleFormatLock}
-                      aria-label={formatLocked ? 'Unlock format choice' : 'Lock format choice'}
-                      className={formatLocked
-                        ? 'text-primary bg-primary/10 border border-primary/40 hover:bg-primary/15'
-                        : 'border border-border text-foreground hover:bg-secondary'
+                  {/* v2.0.15 (Terry 2026-06-03) — Pin button matches the
+                      sidebar's pin chrome verbatim for visual consistency
+                      (lines 4358-4368): plain <button>, p-1.5 + rounded-md
+                      + border, locked = bg-primary/15 + text-primary +
+                      border-primary/50 + ring, unlocked = neutral with
+                      text-muted-foreground + border-border/60. ONLY shown
+                      when the user has actively chosen something other
+                      than Keep Originals (photoFormat !== 'original') —
+                      Terry: "the conversion button should remain its
+                      original width, when it's at the default setting of
+                      Keep Originals, but when the user chooses PNG or JPG,
+                      then the button should narrow to what you've now made
+                      it, and in between the button and the (i) tooltip,
+                      there should be the same pin as what's used in the
+                      sidebar (for consistency)." */}
+                  {photoFormat !== 'original' && (
+                    <IconTooltip
+                      label={formatLocked
+                        ? 'Choice locked — will persist between Fixes. Click to unlock.'
+                        : 'Lock this choice for future Fixes'
                       }
-                      data-testid="format-lock-toggle"
+                      side="bottom"
                     >
-                      <Pin className="w-[18px] h-[18px]" strokeWidth={2.2} />
-                    </Button>
-                  </IconTooltip>
+                      <button
+                        onClick={toggleFormatLock}
+                        aria-label={formatLocked ? 'Unlock format choice' : 'Lock format choice'}
+                        className={`p-1.5 rounded-md border transition-colors ${
+                          formatLocked
+                            ? 'bg-primary/15 text-primary border-primary/50 ring-1 ring-primary/40'
+                            : 'text-muted-foreground border-border/60 hover:bg-secondary/60 hover:text-foreground hover:border-border'
+                        }`}
+                        data-testid="format-lock-toggle"
+                      >
+                        <Pin className="w-4 h-4" />
+                      </button>
+                    </IconTooltip>
+                  )}
                   <CardInfoTooltip onNavigateToBestPractices={onNavigateToBestPractices}>
                     <p><strong className="text-foreground">PNG (Full Quality)</strong> — preserves every pixel with zero loss. Ideal for photos you may want to edit, print, or archive long-term. Files will be larger.</p>
                     <p className="mt-1.5"><strong className="text-foreground">JPG</strong> — compresses photos to a fraction of the size with virtually no visible difference. The most widely supported format across every device and app.</p>
@@ -6216,7 +6225,10 @@ function DashboardPanel({
                     <p className="text-sm text-muted-foreground">Reading process list…</p>
                   )}
                   {!topMemConsumersLoading && topMemConsumers && topMemConsumers.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Couldn't read the process list right now — try again in a moment.</p>
+                    <div className="text-sm text-muted-foreground space-y-2">
+                      <p>PDR couldn't read your running-app list from Windows just now. This usually means a security policy on the machine is blocking <code className="text-xs px-1 py-0.5 rounded bg-secondary/60">Get-Process</code> from PowerShell.</p>
+                      <p>You can still get the same information from Windows&apos; built-in Task Manager — press <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Ctrl</kbd> + <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Shift</kbd> + <kbd className="text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/60">Esc</kbd>, click the <strong className="text-foreground">Memory</strong> column to sort, and close anything heavy you don&apos;t need running.</p>
+                    </div>
                   )}
                   {!topMemConsumersLoading && topMemConsumers && topMemConsumers.map((p, i) => (
                     <div

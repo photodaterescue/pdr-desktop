@@ -6978,17 +6978,23 @@ ipcMain.handle('system:topMemoryConsumers', async (_e, limit: number = 5) => {
     // (53 procs, 3.4 GB)" line instead of 53 separate Chrome rows),
     // sort by total memory desc, take top N. ConvertTo-Json so the
     // renderer can parse cleanly.
-    const ps = [
-      'Get-Process',
-      '| Group-Object -Property ProcessName',
-      '| ForEach-Object {',
-      '  $sum = ($_.Group | Measure-Object WorkingSet64 -Sum).Sum',
-      '  [PSCustomObject]@{ name = $_.Name; memMB = [math]::Round($sum / 1MB, 0); procCount = $_.Count }',
-      '}',
-      '| Sort-Object memMB -Descending',
-      `| Select-Object -First ${Math.max(1, Math.min(20, limit + 4))}`,
-      '| ConvertTo-Json -Compress',
-    ].join(' ');
+    //
+    // v2.0.15 fix (Terry 2026-06-03): the previous version's
+    // `Measure-Object WorkingSet64 -Sum` was binding `WorkingSet64`
+    // positionally as `-InputObject` rather than `-Property`, so the
+    // sum came back null and the whole pipeline returned empty.
+    // Explicit `-Property` flag fixes it; `;` separator between the
+    // two statements inside `ForEach-Object { ... }` is needed because
+    // we collapse onto one line.
+    const topN = Math.max(1, Math.min(20, limit + 4));
+    const ps =
+      "Get-Process | Group-Object -Property ProcessName | ForEach-Object { " +
+      "  $sum = ($_.Group | Measure-Object -Property WorkingSet64 -Sum).Sum; " +
+      "  [PSCustomObject]@{ name = $_.Name; memMB = [math]::Round($sum / 1MB, 0); procCount = $_.Count } " +
+      "} | Where-Object { $_.memMB -gt 0 } " +
+      "| Sort-Object memMB -Descending " +
+      `| Select-Object -First ${topN} ` +
+      "| ConvertTo-Json -Compress";
     const { stdout } = await execFileAsync(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command', ps],
