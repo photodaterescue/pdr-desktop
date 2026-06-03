@@ -5216,13 +5216,21 @@ function DashboardPanel({
   // dashboard) and the user has to manually scroll to read it. Terry:
   // "the scroll should automatically move down when the text appears
   // after selecting it, that way it is all instantly viewable".
-  const formatDescriptionRef = useRef<HTMLParagraphElement>(null);
+  //
+  // 2026-06-03 second pass: was using block:'end' on the <p> which over-
+  // scrolled past the callout when the callout rendered later. Switched
+  // to block:'nearest' so the browser scrolls the minimum needed to
+  // bring the element into view. Ref also re-targeted to a sentinel
+  // <div> placed AFTER the callout (declared below in JSX) so the
+  // scroll lands on the very bottom of the card — capturing both the
+  // description AND the conditional callout.
+  const formatDescriptionRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (photoFormat === 'original') return;
     // Small delay so the layout settles after the dropdown closes.
     const t = setTimeout(() => {
-      formatDescriptionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }, 80);
+      formatDescriptionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 120);
     return () => clearTimeout(t);
   }, [photoFormat]);
 
@@ -6186,7 +6194,7 @@ function DashboardPanel({
                     <p className="mt-1.5 text-muted-foreground/70 italic">Files already in your chosen format are not re-converted.</p>
                   </CardInfoTooltip>
                 </div>
-                <p ref={formatDescriptionRef} className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalized (.jpeg → .jpg).'}
                   {photoFormat === 'png' && 'All photos converted to PNG. Full quality preserved, larger files.'}
                   {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality to PNG.'}
@@ -6234,6 +6242,15 @@ function DashboardPanel({
                     </div>
                   </div>
                 )}
+                {/* v2.0.15 (Terry 2026-06-03) — auto-scroll sentinel.
+                    Sits at the very bottom of the format card, after
+                    both the description <p> and the conditional
+                    RAM-pressure callout. When photoFormat changes to
+                    PNG or JPG, scrollIntoView({block:'nearest'}) on
+                    this sentinel brings the entire card content
+                    (description + callout if present) into view with
+                    the minimum scroll needed — no over-shoot. */}
+                <div ref={formatDescriptionRef} aria-hidden="true" />
               </Card>
             </div>
 
@@ -6284,8 +6301,16 @@ function DashboardPanel({
                         <span className="font-semibold text-foreground tabular-nums">free ~{topMemConsumers.memory.freeUpGB.toFixed(1)} GB more</span>
                       </div>
                     ) : (
-                      <div className="pt-1 border-t border-border/60 text-xs text-muted-foreground italic">
-                        You&apos;re already in the optimal zone for PNG conversion (above 30% free).
+                      <div className="pt-1 border-t border-border/60 flex items-center gap-1.5">
+                        {/* v2.0.15 (Terry 2026-06-03) — emerald palette
+                            verbatim from the "Analysis complete" badge
+                            at line 5666 (text-emerald-700 + CheckCircle2
+                            icon) for visual consistency: same "green tick
+                            = a positive system check" language across PDR. */}
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 shrink-0" />
+                        <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                          You&apos;re already in the optimal zone for PNG conversion (above 30% free).
+                        </span>
                       </div>
                     )}
                   </div>
