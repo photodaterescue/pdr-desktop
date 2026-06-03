@@ -5121,6 +5121,35 @@ function DashboardPanel({
   const [photoFormatOpen, setPhotoFormatOpen] = useState(false);
   const photoFormatBtnRef = React.useRef<HTMLButtonElement>(null);
 
+  // v2.0.15 (Terry 2026-06-03) — passive RAM info for PNG-format
+  // selection. Queries the existing system:memoryInfo IPC once on
+  // mount; the info is shown as an extra sentence inside the existing
+  // description <p> below the format dropdown when:
+  //   1. user has picked PNG as the output format, AND
+  //   2. free RAM is below 30% of total
+  // Terry's explicit guidance 2026-06-03: "Tier 2 — Good idea, for
+  // information... not a warning." So this stays as plain muted-
+  // foreground text alongside the existing description — no amber/red
+  // tint, no alert icon, no modal. Background: free RAM below ~30%
+  // causes Windows to lean on the page file, which lives on the same
+  // HDDs PDR writes to during conversion, adding 25-40% to wall-clock
+  // (measured today — RAM dropped from 77% used to 64% used and PNG
+  // conversion went from 13:42 to 9:44 on the same code, same files).
+  const [memoryInfo, setMemoryInfo] = useState<{ freeGB: number; totalGB: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mem = await (window as any).pdr?.system?.memoryInfo?.();
+        if (!cancelled && mem?.success && typeof mem.data?.freeGB === 'number' && typeof mem.data?.totalGB === 'number') {
+          setMemoryInfo({ freeGB: mem.data.freeGB, totalGB: mem.data.totalGB });
+        }
+      } catch { /* ignore — leaves the info line hidden */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.3;
+
   // Post-fix flow lives at workspace top-level — DashboardPanel only
   // signals the start of the flow via the setPostFixFlowActive prop.
 
@@ -5922,7 +5951,7 @@ function DashboardPanel({
                         >
                           {([
                             { value: 'original' as const, label: 'Keep Originals', desc: 'No conversion' },
-                            { value: 'png' as const, label: 'PNG', desc: 'Highest quality, lossless' },
+                            { value: 'png' as const, label: 'PNG', desc: 'Highest quality, lossless · ~4× slower than JPG' },
                             { value: 'jpg' as const, label: 'JPG', desc: 'Reduced file size, universal' },
                           ]).map(opt => {
                             // Compute estimated output size for this format option
@@ -5987,6 +6016,15 @@ function DashboardPanel({
                   {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalized (.jpeg → .jpg).'}
                   {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
                   {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
+                  {/* v2.0.15 (Terry 2026-06-03) — Tier 2 passive RAM info.
+                      Appears as a continuation of the existing muted-foreground
+                      description; no new colour, no icon, no banner. Only fires
+                      when PNG is selected AND free RAM is below 30% of total —
+                      the threshold where Windows starts page-swapping to the
+                      HDDs we're trying to write conversion output to. */}
+                  {photoFormat === 'png' && ramPressureLow && memoryInfo && (
+                    <> Your system has {memoryInfo.freeGB.toFixed(1)} GB of {memoryInfo.totalGB.toFixed(1)} GB RAM free — closing memory-heavy apps (browser tabs, trading platforms, video editors) before starting will speed PNG conversion noticeably on this hardware class.</>
+                  )}
                 </p>
               </Card>
             </div>
