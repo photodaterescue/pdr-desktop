@@ -5947,8 +5947,14 @@ function DashboardPanel({
                           style={(() => {
                             const rect = photoFormatBtnRef.current?.getBoundingClientRect();
                             if (!rect) return {};
-                            const dropdownH = 3 * 44; // 3 options ~44px each
-                            const spaceBelow = window.innerHeight - rect.bottom - 8;
+                            // v2.0.15 (Terry 2026-06-03) — height bumped to
+                            // match the stacked label+description layout
+                            // (~68 px per row plus borders/padding); bottom
+                            // safe-area reserved for the Run Fix ribbon so the
+                            // dropdown isn't clipped behind it.
+                            const dropdownH = 3 * 72 + 16; // 3 stacked rows + container padding
+                            const RIBBON_RESERVE = 80;     // Run Fix bottom ribbon takes ~80px
+                            const spaceBelow = window.innerHeight - rect.bottom - 8 - RIBBON_RESERVE;
                             if (spaceBelow >= dropdownH) {
                               return { top: rect.bottom + 4, left: rect.left, width: rect.width };
                             }
@@ -6022,16 +6028,22 @@ function DashboardPanel({
                   {photoFormat === 'original' && 'Default: files stay in their current format. Extensions are normalized (.jpeg → .jpg).'}
                   {photoFormat === 'png' && 'All photos converted to PNG. Lossless quality, larger files.'}
                   {photoFormat === 'jpg' && 'All photos converted to JPG. Smaller files, virtually identical quality.'}
-                  {/* v2.0.15 (Terry 2026-06-03) — Tier 2 passive RAM info.
-                      Appears as a continuation of the existing muted-foreground
-                      description; no new colour, no icon, no banner. Only fires
-                      when PNG is selected AND free RAM is below 30% of total —
-                      the threshold where Windows starts page-swapping to the
-                      HDDs we're trying to write conversion output to. */}
-                  {photoFormat === 'png' && ramPressureLow && memoryInfo && (
-                    <> Your system has {memoryInfo.freeGB.toFixed(1)} GB of {memoryInfo.totalGB.toFixed(1)} GB RAM free — closing memory-heavy apps (browser tabs, trading platforms, video editors) before starting will speed PNG conversion noticeably on this hardware class.</>
-                  )}
                 </p>
+                {/* v2.0.15 (Terry 2026-06-03) — Tier 2 passive RAM info.
+                    Bullet-style list (Terry's preference over the prose
+                    paragraph it replaced — "this is some pretty heavy duty
+                    reading just for selecting something from a dropdown menu").
+                    Same muted-foreground colour as the description above; no
+                    new icon, no banner, no warning tint. Only renders when PNG
+                    is selected AND free RAM is below the threshold (currently
+                    50% for Terry's visual test, will revert to 30% before
+                    ship). */}
+                {photoFormat === 'png' && ramPressureLow && memoryInfo && (
+                  <ul className="text-xs text-muted-foreground list-disc list-inside mt-2 space-y-0.5">
+                    <li>Free RAM: {memoryInfo.freeGB.toFixed(1)} GB of {memoryInfo.totalGB.toFixed(1)} GB</li>
+                    <li>Closing memory-heavy apps (browser tabs, video editors, trading platforms) speeds up PNG conversion</li>
+                  </ul>
+                )}
               </Card>
             </div>
         </section>
