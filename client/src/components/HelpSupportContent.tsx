@@ -36,20 +36,25 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
         <>
           <h2 className="text-2xl font-semibold text-foreground mb-3">Help & Support</h2>
           <p className="text-muted-foreground mb-4">Everything you need to use Photo Date Rescue confidently — without guesswork, fear, or unnecessary emails.</p>
-          {/* v2.0.15 (Terry 2026-06-04) — PDR Photos USP card. Help &
-              Support is where users land when something feels uncertain;
-              reassuring them about the brand pillars (Security · Privacy ·
-              Ownership) in that exact moment is intentional. Soft lavender
-              border + 5% tint matches the other primary-accent info cards
-              elsewhere in PDR (e.g. the "Guides" callout below). */}
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mb-10">
-            <p className="text-[0.7rem] uppercase tracking-[0.22em] text-muted-foreground/80 font-medium mb-1.5">PDR Photos</p>
-            <p className="text-sm text-foreground leading-relaxed">
-              Built around three principles: your photos stay on your hardware (<strong className="font-semibold">Security</strong>), nothing is uploaded or shared (<strong className="font-semibold">Privacy</strong>), and the library is yours forever (<strong className="font-semibold">Ownership</strong>).
-            </p>
-          </div>
         </>
       )}
+
+      {/* v2.0.15 (Terry 2026-06-04) — PDR Photos USP card. Lives
+          OUTSIDE the {!hideTitle} gate so it shows on BOTH render
+          paths: the Welcome-modal version (hideTitle=false, h2 above)
+          and the workspace-panel version (hideTitle=true, h2 + intro
+          rendered by workspace.tsx). Help & Support is where users
+          land when something feels uncertain; reassuring them about
+          the brand pillars (Security · Privacy · Ownership) in that
+          exact moment is intentional. Soft lavender border + 5% tint
+          matches the other primary-accent info cards elsewhere in
+          PDR (e.g. the "Guides" callout below). */}
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mb-10">
+        <p className="text-[0.7rem] uppercase tracking-[0.22em] text-muted-foreground/80 font-medium mb-1.5">PDR Photos</p>
+        <p className="text-sm text-foreground leading-relaxed">
+          Built around three principles: your photos stay on your hardware (<strong className="font-semibold">Security</strong>), nothing is uploaded or shared (<strong className="font-semibold">Privacy</strong>), and the library is yours forever (<strong className="font-semibold">Ownership</strong>).
+        </p>
+      </div>
 
       <div className="space-y-6">
         <Accordion type="multiple" defaultValue={["start-here"]} className="space-y-3">

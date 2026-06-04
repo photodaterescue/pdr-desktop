@@ -300,6 +300,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
      *  'catalogue-csv' = PDR_Catalogue.csv file found on disk (high confidence)
      *  'folder-pattern'= folder structure looks like a PDR library (medium) */
     source: 'sql-runs' | 'catalogue-csv' | 'folder-pattern';
+    /** v2.0.15 hotfix — actual current on-disk file count from the
+     *  scan IPC (capped at 50). Only present on scan-source rows
+     *  (catalogue-csv / folder-pattern). SQL-source rows omit this
+     *  because they already show totalFileCount in their subline.
+     *  Empty libraries (count === 0) are dropped before reaching the
+     *  renderer, so when this field is present it's always > 0. */
+    currentFileCount?: number;
+    currentFileCountCapped?: boolean;
   }
   const [discoveredLegacyLibraries, setDiscoveredLegacyLibraries] = useState<DiscoveredLibrary[]>([]);
   // Drive-scan state — separate from the auto-running SQL discovery
@@ -674,6 +682,8 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         source: 'catalogue-csv' | 'folder-pattern';
         lastSeenAt: string;
         destinationCount?: number;
+        currentFileCount: number;
+        currentFileCountCapped: boolean;
       };
       const candidates: ScanCandidate[] = res.data.candidates;
 
@@ -697,6 +707,8 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             path: c.path,
             lastIndexedAt: c.lastSeenAt,
             source: c.source,
+            currentFileCount: c.currentFileCount,
+            currentFileCountCapped: c.currentFileCountCapped,
           });
           addedCount++;
         }
@@ -731,7 +743,32 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // discovered list (so the card disappears from the discovered
   // section).
   const handleAddDiscoveredToLDM = async (targetPath: string) => {
+    // v2.0.15 (Terry 2026-06-04) — OPTIMISTIC UI. Previously this
+    // function awaited refreshSavedDestinations (which fans out
+    // parallel getDriveDetails IPCs) BEFORE updating the discovered
+    // list, so the user saw a perceptible "did anything happen?" gap
+    // between click and feedback. Now the discovered card vanishes
+    // immediately, the success toast fires immediately, and the
+    // localStorage + refresh work runs in the background. The main
+    // drives list will populate the new row a few hundred ms later
+    // when refreshSavedDestinations finishes — which is fine, the
+    // user already has confirmation that the action took effect.
     const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
+    const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+    const targetNorm = norm(targetPath);
+    const rootName = targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
+
+    // Snapshot for rollback if the background work fails.
+    const snapshot = discoveredLegacyLibraries;
+
+    // Optimistic UI: card vanishes now.
+    setDiscoveredLegacyLibraries(prev => prev.filter(lib => norm(lib.path) !== targetNorm));
+    // Optimistic toast.
+    toast.success(`Added "${rootName}" to the Library Drive Manager`, {
+      description: 'It now appears in your drives list. Set it as your Library Drive any time.',
+    });
+
+    // Background writes + refresh.
     try {
       const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
       let existing: string[] = [];
@@ -739,20 +776,16 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         const parsed = raw ? JSON.parse(raw) : [];
         if (Array.isArray(parsed)) existing = parsed.filter((p): p is string => typeof p === 'string');
       } catch { /* corrupted — start fresh */ }
-      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
-      if (!existing.some(p => norm(p) === norm(targetPath))) {
+      if (!existing.some(p => norm(p) === targetNorm)) {
         existing.unshift(targetPath); // newest first, matches App.tsx reconcile
         localStorage.setItem(SAVED_DESTINATIONS_KEY, JSON.stringify(existing));
       }
       await refreshSavedDestinations();
-      await refreshDiscoveredLegacyLibraries();
-      const rootName = targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
-      toast.success(`Added "${rootName}" to the Library Drive Manager`, {
-        description: 'It now appears in your drives list. Set it as your Library Drive any time.',
-      });
     } catch (e) {
       console.warn('[LibraryPanel] handleAddDiscoveredToLDM failed:', e);
       toast.error("Couldn't add to the list", { description: String((e as Error)?.message ?? e) });
+      // Rollback the optimistic card removal so the user can retry.
+      setDiscoveredLegacyLibraries(snapshot);
     }
   };
 
@@ -1232,8 +1265,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       title: `Remove "${rootName}" from the list?`,
       message: (
         <>
-          Your files and any indexed search data stay exactly where they are — nothing on disk is deleted.
-          You can re-add this library any time by picking the folder/drive again.
+          This only changes which libraries appear in this manager. Your files on disk are untouched, the photos remain searchable in <strong className="text-foreground">Search &amp; Discovery</strong>, <strong className="text-foreground">Memories</strong> and the <strong className="text-foreground">Date Editor</strong>, and your reports history is unchanged. Re-add the library any time by picking the folder/drive again.
         </>
       ),
       confirmLabel: 'Remove from list',
@@ -1241,6 +1273,23 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       danger: true,
     });
     if (!ok) return;
+
+    // v2.0.15 (Terry 2026-06-04) — OPTIMISTIC UI. Mirror of the
+    // Add-to-LDM treatment. The savedDestinations state drives the
+    // main drives list; updating it directly here makes the row
+    // vanish immediately. localStorage writes + refresh fan-out
+    // happens in the background.
+    const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+    const targetNorm = norm(targetPath);
+    const snapshot = savedDestinations;
+
+    // Optimistic UI: row disappears now.
+    setSavedDestinations(prev => prev.filter(p => norm(p) !== targetNorm));
+    // Optimistic toast.
+    toast.success(`"${rootName}" removed from the list`, {
+      description: 'Files on disk are untouched. Pick the folder/drive again any time to re-add it.',
+    });
+
     try {
       // (1) Strip from the saved-destinations list.
       const rawSaved = localStorage.getItem(SAVED_DESTINATIONS_KEY);
@@ -1249,8 +1298,6 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         const parsed = rawSaved ? JSON.parse(rawSaved) : [];
         if (Array.isArray(parsed)) saved = parsed.filter((p): p is string => typeof p === 'string');
       } catch { /* corrupted — treat as empty */ }
-      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
-      const targetNorm = norm(targetPath);
       const filtered = saved.filter(p => norm(p) !== targetNorm);
       localStorage.setItem(SAVED_DESTINATIONS_KEY, JSON.stringify(filtered));
 
@@ -1267,14 +1314,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         localStorage.setItem(IGNORED_DESTINATIONS_KEY, JSON.stringify(ignored));
       }
 
-      // Refresh the LDM in place so the row disappears immediately.
+      // Background refresh — picks up the localStorage change and
+      // re-fetches per-path drive details for the remaining rows.
       await refreshSavedDestinations();
-      toast.success(`"${rootName}" removed from the list`, {
-        description: 'Files on disk are untouched. Pick the folder/drive again any time to re-add it.',
-      });
     } catch (e) {
       console.warn('[LibraryPanel] handleRemoveSavedDestination failed:', e);
       toast.error('Couldn\'t remove from list', { description: String((e as Error)?.message ?? e) });
+      // Rollback the optimistic row removal.
+      setSavedDestinations(snapshot);
     }
   };
 
@@ -2491,10 +2538,19 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                   if (lib.source === 'sql-runs' && typeof lib.runCount === 'number' && typeof lib.totalFileCount === 'number') {
                     return `Last Fix ${formatRelativeTime(lib.lastIndexedAt)} · ${lib.runCount} Fix run${lib.runCount === 1 ? '' : 's'} · ${lib.totalFileCount.toLocaleString()} file${lib.totalFileCount === 1 ? '' : 's'}`;
                   }
+                  // v2.0.15 hotfix — scan-source rows now carry an
+                  // actual on-disk file count (capped at 50). Empties
+                  // were dropped at scan time, so when this field is
+                  // present it's always > 0.
+                  const fileCountLabel = (typeof lib.currentFileCount === 'number')
+                    ? `${lib.currentFileCount}${lib.currentFileCountCapped ? '+' : ''} file${lib.currentFileCount === 1 ? '' : 's'} on disk`
+                    : null;
                   if (lib.source === 'catalogue-csv') {
-                    return `Catalogue last updated ${formatRelativeTime(lib.lastIndexedAt)}`;
+                    const base = `Catalogue last updated ${formatRelativeTime(lib.lastIndexedAt)}`;
+                    return fileCountLabel ? `${base} · ${fileCountLabel}` : base;
                   }
-                  return `Folder last modified ${formatRelativeTime(lib.lastIndexedAt)}`;
+                  const base = `Folder last modified ${formatRelativeTime(lib.lastIndexedAt)}`;
+                  return fileCountLabel ? `${base} · ${fileCountLabel}` : base;
                 })();
                 return (
                   <div key={lib.path} className="rounded-lg border border-border bg-secondary/10 p-3 flex items-start gap-3">

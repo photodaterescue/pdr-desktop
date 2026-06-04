@@ -8530,6 +8530,70 @@ interface LegacyScanCandidate {
    *  reveals (helpful when one catalogue references multiple historical
    *  destinations — Terry's H-drive case). */
   destinationCount?: number;
+  /** v2.0.15 hotfix — actual on-disk media-file count, capped at
+   *  LEGACY_FILE_COUNT_CAP. Candidates with 0 files are DROPPED before
+   *  results are returned (Terry's "scan finds hundreds of empty
+   *  candidates" report). When > 0 the renderer shows it on the card
+   *  so users see at-a-glance whether a discovered library is alive. */
+  currentFileCount: number;
+  /** True when currentFileCount hit the cap — renderer shows "50+"
+   *  instead of "50" so users don't misread the cap as the actual size. */
+  currentFileCountCapped: boolean;
+}
+
+/** Cap on the per-candidate file count walk. 50 is enough to
+ *  distinguish "empty" from "few" from "many" without walking a
+ *  10k-file library. Folders with > 50 files render as "50+ files"
+ *  on the card. */
+const LEGACY_FILE_COUNT_CAP = 50;
+
+/** Quick media-file counter with early exit. Walks the folder tree
+ *  depth-first, counts files matching PHOTO_EXTENSIONS_PRESCAN /
+ *  VIDEO_EXTENSIONS_PRESCAN, returns as soon as the cap is reached.
+ *  Skips the same OS-system + hidden folders as the main scan walk
+ *  so e.g. a Windows folder doesn't get probed for media files. */
+async function countMediaFilesQuick(
+  rootPath: string,
+  cap: number,
+  depth = 0,
+  depthCap = 6
+): Promise<number> {
+  if (depth > depthCap) return 0;
+  let count = 0;
+  let entries: { name: string; isDirectory: boolean; isFile: boolean }[] = [];
+  try {
+    const dirents = await fs.promises.readdir(rootPath, { withFileTypes: true });
+    entries = dirents.map(d => ({
+      name: d.name,
+      isDirectory: d.isDirectory(),
+      isFile: d.isFile(),
+    }));
+  } catch {
+    return 0; // permission denied / unreadable — treat as empty
+  }
+  // Files first — cheaper than recursing.
+  for (const e of entries) {
+    if (!e.isFile) continue;
+    const ext = path.extname(e.name).toLowerCase();
+    if (PHOTO_EXTENSIONS_PRESCAN.has(ext) || VIDEO_EXTENSIONS_PRESCAN.has(ext)) {
+      count++;
+      if (count >= cap) return count;
+    }
+  }
+  for (const e of entries) {
+    if (!e.isDirectory) continue;
+    if (e.name.startsWith('.')) continue;
+    if (LEGACY_SCAN_SKIP_NAMES.has(e.name.toLowerCase())) continue;
+    const childCount = await countMediaFilesQuick(
+      path.join(rootPath, e.name),
+      cap - count,
+      depth + 1,
+      depthCap
+    );
+    count += childCount;
+    if (count >= cap) return count;
+  }
+  return count;
 }
 
 /** Parse PDR_Catalogue.csv and return distinct destination_path values.
@@ -8666,20 +8730,28 @@ ipcMain.handle('library:scanForLegacyLibraries', async (_event, opts?: { driveLe
             // lives at the library root), plus every distinct
             // destination_path referenced inside the CSV.
             const norms = new Set<string>();
-            const seed = (libPath: string) => {
+            const seed = async (libPath: string) => {
               const n = norm(libPath);
               if (norms.has(n)) return;
               norms.add(n);
               if (candidates.has(n)) return; // already discovered via another strategy
+              // v2.0.15 hotfix — count files on disk NOW (capped) to
+              // filter empties before they reach the renderer. CSV-
+              // referenced destinations might point at folders that
+              // were emptied / deleted since the Fix run.
+              const fileCount = await countMediaFilesQuick(libPath, LEGACY_FILE_COUNT_CAP);
+              if (fileCount === 0) return; // empty — drop, don't return
               candidates.set(n, {
                 path: libPath,
                 source: 'catalogue-csv',
                 lastSeenAt: stat.mtime.toISOString(),
                 destinationCount: destinations.length,
+                currentFileCount: fileCount,
+                currentFileCountCapped: fileCount >= LEGACY_FILE_COUNT_CAP,
               });
             };
-            seed(dirPath);
-            for (const d of destinations) seed(d);
+            await seed(dirPath);
+            for (const d of destinations) await seed(d);
           } catch (err) {
             log.warn(`[scanForLegacyLibraries] stat/parse failed for ${csvPath}:`, (err as Error).message);
           }
@@ -8694,11 +8766,21 @@ ipcMain.handle('library:scanForLegacyLibraries', async (_event, opts?: { driveLe
           if (!candidates.has(n)) {
             try {
               const stat = await fs.promises.stat(dirPath);
-              candidates.set(n, {
-                path: dirPath,
-                source: 'folder-pattern',
-                lastSeenAt: stat.mtime.toISOString(),
-              });
+              // v2.0.15 hotfix — same empty-folder filter as Strategy
+              // 1. Folder-pattern matches especially benefit from this
+              // because the YYYY/YYYY-MM structure also matches empty
+              // skeleton folders, Lightroom catalog parents, and
+              // similar false positives.
+              const fileCount = await countMediaFilesQuick(dirPath, LEGACY_FILE_COUNT_CAP);
+              if (fileCount > 0) {
+                candidates.set(n, {
+                  path: dirPath,
+                  source: 'folder-pattern',
+                  lastSeenAt: stat.mtime.toISOString(),
+                  currentFileCount: fileCount,
+                  currentFileCountCapped: fileCount >= LEGACY_FILE_COUNT_CAP,
+                });
+              }
             } catch { /* unreadable mtime — skip */ }
           }
           return false; // year folders are part of the library, don't descend further
