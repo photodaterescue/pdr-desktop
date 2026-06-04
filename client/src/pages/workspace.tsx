@@ -5255,12 +5255,14 @@ function DashboardPanel({
     })();
     return () => { cancelled = true; };
   }, []);
-  // v2.0.15 (Terry 2026-06-03) — temporary test threshold 0.5 (free
-  // RAM < 50% of total) so Terry can see the Tier 3 modal flow on
-  // his current system state. Revert to 0.3 (production threshold —
-  // matches the actual page-swap point: free < 30% / used > 70%)
-  // once he confirms the look.
-  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.5;
+  // v2.0.15 (Terry 2026-06-03) — production threshold: fires when
+  // used RAM is above 70% of total (equivalent to free RAM below
+  // 30%). That's the page-swap inflection point measured on Terry's
+  // hardware: 77% used -> page-swap contention added ~30% to PNG
+  // wall-clock; 64% used -> no contention. Was temporarily 0.5 for
+  // visual testing the modal flow; reverted to production 0.3
+  // 2026-06-03 once Terry signed off on the look.
+  const ramPressureLow = memoryInfo !== null && memoryInfo.freeGB < memoryInfo.totalGB * 0.3;
 
   // Post-fix flow lives at workspace top-level — DashboardPanel only
   // signals the start of the flow via the setPostFixFlowActive prop.
