@@ -645,9 +645,14 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           if (parsed && Array.isArray(parsed.candidates)) {
             const sqlPaths = new Set(sqlFiltered.map(r => norm(r.path)));
             cachedScan = parsed.candidates
-              .filter((c: any): c is { path: string; source: 'catalogue-csv' | 'folder-pattern'; lastSeenAt: string; currentFileCount: number; currentFileCountCapped: boolean } =>
+              // v2.0.15 hotfix #4 — only catalogue-csv entries are
+              // valid now. Any 'folder-pattern' entries from a pre-
+              // hotfix-4 cache are silently dropped so old false-
+              // positive rows don't reappear after the strategy was
+              // removed.
+              .filter((c: any): c is { path: string; source: 'catalogue-csv'; lastSeenAt: string; currentFileCount: number; currentFileCountCapped: boolean } =>
                 c && typeof c.path === 'string'
-                  && (c.source === 'catalogue-csv' || c.source === 'folder-pattern')
+                  && c.source === 'catalogue-csv'
                   && typeof c.lastSeenAt === 'string'
                   && typeof c.currentFileCount === 'number'
               )

@@ -8522,19 +8522,22 @@ const LEGACY_SCAN_SKIP_NAMES = new Set([
 
 interface LegacyScanCandidate {
   path: string;
-  source: 'catalogue-csv' | 'folder-pattern';
-  /** mtime of the catalogue CSV (Strategy 1) or the candidate folder
-   *  itself (Strategy 2). ISO string, sorted newest-first by caller. */
+  /** v2.0.15 hotfix #4 — only 'catalogue-csv' now exists. Strategy 2
+   *  (folder-pattern) was dropped because it produced random year-
+   *  folder false positives that weren't cross-referenced against any
+   *  catalogue. Catalogue file presence is the only authoritative
+   *  signal — if PDR didn't write a catalogue there, it's not a PDR
+   *  library. */
+  source: 'catalogue-csv';
+  /** mtime of the catalogue CSV. ISO string, sorted newest-first
+   *  by caller. */
   lastSeenAt: string;
-  /** Strategy 1 only — number of distinct destinations the CSV
-   *  reveals (helpful when one catalogue references multiple historical
-   *  destinations — Terry's H-drive case). */
+  /** Number of distinct destinations the CSV reveals — helpful when
+   *  one catalogue references multiple historical destinations
+   *  (Terry's H-drive case). */
   destinationCount?: number;
-  /** v2.0.15 hotfix — actual on-disk media-file count, capped at
-   *  LEGACY_FILE_COUNT_CAP. Candidates with 0 files are DROPPED before
-   *  results are returned (Terry's "scan finds hundreds of empty
-   *  candidates" report). When > 0 the renderer shows it on the card
-   *  so users see at-a-glance whether a discovered library is alive. */
+  /** Actual on-disk media-file count, capped at LEGACY_FILE_COUNT_CAP.
+   *  Candidates with 0 files are dropped before results are returned. */
   currentFileCount: number;
   /** True when currentFileCount hit the cap — renderer shows "50+"
    *  instead of "50" so users don't misread the cap as the actual size. */
@@ -8546,56 +8549,6 @@ interface LegacyScanCandidate {
  *  10k-file library. Folders with > 50 files render as "50+ files"
  *  on the card. */
 const LEGACY_FILE_COUNT_CAP = 50;
-
-/** v2.0.15 hotfix #2 (Terry 2026-06-04) — PDR's renamed-file pattern.
- *  Output files from a Fix run always start with the date-time prefix
- *  `YYYY-MM-DD_HH-MM-SS` (optionally followed by a suffix like _CF,
- *  _RC, _MK, _CORR). Strategy 2 (folder-pattern) was producing a lot
- *  of false positives by matching any folder with two year-named
- *  children — including hand-organised photo folders, Lightroom
- *  catalog parents, etc. Adding "must also contain at least one file
- *  named in PDR's convention" tightens the test sharply: a real PDR
- *  library has at least one PDR-named file; a coincidental year-folder
- *  arrangement does not. */
-const PDR_FILENAME_PATTERN = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}/;
-
-/** Returns true the moment we find ANY file in the tree whose name
- *  matches PDR's renamed-file pattern. Early-exits on the first hit
- *  so the cost is roughly "one readdir per level until we hit a
- *  PDR-named file." Uses the same depth cap + skip list as
- *  countMediaFilesQuick so coverage matches. */
-async function hasPdrNamedFile(
-  rootPath: string,
-  depth = 0,
-  depthCap = 6
-): Promise<boolean> {
-  if (depth > depthCap) return false;
-  let entries: { name: string; isDirectory: boolean; isFile: boolean }[] = [];
-  try {
-    const dirents = await fs.promises.readdir(rootPath, { withFileTypes: true });
-    entries = dirents.map(d => ({
-      name: d.name,
-      isDirectory: d.isDirectory(),
-      isFile: d.isFile(),
-    }));
-  } catch {
-    return false;
-  }
-  // Files first — first hit short-circuits everything.
-  for (const e of entries) {
-    if (e.isFile && PDR_FILENAME_PATTERN.test(e.name)) return true;
-  }
-  // Recurse into subdirs.
-  for (const e of entries) {
-    if (!e.isDirectory) continue;
-    if (e.name.startsWith('.')) continue;
-    if (LEGACY_SCAN_SKIP_NAMES.has(e.name.toLowerCase())) continue;
-    if (await hasPdrNamedFile(path.join(rootPath, e.name), depth + 1, depthCap)) {
-      return true;
-    }
-  }
-  return false;
-}
 
 /** Quick media-file counter with early exit. Walks the folder tree
  *  depth-first, counts files matching PHOTO_EXTENSIONS_PRESCAN /
@@ -8728,14 +8681,6 @@ async function walkForLegacyLibraries(
   }
 }
 
-/** Heuristic for Strategy 2 — does this directory look like a PDR
- *  library root? Checks for 2+ year folders (\d{4}) where at least
- *  one contains a year-month subfolder (\d{4}-\d{2}). */
-function looksLikePdrLibrary(entries: { name: string; isDirectory: boolean }[]): boolean {
-  const yearFolders = entries.filter(e => e.isDirectory && /^\d{4}$/.test(e.name));
-  return yearFolders.length >= 2;
-}
-
 /** List the connected logical drive letters on Windows. Returns
  *  bare-root paths like 'C:\\', 'D:\\'. Falls back to a smaller set
  *  if the PowerShell call fails. */
@@ -8810,42 +8755,18 @@ ipcMain.handle('library:scanForLegacyLibraries', async (_event, opts?: { driveLe
           // candidates.
           return false;
         }
-        // Strategy 2 — does this folder look like a PDR library root?
-        if (looksLikePdrLibrary(entries)) {
-          const n = norm(dirPath);
-          if (!candidates.has(n)) {
-            try {
-              const stat = await fs.promises.stat(dirPath);
-              // v2.0.15 hotfix — same empty-folder filter as Strategy
-              // 1. Folder-pattern matches especially benefit from this
-              // because the YYYY/YYYY-MM structure also matches empty
-              // skeleton folders, Lightroom catalog parents, and
-              // similar false positives.
-              const fileCount = await countMediaFilesQuick(dirPath, LEGACY_FILE_COUNT_CAP);
-              if (fileCount === 0) return false;
-              // v2.0.15 hotfix #2 — tighten Strategy 2 further:
-              // require at least one file named in PDR's renamed-file
-              // convention (^YYYY-MM-DD_HH-MM-SS). A hand-organised
-              // year-folder tree has zero PDR-named files; a real PDR
-              // library has many. Without this gate Strategy 2 picked
-              // up "any folder with two year-named children" — Terry's
-              // report of hundreds of unrelated matches. With this
-              // gate, only folders that contain PDR-renamed output
-              // survive.
-              const hasPdrFile = await hasPdrNamedFile(dirPath);
-              if (!hasPdrFile) return false;
-              candidates.set(n, {
-                path: dirPath,
-                source: 'folder-pattern',
-                lastSeenAt: stat.mtime.toISOString(),
-                currentFileCount: fileCount,
-                currentFileCountCapped: fileCount >= LEGACY_FILE_COUNT_CAP,
-              });
-            } catch { /* unreadable mtime — skip */ }
-          }
-          return false; // year folders are part of the library, don't descend further
-        }
-        // Not a library root — keep walking children.
+        // v2.0.15 hotfix #4 (Terry 2026-06-04) — Strategy 2 (folder-
+        // pattern detection) DROPPED. Terry's pushback: any folder
+        // not mentioned somewhere in a PDR catalogue CSV shouldn't be
+        // surfaced as a "discovered library" — that's guessing, not
+        // cross-referencing. Folder-pattern was producing too many
+        // false positives even with the PDR-naming-convention tighten
+        // (any year-folder tree that happened to contain one PDR-
+        // renamed file would still surface). The catalogue file is
+        // the authoritative signal: if PDR didn't write a catalogue
+        // there, it's not a PDR library, full stop.
+        //
+        // Not a catalogue location — keep walking children.
         return true;
       });
     }
