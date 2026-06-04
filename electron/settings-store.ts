@@ -345,8 +345,42 @@ export function resetCriticalSettings(): void {
   store.set('skipDuplicates', true);
 }
 
+// v2.0.15 (Terry 2026-06-04) — "Reset to Optimised Defaults" is a
+// USABILITY reset, never a library-data reset. Before this audit,
+// the function below iterated EVERY key in optimisedDefaults and
+// wrote the default value back — silently destroying user data the
+// "defaults" struct held the seed-value for. Concrete losses
+// observed in Terry's session before the audit:
+//   • destinationPath → null   — disconnected the active Library Drive
+//   • scannerOverrides → []    — wiped every per-camera scanner-or-not
+//                                decision the user had curated
+//   • pmOpenDays → []          — wiped People Manager startup days
+//   • pmStartupPromptDismissed → false — re-surfaced a dismissed prompt
+//   • lastDbBackupAt → null    — destroyed backup-history timestamp
+//   • *DismissedAt → null      — re-surfaced advisories the user had
+//                                acknowledged (low RAM, unindexed
+//                                libraries, DB-backup snooze)
+// None of those are "defaults" — they're user data or user history.
+//
+// Fix: an explicit USER_DATA_KEYS denylist that resetToOptimisedDefaults
+// skips. Adding a new user-data setting in future requires adding its
+// key here at the same time — otherwise the next "Reset to Optimised
+// Defaults" click would wipe it. The denylist sits next to the
+// function so it's hard to miss when reading the reset path.
+const USER_DATA_KEYS = new Set<keyof PDRSettings>([
+  'destinationPath',
+  'scannerOverrides',
+  'pmOpenDays',
+  'pmStartupPromptDismissed',
+  'lastDbBackupAt',
+  'dbBackupReminderSnoozedAt',
+  'lowRamAdvisoryDismissedAt',
+  'unindexedLibrariesDismissedAt',
+]);
+
 export function resetToOptimisedDefaults(): void {
   Object.entries(optimisedDefaults).forEach(([key, value]) => {
+    if (USER_DATA_KEYS.has(key as keyof PDRSettings)) return;
     store.set(key as keyof PDRSettings, value);
   });
 }

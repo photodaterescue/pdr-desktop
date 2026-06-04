@@ -1543,20 +1543,20 @@ const handleActivateLicense = () => {
         const initResult = await initSearchDatabase();
         if (!initResult.success) {
           toast.error('Search index unavailable', {
-            description: initResult.error || 'Could not initialize search database. You can manually index from the Library Manager.',
+            description: initResult.error || 'Could not initialize search database. You can manually refresh from the Library Drive Manager.',
             duration: 8000,
           });
           return;
         }
         setIsIndexing(true);
-        toast.info('Indexing files for Search & Discovery...', { duration: 3000 });
+        toast.info('Refreshing files for Search & Discovery...', { duration: 3000 });
         onSearchIndexProgress(async (progress: any) => {
           setIndexingProgress({ current: progress.current, total: progress.total });
           if (progress.phase === 'complete') {
             setIsIndexing(false);
             setIndexingProgress(null);
             removeSearchIndexProgressListener();
-            toast.success('Files indexed for Search & Discovery', {
+            toast.success('Files refreshed for Search & Discovery', {
               description: `${progress.total.toLocaleString()} files are now searchable.`,
               duration: 4000,
             });
@@ -1579,8 +1579,8 @@ const handleActivateLicense = () => {
         await new Promise(resolve => setTimeout(resolve, 500));
         const indexResult = await indexFixRun(savedReportId);
         if (!indexResult.success) {
-          toast.error('Auto-indexing failed', {
-            description: indexResult.error || 'You can manually index from the Library Manager.',
+          toast.error('Auto-refresh failed', {
+            description: indexResult.error || 'You can manually refresh from the Library Drive Manager.',
             duration: 8000,
           });
           setIsIndexing(false);
@@ -1588,8 +1588,8 @@ const handleActivateLicense = () => {
           removeSearchIndexProgressListener();
         }
       } catch (err) {
-        toast.error('Auto-indexing error', {
-          description: `${(err as Error).message}. You can manually index from the Library Manager.`,
+        toast.error('Auto-refresh error', {
+          description: `${(err as Error).message}. You can manually refresh from the Library Drive Manager.`,
           duration: 8000,
         });
         setIsIndexing(false);
@@ -11656,7 +11656,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Conversion benchmark auto-save</strong> &mdash; the end of every Fix-with-conversion now writes a <code>summary.txt</code> + <code>per-file.csv</code> + <code>per-batch.csv</code> into <code>%APPDATA%\Photo Date Rescue\benchmarks\conversion-&lt;timestamp&gt;\</code>, and mirrors them to <code>&lt;library&gt;\.pdr\benchmarks\</code> so the trail travels with the library. Useful for power users tracking their own conversion performance over time; helped us narrow down v2.0.15&apos;s PNG encode optimisations.</li>
                         <li><strong className="text-foreground font-medium">Library Drive Manager &mdash; per-row Refresh and Remove</strong> &mdash; every row in the LDM now offers a Refresh search index action and a Remove from list action in its &ldquo;&hellip;&rdquo; menu. Refresh updates PDR&apos;s view of that library on demand (useful after adding files via Explorer); Remove drops the library from the LDM list with a confirmation that makes clear nothing on disk is deleted &mdash; you can re-add the folder/drive any time. Removed libraries stay removed across restarts even if a Fix report still names them.</li>
                         <li><strong className="text-foreground font-medium">&ldquo;Refresh&rdquo; replaces &ldquo;Index&rdquo; everywhere user-facing</strong> &mdash; the verb &ldquo;Index&rdquo; reads as IT jargon; &ldquo;Refresh&rdquo; says exactly what&apos;s happening (PDR&apos;s view of the library is being brought up to date). The amber per-row pill on the LDM, the Dashboard catch-up banner, and every related toast / tooltip now use Refresh. The underlying search-index database itself keeps its name.</li>
-                        <li><strong className="text-foreground font-medium">Reset to Optimized Defaults stops touching library data</strong> &mdash; previously clicking &ldquo;Reset to Optimized Defaults&rdquo; at the bottom of Settings silently disconnected your Library Drive, cleared your Library Planner answers, wiped the saved-destinations list (the LDM), and reset per-library advisory state. None of those are defaults &mdash; they&apos;re user data. The reset now leaves all four classes of state alone and only resets usability preferences (sounds, EXIF write toggles, AI defaults, folder structure, etc.).</li>
+                        <li><strong className="text-foreground font-medium">Reset to Optimized Defaults stops touching library data</strong> &mdash; previously clicking &ldquo;Reset to Optimized Defaults&rdquo; at the bottom of Settings silently destroyed a long list of user data masquerading as &ldquo;defaults&rdquo;: your currently-configured Library Drive, your entire saved-destinations list (the LDM), your Library Planner answers, your per-camera scanner overrides (each one a curated decision you&apos;d made), your People Manager startup-days preference, your last-backup timestamp, and every &ldquo;I dismissed this advisory&rdquo; state (low-RAM, unindexed libraries, DB-backup snooze). The audit fixed both layers &mdash; the renderer-side localStorage clears (saved-destinations, planner, master-lib advisories) AND the settings-store function itself (which now honours an explicit user-data denylist). The reset now leaves all your data alone and only resets usability preferences (sounds, EXIF write toggles, AI defaults, folder structure, etc.).</li>
                         <li><strong className="text-foreground font-medium">Introducing &ldquo;PDR Photos&rdquo;</strong> &mdash; a soft brand line that appears alongside &ldquo;Photo Date Rescue&rdquo; in a few places (Welcome screen signature, About PDR header, Help &amp; Support, Settings footer). PDR is no longer just a one-shot date-fixer &mdash; it&apos;s become a full home for your photo library, built around three principles: your photos stay on your hardware (<strong className="text-foreground font-medium">Security</strong>), nothing is uploaded or shared (<strong className="text-foreground font-medium">Privacy</strong>), and the library is yours forever (<strong className="text-foreground font-medium">Ownership</strong>). &ldquo;PDR Photos&rdquo; positions it in the same category as Apple Photos, Google Photos, and Amazon Photos &mdash; with the difference that none of those can credibly claim any of the three pillars. The full product name doesn&apos;t change, the domain doesn&apos;t change, and your installs don&apos;t change &mdash; this is a gentle introduction, not a rename.</li>
                       </ul>
                     </AccordionContent>
@@ -12748,37 +12748,26 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   
   const handleResetToDefaults = async () => {
     // v2.0.15 (Terry 2026-06-04) — "Reset to Optimized Defaults" is
-    // a USABILITY reset, never a library-data reset. Audit of the
-    // previous handler found four classes of state it was wiping
-    // that aren't defaults at all:
-    //   1. destinationPath — the user's currently-configured Library
-    //      Drive. resetToOptimisedDefaults() in settings-store.ts
-    //      sets this to null, which silently disconnected users
-    //      from their library after a defaults reset. Now captured
-    //      BEFORE the wipe and restored immediately after.
-    //   2. pdr-saved-destinations — the entire LDM list.
-    //   3. pdr-library-planner-* — the user's planner answers
-    //      (library size, multi-library yes/no, completion flag).
-    //      User data, not defaults — someone clicking "reset
-    //      defaults" is not asking to be pushed back through
-    //      onboarding.
-    //   4. pdr-master-lib-* — per-library "have they seen the
-    //      master-library advisory" tracking. Resetting would re-
-    //      surface advisories for libraries already acknowledged.
-    // All four removed below. Per-library hygiene (drop a library
-    // from the LDM, refresh its search index) is now available on
-    // the LDM kebab menu itself.
-    let preservedDestinationPath: string | null = null;
-    try {
-      const before = await getSettings();
-      preservedDestinationPath = (before as any)?.destinationPath ?? null;
-    } catch { /* best-effort — proceed with reset either way */ }
+    // a USABILITY reset, never a library-data reset. Two layers of
+    // audit landed in v2.0.15:
+    //
+    //   Layer 1 (renderer, this handler) — removed the localStorage
+    //   clears that were silently destroying:
+    //     • pdr-saved-destinations  — the entire LDM list
+    //     • pdr-library-planner-*   — onboarding planner answers
+    //     • pdr-master-lib-*        — per-library advisory state
+    //
+    //   Layer 2 (electron/settings-store.ts) — resetToOptimisedDefaults
+    //   now honours a USER_DATA_KEYS denylist so destinationPath,
+    //   scannerOverrides, pmOpenDays, lastDbBackupAt, and the various
+    //   dismissedAt timestamps survive a reset. See settings-store.ts
+    //   for the full list + rationale. The denylist replaces an
+    //   earlier capture/restore dance we did for destinationPath only;
+    //   the deeper fix sweeps in all the other forgotten user data too.
+    //
+    // Per-library hygiene (drop a library from the LDM, refresh its
+    // search index) lives on the LDM kebab menu itself, not here.
     await resetSettingsToDefaults();
-    if (preservedDestinationPath) {
-      try {
-        await setSetting('destinationPath' as any, preservedDestinationPath as any);
-      } catch { /* best-effort */ }
-    }
     setSkipDuplicates(true);
     setThoroughDuplicateMatching(false);
     setWriteExif(true);
@@ -13499,7 +13488,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
-                      <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-indexing requires running the fix again.</span>
+                      <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-running the fix is the only way to add the photos back to your search index.</span>
                     </div>
                     <Checkbox
                       checked={allowIndexRemoval}
