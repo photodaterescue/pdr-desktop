@@ -63,8 +63,16 @@ function AppShell() {
   // if the IPC errors or returns nothing, the LDM list just stays
   // as-is. Capped at MAX_SAVED_DESTINATIONS on write so we don't
   // unbounded-grow localStorage.
+  //
+  // v2.0.15 (Terry 2026-06-04) — also honour the user's ignore list
+  // (pdr-ignored-destinations, written by the LDM's "Remove from
+  // list" kebab item). Without this guard, a user removes a test
+  // library from the LDM, restarts PDR, and watches it reappear on
+  // the next reconcile pass because a Fix report still names that
+  // path. The ignore list makes removal stick across sessions.
   useEffect(() => {
     const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
+    const IGNORED_DESTINATIONS_KEY = 'pdr-ignored-destinations';
     const MAX_SAVED_DESTINATIONS = 20;
     const reconcile = async () => {
       try {
@@ -80,10 +88,26 @@ function AppShell() {
           const parsed = raw ? JSON.parse(raw) : [];
           existing = Array.isArray(parsed) ? parsed : [];
         } catch { existing = []; }
+        // Load the user's ignore list — paths they've explicitly
+        // removed from the LDM. Honour it here so the reconcile
+        // doesn't undo their removal next launch.
+        let ignored: Set<string> = new Set();
+        try {
+          const ignoredRaw = localStorage.getItem(IGNORED_DESTINATIONS_KEY);
+          const ignoredParsed = ignoredRaw ? JSON.parse(ignoredRaw) : [];
+          if (Array.isArray(ignoredParsed)) {
+            ignored = new Set(
+              ignoredParsed
+                .filter((p: unknown): p is string => typeof p === 'string')
+                .map((p: string) => p.replace(/[\\/]+$/, '').toLowerCase())
+            );
+          }
+        } catch { /* corrupted ignore list — treat as empty */ }
         const seen = new Set(existing.map(p => p.replace(/[\\/]+$/, '').toLowerCase()));
         const additions: string[] = [];
         for (const p of reportPaths) {
           const norm = p.replace(/[\\/]+$/, '').toLowerCase();
+          if (ignored.has(norm)) continue; // explicit user removal — respect it
           if (!seen.has(norm)) {
             seen.add(norm);
             additions.push(p);

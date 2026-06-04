@@ -160,8 +160,8 @@ export function UnindexedLibrariesCard() {
       // (v2.0.11 addition). Without this hint, dismissing the banner used
       // to leave users with no obvious way back to indexing. 8-second
       // duration so it's readable but doesn't linger.
-      toast.message("Hidden — you can index any time from Library Drive Manager", {
-        description: "Each library row shows its indexing status with an Index button next to its connection status.",
+      toast.message("Hidden — you can refresh any library from the Library Drive Manager", {
+        description: "Open any library row's ⋯ menu and pick Refresh search index to bring PDR's view of that library up to date.",
         duration: 8000,
       });
     } catch (e) {
@@ -182,7 +182,7 @@ export function UnindexedLibrariesCard() {
     // toast follows them across views (it's mounted on <Toaster />
     // at the workspace root).
     const toastId = toast.loading(
-      `Indexing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}…`,
+      `Refreshing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}…`,
       { description: 'Starting…' }
     );
 
@@ -213,7 +213,7 @@ export function UnindexedLibrariesCard() {
       } else if (progress.phase === 'complete') {
         if (progress.rootIndex >= progress.rootCount - 1) {
           // Last root finished — resolve the loading toast.
-          toast.success(`Finished indexing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}`,
+          toast.success(`Refreshed ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}`,
             { id: toastId, description: 'Your photos are now searchable in S&D, Memories, and the Date Editor.' });
           // Broadcast so any surface that's currently mounted can
           // re-fetch its data without the user having to close and
@@ -229,7 +229,7 @@ export function UnindexedLibrariesCard() {
         }
       }
       lastRootIndex = progress.rootIndex;
-      toast.loading(`Indexing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}…`,
+      toast.loading(`Refreshing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}…`,
         { id: toastId, description });
     });
 
@@ -240,7 +240,7 @@ export function UnindexedLibrariesCard() {
       void (window as any).pdr?.search?.rebuildFromLibraries?.(pathsToIndex)
         .catch((e: any) => {
           console.warn('[UnindexedLibrariesCard] rebuild failed:', e);
-          toast.error('Indexing failed', { id: toastId, description: String(e?.message ?? e) });
+          toast.error('Refresh failed', { id: toastId, description: String(e?.message ?? e) });
           unsubscribe?.();
           // Bring the banner back so the user can retry. We deliberately
           // do NOT persist a dismiss timestamp on failure — that would
@@ -263,8 +263,8 @@ export function UnindexedLibrariesCard() {
       void lastRootIndex;
       setHiddenWhileIndexing(true);
     } catch (e) {
-      console.warn('[UnindexedLibrariesCard] index-now failed:', e);
-      toast.error('Indexing failed to start', { id: toastId });
+      console.warn('[UnindexedLibrariesCard] refresh-now failed:', e);
+      toast.error('Refresh failed to start', { id: toastId });
       unsubscribe?.();
       setHiddenWhileIndexing(false);
     } finally {
@@ -285,12 +285,12 @@ export function UnindexedLibrariesCard() {
             : `${stale.length} of your libraries aren't fully searchable yet`}
         </p>
         <p className="text-body-muted mt-1">
-          {totalMissing.toLocaleString()} photo{totalMissing === 1 ? '' : 's'} on disk haven't been added to PDR's search index. They won't appear in <strong className="text-foreground">Search &amp; Discovery</strong>, <strong className="text-foreground">Memories</strong>, or the <strong className="text-foreground">Date Editor</strong> until indexed. From v2.0.5 onwards new Fixes index automatically; this is a one-off catch-up for libraries created earlier.
+          {totalMissing.toLocaleString()} photo{totalMissing === 1 ? '' : 's'} on disk haven't been added to PDR's search index. They won't appear in <strong className="text-foreground">Search &amp; Discovery</strong>, <strong className="text-foreground">Memories</strong>, or the <strong className="text-foreground">Date Editor</strong> until PDR's view of these libraries is refreshed. From v2.0.5 onwards new Fixes refresh automatically; this is a one-off catch-up for libraries created earlier.
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Button onClick={handleIndexNow} variant="primary" size="sm" disabled={indexing} data-testid="unindexed-libraries-index-now">
-          {indexing ? 'Starting…' : 'Index now'}
+          {indexing ? 'Starting…' : 'Refresh now'}
         </Button>
         <IconTooltip label="Dismiss" side="top">
           <button

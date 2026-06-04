@@ -11646,6 +11646,9 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Output Formats added to the Glossary</strong> &mdash; Help &amp; Support &rarr; Glossary now explains &ldquo;Full Quality (PNG)&rdquo;, &ldquo;Lossless&rdquo; (confirms what the technical term means), and &ldquo;JPG (lossy)&rdquo; for users who want to know what the choice actually means.</li>
                         <li><strong className="text-foreground font-medium">Modal backdrop unified across PDR</strong> &mdash; the Dialog primitive (used by the top-RAM-users modal, the command palette, and any other dialog-based surface) now uses the same light backdrop with a soft 2 px blur as PDR&apos;s other modals (FixProgressModal, Pre-Scan Results, etc.), instead of the previous heavy black overlay.</li>
                         <li><strong className="text-foreground font-medium">Conversion benchmark auto-save</strong> &mdash; the end of every Fix-with-conversion now writes a <code>summary.txt</code> + <code>per-file.csv</code> + <code>per-batch.csv</code> into <code>%APPDATA%\Photo Date Rescue\benchmarks\conversion-&lt;timestamp&gt;\</code>, and mirrors them to <code>&lt;library&gt;\.pdr\benchmarks\</code> so the trail travels with the library. Useful for power users tracking their own conversion performance over time; helped us narrow down v2.0.15&apos;s PNG encode optimisations.</li>
+                        <li><strong className="text-foreground font-medium">Library Drive Manager &mdash; per-row Refresh and Remove</strong> &mdash; every row in the LDM now offers a Refresh search index action and a Remove from list action in its &ldquo;&hellip;&rdquo; menu. Refresh updates PDR&apos;s view of that library on demand (useful after adding files via Explorer); Remove drops the library from the LDM list with a confirmation that makes clear nothing on disk is deleted &mdash; you can re-add the folder/drive any time. Removed libraries stay removed across restarts even if a Fix report still names them.</li>
+                        <li><strong className="text-foreground font-medium">&ldquo;Refresh&rdquo; replaces &ldquo;Index&rdquo; everywhere user-facing</strong> &mdash; the verb &ldquo;Index&rdquo; reads as IT jargon; &ldquo;Refresh&rdquo; says exactly what&apos;s happening (PDR&apos;s view of the library is being brought up to date). The amber per-row pill on the LDM, the Dashboard catch-up banner, and every related toast / tooltip now use Refresh. The underlying search-index database itself keeps its name.</li>
+                        <li><strong className="text-foreground font-medium">Reset to Optimized Defaults stops touching library data</strong> &mdash; previously clicking &ldquo;Reset to Optimized Defaults&rdquo; at the bottom of Settings silently disconnected your Library Drive, cleared your Library Planner answers, wiped the saved-destinations list (the LDM), and reset per-library advisory state. None of those are defaults &mdash; they&apos;re user data. The reset now leaves all four classes of state alone and only resets usability preferences (sounds, EXIF write toggles, AI defaults, folder structure, etc.).</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
@@ -12735,7 +12738,38 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   };
   
   const handleResetToDefaults = async () => {
+    // v2.0.15 (Terry 2026-06-04) — "Reset to Optimized Defaults" is
+    // a USABILITY reset, never a library-data reset. Audit of the
+    // previous handler found four classes of state it was wiping
+    // that aren't defaults at all:
+    //   1. destinationPath — the user's currently-configured Library
+    //      Drive. resetToOptimisedDefaults() in settings-store.ts
+    //      sets this to null, which silently disconnected users
+    //      from their library after a defaults reset. Now captured
+    //      BEFORE the wipe and restored immediately after.
+    //   2. pdr-saved-destinations — the entire LDM list.
+    //   3. pdr-library-planner-* — the user's planner answers
+    //      (library size, multi-library yes/no, completion flag).
+    //      User data, not defaults — someone clicking "reset
+    //      defaults" is not asking to be pushed back through
+    //      onboarding.
+    //   4. pdr-master-lib-* — per-library "have they seen the
+    //      master-library advisory" tracking. Resetting would re-
+    //      surface advisories for libraries already acknowledged.
+    // All four removed below. Per-library hygiene (drop a library
+    // from the LDM, refresh its search index) is now available on
+    // the LDM kebab menu itself.
+    let preservedDestinationPath: string | null = null;
+    try {
+      const before = await getSettings();
+      preservedDestinationPath = (before as any)?.destinationPath ?? null;
+    } catch { /* best-effort — proceed with reset either way */ }
     await resetSettingsToDefaults();
+    if (preservedDestinationPath) {
+      try {
+        await setSetting('destinationPath' as any, preservedDestinationPath as any);
+      } catch { /* best-effort */ }
+    }
     setSkipDuplicates(true);
     setThoroughDuplicateMatching(false);
     setWriteExif(true);
@@ -12758,18 +12792,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     localStorage.removeItem('pdr-allow-report-removal');
     localStorage.removeItem('pdr-allow-index-removal');
     localStorage.removeItem('pdr-show-library-manager');
-    // v2.0.15 (Terry 2026-06-03) — master-lib tracking now uses a
-    // single per-library map (pdr-master-lib-shown-libs) instead of
-    // the previous dismissed+seen-count pair. Old keys still removed
-    // for backward-compat cleanup on machines that have them lingering.
-    localStorage.removeItem('pdr-master-lib-dismissed');
-    localStorage.removeItem('pdr-master-lib-seen-count');
-    localStorage.removeItem('pdr-master-lib-shown-libs');
-    localStorage.removeItem('pdr-library-planner-complete');
-    localStorage.removeItem('pdr-library-planner-size');
-    localStorage.removeItem('pdr-library-planner-multi');
     localStorage.setItem('pdr-auto-add-to-sd', 'ask');
-    localStorage.removeItem('pdr-saved-destinations');
     setShowLibraryManager(false);
     setAutoAddToSD('ask');
   };

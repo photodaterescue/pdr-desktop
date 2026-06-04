@@ -24,6 +24,7 @@ import {
   MoreHorizontal,
   Copy,
   Download,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -35,8 +36,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { useLicense } from '@/contexts/LicenseContext';
+import { promptConfirm } from '@/components/trees/promptConfirm';
 
 // LibraryPanel — the user-facing surface for the library-portable DB
 // feature. Visual vocabulary intentionally mirrors ManageDevicesModal
@@ -824,18 +827,26 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     }
   };
 
-  // v2.0.11 — index a single library row. Sister of the Dashboard
-  // banner's "Index now" action, but scoped to one path so the user
-  // can pick which library to back-fill without having to index all
-  // stale ones in a single batch. Uses the same search:rebuildFromLibraries
-  // IPC + rebuildProgress subscription as the banner; toast follows
-  // the user across views. On success the on-disk count is refreshed
-  // so the pill disappears (or shrinks) without a manual reload.
-  const handleIndexLibrary = async (targetPath: string) => {
+  // v2.0.11 — refresh a single library row's search index. Sister of
+  // the Dashboard banner's "Refresh now" action, but scoped to one
+  // path so the user can pick which library to back-fill without
+  // having to refresh all stale ones in a single batch. Uses the
+  // same search:rebuildFromLibraries IPC + rebuildProgress
+  // subscription as the banner; toast follows the user across
+  // views. On success the on-disk count is refreshed so the pill
+  // disappears (or shrinks) without a manual reload.
+  //
+  // v2.0.15 verb-rename — was handleIndexLibrary. The user-facing
+  // verb is now "Refresh" everywhere (replacing "Index" / "Catalogue")
+  // because "Index" reads as IT jargon and "Catalogue" collides with
+  // PDR_Catalogue.csv. Internal variables (indexingPaths, search
+  // index DB concept) keep the noun "index" — only the user-facing
+  // verb changed.
+  const handleRefreshLibrary = async (targetPath: string) => {
     if (indexingPaths.has(targetPath)) return;
     setIndexingPaths(prev => new Set(prev).add(targetPath));
     const rootName = targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
-    const toastId = toast.loading(`Indexing "${rootName}"…`, { description: 'Starting…' });
+    const toastId = toast.loading(`Refreshing "${rootName}"…`, { description: 'Starting…' });
     const unsubscribe = (window as any).pdr?.search?.onRebuildProgress?.((progress: {
       phase: 'walking' | 'reading-exif' | 'inserting' | 'complete';
       rootIndex: number;
@@ -856,15 +867,15 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       if (progress.phase !== 'complete' && progress.rootPath !== targetPath) return;
       if (progress.phase === 'walking') {
         setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'walking', current: 0, total: 0 } }));
-        toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: 'Scanning…' });
+        toast.loading(`Refreshing "${rootName}"…`, { id: toastId, description: 'Scanning…' });
       } else if (progress.phase === 'reading-exif') {
         setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'reading-exif', current: progress.current, total: progress.total } }));
-        toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: `Reading ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()}` });
+        toast.loading(`Refreshing "${rootName}"…`, { id: toastId, description: `Reading ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()}` });
       } else if (progress.phase === 'inserting') {
         setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'inserting', current: progress.current, total: progress.total } }));
-        toast.loading(`Indexing "${rootName}"…`, { id: toastId, description: 'Saving…' });
+        toast.loading(`Refreshing "${rootName}"…`, { id: toastId, description: 'Saving…' });
       } else if (progress.phase === 'complete') {
-        toast.success(`Finished indexing "${rootName}"`, { id: toastId, description: 'Photos are now searchable in S&D, Memories, and the Date Editor.' });
+        toast.success(`Refreshed "${rootName}"`, { id: toastId, description: 'PDR\'s view of this library is now up to date — new photos are searchable in S&D, Memories, and the Date Editor.' });
         // Re-probe the on-disk count so the pill reflects the new
         // state. The indexed count comes through automatically on
         // the next refreshPathCounts.
@@ -888,8 +899,8 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     try {
       void (window as any).pdr?.search?.rebuildFromLibraries?.([targetPath])
         .catch((e: any) => {
-          console.warn('[LibraryPanel] handleIndexLibrary failed:', e);
-          toast.error('Indexing failed', { id: toastId, description: String(e?.message ?? e) });
+          console.warn('[LibraryPanel] handleRefreshLibrary failed:', e);
+          toast.error('Refresh failed', { id: toastId, description: String(e?.message ?? e) });
           unsubscribe?.();
           setIndexingPaths(prev => {
             const next = new Set(prev);
@@ -903,8 +914,8 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           });
         });
     } catch (e) {
-      console.warn('[LibraryPanel] handleIndexLibrary kickoff failed:', e);
-      toast.error('Indexing failed to start', { id: toastId });
+      console.warn('[LibraryPanel] handleRefreshLibrary kickoff failed:', e);
+      toast.error('Refresh failed to start', { id: toastId });
       unsubscribe?.();
       setIndexingPaths(prev => {
         const next = new Set(prev);
@@ -916,6 +927,76 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         delete next[targetPath];
         return next;
       });
+    }
+  };
+
+  // v2.0.15 (Terry 2026-06-04) — remove a saved destination from the
+  // LDM list. Companion to the per-row "Remove from list" kebab item.
+  //
+  // Two stores have to agree for a removal to actually stick:
+  //   1. pdr-saved-destinations — the LDM list itself.
+  //   2. pdr-ignored-destinations — a persistent ignore list so the
+  //      App.tsx start-up reconcile (which re-adds destinations from
+  //      saved Fix reports) doesn't bring the path back next launch.
+  //      Without (2) the user would remove a path, restart PDR, and
+  //      watch it reappear from a Fix report — silent and confusing.
+  //
+  // Files on disk + indexed search data are NOT touched — this is a
+  // list-membership change, not a deletion. The confirmation makes
+  // that clear so the user knows they can re-add the folder/drive
+  // any time by picking it again.
+  const handleRemoveSavedDestination = async (targetPath: string) => {
+    const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
+    const IGNORED_DESTINATIONS_KEY = 'pdr-ignored-destinations';
+    const rootName = targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
+    const ok = await promptConfirm({
+      eyebrow: 'REMOVE FROM LIBRARY DRIVE MANAGER',
+      title: `Remove "${rootName}" from the list?`,
+      message: (
+        <>
+          Your files and any indexed search data stay exactly where they are — nothing on disk is deleted.
+          You can re-add this library any time by picking the folder/drive again.
+        </>
+      ),
+      confirmLabel: 'Remove from list',
+      cancelLabel: 'Cancel',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      // (1) Strip from the saved-destinations list.
+      const rawSaved = localStorage.getItem(SAVED_DESTINATIONS_KEY);
+      let saved: string[] = [];
+      try {
+        const parsed = rawSaved ? JSON.parse(rawSaved) : [];
+        if (Array.isArray(parsed)) saved = parsed.filter((p): p is string => typeof p === 'string');
+      } catch { /* corrupted — treat as empty */ }
+      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+      const targetNorm = norm(targetPath);
+      const filtered = saved.filter(p => norm(p) !== targetNorm);
+      localStorage.setItem(SAVED_DESTINATIONS_KEY, JSON.stringify(filtered));
+
+      // (2) Add to the ignore list so App.tsx's start-up reconcile
+      // doesn't re-restore this path from saved Fix reports.
+      const rawIgnored = localStorage.getItem(IGNORED_DESTINATIONS_KEY);
+      let ignored: string[] = [];
+      try {
+        const parsed = rawIgnored ? JSON.parse(rawIgnored) : [];
+        if (Array.isArray(parsed)) ignored = parsed.filter((p): p is string => typeof p === 'string');
+      } catch { /* corrupted — treat as empty */ }
+      if (!ignored.some(p => norm(p) === targetNorm)) {
+        ignored.push(targetPath);
+        localStorage.setItem(IGNORED_DESTINATIONS_KEY, JSON.stringify(ignored));
+      }
+
+      // Refresh the LDM in place so the row disappears immediately.
+      await refreshSavedDestinations();
+      toast.success(`"${rootName}" removed from the list`, {
+        description: 'Files on disk are untouched. Pick the folder/drive again any time to re-add it.',
+      });
+    } catch (e) {
+      console.warn('[LibraryPanel] handleRemoveSavedDestination failed:', e);
+      toast.error('Couldn\'t remove from list', { description: String((e as Error)?.message ?? e) });
     }
   };
 
@@ -1842,11 +1923,11 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                             the gap is the thing the user needs to
                             know about, AND the trigger to fix it.
                             When fully indexed, no pill (zero chrome).
-                            During indexing, becomes a disabled
-                            "Indexing…" pill with the same loading
+                            During a refresh, becomes a disabled
+                            "Refreshing…" pill with the same loading
                             visual language as the rest of PDR's pills.
                             Click fires the per-library rebuild via
-                            handleIndexLibrary; toast follows the user
+                            handleRefreshLibrary; toast follows the user
                             across views via the existing
                             rebuildProgress subscription. */}
                         {(() => {
@@ -1868,25 +1949,25 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                               label = 'Scanning…';
                             } else if (progress?.phase === 'reading-exif' && progress.total > 0) {
                               const pct = Math.min(99, Math.floor((progress.current / progress.total) * 100));
-                              label = `Indexing ${pct}%`;
+                              label = `Refreshing ${pct}%`;
                             } else if (progress?.phase === 'inserting') {
                               label = 'Saving…';
                             } else {
-                              label = 'Indexing…';
+                              label = 'Refreshing…';
                             }
                           } else {
-                            label = `+${gap.toLocaleString()} to index`;
+                            label = `+${gap.toLocaleString()} to refresh`;
                           }
                           const tooltip = isIndexing
                             ? progress?.phase === 'reading-exif' && progress.total > 0
                               ? `Reading ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()} files. The pill clears when finished.`
-                              : 'Indexing in progress — the pill clears when finished.'
-                            : `${gap.toLocaleString()} photo${gap === 1 ? '' : 's'} on disk that aren't in the search index yet. Click to index this library.`;
+                              : 'Refresh in progress — the pill clears when finished.'
+                            : `${gap.toLocaleString()} photo${gap === 1 ? '' : 's'} on disk that aren't in the search index yet. Click to refresh — updates PDR's view of this library.`;
                           return (
                             <IconTooltip label={tooltip} side="top">
                               <button
                                 type="button"
-                                onClick={() => handleIndexLibrary(drive.path)}
+                                onClick={() => handleRefreshLibrary(drive.path)}
                                 disabled={isIndexing}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label transition-colors cursor-pointer bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 hover:bg-amber-200/80 dark:hover:bg-amber-900/60 disabled:opacity-60 disabled:cursor-default"
                                 data-testid="pill-index-library"
@@ -2009,6 +2090,26 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                               <Copy />
                               Copy drive path
                             </DropdownMenuItem>
+                            {/* v2.0.15 (Terry 2026-06-04) — per-row
+                                Refresh, always available regardless of
+                                whether there's an apparent on-disk vs
+                                indexed gap. Covers the case where a
+                                user has added files to the library via
+                                Explorer/Finder and wants PDR's view to
+                                catch up immediately, without waiting
+                                for the conditional "+N to refresh"
+                                pill to appear. Same handler the pill
+                                uses — toast follows the user. Disabled
+                                when offline (no point firing a rebuild
+                                against an unreachable root) or while
+                                this row's refresh is already running. */}
+                            <DropdownMenuItem
+                              onClick={() => handleRefreshLibrary(drive.path)}
+                              disabled={!drive.online || indexingPaths.has(drive.path)}
+                            >
+                              <RefreshCw />
+                              {indexingPaths.has(drive.path) ? 'Refreshing…' : 'Refresh search index'}
+                            </DropdownMenuItem>
                             {/* Download Library DB — shown on every row.
                                 There's only one DB (the user's library
                                 metadata), and gating it to "only the
@@ -2019,6 +2120,30 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                               <Download />
                               Download Library DB
                             </DropdownMenuItem>
+                            {/* v2.0.15 (Terry 2026-06-04) — Remove from
+                                list. Only shown for user-added rows
+                                (those present in pdr-saved-destinations
+                                and NOT the current Library Drive). The
+                                current Library Drive must be switched
+                                or disconnected first via its dedicated
+                                flow — removing it inline from a kebab
+                                would be too easy to misclick. Separator
+                                above so the destructive action sits in
+                                its own region. */}
+                            {!drive.isCurrentLibraryDrive && savedDestinations.some(p =>
+                              p.replace(/[\\/]+$/, '').toLowerCase() === drive.path.replace(/[\\/]+$/, '').toLowerCase()
+                            ) && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => handleRemoveSavedDestination(drive.path)}
+                                  className="text-rose-600 dark:text-rose-400 focus:text-rose-700 focus:bg-rose-50 dark:focus:bg-rose-950/30"
+                                >
+                                  <Trash2 />
+                                  Remove from list
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
