@@ -10,30 +10,22 @@ createRoot(document.getElementById("root")!).render(
   </Router>
 );
 
-// v2.0.11 (Terry 2026-05-24) — workspace-ready signal to the main
-// process. Two requestAnimationFrames after render() returns:
+// v2.0.15 (Terry 2026-06-05) — workspace-first-frame signal MOVED
+// from here (App-level RAF) to home.tsx (Welcome-level RAF). Reason:
+// the previous double-RAF fired after App's first commit, but App's
+// initial commit doesn't include Welcome's painted content — Welcome
+// is a child route mounted via AppShell's Routes. In dev the bundle
+// loaded fast so Welcome painted almost-immediately after App, and
+// the gap was invisible. In packaged builds the bundle is bigger
+// AND antivirus scans the freshly-installed .exe AND there's no
+// Vite caching — Welcome could take 6 seconds to actually paint
+// after App mounted. Main saw workspaceFirstFrame at App level, ran
+// maybeFinishStartup, and showed the BrowserWindow against its
+// lavender backgroundColor — Terry got a 6-second purple flash before
+// the Welcome content finally rendered.
 //
-//   First RAF: runs after React has committed its first frame
-//     (createRoot.render schedules the commit asynchronously).
-//   Second RAF: runs after the browser has painted that commit
-//     into Chromium's offscreen buffer.
-//
-// By the time the second RAF's callback fires, the actual workspace
-// UI is painted in the renderer process — main can safely show the
-// BrowserWindow and the user sees the dashboard immediately instead
-// of a lavender body-background flash. Without this signal, main
-// fell back to BrowserWindow's 'ready-to-show' event which fires on
-// the FIRST paint (the empty document with lavender body, before
-// React mounts) — Terry's "old splash trying to load for a split
-// second before the WS loaded up" symptom.
-//
-// Fire-and-forget — main's ipcMain.on('workspace:first-frame') just
-// flips a coordinator flag and runs maybeFinishStartup.
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
-    try { (window as Window & { pdr?: { workspaceFirstFrame?: () => void } }).pdr?.workspaceFirstFrame?.(); } catch {
-      // Best-effort — splash hard-timeout (SPLASH_HARD_MAX_MS in
-      // main.ts) is the safety net if the signal never arrives.
-    }
-  });
-});
+// Fix: home.tsx now fires BOTH __pdrSplashReady AND workspaceFirstFrame
+// from its own double-RAF inside the Welcome useEffect — same RAF
+// chain that's always been gating splash dismissal correctly. Main
+// window now shows only after Welcome content is in the offscreen
+// buffer.

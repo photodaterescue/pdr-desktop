@@ -183,12 +183,31 @@ export default function Home() {
   // splash duration adapts to the host machine: a fast computer hits
   // the floor and exits at 3 s, a slower one holds the splash until
   // Welcome is genuinely ready (up to the 6.5 s ceiling).
+  //
+  // v2.0.15 (Terry 2026-06-05) — ALSO fire workspaceFirstFrame here,
+  // not from main.tsx. Previously main.tsx fired it after App's
+  // first commit, but App's initial commit doesn't include Welcome's
+  // painted content (Welcome is a child route via AppShell's Routes).
+  // In packaged builds the gap between App-commit and Welcome-paint
+  // could stretch to 6 seconds (bigger bundle + antivirus scanning
+  // the freshly installed .exe), and during that gap the main window
+  // showed against its lavender backgroundColor — Terry's "6-second
+  // purple flash" report 2026-06-05. Firing the signal here, from
+  // Welcome's own useEffect double-RAF, gates the main-window reveal
+  // on Welcome being actually-painted, not just on App being mounted.
   useEffect(() => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const signal = (window as Window & { __pdrSplashReady?: () => void })
+        const splashSignal = (window as Window & { __pdrSplashReady?: () => void })
           .__pdrSplashReady;
-        if (typeof signal === 'function') signal();
+        if (typeof splashSignal === 'function') splashSignal();
+        try {
+          (window as Window & { pdr?: { workspaceFirstFrame?: () => void } })
+            .pdr?.workspaceFirstFrame?.();
+        } catch {
+          // Best-effort — SPLASH_HARD_MAX_MS in main.ts is the safety
+          // net if the signal never arrives.
+        }
       });
     });
   }, []);
