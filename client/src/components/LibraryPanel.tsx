@@ -544,6 +544,17 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     }
   };
 
+  // v2.0.15 hotfix #3 (Terry 2026-06-04) — drive-scan results are
+  // now PERSISTED to localStorage under this key so they survive the
+  // LDM closing + reopening. Without this Terry would run a multi-
+  // minute scan, navigate away to S&D to look around while it ran,
+  // then come back to find the discovered list empty because the
+  // LibraryPanel component unmounted on LDM close. The cache stores
+  // RAW scan results — filtering against savedDestinations + ignored
+  // list happens at render time, so an Add-to-LDM action naturally
+  // removes the card without needing to mutate the cache.
+  const SCAN_CACHE_KEY = 'pdr-discovered-scan-cache';
+
   // v2.0.15 (Terry 2026-06-04) — Library-history discovery. Asks main
   // for every distinct destination_path in indexed_runs that still
   // exists on disk, then filters out:
@@ -609,7 +620,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           );
         }
       } catch { /* corrupted ignore list — treat as empty */ }
-      const filtered: DiscoveredLibrary[] = all
+      const sqlFiltered: DiscoveredLibrary[] = all
         .filter(lib => {
           const n = norm(lib.path);
           if (currentLibraryNorm && n === currentLibraryNorm) return false;
@@ -618,7 +629,50 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           return true;
         })
         .map(lib => ({ ...lib, source: 'sql-runs' as const }));
-      setDiscoveredLegacyLibraries(filtered);
+
+      // v2.0.15 hotfix #3 — restore any cached scan results from
+      // localStorage (the user ran a drive scan in a previous LDM
+      // session, then closed LDM). Filter them against the SAME live
+      // state checks so paths the user has since added or ignored
+      // don't reappear. Dedupe by normalised path so SQL rows always
+      // beat scan rows on conflicts (SQL data is richer — has Fix
+      // count + file count).
+      let cachedScan: DiscoveredLibrary[] = [];
+      try {
+        const rawCache = localStorage.getItem(SCAN_CACHE_KEY);
+        if (rawCache) {
+          const parsed = JSON.parse(rawCache);
+          if (parsed && Array.isArray(parsed.candidates)) {
+            const sqlPaths = new Set(sqlFiltered.map(r => norm(r.path)));
+            cachedScan = parsed.candidates
+              .filter((c: any): c is { path: string; source: 'catalogue-csv' | 'folder-pattern'; lastSeenAt: string; currentFileCount: number; currentFileCountCapped: boolean } =>
+                c && typeof c.path === 'string'
+                  && (c.source === 'catalogue-csv' || c.source === 'folder-pattern')
+                  && typeof c.lastSeenAt === 'string'
+                  && typeof c.currentFileCount === 'number'
+              )
+              .filter(c => {
+                const n = norm(c.path);
+                if (currentLibraryNorm && n === currentLibraryNorm) return false;
+                if (savedNorms.has(n)) return false;
+                if (ignoredNorms.has(n)) return false;
+                if (sqlPaths.has(n)) return false;
+                return true;
+              })
+              .map(c => ({
+                path: c.path,
+                lastIndexedAt: c.lastSeenAt,
+                source: c.source,
+                currentFileCount: c.currentFileCount,
+                currentFileCountCapped: c.currentFileCountCapped,
+              }));
+          }
+        }
+      } catch (e) {
+        console.warn('[LibraryPanel] scan cache read failed:', e);
+      }
+
+      setDiscoveredLegacyLibraries([...sqlFiltered, ...cachedScan]);
     } catch (e) {
       console.warn('[LibraryPanel] refreshDiscoveredLegacyLibraries failed:', e);
       setDiscoveredLegacyLibraries([]);
@@ -643,7 +697,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     if (isScanningDrives) return;
     setIsScanningDrives(true);
     const toastId = toast.loading('Scanning drives for legacy libraries…', {
-      description: 'Looking for PDR catalogue files and PDR-style folder structures across your connected drives. This may take a minute on large external drives — feel free to keep using PDR while it runs.',
+      description: 'Looking for PDR catalogue files and PDR-style folder structures across your connected drives. This may take a minute on large external drives — your scan results will be saved here so you can close the Library Drive Manager and come back to them.',
     });
     try {
       const res = await (window as any).pdr?.library?.scanForLegacyLibraries?.();
@@ -687,46 +741,59 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       };
       const candidates: ScanCandidate[] = res.data.candidates;
 
-      // Merge with the existing discovered list. SQL-source rows in
-      // the current state are authoritative; scan results that match
-      // them are dropped. New scan results that pass all filters are
-      // appended.
-      setDiscoveredLegacyLibraries(prev => {
-        const sqlPaths = new Set(prev.filter(p => p.source === 'sql-runs').map(p => norm(p.path)));
-        const existingScanPaths = new Set(prev.filter(p => p.source !== 'sql-runs').map(p => norm(p.path)));
-        const merged: DiscoveredLibrary[] = [...prev];
-        let addedCount = 0;
-        for (const c of candidates) {
-          const n = norm(c.path);
-          if (currentLibraryNorm && n === currentLibraryNorm) continue;
-          if (savedNorms.has(n)) continue;
-          if (ignoredNorms.has(n)) continue;
-          if (sqlPaths.has(n)) continue; // SQL row wins
-          if (existingScanPaths.has(n)) continue; // already in list
-          merged.push({
-            path: c.path,
-            lastIndexedAt: c.lastSeenAt,
-            source: c.source,
-            currentFileCount: c.currentFileCount,
-            currentFileCountCapped: c.currentFileCountCapped,
-          });
-          addedCount++;
-        }
-        // Toast outcome — count of NEW rows added (not the raw scan
-        // count, which can include paths already represented by SQL).
-        if (addedCount === 0) {
-          toast.success('Scan complete — no new libraries found', {
-            id: toastId,
-            description: 'PDR already knows about every library on your connected drives.',
-          });
-        } else {
-          toast.success(`Scan complete — ${addedCount} new librar${addedCount === 1 ? 'y' : 'ies'} found`, {
-            id: toastId,
-            description: 'Listed below. Add what you want back in the LDM, ignore the rest.',
-          });
-        }
-        return merged;
-      });
+      // v2.0.15 hotfix #3 — persist raw scan results so they survive
+      // LDM close + reopen. Filtering against the user's live state
+      // (current LD, savedDestinations, ignored) happens at render
+      // time, so we cache the unfiltered set; that way an Add-to-LDM
+      // or Ignore action just updates the relevant list and the
+      // render filter naturally removes the row, no cache mutation
+      // needed. Overwrites the previous cache (new scan replaces).
+      try {
+        localStorage.setItem(SCAN_CACHE_KEY, JSON.stringify({
+          runAt: new Date().toISOString(),
+          candidates,
+        }));
+      } catch (e) {
+        console.warn('[LibraryPanel] scan cache write failed:', e);
+        // Non-fatal — the in-session state below still works; only
+        // the close-and-come-back persistence is affected.
+      }
+
+      // v2.0.15 hotfix #3 — count filterable candidates OUTSIDE the
+      // setState callback so the success toast still fires even if
+      // LDM was closed mid-scan (React doesn't run setState updaters
+      // for unmounted components; toasts inside would never appear).
+      // The cache write has already happened above so the persistence
+      // path is safe regardless of mount state.
+      const visibleCount = candidates.filter(c => {
+        const n = norm(c.path);
+        if (currentLibraryNorm && n === currentLibraryNorm) return false;
+        if (savedNorms.has(n)) return false;
+        if (ignoredNorms.has(n)) return false;
+        return true;
+      }).length;
+
+      if (visibleCount === 0) {
+        toast.success('Scan complete — no new libraries found', {
+          id: toastId,
+          description: 'PDR already knows about every library on your connected drives.',
+          duration: 8000,
+        });
+      } else {
+        toast.success(`Scan complete — ${visibleCount} librar${visibleCount === 1 ? 'y' : 'ies'} found`, {
+          id: toastId,
+          description: 'Open the Library Drive Manager → Discovered libraries to add or ignore each one. Your results are saved.',
+          duration: 10000,
+        });
+      }
+
+      // Re-trigger the discovered-list refresh so the cards render
+      // immediately. refreshDiscoveredLegacyLibraries reads from the
+      // freshly-written cache + applies all live filters, so we get
+      // the same end state as the previous inline merge but with a
+      // single source of truth. setState on an unmounted component
+      // is a no-op + console warning, never a crash.
+      await refreshDiscoveredLegacyLibraries();
     } catch (e) {
       console.warn('[LibraryPanel] handleScanDrivesForLegacyLibraries failed:', e);
       toast.error('Scan failed', { id: toastId, description: String((e as Error)?.message ?? e) });
