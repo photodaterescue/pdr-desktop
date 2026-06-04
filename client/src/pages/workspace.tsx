@@ -60,6 +60,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Accordion,
   AccordionContent,
@@ -6280,6 +6281,57 @@ function DashboardPanel({
                     Windows-essential processes (svchost, Memory Compression, dwm, etc.) are filtered out — only apps you actually opened are shown. Closing them from their own windows frees the OS file cache that PNG conversion leans on.
                   </DialogDescription>
                 </DialogHeader>
+
+                {/* v2.0.15 (Terry 2026-06-03) — skeleton placeholders
+                    while the IPC fetches. Renders the SAME shape and
+                    chrome as the real banner + row list below, so the
+                    modal opens at its final size and visual structure
+                    is immediately there. Without this the modal first
+                    flashes a tiny "Reading..." box, then jumps to a
+                    much taller populated state — Terry: "this smaller
+                    modal flashes up for about half a second before it
+                    enlarges and populates... users wonder what they
+                    missed." Skeletons use bg-secondary/60 (same token
+                    as other PDR loading placeholders) with Tailwind's
+                    animate-pulse for the standard shimmer. */}
+                {topMemConsumersLoading && (
+                  <>
+                    {/* v2.0.15 (Terry 2026-06-03) — skeleton placeholders
+                        use the existing Skeleton primitive from
+                        @/components/ui/skeleton (which is animate-pulse
+                        rounded-md bg-primary/10). Container chrome
+                        (bg-secondary/30 + border + rounded-md) mirrors
+                        the real banner / row chrome verbatim so the
+                        modal opens at the SAME size and structure that
+                        the populated state will take, eliminating the
+                        flash-then-grow Terry called out. */}
+                    <div className="mt-1 rounded-md border border-border bg-secondary/30 px-3 py-2.5 space-y-2">
+                      <div className="flex justify-between items-baseline">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-4 w-16" />
+                      </div>
+                      <div className="flex justify-between items-baseline">
+                        <Skeleton className="h-4 w-28" />
+                        <Skeleton className="h-4 w-24" />
+                      </div>
+                      <div className="pt-1 border-t border-border/60 flex justify-between items-baseline">
+                        <Skeleton className="h-4 w-36" />
+                        <Skeleton className="h-4 w-28" />
+                      </div>
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                      {[0, 1, 2, 3, 4].map(i => (
+                        <div
+                          key={i}
+                          className="px-3 py-2 rounded-md bg-secondary/30 border border-border flex items-baseline justify-between gap-3"
+                        >
+                          <Skeleton className="h-4" style={{ width: `${[40, 50, 35, 45, 30][i]}%` }} />
+                          <Skeleton className="h-4 w-14" />
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 {/* v2.0.15 (Terry 2026-06-03) — system memory context
                     banner. Anchors the per-app numbers below in the
