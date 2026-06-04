@@ -4,11 +4,20 @@ import { useHashLocation } from "wouter/use-hash-location";
 import App from "./App";
 import "./index.css";
 
+// v2.0.15 (Terry 2026-06-05) — boot timeline logs to diagnose the
+// purple-flash gap. main.ts captures lines containing "[Boot]" and
+// writes them into main.log with electron-log's own timestamp, so
+// the renderer-side events interleave cleanly with the main-side
+// events when reading the log.
+console.log('[Boot] main.tsx loaded — bundle parsed, about to call createRoot.render');
+
 createRoot(document.getElementById("root")!).render(
   <Router hook={useHashLocation}>
     <App />
   </Router>
 );
+
+console.log('[Boot] createRoot.render() returned (React commit scheduled, not yet painted)');
 
 // v2.0.15 (Terry 2026-06-05) — workspace-first-frame signal MOVED
 // from here (App-level RAF) to home.tsx (Welcome-level RAF). Reason:

@@ -725,7 +725,18 @@ let startupSwapped = false;
 const SPLASH_MIN_MS = 3000;
 const SPLASH_HARD_MAX_MS = 60000;
 
+// v2.0.15 (Terry 2026-06-05) — boot timeline logs. Terry's report
+// that packaged builds show a 6-second purple flash needed a way to
+// see exactly where time is being spent. Each log line records the
+// elapsed ms since app launch so reading the timeline is mechanical:
+// subtract one timestamp from the next, find the long gaps.
+const BOOT_T0 = Date.now();
+const bootElapsed = () => Date.now() - BOOT_T0;
+const bootLog = (msg: string) => log.info(`[Boot +${bootElapsed()}ms] ${msg}`);
+bootLog('main process started');
+
 function createSplashWindow(): void {
+  bootLog('createSplashWindow() called');
   splashWindow = new BrowserWindow({
     width: 600,
     height: 400,
@@ -754,6 +765,7 @@ function createSplashWindow(): void {
   // the splash should hold for a beat so it never feels rushed.
   setTimeout(() => {
     splashMinElapsed = true;
+    bootLog('splashMinElapsed = true (3s floor reached)');
     maybeFinishStartup();
   }, SPLASH_MIN_MS);
 
@@ -808,6 +820,7 @@ function spawnStartupWorker(): void {
     } else if (m?.type === 'done') {
       log.info(`[Startup Worker] done — ${JSON.stringify(m.summary)}`);
       workerDone = true;
+      bootLog('workerDone = true (startup-worker reported done)');
       try { startupWorker?.kill(); } catch { /* best-effort */ }
       startupWorker = null;
       maybeFinishStartup();
@@ -852,14 +865,16 @@ function spawnStartupWorker(): void {
 ipcMain.on('workspace:first-frame', () => {
   if (workspaceReadyToShow) return;
   workspaceReadyToShow = true;
+  bootLog('workspaceReadyToShow = true (renderer fired workspace:first-frame IPC)');
   maybeFinishStartup();
 });
 
 function maybeFinishStartup(): void {
   if (startupSwapped) return;
-  if (!splashMinElapsed) return;
-  if (!workerDone) return;
-  if (!workspaceReadyToShow) return;
+  if (!splashMinElapsed) { bootLog('maybeFinishStartup: waiting on splashMinElapsed'); return; }
+  if (!workerDone) { bootLog('maybeFinishStartup: waiting on workerDone'); return; }
+  if (!workspaceReadyToShow) { bootLog('maybeFinishStartup: waiting on workspaceReadyToShow'); return; }
+  bootLog('maybeFinishStartup: ALL GATES PASSED — about to show mainWindow + close splash');
   startupSwapped = true;
 
   // v2.0.11 (Terry 2026-05-24) — splash-to-workspace position handoff.
@@ -894,6 +909,7 @@ function maybeFinishStartup(): void {
     } catch (err) {
       log.warn(`[Startup] splash-to-workspace position handoff failed (non-fatal): ${(err as Error).message}`);
     }
+    bootLog('mainWindow.show() called');
     mainWindow.show();
   }
   if (splashWindow && !splashWindow.isDestroyed()) {
@@ -903,6 +919,7 @@ function maybeFinishStartup(): void {
 }
 
 function createWindow() {
+  bootLog('createWindow() called — instantiating mainWindow');
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -951,7 +968,9 @@ function createWindow() {
   // UI is already painted in Chromium's offscreen buffer — no flash.
   // SPLASH_HARD_MAX_MS is the global safety net if the IPC never fires.
 
+	bootLog('mainWindow.loadFile(index.html) called');
 	mainWindow.loadFile(path.join(__dirname, '../dist/public/index.html'));
+	mainWindow.webContents.once('did-finish-load', () => bootLog('mainWindow webContents did-finish-load fired'));
 
 	// Surface renderer [inline-video] / [video] console messages in main log.
 	mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
@@ -959,7 +978,8 @@ function createWindow() {
 	    message.includes('[inline-video]') ||
 	    message.includes('[video]') ||
 	    message.includes('[pdr-file]') ||
-	    message.includes('[Welcome]')
+	    message.includes('[Welcome]') ||
+	    message.includes('[Boot]')
 	  ) {
 	    console.log(`[main-renderer] ${sourceId}:${line} ${message}`);
 	  }

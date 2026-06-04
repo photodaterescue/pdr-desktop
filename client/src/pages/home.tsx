@@ -196,15 +196,29 @@ export default function Home() {
   // Welcome's own useEffect double-RAF, gates the main-window reveal
   // on Welcome being actually-painted, not just on App being mounted.
   useEffect(() => {
+    console.log('[Boot] Welcome useEffect fired (component mounted, scheduling double-RAF)');
     requestAnimationFrame(() => {
+      console.log('[Boot] Welcome RAF #1 fired (after React first commit)');
       requestAnimationFrame(() => {
+        console.log('[Boot] Welcome RAF #2 fired (after browser paint — Welcome content now in offscreen buffer)');
         const splashSignal = (window as Window & { __pdrSplashReady?: () => void })
           .__pdrSplashReady;
-        if (typeof splashSignal === 'function') splashSignal();
+        if (typeof splashSignal === 'function') {
+          splashSignal();
+          console.log('[Boot] __pdrSplashReady signal sent to splash window');
+        } else {
+          console.log('[Boot] __pdrSplashReady NOT a function — splash signal skipped');
+        }
         try {
-          (window as Window & { pdr?: { workspaceFirstFrame?: () => void } })
-            .pdr?.workspaceFirstFrame?.();
-        } catch {
+          const pdr = (window as Window & { pdr?: { workspaceFirstFrame?: () => void } }).pdr;
+          if (pdr?.workspaceFirstFrame) {
+            pdr.workspaceFirstFrame();
+            console.log('[Boot] workspaceFirstFrame IPC sent to main process');
+          } else {
+            console.log('[Boot] window.pdr.workspaceFirstFrame NOT exposed — IPC skipped');
+          }
+        } catch (e) {
+          console.log('[Boot] workspaceFirstFrame IPC threw:', e);
           // Best-effort — SPLASH_HARD_MAX_MS in main.ts is the safety
           // net if the signal never arrives.
         }
