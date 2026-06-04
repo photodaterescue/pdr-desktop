@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { promptConfirm } from '@/components/trees/promptConfirm';
 // react-window virtualisation reverted 2026-05-20 (see grid view
 // comment below). The dep stays in package.json for future use.
 import { motion, AnimatePresence } from 'framer-motion';
@@ -6261,6 +6262,73 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
   };
   const handleRemoveRun = async (runId: number) => { await removeSearchRun(runId); await loadData(); onRefresh(); };
 
+  // v2.0.15 hotfix (Terry 2026-06-04) — group raw indexed_runs rows
+  // by destination_path so the Library Manager modal shows ONE row
+  // per library, not one row per Fix run. Terry's report: with 24
+  // Fix runs to the same library the modal listed all 24, making
+  // it read as "this is so noisy and should only be showing
+  // working/acknowledged LDs." Aggregation gives: path, total file
+  // count across all runs, run count, latest-Fix timestamp. The
+  // run IDs are kept in the group so a Remove action can cascade
+  // through every run for that destination in one go.
+  interface GroupedRun {
+    destination_path: string;
+    total_file_count: number;
+    run_count: number;
+    latest_indexed_at: string;
+    ids: number[];
+  }
+  const groupedRuns = useMemo<GroupedRun[]>(() => {
+    const map = new Map<string, GroupedRun>();
+    for (const run of runs) {
+      const key = run.destination_path.replace(/[\\/]+$/, '').toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.total_file_count += run.file_count;
+        existing.run_count += 1;
+        if (run.indexed_at > existing.latest_indexed_at) {
+          existing.latest_indexed_at = run.indexed_at;
+        }
+        existing.ids.push(run.id);
+      } else {
+        map.set(key, {
+          destination_path: run.destination_path,
+          total_file_count: run.file_count,
+          run_count: 1,
+          latest_indexed_at: run.indexed_at,
+          ids: [run.id],
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.latest_indexed_at.localeCompare(a.latest_indexed_at));
+  }, [runs]);
+
+  // Library-level remove — confirms, then sequentially removes every
+  // run for that destination. Confirmation copy explicit about the
+  // multi-run cascade because "remove this library" could be misread
+  // as "remove the last Fix only."
+  const handleRemoveLibrary = async (group: GroupedRun) => {
+    const rootName = group.destination_path.split(/[\\/]/).filter(Boolean).pop() ?? group.destination_path;
+    const ok = await promptConfirm({
+      eyebrow: 'REMOVE FROM SEARCH LIBRARY',
+      title: `Remove "${rootName}" from the search library?`,
+      message: (
+        <>
+          This will remove <strong className="text-foreground">{group.run_count} Fix run{group.run_count === 1 ? '' : 's'}</strong> ({group.total_file_count.toLocaleString()} files) from PDR&apos;s search index. Files on disk are untouched. Re-running the fix is the only way to add them back.
+        </>
+      ),
+      confirmLabel: 'Remove from search library',
+      cancelLabel: 'Cancel',
+      danger: true,
+    });
+    if (!ok) return;
+    for (const id of group.ids) {
+      await removeSearchRun(id);
+    }
+    await loadData();
+    onRefresh();
+  };
+
   const startIndexProgressListener = () => {
     setIndexStartTime(Date.now());
     onSearchIndexProgress((progress: any) => {
@@ -6439,7 +6507,10 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                 <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Searchable</h4>
-                <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">{runs.length}</span>
+                {/* v2.0.15 hotfix — count reflects libraries (grouped),
+                    not raw Fix runs. Was showing 24 for 24 runs to the
+                    same library; now shows 1. */}
+                <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">{groupedRuns.length}</span>
               </div>
               <div className="flex items-center gap-2">
                 {runs.length > 0 && searchableOpen && (
@@ -6473,26 +6544,29 @@ function IndexManagerModal({ onClose, onRefresh, stats, onStaleRunsDetected }: {
                   <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
                     <Loader2 className="w-4 h-4 animate-spin" /> Loading...
                   </div>
-                ) : runs.length === 0 ? (
+                ) : groupedRuns.length === 0 ? (
                   <div className="p-3 rounded-lg border border-dashed border-border text-center">
                     <p className="text-sm text-muted-foreground">No destinations searchable yet</p>
                     <p className="text-xs text-muted-foreground/60 mt-1">Complete a fix or index a report below to get started</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">{runs.map(run => (
-                    <div key={run.id} className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-secondary/10">
+                  // v2.0.15 hotfix — iterate groupedRuns (one row per
+                  // library destination) instead of raw runs (one row
+                  // per Fix run). Subline summarises across runs.
+                  <div className="space-y-2">{groupedRuns.map(group => (
+                    <div key={group.destination_path} className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-secondary/10">
                       <div className="flex-1 min-w-0">
-                        <IconTooltip label={run.destination_path.replace(/\\\\/g, '\\')} side="top"><p className="text-sm font-medium text-foreground truncate">{run.destination_path.replace(/\\\\/g, '\\')}</p></IconTooltip>
-                        <p className="text-xs text-muted-foreground">{run.file_count.toLocaleString()} files · {new Date(run.indexed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}{run.source_labels ? ` · ${run.source_labels}` : ''}</p>
+                        <IconTooltip label={group.destination_path.replace(/\\\\/g, '\\')} side="top"><p className="text-sm font-medium text-foreground truncate">{group.destination_path.replace(/\\\\/g, '\\')}</p></IconTooltip>
+                        <p className="text-xs text-muted-foreground">{group.total_file_count.toLocaleString()} files &middot; {group.run_count} Fix run{group.run_count === 1 ? '' : 's'} &middot; last {new Date(group.latest_indexed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       </div>
-                      {allowIndexRemoval && <IconTooltip label="Remove from library" side="left"><button onClick={() => handleRemoveRun(run.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /></button></IconTooltip>}
+                      {allowIndexRemoval && <IconTooltip label="Remove this library from the search index" side="left"><button onClick={() => handleRemoveLibrary(group)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /></button></IconTooltip>}
                     </div>
                   ))}</div>
                 )}
-                {!allowIndexRemoval && runs.length > 0 && (
+                {!allowIndexRemoval && groupedRuns.length > 0 && (
                   <p className="text-[10px] text-muted-foreground/70 mt-2 flex items-center gap-1">
                     <Info className="w-3 h-3 shrink-0" />
-                    To remove a destination from the library, enable removal in the Pro tab under Settings.
+                    To remove a library from the search index, enable &ldquo;Allow Index Removal&rdquo; in Settings &rarr; Workspace &rarr; Data Management.
                   </p>
                 )}
               </div>

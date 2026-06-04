@@ -12951,9 +12951,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     keywords: string;
   }> = [
     { id: 'general',   label: 'General',     icon: SlidersHorizontal, keywords: 'sound chime welcome duplicates thorough skip exif write confirmed recovered marked storage performance tips' },
-    { id: 'workspace', label: 'Workspace',   icon: LayoutGrid,        keywords: 'folder structure year month day organize remember sources clear after fix output formats reports history allow report removal csv txt export catalogue catalog save library drive' },
+    { id: 'workspace', label: 'Workspace',   icon: LayoutGrid,        keywords: 'folder structure year month day organize remember sources clear after fix output formats reports history allow report removal index removal data management csv txt export catalogue catalog save library drive' },
     { id: 'afterFix',  label: 'After Fix',   icon: CheckCircle2,      keywords: 'fixed photos searchable auto refresh recognize people content faces ai recognition auto process' },
-    { id: 'sd',        label: 'S&D',         icon: Database,          keywords: 'search discovery index allow removal library manager refresh re-running' },
+    { id: 'sd',        label: 'S&D',         icon: Database,          keywords: 'search discovery library manager refresh re-running' },
     { id: 'people',    label: 'People',      icon: Users,             keywords: 'people manager faces face recognition visual suggestions startup' },
     { id: 'ai',        label: 'AI',          icon: Sparkles,          keywords: 'ai face detection object tagging auto process threshold confidence reclustering re-analyze' },
     { id: 'backup',    label: 'Backup',      icon: Archive,           keywords: 'backup database db library drive sidecar recovery snapshot' },
@@ -13535,6 +13535,26 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                               data-testid="checkbox-allow-report-removal"
                             />
                           </label>
+                          {/* v2.0.15 hotfix (Terry 2026-06-04) — moved
+                              from S&D tab to Workspace tab. Sibling of
+                              Allow Report Removal: both are Data
+                              Management controls about destroying
+                              library-side records. Living in S&D
+                              alongside "Show Library Manager" was
+                              counterintuitive — index removal isn't
+                              about Search & Discovery, it's about the
+                              library. */}
+                          <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
+                              <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-running the fix is the only way to add the photos back to your search index.</span>
+                            </div>
+                            <Switch
+                              checked={allowIndexRemoval}
+                              onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
+                              data-testid="checkbox-allow-index-removal"
+                            />
+                          </label>
                           <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                             <div className="flex flex-col">
                               <span className="text-sm font-medium text-foreground">Show CSV/TXT export buttons</span>
@@ -13597,17 +13617,10 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       onCheckedChange={(checked) => handleShowLibraryManagerToggle(!!checked)}
                     />
                   </label>
-                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
-                      <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-running the fix is the only way to add the photos back to your search index.</span>
-                    </div>
-                    <Switch
-                      checked={allowIndexRemoval}
-                      onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
-                      data-testid="checkbox-allow-index-removal"
-                    />
-                  </label>
+                  {/* v2.0.15 hotfix (Terry 2026-06-04) — "Allow Index
+                      Removal" moved to the Workspace tab's Data
+                      Management section, alongside Allow Report Removal.
+                      It's a library-data control, not an S&D one. */}
                 </div>
               </div>
             </>
