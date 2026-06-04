@@ -13009,23 +13009,21 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-4xl w-full p-6"
+        className="relative bg-background rounded-2xl shadow-2xl max-w-4xl w-full p-6"
       >
-        <div className="relative mb-5 text-center">
-          <div className="flex items-center justify-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Settings className="w-5 h-5 text-primary" />
-            </div>
-            <h2 className="text-xl font-semibold text-foreground">Settings</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="absolute right-0 top-1/2 -translate-y-1/2 p-2 hover:bg-secondary rounded-full transition-colors"
-            data-testid="button-close-settings"
-          >
-            <X className="w-5 h-5 text-muted-foreground" />
-          </button>
-        </div>
+        {/* v2.0.15 (Terry 2026-06-04, hotfix) — Settings header moved
+            from centered-with-circular-icon to a Claude-style top-left
+            title inside the sidebar (see below). X close button
+            absolute-positioned top-right of the whole modal so it
+            doesn't compete with the sidebar real estate. Saves ~50px
+            of vertical space the old header was eating. */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 p-2 hover:bg-secondary rounded-full transition-colors z-10"
+          data-testid="button-close-settings"
+        >
+          <X className="w-5 h-5 text-muted-foreground" />
+        </button>
 
         {/* ═══════════════════════════════════════════════════════════════
             SIDEBAR + CONTENT LAYOUT
@@ -13033,8 +13031,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
             previous horizontal-tab bar with a vertical sidebar on the
             left (matching the navigation pattern Terry highlighted in
             Claude's own settings as easier to scan). The sidebar has:
-              • A search input at the top that filters tabs by label
-                OR by a hand-rolled keyword index per tab
+              • A top-left "Settings" title (replaces the previous
+                centered-with-circular-icon header — saves vertical
+                space and anchors the title with the navigation
+                rather than floating it)
+              • A search input that filters tabs by label OR by a
+                hand-rolled keyword index per tab
               • Icons next to each tab so the eye finds them by shape
                 before reading
               • Active-row tinting + dimmed non-match rows for filter
@@ -13043,10 +13045,16 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
             the same `{settingsTab === 'X' && (...)}` blocks render
             below; they just sit inside a flex panel now.
             ═══════════════════════════════════════════════════════════════ */}
-        <div className="flex gap-4 h-[55vh]">
-          {/* ── Sidebar — fixed width, full height, soft background
-                to separate from the content area. */}
-          <aside className="w-52 shrink-0 flex flex-col gap-3 bg-secondary/20 rounded-xl p-3 border border-border/40">
+        <div className="flex gap-5 h-[62vh]">
+          {/* ── Sidebar — fixed width, NO background bubble (Terry's
+                hotfix: the bubble wasted space). Right border separates
+                from content panel. */}
+          <aside className="w-48 shrink-0 flex flex-col gap-3 pr-4 border-r border-border/60">
+            {/* Top-left Settings title — replaces the previous centered
+                header. Same h2 weight as About PDR's header inside the
+                Workspace panel so they read as the same affordance
+                across surfaces. */}
+            <h2 className="text-lg font-semibold text-foreground px-1">Settings</h2>
             {/* Search input. Magnifier prefix matches the rest of
                 PDR's search affordances (S&D's search field uses
                 the same idiom). Auto-focuses on modal open. */}
@@ -13056,7 +13064,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 type="text"
                 value={settingsSearchQuery}
                 onChange={(e) => setSettingsSearchQuery(e.target.value)}
-                placeholder="Search settings…"
+                placeholder="Search…"
                 className="w-full pl-8 pr-2 py-1.5 text-xs rounded-md border border-border bg-background focus:outline-none focus:border-primary/60 placeholder:text-muted-foreground"
                 data-testid="input-settings-search"
               />
