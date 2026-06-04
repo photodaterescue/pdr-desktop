@@ -10423,6 +10423,36 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 <p className="text-sm text-muted-foreground mt-4">If Marked is high, consider running smaller grouped jobs to isolate what's happening. If Duplicates is high, you've probably stacked overlapping backups — that's normal and PDR handles it.</p>
               </section>
 
+              {/* v2.0.15 (Terry 2026-06-04) — Output format guidance.
+                  Pairs with the format dropdown on the Dashboard, the
+                  "Output formats" glossary entries in Help & Support,
+                  and the RAM-pressure advisory that surfaces when you
+                  pick PNG with low free memory. Uses the same emerald/
+                  indigo/amber tinted card chrome as the Source Types
+                  section above for visual consistency. */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">Choosing an Output Format</h3>
+                <div className="space-y-3">
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                    <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-1">Keep Originals (default)</p>
+                    <p className="text-sm text-muted-foreground">No conversion — files stay in their current format (only the extension is normalised, e.g. <span className="font-mono text-xs">.jpeg</span> → <span className="font-mono text-xs">.jpg</span>). Fastest path; the right pick for the vast majority of users. Preserves exactly what your camera or phone wrote, byte for byte.</p>
+                  </div>
+                  <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-700 rounded-lg">
+                    <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-1">JPG</p>
+                    <p className="text-sm text-muted-foreground">Re-encodes any non-JPG photos (PNG, HEIC, TIFF, BMP, etc.) to JPG at quality 92 — visually identical to PNG for almost all photographs, at a fraction of the size. Useful if you want one universal format across the library. Already-JPG files are NOT re-encoded (no quality loss).</p>
+                  </div>
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mb-1">PNG (Full Quality)</p>
+                    <p className="text-sm text-muted-foreground mb-2">Re-encodes any non-PNG photos as lossless PNG — every pixel preserved exactly, ideal for archival or photos you may edit later. Trade-offs: <span className="font-medium text-foreground">files are ~3× the size of JPG</span> and conversion is <span className="font-medium text-foreground">~4× slower</span>.</p>
+                    <p className="text-sm text-muted-foreground"><span className="font-medium text-amber-700 dark:text-amber-300">RAM matters for PNG.</span> The conversion path leans on the OS file cache, so PNG runs noticeably faster when you have plenty of free RAM. Below ~30 % free, Windows starts paging to disk and competes with PDR's writes — closing heavy apps before starting (browser tabs, video editors, trading platforms) can cut wall-clock by ~30 %. PDR shows a small advisory under the format dropdown when this matters, with a one-click list of your biggest RAM users.</p>
+                  </div>
+                  <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                    <p className="text-sm font-medium text-foreground mb-1">Locking your choice (the pin)</p>
+                    <p className="text-sm text-muted-foreground">When you pick PNG or JPG, a small pin icon appears between the dropdown and the (i) tooltip. Click it to keep that choice across the next few Fixes in this session (useful if you're processing several sources to the same format). The lock auto-resets if you go back to Keep Originals, and never carries over between app restarts — every fresh launch defaults to Keep Originals.</p>
+                  </div>
+                </div>
+              </section>
+
               {/* Expandable Accordion Sections */}
               <div className="pt-6 border-t border-border">
                 <h3 className="text-lg font-medium text-foreground mb-4">Detailed Guidance</h3>
@@ -11363,6 +11393,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <li><span className="font-medium text-foreground">Library Drive still has room</span> — the storage indicator next to your Library Drive shows free vs required. Free should comfortably exceed Required.</li>
                     <li><span className="font-medium text-foreground">Sources are checked</span> — only ticked Sources go into the run. Untick anything you don't want included.</li>
                     <li><span className="font-medium text-foreground">File types</span> — in Combined Analysis, choose whether to include Photos, Videos, or both for this run.</li>
+                    <li><span className="font-medium text-foreground">Output format</span> — the Photo Format dropdown defaults to <em>Keep Originals</em> (no conversion — recommended for most users). Switch to <em>Full Quality (PNG)</em> for lossless archival output, or <em>JPG</em> if you want one universal format across the library. PDR will warn you if PNG conversion would slow down because of low free RAM.</li>
                     <li><span className="font-medium text-foreground">Folder structure</span> — Settings → Folder structure controls how the output is organized (Year / Year-Month / Year-Month-Day).</li>
                   </ul>
                 </div>
@@ -11396,11 +11427,11 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                   <p>Once the fix finishes, your library is ready to explore:</p>
                   <ul className="list-disc ml-5 space-y-1.5">
                     <li><span className="font-medium text-foreground">Fix Report</span> — the authoritative breakdown of what was processed, dates determined, and duplicates skipped. Stored permanently in Reports History.</li>
-                    <li><span className="font-medium text-foreground">Search &amp; Discovery</span> — find any photo by date, person, location, tag, camera or scanner.</li>
-                    <li><span className="font-medium text-foreground">Memories</span> — Year/Month timeline + On This Day across your library.</li>
+                    <li><span className="font-medium text-foreground">Search &amp; Discovery</span> — find any photo by date, person, location, tag, camera or scanner. Right-click any file for &ldquo;Add to album&hellip;&rdquo; to drop it (or your selection) into an existing or new album without leaving S&amp;D.</li>
+                    <li><span className="font-medium text-foreground">Memories</span> — Dates timeline (year / month / day drilldowns) + Albums + On This Day across your library. Right-click any photo or selection inside a Dates drilldown or album and choose &ldquo;Send to Search &amp; Discovery&rdquo; (or &ldquo;Add to S&amp;D pile&rdquo; to accumulate) — the chosen files appear as a Memories chip in the S&amp;D filter row and can be filtered, ranked, or acted on like any other result set. A gold &ldquo;Back to Memories&rdquo; pill appears in the title bar so one click returns you to the exact month or album you came from, scrolled back to the file you last touched.</li>
                     <li><span className="font-medium text-foreground">People Manager</span> — name and merge AI-detected face clusters.</li>
                   </ul>
-                  <p>PDR also keeps itself up to date in the background, so future improvements (Trees, Edit Dates, Photo Format conversion — released shortly) will arrive without you needing to manually download anything.</p>
+                  <p>PDR also keeps itself up to date in the background, so future improvements (Trees and Edit Dates — released shortly) will arrive without you needing to manually download anything.</p>
                 </div>
               </section>
             </div>
@@ -11608,6 +11639,13 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">&ldquo;Change source&rdquo; opens the unified folder browser</strong> &mdash; replaces the legacy Select Source Type modal for consistency with the main Add Source flow.</li>
                         <li><strong className="text-foreground font-medium">Settings &rarr; After Fix toggles fixed</strong> &mdash; &ldquo;Clear sources after Fix&rdquo; was previously a no-op; now actually clears the source list when the Fix completes. The Clear-Sources confirmation prompt is back too.</li>
                         <li><strong className="text-foreground font-medium">Async geocoder load</strong> &mdash; city / country lookups initialise off the main thread so the workspace opens faster.</li>
+                        <li><strong className="text-foreground font-medium">Format dropdown polish</strong> &mdash; &ldquo;Highest quality, lossless&rdquo; renamed to the plain-language &ldquo;Full Quality&rdquo; (Google Photos / Apple Photos / Microsoft Photos all avoid the word &ldquo;lossless&rdquo; with consumer users for the same reason). Options stack with their size estimates right-aligned for consistency. A small pin appears between the dropdown and the (i) tooltip whenever you choose PNG or JPG &mdash; click to keep that choice for follow-up Fixes in this session, resets to Keep Originals on app restart. Picking PNG or JPG also auto-scrolls the format card into view so any advisories underneath are instantly readable.</li>
+                        <li><strong className="text-foreground font-medium">PNG conversion memory advisory</strong> &mdash; when free RAM drops below 30 % of total and you pick PNG, a soft lavender callout appears below the format dropdown with a brief attention pulse and the headline numbers (free GB, suggestion to close heavy apps). A &ldquo;See which apps are using your RAM&rdquo; link opens a modal listing the top consumers grouped by app (Chrome&apos;s 50+ processes shown as one row, e.g. &ldquo;chrome (53 processes) 6.1 GB&rdquo;). Windows-essential processes (svchost, Memory Compression, dwm, lsass, Defender, GPU drivers, etc.) are filtered out so users only see apps they can safely close. Browser rows include a hint to close heavy tabs rather than the whole app. A header banner shows total system RAM, currently free, and how much you&apos;d need to close to hit the optimal zone &mdash; or a green &ldquo;Already in the optimal zone&rdquo; pill if you&apos;re already there.</li>
+                        <li><strong className="text-foreground font-medium">Master-library warning only on the first Fix per library</strong> &mdash; the amber &ldquo;This is now your master photo library&rdquo; advisory used to appear on EVERY Fix Complete modal, with the dismiss link only appearing after the third sighting. Now it appears exactly once per library destination then auto-suppresses for that library forever. A new Library Drive gets a fresh single shot. The copy is also tightened (one sentence, 14 words). Fix Complete modal is noticeably shorter on every Fix after the first.</li>
+                        <li><strong className="text-foreground font-medium">&ldquo;Cloud-Synced Folder&rdquo; false-positive fix</strong> &mdash; the Pre-Scan Results modal used to flag any folder whose name contained &ldquo;OneDrive&rdquo;, &ldquo;Dropbox&rdquo;, &ldquo;Google Drive&rdquo; etc. as cloud-synced, even if it was just a local folder you&apos;d named that way after copying contents off the cloud. Now uses strict path-prefix matching against your actual sync-root folders (resolved from <code>%USERPROFILE%</code>) so local folders with provider words in their name are correctly classified as local.</li>
+                        <li><strong className="text-foreground font-medium">Output Formats added to the Glossary</strong> &mdash; Help &amp; Support &rarr; Glossary now explains &ldquo;Full Quality (PNG)&rdquo;, &ldquo;Lossless&rdquo; (confirms what the technical term means), and &ldquo;JPG (lossy)&rdquo; for users who want to know what the choice actually means.</li>
+                        <li><strong className="text-foreground font-medium">Modal backdrop unified across PDR</strong> &mdash; the Dialog primitive (used by the top-RAM-users modal, the command palette, and any other dialog-based surface) now uses the same light backdrop with a soft 2 px blur as PDR&apos;s other modals (FixProgressModal, Pre-Scan Results, etc.), instead of the previous heavy black overlay.</li>
+                        <li><strong className="text-foreground font-medium">Conversion benchmark auto-save</strong> &mdash; the end of every Fix-with-conversion now writes a <code>summary.txt</code> + <code>per-file.csv</code> + <code>per-batch.csv</code> into <code>%APPDATA%\Photo Date Rescue\benchmarks\conversion-&lt;timestamp&gt;\</code>, and mirrors them to <code>&lt;library&gt;\.pdr\benchmarks\</code> so the trail travels with the library. Useful for power users tracking their own conversion performance over time; helped us narrow down v2.0.15&apos;s PNG encode optimisations.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
