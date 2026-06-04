@@ -643,7 +643,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     if (isScanningDrives) return;
     setIsScanningDrives(true);
     const toastId = toast.loading('Scanning drives for legacy libraries…', {
-      description: 'Looking for PDR catalogue files and PDR-style folder structures across your connected drives.',
+      description: 'Looking for PDR catalogue files and PDR-style folder structures across your connected drives. This may take a minute on large external drives — feel free to keep using PDR while it runs.',
     });
     try {
       const res = await (window as any).pdr?.library?.scanForLegacyLibraries?.();
@@ -763,9 +763,12 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
 
     // Optimistic UI: card vanishes now.
     setDiscoveredLegacyLibraries(prev => prev.filter(lib => norm(lib.path) !== targetNorm));
-    // Optimistic toast.
+    // Optimistic toast — duration bumped to 8s (Terry's request) so
+    // the confirmation stays readable while he reviews the LDM
+    // change.
     toast.success(`Added "${rootName}" to the Library Drive Manager`, {
       description: 'It now appears in your drives list. Set it as your Library Drive any time.',
+      duration: 8000,
     });
 
     // Background writes + refresh.
@@ -1285,9 +1288,10 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
 
     // Optimistic UI: row disappears now.
     setSavedDestinations(prev => prev.filter(p => norm(p) !== targetNorm));
-    // Optimistic toast.
+    // Optimistic toast — 8s duration to match the Add-to-LDM toast.
     toast.success(`"${rootName}" removed from the list`, {
       description: 'Files on disk are untouched. Pick the folder/drive again any time to re-add it.',
+      duration: 8000,
     });
 
     try {
@@ -2565,6 +2569,24 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {/* v2.0.15 hotfix #2 — Terry's request: he often
+                          wants to open discovered folders in Explorer
+                          to inspect or delete them personally. Reuses
+                          the existing handleOpenInExplorer handler +
+                          ExternalLink icon for visual consistency with
+                          the main LDM rows' kebab "Open drive location"
+                          item. Wrapped in IconTooltip per the style
+                          guide (never freehand a pill). */}
+                      <IconTooltip label="Open folder in File Explorer" side="top">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenInExplorer(lib.path)}
+                          className="p-1.5 hover:bg-secondary/60 rounded-md text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                          aria-label="Open folder in File Explorer"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                      </IconTooltip>
                       <Button onClick={() => handleAddDiscoveredToLDM(lib.path)} variant="primary" size="sm">
                         Add to list
                       </Button>
@@ -2594,7 +2616,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                   <><HardDrive className="w-3.5 h-3.5 mr-1.5" /> Scan drives for more</>
                 )}
               </Button>
-              <p className="text-caption">Looks for PDR catalogue files and PDR-style folder structures across all connected drives.</p>
+              <p className="text-caption">Looks for PDR catalogue files and PDR-style folder structures across all connected drives. Can take a minute on large external drives.</p>
             </div>
           </section>
 
