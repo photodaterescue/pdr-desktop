@@ -12805,7 +12805,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     setAutoAddToSD('ask');
   };
 
-  const [settingsTab, setSettingsTab] = useState<'general' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
   // v2.0.15 (Terry 2026-06-04) — Settings redesign. Search input at
   // the top of the new left sidebar filters which tabs surface in the
   // list based on a hand-rolled keyword index per tab (label keywords
@@ -12945,13 +12945,23 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // Refresh action lives) even though the word "refresh" isn't on
   // the tab label.
   const SETTINGS_TABS: Array<{
-    id: 'general' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup';
+    id: 'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup';
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     keywords: string;
   }> = [
     { id: 'general',   label: 'General',     icon: SlidersHorizontal, keywords: 'sound chime welcome duplicates thorough skip exif write confirmed recovered marked storage performance tips' },
-    { id: 'workspace', label: 'Workspace',   icon: LayoutGrid,        keywords: 'folder structure year month day organize remember sources clear after fix output formats reports history allow report removal index removal data management csv txt export catalogue catalog save library drive' },
+    // v2.0.15 hotfix (Terry 2026-06-04) — Library category added.
+    // Terry: "I think you should have a category called Library on
+    // the left since it's likely going to have another couple of
+    // settings before long." Hosts the three Data Management toggles
+    // that were previously buried inside Workspace → Advanced (where
+    // users couldn't find them): Allow Report Removal, Allow Index
+    // Removal, Show CSV/TXT export buttons. Positioned right after
+    // General because Library is foundational — the library is the
+    // thing PDR is built around.
+    { id: 'library',   label: 'Library',     icon: HardDrive,         keywords: 'library allow report removal allow index removal csv txt export data management catalogue catalog reports history search index' },
+    { id: 'workspace', label: 'Workspace',   icon: LayoutGrid,        keywords: 'folder structure year month day organize remember sources clear after fix output formats save' },
     { id: 'afterFix',  label: 'After Fix',   icon: CheckCircle2,      keywords: 'fixed photos searchable auto refresh recognize people content faces ai recognition auto process' },
     { id: 'sd',        label: 'S&D',         icon: Database,          keywords: 'search discovery library manager refresh re-running' },
     { id: 'people',    label: 'People',      icon: Users,             keywords: 'people manager faces face recognition visual suggestions startup' },
@@ -13250,6 +13260,62 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           )}
 
           {/* ═══════════════════════════════════════════════════════════════
+              LIBRARY TAB
+              v2.0.15 (Terry 2026-06-04) — new top-level category for
+              library-data controls. Hosts the three Data Management
+              toggles that used to be buried inside Workspace → Advanced
+              (default-collapsed, users couldn't find them). Terry's
+              call: "I think you should have a category called Library
+              on the left since it's likely going to have another
+              couple of settings before long." Forward-thinking — more
+              library-related settings (e.g., master-library reminders,
+              orphan handling, etc.) can land here over time.
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'library' && (
+            <>
+              <div>
+                <label className="block text-base font-semibold text-foreground mb-1">Library data</label>
+                <p className="text-xs text-muted-foreground mb-3">Controls for what you can do to PDR's records of your library — reports history, search index, and manual exports. These are power-user actions; most users won't need to touch them.</p>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Allow Report Removal</span>
+                      <span className="text-xs text-muted-foreground">Enable deleting saved reports from history. Reports are PDR's per-Fix-run records (date, file count, results breakdown) used by Reports History and the catalogue.</span>
+                    </div>
+                    <Switch
+                      checked={allowReportRemoval}
+                      onCheckedChange={(checked) => handleReportRemovalToggle(!!checked)}
+                      data-testid="checkbox-allow-report-removal"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
+                      <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-running the fix is the only way to add the photos back to your search index.</span>
+                    </div>
+                    <Switch
+                      checked={allowIndexRemoval}
+                      onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
+                      data-testid="checkbox-allow-index-removal"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">Show CSV/TXT export buttons</span>
+                      <span className="text-xs text-muted-foreground">Manual exports for standalone reports (auditing, sharing). The auto-catalog already maintains a complete record.</span>
+                    </div>
+                    <Switch
+                      checked={showManualReportExports}
+                      onCheckedChange={(checked) => handleShowManualReportExportsToggle(!!checked)}
+                      data-testid="checkbox-show-manual-exports"
+                    />
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
               WORKSPACE TAB
               Everything that affects the Workspace / Dashboard area:
               folder layout of the destination, source management,
@@ -13520,54 +13586,15 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         )}
                       </div>
 
-                      {/* Report Management */}
-                      <div className="pt-3 border-t border-amber-200/50 dark:border-amber-800/30">
-                        <label className="block text-sm font-medium text-foreground mb-3">Data Management</label>
-                        <div className="space-y-2">
-                          <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-foreground">Allow Report Removal</span>
-                              <span className="text-xs text-muted-foreground">Enable deleting saved reports from history</span>
-                            </div>
-                            <Switch
-                              checked={allowReportRemoval}
-                              onCheckedChange={(checked) => handleReportRemovalToggle(!!checked)}
-                              data-testid="checkbox-allow-report-removal"
-                            />
-                          </label>
-                          {/* v2.0.15 hotfix (Terry 2026-06-04) — moved
-                              from S&D tab to Workspace tab. Sibling of
-                              Allow Report Removal: both are Data
-                              Management controls about destroying
-                              library-side records. Living in S&D
-                              alongside "Show Library Manager" was
-                              counterintuitive — index removal isn't
-                              about Search & Discovery, it's about the
-                              library. */}
-                          <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
-                              <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-running the fix is the only way to add the photos back to your search index.</span>
-                            </div>
-                            <Switch
-                              checked={allowIndexRemoval}
-                              onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
-                              data-testid="checkbox-allow-index-removal"
-                            />
-                          </label>
-                          <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-foreground">Show CSV/TXT export buttons</span>
-                              <span className="text-xs text-muted-foreground">Manual exports for standalone reports (auditing, sharing). The auto-catalog already maintains a complete record.</span>
-                            </div>
-                            <Switch
-                              checked={showManualReportExports}
-                              onCheckedChange={(checked) => handleShowManualReportExportsToggle(!!checked)}
-                              data-testid="checkbox-show-manual-exports"
-                            />
-                          </label>
-                        </div>
-                      </div>
+                      {/* Data Management section MOVED v2.0.15
+                          (Terry 2026-06-04) — was buried here inside
+                          Workspace → Advanced (collapsed by default,
+                          users couldn't find the toggles). Now lives
+                          on its own top-level Library tab in the
+                          sidebar — see {settingsTab === 'library' &&
+                          (...)} block. Three toggles moved: Allow
+                          Report Removal, Allow Index Removal, Show
+                          CSV/TXT export buttons. */}
                     </div>
                   </div>
                 )}
