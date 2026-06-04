@@ -1654,8 +1654,22 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                   <div className="rounded-lg border border-emerald-200/60 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/20 p-2.5 mb-2 flex items-start gap-2">
                     <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                     <p className="text-body-muted">
-                      <span className="text-foreground font-medium">{masterDrive.letter ?? masterDrive.path}</span>
-                      {masterDrive.volumeLabel && <span> "{masterDrive.volumeLabel}"</span>}
+                      {/* v2.0.15 (Terry 2026-06-04) — show the actual
+                          library FOLDER path, not just the drive letter.
+                          The previous `masterDrive.letter ?? path` line
+                          collapsed any folder-on-D: row into a bare "D:",
+                          which read as "your entire D drive is your
+                          master library" — actively misleading when the
+                          user has multiple library folders on D: and
+                          only one of them is the actual master. With
+                          the full path, the recommendation points at
+                          the specific folder PDR thinks is the master.
+                          Bare-letter rows (no library folder on the
+                          drive) still render fine because `.path` is
+                          "D:\" for those — same visual result as
+                          before in that case. */}
+                      <span className="text-foreground font-medium">{masterDrive.path}</span>
+                      {masterDrive.volumeLabel && <span> ({masterDrive.volumeLabel})</span>}
                       {' '}looks to be your master library — most of your photos live here. Set it as your Library Drive to enable backup.
                     </p>
                   </div>
