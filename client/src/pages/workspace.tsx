@@ -11469,6 +11469,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
               <div className="flex items-center gap-4">
                 <img src="./assets//pdr-logo_transparent.png" alt="Photo Date Rescue" className="h-12 w-auto object-contain" />
                 <div>
+                  {/* v2.0.15 (Terry 2026-06-04) — soft slip-in of the
+                      "PDR Photos" brand line. Positioned as an eyebrow
+                      above the existing "Photo Date Rescue" h2 so it
+                      reads as a brand category mark, not a rename.
+                      Same tiny uppercase tracking treatment used by
+                      the Welcome screen signature so the two surfaces
+                      feel of-a-piece. */}
+                  <p className="text-[0.7rem] uppercase tracking-[0.22em] text-muted-foreground/70 font-medium mb-1">PDR Photos</p>
                   <h2 className="text-2xl font-semibold text-foreground">Photo Date Rescue</h2>
                   <p className="text-sm italic text-muted-foreground">Bring every photo home.</p>
                   <p className="text-sm text-muted-foreground">Version {appVersion}</p>
@@ -11649,6 +11657,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Library Drive Manager &mdash; per-row Refresh and Remove</strong> &mdash; every row in the LDM now offers a Refresh search index action and a Remove from list action in its &ldquo;&hellip;&rdquo; menu. Refresh updates PDR&apos;s view of that library on demand (useful after adding files via Explorer); Remove drops the library from the LDM list with a confirmation that makes clear nothing on disk is deleted &mdash; you can re-add the folder/drive any time. Removed libraries stay removed across restarts even if a Fix report still names them.</li>
                         <li><strong className="text-foreground font-medium">&ldquo;Refresh&rdquo; replaces &ldquo;Index&rdquo; everywhere user-facing</strong> &mdash; the verb &ldquo;Index&rdquo; reads as IT jargon; &ldquo;Refresh&rdquo; says exactly what&apos;s happening (PDR&apos;s view of the library is being brought up to date). The amber per-row pill on the LDM, the Dashboard catch-up banner, and every related toast / tooltip now use Refresh. The underlying search-index database itself keeps its name.</li>
                         <li><strong className="text-foreground font-medium">Reset to Optimized Defaults stops touching library data</strong> &mdash; previously clicking &ldquo;Reset to Optimized Defaults&rdquo; at the bottom of Settings silently disconnected your Library Drive, cleared your Library Planner answers, wiped the saved-destinations list (the LDM), and reset per-library advisory state. None of those are defaults &mdash; they&apos;re user data. The reset now leaves all four classes of state alone and only resets usability preferences (sounds, EXIF write toggles, AI defaults, folder structure, etc.).</li>
+                        <li><strong className="text-foreground font-medium">Introducing &ldquo;PDR Photos&rdquo;</strong> &mdash; a soft brand line that appears alongside &ldquo;Photo Date Rescue&rdquo; in a few places (Welcome screen signature, About PDR header, Help &amp; Support, Settings footer). PDR is no longer just a one-shot date-fixer &mdash; it&apos;s become a full home for your photo library, built around three principles: your photos stay on your hardware (<strong className="text-foreground font-medium">Security</strong>), nothing is uploaded or shared (<strong className="text-foreground font-medium">Privacy</strong>), and the library is yours forever (<strong className="text-foreground font-medium">Ownership</strong>). &ldquo;PDR Photos&rdquo; positions it in the same category as Apple Photos, Google Photos, and Amazon Photos &mdash; with the difference that none of those can credibly claim any of the three pillars. The full product name doesn&apos;t change, the domain doesn&apos;t change, and your installs don&apos;t change &mdash; this is a gentle introduction, not a rename.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
@@ -14433,7 +14442,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
             </button>
           </IconTooltip>
           <p className="text-center text-xs text-muted-foreground mt-4">
-            Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
+            {/* v2.0.15 (Terry 2026-06-04) — soft slip-in of PDR Photos
+                brand line alongside the established product name + version.
+                Both names appear side-by-side so users gradually associate
+                the two without "Photo Date Rescue" being replaced. */}
+            PDR Photos &middot; Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
           </p>
         </div>
       </motion.div>

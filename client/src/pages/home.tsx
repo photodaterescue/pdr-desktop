@@ -349,6 +349,16 @@ export default function Home() {
           <p className="text-[0.9rem] text-muted-foreground/70 max-w-2xl mx-auto font-light mt-1.5">
             Runs entirely on your own machine — no cloud, no upload, no account.
           </p>
+          {/* v2.0.15 (Terry 2026-06-04) — soft slip-in of "PDR Photos"
+              brand line. Positioned as a signature beneath the hero
+              copy so it reads as a brand mark rather than competing
+              with the h1. The USP trio (Security · Privacy · Ownership)
+              is what makes "PDR Photos" credible as a category alongside
+              Apple/Google/Amazon Photos — those services can't claim
+              any of the three because they're cloud-first. */}
+          <p className="text-[0.7rem] uppercase tracking-[0.22em] text-muted-foreground/60 font-medium mt-5">
+            PDR Photos &middot; Security &middot; Privacy &middot; Ownership
+          </p>
         </motion.div>
 
         <motion.div variants={item} className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full mb-8">
