@@ -25,6 +25,7 @@ import {
   Copy,
   Download,
   Trash2,
+  History,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -280,6 +281,20 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // completion.
   type IndexingProgress = { phase: 'walking' | 'reading-exif' | 'inserting'; current: number; total: number };
   const [indexingProgress, setIndexingProgress] = useState<Record<string, IndexingProgress>>({});
+  // v2.0.15 (Terry 2026-06-04) — Library-history discovery. Surfaces
+  // libraries PDR has ever written to (according to the SQL
+  // indexed_runs table) that aren't already in the LDM list. Each
+  // entry includes the path, last-seen timestamp, total file count
+  // across all Fix runs to that path, and how many runs landed
+  // there. Filtered in the renderer against the current LDM list
+  // plus the ignore list so only actionable rows survive.
+  interface DiscoveredLibrary {
+    path: string;
+    lastIndexedAt: string;
+    totalFileCount: number;
+    runCount: number;
+  }
+  const [discoveredLegacyLibraries, setDiscoveredLegacyLibraries] = useState<DiscoveredLibrary[]>([]);
   // Refresh affordance. Spinner state for the refresh icon button so the
   // user gets visual feedback when they manually trigger a re-fetch
   // (slow on network drives where PowerShell takes a few seconds).
@@ -510,6 +525,143 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     }
   };
 
+  // v2.0.15 (Terry 2026-06-04) — Library-history discovery. Asks main
+  // for every distinct destination_path in indexed_runs that still
+  // exists on disk, then filters out:
+  //   • the current Library Drive (already represented)
+  //   • paths already in pdr-saved-destinations (already in the LDM)
+  //   • paths in pdr-ignored-destinations (user has explicitly
+  //     removed them and doesn't want them re-suggested)
+  // What's left is the set of "you've written here before, want to
+  // add it back?" candidates.
+  const refreshDiscoveredLegacyLibraries = async () => {
+    try {
+      const res = await (window as any).pdr?.library?.discoverLegacyLibraries?.();
+      if (!res?.success || !Array.isArray(res?.data?.libraries)) {
+        setDiscoveredLegacyLibraries([]);
+        return;
+      }
+      const all: DiscoveredLibrary[] = res.data.libraries;
+      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+      // Fetch the current Library Drive freshly via IPC rather than
+      // reading the React `status` state — refreshAll fires this
+      // discovery refresh from within its own continuation, and
+      // setStatus() (from refreshStatus earlier in the Promise.all)
+      // is an async React update that may not have flushed yet when
+      // this filter runs. A fresh IPC is cheap and makes the function
+      // self-contained — callable from anywhere without worrying
+      // about React state freshness.
+      let currentLibraryNorm: string | null = null;
+      try {
+        const sres = await (window as any).pdr?.library?.status?.();
+        const root = sres?.success ? ((sres.data as LibraryStatus)?.libraryRoot ?? null) : null;
+        if (root) currentLibraryNorm = norm(root);
+      } catch { /* no current library — proceed with no current-LD filter */ }
+      // Read savedDestinations from localStorage directly for the same
+      // reason — the React state might lag behind a fresh localStorage
+      // write done elsewhere in this session (e.g. user just added a
+      // discovered library, then opened the LDM again before the state
+      // round-trip completed).
+      let savedNorms: Set<string> = new Set();
+      try {
+        const raw = localStorage.getItem('pdr-saved-destinations');
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          savedNorms = new Set(
+            parsed
+              .filter((p: unknown): p is string => typeof p === 'string')
+              .map(norm)
+          );
+        }
+      } catch { /* corrupted savedDestinations — treat as empty */ }
+      // Read the ignore list directly here (rather than threading it
+      // through state) so a removal performed earlier in this same
+      // session is honoured immediately on the next refresh, without
+      // requiring a re-render dependency.
+      let ignoredNorms: Set<string> = new Set();
+      try {
+        const raw = localStorage.getItem('pdr-ignored-destinations');
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          ignoredNorms = new Set(
+            parsed
+              .filter((p: unknown): p is string => typeof p === 'string')
+              .map(norm)
+          );
+        }
+      } catch { /* corrupted ignore list — treat as empty */ }
+      const filtered = all.filter(lib => {
+        const n = norm(lib.path);
+        if (currentLibraryNorm && n === currentLibraryNorm) return false;
+        if (savedNorms.has(n)) return false;
+        if (ignoredNorms.has(n)) return false;
+        return true;
+      });
+      setDiscoveredLegacyLibraries(filtered);
+    } catch (e) {
+      console.warn('[LibraryPanel] refreshDiscoveredLegacyLibraries failed:', e);
+      setDiscoveredLegacyLibraries([]);
+    }
+  };
+
+  // v2.0.15 — accept a discovered library and add it to the LDM.
+  // Companion to refreshDiscoveredLegacyLibraries above. Idempotent:
+  // writing a path that's already in savedDestinations leaves the
+  // list unchanged. After write we refresh both savedDestinations
+  // (so the new row appears in the main drives list) AND the
+  // discovered list (so the card disappears from the discovered
+  // section).
+  const handleAddDiscoveredToLDM = async (targetPath: string) => {
+    const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
+    try {
+      const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
+      let existing: string[] = [];
+      try {
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) existing = parsed.filter((p): p is string => typeof p === 'string');
+      } catch { /* corrupted — start fresh */ }
+      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+      if (!existing.some(p => norm(p) === norm(targetPath))) {
+        existing.unshift(targetPath); // newest first, matches App.tsx reconcile
+        localStorage.setItem(SAVED_DESTINATIONS_KEY, JSON.stringify(existing));
+      }
+      await refreshSavedDestinations();
+      await refreshDiscoveredLegacyLibraries();
+      const rootName = targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
+      toast.success(`Added "${rootName}" to the Library Drive Manager`, {
+        description: 'It now appears in your drives list. Set it as your Library Drive any time.',
+      });
+    } catch (e) {
+      console.warn('[LibraryPanel] handleAddDiscoveredToLDM failed:', e);
+      toast.error("Couldn't add to the list", { description: String((e as Error)?.message ?? e) });
+    }
+  };
+
+  // v2.0.15 — ignore a discovered library so it stops appearing in
+  // the discovered section. Writes to the SAME ignore list used by
+  // handleRemoveSavedDestination + App.tsx's start-up reconcile so
+  // the rule "removed paths stay removed across restarts" extends
+  // naturally to discovered paths too.
+  const handleIgnoreDiscovered = async (targetPath: string) => {
+    const IGNORED_DESTINATIONS_KEY = 'pdr-ignored-destinations';
+    try {
+      const raw = localStorage.getItem(IGNORED_DESTINATIONS_KEY);
+      let ignored: string[] = [];
+      try {
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) ignored = parsed.filter((p): p is string => typeof p === 'string');
+      } catch { /* corrupted — start fresh */ }
+      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+      if (!ignored.some(p => norm(p) === norm(targetPath))) {
+        ignored.push(targetPath);
+        localStorage.setItem(IGNORED_DESTINATIONS_KEY, JSON.stringify(ignored));
+      }
+      await refreshDiscoveredLegacyLibraries();
+    } catch (e) {
+      console.warn('[LibraryPanel] handleIgnoreDiscovered failed:', e);
+    }
+  };
+
   const refreshSavedDestinations = async () => {
     try {
       const raw = localStorage.getItem(SAVED_DESTINATIONS_KEY);
@@ -584,6 +736,13 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       // run in parallel; pills appear progressively as each path's
       // probe resolves.
       void refreshOnDiskCounts(paths);
+      // v2.0.15 — discovered legacy libraries. Runs AFTER status +
+      // savedDestinations resolve because the filter depends on
+      // both (current Library Drive must be known to exclude it,
+      // savedDestinations must be known to skip already-in-LDM
+      // paths). Cheap — single SQL GROUP BY against indexed_runs
+      // followed by per-path fs.existsSync; doesn't block the user.
+      void refreshDiscoveredLegacyLibraries();
     } finally {
       setIsRefreshing(false);
       setInitialDataLoaded(true);
@@ -2168,6 +2327,50 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               </div>
             )}
           </section>
+
+          {/* ── Discovered libraries (v2.0.15 — Terry 2026-06-04).
+                Surfaces libraries PDR has ever Fixed photos to (from
+                the SQL indexed_runs table) that aren't already in the
+                LDM and haven't been explicitly ignored. Useful when
+                old libraries dropped off the LDM list — e.g. when
+                the user migrated from one drive to a larger one and
+                their original library folder was source-only at the
+                time (so it never lived in pdr-saved-destinations).
+                The DB has been quietly remembering every destination
+                all along; this section just exposes that memory.
+                Hidden entirely when there are zero candidates so the
+                LDM stays clean for users with nothing to discover. */}
+          {discoveredLegacyLibraries.length > 0 && (
+            <section>
+              <p className="text-caption uppercase tracking-wider mb-2">Discovered libraries</p>
+              <p className="text-body-muted mb-3">
+                PDR has Fixed photos to {discoveredLegacyLibraries.length === 1 ? 'this location' : 'these locations'} in the past, but {discoveredLegacyLibraries.length === 1 ? 'it isn\'t' : 'they aren\'t'} in your Library Drive Manager. Add what you still want, ignore the rest.
+              </p>
+              <div className="space-y-2">
+                {discoveredLegacyLibraries.map(lib => (
+                  <div key={lib.path} className="rounded-lg border border-border bg-secondary/10 p-3 flex items-start gap-3">
+                    <div className="shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <History className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-body text-foreground font-medium truncate" title={lib.path}>{lib.path}</p>
+                      <p className="text-caption mt-0.5">
+                        Last Fix {formatRelativeTime(lib.lastIndexedAt)} &middot; {lib.runCount} Fix run{lib.runCount === 1 ? '' : 's'} &middot; {lib.totalFileCount.toLocaleString()} file{lib.totalFileCount === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button onClick={() => handleAddDiscoveredToLDM(lib.path)} variant="primary" size="sm">
+                        Add to list
+                      </Button>
+                      <Button onClick={() => handleIgnoreDiscovered(lib.path)} variant="link" size="sm">
+                        Ignore
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* ── Library Drive actions — Take over writing only.
                 "Sync now" was removed (2026-05-15) — the background

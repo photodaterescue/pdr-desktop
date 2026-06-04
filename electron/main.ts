@@ -8387,6 +8387,82 @@ ipcMain.handle('library:listReportDestinations', async () => {
   }
 });
 
+// ─── library:discoverLegacyLibraries ────────────────────────────────────────
+// v2.0.15 (Terry 2026-06-04) — Library-history discovery.
+//
+// Reads every distinct destination_path PDR has ever written to from
+// the indexed_runs table (which is the cumulative log of every Fix
+// run's destination, surviving even when the renderer-side
+// pdr-saved-destinations list got capped at 3 in old versions).
+// Returns rows for paths that:
+//   (1) STILL EXIST ON DISK — fs.existsSync proves the folder is
+//       reachable, so the user can actually act on it.
+//   (2) AREN'T ALREADY in the LDM — comparison happens in the
+//       renderer because the LDM list lives in localStorage and
+//       isn't visible to main.
+//
+// The renderer receives the full set and applies its own filters
+// (current Library Drive + already-saved + ignore list) on top.
+// This split keeps the SQL side simple and lets the renderer's
+// filter logic share a single source of truth with the rest of
+// the LDM rendering.
+//
+// Why indexed_runs vs reading PDR_Catalogue.csv directly: indexed_runs
+// is canonical (set at Fix time, never re-derived), is queryable in
+// O(rows) with SQL, and survives CSV-file deletion or library
+// relocation. The CSV is a derived view of the same data.
+ipcMain.handle('library:discoverLegacyLibraries', async () => {
+  try {
+    const db = getDb();
+    // GROUP BY destination_path to collapse multiple Fix runs to the
+    // same library into one row, summing their file counts and taking
+    // the latest indexed_at as "last seen". COALESCE on file_count
+    // because the column is NOT NULL DEFAULT 0 but old rows may be 0.
+    const rows = db.prepare(`
+      SELECT
+        destination_path,
+        MAX(indexed_at) AS last_indexed_at,
+        SUM(COALESCE(file_count, 0)) AS total_file_count,
+        COUNT(*) AS run_count
+      FROM indexed_runs
+      WHERE destination_path IS NOT NULL AND destination_path != ''
+      GROUP BY destination_path
+      ORDER BY last_indexed_at DESC
+    `).all() as Array<{
+      destination_path: string;
+      last_indexed_at: string;
+      total_file_count: number;
+      run_count: number;
+    }>;
+
+    // Reachability check — only return paths that still exist on
+    // disk so the renderer can offer a real "Add to LDM" CTA. Paths
+    // whose drive is currently unplugged are filtered out here; if
+    // the user plugs the drive back in and re-opens the LDM, they'll
+    // appear next time. Honest UX > "discovered but unreachable"
+    // ghost rows.
+    const discovered = rows
+      .filter(r => {
+        try {
+          return fs.existsSync(r.destination_path);
+        } catch {
+          return false;
+        }
+      })
+      .map(r => ({
+        path: r.destination_path,
+        lastIndexedAt: r.last_indexed_at,
+        totalFileCount: r.total_file_count,
+        runCount: r.run_count,
+      }));
+
+    return { success: true, data: { libraries: discovered } };
+  } catch (err) {
+    log.error('[library:discoverLegacyLibraries] failed:', (err as Error).message);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('library:listIndexedDrives', async () => {
   try {
     const db = getDb();

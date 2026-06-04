@@ -216,6 +216,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // to reconcile pdr-saved-destinations, restoring any entries
     // evicted by the historical MAX_SAVED_DESTINATIONS=3 cap.
     listReportDestinations: () => ipcRenderer.invoke('library:listReportDestinations'),
+    // v2.0.15 — discover libraries PDR has ever written to but that
+    // aren't in the LDM right now. Reads from the indexed_runs SQL
+    // table (the cumulative log of every Fix run's destination),
+    // returns paths that still exist on disk. The renderer filters
+    // out the current Library Drive, already-in-LDM paths, and
+    // entries in the ignore list before rendering.
+    discoverLegacyLibraries: () => ipcRenderer.invoke('library:discoverLegacyLibraries'),
     // Per-path indexed-file count (count + total bytes + last
     // indexed timestamp) for a specific library root. Lets the LDM
     // show accurate per-folder counts on library-root rows instead
