@@ -13099,8 +13099,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
 
           {/* ── Content panel — flex-1 so it absorbs remaining width;
                 scrolls independently when content is taller than the
-                fixed sidebar. */}
-          <div className="flex-1 min-w-0 space-y-5 overflow-y-auto pr-2">
+                fixed sidebar. pt-12 (Terry 2026-06-04 hotfix #2) aligns
+                the first content row with the sidebar search input
+                vertically — matches Claude's pattern where the body
+                content starts at the search-row level, not at the
+                title-bar level. */}
+          <div className="flex-1 min-w-0 space-y-5 overflow-y-auto pr-2 pt-12">
 
           {/* ═══════════════════════════════════════════════════════════════
               GENERAL TAB
@@ -13332,7 +13336,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   Only matters for network destinations; local copies
                   always use the direct path. */}
               <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">Network upload mode</label>
+                <label className="block text-base font-semibold text-foreground mb-1">Network upload mode</label>
                 <p className="text-xs text-muted-foreground mb-3">
                   How PDR copies files to a network destination (UNC paths or mapped network drives). Local destinations always use Direct.
                 </p>
@@ -13551,7 +13555,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
 
               {/* Catalogue (moved from Pro — fix-engine output behaviour) */}
               <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">
+                <label className="block text-base font-semibold text-foreground mb-1">
                   Catalog
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
@@ -13580,7 +13584,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           {settingsTab === 'sd' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Search & Discovery</label>
+                <label className="block text-base font-semibold text-foreground mb-1">Search & Discovery</label>
                 <p className="text-xs text-muted-foreground mb-3">Advanced controls for the Search &amp; Discovery surface. The everyday "make Fixed photos searchable" toggle lives in the After Fix tab.</p>
                 <div className="space-y-2">
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
@@ -13625,7 +13629,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           {settingsTab === 'afterFix' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">After a Fix</label>
+                <label className="block text-base font-semibold text-foreground mb-1">After a Fix</label>
                 <p className="text-xs text-muted-foreground mb-3">Choose what PDR does with your photos once a Fix completes.</p>
                 <div className="space-y-2">
                   {/* Toggle 1: searchable (formerly "Auto-index Fixed files for Search & Discovery") */}
@@ -13721,7 +13725,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   you missed on the original Fix". Will move to the
                   Memories Albums tab's empty-state CTA in step 3. */}
               <div className="mt-6">
-                <label className="block text-sm font-medium text-foreground mb-1">Already Fixed your Google Photos Takeout?</label>
+                <label className="block text-base font-semibold text-foreground mb-1">Already Fixed your Google Photos Takeout?</label>
                 <p className="text-xs text-muted-foreground mb-3">
                   Point us at the original Takeout ZIP and we'll bring across your albums, captions, and original filenames — without re-running Fix on the whole archive.
                 </p>
@@ -13780,7 +13784,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   now always a separate window, pre-warmed in the
                   background so opening it feels instant regardless. */}
               <div className="space-y-3">
-                <label className="block text-sm font-medium text-foreground mb-1">People Manager</label>
+                <label className="block text-base font-semibold text-foreground mb-1">People Manager</label>
                 <p className="text-xs text-muted-foreground mb-3">PM opens in its own window. PDR pre-loads it in the background a few seconds after launch so the icon click feels instant.</p>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
@@ -13800,7 +13804,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   show a hint when the master toggle is off so the user
                   knows where to flip it. */}
               <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">Face recognition</label>
+                <label className="block text-base font-semibold text-foreground mb-1">Face recognition</label>
                 <p className="text-xs text-muted-foreground mb-3">How PDR detects, refines, and suggests people. Requires AI to be enabled in the AI tab.</p>
                 <div className="space-y-2">
                   <label className="flex items-center justify-between p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20 cursor-pointer transition-colors">
@@ -13862,7 +13866,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   block below is DEV-only because the bypass toggle
                   carries crash risk on phone videos > 1 GB). */}
               <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">Reset</label>
+                <label className="block text-base font-semibold text-foreground mb-1">Reset</label>
                 <p className="text-xs text-muted-foreground mb-3">Redo onboarding choices. Doesn't affect sources, reports, AI data, or your licence.</p>
                 <div className="flex items-center justify-between p-3 rounded-lg border border-border">
                   <div className="flex flex-col mr-3">
@@ -13901,7 +13905,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   dead-code-eliminated from the bundle. */}
               {import.meta.env.DEV && (
                 <div className="pt-4 border-t border-border">
-                  <label className="block text-sm font-medium text-foreground mb-1">Diagnostic <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50 ml-2">DEV-ONLY</span></label>
+                  <label className="block text-base font-semibold text-foreground mb-1">Diagnostic <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50 ml-2">DEV-ONLY</span></label>
                   <p className="text-xs text-muted-foreground mb-3">Internal toggles used during release testing. Leave off unless explicitly directed. Hidden from packaged production builds.</p>
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col">
@@ -13919,7 +13923,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
 
               {/* Trees */}
               <div className="pt-4 border-t border-border">
-                <label className="block text-sm font-medium text-foreground mb-1">Trees</label>
+                <label className="block text-base font-semibold text-foreground mb-1">Trees</label>
                 <p className="text-xs text-muted-foreground mb-3">Family-tree management.</p>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
@@ -13949,7 +13953,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   switch — Object & Scene Tagging granularly, plus
                   the Re-analyze tags maintenance operation. */}
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
+                <label className="block text-base font-semibold text-foreground mb-1">
                   Advanced AI controls
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
@@ -14519,14 +14523,20 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
 
         </div>
 
-        <div className="mt-6 pt-4 border-t border-border space-y-3">
-          <Button
-            onClick={onClose}
-            className="w-full"
-            data-testid="button-save-settings"
-          >
-            Done
-          </Button>
+        {/* v2.0.15 (Terry 2026-06-04 hotfix #2) — Done button removed.
+            PDR Settings auto-save on every toggle (not on a Done
+            click), so the button was purely decorative + duplicated
+            the X close in the top-right. Reset link kept as a quiet
+            text-link, paired with the version line so the footer is
+            ~80px slimmer than before. */}
+        <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-4">
+          <p className="text-xs text-muted-foreground">
+            {/* PDR Photos brand line — soft slip-in alongside the
+                established product name + version. Both names appear
+                side-by-side so users gradually associate the two
+                without "Photo Date Rescue" being replaced. */}
+            PDR Photos &middot; Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
+          </p>
           <IconTooltip
             label={settingsMutationsBlocked ? settingsMutationsBlockedTooltip : 'Restore every setting on this dialog to PDR defaults'}
             side="top"
@@ -14534,19 +14544,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
             <button
               onClick={handleResetToDefaults}
               disabled={settingsMutationsBlocked}
-              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
               data-testid="button-reset-defaults"
             >
               Reset to Optimized Defaults
             </button>
           </IconTooltip>
-          <p className="text-center text-xs text-muted-foreground mt-4">
-            {/* v2.0.15 (Terry 2026-06-04) — soft slip-in of PDR Photos
-                brand line alongside the established product name + version.
-                Both names appear side-by-side so users gradually associate
-                the two without "Photo Date Rescue" being replaced. */}
-            PDR Photos &middot; Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
-          </p>
         </div>
       </motion.div>
     </motion.div>
