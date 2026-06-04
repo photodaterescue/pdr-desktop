@@ -82,16 +82,17 @@
          category in the same way. Animates in slightly after the
          tagline so the eye reads top-to-bottom naturally. */
       .splash-pdr-photos {
-        /* v2.0.15 hotfix (Terry 2026-06-04) — bumped weight 500→600,
-           size 9→11px, and opacity 0.55→0.85 after Terry reported it
-           was too faint to read at glasses-on viewing distance. Still
-           visually subordinate to the main brand mark + tagline above
-           but actually legible now. */
-        font-weight: 600;
-        font-size: 11px;
+        /* v2.0.15 hotfix #2 (Terry 2026-06-04) — first hotfix was too
+           bold (weight 600 / size 11 / opacity 0.85) and competed with
+           the main "PHOTO DATE RESCUE" title. Meeting halfway between
+           the original (weight 500 / size 9 / opacity 0.55) and the
+           first hotfix: weight 500 (no bold competition), size 10px
+           (clearly subordinate), opacity 0.72 (readable but quiet). */
+        font-weight: 500;
+        font-size: 10px;
         letter-spacing: 0.22em;
         text-transform: uppercase;
-        color: rgba(255, 255, 255, 0.85);
+        color: rgba(255, 255, 255, 0.72);
         margin-top: 18px;
         opacity: 0;
         transform: translateY(10px);
