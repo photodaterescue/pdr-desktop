@@ -223,6 +223,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // out the current Library Drive, already-in-LDM paths, and
     // entries in the ignore list before rendering.
     discoverLegacyLibraries: () => ipcRenderer.invoke('library:discoverLegacyLibraries'),
+    // v2.0.15 — drive-scan discovery (Strategies 1 + 2). Walks
+    // connected drives looking for PDR_Catalogue.csv files (high
+    // confidence — catalogue travels with the library) and folders
+    // matching PDR's year-based output structure (medium confidence —
+    // looks like a PDR library, might be one). Heavier than
+    // discoverLegacyLibraries — this hits the filesystem rather than
+    // a SQL table, so the renderer fires it on-demand from a button
+    // rather than auto-running on every LDM open.
+    scanForLegacyLibraries: (opts?: { driveLetters?: string[] }) =>
+      ipcRenderer.invoke('library:scanForLegacyLibraries', opts),
     // Per-path indexed-file count (count + total bytes + last
     // indexed timestamp) for a specific library root. Lets the LDM
     // show accurate per-folder counts on library-root rows instead

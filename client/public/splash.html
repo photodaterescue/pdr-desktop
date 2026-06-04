@@ -75,6 +75,23 @@
         transform: translateY(10px);
         animation: splash-fade-up 650ms cubic-bezier(0.4, 0, 0.2, 1) 800ms forwards;
       }
+      /* v2.0.15 (Terry 2026-06-04) — PDR Photos brand signature.
+         Sits below the tagline as a small uppercase brand mark — same
+         visual treatment as the Welcome screen + About PDR header so
+         the splash, hero, and About all reinforce the same brand
+         category in the same way. Animates in slightly after the
+         tagline so the eye reads top-to-bottom naturally. */
+      .splash-pdr-photos {
+        font-weight: 500;
+        font-size: 9px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.55);
+        margin-top: 18px;
+        opacity: 0;
+        transform: translateY(10px);
+        animation: splash-fade-up 650ms cubic-bezier(0.4, 0, 0.2, 1) 950ms forwards;
+      }
       .splash-bar {
         width: 220px;
         height: 3px;
@@ -139,6 +156,7 @@
       <img class="splash-logo" src="./assets/pdr-logo_transparent.png" alt="" />
       <div class="splash-name">PHOTO DATE RESCUE</div>
       <div class="splash-tagline">Bring every photo home</div>
+      <div class="splash-pdr-photos">PDR Photos &middot; Security &middot; Privacy &middot; Ownership</div>
       <div class="splash-bar"></div>
       <div class="splash-status" id="splash-status"></div>
     </div>

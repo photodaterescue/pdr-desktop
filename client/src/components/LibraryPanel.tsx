@@ -291,10 +291,21 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   interface DiscoveredLibrary {
     path: string;
     lastIndexedAt: string;
-    totalFileCount: number;
-    runCount: number;
+    /** Only present for SQL-source rows. CSV/folder-pattern rows omit
+     *  these because they don't have run-level data. */
+    totalFileCount?: number;
+    runCount?: number;
+    /** Provenance — drives the small badge on each discovered card.
+     *  'sql-runs'      = canonical, found in indexed_runs (highest confidence)
+     *  'catalogue-csv' = PDR_Catalogue.csv file found on disk (high confidence)
+     *  'folder-pattern'= folder structure looks like a PDR library (medium) */
+    source: 'sql-runs' | 'catalogue-csv' | 'folder-pattern';
   }
   const [discoveredLegacyLibraries, setDiscoveredLegacyLibraries] = useState<DiscoveredLibrary[]>([]);
+  // Drive-scan state — separate from the auto-running SQL discovery
+  // because the filesystem walk is heavier and runs on demand from
+  // the "Scan drives for more" button.
+  const [isScanningDrives, setIsScanningDrives] = useState(false);
   // Refresh affordance. Spinner state for the refresh icon button so the
   // user gets visual feedback when they manually trigger a re-fetch
   // (slow on network drives where PowerShell takes a few seconds).
@@ -590,17 +601,125 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           );
         }
       } catch { /* corrupted ignore list — treat as empty */ }
-      const filtered = all.filter(lib => {
-        const n = norm(lib.path);
-        if (currentLibraryNorm && n === currentLibraryNorm) return false;
-        if (savedNorms.has(n)) return false;
-        if (ignoredNorms.has(n)) return false;
-        return true;
-      });
+      const filtered: DiscoveredLibrary[] = all
+        .filter(lib => {
+          const n = norm(lib.path);
+          if (currentLibraryNorm && n === currentLibraryNorm) return false;
+          if (savedNorms.has(n)) return false;
+          if (ignoredNorms.has(n)) return false;
+          return true;
+        })
+        .map(lib => ({ ...lib, source: 'sql-runs' as const }));
       setDiscoveredLegacyLibraries(filtered);
     } catch (e) {
       console.warn('[LibraryPanel] refreshDiscoveredLegacyLibraries failed:', e);
       setDiscoveredLegacyLibraries([]);
+    }
+  };
+
+  // v2.0.15 — drive-scan discovery (Strategies 1 + 2). Heavier than
+  // the SQL discovery above (walks each connected drive's filesystem
+  // looking for PDR_Catalogue.csv files and folders that match PDR's
+  // year-based output structure), so it runs only when the user
+  // clicks the "Scan drives for more" button — not automatically on
+  // every LDM open.
+  //
+  // Results are MERGED into the existing discoveredLegacyLibraries
+  // list rather than replacing it, and deduped by normalised path so
+  // a library found by both SQL and CSV doesn't appear twice. The
+  // SQL-source row wins the dedup race (kept as-is, scan result
+  // discarded) because the SQL row has authoritative file count +
+  // run count from indexed_runs that the CSV/folder-pattern paths
+  // don't have.
+  const handleScanDrivesForLegacyLibraries = async () => {
+    if (isScanningDrives) return;
+    setIsScanningDrives(true);
+    const toastId = toast.loading('Scanning drives for legacy libraries…', {
+      description: 'Looking for PDR catalogue files and PDR-style folder structures across your connected drives.',
+    });
+    try {
+      const res = await (window as any).pdr?.library?.scanForLegacyLibraries?.();
+      if (!res?.success || !Array.isArray(res?.data?.candidates)) {
+        toast.error('Scan failed', { id: toastId, description: res?.error ?? 'Unknown error' });
+        return;
+      }
+      const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+      // Fresh status + LDM + ignore-list reads, same approach as the
+      // SQL discovery — avoids stale React state.
+      let currentLibraryNorm: string | null = null;
+      try {
+        const sres = await (window as any).pdr?.library?.status?.();
+        const root = sres?.success ? ((sres.data as LibraryStatus)?.libraryRoot ?? null) : null;
+        if (root) currentLibraryNorm = norm(root);
+      } catch { /* ignore */ }
+      let savedNorms: Set<string> = new Set();
+      try {
+        const raw = localStorage.getItem('pdr-saved-destinations');
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          savedNorms = new Set(parsed.filter((p: unknown): p is string => typeof p === 'string').map(norm));
+        }
+      } catch { /* ignore */ }
+      let ignoredNorms: Set<string> = new Set();
+      try {
+        const raw = localStorage.getItem('pdr-ignored-destinations');
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          ignoredNorms = new Set(parsed.filter((p: unknown): p is string => typeof p === 'string').map(norm));
+        }
+      } catch { /* ignore */ }
+
+      type ScanCandidate = {
+        path: string;
+        source: 'catalogue-csv' | 'folder-pattern';
+        lastSeenAt: string;
+        destinationCount?: number;
+      };
+      const candidates: ScanCandidate[] = res.data.candidates;
+
+      // Merge with the existing discovered list. SQL-source rows in
+      // the current state are authoritative; scan results that match
+      // them are dropped. New scan results that pass all filters are
+      // appended.
+      setDiscoveredLegacyLibraries(prev => {
+        const sqlPaths = new Set(prev.filter(p => p.source === 'sql-runs').map(p => norm(p.path)));
+        const existingScanPaths = new Set(prev.filter(p => p.source !== 'sql-runs').map(p => norm(p.path)));
+        const merged: DiscoveredLibrary[] = [...prev];
+        let addedCount = 0;
+        for (const c of candidates) {
+          const n = norm(c.path);
+          if (currentLibraryNorm && n === currentLibraryNorm) continue;
+          if (savedNorms.has(n)) continue;
+          if (ignoredNorms.has(n)) continue;
+          if (sqlPaths.has(n)) continue; // SQL row wins
+          if (existingScanPaths.has(n)) continue; // already in list
+          merged.push({
+            path: c.path,
+            lastIndexedAt: c.lastSeenAt,
+            source: c.source,
+          });
+          addedCount++;
+        }
+        // Toast outcome — count of NEW rows added (not the raw scan
+        // count, which can include paths already represented by SQL).
+        if (addedCount === 0) {
+          toast.success('Scan complete — no new libraries found', {
+            id: toastId,
+            description: 'PDR already knows about every library on your connected drives.',
+          });
+        } else {
+          toast.success(`Scan complete — ${addedCount} new librar${addedCount === 1 ? 'y' : 'ies'} found`, {
+            id: toastId,
+            description: 'Listed below. Add what you want back in the LDM, ignore the rest.',
+          });
+        }
+        return merged;
+      });
+    } catch (e) {
+      console.warn('[LibraryPanel] handleScanDrivesForLegacyLibraries failed:', e);
+      toast.error('Scan failed', { id: toastId, description: String((e as Error)?.message ?? e) });
+    } finally {
+      setIsScanningDrives(false);
     }
   };
 
@@ -2340,23 +2459,54 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                 all along; this section just exposes that memory.
                 Hidden entirely when there are zero candidates so the
                 LDM stays clean for users with nothing to discover. */}
-          {discoveredLegacyLibraries.length > 0 && (
-            <section>
-              <p className="text-caption uppercase tracking-wider mb-2">Discovered libraries</p>
+          {/* Section always renders so the "Scan drives" button is
+              reachable even when the SQL discovery returned zero
+              candidates — letting users discover libraries that
+              predate the indexed_runs table or live on a drive PDR
+              has never written to from this install. */}
+          <section>
+            <p className="text-caption uppercase tracking-wider mb-2">Discovered libraries</p>
+            {discoveredLegacyLibraries.length > 0 ? (
               <p className="text-body-muted mb-3">
                 PDR has Fixed photos to {discoveredLegacyLibraries.length === 1 ? 'this location' : 'these locations'} in the past, but {discoveredLegacyLibraries.length === 1 ? 'it isn\'t' : 'they aren\'t'} in your Library Drive Manager. Add what you still want, ignore the rest.
               </p>
-              <div className="space-y-2">
-                {discoveredLegacyLibraries.map(lib => (
+            ) : (
+              <p className="text-body-muted mb-3">
+                No forgotten libraries in PDR&apos;s run history. Click below to also scan your connected drives for PDR catalogue files and PDR-style folder structures &mdash; useful if you&apos;ve reinstalled PDR or migrated from another machine.
+              </p>
+            )}
+            <div className="space-y-2">
+              {discoveredLegacyLibraries.map(lib => {
+                const sourceBadge = (() => {
+                  switch (lib.source) {
+                    case 'sql-runs':
+                      return { label: 'From your Fix history', tone: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' };
+                    case 'catalogue-csv':
+                      return { label: 'PDR catalogue found on disk', tone: 'bg-primary/15 text-primary' };
+                    case 'folder-pattern':
+                      return { label: 'Folder structure looks like PDR', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' };
+                  }
+                })();
+                const subline = (() => {
+                  if (lib.source === 'sql-runs' && typeof lib.runCount === 'number' && typeof lib.totalFileCount === 'number') {
+                    return `Last Fix ${formatRelativeTime(lib.lastIndexedAt)} · ${lib.runCount} Fix run${lib.runCount === 1 ? '' : 's'} · ${lib.totalFileCount.toLocaleString()} file${lib.totalFileCount === 1 ? '' : 's'}`;
+                  }
+                  if (lib.source === 'catalogue-csv') {
+                    return `Catalogue last updated ${formatRelativeTime(lib.lastIndexedAt)}`;
+                  }
+                  return `Folder last modified ${formatRelativeTime(lib.lastIndexedAt)}`;
+                })();
+                return (
                   <div key={lib.path} className="rounded-lg border border-border bg-secondary/10 p-3 flex items-start gap-3">
                     <div className="shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
                       <History className="w-4 h-4 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-body text-foreground font-medium truncate" title={lib.path}>{lib.path}</p>
-                      <p className="text-caption mt-0.5">
-                        Last Fix {formatRelativeTime(lib.lastIndexedAt)} &middot; {lib.runCount} Fix run{lib.runCount === 1 ? '' : 's'} &middot; {lib.totalFileCount.toLocaleString()} file{lib.totalFileCount === 1 ? '' : 's'}
-                      </p>
+                      <p className="text-caption mt-0.5">{subline}</p>
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-label mt-1.5 ${sourceBadge.tone}`}>
+                        {sourceBadge.label}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <Button onClick={() => handleAddDiscoveredToLDM(lib.path)} variant="primary" size="sm">
@@ -2367,10 +2517,31 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                       </Button>
                     </div>
                   </div>
-                ))}
-              </div>
-            </section>
-          )}
+                );
+              })}
+            </div>
+            {/* Drive-scan trigger — fires Strategies 1+2 on demand.
+                Sits below the existing list so the cheaper SQL
+                discovery's results are always visible first, with
+                the scan acting as a "go deeper" option for users
+                who don't see what they expected. */}
+            <div className="mt-3 flex items-center gap-2">
+              <Button
+                onClick={handleScanDrivesForLegacyLibraries}
+                variant="secondary"
+                size="sm"
+                disabled={isScanningDrives}
+              >
+                {isScanningDrives ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Scanning drives&hellip;</>
+                ) : (
+                  <><HardDrive className="w-3.5 h-3.5 mr-1.5" /> Scan drives for more</>
+                )}
+              </Button>
+              <p className="text-caption">Looks for PDR catalogue files and PDR-style folder structures across all connected drives.</p>
+            </div>
+          </section>
+
 
           {/* ── Library Drive actions — Take over writing only.
                 "Sync now" was removed (2026-05-15) — the background

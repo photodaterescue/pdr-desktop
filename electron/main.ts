@@ -8463,6 +8463,266 @@ ipcMain.handle('library:discoverLegacyLibraries', async () => {
   }
 });
 
+// ─── library:scanForLegacyLibraries ─────────────────────────────────────────
+// v2.0.15 (Terry 2026-06-04) — drive-scan discovery (Strategies 1 + 2
+// from Terry's three-strategy proposal). Complements
+// library:discoverLegacyLibraries (which reads indexed_runs, the SQL
+// log of every Fix run inside PDR's search-index DB). This handler
+// scans the filesystem itself, picking up libraries the SQL log
+// can't see:
+//
+//   Strategy 1 (high confidence) — find PDR_Catalogue.csv files
+//   anywhere on connected drives, then extract distinct
+//   destination_path values from each. Catches libraries that exist
+//   on disk but whose indexed_runs rows are gone (PDR reinstalled,
+//   different machine, AppData reset, etc.). The catalogue file
+//   travels with the library when copied/moved, so a CSV at
+//   X:\OldPhotos\PDR_Catalogue.csv is a near-100% signal that
+//   X:\OldPhotos was once a PDR library.
+//
+//   Strategy 2 (medium confidence, opportunistic) — find folders
+//   matching PDR's year-based output structure: a folder whose
+//   IMMEDIATE children include 2+ year folders (/^\d{4}$/), where
+//   at least one year folder contains a year-month subfolder
+//   (/^\d{4}-\d{2}/). This is the structure PDR creates by default;
+//   matching it without a catalogue file present is weaker signal
+//   (Lightroom and manual organisers also produce this) but worth
+//   surfacing as "this looks like a PDR library, was it one?"
+//
+// Walk constraints — keep the scan bounded:
+//   • Depth cap of 6 levels (libraries are typically 2–4 deep)
+//   • Skip OS-system folders ($RECYCLE.BIN, System Volume Information,
+//     Windows, Program Files, ProgramData, AppData, node_modules, .git)
+//   • Skip hidden folders (names starting with .)
+//   • Skip folders the walker can't read (permission errors swallowed)
+//
+// Returns an array of candidate library paths, each with provenance
+// (which strategy found it) and a "lastSeenAt" mtime for sorting.
+// Caller deduplicates by normalised path against the SQL discovery
+// results and the user's existing LDM list.
+const LEGACY_SCAN_DEPTH_CAP = 6;
+const LEGACY_SCAN_SKIP_NAMES = new Set([
+  '$recycle.bin',
+  'system volume information',
+  'windows',
+  'program files',
+  'program files (x86)',
+  'programdata',
+  'appdata',
+  'node_modules',
+  '.git',
+  '.svn',
+  '.hg',
+  'recovery',
+  'msocache',
+  'perflogs',
+  '$windows.~bt',
+  '$windows.~ws',
+]);
+
+interface LegacyScanCandidate {
+  path: string;
+  source: 'catalogue-csv' | 'folder-pattern';
+  /** mtime of the catalogue CSV (Strategy 1) or the candidate folder
+   *  itself (Strategy 2). ISO string, sorted newest-first by caller. */
+  lastSeenAt: string;
+  /** Strategy 1 only — number of distinct destinations the CSV
+   *  reveals (helpful when one catalogue references multiple historical
+   *  destinations — Terry's H-drive case). */
+  destinationCount?: number;
+}
+
+/** Parse PDR_Catalogue.csv and return distinct destination_path values.
+ *  Stops reading after MAX_CSV_BYTES to avoid pathological reads on
+ *  a 500 MB catalogue (worst case for a power user with millions of
+ *  rows). The destination_path column is constant per Fix run, so
+ *  we only need to sample enough rows to find all distinct values
+ *  — a single Fix run with 1M files contributes 1 unique value. */
+async function extractDestinationsFromCatalogue(csvPath: string): Promise<string[]> {
+  const MAX_CSV_BYTES = 32 * 1024 * 1024; // 32 MB hard cap
+  try {
+    const stat = await fs.promises.stat(csvPath);
+    const readSize = Math.min(stat.size, MAX_CSV_BYTES);
+    const fd = await fs.promises.open(csvPath, 'r');
+    try {
+      const buf = Buffer.alloc(readSize);
+      await fd.read(buf, 0, readSize, 0);
+      const text = buf.toString('utf-8');
+      const lines = text.split(/\r?\n/);
+      if (lines.length === 0) return [];
+      // Header parse — find destination_path column index. Catalogue
+      // worker schema (line 401 of electron/catalogue-worker.ts):
+      //   confidence, confidence_method, source_path, destination_path, ...
+      const header = lines[0].split(',').map(c => c.trim().toLowerCase());
+      const idx = header.indexOf('destination_path');
+      if (idx === -1) return [];
+      const distinct = new Set<string>();
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
+        // Simple CSV split — destination_path values shouldn't contain
+        // commas in practice (Windows paths use \). If a future field
+        // ever requires quote-escaping, swap in a real CSV parser.
+        const cells = line.split(',');
+        if (cells.length <= idx) continue;
+        const raw = cells[idx].trim();
+        if (!raw) continue;
+        distinct.add(raw);
+        // Early-out — once we've seen 50 distinct destinations from a
+        // single CSV we've almost certainly covered the user's history;
+        // continuing would just re-add duplicates.
+        if (distinct.size >= 50) break;
+      }
+      return Array.from(distinct);
+    } finally {
+      await fd.close();
+    }
+  } catch (err) {
+    log.warn(`[scanForLegacyLibraries] CSV parse failed for ${csvPath}:`, (err as Error).message);
+    return [];
+  }
+}
+
+/** Recursive walk. Skips hidden + system folders, depth-capped. Calls
+ *  the visitor for each directory it enters; the visitor returns
+ *  whether to descend into that directory's children. */
+async function walkForLegacyLibraries(
+  rootPath: string,
+  depth: number,
+  visitDir: (dirPath: string, entries: { name: string; isDirectory: boolean; isFile: boolean }[]) => Promise<boolean>
+): Promise<void> {
+  if (depth > LEGACY_SCAN_DEPTH_CAP) return;
+  let entries: { name: string; isDirectory: boolean; isFile: boolean }[] = [];
+  try {
+    const dirents = await fs.promises.readdir(rootPath, { withFileTypes: true });
+    entries = dirents.map(d => ({
+      name: d.name,
+      isDirectory: d.isDirectory(),
+      isFile: d.isFile(),
+    }));
+  } catch {
+    return; // permission denied / unreadable — skip silently
+  }
+  const shouldRecurse = await visitDir(rootPath, entries);
+  if (!shouldRecurse) return;
+  for (const e of entries) {
+    if (!e.isDirectory) continue;
+    if (e.name.startsWith('.')) continue;
+    if (LEGACY_SCAN_SKIP_NAMES.has(e.name.toLowerCase())) continue;
+    const childPath = path.join(rootPath, e.name);
+    await walkForLegacyLibraries(childPath, depth + 1, visitDir);
+  }
+}
+
+/** Heuristic for Strategy 2 — does this directory look like a PDR
+ *  library root? Checks for 2+ year folders (\d{4}) where at least
+ *  one contains a year-month subfolder (\d{4}-\d{2}). */
+function looksLikePdrLibrary(entries: { name: string; isDirectory: boolean }[]): boolean {
+  const yearFolders = entries.filter(e => e.isDirectory && /^\d{4}$/.test(e.name));
+  return yearFolders.length >= 2;
+}
+
+/** List the connected logical drive letters on Windows. Returns
+ *  bare-root paths like 'C:\\', 'D:\\'. Falls back to a smaller set
+ *  if the PowerShell call fails. */
+async function listConnectedDriveRoots(): Promise<string[]> {
+  try {
+    const { execSync } = await import('child_process');
+    const out = execSync(
+      'powershell -NoProfile -Command "Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null } | Select-Object -ExpandProperty Root"',
+      { encoding: 'utf-8', timeout: 5000 }
+    );
+    const roots = out.split(/\r?\n/).map(s => s.trim()).filter(s => /^[A-Z]:\\?$/i.test(s));
+    return roots.length > 0 ? roots : ['C:\\'];
+  } catch {
+    return ['C:\\'];
+  }
+}
+
+ipcMain.handle('library:scanForLegacyLibraries', async (_event, opts?: { driveLetters?: string[] }) => {
+  try {
+    const roots = opts?.driveLetters && opts.driveLetters.length > 0
+      ? opts.driveLetters
+      : await listConnectedDriveRoots();
+    const candidates = new Map<string, LegacyScanCandidate>();
+    const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+
+    // To check parent-folder candidacy in Strategy 2, we need to look
+    // at folder entries DURING the walk (when we're sitting on a
+    // potential library root, before descending). The visitor returns
+    // false to prune (don't descend further into a candidate — the
+    // year folders are leaves for discovery purposes; we don't want
+    // YYYY-MM folders also flagged).
+    for (const root of roots) {
+      await walkForLegacyLibraries(root, 0, async (dirPath, entries) => {
+        // Strategy 1 — catalogue file in this directory?
+        const catalogueEntry = entries.find(e => e.isFile && e.name === 'PDR_Catalogue.csv');
+        if (catalogueEntry) {
+          const csvPath = path.join(dirPath, catalogueEntry.name);
+          try {
+            const stat = await fs.promises.stat(csvPath);
+            const destinations = await extractDestinationsFromCatalogue(csvPath);
+            // The folder itself IS a discovered library (catalogue
+            // lives at the library root), plus every distinct
+            // destination_path referenced inside the CSV.
+            const norms = new Set<string>();
+            const seed = (libPath: string) => {
+              const n = norm(libPath);
+              if (norms.has(n)) return;
+              norms.add(n);
+              if (candidates.has(n)) return; // already discovered via another strategy
+              candidates.set(n, {
+                path: libPath,
+                source: 'catalogue-csv',
+                lastSeenAt: stat.mtime.toISOString(),
+                destinationCount: destinations.length,
+              });
+            };
+            seed(dirPath);
+            for (const d of destinations) seed(d);
+          } catch (err) {
+            log.warn(`[scanForLegacyLibraries] stat/parse failed for ${csvPath}:`, (err as Error).message);
+          }
+          // Don't descend further from a catalogue-confirmed library —
+          // its year subfolders are part of the library, not separate
+          // candidates.
+          return false;
+        }
+        // Strategy 2 — does this folder look like a PDR library root?
+        if (looksLikePdrLibrary(entries)) {
+          const n = norm(dirPath);
+          if (!candidates.has(n)) {
+            try {
+              const stat = await fs.promises.stat(dirPath);
+              candidates.set(n, {
+                path: dirPath,
+                source: 'folder-pattern',
+                lastSeenAt: stat.mtime.toISOString(),
+              });
+            } catch { /* unreadable mtime — skip */ }
+          }
+          return false; // year folders are part of the library, don't descend further
+        }
+        // Not a library root — keep walking children.
+        return true;
+      });
+    }
+
+    // Filter to candidates that still exist (defensive — the walk
+    // already only visits reachable paths) and dedupe.
+    const result = Array.from(candidates.values())
+      .filter(c => {
+        try { return fs.existsSync(c.path); } catch { return false; }
+      })
+      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+
+    return { success: true, data: { candidates: result } };
+  } catch (err) {
+    log.error('[scanForLegacyLibraries] failed:', (err as Error).message);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('library:listIndexedDrives', async () => {
   try {
     const db = getDb();
