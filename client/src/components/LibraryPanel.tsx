@@ -2590,12 +2590,20 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           <section>
             <p className="text-caption uppercase tracking-wider mb-2">Discovered libraries</p>
             {discoveredLegacyLibraries.length > 0 ? (
+              // v2.0.15 (Terry 2026-06-04) — explicit explanation of
+              // where these candidates came from. Terry's framing:
+              // "Reports History" is the user-facing surface, so cross-
+              // referencing against it makes the discovery feel like
+              // PDR is filling a known gap, not surfacing random
+              // folders. Two discovery paths (Fix history auto, drive-
+              // scan manual) named so the user understands which row
+              // came from where via the per-card badge.
               <p className="text-body-muted mb-3">
-                PDR has Fixed photos to {discoveredLegacyLibraries.length === 1 ? 'this location' : 'these locations'} in the past, but {discoveredLegacyLibraries.length === 1 ? 'it isn\'t' : 'they aren\'t'} in your Library Drive Manager. Add what you still want, ignore the rest.
+                Drive locations PDR has previously run Fixes to that no longer appear in your Reports History (the ribbon at the bottom of the Dashboard). Found from your Fix history records (auto), and from <code>PDR_Catalogue.csv</code> files PDR finds on your drives when you click <em>Scan drives for more</em>. Add what you still want; ignore the rest.
               </p>
             ) : (
               <p className="text-body-muted mb-3">
-                No forgotten libraries in PDR&apos;s run history. Click below to also scan your connected drives for PDR catalogue files and PDR-style folder structures &mdash; useful if you&apos;ve reinstalled PDR or migrated from another machine.
+                No previously-Fixed libraries are missing from Reports History on this install. Click below to also scan your connected drives for <code>PDR_Catalogue.csv</code> files &mdash; useful if you&apos;ve reinstalled PDR, migrated from another machine, or manually cleaned up old reports.
               </p>
             )}
             <div className="space-y-2">
