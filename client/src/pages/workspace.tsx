@@ -49,7 +49,10 @@ import {
   Search,
   Network,
   Lock,
-  Calendar
+  Calendar,
+  SlidersHorizontal,
+  Database,
+  Archive
 } from "lucide-react";
 import { toast } from "sonner";
 import { promptConfirm } from "@/components/trees/promptConfirm";
@@ -57,6 +60,7 @@ import { Button } from "@/components/ui/custom-button";
 import { Card } from "@/components/ui/custom-card";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -12802,6 +12806,15 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   };
 
   const [settingsTab, setSettingsTab] = useState<'general' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
+  // v2.0.15 (Terry 2026-06-04) — Settings redesign. Search input at
+  // the top of the new left sidebar filters which tabs surface in the
+  // list based on a hand-rolled keyword index per tab (label keywords
+  // PLUS the actual setting labels users see — so typing "index" or
+  // "refresh" routes to S&D even though those words aren't in the
+  // tab name). When the search matches a single tab it auto-selects
+  // it; non-matching tabs render dimmed so the user keeps context
+  // about the wider Settings surface.
+  const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
   const [folderStructureOpen, setFolderStructureOpen] = useState(false);
 
   // v2.0.8 step 2b — Takeout ZIP backfill (After Fix tab card).
@@ -12924,15 +12937,64 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     { value: 'year-month-day' as const, label: 'Year / Month / Day', example: '2024/03/15/' },
   ];
 
-  // Settings tab classes — compact since we now host 6 tabs in a 2xl
-  // modal. Padding/font slightly tighter than before so all six fit
-  // without horizontal scrolling at typical zoom levels.
-  const tabClass = (tab: string) =>
-    `flex-1 px-2 py-2 text-xs font-medium cursor-pointer transition-all duration-200 border-b-2 whitespace-nowrap ${
-      settingsTab === tab
-        ? 'border-primary text-primary bg-background'
-        : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30 bg-muted/40'
-    } ${tab === 'general' ? 'rounded-tl-lg' : ''} ${tab === 'backup' ? 'rounded-tr-lg' : ''}`;
+  // v2.0.15 (Terry 2026-06-04) — Settings redesign: catalog of every
+  // tab with its icon + a searchable keyword list (synonyms users
+  // might type when looking for a specific setting). The sidebar
+  // filter checks BOTH the tab label AND the keywords, so e.g.
+  // typing "refresh" surfaces the S&D tab (where the per-row
+  // Refresh action lives) even though the word "refresh" isn't on
+  // the tab label.
+  const SETTINGS_TABS: Array<{
+    id: 'general' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup';
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    keywords: string;
+  }> = [
+    { id: 'general',   label: 'General',     icon: SlidersHorizontal, keywords: 'sound chime welcome duplicates thorough skip exif write confirmed recovered marked storage performance tips' },
+    { id: 'workspace', label: 'Workspace',   icon: LayoutGrid,        keywords: 'folder structure year month day organize remember sources clear after fix output formats reports history allow report removal csv txt export catalogue catalog save library drive' },
+    { id: 'afterFix',  label: 'After Fix',   icon: CheckCircle2,      keywords: 'fixed photos searchable auto refresh recognize people content faces ai recognition auto process' },
+    { id: 'sd',        label: 'S&D',         icon: Database,          keywords: 'search discovery index allow removal library manager refresh re-running' },
+    { id: 'people',    label: 'People',      icon: Users,             keywords: 'people manager faces face recognition visual suggestions startup' },
+    { id: 'ai',        label: 'AI',          icon: Sparkles,          keywords: 'ai face detection object tagging auto process threshold confidence reclustering re-analyze' },
+    { id: 'backup',    label: 'Backup',      icon: Archive,           keywords: 'backup database db library drive sidecar recovery snapshot' },
+  ];
+
+  // Search filter — match against label OR keywords. Empty query
+  // shows all tabs. Case-insensitive. When the query matches exactly
+  // one tab, auto-select it so the user lands on the right place
+  // without an extra click.
+  const settingsQueryLower = settingsSearchQuery.trim().toLowerCase();
+  const settingsMatchingTabs = settingsQueryLower
+    ? SETTINGS_TABS.filter(t =>
+        t.label.toLowerCase().includes(settingsQueryLower) ||
+        t.keywords.toLowerCase().includes(settingsQueryLower)
+      )
+    : SETTINGS_TABS;
+
+  // Auto-select effect — when the search narrows to one tab AND the
+  // current tab isn't that one, jump to it. Wrapped in a layout
+  // effect so it fires synchronously with the render.
+  useEffect(() => {
+    if (settingsMatchingTabs.length === 1 && settingsMatchingTabs[0].id !== settingsTab) {
+      setSettingsTab(settingsMatchingTabs[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsQueryLower]);
+
+  // Per-row sidebar styling — active row gets a primary-tinted
+  // background, inactive rows fade to muted with hover. Items
+  // outside the current search result set render dimmed (40% opacity)
+  // so the user retains the surface map without losing the filter
+  // signal.
+  const sidebarItemClass = (tab: typeof SETTINGS_TABS[number]) => {
+    const isActive = settingsTab === tab.id;
+    const isFiltered = settingsQueryLower && !settingsMatchingTabs.some(t => t.id === tab.id);
+    return `w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 ${
+      isActive
+        ? 'bg-primary/10 text-primary'
+        : 'text-foreground hover:bg-secondary/60'
+    } ${isFiltered ? 'opacity-40' : ''}`;
+  };
 
   return (
     <motion.div
@@ -12947,7 +13009,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full p-6"
+        className="bg-background rounded-2xl shadow-2xl max-w-4xl w-full p-6"
       >
         <div className="relative mb-5 text-center">
           <div className="flex items-center justify-center gap-3">
@@ -12965,40 +13027,72 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           </button>
         </div>
 
-        {/* ===== TAB BAR =====
-            Six tabs, one per app area. Order roughly mirrors a user's
-            journey through PDR: General settings, then Workspace
-            (where they spend most of their time fixing), then the
-            search/discovery / people / AI tooling, then Backup as the
-            recovery escape hatch. */}
-        <div className="flex border-b border-border mb-0">
-          <button type="button" className={tabClass('general')} onClick={() => setSettingsTab('general')} data-testid="tab-general">
-            General
-          </button>
-          <button type="button" className={tabClass('workspace')} onClick={() => setSettingsTab('workspace')} data-testid="tab-workspace">
-            Workspace
-          </button>
-          <button type="button" className={tabClass('afterFix')} onClick={() => setSettingsTab('afterFix')} data-testid="tab-after-fix">
-            After Fix
-          </button>
-          <button type="button" className={tabClass('sd')} onClick={() => setSettingsTab('sd')} data-testid="tab-sd">
-            S&amp;D
-          </button>
-          <button type="button" className={tabClass('people')} onClick={() => setSettingsTab('people')} data-testid="tab-people">
-            People
-          </button>
-          <button type="button" className={tabClass('ai')} onClick={() => setSettingsTab('ai')} data-testid="tab-ai">
-            <span className="flex items-center justify-center gap-1">
-              AI
-              <Sparkles className="w-3 h-3" />
-            </span>
-          </button>
-          <button type="button" className={tabClass('backup')} onClick={() => setSettingsTab('backup')} data-testid="tab-backup">
-            Backup
-          </button>
-        </div>
+        {/* ═══════════════════════════════════════════════════════════════
+            SIDEBAR + CONTENT LAYOUT
+            v2.0.15 (Terry 2026-06-04) — Settings redesign replaces the
+            previous horizontal-tab bar with a vertical sidebar on the
+            left (matching the navigation pattern Terry highlighted in
+            Claude's own settings as easier to scan). The sidebar has:
+              • A search input at the top that filters tabs by label
+                OR by a hand-rolled keyword index per tab
+              • Icons next to each tab so the eye finds them by shape
+                before reading
+              • Active-row tinting + dimmed non-match rows for filter
+                state without losing the surface map
+            The right-hand content area is unchanged structurally —
+            the same `{settingsTab === 'X' && (...)}` blocks render
+            below; they just sit inside a flex panel now.
+            ═══════════════════════════════════════════════════════════════ */}
+        <div className="flex gap-4 h-[55vh]">
+          {/* ── Sidebar — fixed width, full height, soft background
+                to separate from the content area. */}
+          <aside className="w-52 shrink-0 flex flex-col gap-3 bg-secondary/20 rounded-xl p-3 border border-border/40">
+            {/* Search input. Magnifier prefix matches the rest of
+                PDR's search affordances (S&D's search field uses
+                the same idiom). Auto-focuses on modal open. */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={settingsSearchQuery}
+                onChange={(e) => setSettingsSearchQuery(e.target.value)}
+                placeholder="Search settings…"
+                className="w-full pl-8 pr-2 py-1.5 text-xs rounded-md border border-border bg-background focus:outline-none focus:border-primary/60 placeholder:text-muted-foreground"
+                data-testid="input-settings-search"
+              />
+            </div>
+            {/* Tab list — vertical column with icon + label per row.
+                Pulled from SETTINGS_TABS (declared above) so the
+                catalog is the single source of truth for both the
+                sidebar order and the search keyword map. */}
+            <nav className="flex flex-col gap-0.5" role="tablist">
+              {SETTINGS_TABS.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={settingsTab === tab.id}
+                    className={sidebarItemClass(tab)}
+                    onClick={() => setSettingsTab(tab.id)}
+                    data-testid={`tab-${tab.id}`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
+              {settingsQueryLower && settingsMatchingTabs.length === 0 && (
+                <p className="text-caption mt-2 px-2">No matches. Try a different word — or clear the search to see everything.</p>
+              )}
+            </nav>
+          </aside>
 
-        <div className="space-y-5 h-[45vh] overflow-y-auto pr-2 pt-5">
+          {/* ── Content panel — flex-1 so it absorbs remaining width;
+                scrolls independently when content is taller than the
+                fixed sidebar. */}
+          <div className="flex-1 min-w-0 space-y-5 overflow-y-auto pr-2">
 
           {/* ═══════════════════════════════════════════════════════════════
               GENERAL TAB
@@ -13053,7 +13147,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Play completion sound</span>
                     <span className="text-xs text-muted-foreground">Play a sound and flash taskbar when fixes complete</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={playSound}
                     onCheckedChange={(checked) => onPlaySoundChange(!!checked)}
                     data-testid="checkbox-completion-sound"
@@ -13068,7 +13162,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Pulse the sidebar burger when collapsed</span>
                     <span className="text-xs text-muted-foreground">A subtle pulse on the menu icon helps first-time users find how to re-open the side menu. Turn off once you're used to it.</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={!burgerPulseDisabled}
                     onCheckedChange={(checked) => onBurgerPulseChange(!checked)}
                     data-testid="checkbox-burger-pulse"
@@ -13090,7 +13184,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Show Recycle Bin count on titlebar</span>
                     <span className="text-xs text-muted-foreground">Display a small badge on the titlebar's Recycle Bin icon showing how many items are inside. Off by default — the count is always available in the hover tooltip.</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={recycleBinShowCountBadge}
                     onCheckedChange={(checked) => handleRecycleBinShowCountBadgeToggle(!!checked)}
                     data-testid="checkbox-recycle-bin-count-badge"
@@ -13105,7 +13199,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Show Welcome Screen on launch</span>
                     <span className="text-xs text-muted-foreground">Display the onboarding screen when the app starts</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={showWelcome}
                     onCheckedChange={(checked) => handleWelcomeToggle(!!checked)}
                     data-testid="checkbox-show-welcome"
@@ -13206,7 +13300,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-foreground">Remember sources between sessions</span>
                       <span className="text-xs text-muted-foreground">Keep your added sources if the app restarts or crashes</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={rememberSources}
                       onCheckedChange={(checked) => handleRememberSourcesToggle(!!checked)}
                       data-testid="checkbox-remember-sources"
@@ -13217,7 +13311,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-foreground">Auto-clear sources after fix</span>
                       <span className="text-xs text-muted-foreground">Skip the "Clear sources?" prompt and remove sources automatically once a fix finishes. Off by default — keeps the prompt so you can hold onto a slow-to-analyse source for another run.</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={clearSourcesAfterFix}
                       onCheckedChange={(checked) => handleClearSourcesAfterFixToggle(!!checked)}
                       data-testid="checkbox-clear-sources-after-fix"
@@ -13290,7 +13384,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Skip duplicate files (recommended)</span>
                     <span className="text-xs text-muted-foreground">Duplicate files are detected and skipped during Run Fix</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={skipDuplicates}
                     onCheckedChange={(checked) => handleSkipDuplicatesToggle(!!checked)}
                     data-testid="checkbox-skip-duplicates"
@@ -13305,7 +13399,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Show storage performance tips</span>
                     <span className="text-xs text-muted-foreground">Display helpful messages about storage speed when selecting sources</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={showStoragePerformanceTips}
                     onCheckedChange={(checked) => handleStoragePerformanceTipsToggle(!!checked)}
                     data-testid="checkbox-storage-tips"
@@ -13353,7 +13447,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                             <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Thorough duplicate matching</span>
                             <span className="text-xs text-muted-foreground">PDR already uses a file-content hash for duplicate detection on local Library Drives by default. Turn this on to also use a hash on network shares and cloud-sync folders &mdash; catches files that have been renamed but are otherwise identical, at the cost of a slower scan every time PDR reads from those drives. Leave off if your Library Drive lives on a NAS or OneDrive / Google Drive folder and the dedup speed matters more than catching renamed duplicates.</span>
                           </div>
-                          <Checkbox
+                          <Switch
                             checked={thoroughDuplicateMatching}
                             onCheckedChange={(checked) => handleThoroughDuplicateMatchingToggle(!!checked)}
                             data-testid="checkbox-thorough-duplicates"
@@ -13369,7 +13463,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                             <span className="text-sm font-medium text-foreground">Write dates to photo metadata (EXIF)</span>
                             <span className="text-xs text-muted-foreground">Populate EXIF date fields when copying photos</span>
                           </div>
-                          <Checkbox
+                          <Switch
                             checked={writeExif}
                             onCheckedChange={(checked) => handleWriteExifToggle(!!checked)}
                             data-testid="checkbox-write-exif"
@@ -13382,7 +13476,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                                 <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Confirmed files</span>
                                 <span className="text-xs text-muted-foreground">Normalize metadata using the trusted EXIF/Takeout date</span>
                               </div>
-                              <Checkbox
+                              <Switch
                                 checked={exifWriteConfirmed}
                                 onCheckedChange={(checked) => handleExifWriteConfirmedToggle(!!checked)}
                                 data-testid="checkbox-exif-confirmed"
@@ -13393,7 +13487,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                                 <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Recovered files (recommended)</span>
                                 <span className="text-xs text-muted-foreground">Populate EXIF with the date recovered from filename patterns</span>
                               </div>
-                              <Checkbox
+                              <Switch
                                 checked={exifWriteRecovered}
                                 onCheckedChange={(checked) => handleExifWriteRecoveredToggle(!!checked)}
                                 data-testid="checkbox-exif-recovered"
@@ -13404,7 +13498,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Marked files (advanced)</span>
                                 <span className="text-xs text-muted-foreground">Populate EXIF with fallback date — use with caution</span>
                               </div>
-                              <Checkbox
+                              <Switch
                                 checked={exifWriteMarked}
                                 onCheckedChange={(checked) => handleExifWriteMarkedToggle(!!checked)}
                                 data-testid="checkbox-exif-marked"
@@ -13423,7 +13517,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                               <span className="text-sm font-medium text-foreground">Allow Report Removal</span>
                               <span className="text-xs text-muted-foreground">Enable deleting saved reports from history</span>
                             </div>
-                            <Checkbox
+                            <Switch
                               checked={allowReportRemoval}
                               onCheckedChange={(checked) => handleReportRemovalToggle(!!checked)}
                               data-testid="checkbox-allow-report-removal"
@@ -13434,7 +13528,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                               <span className="text-sm font-medium text-foreground">Show CSV/TXT export buttons</span>
                               <span className="text-xs text-muted-foreground">Manual exports for standalone reports (auditing, sharing). The auto-catalog already maintains a complete record.</span>
                             </div>
-                            <Checkbox
+                            <Switch
                               checked={showManualReportExports}
                               onCheckedChange={(checked) => handleShowManualReportExportsToggle(!!checked)}
                               data-testid="checkbox-show-manual-exports"
@@ -13460,7 +13554,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Save catalog after each fix</span>
                     <span className="text-xs text-muted-foreground">Write PDR_Catalogue.csv and .txt to your Library Drive — updates dynamically</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={autoSaveCatalogue}
                     onCheckedChange={(checked) => handleAutoSaveCatalogueToggle(!!checked)}
                     data-testid="checkbox-auto-save-catalogue"
@@ -13486,7 +13580,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-foreground">Show Library Manager</span>
                       <span className="text-xs text-muted-foreground">Show the Library Manager button in Search & Discovery for advanced index management.</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={showLibraryManager}
                       onCheckedChange={(checked) => handleShowLibraryManagerToggle(!!checked)}
                     />
@@ -13496,7 +13590,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-foreground">Allow Index Removal</span>
                       <span className="text-xs text-muted-foreground">Enable removing destinations from the search library. Re-running the fix is the only way to add the photos back to your search index.</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={allowIndexRemoval}
                       onCheckedChange={(checked) => handleIndexRemovalToggle(!!checked)}
                       data-testid="checkbox-allow-index-removal"
@@ -13532,7 +13626,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-foreground">Make Fixed photos searchable</span>
                       <span className="text-xs text-muted-foreground">Fixed photos appear in Search &amp; Discovery, Memories, and Date Editor. Turn off only if you'd rather manage indexing yourself.</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={autoIndexAfterFix}
                       onCheckedChange={(checked) => handleAutoIndexAfterFixToggle(!!checked)}
                     />
@@ -13550,7 +13644,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       </div>
                       <span className="text-xs text-muted-foreground ml-6">Searchable by face and by what's in the photo (sunset, beach, pet…). One-time ~300 MB download, then runs in the background — about a minute per 100 photos. Everything stays on your device.</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={aiEnabled}
                       onCheckedChange={(checked) => handleAiEnabledToggle(!!checked)}
                       data-testid="checkbox-ai-enabled-afterfix"
@@ -13586,7 +13680,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         <span className="text-sm font-medium text-foreground">Recognize new Fixed photos automatically</span>
                         <span className="text-xs text-muted-foreground">PDR works through new photos in the background after every Fix. Turn off to keep recognition on standby — you can run it manually later from Search &amp; Discovery.</span>
                       </div>
-                      <Checkbox
+                      <Switch
                         checked={aiAutoProcess}
                         onCheckedChange={(checked) => handleAiAutoProcessToggle(!!checked)}
                         data-testid="checkbox-ai-auto-process-afterfix"
@@ -13685,7 +13779,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Open People Manager on startup</span>
                     <span className="text-xs text-muted-foreground">Show the People Manager window automatically whenever PDR opens, instead of waiting for you to click the icon.</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={openPeopleOnStartup}
                     onCheckedChange={(checked) => handleOpenPeopleOnStartupToggle(!!checked)}
                     data-testid="checkbox-open-people-on-startup"
@@ -13706,7 +13800,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Face Detection</span>
                       <span className="text-xs text-muted-foreground">Detect and cluster faces to identify people in photos</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={aiFaceDetection}
                       onCheckedChange={(checked) => handleAiFaceDetectionToggle(!!checked)}
                       data-testid="checkbox-ai-face-detection"
@@ -13717,7 +13811,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Visual face suggestions</span>
                       <span className="text-xs text-muted-foreground">When naming a face, suggest visually similar people from your library</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={aiVisualSuggestions}
                       onCheckedChange={(checked) => handleAiVisualSuggestionsToggle(!!checked)}
                       data-testid="checkbox-ai-visual-suggestions"
@@ -13806,7 +13900,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       <span className="text-sm font-medium text-foreground">Bypass large-zip pre-extract</span>
                       <span className="text-xs text-muted-foreground">Skip the temporary unpack step for zips over 2 GB and stream them through the analysis engine directly. Used to QA the streaming path on real Google Takeouts. Known to crash on phone videos &gt; 1 GB — leave off for any non-test run.</span>
                     </div>
-                    <Checkbox
+                    <Switch
                       checked={bypassLargeZipPreExtract}
                       onCheckedChange={(checked) => handleBypassLargeZipPreExtractToggle(!!checked)}
                       data-testid="checkbox-bypass-large-zip-pre-extract"
@@ -13824,7 +13918,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-sm font-medium text-foreground">Allow Tree Removal</span>
                     <span className="text-xs text-muted-foreground">Show the Remove button for saved trees in the Manage Trees modal. Off by default to prevent accidental deletion — turning on treats deletion as a deliberate, two-step action.</span>
                   </div>
-                  <Checkbox
+                  <Switch
                     checked={allowTreeRemoval}
                     onCheckedChange={(checked) => handleTreeRemovalToggle(!!checked)}
                   />
@@ -13874,7 +13968,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Object & Scene Tagging</span>
                         <span className="text-xs text-muted-foreground">Tag photos by what's in them (sunset, beach, pet, etc.). Turn off to keep face recognition only.</span>
                       </div>
-                      <Checkbox
+                      <Switch
                         checked={aiObjectTagging}
                         onCheckedChange={(checked) => handleAiObjectTaggingToggle(!!checked)}
                         data-testid="checkbox-ai-object-tagging"
@@ -14277,7 +14371,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     </div>
                     <div className="px-5 pb-3">
                       <label className="flex items-center gap-2.5 p-2.5 rounded-lg border border-border hover:bg-secondary/30 cursor-pointer">
-                        <Checkbox
+                        <Switch
                           checked={reclusterSnapshotFirst}
                           onCheckedChange={(checked) => setReclusterSnapshotFirst(!!checked)}
                         />
@@ -14413,6 +14507,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               </div>
             </div>
           )}
+        </div>
+
         </div>
 
         <div className="mt-6 pt-4 border-t border-border space-y-3">
