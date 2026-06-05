@@ -61,6 +61,21 @@ process.on('unhandledRejection', (reason) => {
   process.exit(1);
 });
 
+// v2.0.15 (Terry 2026-06-05) — see startup-worker.ts for the full
+// rationale. In packaged Electron the worker lives at resources/dist-
+// electron/analysis-worker.cjs (extraResources) and node_modules lives
+// at resources/app.asar.unpacked/node_modules/. main.ts's workerEnv()
+// sets NODE_PATH but Node caches resolved paths at process startup —
+// env-var changes via utilityProcess.fork({env: ...}) don't re-trigger
+// the cache. _initPaths() forces a re-read so the analysis-engine's
+// chain of imports (exif-parser / unzipper / mime-types / etc.) all
+// resolve. Without this, the prewarmed analysis-worker exited code=1
+// within ~1s of fork in packaged installs and Add Source failed with
+// "analysis-worker exited unexpectedly (code=1)".
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ModuleInit = require('module') as { _initPaths?: () => void };
+ModuleInit._initPaths?.();
+
 import {
   analyzeSource,
   cancelAnalysis,

@@ -29,6 +29,20 @@
  *      internal flag the per-entry loop checks every iteration.
  */
 
+// v2.0.15 (Terry 2026-06-05) — see startup-worker.ts for the full
+// rationale. In packaged Electron, this worker lives at resources/
+// dist-electron/extract-worker.cjs (extraResources). Its node_modules
+// dependencies live at resources/app.asar.unpacked/node_modules/.
+// main.ts's workerEnv() sets NODE_PATH on the spawned process, but
+// Node caches the resolved search paths at PROCESS STARTUP — env-var
+// changes done via utilityProcess.fork({env: ...}) don't re-trigger
+// the cache. _initPaths() forces a re-read so 'unzipper' (and any
+// future native dep) resolves correctly. Without this, the prewarmed
+// extract-worker exited code=1 within ~1s of fork in packaged installs.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ModuleInit = require('module') as { _initPaths?: () => void };
+ModuleInit._initPaths?.();
+
 import * as fs from 'fs';
 import * as path from 'path';
 import unzipper from 'unzipper';

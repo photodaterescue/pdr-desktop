@@ -2223,8 +2223,20 @@ function preforkExtractWorker(): void {
         log.info(`[extract-worker prewarm] worker exited (code=${code}) before being claimed`);
       }
     });
-    w.stdout?.on('data', () => { /* swallow until claimed — claim re-attaches */ });
-    w.stderr?.on('data', () => { /* swallow until claimed — claim re-attaches */ });
+    // v2.0.15 (Terry 2026-06-05) — was swallowing stderr during prewarm.
+    // When workers crashed during prewarm (packaged-build module resolution
+    // failure), we got the exit log but no clue WHY. Now we log every
+    // stderr line with a [prewarm] prefix so the actual error lands in
+    // main.log. Once a job claims this worker, runExtractInWorker re-
+    // attaches its own listeners and the prewarm ones still fire harmlessly.
+    w.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) log.info(`[extract-worker prewarm stdout] ${text}`);
+    });
+    w.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) log.warn(`[extract-worker prewarm stderr] ${text}`);
+    });
     prewarmedExtractWorker = w;
     log.info(`[extract-worker prewarm] ready in ${Date.now() - startedAt}ms`);
   } catch (err) {
@@ -2380,8 +2392,20 @@ function preforkAnalysisWorker(): void {
         log.info(`[analysis-worker prewarm] worker exited (code=${code}) before being claimed`);
       }
     });
-    w.stdout?.on('data', () => { /* swallow until claimed */ });
-    w.stderr?.on('data', () => { /* swallow until claimed */ });
+    // v2.0.15 (Terry 2026-06-05) — was swallowing stderr during prewarm.
+    // When workers crashed during prewarm (packaged-build module resolution
+    // failure), we got the exit log but no clue WHY. Now we log every
+    // stderr line with a [prewarm] prefix so the actual error lands in
+    // main.log. Once a job claims this worker, runAnalysisInWorker re-
+    // attaches its own listeners and the prewarm ones still fire harmlessly.
+    w.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) log.info(`[analysis-worker prewarm stdout] ${text}`);
+    });
+    w.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) log.warn(`[analysis-worker prewarm stderr] ${text}`);
+    });
     prewarmedAnalysisWorker = w;
     log.info(`[analysis-worker prewarm] ready in ${Date.now() - startedAt}ms`);
   } catch (err) {
