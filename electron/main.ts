@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage, utilityProcess, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage, utilityProcess, screen, nativeTheme } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -954,7 +954,17 @@ function createWindow() {
     // the comment block above the splash/worker helpers for the full
     // architecture rationale.
     show: false,
-    backgroundColor: '#a99cff',
+    // v2.0.15 (Terry 2026-06-05) — was '#a99cff' (lavender). Changed
+    // to off-white to match the actual Welcome / Workspace BODY
+    // background (CSS --background: HSL 240 27% 97% in light mode).
+    // The lavender was misguided "brand-matching" that actually drew
+    // attention to flashes (maximize / restore / boot gate failures)
+    // instead of hiding them. White body matches the page underneath;
+    // titleBarOverlay below stays lavender because the actual title
+    // bar IS lavender — so during a maximize repaint the user sees
+    // exactly what the painted app looks like (lavender title + white
+    // body) rather than a full-lavender wall.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1a2e' : '#f6f6fb',
     titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
     thickFrame: true,
     ...(process.platform === 'win32' ? {
