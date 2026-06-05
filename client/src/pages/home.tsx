@@ -196,34 +196,74 @@ export default function Home() {
   // Welcome's own useEffect double-RAF, gates the main-window reveal
   // on Welcome being actually-painted, not just on App being mounted.
   useEffect(() => {
-    console.log('[Boot] Welcome useEffect fired (component mounted, scheduling double-RAF)');
-    requestAnimationFrame(() => {
-      console.log('[Boot] Welcome RAF #1 fired (after React first commit)');
+    // v2.0.15 (Terry 2026-06-05) — the previous double-RAF signal
+    // fired too early: React's commit was done but Chromium hadn't
+    // actually composited Welcome's pixels yet. Result: main process
+    // received "ready", showed mainWindow against its background
+    // colour for 3+ seconds before Welcome paint caught up. Terry saw
+    // a 3-second blank wall instead of a clean splash-to-Welcome
+    // transition.
+    //
+    // Fix: wait for THREE genuine paint barriers before signalling:
+    //   1) document.fonts.ready — text doesn't render until @font-face
+    //      fonts are loaded, and Welcome has substantial text.
+    //   2) double-RAF — React commit + layout + first paint scheduled.
+    //   3) extra setTimeout — Chromium's GPU compositor has measurable
+    //      lag between the rAF "before paint" callback firing and the
+    //      actual pixels being on the offscreen surface. The timeout
+    //      gives that compositor pass time to complete.
+    //
+    // By the time the signal fires, Welcome is GENUINELY in the off-
+    // screen buffer. main process shows mainWindow → user instantly
+    // sees Welcome content. No background-colour flash.
+    let cancelled = false;
+    console.log('[Boot] Welcome useEffect fired (component mounted, awaiting fonts + paint barriers)');
+    (async () => {
+      try {
+        const fonts = (document as Document & { fonts?: { ready?: Promise<unknown> } }).fonts;
+        if (fonts?.ready) {
+          await fonts.ready;
+          console.log('[Boot] document.fonts.ready resolved');
+        }
+      } catch {
+        // Best-effort — if FontFaceSet isn't available we just skip ahead.
+      }
+      if (cancelled) return;
       requestAnimationFrame(() => {
-        console.log('[Boot] Welcome RAF #2 fired (after browser paint — Welcome content now in offscreen buffer)');
-        const splashSignal = (window as Window & { __pdrSplashReady?: () => void })
-          .__pdrSplashReady;
-        if (typeof splashSignal === 'function') {
-          splashSignal();
-          console.log('[Boot] __pdrSplashReady signal sent to splash window');
-        } else {
-          console.log('[Boot] __pdrSplashReady NOT a function — splash signal skipped');
-        }
-        try {
-          const pdr = (window as Window & { pdr?: { workspaceFirstFrame?: () => void } }).pdr;
-          if (pdr?.workspaceFirstFrame) {
-            pdr.workspaceFirstFrame();
-            console.log('[Boot] workspaceFirstFrame IPC sent to main process');
-          } else {
-            console.log('[Boot] window.pdr.workspaceFirstFrame NOT exposed — IPC skipped');
-          }
-        } catch (e) {
-          console.log('[Boot] workspaceFirstFrame IPC threw:', e);
-          // Best-effort — SPLASH_HARD_MAX_MS in main.ts is the safety
-          // net if the signal never arrives.
-        }
+        if (cancelled) return;
+        console.log('[Boot] Welcome RAF #1 fired (after React first commit)');
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          console.log('[Boot] Welcome RAF #2 fired (paint scheduled — waiting for compositor)');
+          setTimeout(() => {
+            if (cancelled) return;
+            console.log('[Boot] compositor catch-up complete — Welcome genuinely visible in offscreen buffer');
+            const splashSignal = (window as Window & { __pdrSplashReady?: () => void })
+              .__pdrSplashReady;
+            if (typeof splashSignal === 'function') {
+              splashSignal();
+              console.log('[Boot] __pdrSplashReady signal sent to splash window');
+            } else {
+              console.log('[Boot] __pdrSplashReady NOT a function — splash signal skipped');
+            }
+            try {
+              const pdr = (window as Window & { pdr?: { workspaceFirstFrame?: () => void } }).pdr;
+              if (pdr?.workspaceFirstFrame) {
+                pdr.workspaceFirstFrame();
+                console.log('[Boot] workspaceFirstFrame IPC sent to main process');
+              } else {
+                console.log('[Boot] window.pdr.workspaceFirstFrame NOT exposed — IPC skipped');
+              }
+            } catch (e) {
+              console.log('[Boot] workspaceFirstFrame IPC threw:', e);
+              // Best-effort — SPLASH_HARD_MAX_MS in main.ts is the safety
+              // net if the signal never arrives.
+            }
+          }, 150);
+        });
       });
-    });
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -367,7 +407,16 @@ export default function Home() {
       <div className="min-h-full flex flex-col items-center justify-center px-6 py-8 relative z-10">
       <motion.div
         variants={container}
-        initial="hidden"
+        // v2.0.15 (Terry 2026-06-05) — initial={false} bypasses framer-
+        // motion's initial-state machinery entirely. Previously had
+        // initial="show" + animate="show" which SHOULD have started at
+        // the show state, but children (variants={item}) were still
+        // staggering through hidden→show even when parent didn't.
+        // Terry's blank-window report 2026-06-05 was Welcome content
+        // genuinely at opacity 0 during the stagger, captured by
+        // mainWindow.show(). initial={false} = no intro animation at
+        // all, content rendered fully opaque from first paint.
+        initial={false}
         animate="show"
         className="max-w-[1200px] w-full z-10 flex flex-col items-center text-center"
       >

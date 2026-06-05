@@ -895,9 +895,20 @@ ipcMain.on('workspace:first-frame', () => {
 function maybeFinishStartup(): void {
   if (startupSwapped) return;
   if (!splashMinElapsed) { bootLog('maybeFinishStartup: waiting on splashMinElapsed'); return; }
-  if (!workerDone) { bootLog('maybeFinishStartup: waiting on workerDone'); return; }
   if (!workspaceReadyToShow) { bootLog('maybeFinishStartup: waiting on workspaceReadyToShow'); return; }
-  bootLog('maybeFinishStartup: ALL GATES PASSED — about to show mainWindow + close splash');
+  // v2.0.15 (Terry 2026-06-05) — workerDone REMOVED from the gate
+  // set. Previously the worker had to complete its DB walk + sidecar
+  // snapshot (~17s on a 74k-row library, scaling linearly with
+  // library size — minutes for huge libraries) before the window
+  // could show. The worker's actual job (sidecar snapshot for
+  // recovery + cleanup queries) doesn't need to block the user from
+  // seeing the workspace — it runs in a separate utility process so
+  // it can't affect main-thread responsiveness, and the snapshot
+  // uses atomic .tmp + rename so a mid-write quit doesn't corrupt
+  // the existing sidecar. Worker keeps running in the background;
+  // workerDone flag and 'done' message still fire (used for logging
+  // and the [Boot] timeline), they're just not gating the show.
+  bootLog('maybeFinishStartup: gates passed (splashMinElapsed + workspaceReadyToShow) — showing mainWindow; worker continues in background');
   startupSwapped = true;
 
   // v2.0.11 (Terry 2026-05-24) — splash-to-workspace position handoff.
@@ -911,6 +922,29 @@ function maybeFinishStartup(): void {
   // splash's center (clamped to that display's work area so the
   // window never lands partly off-screen). Multi-monitor safe via
   // screen.getDisplayMatching.
+  // v2.0.15 (Terry 2026-06-05) — show mainWindow FIRST, then close
+  // splash with a brief overlap. We tried close-first-then-show, but
+  // the OS leaves one or two frames with no PDR window visible (Terry
+  // saw a "black-grey" gap). We tried no-overlap show-first, but the
+  // 500ms post-show splash overlap exposed mainWindow's off-white bg
+  // AROUND the splash card (Terry's "off-white wall" screenshot).
+  //
+  // The actual fix is the home.tsx side, not the order: with
+  // document.fonts.ready + double-RAF + 150ms compositor barrier,
+  // Welcome is GENUINELY painted in the offscreen buffer by the time
+  // workspaceFirstFrame fires. So when mainWindow.show() runs, the
+  // area around the splash card is Welcome content (logo, cards, body
+  // text) — not blank off-white. The splash dismisses on top of an
+  // already-fully-rendered Welcome, which is the smooth handoff we
+  // always wanted.
+  //
+  // Order:
+  //   1) Position mainWindow over splash's centre (handoff).
+  //   2) Show mainWindow → Welcome instantly visible behind splash.
+  //   3) Brief overlap (120ms) so the OS has time to composite the
+  //      mainWindow frame before we yank the splash away — covers
+  //      compositor latency on slower hardware.
+  //   4) Close splash → just Welcome visible. No gap, no flash.
   if (mainWindow && !mainWindow.isDestroyed()) {
     try {
       if (splashWindow && !splashWindow.isDestroyed()) {
@@ -932,12 +966,44 @@ function maybeFinishStartup(): void {
     } catch (err) {
       log.warn(`[Startup] splash-to-workspace position handoff failed (non-fatal): ${(err as Error).message}`);
     }
-    bootLog('mainWindow.show() called');
+    // v2.0.15 (Terry 2026-06-05) — "disable that fucking blank
+    // window" fix. The blank Terry kept seeing is mainWindow's
+    // background colour after show() but before Chromium has
+    // composed Welcome onto the visible window surface. Earlier
+    // attempts (paintWhenInitiallyHidden, fonts.ready, double-RAF,
+    // 150ms barrier) reduced the gap but didn't eliminate it: a
+    // hidden window's renderer is throttled by Chromium, so paint-
+    // WhenInitiallyHidden has limited effect.
+    //
+    // Two-stage reveal:
+    //   1) Show mainWindow at OPACITY 0 — Chromium now has a visible
+    //      window surface to paint to, renderer un-throttles, paint-
+    //      WhenInitiallyHidden + visible-surface rendering both
+    //      proceed. User sees nothing change (splash still on top of
+    //      an invisible mainWindow).
+    //   2) 1500ms warmup — Welcome paints onto the visible-but-
+    //      invisible mainWindow. Generous wait to absorb cold-launch
+    //      variance.
+    //   3) Same-tick: setOpacity(1) on mainWindow + close splash.
+    //      mainWindow becomes visible WITH Welcome already on screen.
+    //      Splash disappears. No off-white flash, no blank, no gap.
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      try { splashWindow.setAlwaysOnTop(true); } catch { /* best-effort */ }
+    }
+    try { mainWindow.setOpacity(0); } catch { /* best-effort */ }
+    bootLog('mainWindow.show() called at opacity 0 (1500ms warmup begins)');
     mainWindow.show();
-  }
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    try { splashWindow.close(); } catch { /* best-effort */ }
+    const splashToClose = splashWindow;
     splashWindow = null;
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.setOpacity(1); } catch { /* best-effort */ }
+      }
+      if (splashToClose && !splashToClose.isDestroyed()) {
+        try { splashToClose.close(); } catch { /* best-effort */ }
+      }
+      bootLog('mainWindow opacity → 1 + splash closed (1500ms warmup complete)');
+    }, 1500);
   }
 }
 
@@ -954,16 +1020,31 @@ function createWindow() {
     // the comment block above the splash/worker helpers for the full
     // architecture rationale.
     show: false,
-    // v2.0.15 (Terry 2026-06-05) — was '#a99cff' (lavender). Changed
-    // to off-white to match the actual Welcome / Workspace BODY
-    // background (CSS --background: HSL 240 27% 97% in light mode).
-    // The lavender was misguided "brand-matching" that actually drew
-    // attention to flashes (maximize / restore / boot gate failures)
-    // instead of hiding them. White body matches the page underneath;
-    // titleBarOverlay below stays lavender because the actual title
-    // bar IS lavender — so during a maximize repaint the user sees
-    // exactly what the painted app looks like (lavender title + white
-    // body) rather than a full-lavender wall.
+    // v2.0.15 (Terry 2026-06-05) — paintWhenInitiallyHidden tells
+    // Chromium to render the page content even while the window is
+    // hidden (show:false), so by the time mainWindow.show() fires,
+    // the Welcome content is already composited in Chromium's
+    // offscreen buffer and appears on screen INSTANTLY — no
+    // intermediate flash of the backgroundColor, no awkward
+    // "splash dismissed but WS not ready yet" blank gap. Other PDR
+    // windows (peopleWindow, viewerWindow) already use this flag;
+    // mainWindow was the outlier. Terry's call: "the splash for the
+    // length of time the white-grey screen is shown if anything is
+    // needed... this changing one screen which has the logo and
+    // wording on just to show another blank screen just to then
+    // show the WS is fucking nonsense."
+    paintWhenInitiallyHidden: true,
+    // v2.0.15 (Terry 2026-06-05) — off-white to match the Welcome /
+    // Workspace BODY background (CSS --background: HSL 240 27% 97%
+    // in light mode). The two-stage lavender→off-white experiment
+    // was wrong: Terry said no purple at all. With paintWhenInitially-
+    // Hidden above, this should rarely be visible — it's a fallback
+    // for OS-side repaint flashes (maximize, restore, window resize)
+    // where matching the body colour makes the flash invisible against
+    // the page underneath. The boot-time "gap" is solved by gating
+    // mainWindow.show() on Welcome being genuinely painted (see the
+    // pushed-back signal in home.tsx) — NOT by colouring the
+    // background to look like the splash.
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1a2e' : '#f6f6fb',
     titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
     thickFrame: true,

@@ -36,6 +36,25 @@
  *   (see main.ts startup sequence), so there's no contention.
  */
 
+// v2.0.15 (Terry 2026-06-05) — module-resolution fix for packaged
+// builds. In packaged Electron, this worker lives at
+// resources/dist-electron/startup-worker.cjs (extraResources), but
+// native modules like better-sqlite3 live at
+// resources/app.asar.unpacked/node_modules/better-sqlite3/. main.ts's
+// workerEnv() sets NODE_PATH on the spawned process to bridge that
+// gap, but Node's module resolver caches NODE_PATH-derived search
+// paths at PROCESS STARTUP — env-var changes done by the parent
+// process via utilityProcess.fork({env: ...}) take effect on
+// process.env but DON'T re-trigger the resolver's path cache.
+// Module._initPaths() forces a re-read, populating the search paths
+// from the current NODE_PATH so 'better-sqlite3' can resolve.
+// Without this call, the worker crashes with "Cannot find module
+// 'better-sqlite3'" at exit code 1 within ~1.2s of fork — verified
+// in main.log from packaged installs prior to this fix.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ModuleInit = require('module') as { _initPaths?: () => void };
+ModuleInit._initPaths?.();
+
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
