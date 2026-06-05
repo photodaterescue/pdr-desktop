@@ -756,8 +756,31 @@ function createSplashWindow(): void {
     },
   });
   const splashHtml = path.join(__dirname, '../dist/public/splash.html');
+  bootLog(`splash loadFile path: ${splashHtml}`);
+  bootLog(`splash path exists: ${fs.existsSync(splashHtml)}`);
+  // v2.0.15 (Terry 2026-06-05) — diagnostic listeners to catch why
+  // splash.html load fails in packaged builds (ERR_FAILED -2). The
+  // generic catch on loadFile loses information; these event listeners
+  // surface the actual reason (renderer crash, navigation failure with
+  // specific Chromium error code, etc).
+  splashWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    bootLog(`splash did-fail-load: code=${errorCode} desc="${errorDescription}" url=${validatedURL}`);
+  });
+  splashWindow.webContents.on('render-process-gone', (_event, details) => {
+    bootLog(`splash render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+  splashWindow.webContents.on('unresponsive', () => {
+    bootLog('splash webContents UNRESPONSIVE');
+  });
+  splashWindow.webContents.on('did-finish-load', () => {
+    bootLog('splash webContents did-finish-load fired (splash HTML loaded successfully)');
+  });
+  splashWindow.on('closed', () => {
+    bootLog('splash window CLOSED event fired');
+  });
   splashWindow.loadFile(splashHtml).catch((err) => {
     log.warn(`[Startup] splash loadFile failed: ${(err as Error).message}`);
+    bootLog(`splash loadFile catch: ${(err as Error).message}`);
   });
   splashWindow.center();
 
