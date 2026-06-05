@@ -2764,13 +2764,18 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <HardDrive className="w-3.5 h-3.5 mr-2" />
                         Show in File Explorer
                       </ContextMenuItem>
-                      {/* v2.0.15 (Terry 2026-06-01) — Send to S&D.
+                      {/* v2.0.15 (Terry 2026-06-05) — Send to S&D.
                           When the right-clicked tile is part of an
                           active multi-select, sends the whole
                           selection; otherwise sends just this one.
-                          Default ACCUMULATE merges into the pile;
-                          the sibling "as new selection" clears the
-                          pile and starts fresh. */}
+                          Default mode is REPLACE — wipes any
+                          residual S&D filter / pile state so the
+                          arriving selection IS the new S&D contents
+                          (instead of being merged into whatever was
+                          there from earlier S&D activity). The
+                          sibling "Add to S&D pile" below opts in to
+                          ACCUMULATE for building up a review set
+                          across multiple visits. */}
                       <ContextMenuItem
                         onSelect={() => {
                           const fileIds = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)
@@ -2784,7 +2789,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           // just dump the user at All Albums.
                           void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({ tab: 'albums', label: `Album "${selectedAlbum.title}"`, albumId: selectedAlbum.id, scrollToFileId: p.id }));
                           window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
-                            detail: { fileIds, source: 'albums', mode: 'accumulate' },
+                            detail: { fileIds, source: 'albums', mode: 'replace' },
                           }));
                         }}
                         data-testid={`album-photo-send-to-sd-${p.id}`}
@@ -2799,13 +2804,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                             : [p.id];
                           void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({ tab: 'albums', label: `Album "${selectedAlbum.title}"`, albumId: selectedAlbum.id, scrollToFileId: p.id }));
                           window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
-                            detail: { fileIds, source: 'albums', mode: 'replace' },
+                            detail: { fileIds, source: 'albums', mode: 'accumulate' },
                           }));
                         }}
-                        data-testid={`album-photo-send-to-sd-replace-${p.id}`}
+                        data-testid={`album-photo-send-to-sd-pile-${p.id}`}
                       >
                         <SearchIcon className="w-3.5 h-3.5 mr-2" />
-                        Send to S&amp;D as new selection
+                        Add to S&amp;D pile
                       </ContextMenuItem>
                       <ContextMenuSeparator />
                       {/* v2.0.13 (Terry 2026-05-26) — mirrors MemoriesView's

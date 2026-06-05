@@ -3020,8 +3020,19 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   const renderSuccess = () => (
     <>
       {renderHeader('Done', successMsg, 'emerald')}
+      {/* v2.0.15 (Terry 2026-06-05) — split the single "Close" button
+          into two explicit next-step options so the user isn't dropped
+          back to the workspace when they were mid-task in the LDM. The
+          previous "Close" both ended the modal AND silently returned to
+          PDR. Terry: "I was expecting to stay on LDM, because I never
+          asked to leave... but I can see how perhaps most users will
+          want to go back onto PDR apps after changing." Two buttons,
+          primary first matches the more common intent (most users
+          finish here and want to use their library), secondary
+          underneath for power users / multi-library work. */}
       <div className="px-6 pb-6 pt-2 space-y-3">
-        <Button onClick={handleClose} variant="primary" className="w-full h-12">Close</Button>
+        <Button onClick={handleClose} variant="primary" className="w-full h-12">Back to Workspace</Button>
+        <Button onClick={() => setStep('status')} variant="secondary" className="w-full h-12">Back to libraries</Button>
       </div>
     </>
   );

@@ -200,6 +200,25 @@ console.log('[ffmpeg] path =', ffmpegPath);
 
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg']);
 
+// v2.0.15 (Terry 2026-06-05) — session-level negative cache for video
+// thumbnail failures. Without this, every scroll past a known-bad
+// HEVC clip in S&D / Memories re-spawns the 2-attempt ffmpeg cascade
+// (previously 4); on a library with hundreds of unsupported clips
+// in a 6,996-video S&D result set, the scroll-induced subprocess
+// storm crashed the renderer. The cache is module-scoped (not file-
+// system persisted) so a fresh launch retries — useful if the user
+// has updated ffmpeg / installed codecs out-of-band.
+const VIDEO_THUMB_NEGATIVE_CACHE = new Set<string>();
+
+// v2.0.15 (Terry 2026-06-05) — hard cap on a single ffmpeg subprocess
+// per attempt. The "no stderr — likely killed / crashed" log lines
+// were typically OS-side process kills (Windows kills children when
+// the parent renderer hits memory pressure). A 5s deadline matches
+// the longest legitimate extract time we've seen on slow USB drives
+// and prevents a single hung ffmpeg from holding a slot in the
+// (forthcoming) concurrency limiter.
+const FFMPEG_ATTEMPT_TIMEOUT_MS = 5_000;
+
 /**
  * Extract a single frame from a video using ffmpeg-static. Returns a JPEG buffer
  * suitable for piping into sharp. Seeks ~1s into the video to skip the usual
@@ -232,9 +251,16 @@ async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer
       }
     });
     let finished = false;
+    let timedOut = false;
+    // v2.0.15 — kill the subprocess if it runs past the deadline.
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      try { proc.kill('SIGKILL'); } catch { /* best-effort */ }
+    }, FFMPEG_ATTEMPT_TIMEOUT_MS);
     const done = async (ok: boolean) => {
       if (finished) return;
       finished = true;
+      clearTimeout(timeoutHandle);
       try {
         if (ok && fs.existsSync(tmp)) {
           const buf = await fs.promises.readFile(tmp);
@@ -245,14 +271,15 @@ async function extractVideoFrame(videoPath: string, seekSec = 1): Promise<Buffer
       } catch {}
       fs.promises.unlink(tmp).catch(() => {});
       // Log the real ffmpeg error if we have one — single line, file +
-      // seek position prefixed so the cascade's 4 attempts are
+      // seek position prefixed so the cascade's 2 attempts are
       // distinguishable in main.log. Empty stderr means ffmpeg
       // crashed before printing anything; we still log a marker line.
       const trimmed = stderrBuf.trim().replace(/\s+/g, ' ');
+      const tag = timedOut ? ` <killed after ${FFMPEG_ATTEMPT_TIMEOUT_MS}ms>` : '';
       if (trimmed) {
-        log.warn(`[ffmpeg] extract failed seek=${seekSec}s file="${path.basename(ffmpegSrc)}": ${trimmed.slice(0, 500)}`);
+        log.warn(`[ffmpeg] extract failed seek=${seekSec}s file="${path.basename(ffmpegSrc)}"${tag}: ${trimmed.slice(0, 500)}`);
       } else {
-        log.warn(`[ffmpeg] extract failed seek=${seekSec}s file="${path.basename(ffmpegSrc)}": <no stderr — likely killed / crashed>`);
+        log.warn(`[ffmpeg] extract failed seek=${seekSec}s file="${path.basename(ffmpegSrc)}"${tag}: <no stderr — likely killed / crashed>`);
       }
       resolve(null);
     };
@@ -3631,27 +3658,43 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
 
     // Video: extract a frame via ffmpeg-static, then resize through sharp.
     if (!jpegBuffer && VIDEO_EXTS.has(ext)) {
-      try {
-        // Cascade of seek positions for short clips and codecs that
-        // dislike a 1s pre-seek. v2.0.13 (Terry 2026-05-27) — added
-        // mid-clip + late-clip positions because Samsung Motion-Photo
-        // .mp4 side-files (typically 2 s and HEVC-coded) were
-        // returning blank in S&D / Memories. The cascade short-circuits
-        // as soon as any seek yields a decodable frame.
-        let frame = await extractVideoFrame(filePathLong, 1);
-        if (!frame) frame = await extractVideoFrame(filePathLong, 0);
-        if (!frame) frame = await extractVideoFrame(filePathLong, 0.5);
-        if (!frame) frame = await extractVideoFrame(filePathLong, 2);
-        if (frame) {
-          jpegBuffer = await sharp(frame, { failOnError: false })
-            .resize(size, size, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 80 })
-            .toBuffer();
-        } else {
-          console.warn('[ffmpeg] no frame extracted for', filePath, '(tried 1s, 0s, 0.5s, 2s — likely HEVC / unsupported codec)');
+      // v2.0.15 (Terry 2026-06-05) — negative-cache short-circuit. If
+      // we already tried and failed to extract a thumbnail from this
+      // exact path during this session, skip the cascade — the result
+      // will be the same and the storm of pointless ffmpeg subprocess
+      // spawns is what crashed Terry's renderer scrolling 6,996 videos
+      // in S&D filtered to Videos-only.
+      if (VIDEO_THUMB_NEGATIVE_CACHE.has(filePathLong)) {
+        // Fall through to the next thumbnail source (sharp / nativeImage
+        // fallback below) — they'll also fail but at least don't churn.
+      } else {
+        try {
+          // Cascade of seek positions for short clips and codecs that
+          // dislike a 1s pre-seek. v2.0.15 (Terry 2026-06-05) — trimmed
+          // from 4 attempts (1s, 0s, 0.5s, 2s) to 2 (1s, 0.5s). The
+          // original 4-attempt cascade was the inner loop of a renderer
+          // crash: each failing HEVC clip multiplied 4× into the
+          // subprocess storm. 2 attempts cover both the "skip black
+          // fade-in" case and the "clip shorter than 1s" case;
+          // codecs ffmpeg-static fundamentally can't decode wouldn't
+          // succeed at attempt 3 or 4 anyway.
+          let frame = await extractVideoFrame(filePathLong, 1);
+          if (!frame) frame = await extractVideoFrame(filePathLong, 0.5);
+          if (frame) {
+            jpegBuffer = await sharp(frame, { failOnError: false })
+              .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 80 })
+              .toBuffer();
+          } else {
+            // v2.0.15 — record the failure so subsequent scroll-by
+            // visits skip the cascade entirely.
+            VIDEO_THUMB_NEGATIVE_CACHE.add(filePathLong);
+            console.warn('[ffmpeg] no frame extracted for', filePath, '(tried 1s, 0.5s — adding to session negative cache)');
+          }
+        } catch (e) {
+          VIDEO_THUMB_NEGATIVE_CACHE.add(filePathLong);
+          console.warn('[ffmpeg] frame→sharp failed for', filePath, (e as Error).message);
         }
-      } catch (e) {
-        console.warn('[ffmpeg] frame→sharp failed for', filePath, (e as Error).message);
       }
     }
 

@@ -2431,14 +2431,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     <HardDrive className="w-3.5 h-3.5 mr-2" />
                     Show in File Explorer
                   </ContextMenuItem>
-                  {/* v2.0.15 (Terry 2026-06-01) — Send to S&D. If the
+                  {/* v2.0.15 (Terry 2026-06-05) — Send to S&D. If the
                       right-clicked tile is part of a multi-select,
                       send the whole selection; otherwise send just
-                      this one file. Default mode is ACCUMULATE — the
-                      incoming photos merge into any existing pile in
-                      S&D so the user can build up a review set
-                      across multiple visits. "Send as new selection"
-                      below replaces the pile from scratch. */}
+                      this one file. Default mode is REPLACE — wipes
+                      any residual S&D filter / pile state so the
+                      arriving selection IS the new S&D contents.
+                      Terry's report: prior runs left filters from
+                      earlier S&D activity on screen, making the new
+                      selection look "added to" whatever was there
+                      instead of starting fresh. The sibling "Add to
+                      S&D pile" below opts in to ACCUMULATE for
+                      building up a review set across multiple visits. */}
                   <ContextMenuItem
                     onSelect={() => {
                       const fileIds = selectedFileIds.size > 0 && selectedFileIds.has(f.id)
@@ -2456,7 +2460,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         scrollToFileId: f.id,
                       }));
                       window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
-                        detail: { fileIds, source: 'memories', mode: 'accumulate' },
+                        detail: { fileIds, source: 'memories', mode: 'replace' },
                       }));
                     }}
                     data-testid={`memories-tile-send-to-sd-${f.id}`}
@@ -2476,13 +2480,13 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         scrollToFileId: f.id,
                       }));
                       window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
-                        detail: { fileIds, source: 'memories', mode: 'replace' },
+                        detail: { fileIds, source: 'memories', mode: 'accumulate' },
                       }));
                     }}
-                    data-testid={`memories-tile-send-to-sd-replace-${f.id}`}
+                    data-testid={`memories-tile-send-to-sd-pile-${f.id}`}
                   >
                     <Search className="w-3.5 h-3.5 mr-2" />
-                    Send to S&amp;D as new selection
+                    Add to S&amp;D pile
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   {/* Right-click actions — Terry 2026-05-19. "Add to
