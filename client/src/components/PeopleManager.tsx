@@ -3317,19 +3317,19 @@ export default function PeopleManager() {
                   </div>
                 </div>
               ) : (
-                // Done button — matches the OK button style used by the
-                // existing PM Result modal directly above (raw button,
-                // bg-purple-500, rounded-lg) so it feels like part of
-                // PM's modal family.
-                <div className="flex items-center justify-end pt-1">
-                  <button
-                    onClick={handleImproveDone}
-                    className="px-4 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm font-medium transition-colors"
-                    autoFocus
-                  >
-                    Done
-                  </button>
-                </div>
+                // v2.0.15 (Terry 2026-06-06) — full-width Done button
+                // matching the LDM success modal's "Back to Workspace"
+                // pattern (w-full h-12). Small right-aligned variant
+                // looked off in such a large card. bg-purple-500 /
+                // hover:bg-purple-600 / text-white still mirrors the
+                // PM Result modal palette.
+                <button
+                  onClick={handleImproveDone}
+                  className="w-full h-12 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-base font-medium transition-colors"
+                  autoFocus
+                >
+                  Done
+                </button>
               )}
             </div>
           </div>
