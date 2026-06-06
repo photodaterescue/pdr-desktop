@@ -2743,6 +2743,66 @@ export function onLibraryFilesAdded(callback: (info: LibraryFilesAddedInfo) => v
   catch { return () => {}; }
 }
 
+// v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model
+// installer bridge. The Settings cards call these to surface the
+// install/uninstall state of the optional ONNX models (CodeFormer +
+// Real-ESRGAN), and subscribe to live download progress.
+export type AiModelKey = 'codeformer' | 'realesrgan';
+export type AiModelState = 'not-installed' | 'downloading' | 'installed';
+
+export interface AiModelSpec {
+  key: AiModelKey;
+  displayName: string;
+  oneLiner: string;
+  sizeMB: number;
+  expectedBytes: number;
+  url: string;
+  subdir: string;
+  filename: string;
+}
+
+export interface AiModelProgress {
+  receivedBytes: number;
+  totalBytes: number;
+  percent: number;
+}
+
+export interface AiModelStatus {
+  spec: AiModelSpec;
+  state: AiModelState;
+  progress: AiModelProgress | null;
+}
+
+export async function listAiModels(): Promise<{ success: boolean; models?: Record<AiModelKey, AiModelStatus>; error?: string }> {
+  if (!isElectron()) return { success: false, error: 'Not in Electron' };
+  try { return await (window as any).pdr?.aiModels?.list(); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function installAiModel(key: AiModelKey): Promise<{ success: boolean; error?: string }> {
+  if (!isElectron()) return { success: false, error: 'Not in Electron' };
+  try { return await (window as any).pdr?.aiModels?.install(key); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function cancelAiModelInstall(key: AiModelKey): Promise<{ success: boolean; cancelled?: boolean }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.aiModels?.cancel(key); }
+  catch { return { success: false }; }
+}
+
+export async function uninstallAiModel(key: AiModelKey): Promise<{ success: boolean; error?: string }> {
+  if (!isElectron()) return { success: false, error: 'Not in Electron' };
+  try { return await (window as any).pdr?.aiModels?.uninstall(key); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export function onAiModelStateChanged(callback: (info: { key: AiModelKey; state: AiModelState; progress: AiModelProgress | null; error?: string }) => void): () => void {
+  if (!isElectron()) return () => {};
+  try { return (window as any).pdr?.aiModels?.onStateChanged?.(callback) ?? (() => {}); }
+  catch { return () => {}; }
+}
+
 export async function getFaceContext(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240): Promise<{ success: boolean; dataUrl?: string }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.faceContext(filePath, boxX, boxY, boxW, boxH, size);

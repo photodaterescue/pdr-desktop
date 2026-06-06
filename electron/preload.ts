@@ -762,6 +762,22 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
+  // v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model
+  // installer surface. Settings cards call list() on mount, install /
+  // uninstall / cancel from button clicks, and subscribe to
+  // onStateChanged for live progress updates.
+  aiModels: {
+    list: () => ipcRenderer.invoke('ai-models:list'),
+    install: (key: 'codeformer' | 'realesrgan') => ipcRenderer.invoke('ai-models:install', key),
+    cancel: (key: 'codeformer' | 'realesrgan') => ipcRenderer.invoke('ai-models:cancel', key),
+    uninstall: (key: 'codeformer' | 'realesrgan') => ipcRenderer.invoke('ai-models:uninstall', key),
+    onStateChanged: (callback: (info: { key: string; state: string; progress: { receivedBytes: number; totalBytes: number; percent: number } | null; error?: string }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('ai-models:stateChanged', handler);
+      return () => ipcRenderer.removeListener('ai-models:stateChanged', handler);
+    },
+  },
+
   dateEditor: {
     open: (seedQuery?: any) => ipcRenderer.invoke('dateEditor:open', seedQuery),
     onThemeChange: (callback: (isDark: boolean) => void) => {

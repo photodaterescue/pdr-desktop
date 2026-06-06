@@ -7200,6 +7200,91 @@ ipcMain.handle('settings:resetToDefaults', async () => {
   return { success: true };
 });
 
+// ─── v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model installer
+// IPC. Settings → AI → Photo Enhancement cards call these.
+//
+// State events: every state change broadcasts on 'ai-models:stateChanged'
+// so multiple Settings windows / surfaces stay in sync without polling.
+
+ipcMain.handle('ai-models:list', async () => {
+  const { MODELS, getInstallState, getDownloadProgress } = await import('./ai-model-installer.js');
+  const out: Record<string, any> = {};
+  for (const key of Object.keys(MODELS) as Array<keyof typeof MODELS>) {
+    out[key] = {
+      spec: MODELS[key],
+      state: getInstallState(key),
+      progress: getDownloadProgress(key),
+    };
+  }
+  return { success: true, models: out };
+});
+
+ipcMain.handle('ai-models:install', async (_event, key: 'codeformer' | 'realesrgan') => {
+  try {
+    const installer = await import('./ai-model-installer.js');
+    if (!installer.MODELS[key]) {
+      return { success: false, error: `Unknown model key: ${key}` };
+    }
+    // Broadcast start immediately so the card flips to "Downloading 0%"
+    // without waiting for the first progress tick.
+    try {
+      mainWindow?.webContents.send('ai-models:stateChanged', {
+        key, state: 'downloading', progress: { receivedBytes: 0, totalBytes: 0, percent: 0 },
+      });
+    } catch { /* non-fatal */ }
+
+    await installer.installModel(key, {
+      onProgress: (info) => {
+        try {
+          mainWindow?.webContents.send('ai-models:stateChanged', {
+            key, state: 'downloading', progress: info,
+          });
+        } catch { /* non-fatal */ }
+      },
+    });
+
+    // Final broadcast — flip to 'installed'. UI uses this to enable
+    // the corresponding Viewer Enhance AI buttons.
+    try {
+      mainWindow?.webContents.send('ai-models:stateChanged', {
+        key, state: 'installed', progress: null,
+      });
+    } catch { /* non-fatal */ }
+
+    return { success: true };
+  } catch (err) {
+    // Broadcast back to not-installed so the card resets out of
+    // the downloading state into something the user can retry.
+    try {
+      mainWindow?.webContents.send('ai-models:stateChanged', {
+        key, state: 'not-installed', progress: null, error: (err as Error).message,
+      });
+    } catch { /* non-fatal */ }
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('ai-models:cancel', async (_event, key: 'codeformer' | 'realesrgan') => {
+  const { cancelInstall } = await import('./ai-model-installer.js');
+  const cancelled = cancelInstall(key);
+  return { success: true, cancelled };
+});
+
+ipcMain.handle('ai-models:uninstall', async (_event, key: 'codeformer' | 'realesrgan') => {
+  try {
+    const { uninstallModel } = await import('./ai-model-installer.js');
+    uninstallModel(key);
+    try {
+      mainWindow?.webContents.send('ai-models:stateChanged', {
+        key, state: 'not-installed', progress: null,
+      });
+    } catch { /* non-fatal */ }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // License IPC handlers
 ipcMain.handle('license:getStatus', async () => {
   return await getLicenseStatus();

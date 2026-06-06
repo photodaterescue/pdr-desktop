@@ -52,7 +52,9 @@ import {
   Calendar,
   SlidersHorizontal,
   Database,
-  Archive
+  Archive,
+  Smile,
+  Maximize2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { promptConfirm } from "@/components/trees/promptConfirm";
@@ -98,7 +100,14 @@ import {
   deleteSnapshot as deleteSnapshotBridge,
   exportSnapshotZip as exportSnapshotZipBridge,
   type DbBackup,
-  prewarmPersonClusters
+  prewarmPersonClusters,
+  listAiModels,
+  installAiModel,
+  cancelAiModelInstall,
+  uninstallAiModel,
+  onAiModelStateChanged,
+  type AiModelKey,
+  type AiModelStatus,
 } from "@/lib/electron-bridge";
 import { useFixInProgress, FIX_BLOCKED_TOOLTIP } from "@/lib/fix-state";
 import { NetworkScanModal } from "@/components/NetworkScanModal";
@@ -12617,6 +12626,16 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // button is highlighted on panel open; the user can still pick the
   // other one per-save.
   const [viewerEnhanceSaveDefault, setViewerEnhanceSaveDefaultState] = useState<'new' | 'replace'>('new');
+  // v2.0.15 Phase 4 (Terry 2026-06-06) — live state of the two optional
+  // AI Photo Enhancement models (CodeFormer / Real-ESRGAN). Populated
+  // on Settings open via listAiModels() and kept fresh via the
+  // onAiModelStateChanged broadcast (fires on install start, every
+  // progress tick, install complete, uninstall, error).
+  const [aiModelStatuses, setAiModelStatuses] = useState<Record<AiModelKey, AiModelStatus> | null>(null);
+  // Per-card error message — surfaces the most recent install failure
+  // inline under the card without bouncing the user to a toast they
+  // might miss. Cleared on next state change for that key.
+  const [aiModelErrors, setAiModelErrors] = useState<Partial<Record<AiModelKey, string>>>({});
   // Bypass the >2 GB pre-extract path during analysis. Used to QA the
   // streaming engine on real 50 GB Google Takeouts before deciding
   // whether the temp-extract step can be retired entirely. Default off.
@@ -12649,6 +12668,42 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setBypassLargeZipPreExtract(((settings as any).bypassLargeZipPreExtract as boolean) ?? false);
       setAutoIndexAfterFix(((settings as any).autoIndexAfterFix as boolean) ?? true);
     });
+  }, []);
+
+  // v2.0.15 Phase 4 (Terry 2026-06-06) — initial fetch of AI Photo
+  // Enhancement model statuses + live subscription to state changes.
+  // Listener stays mounted with workspace.tsx so installs that
+  // started in a prior Settings open keep updating the cards if the
+  // user re-opens Settings while a download is in flight.
+  useEffect(() => {
+    listAiModels().then(res => {
+      if (res.success && res.models) {
+        setAiModelStatuses(res.models);
+      }
+    });
+    const off = onAiModelStateChanged((info) => {
+      setAiModelStatuses(prev => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        if (next[info.key]) {
+          next[info.key] = { ...next[info.key], state: info.state as any, progress: info.progress };
+        }
+        return next;
+      });
+      setAiModelErrors(prev => {
+        const next = { ...prev };
+        if (info.error) {
+          next[info.key] = info.error;
+        } else if (info.state === 'installed' || info.state === 'downloading') {
+          // Successful install or restart of a download — clear the
+          // stale error so the card doesn't show "Network error" while
+          // a new download is in flight.
+          delete next[info.key];
+        }
+        return next;
+      });
+    });
+    return off;
   }, []);
 
   const handleNetworkUploadModeChange = (mode: 'fast' | 'direct') => {
@@ -14149,19 +14204,175 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 </div>
               </div>
 
-              {/* v2.0.15 Phase 3c (Terry 2026-06-06) — Photo Enhancement
-                  section. Lands here as a placeholder for the Phase 4-6
-                  model install cards (CodeFormer, Real-ESRGAN), and
-                  hosts the save-default radio NOW so v2.0.15 ships a
-                  complete user-facing settings story for the Enhance
-                  feature. Neutral palette on the radio (border / hover
-                  semantics from Network upload mode) because save-default
-                  is a behaviour preference, not an AI feature toggle —
-                  Phase 4's model cards will use the violet AI treatment.
-                  Section heading copy is short on purpose; the full
-                  "what this is" lives in Help & Support → Glossary. */}
+              {/* v2.0.15 Phase 3c + Phase 4 (Terry 2026-06-06) — Photo
+                  Enhancement section.
+                  - Phase 3c: save-default radio (further down).
+                  - Phase 4: AI model install cards (CodeFormer +
+                    Real-ESRGAN). Violet AI palette matching Object &
+                    Scene Tagging card above. Each card has three
+                    visual states (not-installed / downloading /
+                    installed) driven by aiModelStatuses live state.
+                  Cards come first because they're the substantive
+                  features; save-default radio is a small preference
+                  underneath. */}
               <div className="pt-4 border-t border-border">
                 <label className="block text-base font-semibold text-foreground mb-1">Photo Enhancement</label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Optional on-device AI models that the PDR Viewer's Enhance panel uses to restore old faces and upscale photos. Both run entirely on your computer — your photos are never uploaded.
+                </p>
+
+                {/* Two cards — CodeFormer + Real-ESRGAN. Same structure
+                    each. Inlined (not a helper) to keep the JSX readable
+                    next to the surrounding settings code. */}
+                <div className="space-y-2 mb-3">
+                  {(['codeformer', 'realesrgan'] as AiModelKey[]).map((key) => {
+                    const status = aiModelStatuses?.[key];
+                    const spec = status?.spec;
+                    const state = status?.state ?? 'not-installed';
+                    const progress = status?.progress;
+                    const err = aiModelErrors[key];
+                    const Icon = key === 'codeformer' ? Smile : Maximize2;
+                    // Fallback display until aiModelStatuses loads — keeps
+                    // the cards from popping in. Static title + size from
+                    // the renderer-side knowledge so the layout is stable
+                    // even before the first IPC round-trip completes.
+                    const fallbackTitle = key === 'codeformer'
+                      ? 'CodeFormer (face restoration)'
+                      : 'Real-ESRGAN (whole-image upscale)';
+                    const fallbackSizeMB = key === 'codeformer' ? 337 : 34;
+                    const title = spec?.displayName ?? fallbackTitle;
+                    const sizeMB = spec?.sizeMB ?? fallbackSizeMB;
+                    const oneLiner = spec?.oneLiner ?? '';
+                    return (
+                      <div
+                        key={key}
+                        data-testid={`ai-model-card-${key}`}
+                        className="p-3 rounded-lg border border-violet-200 dark:border-violet-700/50 bg-violet-50/50 dark:bg-violet-950/20"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Icon className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                              <span className="text-sm font-medium text-violet-700 dark:text-violet-300">{title}</span>
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 shrink-0">
+                                {sizeMB} MB
+                              </span>
+                            </div>
+                            {oneLiner && (
+                              <p className="text-xs text-muted-foreground leading-relaxed">{oneLiner}</p>
+                            )}
+                          </div>
+                          <div className="shrink-0 flex flex-col items-end gap-1 min-w-[140px]">
+                            {state === 'not-installed' && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={async () => {
+                                  // No confirm — install is non-destructive
+                                  // and Cancel is always available.
+                                  const r = await installAiModel(key);
+                                  if (!r.success) {
+                                    setAiModelErrors(prev => ({ ...prev, [key]: r.error || 'Install failed' }));
+                                  }
+                                }}
+                                data-testid={`ai-model-install-${key}`}
+                              >
+                                <Download className="w-3.5 h-3.5 mr-1.5" />
+                                Install
+                              </Button>
+                            )}
+                            {state === 'downloading' && (
+                              <div className="flex flex-col items-end gap-1.5 w-full">
+                                <div className="w-full">
+                                  <Progress value={progress?.percent ?? 0} className="h-1.5" />
+                                </div>
+                                <div className="text-[11px] text-violet-700 dark:text-violet-300 tabular-nums">
+                                  {progress?.percent ?? 0}%
+                                  {progress && progress.totalBytes > 0 && (
+                                    <span className="text-muted-foreground ml-1">
+                                      ({Math.round(progress.receivedBytes / (1024 * 1024))} / {Math.round(progress.totalBytes / (1024 * 1024))} MB)
+                                    </span>
+                                  )}
+                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => cancelAiModelInstall(key)}
+                                  data-testid={`ai-model-cancel-${key}`}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            )}
+                            {state === 'installed' && (
+                              <>
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  Installed
+                                </span>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={async () => {
+                                    const ok = await promptConfirm({
+                                      title: `Uninstall ${title}?`,
+                                      message: `The ${sizeMB} MB model file will be deleted from your computer. You can re-install any time from this Settings panel — no data is lost.`,
+                                      confirmLabel: 'Uninstall',
+                                      cancelLabel: 'Cancel',
+                                    });
+                                    if (!ok) return;
+                                    const r = await uninstallAiModel(key);
+                                    if (!r.success) {
+                                      await promptConfirm({
+                                        title: 'Could not uninstall',
+                                        message: r.error || 'The model file is in use. Close any open Viewer windows and try again.',
+                                        confirmLabel: 'OK',
+                                        hideCancel: true,
+                                        danger: true,
+                                      });
+                                    }
+                                  }}
+                                  data-testid={`ai-model-uninstall-${key}`}
+                                >
+                                  Uninstall
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {err && state !== 'downloading' && (
+                          <div className="mt-2 text-[11px] text-rose-600 dark:text-rose-400">
+                            {err}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Total disk usage line — only shown when at least one
+                    model is installed, so a fresh user doesn't see "0 MB
+                    used" clutter. */}
+                {aiModelStatuses && Object.values(aiModelStatuses).some(s => s.state === 'installed') && (
+                  <p className="text-[11px] text-muted-foreground/85 mb-3">
+                    Total AI model storage: {Object.values(aiModelStatuses).filter(s => s.state === 'installed').reduce((sum, s) => sum + (s.spec?.sizeMB ?? 0), 0)} MB
+                  </p>
+                )}
+
+                {/* Privacy callout — same pattern as Object & Scene Tagging
+                    section above, repeated here because the Photo
+                    Enhancement section is far enough below it that a
+                    user might miss the upstream callout. */}
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30 mb-3">
+                  <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-violet-700 dark:text-violet-300">
+                    <strong>Privacy:</strong> Photo Enhancement runs entirely on your device. Models download once from HuggingFace and run locally thereafter — no photos are uploaded, shared, or sent anywhere during enhancement.
+                  </p>
+                </div>
+
+                {/* Sub-heading for the save preference, distinguishing it
+                    from the AI model cards above. */}
+                <label className="block text-sm font-medium text-foreground mb-1 mt-4">Default save action</label>
                 <p className="text-xs text-muted-foreground mb-3">
                   When you save changes from the PDR Viewer's Enhance panel, which option should be highlighted by default?
                 </p>
