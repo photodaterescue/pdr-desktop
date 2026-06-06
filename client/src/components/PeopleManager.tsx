@@ -57,6 +57,12 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
+// v2.0.15 (Terry 2026-06-06) — PDR's premium Button primitive
+// (workspace + LDM both use this one). variant="primary" gives the
+// proper lavender (`--primary` / `#ad9eff`) with `text-primary-
+// foreground` (white) and the rounded-full pill shape. Replaces the
+// raw bg-purple-500 Done button that read as off-brand to Terry.
+import { Button } from '@/components/ui/custom-button';
 import { MainAliveBanner } from './MainAliveBanner';
 import { SnapshotStatusBadge } from './SnapshotStatusBadge';
 import {
@@ -3317,19 +3323,23 @@ export default function PeopleManager() {
                   </div>
                 </div>
               ) : (
-                // v2.0.15 (Terry 2026-06-06) — full-width Done button
-                // matching the LDM success modal's "Back to Workspace"
-                // pattern (w-full h-12). Small right-aligned variant
-                // looked off in such a large card. bg-purple-500 /
-                // hover:bg-purple-600 / text-white still mirrors the
-                // PM Result modal palette.
-                <button
+                // v2.0.15 (Terry 2026-06-06) — uses the PDR Button
+                // primitive (variant="primary" size="lg") instead of a
+                // raw bg-purple-500 button. The primitive gives the
+                // proper --primary lavender, text-primary-foreground
+                // white, rounded-full pill shape, and the premium
+                // button-shadow / hover-translate animation the rest
+                // of PDR uses. Same primitive LDM uses for its
+                // "Back to Workspace" primary CTA.
+                <Button
                   onClick={handleImproveDone}
-                  className="w-full h-12 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-base font-medium transition-colors"
+                  variant="primary"
+                  size="lg"
+                  className="w-full"
                   autoFocus
                 >
                   Done
-                </button>
+                </Button>
               )}
             </div>
           </div>
