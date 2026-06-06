@@ -912,13 +912,33 @@
   <div class="viewer-container" id="container">
     <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
     <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
-    <!-- v2.0.15 (Terry 2026-06-06 round 2) — video-only controls
+    <!-- v2.0.15 (Terry 2026-06-06 round 3) — video-only controls
          overlay. Shown only when a video is loaded; positioned above
          the native HTML5 control bar so the volume/fullscreen still
-         reach. Mutually-exclusive Repeat once + Loop endlessly. -->
+         reach. Two mutually-exclusive buttons, both using the YouTube
+         "play-inside-loop-arrow" / "infinity-inside-loop-arrow"
+         iconography: Repeat once first (the more common intent),
+         Loop endlessly second.
+
+         Icon design (generic SVG iconography, not copied from any
+         platform's proprietary artwork): an open circular arrow
+         indicating "loop" with the appropriate content centred —
+         play triangle for repeat-once, infinity symbol for loop. -->
     <div class="video-controls-overlay" id="video-controls-overlay">
-      <button class="video-controls-btn" id="btn-repeat-once" type="button" title="Repeat once when video ends">↻</button>
-      <button class="video-controls-btn" id="btn-loop" type="button" title="Loop endlessly">∞</button>
+      <button class="video-controls-btn" id="btn-repeat-once" type="button" title="Repeat once when video ends">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.68.94 6.36 2.64L21 8"/>
+          <polyline points="21 3 21 8 16 8"/>
+          <polygon points="10 9.5 15 12 10 14.5" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
+      <button class="video-controls-btn" id="btn-loop" type="button" title="Loop endlessly">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.68.94 6.36 2.64L21 8"/>
+          <polyline points="21 3 21 8 16 8"/>
+          <text x="12" y="16" text-anchor="middle" font-size="12" font-family="serif" fill="currentColor" stroke="none">&#8734;</text>
+        </svg>
+      </button>
     </div>
     <div class="no-image" id="placeholder">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1373,9 +1393,23 @@
       // Fetch the caption for this photo in parallel with media load.
       loadCaptionFor(filePath);
 
-      // Remove old media
+      // Remove old media. v2.0.15 (Terry 2026-06-06 round 3) — for
+      // videos, calling .pause() alone isn't always enough — the
+      // already-buffered audio can keep playing for a tick or two
+      // (Chromium behaviour), which surfaced as Terry's bug where
+      // slideshow advancing past a video left the video's audio
+      // bleeding over the subsequent photos. Muting + clearing the
+      // src + calling load() forces the media element to fully
+      // unload its buffer before removal so the audio cuts instantly.
       if (mediaEl) {
-        try { if (isVideo) mediaEl.pause(); } catch {}
+        try {
+          if (isVideo) {
+            mediaEl.pause();
+            mediaEl.muted = true;
+            mediaEl.removeAttribute('src');
+            mediaEl.load();
+          }
+        } catch {}
         mediaEl.remove();
         mediaEl = null;
       }
@@ -1915,6 +1949,23 @@ function zoomTo(newZoom, centreX, centreY) {
     const SLIDESHOW_INTERVALS = [3, 5, 10, 15, 30];
     let slideshowIntervalSec = 5;
     let slideshowTimerId = null;
+    // v2.0.15 (Terry 2026-06-06 round 3) — read on viewer init,
+    // updated via settings broadcast if available. Controls whether
+    // the slideshow loads videos (true) or skips past them (false).
+    let slideshowIncludeVideos = false;
+    try {
+      if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
+        window.pdr.settings.get().then(function (s) {
+          if (s && typeof s.slideshowIncludeVideos === 'boolean') {
+            slideshowIncludeVideos = s.slideshowIncludeVideos;
+            // Re-render the slideshow menu so the Include Videos
+            // entry reflects the loaded value (renderSlideshowMenu
+            // ran once on script init before this async fetch resolved).
+            try { renderSlideshowMenu(); } catch (_) {}
+          }
+        }).catch(function () {});
+      }
+    } catch (_) {}
     function isSlideshowRunning() { return slideshowTimerId != null; }
     function renderSlideshowMenu() {
       slideshowMenu.innerHTML = '';
@@ -1935,6 +1986,27 @@ function zoomTo(newZoom, centreX, centreY) {
         });
         slideshowMenu.appendChild(b);
       });
+      // v2.0.15 (Terry 2026-06-06 round 3) — Include videos toggle.
+      // Sits beneath the interval list, separated by a thin divider.
+      // Persisted to settings via pdr.settings.set on toggle so the
+      // choice survives across viewer opens. Same menu uses .active
+      // class for the "on" indicator (a small filled tick implied by
+      // the lavender highlight already styled for SLIDESHOW_INTERVALS).
+      const divider = document.createElement('div');
+      divider.style.cssText = 'height:1px;background:rgba(255,255,255,0.1);margin:4px 0;';
+      slideshowMenu.appendChild(divider);
+      const includeVideosBtn = document.createElement('button');
+      includeVideosBtn.textContent = (slideshowIncludeVideos ? '✓ ' : '') + 'Include videos';
+      includeVideosBtn.title = slideshowIncludeVideos
+        ? 'Videos play during slideshow (auto-advance on end)'
+        : 'Slideshow skips videos and shows photos only';
+      if (slideshowIncludeVideos) includeVideosBtn.classList.add('active');
+      includeVideosBtn.addEventListener('click', () => {
+        slideshowIncludeVideos = !slideshowIncludeVideos;
+        try { window.pdr.settings.set('slideshowIncludeVideos', slideshowIncludeVideos); } catch (_) {}
+        renderSlideshowMenu();
+      });
+      slideshowMenu.appendChild(includeVideosBtn);
     }
     renderSlideshowMenu();
     btnSlideshowInterval.addEventListener('click', (e) => {
@@ -1946,10 +2018,56 @@ function zoomTo(newZoom, centreX, centreY) {
     });
     function advanceSlideshow() {
       if (!isSlideshowRunning()) return;
-      // Loop at the end so a "set it and forget it" run doesn't
-      // dead-end on the last photo. Wraps cleanly via modulo.
-      const next = (currentIndex + 1) % files.length;
+      // v2.0.15 (Terry 2026-06-06 round 3) — pick the next index. If
+      // videos are excluded (default), walk forward until we find a
+      // non-video. Bail after one full loop so a video-only library
+      // doesn't lock the slideshow into an infinite skip.
+      let next = (currentIndex + 1) % files.length;
+      if (!slideshowIncludeVideos) {
+        let attempts = 0;
+        while (isVideoPath(files[next]) && attempts < files.length) {
+          next = (next + 1) % files.length;
+          attempts++;
+        }
+        if (attempts >= files.length) {
+          // Library is all videos and user has excluded them — nothing
+          // to advance to. Stop the slideshow gracefully so we don't
+          // burn timer ticks on no-op iterations.
+          stopSlideshow();
+          return;
+        }
+      }
       loadMedia(next);
+      // If videos ARE included and we just loaded one, pause the
+      // interval timer until the video ends, then advance. Stops the
+      // slideshow from cutting a 30s clip off mid-playback.
+      if (slideshowIncludeVideos && isVideoPath(files[next])) {
+        stopSlideshow();
+        const waitForEnd = function () {
+          // Re-check that user hasn't navigated away in the meantime.
+          if (currentIndex === next) startSlideshow();
+        };
+        // Listen on the video that loadMedia just attached. mediaEl
+        // is set asynchronously after prepare() resolves, so poll
+        // briefly for it.
+        let poll = 0;
+        const pollId = setInterval(function () {
+          poll++;
+          if (mediaEl && isVideo) {
+            clearInterval(pollId);
+            mediaEl.addEventListener('ended', waitForEnd, { once: true });
+            // Auto-play the video so the slideshow flow doesn't sit
+            // on a paused first frame waiting for the user to press
+            // play.
+            try { mediaEl.play(); } catch (_) {}
+          } else if (poll > 50) {
+            // 5 seconds with no video element — give up and resume
+            // the slideshow to keep flow alive.
+            clearInterval(pollId);
+            startSlideshow();
+          }
+        }, 100);
+      }
     }
     function startSlideshow() {
       if (isSlideshowRunning()) return;
@@ -2419,9 +2537,35 @@ function zoomTo(newZoom, centreX, centreY) {
             aiStatusLine.classList.remove('warn');
           }
           const installLink = document.getElementById('enhance-ai-status-install');
-          if (installLink && window.pdr && window.pdr.openMainWindow) {
+          // v2.0.15 (Terry 2026-06-06 round 3) — THIS is the link the
+          // user actually sees (rendered by refreshAiButtonState on
+          // every viewer open / state change). The handleAiError
+          // block below — only fires post-enhance-error — got the
+          // openMainWindow → openSettings rename in round 2, but
+          // THIS block was missed and kept calling the dead
+          // openMainWindow function. The try/catch swallowed the
+          // resulting ReferenceError so the click went silent. Now
+          // matches the handleAiError implementation: openSettings
+          // IPC + full diagnostic logging.
+          console.log('[viewer] open-settings link (primary): el=' + (!!installLink) + ' pdr=' + (typeof window.pdr) + ' openSettings=' + (typeof (window.pdr && window.pdr.openSettings)));
+          if (installLink && window.pdr && typeof window.pdr.openSettings === 'function') {
+            installLink.onclick = function (e) {
+              console.log('[viewer] open-settings (primary) clicked — invoking IPC');
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                const r = window.pdr.openSettings('ai');
+                if (r && typeof r.then === 'function') {
+                  r.then(function (res) { console.log('[viewer] openSettings resolved:', JSON.stringify(res)); })
+                   .catch(function (err) { console.warn('[viewer] openSettings rejected:', err && (err.message || err)); });
+                }
+              } catch (err) {
+                console.warn('[viewer] openSettings threw:', err && (err.message || err));
+              }
+            };
+          } else if (installLink) {
             installLink.onclick = function () {
-              try { window.pdr.openMainWindow({ openSettings: 'ai' }); } catch (_) {}
+              console.warn('[viewer] open-settings clicked but window.pdr.openSettings missing');
             };
           }
         }

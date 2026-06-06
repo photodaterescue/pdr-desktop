@@ -69,6 +69,12 @@ export interface PDRSettings {
    *  warning. Once true, the warning modal is skipped on subsequent
    *  AI presses (sliders still reset — the warning is just hidden). */
   viewerEnhanceAiWarningDismissed: boolean;
+  /** v2.0.15 (Terry 2026-06-06 round 3) — whether the PDR Viewer's
+   *  slideshow should include videos. Default false because a 30-second
+   *  video derails a "browse my photos" rhythm; users who want videos
+   *  in the slideshow opt in. When true, the slideshow loads the video
+   *  on its tick and pauses auto-advance until the video ends. */
+  slideshowIncludeVideos: boolean;
 
   /** When true, the titlebar's Recycle Bin icon shows a small live
    *  count badge of how many items are sitting in the bin. Default
@@ -214,6 +220,9 @@ export const optimisedDefaults: PDRSettings = {
   // AI Enhance press so the user understands the slider reset, then
   // can dismiss it forever via the don't-show-again checkbox.
   viewerEnhanceAiWarningDismissed: false,
+  // v2.0.15 — slideshow skips videos by default. Toggle on for users
+  // who want videos in the slideshow (advances when the video ends).
+  slideshowIncludeVideos: false,
   recycleBinShowCountBadge: false,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
@@ -287,6 +296,7 @@ export function getSettings(): PDRSettings {
     openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
     viewerEnhanceSaveDefault: store.get('viewerEnhanceSaveDefault', optimisedDefaults.viewerEnhanceSaveDefault),
     viewerEnhanceAiWarningDismissed: store.get('viewerEnhanceAiWarningDismissed', optimisedDefaults.viewerEnhanceAiWarningDismissed),
+    slideshowIncludeVideos: store.get('slideshowIncludeVideos', optimisedDefaults.slideshowIncludeVideos),
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
