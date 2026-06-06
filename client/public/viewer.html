@@ -105,38 +105,137 @@
       border-color: rgba(169, 156, 255, 0.4);
     }
     .toolbar-btn[hidden] { display: none; }
-    /* v2.0.15 (Terry 2026-06-06 round 5) — End-of-video replay button.
-       Native HTML5 video controls don't expose the play button for
-       restyling, so we overlay a custom button positioned over the
-       native play button's location (bottom-left of the controls bar).
-       Only shown when video.ended fires; covers the native button via
-       z-index + matching gradient background so the swap reads as
-       "the play button has become a replay button". Click restarts
-       the video from 0 and hides the overlay so the native button
-       comes back for ordinary play/pause. */
-    .video-replay-button {
+    /* v2.0.15 (Terry 2026-06-06 round 6) — Custom video controls bar.
+       Native HTML5 controls don't let us swap the play button to a
+       replay icon at end-of-video, so we build our own bar modelled
+       on YouTube's layout: seek slider ABOVE the buttons row, then
+       Play/Pause/Replay button (icon swaps based on video state),
+       time current/total, spacer, volume button + slider, fullscreen.
+       Bar auto-hides during playback after 2.5s of mouse inactivity
+       (re-shown on mousemove, always shown when paused or ended). */
+    .pdrv-wrap {
+      position: relative;
+      max-width: 100%;
+      max-height: 100%;
+      display: inline-block;
+      line-height: 0;
+    }
+    .pdrv-wrap video {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+    .pdrv-controls {
       position: absolute;
-      bottom: 5px;
-      left: 5px;
-      width: 42px;
-      height: 38px;
-      z-index: 10;
-      display: none;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 6px 12px 8px;
+      background: linear-gradient(0deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.55) 60%, transparent 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      opacity: 1;
+      transition: opacity 0.25s;
+      pointer-events: auto;
+      z-index: 5;
+    }
+    .pdrv-controls.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Seek bar — full width, slim by default, fattens on hover */
+    .pdrv-seek {
+      position: relative;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.22);
+      border-radius: 2px;
+      cursor: pointer;
+      transition: height 0.12s;
+    }
+    .pdrv-seek:hover { height: 6px; }
+    .pdrv-seek-played {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0;
+      background: #A99CFF;
+      border-radius: 2px;
+      pointer-events: none;
+    }
+    .pdrv-seek-handle {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 12px;
+      height: 12px;
+      margin-left: -6px;
+      transform: translateY(-50%);
+      background: #A99CFF;
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.12s;
+      pointer-events: none;
+    }
+    .pdrv-seek:hover .pdrv-seek-handle { opacity: 1; }
+    /* Bottom buttons row */
+    .pdrv-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pdrv-btn {
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0;
-      background: linear-gradient(0deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.4) 100%);
+      background: transparent;
       border: none;
-      border-radius: 4px;
       color: #fff;
       cursor: pointer;
-      transition: background 0.15s, color 0.15s;
+      padding: 0;
+      border-radius: 4px;
+      transition: background 0.12s;
     }
-    .video-replay-button.show {
+    .pdrv-btn:hover { background: rgba(255, 255, 255, 0.18); }
+    .pdrv-time {
+      color: #fff;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      padding: 0 6px;
+      line-height: 1;
+    }
+    .pdrv-time-sep { opacity: 0.55; padding: 0 2px; }
+    .pdrv-spacer { flex: 1; }
+    /* Volume slider — collapsed by default, expands when the volume
+       button group is hovered. */
+    .pdrv-vol-group {
       display: flex;
+      align-items: center;
     }
-    .video-replay-button:hover {
-      background: rgba(169, 156, 255, 0.45);
+    .pdrv-vol-slider {
+      width: 0;
+      height: 4px;
+      margin: 0 4px;
+      background: rgba(255, 255, 255, 0.22);
+      border-radius: 2px;
+      overflow: visible;
+      position: relative;
+      cursor: pointer;
+      transition: width 0.2s;
+    }
+    .pdrv-vol-group:hover .pdrv-vol-slider { width: 70px; }
+    .pdrv-vol-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 100%;
+      background: #fff;
+      border-radius: 2px;
+      pointer-events: none;
     }
     /* v2.0.15 — active state for toggle-style toolbar buttons (video
        Repeat once + Loop endlessly). When .active, the button reads
@@ -892,16 +991,6 @@
   <div class="viewer-container" id="container">
     <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
     <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
-    <!-- v2.0.15 (Terry 2026-06-06 round 5) — End-of-video replay
-         overlay. Positioned to cover the native HTML5 play button at
-         the bottom-left of the controls bar. Visible only when the
-         video has ended; hidden again as soon as the user clicks
-         (which restarts playback) or navigates to a different file. -->
-    <button class="video-replay-button" id="btn-video-replay" type="button" title="Replay video">
-      <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" stroke="none">
-        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-      </svg>
-    </button>
     <div class="no-image" id="placeholder">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1091,19 +1180,6 @@
     const btnRotateLeft = document.getElementById('btn-rotateLeft');
     const btnRotateRight = document.getElementById('btn-rotateRight');
     const btnOpenExternal = document.getElementById('btn-openExternal');
-    // v2.0.15 (Terry 2026-06-06 round 5) — replay overlay click. One
-    // listener wired here (the button element persists across video
-    // loads), so we don't re-attach on every loadMedia call.
-    const videoReplayBtn = document.getElementById('btn-video-replay');
-    if (videoReplayBtn) {
-      videoReplayBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (mediaEl && isVideo) {
-          try { mediaEl.currentTime = 0; mediaEl.play(); } catch (_) {}
-        }
-        videoReplayBtn.classList.remove('show');
-      });
-    }
     const speedWrap = document.getElementById('speed-wrap');
     const btnSpeed = document.getElementById('btn-speed');
     const speedMenu = document.getElementById('speed-menu');
@@ -1210,6 +1286,160 @@
       return m ? m[1].toLowerCase() : '';
     }
     function isVideoPath(filePath) { return VIDEO_EXTS.has(getExt(filePath)); }
+
+    // v2.0.15 (Terry 2026-06-06 round 6) — Custom video controls bar.
+    // Replaces the native HTML5 controls so we can swap the play
+    // button to a replay icon when video.ended fires (the YouTube
+    // pattern that native controls don't support). Layout mirrors
+    // YouTube's: full-width seek slider on top, buttons row below
+    // (play/pause/replay, time, spacer, volume, fullscreen).
+    function buildCustomVideoControls(video, wrap) {
+      // Icon paths (Material Design — same set YouTube uses).
+      const ICON_PLAY    = '<path d="M8 5v14l11-7z"/>';
+      const ICON_PAUSE   = '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>';
+      const ICON_REPLAY  = '<path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>';
+      const ICON_VOL_ON  = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>';
+      const ICON_VOL_OFF = '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>';
+      const ICON_FS_ON   = '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>';
+      const ICON_FS_OFF  = '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>';
+      const wrapSvg = (path) => '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">' + path + '</svg>';
+
+      const bar = document.createElement('div');
+      bar.className = 'pdrv-controls';
+      bar.innerHTML =
+        '<div class="pdrv-seek" data-ctrl="seek">' +
+          '<div class="pdrv-seek-played" data-ctrl="seek-played"></div>' +
+          '<div class="pdrv-seek-handle" data-ctrl="seek-handle"></div>' +
+        '</div>' +
+        '<div class="pdrv-row">' +
+          '<button class="pdrv-btn" data-ctrl="play" type="button" title="Play (Space)">' + wrapSvg(ICON_PLAY) + '</button>' +
+          '<div class="pdrv-time">' +
+            '<span data-ctrl="time-current">0:00</span>' +
+            '<span class="pdrv-time-sep">/</span>' +
+            '<span data-ctrl="time-total">0:00</span>' +
+          '</div>' +
+          '<div class="pdrv-spacer"></div>' +
+          '<div class="pdrv-vol-group">' +
+            '<button class="pdrv-btn" data-ctrl="vol" type="button" title="Mute (M)">' + wrapSvg(ICON_VOL_ON) + '</button>' +
+            '<div class="pdrv-vol-slider" data-ctrl="vol-slider">' +
+              '<div class="pdrv-vol-fill" data-ctrl="vol-fill"></div>' +
+            '</div>' +
+          '</div>' +
+          '<button class="pdrv-btn" data-ctrl="fullscreen" type="button" title="Fullscreen (F)">' + wrapSvg(ICON_FS_OFF) + '</button>' +
+        '</div>';
+      wrap.appendChild(bar);
+
+      const q = (sel) => bar.querySelector('[data-ctrl="' + sel + '"]');
+      const playBtn = q('play');
+      const seekBar = q('seek');
+      const seekPlayed = q('seek-played');
+      const seekHandle = q('seek-handle');
+      const timeCur = q('time-current');
+      const timeTot = q('time-total');
+      const volBtn = q('vol');
+      const volSlider = q('vol-slider');
+      const volFill = q('vol-fill');
+      const fsBtn = q('fullscreen');
+
+      function fmt(s) {
+        if (!isFinite(s) || s < 0) s = 0;
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return m + ':' + String(sec).padStart(2, '0');
+      }
+      function refreshPlayIcon() {
+        if (video.ended)        playBtn.innerHTML = wrapSvg(ICON_REPLAY);
+        else if (video.paused)  playBtn.innerHTML = wrapSvg(ICON_PLAY);
+        else                    playBtn.innerHTML = wrapSvg(ICON_PAUSE);
+        playBtn.title = video.ended ? 'Replay' : (video.paused ? 'Play (Space)' : 'Pause (Space)');
+      }
+      function refreshVolume() {
+        const muted = video.muted || video.volume === 0;
+        volBtn.innerHTML = wrapSvg(muted ? ICON_VOL_OFF : ICON_VOL_ON);
+        volFill.style.width = (muted ? 0 : video.volume * 100) + '%';
+      }
+      function refreshTime() {
+        timeCur.textContent = fmt(video.currentTime);
+        if (!isNaN(video.duration)) {
+          const pct = (video.currentTime / Math.max(video.duration, 0.0001)) * 100;
+          seekPlayed.style.width = pct + '%';
+          seekHandle.style.left = pct + '%';
+        }
+      }
+
+      // Initial state — refresh once duration is known.
+      video.addEventListener('loadedmetadata', () => {
+        timeTot.textContent = fmt(video.duration);
+        refreshTime();
+        refreshPlayIcon();
+        refreshVolume();
+      });
+      video.addEventListener('timeupdate', refreshTime);
+      video.addEventListener('play',  () => { refreshPlayIcon(); scheduleHide(); });
+      video.addEventListener('pause', () => { refreshPlayIcon(); showBar(); });
+      video.addEventListener('ended', () => { refreshPlayIcon(); showBar(); });
+      video.addEventListener('volumechange', refreshVolume);
+
+      playBtn.addEventListener('click', () => {
+        if (video.ended) { try { video.currentTime = 0; video.play(); } catch (_) {} }
+        else if (video.paused) { try { video.play(); } catch (_) {} }
+        else { try { video.pause(); } catch (_) {} }
+      });
+
+      // Seek: click anywhere on the bar to jump.
+      seekBar.addEventListener('click', (e) => {
+        const r = seekBar.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        try { video.currentTime = pct * (video.duration || 0); } catch (_) {}
+      });
+
+      // Volume button toggles mute; slider click sets level.
+      volBtn.addEventListener('click', () => {
+        video.muted = !video.muted;
+        refreshVolume();
+      });
+      volSlider.addEventListener('click', (e) => {
+        const r = volSlider.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        video.muted = false;
+        video.volume = pct;
+        refreshVolume();
+      });
+
+      // Fullscreen: request on wrap so the controls bar comes too.
+      fsBtn.addEventListener('click', () => {
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          (wrap.requestFullscreen ? wrap : video).requestFullscreen().catch(() => {});
+        }
+      });
+      document.addEventListener('fullscreenchange', () => {
+        const isFs = document.fullscreenElement === wrap || document.fullscreenElement === video;
+        fsBtn.innerHTML = wrapSvg(isFs ? ICON_FS_ON : ICON_FS_OFF);
+      });
+
+      // Auto-hide bar after 2.5s of inactivity while playing. Always
+      // visible when paused or ended.
+      let hideTimer = null;
+      function scheduleHide() {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+          if (!video.paused && !video.ended) bar.classList.add('hidden');
+        }, 2500);
+      }
+      function showBar() {
+        bar.classList.remove('hidden');
+        if (!video.paused && !video.ended) scheduleHide();
+      }
+      wrap.addEventListener('mousemove', showBar);
+      wrap.addEventListener('mouseleave', () => {
+        if (!video.paused && !video.ended) bar.classList.add('hidden');
+      });
+
+      refreshPlayIcon();
+      refreshVolume();
+    }
     function getFileSrc(filePath) {
       // Put the path in a query param so Chromium's URL parser (which
       // treats pdr-file as 'standard' scheme) can't mangle the C: drive
@@ -1381,10 +1611,6 @@
       isVideo = isVideoPath(filePath);
       setImageControlsVisible(!isVideo);
       btnOpenExternal.hidden = !isVideo;
-      // v2.0.15 (Terry 2026-06-06 round 5) — hide any leftover replay
-      // overlay from a previous video when navigating to a new file.
-      const _replayBtn = document.getElementById('btn-video-replay');
-      if (_replayBtn) _replayBtn.classList.remove('show');
 
       if (isVideo) {
         // Show a transcoding status while we wait for ffmpeg (no-op for
@@ -1403,8 +1629,14 @@
         const useSrc = (primaryUrl, fallbackUrl, label) => {
           if (currentIndex < 0 || files[currentIndex] !== prepareStarted) return;
           status.remove();
+          // v2.0.15 (Terry 2026-06-06 round 6) — custom video controls.
+          // Native controls=false; build our own YouTube-style bar so
+          // the play button can swap to a replay icon at end-of-video.
+          const videoWrap = document.createElement('div');
+          videoWrap.className = 'pdrv-wrap';
+
           const video = document.createElement('video');
-          video.controls = true;
+          video.controls = false;
           video.autoplay = false;
           video.preload = 'metadata';
           video.onloadedmetadata = () => {
@@ -1422,23 +1654,14 @@
               video.src = fallbackUrl;
               return;
             }
-            video.remove();
+            videoWrap.remove();
             mediaEl = null;
             showUnplayable(filePath);
           };
           video.src = primaryUrl;
-          // v2.0.15 (Terry 2026-06-06 round 5) — show the end-of-video
-          // replay overlay on ended, hide it as soon as the user
-          // resumes playback (whether via my overlay click or the
-          // native play button).
-          const replayBtn = document.getElementById('btn-video-replay');
-          video.addEventListener('ended', () => {
-            if (replayBtn) replayBtn.classList.add('show');
-          });
-          video.addEventListener('play', () => {
-            if (replayBtn) replayBtn.classList.remove('show');
-          });
-          container.appendChild(video);
+          videoWrap.appendChild(video);
+          buildCustomVideoControls(video, videoWrap);
+          container.appendChild(videoWrap);
           mediaEl = video;
         };
 
