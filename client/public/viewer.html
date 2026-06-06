@@ -1628,6 +1628,18 @@
             if (typeof btnSpeed !== 'undefined' && btnSpeed) btnSpeed.textContent = r === 1 ? '1x' : (r + 'x');
             renderSpeeds();
             settingsPop.classList.remove('show');
+            // v2.0.15 (Terry 2026-06-07) — popover sits above the bar
+            // and is a DOM descendant of it, so clicking a speed
+            // item never triggers bar.mouseleave (the cursor didn't
+            // physically move outside the bar's DOM tree, even
+            // though it visually went off-screen after the popover
+            // closed). Without resetting mouseOverBar, the auto-hide
+            // timer's `!mouseOverBar` check kept the bar pinned
+            // visible indefinitely. Reset + schedule hide; if the
+            // cursor is genuinely still over the bar, the next
+            // mousemove will flip mouseOverBar back to true.
+            mouseOverBar = false;
+            if (!video.paused && !video.ended) scheduleHide();
           });
           speedList.appendChild(item);
         });
