@@ -315,6 +315,91 @@
       border-radius: 2px;
       pointer-events: none;
     }
+    /* v2.1 (Terry 2026-06-07) — Trim mode handles on the seek bar.
+       Two draggable knobs (in / out) with a lavender-highlighted
+       region between them; the seek-bar's normal click-to-seek is
+       suppressed while trim mode is on (the .trimming class swaps
+       the cursor + disables the seek listener via JS guard). */
+    .pdrv-seek.trimming { cursor: default; }
+    .pdrv-trim-region {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: rgba(169, 156, 255, 0.35);
+      border-left: 1px solid #A99CFF;
+      border-right: 1px solid #A99CFF;
+      pointer-events: none;
+    }
+    .pdrv-trim-handle {
+      position: absolute;
+      top: 50%;
+      width: 12px;
+      height: 18px;
+      margin-left: -6px;
+      transform: translateY(-50%);
+      background: #A99CFF;
+      border-radius: 3px;
+      cursor: ew-resize;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+    }
+    .pdrv-trim-handle::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 2px;
+      height: 8px;
+      background: rgba(0, 0, 0, 0.45);
+      transform: translate(-50%, -50%);
+    }
+    /* Trim toolbar — floats below the controls bar inside the wrap
+       when trim mode is on. */
+    .pdrv-trim-bar {
+      position: absolute;
+      bottom: 56px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: rgba(15, 12, 30, 0.92);
+      border: 1px solid rgba(169, 156, 255, 0.5);
+      border-radius: 8px;
+      backdrop-filter: blur(6px);
+      z-index: 8;
+      color: #fff;
+      font-size: 12px;
+    }
+    .pdrv-trim-bar.show { display: inline-flex; }
+    .pdrv-trim-range {
+      font-variant-numeric: tabular-nums;
+      color: #ddd6fe;
+    }
+    .pdrv-trim-btn {
+      padding: 6px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .pdrv-trim-save {
+      background: #8b5cf6;
+      color: white;
+    }
+    .pdrv-trim-save:hover { background: #7c4dff; }
+    .pdrv-trim-save:disabled { opacity: 0.55; cursor: not-allowed; }
+    .pdrv-trim-cancel {
+      background: transparent;
+      color: #d1d5db;
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .pdrv-trim-cancel:hover { background: rgba(255, 255, 255, 0.08); }
+    .pdrv-trim-status {
+      color: #c4b5fd;
+      font-size: 11px;
+    }
     /* Quarter ticks — mirror PeopleManager's Loose/Strict slider:
        2px wide × ~7px tall, light overlay, positioned at 25/50/75%. */
     .pdrv-vol-ticks {
@@ -1454,6 +1539,8 @@
             '<div class="pdrv-settings-pop" data-ctrl="settings-pop">' +
               '<div class="pdrv-settings-section">Playback speed</div>' +
               '<div data-ctrl="speed-list"></div>' +
+              '<div class="pdrv-settings-section" style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:8px;">Tools</div>' +
+              '<button class="pdrv-settings-item" data-ctrl="trim-enter" type="button"><span class="tick">✂</span>Trim clip…</button>' +
             '</div>' +
           '</div>' +
           '<button class="pdrv-btn" data-ctrl="fullscreen" type="button" title="Fullscreen (F)">' + wrapSvg(ICON_FS_OPEN) + '</button>' +
@@ -1468,6 +1555,36 @@
       fsClose.title = 'Exit fullscreen (Esc)';
       fsClose.innerHTML = wrapSvg(ICON_CLOSE, 20);
       wrap.appendChild(fsClose);
+
+      // v2.1 (Terry 2026-06-07) — Trim mode toolbar. Floats above the
+      // controls bar inside the wrap. Shown only while trim mode is
+      // active. The Save button writes the clip via viewer.trimVideo.
+      const trimBar = document.createElement('div');
+      trimBar.className = 'pdrv-trim-bar';
+      trimBar.innerHTML =
+        '<span class="pdrv-trim-range" data-ctrl="trim-range">In 0:00 → Out 0:00 · 0:00</span>' +
+        '<button class="pdrv-trim-btn pdrv-trim-save" data-ctrl="trim-save" type="button">Save clip</button>' +
+        '<button class="pdrv-trim-btn pdrv-trim-cancel" data-ctrl="trim-cancel" type="button">Cancel</button>' +
+        '<span class="pdrv-trim-status" data-ctrl="trim-status"></span>';
+      wrap.appendChild(trimBar);
+
+      // Trim handles on the seek bar — created up-front but hidden
+      // until trim mode flips on. Position is set in pixel-percent
+      // each time the user drags or video metadata changes.
+      const trimRegion = document.createElement('div');
+      trimRegion.className = 'pdrv-trim-region';
+      trimRegion.style.display = 'none';
+      seekBar.appendChild(trimRegion);
+      const trimInHandle = document.createElement('div');
+      trimInHandle.className = 'pdrv-trim-handle';
+      trimInHandle.title = 'Drag to set clip start';
+      trimInHandle.style.display = 'none';
+      seekBar.appendChild(trimInHandle);
+      const trimOutHandle = document.createElement('div');
+      trimOutHandle.className = 'pdrv-trim-handle';
+      trimOutHandle.title = 'Drag to set clip end';
+      trimOutHandle.style.display = 'none';
+      seekBar.appendChild(trimOutHandle);
 
       // v2.0.15 (Terry 2026-06-06 round 7) — apply the session-wide
       // viewerVolume default (0.5 on first ever open of the viewer).
@@ -1488,7 +1605,12 @@
       const gearBtn = q('gear');
       const settingsPop = q('settings-pop');
       const speedList = q('speed-list');
+      const trimEnterBtn = q('trim-enter');
       const fsBtn = q('fullscreen');
+      const trimRangeLbl = trimBar.querySelector('[data-ctrl="trim-range"]');
+      const trimSaveBtn = trimBar.querySelector('[data-ctrl="trim-save"]');
+      const trimCancelBtn = trimBar.querySelector('[data-ctrl="trim-cancel"]');
+      const trimStatus = trimBar.querySelector('[data-ctrl="trim-status"]');
 
       function fmt(s) {
         if (!isFinite(s) || s < 0) s = 0;
@@ -1537,8 +1659,11 @@
         else { try { video.pause(); } catch (_) {} }
       });
 
-      // Seek: click anywhere on the bar to jump.
+      // Seek: click anywhere on the bar to jump. v2.1 — suppressed
+      // while trim mode is active so dragging a handle doesn't also
+      // jump the playhead.
       seekBar.addEventListener('click', (e) => {
+        if (trimMode) return;
         const r = seekBar.getBoundingClientRect();
         const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
         try { video.currentTime = pct * (video.duration || 0); } catch (_) {}
@@ -1688,6 +1813,133 @@
 
       refreshPlayIcon();
       refreshVolume();
+
+      // ─── Clip trim mode (v2.1, Terry 2026-06-07) ─────────────────
+      // Two draggable handles overlaid on the seek bar mark in/out
+      // points. Save spawns ffmpeg via viewer.trimVideo, writing a
+      // _T sibling file that's indexed live into S&D / Memories.
+      let trimMode = false;
+      let trimIn = 0;
+      let trimOut = 0;
+
+      function fmtSec(s) { return fmt(s); }
+
+      function refreshTrimUI() {
+        const dur = video.duration || 0;
+        if (!trimMode || dur <= 0) {
+          trimRegion.style.display = 'none';
+          trimInHandle.style.display = 'none';
+          trimOutHandle.style.display = 'none';
+          trimBar.classList.remove('show');
+          seekBar.classList.remove('trimming');
+          return;
+        }
+        const inPct = (trimIn / dur) * 100;
+        const outPct = (trimOut / dur) * 100;
+        trimRegion.style.display = 'block';
+        trimRegion.style.left = inPct + '%';
+        trimRegion.style.width = Math.max(0, outPct - inPct) + '%';
+        trimInHandle.style.display = 'block';
+        trimInHandle.style.left = inPct + '%';
+        trimOutHandle.style.display = 'block';
+        trimOutHandle.style.left = outPct + '%';
+        trimBar.classList.add('show');
+        seekBar.classList.add('trimming');
+        trimRangeLbl.textContent = 'In ' + fmtSec(trimIn) + ' → Out ' + fmtSec(trimOut) + ' · ' + fmtSec(Math.max(0, trimOut - trimIn));
+        trimSaveBtn.disabled = (trimOut - trimIn) < 0.5;
+      }
+
+      function enterTrim() {
+        if (!video.duration || video.duration < 0.5) return;
+        trimMode = true;
+        // Default: full clip (in=0, out=duration). User drags inward.
+        trimIn = 0;
+        trimOut = video.duration;
+        trimStatus.textContent = '';
+        refreshTrimUI();
+        settingsPop.classList.remove('show');
+      }
+      function exitTrim() {
+        trimMode = false;
+        trimStatus.textContent = '';
+        refreshTrimUI();
+      }
+
+      // Gear-menu "Trim clip…" item.
+      if (trimEnterBtn) {
+        trimEnterBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          enterTrim();
+        });
+      }
+      trimCancelBtn.addEventListener('click', exitTrim);
+
+      // Drag handles. mousedown on a handle starts tracking
+      // mousemove on the document until mouseup. Position constrained
+      // so in < out with a 0.5s minimum gap.
+      function makeDraggable(handle, which) {
+        handle.addEventListener('mousedown', (e) => {
+          if (!trimMode) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const onMove = (mv) => {
+            const r = seekBar.getBoundingClientRect();
+            const pct = Math.max(0, Math.min(1, (mv.clientX - r.left) / r.width));
+            const t = pct * (video.duration || 0);
+            if (which === 'in') {
+              trimIn = Math.min(t, Math.max(0, trimOut - 0.5));
+            } else {
+              trimOut = Math.max(t, Math.min(video.duration || 0, trimIn + 0.5));
+            }
+            refreshTrimUI();
+          };
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+          };
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+      }
+      makeDraggable(trimInHandle, 'in');
+      makeDraggable(trimOutHandle, 'out');
+
+      // Save button → IPC. Status text feedback during the ffmpeg
+      // shell-out; toast on success/failure handled by viewer-wide
+      // patterns (no toast lib in viewer.html, so we keep status
+      // inline + log).
+      trimSaveBtn.addEventListener('click', async () => {
+        if (!trimMode) return;
+        const filePath = files[currentIndex];
+        if (!filePath) return;
+        trimSaveBtn.disabled = true;
+        trimCancelBtn.disabled = true;
+        trimStatus.textContent = 'Trimming…';
+        try {
+          const r = await window.pdr.viewer.trimVideo({
+            filePath: filePath,
+            startSec: trimIn,
+            endSec: trimOut,
+          });
+          if (r && r.success) {
+            const name = (r.newFilePath || '').split(/[\\/]/).pop();
+            trimStatus.textContent = '✓ Saved ' + name;
+            console.log('[trim] saved clip to', r.newFilePath);
+            // Brief delay so the user sees the success, then exit.
+            setTimeout(() => { exitTrim(); }, 1400);
+          } else {
+            trimStatus.textContent = '✗ ' + (r && r.error ? r.error : 'Trim failed');
+            console.warn('[trim] failed:', r && r.error);
+            trimSaveBtn.disabled = false;
+            trimCancelBtn.disabled = false;
+          }
+        } catch (err) {
+          trimStatus.textContent = '✗ ' + (err && err.message ? err.message : String(err));
+          console.warn('[trim] threw:', err);
+          trimSaveBtn.disabled = false;
+          trimCancelBtn.disabled = false;
+        }
+      });
     }
     function getFileSrc(filePath) {
       // Put the path in a query param so Chromium's URL parser (which

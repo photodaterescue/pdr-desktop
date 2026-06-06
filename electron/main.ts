@@ -11479,6 +11479,117 @@ interface SaveEnhancedRequest {
   enhancementMethod?: string; // free-form, e.g. 'manual', 'codeformer-w0.5', 'realesrgan-x4'
 }
 
+// v2.1 (Terry 2026-06-07) — viewer:trimVideo. Trims a video to a
+// user-selected in/out range and writes the result as a sibling
+// file with a `_T` suffix. Uses ffmpeg `-c copy` for a fast remux
+// (no re-encode) — finishes in ~1-2s even for long videos. Note:
+// `-c copy` only cuts on keyframes; small edge-of-frame slop is
+// possible at the in-point but usually unnoticeable. For pixel-
+// perfect cuts we'd need re-encode; not bothering for v1.
+//
+// Output naming: `<basename>_T<ext>` next to the original; `_T_2`,
+// `_T_3`, … on collisions so prior clips aren't overwritten.
+//
+// After the file lands on disk, indexTrimmedClip stamps it in the
+// search DB (inheriting date/EXIF/GPS from the source, setting
+// clip_of_file_id so the parent link is queryable). library:filesAdded
+// then fires so S&D / Memories pick up the new clip live.
+
+interface TrimVideoRequest {
+  filePath: string;
+  /** Start time in seconds (inclusive). */
+  startSec: number;
+  /** End time in seconds (exclusive). */
+  endSec: number;
+}
+
+ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
+  try {
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      return { success: false, error: 'Source file not found.' };
+    }
+    if (typeof req.startSec !== 'number' || typeof req.endSec !== 'number' || req.endSec <= req.startSec) {
+      return { success: false, error: 'Invalid trim range.' };
+    }
+    if (!ffmpegPath) {
+      return { success: false, error: 'ffmpeg not available — cannot trim.' };
+    }
+
+    // Compute output path: <basename>_T<ext>, collision-bumped.
+    const dir = path.dirname(req.filePath);
+    const ext = path.extname(req.filePath);
+    const baseNoExt = path.basename(req.filePath, ext);
+    let outPath = path.join(dir, `${baseNoExt}_T${ext}`);
+    let n = 2;
+    while (fs.existsSync(toLongPath(outPath))) {
+      outPath = path.join(dir, `${baseNoExt}_T_${n}${ext}`);
+      n++;
+      if (n > 999) return { success: false, error: 'Too many existing trimmed clips.' };
+    }
+
+    const ffmpegSrc = fromLongPath(req.filePath);
+    const partPath = outPath + '.part';
+    try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch {}
+
+    // ffmpeg args: -ss BEFORE -i for fast input seeking on `-c copy`,
+    // -to for end (absolute time, not duration), -c copy for fast
+    // remux, -avoid_negative_ts make_zero to prevent timestamp
+    // issues at the cut point.
+    const args = [
+      '-hide_banner', '-loglevel', 'error',
+      '-ss', String(req.startSec),
+      '-to', String(req.endSec),
+      '-i', ffmpegSrc,
+      '-c', 'copy',
+      '-avoid_negative_ts', 'make_zero',
+      '-y', partPath,
+    ];
+
+    const runFfmpeg = (): Promise<{ ok: boolean; err?: string }> => new Promise((resolve) => {
+      const proc = spawn(ffmpegPath!, args, { windowsHide: true });
+      let stderr = '';
+      proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+      proc.on('error', (e) => resolve({ ok: false, err: e.message }));
+      proc.on('close', (code) => resolve({ ok: code === 0, err: code === 0 ? undefined : (stderr || ('ffmpeg exit ' + code)) }));
+    });
+
+    const r = await runFfmpeg();
+    if (!r.ok) {
+      try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch {}
+      return { success: false, error: r.err || 'ffmpeg failed' };
+    }
+
+    try { fs.renameSync(partPath, outPath); } catch (e) {
+      return { success: false, error: 'Could not finalise output: ' + (e as Error).message };
+    }
+
+    // Index the new clip into the search DB so S&D / Memories pick
+    // it up. Same pattern as Phase 3a Enhance save.
+    try {
+      const { indexTrimmedClip } = await import('./search-database.js');
+      const newId = await indexTrimmedClip(req.filePath, outPath);
+      if (newId == null) {
+        log.warn(`[viewer:trimVideo] source row not in library index (${req.filePath}); clip written but not indexed`);
+      } else {
+        try {
+          mainWindow?.webContents.send('library:filesAdded', {
+            reason: 'trimmed',
+            sourcePath: req.filePath,
+            newFilePath: outPath,
+            fileId: newId,
+          });
+        } catch { /* non-fatal */ }
+      }
+    } catch (idxErr) {
+      log.warn(`[viewer:trimVideo] index pass failed (clip still saved): ${(idxErr as Error).message}`);
+    }
+
+    return { success: true, newFilePath: outPath };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) => {
   try {
     if (!req?.filePath || !fs.existsSync(req.filePath)) {

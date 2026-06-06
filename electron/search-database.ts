@@ -72,6 +72,8 @@ export interface IndexedFile {
   // initSearchDatabase for the value taxonomy. NULL for ordinary
   // photos; populated only when the file came from "Save Enhanced".
   enhancement_type?: string | null;
+  // v2.1 — clip-trim parent reference. See migration above.
+  clip_of_file_id?: number | null;
 }
 
 export interface SearchQuery {
@@ -836,6 +838,13 @@ export function initDatabase(): { success: boolean; error?: string } {
       // manual/AI split popover (deferred to Phase 5+) reads the
       // exact value to filter further.
       { name: 'enhancement_type', type: 'TEXT' },
+      // v2.1 (Terry 2026-06-07) — Clip-trim parent reference. NULL
+      // for ordinary files; set to the originating indexed_files.id
+      // when this row represents a clip produced by the Viewer's
+      // Trim flow. Lets "show original" actions jump back from a
+      // clip to its parent, and powers a future "Clips only" S&D
+      // filter chip.
+      { name: 'clip_of_file_id', type: 'INTEGER' },
     ];
     for (const col of newCols) {
       if (!colNames.has(col.name)) {
@@ -1810,6 +1819,104 @@ export async function indexEnhancedSibling(
     database
       .prepare(`UPDATE indexed_files SET enhancement_type = ? WHERE id = ?`)
       .run(enhancementType, idRow.id);
+  }
+
+  return idRow?.id ?? null;
+}
+
+// ─── Single-file upsert (Clip trim) ──────────────────────────────────────────
+
+/**
+ * v2.1 (Terry 2026-06-07) — single-file upsert for the PDR Viewer's
+ * "Trim clip" flow. Mirrors indexEnhancedSibling but sets
+ * clip_of_file_id instead of enhancement_type, so the new row knows
+ * which original it was clipped from.
+ *
+ * The clip inherits the parent's date / camera / GPS / run_id (it
+ * IS the same recording, just shorter — same capture moment, same
+ * location). Size + hash are recomputed from the new file on disk.
+ * Width/height are inherited (ffmpeg -c copy preserves resolution).
+ * Duration recomputed by the indexer on next walk if needed — for
+ * v1 we don't try to update derived-date timestamps based on the
+ * clip's in/out time, since the user typically wants the clip to
+ * sort alongside the original.
+ */
+export async function indexTrimmedClip(
+  sourcePath: string,
+  newPath: string,
+): Promise<number | null> {
+  const database = getDb();
+
+  const sourceRow = database
+    .prepare(`SELECT * FROM indexed_files WHERE file_path = ? LIMIT 1`)
+    .get(sourcePath) as IndexedFile | undefined;
+
+  if (!sourceRow) return null;
+
+  const stat = await fs.promises.stat(newPath);
+  const sizeBytes = stat.size;
+  const newHash = await new Promise<string>((resolve, reject) => {
+    const crypto = require('crypto');
+    const h = crypto.createHash('sha256');
+    const stream = fs.createReadStream(newPath, { highWaterMark: 64 * 1024 });
+    stream.on('data', (chunk: string | Buffer) => h.update(chunk));
+    stream.on('end', () => resolve(h.digest('hex')));
+    stream.on('error', reject);
+  });
+
+  const newFilename = path.basename(newPath);
+  const newExt = path.extname(newPath).toLowerCase().replace(/^\./, '');
+
+  const payload: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'> = {
+    file_path: newPath,
+    filename: newFilename,
+    extension: newExt,
+    file_type: 'video',
+    size_bytes: sizeBytes,
+    hash: newHash,
+    confidence: sourceRow.confidence,
+    date_source: sourceRow.date_source,
+    original_filename: sourceRow.original_filename,
+    derived_date: sourceRow.derived_date,
+    year: sourceRow.year,
+    month: sourceRow.month,
+    day: sourceRow.day,
+    camera_make: sourceRow.camera_make,
+    camera_model: sourceRow.camera_model,
+    lens_model: sourceRow.lens_model,
+    width: sourceRow.width,
+    height: sourceRow.height,
+    megapixels: sourceRow.megapixels,
+    iso: sourceRow.iso,
+    shutter_speed: sourceRow.shutter_speed,
+    aperture: sourceRow.aperture,
+    focal_length: sourceRow.focal_length,
+    flash_fired: sourceRow.flash_fired,
+    scene_capture_type: sourceRow.scene_capture_type,
+    exposure_program: sourceRow.exposure_program,
+    white_balance: sourceRow.white_balance,
+    orientation: sourceRow.orientation,
+    camera_position: sourceRow.camera_position,
+    gps_lat: sourceRow.gps_lat,
+    gps_lon: sourceRow.gps_lon,
+    gps_alt: sourceRow.gps_alt,
+    geo_country: sourceRow.geo_country,
+    geo_country_code: sourceRow.geo_country_code,
+    geo_city: sourceRow.geo_city,
+    exif_read_ok: sourceRow.exif_read_ok,
+  };
+
+  insertFiles(sourceRow.run_id, [payload]);
+
+  const idRow = database
+    .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+    .get(newPath) as { id: number } | undefined;
+
+  // Stamp the parent-reference column so the clip knows its origin.
+  if (idRow?.id != null) {
+    database
+      .prepare(`UPDATE indexed_files SET clip_of_file_id = ? WHERE id = ?`)
+      .run(sourceRow.id, idRow.id);
   }
 
   return idRow?.id ?? null;

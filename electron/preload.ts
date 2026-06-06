@@ -584,6 +584,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // mode='replace' overwrites the original. XMP metadata records the
     // enhancement in both paths. See main.ts viewer:saveEnhanced for
     // the full handler.
+    // v2.1 (Terry 2026-06-07) — clip trim via ffmpeg -c copy. Writes
+    // a `_T` sibling, indexes it, broadcasts library:filesAdded.
+    trimVideo: (req: { filePath: string; startSec: number; endSec: number }) =>
+      ipcRenderer.invoke('viewer:trimVideo', req) as Promise<{
+        success: boolean;
+        newFilePath?: string;
+        error?: string;
+      }>,
     saveEnhanced: (req: {
       filePath: string;
       mode: 'new' | 'replace';
