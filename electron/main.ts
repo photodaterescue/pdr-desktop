@@ -10267,7 +10267,20 @@ ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold?: num
     // v2.0.15 (Terry 2026-06-05) — refineFromVerifiedFaces is now async
     // with cooperative yields so main can answer IPC during the
     // tens-of-millions-of-multiplications inner loop. Await is needed.
-    const result = await refineFromVerifiedFaces(threshold, personFilter);
+    //
+    // v2.0.15 (Terry 2026-06-06) — onProgress relays each progress
+    // event to the PM window (which is where the Improve modal
+    // lives). Channel name 'ai:refineProgress'; payload is the full
+    // RefineProgress object from search-database.ts. The send loop
+    // tries peopleWindow first (the PM is its own BrowserWindow) and
+    // falls back to mainWindow so progress also lands somewhere
+    // useful if Improve is ever fired from the main workspace.
+    const result = await refineFromVerifiedFaces(threshold, personFilter, (progress) => {
+      const target = (peopleWindow && !peopleWindow.isDestroyed()) ? peopleWindow : mainWindow;
+      if (target && !target.isDestroyed()) {
+        try { target.webContents.send('ai:refineProgress', progress); } catch { /* best-effort */ }
+      }
+    });
     // Rebuild FTS for all files whose faces were newly assigned
     const database = getDb();
     const personIds = result.perPerson.filter(p => p.matched > 0).map(p => p.personId);
@@ -10278,8 +10291,17 @@ ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold?: num
       // post-refine FTS pass doesn't also block main for the matched-
       // file count (potentially thousands of files for a heavy
       // Improve run). Same pattern as the inner refine loops.
+      // v2.0.15 (Terry 2026-06-06) — also emit a 'finalising' progress
+      // beat per chunk so the modal bar shows the FTS rebuild phase
+      // isn't stalled (it's not negligible for large match runs).
+      const target = (peopleWindow && !peopleWindow.isDestroyed()) ? peopleWindow : mainWindow;
       for (let i = 0; i < files.length; i++) {
-        if (i > 0 && i % 200 === 0) await new Promise<void>((r) => setImmediate(r));
+        if (i > 0 && i % 200 === 0) {
+          await new Promise<void>((r) => setImmediate(r));
+          if (target && !target.isDestroyed()) {
+            try { target.webContents.send('ai:refineProgress', { phase: 'finalising', personIndex: 0, personsTotal: 0, personName: '', itemIndex: i, itemsTotal: files.length, matchedSoFar: result.newMatches }); } catch {}
+          }
+        }
         rebuildAiFts(files[i].file_id);
       }
     }

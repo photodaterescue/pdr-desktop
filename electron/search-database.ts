@@ -3605,11 +3605,48 @@ export function getUnclusteredFaceCount(): number {
  * Processes persons in descending order of verified face count (most populous first).
  * Returns stats about what was done.
  */
-export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, personFilter?: number): {
+// v2.0.15 (Terry 2026-06-05) — async + cooperative yielding. This
+// function does up to (verified faces × unnamed faces × top-K × 512)
+// dot-product operations on JavaScript's single thread — for Terry's
+// library that's 2 800 verified Terry faces × 12 000 unnamed faces × 5
+// top-K × 512 dim ≈ tens of millions of multiplications, plus DB
+// writes. Previously this blocked the main process for 30-60 seconds,
+// which made PM's heartbeat ping time out and the "PDR has stopped
+// responding" banner fire mid-Improve. Now each outer loop yields via
+// setImmediate every YIELD_EVERY iterations so the Electron message
+// pump can answer pings (and other IPC) between chunks of work. The
+// total work is unchanged — only the latency-to-respond changes — so
+// the Improve still takes the same wall-clock time but the rest of
+// PDR stays interactive throughout.
+const YIELD_EVERY = 200;
+const yieldToEventLoop = (): Promise<void> =>
+  new Promise<void>((resolve) => setImmediate(resolve));
+
+// v2.0.15 (Terry 2026-06-06) — progress callback signature for PM's
+// "Improving facial recognition" modal. Called from inside the two
+// inner loops (existing-auto-match re-test and unnamed-faces matching)
+// every YIELD_EVERY iterations, plus once at "start" and once at
+// "done" so the modal can show "Person X / Y" if multiple persons are
+// being refined plus per-person inner progress.
+export interface RefineProgress {
+  phase: 'start' | 'person-start' | 'retest' | 'match' | 'person-done' | 'done';
+  personIndex: number;     // 0-based, current person being refined
+  personsTotal: number;    // total persons in this run
+  personName: string;      // name of current person (empty for 'start' / 'done')
+  itemIndex: number;       // current iteration within the active inner loop (retest or match)
+  itemsTotal: number;      // total iterations for the active inner loop
+  matchedSoFar: number;    // cumulative new matches across all persons in this run
+}
+
+export async function refineFromVerifiedFaces(
+  similarityThreshold: number = 0.72,
+  personFilter?: number,
+  onProgress?: (p: RefineProgress) => void,
+): Promise<{
   personsProcessed: number;
   newMatches: number;
   perPerson: { personId: number; personName: string; verifiedCount: number; matched: number }[];
-} {
+}> {
   const database = getDb();
 
   // Get all real named persons with their verified face counts, most populous first.
@@ -3641,7 +3678,13 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
   const perPerson: { personId: number; personName: string; verifiedCount: number; matched: number }[] = [];
   let totalNewMatches = 0;
 
-  for (const person of persons) {
+  // v2.0.15 — emit 'start' progress so the modal can render before
+  // the (possibly slow) per-person SQL queries fire.
+  try { onProgress?.({ phase: 'start', personIndex: 0, personsTotal: persons.length, personName: '', itemIndex: 0, itemsTotal: 0, matchedSoFar: 0 }); } catch { /* progress is best-effort */ }
+
+  for (let personIdx = 0; personIdx < persons.length; personIdx++) {
+    const person = persons[personIdx];
+    try { onProgress?.({ phase: 'person-start', personIndex: personIdx, personsTotal: persons.length, personName: person.name, itemIndex: 0, itemsTotal: 0, matchedSoFar: totalNewMatches }); } catch {}
     // Get verified embeddings for this person
     const verifiedRows = database.prepare(`
       SELECT embedding FROM face_detections
@@ -3750,7 +3793,18 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
       `SELECT id, embedding FROM face_detections WHERE person_id = ? AND verified = 0 AND embedding IS NOT NULL`,
     ).all(person.id) as Array<{ id: number; embedding: Buffer }>;
     let unassignedCount = 0;
+    let existingIdx = 0;
     for (const row of existingAutoMatches) {
+      // v2.0.15 — yield to event loop every YIELD_EVERY iterations so
+      // main can answer IPC pings + drag/resize/render between chunks.
+      // Same cadence also drives the progress event so the modal's
+      // bar moves smoothly across the re-test pass without flooding
+      // the IPC channel.
+      if (existingIdx > 0 && existingIdx % YIELD_EVERY === 0) {
+        await yieldToEventLoop();
+        try { onProgress?.({ phase: 'retest', personIndex: personIdx, personsTotal: persons.length, personName: person.name, itemIndex: existingIdx, itemsTotal: existingAutoMatches.length, matchedSoFar: totalNewMatches }); } catch {}
+      }
+      existingIdx++;
       const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
       let magB = 0;
       for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
@@ -3797,7 +3851,19 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
       WHERE person_id IS NULL AND embedding IS NOT NULL
     `).all() as { id: number; embedding: Buffer }[];
 
+    let unnamedIdx = 0;
     for (const row of unnamedRefreshed) {
+      // v2.0.15 — yield to event loop every YIELD_EVERY iterations.
+      // This is the biggest CPU loop in PDR (12 000+ unnamed faces
+      // for Terry's library) so yielding here is what keeps PM's
+      // heartbeat ping responsive during Improve Facial Recognition.
+      // Progress event emits at the same cadence so the modal bar
+      // tracks the main loop accurately.
+      if (unnamedIdx > 0 && unnamedIdx % YIELD_EVERY === 0) {
+        await yieldToEventLoop();
+        try { onProgress?.({ phase: 'match', personIndex: personIdx, personsTotal: persons.length, personName: person.name, itemIndex: unnamedIdx, itemsTotal: unnamedRefreshed.length, matchedSoFar: totalNewMatches + matchedForThisPerson }); } catch {}
+      }
+      unnamedIdx++;
       const vec = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
       let magB = 0;
       for (let i = 0; i < dim; i++) magB += vec[i] * vec[i];
@@ -3838,7 +3904,10 @@ export function refineFromVerifiedFaces(similarityThreshold: number = 0.72, pers
       verifiedCount: verifiedRows.length,
       matched: matchedForThisPerson,
     });
+    try { onProgress?.({ phase: 'person-done', personIndex: personIdx, personsTotal: persons.length, personName: person.name, itemIndex: unnamedRefreshed.length, itemsTotal: unnamedRefreshed.length, matchedSoFar: totalNewMatches }); } catch {}
   }
+
+  try { onProgress?.({ phase: 'done', personIndex: persons.length, personsTotal: persons.length, personName: '', itemIndex: 0, itemsTotal: 0, matchedSoFar: totalNewMatches }); } catch {}
 
   return {
     personsProcessed: persons.length,

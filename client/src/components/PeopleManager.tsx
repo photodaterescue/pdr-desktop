@@ -506,6 +506,28 @@ export default function PeopleManager() {
   // facial recognition for Terry…" without a clusters lookup at every
   // render. Cleared when improvingPersonId clears.
   const [improvingPersonName, setImprovingPersonName] = useState<string | null>(null);
+  // v2.0.15 (Terry 2026-06-06) — real-time progress from main process
+  // for the Improve modal's progress bar. Updated via the
+  // 'ai:refineProgress' IPC event stream emitted from
+  // refineFromVerifiedFaces every 200 inner-loop iterations + at each
+  // phase boundary. Null when no Improve is in flight.
+  const [improveProgress, setImproveProgress] = useState<{
+    phase: 'start' | 'person-start' | 'retest' | 'match' | 'person-done' | 'done' | 'finalising';
+    personIndex: number;
+    personsTotal: number;
+    personName: string;
+    itemIndex: number;
+    itemsTotal: number;
+    matchedSoFar: number;
+  } | null>(null);
+  useEffect(() => {
+    const pdrAi = (window as any).pdr?.ai;
+    if (!pdrAi?.onRefineProgress) return;
+    const unsubscribe = pdrAi.onRefineProgress((p: typeof improveProgress) => {
+      setImproveProgress(p);
+    });
+    return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+  }, []);
   // In-app result toast — replaces window.alert() AND replaces a
   // previous blocking modal that required an OK click. Auto-fades
   // after ~6s so users see results immediately without an extra
@@ -806,6 +828,7 @@ export default function PeopleManager() {
     } finally {
       setImprovingPersonId(null);
       setImprovingPersonName(null);
+      setImproveProgress(null);
     }
   };
 
@@ -3175,37 +3198,79 @@ export default function PeopleManager() {
         </div>
       )}
 
-      {/* v2.0.15 (Terry 2026-06-06) — blocking modal while Improve
-          Facial Recognition is running. Before this, the only signal
-          was a small spinner on the per-row button; the rest of PM
-          looked usable but was actually unresponsive while main was
-          doing the embedding work. Now the PM window is visually
-          blocked end-to-end so the user knows to wait. The workspace
-          window is a separate BrowserWindow and remains usable
-          throughout — main is busy but Chromium pumps IPC for the
-          workspace renderer in parallel with this one. Backdrop +
-          card use the same z-[95] / bg-black/40 / w-[440px] / rounded-
-          xl pattern as the existing PM Result modal directly above
-          so it feels like part of PM's modal family. No close-on-
-          backdrop-click — the operation is in flight and dismissing
-          the modal would just leave the user looking at a frozen PM. */}
-      {improvingPersonId !== null && (
-        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-[440px] max-w-[90vw] rounded-xl bg-background border border-border shadow-2xl flex flex-col">
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-border text-foreground">
-              <Loader2 className="w-4 h-4 text-primary animate-spin" />
-              <h3 className="text-base font-semibold">
-                {improvingPersonName
-                  ? `Improving facial recognition for ${improvingPersonName}…`
-                  : 'Improving facial recognition…'}
-              </h3>
-            </div>
-            <div className="px-5 py-4 text-sm text-muted-foreground leading-relaxed">
-              PDR is searching the unnamed faces for more of this person. This usually takes a few seconds, but it scales with how many verified faces and unnamed faces you have. You can keep using PDR in the main window while this runs.
+      {/* v2.0.15 (Terry 2026-06-06) — premium Improve-in-progress modal.
+          Centered card with generous padding, a Sparkles accent icon
+          (the same icon the per-row Improve button uses, so the modal
+          visually inherits from that surface), a single-line headline,
+          a live progress bar driven by IPC events emitted from
+          refineFromVerifiedFaces every 200 inner-loop iterations,
+          and a status line that names the current phase ("Looking for
+          matches…" / "Finalising…") plus the cumulative match count.
+          The workspace window remains usable while this runs because
+          PM is a separate BrowserWindow — note included so users know
+          they don't have to wait if they want to do other PDR work.
+          No backdrop-click close because the operation is in flight. */}
+      {improvingPersonId !== null && (() => {
+        const p = improveProgress;
+        const phaseLabel = !p
+          ? 'Starting up…'
+          : p.phase === 'start' || p.phase === 'person-start'
+            ? 'Starting up…'
+            : p.phase === 'retest'
+              ? 'Reviewing existing matches…'
+              : p.phase === 'match'
+                ? 'Looking for more matches…'
+                : p.phase === 'finalising'
+                  ? 'Finalising…'
+                  : 'Almost done…';
+        const pct = (p && p.itemsTotal > 0)
+          ? Math.min(100, Math.max(0, Math.round((p.itemIndex / p.itemsTotal) * 100)))
+          : null;
+        const matchedSoFar = p?.matchedSoFar ?? 0;
+        return (
+          <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4">
+            <div className="w-[520px] max-w-[92vw] rounded-2xl bg-background border border-border shadow-2xl flex flex-col p-8 gap-5">
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1 pt-1">
+                  <h3 className="text-lg font-semibold text-foreground leading-tight">
+                    Improving recognition for {improvingPersonName ?? 'this person'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Searching unnamed faces for more matches. You can keep working in the main PDR window while this runs.
+                  </p>
+                </div>
+              </div>
+              {/* Progress bar — indeterminate look when pct is null
+                  (very start of operation, before first event), real
+                  bar when itemsTotal is known. */}
+              <div className="flex flex-col gap-2">
+                <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                  {pct == null ? (
+                    <div className="h-full w-1/3 rounded-full bg-primary/70 animate-pulse" />
+                  ) : (
+                    <div
+                      className="h-full bg-primary transition-all duration-200 ease-out"
+                      style={{ width: `${pct}%` }}
+                    />
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{phaseLabel}</span>
+                  <span>
+                    {pct != null && <span className="tabular-nums">{pct}%</span>}
+                    {matchedSoFar > 0 && (
+                      <span className="ml-3 text-foreground font-medium tabular-nums">+{matchedSoFar} match{matchedSoFar === 1 ? '' : 'es'}</span>
+                    )}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Post-verify Improve Recognition chip ── Vote D from the
           FR redesign. Appears after a successful verify, offers

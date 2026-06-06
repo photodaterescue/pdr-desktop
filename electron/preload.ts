@@ -603,6 +603,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     batchVerify: (personIds: number[]) => ipcRenderer.invoke('ai:batchVerify', personIds),
     unnameFace: (faceId: number) => ipcRenderer.invoke('ai:unnameFace', faceId),
     refineFromVerified: (similarityThreshold?: number, personFilter?: number) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold, personFilter),
+    // v2.0.15 (Terry 2026-06-06) — progress event subscription for
+    // PM's Improve Facial Recognition modal. Returns an unsubscribe
+    // function. Payload shape matches RefineProgress in search-database.ts.
+    onRefineProgress: (cb: (p: unknown) => void) => {
+      const handler = (_event: unknown, p: unknown) => cb(p);
+      ipcRenderer.on('ai:refineProgress', handler);
+      return () => ipcRenderer.removeListener('ai:refineProgress', handler);
+    },
     importXmpFaces: () => ipcRenderer.invoke('ai:importXmpFaces'),
     renamePerson: (personId: number, newName: string, newFullName?: string | null) => ipcRenderer.invoke('ai:renamePerson', personId, newName, newFullName),
     setRepresentativeFace: (personId: number, faceId: number) => ipcRenderer.invoke('ai:setRepresentativeFace', personId, faceId),
