@@ -569,6 +569,18 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
      *  JSON-stringified into the URL). Returns one-shot — consumed on
      *  read so a stale list can't leak across opens. */
     getPendingFileList: () => ipcRenderer.invoke('viewer:getPendingFileList') as Promise<{ files: string[]; startIndex: number }>,
+    // v2.0.15 (Terry 2026-06-06) — bake Enhance panel adjustments into
+    // a real JPG. mode='new' creates <original>_E.jpg sibling;
+    // mode='replace' overwrites the original. XMP metadata records the
+    // enhancement in both paths. See main.ts viewer:saveEnhanced for
+    // the full handler.
+    saveEnhanced: (req: {
+      filePath: string;
+      mode: 'new' | 'replace';
+      filterState: { brightness: number; contrast: number; saturation: number; temperature: number; bw: boolean };
+      enhancementType?: 'manual' | 'ai' | 'manual+ai';
+      enhancementMethod?: string;
+    }) => ipcRenderer.invoke('viewer:saveEnhanced', req) as Promise<{ success: boolean; newFilePath?: string; error?: string }>,
     /** v2.0.14 — broadcast fired by viewer:setRotation. Renderers that
      *  hold cached thumbnails (Memories grid, Albums tiles, viewer
      *  filmstrip) subscribe to drop the stale entry and refetch with

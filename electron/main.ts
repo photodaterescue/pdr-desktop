@@ -11166,6 +11166,207 @@ ipcMain.handle('viewer:setRotation', async (_event, filePath: string, rotation: 
   }
 });
 
+// v2.0.15 (Terry 2026-06-06) — viewer:saveEnhanced
+// Bakes the CSS-filter-equivalent adjustments from the PDR Viewer
+// Enhance panel into a real JPG using sharp, optionally writes it
+// as a new "_E" sibling OR replaces the original, and records the
+// enhancement in XMP metadata so S&D / PDR's indexer can surface it
+// regardless of filename. See project_ai_enhancement_plan.md for the
+// full design context.
+//
+// Filter-to-sharp mapping:
+//   brightness 0..200 → modulate({ brightness: v/100 })
+//   contrast   0..200 → linear(slope=v/100, offset=128*(1 - v/100))
+//   saturation 0..200 → modulate({ saturation: v/100 })  (ignored when bw)
+//   bw         true   → greyscale()
+//   temperature -50..+50 → tint() with warm/cool shift
+//
+// XMP metadata written via exiftool:
+//   XMP-xmp:Label         = "PDR-Enhanced-manual" (or "ai" / "manual+ai" later)
+//   XMP-xmp:MetadataDate  = ISO timestamp of the save
+//   Software is NOT overwritten — original camera/app info preserved.
+//
+// New-file path: <original>_E.jpg next to the original, auto-suffixed
+// with _2/_3/... if there's a collision. After write, the new file is
+// queued for indexing so it appears in S&D / Memories / Trees immediately.
+//
+// Replace path: writes back to the original filename via the same atomic
+// temp+rename pattern. Filename does NOT change.
+interface SaveEnhancedRequest {
+  filePath: string;
+  mode: 'new' | 'replace';
+  filterState: {
+    brightness: number;   // 0..200, default 100
+    contrast: number;     // 0..200, default 100
+    saturation: number;   // 0..200, default 100
+    temperature: number;  // -50..+50, default 0
+    bw: boolean;          // default false
+  };
+  // 'manual' for slider-only saves; later 'ai' / 'manual+ai' will be
+  // passed by the AI enhance path. Defaults to 'manual'.
+  enhancementType?: 'manual' | 'ai' | 'manual+ai';
+  enhancementMethod?: string; // e.g. 'manual', 'codeformer', 'manual+codeformer'
+}
+
+ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) => {
+  try {
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      return { success: false, error: 'Source file not found.' };
+    }
+    if (req.mode !== 'new' && req.mode !== 'replace') {
+      return { success: false, error: 'mode must be "new" or "replace".' };
+    }
+    const fs2 = await import('node:fs/promises');
+    const sharp = (await import('sharp')).default;
+    const filePathLong = toLongPath(req.filePath);
+    const fs2Stat = await fs2.stat(filePathLong).catch(() => null);
+    if (!fs2Stat || !fs2Stat.isFile()) {
+      return { success: false, error: 'Source file not found.' };
+    }
+
+    // Resolve output path. New-file path appends _E before the extension;
+    // collisions get _E_2, _E_3, ... so an existing _E.jpg from a prior
+    // save isn't overwritten.
+    const dir = path.dirname(req.filePath);
+    const ext = path.extname(req.filePath);
+    const baseNoExt = path.basename(req.filePath, ext);
+    // Force JPG output regardless of source extension. The Enhance flow
+    // produces an enhanced photo; PNG/TIFF inputs become JPG to keep file
+    // size sane. Original is unchanged (only relevant in 'new' mode;
+    // 'replace' inherits the source extension below).
+    const outExtNew = '.jpg';
+    let outPath: string;
+    if (req.mode === 'new') {
+      let candidate = path.join(dir, `${baseNoExt}_E${outExtNew}`);
+      let n = 2;
+      while (fs.existsSync(toLongPath(candidate))) {
+        candidate = path.join(dir, `${baseNoExt}_E_${n}${outExtNew}`);
+        n++;
+        if (n > 999) {
+          return { success: false, error: 'Too many existing enhanced copies.' };
+        }
+      }
+      outPath = candidate;
+    } else {
+      // Replace original — keep the existing filename + extension.
+      outPath = req.filePath;
+    }
+    const outPathLong = toLongPath(outPath);
+    const tmpPath = outPath + '.pdr-enh.tmp';
+    const tmpPathLong = toLongPath(tmpPath);
+
+    // Build the sharp pipeline.
+    const fs2State = req.filterState;
+    const brightnessF = (fs2State.brightness ?? 100) / 100;   // 1.0 = neutral
+    const contrastF   = (fs2State.contrast ?? 100) / 100;     // 1.0 = neutral
+    const saturationF = (fs2State.saturation ?? 100) / 100;   // 1.0 = neutral
+    const temperature = fs2State.temperature ?? 0;
+    const bw = !!fs2State.bw;
+
+    let pipeline = sharp(filePathLong, { failOnError: false }).rotate();
+
+    // Brightness + saturation via modulate. modulate({ brightness })
+    // multiplies pixel values; brightness=1 is neutral. saturation
+    // ignored when bw=true (greyscale() handles it).
+    if (brightnessF !== 1 || (saturationF !== 1 && !bw)) {
+      pipeline = pipeline.modulate({
+        brightness: brightnessF,
+        ...(bw ? {} : { saturation: saturationF }),
+      });
+    }
+
+    // Contrast via linear. linear(slope, intercept) computes
+    // output = slope * input + intercept. To centre contrast on
+    // mid-grey (128), intercept = 128 * (1 - slope).
+    if (contrastF !== 1) {
+      const slope = contrastF;
+      const offset = 128 * (1 - slope);
+      pipeline = pipeline.linear(slope, offset);
+    }
+
+    // Temperature — approximate via tint(). Negative = cool (blue
+    // shift); positive = warm (orange shift). sharp's tint multiplies
+    // the channels by the supplied colour. Magnitude small enough to
+    // not overpower the rest of the pipeline.
+    if (temperature !== 0) {
+      // Map -50..+50 to a colour:
+      //   warm  (+): more red, less blue (e.g. 255,235,200 at +50)
+      //   cool  (-): more blue, less red (e.g. 200,225,255 at -50)
+      const t = temperature / 50; // -1..+1
+      const r = Math.round(228 + 27 * t);  // 201..255
+      const g = 228;
+      const b = Math.round(228 - 27 * t);  // 255..201
+      pipeline = pipeline.tint({ r, g, b });
+    }
+
+    if (bw) {
+      pipeline = pipeline.greyscale();
+    }
+
+    // .withMetadata() preserves the source's EXIF/IPTC/XMP so we don't
+    // lose camera info, capture date, GPS, etc. We then write the
+    // PDR-Enhanced XMP fields via exiftool after the sharp write
+    // (sharp doesn't write custom XMP fields directly).
+    pipeline = pipeline.withMetadata();
+
+    // Output: JPEG quality 92 — high quality without being absurd file
+    // size. mozjpeg=true uses sharp's better encoder when available.
+    await pipeline
+      .jpeg({ quality: 92, mozjpeg: true })
+      .toFile(tmpPathLong);
+
+    // Atomic move into place.
+    try { if (fs.existsSync(outPathLong) && req.mode === 'replace') fs.unlinkSync(outPathLong); } catch {}
+    fs.renameSync(tmpPathLong, outPathLong);
+
+    // Write PDR-Enhanced XMP metadata via exiftool. Best-effort — if
+    // exiftool fails, the file is still successfully saved; only the
+    // discoverability via S&D filter chips is affected.
+    try {
+      const { ExifTool } = await import('exiftool-vendored');
+      const exiftoolPath = path.join(__dirname, 'bin', 'exiftool.exe');
+      const exiftool = new ExifTool({
+        exiftoolPath: fs.existsSync(exiftoolPath) ? exiftoolPath : undefined,
+      });
+      const enhancementType = req.enhancementType ?? 'manual';
+      const enhancementMethod = req.enhancementMethod ?? enhancementType;
+      try {
+        // exiftool-vendored's WriteTags type doesn't enumerate every
+        // possible XMP namespace tag — custom XMP fields require the
+        // loose cast pattern PDR already uses in exif-writer.ts.
+        const tags = {
+          'XMP-xmp:Label': `PDR-Enhanced-${enhancementType}`,
+          'XMP-xmp:MetadataDate': new Date().toISOString(),
+          // History gives standards-aware readers (Lightroom, Bridge)
+          // a clean log entry without overwriting any existing one.
+          'XMP-xmpMM:HistoryAction': 'enhanced',
+          'XMP-xmpMM:HistorySoftwareAgent': `Photo Date Rescue 2.0.15 (${enhancementMethod})`,
+          'XMP-xmpMM:HistoryWhen': new Date().toISOString(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any;
+        await exiftool.write(outPath, tags, ['-overwrite_original']);
+      } finally {
+        try { await exiftool.end(); } catch {}
+      }
+    } catch (xmpErr) {
+      log.warn(`[viewer:saveEnhanced] XMP write failed (non-fatal): ${(xmpErr as Error).message}`);
+    }
+
+    // TODO Phase 3 (S&D chips): index the new file immediately so it
+    // appears in S&D / Memories without a manual refresh. The existing
+    // single-file insertion paths in search-indexer.ts all require a
+    // runId (they're built for Fix runs). Adding a true single-file
+    // insert is part of the Phase 3 work where the S&D chip filter
+    // also lands. Until then, new _E files appear after the next
+    // library refresh / scan. Replace mode doesn't need re-indexing
+    // (path unchanged; indexer's mtime check picks up new bytes).
+
+    return { success: true, newFilePath: outPath };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('ai:faceContext', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240) => {
   try {
     const sharp = (await import('sharp')).default;

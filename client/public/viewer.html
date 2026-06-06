@@ -488,11 +488,85 @@
       border-radius: 6px;
       cursor: pointer;
       transition: background 120ms, color 120ms, border-color 120ms;
+      align-self: flex-end;
     }
     .enhance-reset-btn:hover {
       background: rgba(169, 156, 255, 0.12);
       color: #fff;
       border-color: rgba(169, 156, 255, 0.5);
+    }
+    /* v2.0.15 (Terry 2026-06-06) — Save panel styles. */
+    .enhance-footer {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .enhance-save-preview {
+      font-size: 11px;
+      color: #999;
+      text-align: center;
+      padding: 4px 8px;
+      background: rgba(169, 156, 255, 0.06);
+      border-radius: 4px;
+    }
+    .enhance-save-filename {
+      color: #cfc8ff;
+      font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Monaco, monospace;
+      font-size: 10.5px;
+    }
+    .enhance-save-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .enhance-save-btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 120ms, color 120ms, border-color 120ms, opacity 120ms;
+    }
+    .enhance-save-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .enhance-save-primary {
+      background: #a99cff;
+      color: #1a1a2e;
+      border: 1px solid #a99cff;
+    }
+    .enhance-save-primary:hover:not(:disabled) {
+      background: #988bf2;
+      border-color: #988bf2;
+    }
+    .enhance-save-secondary {
+      background: transparent;
+      color: #ccc;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+    .enhance-save-secondary:hover:not(:disabled) {
+      background: rgba(255, 90, 90, 0.1);
+      color: #ff9090;
+      border-color: rgba(255, 90, 90, 0.4);
+    }
+    .enhance-save-saving {
+      opacity: 0.7;
+      cursor: progress;
+    }
+    .enhance-save-success {
+      font-size: 11px;
+      text-align: center;
+      padding: 6px 8px;
+      border-radius: 4px;
+      background: rgba(46, 204, 113, 0.12);
+      color: #7fe2a3;
+      border: 1px solid rgba(46, 204, 113, 0.3);
+      animation: enhance-success-fade 4s forwards;
+    }
+    @keyframes enhance-success-fade {
+      0%, 70% { opacity: 1; }
+      100% { opacity: 0; }
     }
   </style>
 
@@ -584,7 +658,23 @@
       </div>
     </div>
     <div class="enhance-footer">
-      <button class="enhance-reset-btn" id="enhance-reset">Reset</button>
+      <!-- v2.0.15 (Terry 2026-06-06) — Save panel. Three buttons:
+           Save as new (default, non-destructive, creates <name>_E.jpg
+           sibling), Replace original (destructive, confirmation), and
+           Cancel (clears save UI without affecting current adjustments).
+           Filename preview line above the buttons so the user is never
+           surprised by the output name. Disabled until at least one
+           filter is non-default. -->
+      <div class="enhance-save-preview" id="enhance-save-preview" style="display:none">
+        Saves to <span class="enhance-save-filename" id="enhance-save-filename">—</span>
+      </div>
+      <div class="enhance-save-actions">
+        <button class="enhance-save-btn enhance-save-primary" id="enhance-save-new" disabled title="Save as a new file alongside the original (recommended)">Save as new file</button>
+        <button class="enhance-save-btn enhance-save-secondary" id="enhance-save-replace" disabled title="Overwrite the original file — destructive, can't be undone from here">Replace original</button>
+      </div>
+      <!-- v2.0.15 — inline transient success message; fades after 4s. -->
+      <div class="enhance-save-success" id="enhance-save-success" style="display:none"></div>
+      <button class="enhance-reset-btn" id="enhance-reset">Reset all</button>
     </div>
   </aside>
 
@@ -1773,6 +1863,154 @@ function zoomTo(newZoom, centreX, centreY) {
         });
         mo.observe(containerEl, { childList: true, subtree: true });
       }
+
+      // v2.0.15 (Terry 2026-06-06) — Save panel wiring.
+      // Three buttons: Save as new (default), Replace original
+      // (destructive, confirms first), Reset all (already wired above).
+      // Filename preview line shows the user-visible new filename for
+      // 'new' mode before they click. Buttons are disabled when all
+      // sliders are at defaults — nothing to save.
+      const saveNewBtn = document.getElementById('enhance-save-new');
+      const saveReplaceBtn = document.getElementById('enhance-save-replace');
+      const savePreview = document.getElementById('enhance-save-preview');
+      const savePreviewFilename = document.getElementById('enhance-save-filename');
+
+      function isFilterModified() {
+        return state.brightness !== 100 ||
+               state.contrast !== 100 ||
+               state.saturation !== 100 ||
+               state.temperature !== 0 ||
+               state.bw === true;
+      }
+      function deriveEnhancedFilename(filePath) {
+        // Mirror main.ts logic: <basename>_E.jpg next to original.
+        // Doesn't check for collisions client-side — main may pick
+        // _E_2.jpg if _E.jpg exists. The preview here is the
+        // unsuffixed expected name; if main collision-adjusts, the
+        // toast on success shows the actual name.
+        if (!filePath) return '';
+        // Last slash or backslash position.
+        const lastSep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        const baseWithExt = lastSep >= 0 ? filePath.substring(lastSep + 1) : filePath;
+        const dotIdx = baseWithExt.lastIndexOf('.');
+        const base = dotIdx > 0 ? baseWithExt.substring(0, dotIdx) : baseWithExt;
+        return base + '_E.jpg';
+      }
+      function updateSaveAvailability() {
+        const modified = isFilterModified();
+        // v2.0.15 — viewer.html tracks the current file as files[currentIndex].
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        const hasFile = !!filePath;
+        const enabled = modified && hasFile;
+        if (saveNewBtn) saveNewBtn.disabled = !enabled;
+        if (saveReplaceBtn) saveReplaceBtn.disabled = !enabled;
+        if (savePreview) {
+          if (enabled) {
+            savePreview.style.display = '';
+            if (savePreviewFilename) savePreviewFilename.textContent = deriveEnhancedFilename(filePath);
+          } else {
+            savePreview.style.display = 'none';
+          }
+        }
+      }
+      // Update availability whenever sliders or BW change. We piggyback
+      // by listening on the inputs we already bound above. The original
+      // event handlers still fire first; this runs after.
+      [sBright, sContrast, sSat, sTemp].forEach(function (el) {
+        el.addEventListener('input', updateSaveAvailability);
+      });
+      tBW.addEventListener('change', updateSaveAvailability);
+      // Re-check availability when the panel opens or new image loads.
+      openBtn.addEventListener('click', updateSaveAvailability);
+      window.addEventListener('keydown', function (e) {
+        if (e.key === 'e' || e.key === 'E') {
+          setTimeout(updateSaveAvailability, 0);
+        }
+      });
+      // Re-check on image swap via the same MutationObserver above —
+      // but that observer is already firing for filter re-apply. Add a
+      // small RAF-deferred update so files[currentIndex] has settled.
+      if (containerEl && typeof MutationObserver !== 'undefined') {
+        const moSave = new MutationObserver(function () {
+          requestAnimationFrame(updateSaveAvailability);
+        });
+        moSave.observe(containerEl, { childList: true, subtree: true });
+      }
+
+      async function performSave(mode) {
+        // v2.0.15 — viewer.html tracks the current file as files[currentIndex].
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        if (!filePath || !isFilterModified()) return;
+        const pdrViewer = (window.pdr && window.pdr.viewer) ? window.pdr.viewer : null;
+        if (!pdrViewer || !pdrViewer.saveEnhanced) {
+          console.warn('[enhance] saveEnhanced not exposed on window.pdr.viewer');
+          return;
+        }
+        // Confirm before replacing.
+        if (mode === 'replace') {
+          const ok = window.confirm(
+            'Replace the original file with these adjustments?\n\n' +
+            'This overwrites the file on disk. There is no undo from here.\n\n' +
+            'Click Cancel to save as a new file instead.'
+          );
+          if (!ok) return;
+        }
+        // Disable buttons during the save to prevent double-clicks.
+        const targets = [saveNewBtn, saveReplaceBtn];
+        targets.forEach(function (b) { if (b) { b.disabled = true; b.classList.add('enhance-save-saving'); } });
+        try {
+          const result = await pdrViewer.saveEnhanced({
+            filePath: filePath,
+            mode: mode,
+            filterState: {
+              brightness: state.brightness,
+              contrast: state.contrast,
+              saturation: state.saturation,
+              temperature: state.temperature,
+              bw: state.bw,
+            },
+            enhancementType: 'manual',
+            enhancementMethod: 'manual',
+          });
+          if (result && result.success) {
+            const msg = mode === 'new'
+              ? ('Saved as ' + (result.newFilePath || '').split(/[\\/]/).pop())
+              : 'Original file replaced — adjustments are now baked in';
+            // Inline transient success — appears in the panel, fades after 4s.
+            const successEl = document.getElementById('enhance-save-success');
+            if (successEl) {
+              successEl.textContent = msg;
+              successEl.style.display = '';
+              // Re-trigger the fade animation on each save.
+              successEl.style.animation = 'none';
+              // Force reflow then re-add to restart animation.
+              void successEl.offsetWidth;
+              successEl.style.animation = '';
+              // Hide after the animation finishes so the panel doesn't
+              // hold stale success text indefinitely.
+              setTimeout(function () { successEl.style.display = 'none'; }, 4100);
+            }
+            console.log('[enhance] ' + msg);
+            // Reset the sliders to defaults — the just-saved file has
+            // the adjustments baked in, so the next round starts fresh.
+            resetState();
+          } else {
+            const err = (result && result.error) || 'Save failed.';
+            window.alert('Enhanced save failed:\n\n' + err);
+          }
+        } catch (err) {
+          window.alert('Enhanced save error:\n\n' + (err && err.message ? err.message : String(err)));
+        } finally {
+          targets.forEach(function (b) { if (b) { b.classList.remove('enhance-save-saving'); } });
+          updateSaveAvailability();
+        }
+      }
+
+      if (saveNewBtn) saveNewBtn.addEventListener('click', function () { performSave('new'); });
+      if (saveReplaceBtn) saveReplaceBtn.addEventListener('click', function () { performSave('replace'); });
+
+      // Initial state.
+      updateSaveAvailability();
     })();
   </script>
 </body>
