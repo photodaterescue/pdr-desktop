@@ -506,6 +506,12 @@ export default function PeopleManager() {
   // facial recognition for Terry…" without a clusters lookup at every
   // render. Cleared when improvingPersonId clears.
   const [improvingPersonName, setImprovingPersonName] = useState<string | null>(null);
+  // v2.0.15 (Terry 2026-06-06) — when Improve completes, the modal
+  // STAYS OPEN and swaps from progress view to result view (matched
+  // count + Done button). Replaces the previous toast-after-modal
+  // pattern which split the result information away from the modal
+  // and felt disconnected. null while in-progress; set when finished.
+  const [improveResult, setImproveResult] = useState<{ matched: number; error?: string } | null>(null);
   // v2.0.15 (Terry 2026-06-06) — real-time progress from main process
   // for the Improve modal's progress bar. Updated via the
   // 'ai:refineProgress' IPC event stream emitted from
@@ -798,38 +804,43 @@ export default function PeopleManager() {
   const handleImproveOne = async (personId: number, personName: string) => {
     setImprovingPersonId(personId);
     setImprovingPersonName(personName);
+    setImproveResult(null);
     // Pre-event snapshot — Improve assigns possibly many faces to
     // this person and there's no per-face undo. The auto-event
     // snapshot lets the user roll back later via Settings → Backup
     // if a single bad match poisons the row.
     void takeSnapshot('auto-event', `Before Improve Recognition · ${personName}`);
+    // v2.0.15 (Terry 2026-06-06) — modal stays open after the operation
+    // completes, swapping to a result view (matched count + Done
+    // button). The old toast-after-modal pattern split the result
+    // information away from the modal and felt disconnected. No
+    // showResult() calls in this path — modal shows it inline.
     try {
       const result = await refineFromVerified(clusterThreshold, personId);
       if (result.success && result.data) {
         await loadClusters();
         notifyChange();
-        const matched = result.data.newMatches;
-        if (matched > 0) {
-          showResult({
-            title: `Recognition improved for ${personName}`,
-            body: `${matched} new face${matched === 1 ? '' : 's'} matched and added. They appear under ${personName} as unverified — review them and click each to verify, or run Improve again after a few more verifies to find more.`,
-            tone: 'success',
-          });
-        } else {
-          showResult({
-            title: `No new matches for ${personName}`,
-            body: `Verify a few more faces and try again — the more verified examples, the better the matching.`,
-            tone: 'info',
-          });
-        }
+        setImproveResult({ matched: result.data.newMatches });
       } else {
-        showResult({ title: 'Improve failed', body: result.error || 'Unknown error.', tone: 'error' });
+        setImproveResult({ matched: 0, error: result.error || 'Unknown error.' });
       }
+    } catch (err) {
+      setImproveResult({ matched: 0, error: (err as Error).message });
     } finally {
-      setImprovingPersonId(null);
-      setImprovingPersonName(null);
-      setImproveProgress(null);
+      // NOTE: do NOT clear improvingPersonId / improvingPersonName /
+      // improveProgress here — the modal needs to stay open showing
+      // the result until the user clicks Done. handleImproveDone()
+      // below does the final cleanup.
     }
+  };
+
+  // v2.0.15 (Terry 2026-06-06) — clears all Improve modal state. Wired
+  // to the modal's Done button.
+  const handleImproveDone = () => {
+    setImprovingPersonId(null);
+    setImprovingPersonName(null);
+    setImproveProgress(null);
+    setImproveResult(null);
   };
 
   // Selection-aware trash branch — unlink JUST the selected faces from
@@ -3227,14 +3238,20 @@ export default function PeopleManager() {
           ? Math.min(100, Math.max(0, Math.round((p.itemIndex / p.itemsTotal) * 100)))
           : null;
         const matchedSoFar = p?.matchedSoFar ?? 0;
+        // v2.0.15 (Terry 2026-06-06) — three modal phases:
+        //   improveResult === null → progress view (running)
+        //   improveResult.error    → error view + Done button
+        //   improveResult set      → success view + Done button
+        // Replaces the previous toast-after-modal pattern so the
+        // result appears INSIDE the same modal the user was watching
+        // (matched count + Done button), no surface-switching.
+        const isDone = improveResult !== null;
+        const isError = isDone && !!improveResult?.error;
+        const matched = improveResult?.matched ?? 0;
+        const personLabel = improvingPersonName ?? 'this person';
         return (
-          // v2.0.15 (Terry 2026-06-06) — backdrop is a window-drag
-          // region (-webkit-app-region: drag) so the user can grab
-          // and move PM from anywhere on the dimmed area while the
-          // modal is up. Single-monitor users hated being unable to
-          // reposition the window during a multi-second Improve run.
-          // The card itself is no-drag so clicks inside it behave
-          // normally (the spinner area, eventually any Cancel button).
+          // Backdrop is window-drag region so user can reposition PM
+          // mid-run. Card itself is no-drag.
           <div
             className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4"
             style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
@@ -3244,42 +3261,76 @@ export default function PeopleManager() {
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             >
               <div className="flex items-start gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-primary" />
+                <div className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
+                  isError ? 'bg-red-500/10' : isDone ? 'bg-emerald-500/10' : 'bg-primary/10'
+                }`}>
+                  {isError ? (
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                  ) : isDone ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                  ) : (
+                    <Sparkles className="w-5 h-5 text-primary" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1 pt-1">
                   <h3 className="text-lg font-semibold text-foreground leading-tight">
-                    Improving recognition for {improvingPersonName ?? 'this person'}
+                    {isError
+                      ? 'Improve failed'
+                      : isDone && matched > 0
+                        ? `Recognition improved for ${personLabel}`
+                        : isDone
+                          ? `No new matches for ${personLabel}`
+                          : `Improving recognition for ${personLabel}`}
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Searching unnamed faces for more matches. You can keep working in the main PDR window while this runs.
+                    {isError
+                      ? (improveResult?.error ?? 'Unknown error.')
+                      : isDone && matched > 0
+                        ? `${matched} new face${matched === 1 ? '' : 's'} matched and added. They appear under ${personLabel} as unverified — review them and click each to verify, or run Improve again after a few more verifies to find more.`
+                        : isDone
+                          ? `Verify a few more faces and run Improve again — the more verified examples, the better the matching gets.`
+                          : 'Searching unnamed faces for more matches. You can keep working in the main PDR window while this runs.'}
                   </p>
                 </div>
               </div>
-              {/* Progress bar — indeterminate look when pct is null
-                  (very start of operation, before first event), real
-                  bar when itemsTotal is known. */}
-              <div className="flex flex-col gap-2">
-                <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                  {pct == null ? (
-                    <div className="h-full w-1/3 rounded-full bg-primary/70 animate-pulse" />
-                  ) : (
-                    <div
-                      className="h-full bg-primary transition-all duration-200 ease-out"
-                      style={{ width: `${pct}%` }}
-                    />
-                  )}
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{phaseLabel}</span>
-                  <span>
-                    {pct != null && <span className="tabular-nums">{pct}%</span>}
-                    {matchedSoFar > 0 && (
-                      <span className="ml-3 text-foreground font-medium tabular-nums">+{matchedSoFar} match{matchedSoFar === 1 ? '' : 'es'}</span>
+              {/* Progress bar OR Done button depending on phase. */}
+              {!isDone ? (
+                <div className="flex flex-col gap-2">
+                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                    {pct == null ? (
+                      <div className="h-full w-1/3 rounded-full bg-primary/70 animate-pulse" />
+                    ) : (
+                      <div
+                        className="h-full bg-primary transition-all duration-200 ease-out"
+                        style={{ width: `${pct}%` }}
+                      />
                     )}
-                  </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{phaseLabel}</span>
+                    <span>
+                      {pct != null && <span className="tabular-nums">{pct}%</span>}
+                      {matchedSoFar > 0 && (
+                        <span className="ml-3 text-foreground font-medium tabular-nums">+{matchedSoFar} match{matchedSoFar === 1 ? '' : 'es'}</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                // Done button — matches the OK button style used by the
+                // existing PM Result modal directly above (raw button,
+                // bg-purple-500, rounded-lg) so it feels like part of
+                // PM's modal family.
+                <div className="flex items-center justify-end pt-1">
+                  <button
+                    onClick={handleImproveDone}
+                    className="px-4 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm font-medium transition-colors"
+                    autoFocus
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -4617,18 +4668,32 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
             const faces = (cluster.sample_faces ?? []).filter(f => f.file_path);
             if (faces.length > 0) {
               let nextIdx = 0;
-              const CONCURRENCY = 2;
+              // v2.0.15 (Terry 2026-06-06) — concurrency 4 (was 2).
+              // Each face's context crop takes 50-500ms on cold cache;
+              // with 30 faces in a row, c=2 left a 0.5-1.5s window
+              // where a hover would still cache-miss. c=4 halves it.
+              const CONCURRENCY = 4;
+              // v2.0.15 (Terry 2026-06-06) — `new Image()` instead of
+              // fetch(). Chromium's image cache (used by <img> tags)
+              // is not always shared with the HTTP cache (used by
+              // fetch()) for custom protocols. The tooltip later
+              // renders an <img>, so we MUST pre-warm via the image
+              // pipeline — otherwise the fetch warms the wrong cache
+              // and the hover still cache-misses even though the
+              // disk-side JPG exists. Standard image-preload pattern.
+              const warmOne = (url: string) => new Promise<void>((resolve) => {
+                const img = new Image();
+                const finish = () => resolve();
+                img.onload = finish;
+                img.onerror = finish;
+                img.src = url;
+              });
               const warmWorker = async () => {
                 while (nextIdx < faces.length) {
                   const i = nextIdx++;
                   const f = faces[i];
                   const url = buildFaceUrl(f.file_path, f.box_x, f.box_y, f.box_w, f.box_h, 200, 'context');
-                  try {
-                    // Fire-and-forget fetch. The protocol handler will
-                    // generate + cache the JPG; the response body is
-                    // discarded. Cache-hit case is essentially free.
-                    await fetch(url);
-                  } catch { /* best-effort */ }
+                  try { await warmOne(url); } catch { /* best-effort */ }
                 }
               };
               void Promise.all(Array.from({ length: CONCURRENCY }, () => warmWorker()));
