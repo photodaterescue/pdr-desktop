@@ -501,6 +501,11 @@ export default function PeopleManager() {
   // the right button (and the global ribbon button stays idle if a
   // user kicks off a row-level improve).
   const [improvingPersonId, setImprovingPersonId] = useState<number | null>(null);
+  // v2.0.15 (Terry 2026-06-06) — track the person NAME alongside the
+  // ID so the blocking modal during Improve can display "Improving
+  // facial recognition for Terry…" without a clusters lookup at every
+  // render. Cleared when improvingPersonId clears.
+  const [improvingPersonName, setImprovingPersonName] = useState<string | null>(null);
   // In-app result toast — replaces window.alert() AND replaces a
   // previous blocking modal that required an OK click. Auto-fades
   // after ~6s so users see results immediately without an extra
@@ -770,6 +775,7 @@ export default function PeopleManager() {
   // per-row sparkle button and the post-verify chip prompt.
   const handleImproveOne = async (personId: number, personName: string) => {
     setImprovingPersonId(personId);
+    setImprovingPersonName(personName);
     // Pre-event snapshot — Improve assigns possibly many faces to
     // this person and there's no per-face undo. The auto-event
     // snapshot lets the user roll back later via Settings → Backup
@@ -799,6 +805,7 @@ export default function PeopleManager() {
       }
     } finally {
       setImprovingPersonId(null);
+      setImprovingPersonName(null);
     }
   };
 
@@ -3163,6 +3170,38 @@ export default function PeopleManager() {
               >
                 OK
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v2.0.15 (Terry 2026-06-06) — blocking modal while Improve
+          Facial Recognition is running. Before this, the only signal
+          was a small spinner on the per-row button; the rest of PM
+          looked usable but was actually unresponsive while main was
+          doing the embedding work. Now the PM window is visually
+          blocked end-to-end so the user knows to wait. The workspace
+          window is a separate BrowserWindow and remains usable
+          throughout — main is busy but Chromium pumps IPC for the
+          workspace renderer in parallel with this one. Backdrop +
+          card use the same z-[95] / bg-black/40 / w-[440px] / rounded-
+          xl pattern as the existing PM Result modal directly above
+          so it feels like part of PM's modal family. No close-on-
+          backdrop-click — the operation is in flight and dismissing
+          the modal would just leave the user looking at a frozen PM. */}
+      {improvingPersonId !== null && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-[440px] max-w-[90vw] rounded-xl bg-background border border-border shadow-2xl flex flex-col">
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-border text-foreground">
+              <Loader2 className="w-4 h-4 text-primary animate-spin" />
+              <h3 className="text-base font-semibold">
+                {improvingPersonName
+                  ? `Improving facial recognition for ${improvingPersonName}…`
+                  : 'Improving facial recognition…'}
+              </h3>
+            </div>
+            <div className="px-5 py-4 text-sm text-muted-foreground leading-relaxed">
+              PDR is searching the unnamed faces for more of this person. This usually takes a few seconds, but it scales with how many verified faces and unnamed faces you have. You can keep using PDR in the main window while this runs.
             </div>
           </div>
         </div>
