@@ -12611,6 +12611,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // Network upload mode: 'fast' = robocopy /MT:16 staging, 'direct'
   // = legacy fs.createReadStream loop. A/B baseline + kill switch.
   const [networkUploadMode, setNetworkUploadMode] = useState<'fast' | 'direct'>('fast');
+  // v2.0.15 Phase 3c (Terry 2026-06-06) — default mode pre-selected in
+  // the PDR Viewer's Enhance Save panel. 'new' = sibling _E file (safe,
+  // default); 'replace' = overwrite original. Setting changes which
+  // button is highlighted on panel open; the user can still pick the
+  // other one per-save.
+  const [viewerEnhanceSaveDefault, setViewerEnhanceSaveDefaultState] = useState<'new' | 'replace'>('new');
   // Bypass the >2 GB pre-extract path during analysis. Used to QA the
   // streaming engine on real 50 GB Google Takeouts before deciding
   // whether the temp-extract step can be retired entirely. Default off.
@@ -12639,6 +12645,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setOpenPeopleOnStartup((settings as any).openPeopleOnStartup ?? false);
       setRecycleBinShowCountBadge((settings as any).recycleBinShowCountBadge ?? false);
       setNetworkUploadMode(((settings as any).networkUploadMode as 'fast' | 'direct') ?? 'fast');
+      setViewerEnhanceSaveDefaultState(((settings as any).viewerEnhanceSaveDefault as 'new' | 'replace') ?? 'new');
       setBypassLargeZipPreExtract(((settings as any).bypassLargeZipPreExtract as boolean) ?? false);
       setAutoIndexAfterFix(((settings as any).autoIndexAfterFix as boolean) ?? true);
     });
@@ -12647,6 +12654,15 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleNetworkUploadModeChange = (mode: 'fast' | 'direct') => {
     setNetworkUploadMode(mode);
     setSetting('networkUploadMode' as any, mode);
+  };
+
+  // v2.0.15 Phase 3c (Terry 2026-06-06) — write-through to settings-store
+  // so the viewer's Enhance Save panel picks up the new default on
+  // its next open. The viewer reads via pdr.settings.get() so no
+  // explicit broadcast is needed.
+  const handleViewerEnhanceSaveDefaultChange = (mode: 'new' | 'replace') => {
+    setViewerEnhanceSaveDefaultState(mode);
+    setSetting('viewerEnhanceSaveDefault' as any, mode);
   };
 
   const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
@@ -14131,6 +14147,71 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     </Button>
                   </IconTooltip>
                 </div>
+              </div>
+
+              {/* v2.0.15 Phase 3c (Terry 2026-06-06) — Photo Enhancement
+                  section. Lands here as a placeholder for the Phase 4-6
+                  model install cards (CodeFormer, Real-ESRGAN), and
+                  hosts the save-default radio NOW so v2.0.15 ships a
+                  complete user-facing settings story for the Enhance
+                  feature. Neutral palette on the radio (border / hover
+                  semantics from Network upload mode) because save-default
+                  is a behaviour preference, not an AI feature toggle —
+                  Phase 4's model cards will use the violet AI treatment.
+                  Section heading copy is short on purpose; the full
+                  "what this is" lives in Help & Support → Glossary. */}
+              <div className="pt-4 border-t border-border">
+                <label className="block text-base font-semibold text-foreground mb-1">Photo Enhancement</label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  When you save changes from the PDR Viewer's Enhance panel, which option should be highlighted by default?
+                </p>
+                <div className="space-y-2">
+                  <label
+                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                      viewerEnhanceSaveDefault === 'new' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                    }`}
+                    data-testid="option-viewer-enhance-save-new"
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="viewerEnhanceSaveDefault"
+                        value="new"
+                        checked={viewerEnhanceSaveDefault === 'new'}
+                        onChange={() => handleViewerEnhanceSaveDefaultChange('new')}
+                        className="w-4 h-4 text-primary focus:ring-primary"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">Save as new file <span className="text-xs font-normal text-muted-foreground">(recommended)</span></span>
+                        <span className="text-xs text-muted-foreground">Writes a sibling file with an <span className="font-mono">_E</span> suffix (e.g. <span className="font-mono">photo.jpg</span> → <span className="font-mono">photo_E.jpg</span>). Original is never touched, so an accidental save can&apos;t lose the unedited version.</span>
+                      </div>
+                    </div>
+                  </label>
+                  <label
+                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                      viewerEnhanceSaveDefault === 'replace' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                    }`}
+                    data-testid="option-viewer-enhance-save-replace"
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="viewerEnhanceSaveDefault"
+                        value="replace"
+                        checked={viewerEnhanceSaveDefault === 'replace'}
+                        onChange={() => handleViewerEnhanceSaveDefaultChange('replace')}
+                        className="w-4 h-4 text-primary focus:ring-primary"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">Replace original</span>
+                        <span className="text-xs text-muted-foreground">Overwrites the existing file in place. Faster + no duplicate sibling, but the unedited original is gone. Best when you're confident the edit is final.</span>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+                <p className="text-[11px] text-muted-foreground/85 mt-2">
+                  This only changes which button is highlighted when the Enhance Save panel opens — you can always click the other one per-save.
+                </p>
               </div>
             </>
           )}

@@ -1893,6 +1893,38 @@ function zoomTo(newZoom, centreX, centreY) {
       const savePreview = document.getElementById('enhance-save-preview');
       const savePreviewFilename = document.getElementById('enhance-save-filename');
 
+      // v2.0.15 Phase 3c (Terry 2026-06-06) — Settings → AI → Photo
+      // Enhancement lets the user pick which save action is the default.
+      // We don't swap primary/secondary CSS classes (would lose the
+      // destructive-red hover cue on Replace), instead we suffix the
+      // chosen button's label with "(default)" so a mouse user can see
+      // their preference at a glance. Default value if settings haven't
+      // loaded yet is 'new' — matches the safe-default rule.
+      let currentEnhanceSaveDefault = 'new';
+      function refreshSaveDefaultLabels() {
+        if (saveNewBtn) {
+          saveNewBtn.textContent = currentEnhanceSaveDefault === 'new'
+            ? 'Save as new file (default)'
+            : 'Save as new file';
+        }
+        if (saveReplaceBtn) {
+          saveReplaceBtn.textContent = currentEnhanceSaveDefault === 'replace'
+            ? 'Replace original (default)'
+            : 'Replace original';
+        }
+      }
+      try {
+        if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
+          window.pdr.settings.get().then(function (s) {
+            if (s && (s.viewerEnhanceSaveDefault === 'new' || s.viewerEnhanceSaveDefault === 'replace')) {
+              currentEnhanceSaveDefault = s.viewerEnhanceSaveDefault;
+              refreshSaveDefaultLabels();
+            }
+          }).catch(function () { /* fall through with 'new' */ });
+        }
+      } catch (_) { /* preload missing — keep 'new' default */ }
+      refreshSaveDefaultLabels();
+
       function isFilterModified() {
         return state.brightness !== 100 ||
                state.contrast !== 100 ||

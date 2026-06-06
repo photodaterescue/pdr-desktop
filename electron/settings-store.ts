@@ -56,6 +56,14 @@ export interface PDRSettings {
    *  main PDR window on launch. Default off — users who rely on PM
    *  daily can opt in once to skip the manual open every session. */
   openPeopleOnStartup: boolean;
+  /** v2.0.15 Phase 3c (Terry 2026-06-06) — default mode pre-selected
+   *  in the PDR Viewer's Enhance Save panel. 'new' = the safe path
+   *  (writes a sibling _E file, original untouched) and is the
+   *  default; 'replace' is for power users who want to overwrite
+   *  the original in place. The radio in Settings only changes
+   *  WHICH button is highlighted on panel open; the user can
+   *  always click the other one per-save. */
+  viewerEnhanceSaveDefault: 'new' | 'replace';
 
   /** When true, the titlebar's Recycle Bin icon shows a small live
    *  count badge of how many items are sitting in the bin. Default
@@ -194,6 +202,9 @@ export const optimisedDefaults: PDRSettings = {
   aiSearchMatchThreshold: 0.72,
   aiSearchMatchMode: 'ai',
   openPeopleOnStartup: false,
+  // v2.0.15 Phase 3c — default to the safe "new file" path so an
+  // accidental click doesn't overwrite the original.
+  viewerEnhanceSaveDefault: 'new',
   recycleBinShowCountBadge: false,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,

@@ -636,6 +636,11 @@ export interface PDRSettings {
   matchThreshold: number;
   // Persisted Library Drive (destination) path — sticky across sessions
   destinationPath: string | null;
+  // v2.0.15 Phase 3c (Terry 2026-06-06) — default mode pre-selected in
+  // the PDR Viewer's Enhance Save panel. 'new' = sibling _E file
+  // (safe, original untouched, default); 'replace' = overwrite original
+  // in place. Per-save the user can still pick the other one.
+  viewerEnhanceSaveDefault?: 'new' | 'replace';
 }
 
 const defaultSettings: PDRSettings = {
