@@ -311,6 +311,37 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                   </dl>
                 </div>
 
+                {/* v2.0.15 (Terry 2026-06-06) — filename suffix
+                    convention was completely undocumented before
+                    this. PDR renames every fixed file with the
+                    `YYYY-MM-DD_HH-MM-SS_XX.ext` pattern; the `XX`
+                    is one of four short codes that tells the user
+                    (and any other photo app) how confident PDR was
+                    about that file's date or what was done to it.
+                    Listed here as a single group so users hitting
+                    e.g. `_CF.jpg` in File Explorer can decode it. */}
+                <div>
+                  <p className="font-medium text-foreground mb-2">Filename suffixes</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_CF — Confirmed</dt>
+                      <dd className="text-muted-foreground mt-0.5">The date came directly from the file&apos;s EXIF data or a Google Takeout sidecar. PDR is fully confident this is when the photo was taken. Highest confidence tier.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_RC — Recovered</dt>
+                      <dd className="text-muted-foreground mt-0.5">The date was worked out from less-direct signals — filename patterns, folder structure, neighbouring photos, file system timestamps. Confident enough to use but not as bullet-proof as Confirmed.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_MK — Marked</dt>
+                      <dd className="text-muted-foreground mt-0.5">PDR couldn&apos;t work out a date with enough confidence. The file was Marked for your review — open it in Date Editor to decide what to do (set the date manually, ignore, or delete).</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_E — Enhanced</dt>
+                      <dd className="text-muted-foreground mt-0.5">A new file created by the PDR Viewer&apos;s Enhance panel — brightness, contrast, saturation, temperature, or B&amp;W adjustments baked into a fresh JPG alongside the original. The original is untouched; this is your edited copy. The enhancement type (manual or AI) is recorded in the file&apos;s XMP metadata so Search &amp; Discovery can filter for it.</dd>
+                    </div>
+                  </dl>
+                </div>
+
                 <div>
                   <p className="font-medium text-foreground mb-2">Faces, people and Trees</p>
                   <dl className="space-y-2">

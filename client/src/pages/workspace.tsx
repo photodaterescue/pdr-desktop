@@ -10457,6 +10457,42 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 </div>
               </section>
 
+              {/* v2.0.15 (Terry 2026-06-06) — Filename conventions
+                  section. The suffix on every fixed file (_CF / _RC /
+                  _MK and now _E) was previously undocumented anywhere
+                  user-facing. This section explains the convention up
+                  front so users seeing `2024-01-15_14-30-22_CF.jpg` in
+                  File Explorer know what the CF means. Glossary has a
+                  per-suffix entry for quick lookup; this is the
+                  "here's the whole pattern" overview. */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">Filename Conventions</h3>
+                <div className="p-4 bg-secondary/40 border border-border rounded-lg space-y-3">
+                  <p className="text-sm text-muted-foreground">Every file PDR fixes is renamed to the same pattern, so you can read a folder of photos and instantly know when each was taken and how confident PDR was about that date:</p>
+                  <p className="text-sm font-mono text-foreground bg-background/60 border border-border/60 rounded px-3 py-2">YYYY-MM-DD_HH-MM-SS_XX.ext</p>
+                  <p className="text-sm text-muted-foreground">The <span className="font-mono text-xs">XX</span> is a two-letter suffix telling you how the date was determined or what was done to the file:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300/50 shrink-0 mt-0.5">_CF</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Confirmed</span> — date came directly from EXIF or a Takeout sidecar. Highest confidence.</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/50 shrink-0 mt-0.5">_RC</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Recovered</span> — date inferred from filename / folder / file system signals.</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 border border-slate-400/50 shrink-0 mt-0.5">_MK</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Marked</span> — PDR couldn't determine a confident date; file is flagged for your review in Date Editor.</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-300/50 shrink-0 mt-0.5">_E</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Enhanced</span> — a copy created by the PDR Viewer&apos;s Enhance panel (brightness / contrast / saturation / temperature / B&amp;W adjustments baked in). Original is untouched.</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground/85 pt-1">The Glossary in Help &amp; Support has a more detailed entry for each suffix.</p>
+                </div>
+              </section>
+
               {/* Expandable Accordion Sections */}
               <div className="pt-6 border-t border-border">
                 <h3 className="text-lg font-medium text-foreground mb-4">Detailed Guidance</h3>
