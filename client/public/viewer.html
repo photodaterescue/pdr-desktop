@@ -26,6 +26,21 @@
       -webkit-app-region: drag;
       flex-shrink: 0;
     }
+    /* v2.0.15 (Terry 2026-06-06 round 2) — wrap title + copy icon so
+       they sit together as one group at the left of the toolbar. The
+       wrap takes flex:1 (filling space available between the group
+       and the right-aligned action buttons); the title shrinks via
+       min-width:0 + overflow:hidden so the copy icon sits IMMEDIATELY
+       after the ellipsis'd filename, not pushed to the far right. */
+    .toolbar-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+      margin-right: 12px;
+      -webkit-app-region: drag;
+    }
     .toolbar-title {
       font-size: 13px;
       font-weight: 500;
@@ -33,8 +48,8 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      flex: 1;
-      margin-right: 12px;
+      min-width: 0;
+      flex: 0 1 auto;
     }
     /* v2.0.15 (Terry 2026-06-06) — copy-filename icon next to the
        title. Subtle by default, lights up on hover. Briefly flashes
@@ -47,7 +62,6 @@
       width: 22px;
       height: 22px;
       padding: 0;
-      margin-right: 8px;
       background: transparent;
       border: 1px solid transparent;
       border-radius: 5px;
@@ -101,6 +115,52 @@
     }
     .toolbar-btn.active:hover {
       background: rgba(169, 156, 255, 0.45);
+    }
+    /* v2.0.15 (Terry 2026-06-06 round 2) — video controls overlay.
+       Sits inside the viewer container, anchored to the bottom-right
+       and offset UP enough to clear the native HTML5 control bar (~48px
+       tall in Chromium) so the user can still reach the volume slider
+       and fullscreen button underneath. Mirrors YouTube's positioning
+       rationale: video-control affordances live with the player, not
+       in the window chrome.
+
+       Hidden via display:none on the parent when not viewing a video. */
+    .video-controls-overlay {
+      position: absolute;
+      bottom: 56px;
+      right: 16px;
+      display: none;
+      gap: 6px;
+      z-index: 6;
+    }
+    .video-controls-overlay.show {
+      display: flex;
+    }
+    .video-controls-btn {
+      width: 34px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 12, 30, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 6px;
+      color: #ddd;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .video-controls-btn:hover {
+      background: rgba(169, 156, 255, 0.35);
+      color: #fff;
+      border-color: rgba(169, 156, 255, 0.55);
+    }
+    .video-controls-btn.active {
+      background: rgba(169, 156, 255, 0.5);
+      color: #fff;
+      border-color: rgba(169, 156, 255, 0.8);
     }
     .speed-wrap { position: relative; -webkit-app-region: no-drag; }
     .speed-menu {
@@ -808,16 +868,18 @@
   </style>
 
   <div class="toolbar">
-    <span class="toolbar-title" id="filename">PDR Viewer</span>
-    <!-- v2.0.15 (Terry 2026-06-06) — copy filename button. Copies the
-         basename (not the full path) to the clipboard since that's what
-         users typically want for sharing / referring to a photo. -->
-    <button class="toolbar-copy-btn" id="btn-copy-filename" type="button" title="Copy filename to clipboard">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-      </svg>
-    </button>
+    <!-- v2.0.15 (Terry 2026-06-06 round 2) — title + copy icon grouped
+         so the icon sits IMMEDIATELY after the truncated filename, not
+         pushed far right by flex:1 on the title alone. -->
+    <div class="toolbar-title-wrap">
+      <span class="toolbar-title" id="filename">PDR Viewer</span>
+      <button class="toolbar-copy-btn" id="btn-copy-filename" type="button" title="Copy filename to clipboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+    </div>
     <div class="toolbar-actions">
       <span class="toolbar-counter" id="counter" style="display:none"></span>
       <button class="toolbar-btn" id="btn-fit" title="Fit to window (F)">Fit</button>
@@ -837,17 +899,27 @@
         <button class="toolbar-btn" id="btn-speed" title="Playback speed (shift+, / shift+.)">1x</button>
         <div class="speed-menu" id="speed-menu" style="display:none"></div>
       </div>
-      <!-- v2.0.15 (Terry 2026-06-06) — video repeat buttons. Hidden
-           when viewing photos; shown only when isVideo. Mutually
-           exclusive: clicking one turns the other off. -->
-      <button class="toolbar-btn" id="btn-repeat-once" title="Repeat once when video ends" hidden>↻</button>
-      <button class="toolbar-btn" id="btn-loop" title="Loop endlessly" hidden>∞</button>
+      <!-- v2.0.15 (Terry 2026-06-06 round 2) — Repeat / Loop buttons
+           moved from this top toolbar to a floating overlay just above
+           the native video control bar (see #video-controls-overlay
+           in the viewer body). Premium video-player convention puts
+           video-control affordances contextual to the player (same
+           as YouTube's loop / CC / settings cluster), not in the
+           window chrome. -->
       <button class="toolbar-btn" id="btn-openExternal" title="Open in system player" hidden>Open externally</button>
     </div>
   </div>
   <div class="viewer-container" id="container">
     <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
     <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
+    <!-- v2.0.15 (Terry 2026-06-06 round 2) — video-only controls
+         overlay. Shown only when a video is loaded; positioned above
+         the native HTML5 control bar so the volume/fullscreen still
+         reach. Mutually-exclusive Repeat once + Loop endlessly. -->
+    <div class="video-controls-overlay" id="video-controls-overlay">
+      <button class="video-controls-btn" id="btn-repeat-once" type="button" title="Repeat once when video ends">↻</button>
+      <button class="video-controls-btn" id="btn-loop" type="button" title="Loop endlessly">∞</button>
+    </div>
     <div class="no-image" id="placeholder">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1328,11 +1400,12 @@
       isVideo = isVideoPath(filePath);
       setImageControlsVisible(!isVideo);
       btnOpenExternal.hidden = !isVideo;
-      // v2.0.15 (Terry 2026-06-06) — Repeat buttons live only with
-      // videos. Reset to 'off' on every new file so a previous
+      // v2.0.15 (Terry 2026-06-06 round 2) — Repeat buttons live in a
+      // floating overlay over the video, visible only while a video
+      // is loaded. Reset to 'off' on every new file so a previous
       // video's loop setting doesn't carry into the next.
-      if (btnRepeatOnce) btnRepeatOnce.hidden = !isVideo;
-      if (btnLoop) btnLoop.hidden = !isVideo;
+      const overlay = document.getElementById('video-controls-overlay');
+      if (overlay) overlay.classList.toggle('show', isVideo);
       repeatMode = 'off';
       applyRepeatModeToVideo();
 
@@ -2526,9 +2599,30 @@ function zoomTo(newZoom, centreX, centreY) {
             aiStatusLine.classList.add('warn');
             aiStatusLine.innerHTML = err + ' <a id="enhance-ai-status-install">Open Settings →</a>';
             const installLink = document.getElementById('enhance-ai-status-install');
-            if (installLink && window.pdr && window.pdr.openSettings) {
+            // v2.0.15 (Terry 2026-06-06 round 2) — diagnostic logs to
+            // find why Open Settings wasn't reaching main. Renderer
+            // console output is captured into main.log so the trace
+            // shows up regardless of whether DevTools is open.
+            console.log('[viewer] open-settings link: el=' + (!!installLink) + ' pdr=' + (typeof window.pdr) + ' openSettings=' + (typeof (window.pdr && window.pdr.openSettings)));
+            if (installLink && window.pdr && typeof window.pdr.openSettings === 'function') {
+              installLink.onclick = function (e) {
+                console.log('[viewer] open-settings clicked — invoking IPC');
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                  const r = window.pdr.openSettings('ai');
+                  console.log('[viewer] openSettings returned (sync):', r);
+                  if (r && typeof r.then === 'function') {
+                    r.then(function (res) { console.log('[viewer] openSettings resolved:', JSON.stringify(res)); })
+                     .catch(function (err) { console.warn('[viewer] openSettings rejected:', err && (err.message || err)); });
+                  }
+                } catch (err) {
+                  console.warn('[viewer] openSettings threw:', err && (err.message || err));
+                }
+              };
+            } else if (installLink) {
               installLink.onclick = function () {
-                try { window.pdr.openSettings('ai'); } catch (_) {}
+                console.warn('[viewer] open-settings clicked but window.pdr.openSettings missing — preload not loaded?');
               };
             }
           }
