@@ -1718,6 +1718,27 @@ function zoomTo(newZoom, centreX, centreY) {
       });
       resetBtn.addEventListener('click', resetState);
 
+      // v2.0.15 (Terry 2026-06-06) — double-click any individual slider
+      // to reset just that slider to its default (mid-point for the
+      // bipolar Temperature, 100% for the others). Standard photo-
+      // editor convention; users expect this and the Reset button at
+      // the bottom only resets EVERYTHING.
+      function attachDblClickReset(el, defaultVal, prop, valSpan, fmt) {
+        el.addEventListener('dblclick', function (e) {
+          e.preventDefault();
+          state[prop] = defaultVal;
+          el.value = String(defaultVal);
+          if (valSpan) valSpan.textContent = fmt ? fmt(defaultVal) : String(defaultVal);
+          applyEnhanceFilter();
+        });
+      }
+      attachDblClickReset(sBright, 100, 'brightness', vBright);
+      attachDblClickReset(sContrast, 100, 'contrast', vContrast);
+      attachDblClickReset(sSat, 100, 'saturation', vSat);
+      attachDblClickReset(sTemp, 0, 'temperature', vTemp, function (v) {
+        return (v > 0 ? '+' : '') + String(v);
+      });
+
       function openPanel() {
         panel.classList.add('open');
         panel.setAttribute('aria-hidden', 'false');

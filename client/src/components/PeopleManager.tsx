@@ -632,7 +632,39 @@ export default function PeopleManager() {
       listDiscardedPersons(),
     ]);
     if (clustersRes.success && clustersRes.data) setClusters(clustersRes.data);
-    if (personsRes.success && personsRes.data) setExistingPersons(personsRes.data);
+    if (personsRes.success && personsRes.data) {
+      // v2.0.15 (Terry 2026-06-06) — dedupe persons by short+full name
+      // before storing. Terry hit a case where his DB had two distinct
+      // person records both named "Mel · Buakhai Clapson" with the
+      // same photo count, surfacing as identical duplicate rows in
+      // every suggestion dropdown. Whatever caused the duplicate in
+      // the DB (legacy sync, double-naming, sidecar merge), the UI
+      // should surface ONE entry per unique display so the user can
+      // assign confidently. We keep the entry with the highest
+      // photo_count under that name (the canonical one) and log a
+      // warning so we know when this happens.
+      const dedupeKey = (p: PersonRecord) =>
+        `${(p.name || '').toLowerCase().trim()}||${(p.full_name || '').toLowerCase().trim()}`;
+      const byKey = new Map<string, PersonRecord>();
+      let dropped = 0;
+      for (const p of personsRes.data) {
+        const key = dedupeKey(p);
+        const existing = byKey.get(key);
+        if (!existing) {
+          byKey.set(key, p);
+        } else {
+          // Keep the one with more photos; the loser is the orphan.
+          dropped++;
+          if ((p.photo_count ?? 0) > (existing.photo_count ?? 0)) {
+            byKey.set(key, p);
+          }
+        }
+      }
+      if (dropped > 0) {
+        console.warn(`[PM] dedupe-persons: hid ${dropped} duplicate person record(s) from suggestion dropdowns — duplicates exist in the DB and should be merged via PM`);
+      }
+      setExistingPersons(Array.from(byKey.values()));
+    }
     if (discardedRes.success && discardedRes.data) setDiscardedPersons(discardedRes.data);
     setIsLoading(false);
   };
@@ -3306,15 +3338,19 @@ export default function PeopleManager() {
                   {improveResult?.error ?? 'Unknown error.'}
                 </p>
               ) : isDone && matched > 0 ? (
-                <div className="flex flex-col items-center gap-1">
-                  <div className="text-5xl font-bold text-purple-500 tabular-nums leading-none">
-                    {matched}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
+                // v2.0.15 (Terry 2026-06-06) — refined from the
+                // earlier text-5xl "lottery win" feel. Now reads as
+                // a calm informational statement: count + label
+                // inline at sensible weight, explainer below at
+                // normal body weight. Premium photo apps surface
+                // results this way — readable, not celebratory.
+                <div className="flex flex-col items-center gap-2">
+                  <p className="text-sm text-foreground">
+                    <span className="text-2xl font-semibold text-purple-500 tabular-nums align-middle mr-1.5">{matched}</span>
                     new face{matched === 1 ? '' : 's'} matched
-                  </div>
-                  <p className="text-xs text-muted-foreground/85 mt-2 leading-relaxed">
-                    Appear under {personLabel} as unverified — click each to verify, or run Improve again later for more.
+                  </p>
+                  <p className="text-xs text-muted-foreground/85 leading-relaxed">
+                    They appear under {personLabel} as unverified — click each to verify, or run Improve again later for more.
                   </p>
                 </div>
               ) : isDone ? (
