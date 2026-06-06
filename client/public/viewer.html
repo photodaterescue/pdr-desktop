@@ -912,31 +912,28 @@
   <div class="viewer-container" id="container">
     <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
     <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
-    <!-- v2.0.15 (Terry 2026-06-06 round 3) — video-only controls
+    <!-- v2.0.15 (Terry 2026-06-06 round 4) — video-only controls
          overlay. Shown only when a video is loaded; positioned above
-         the native HTML5 control bar so the volume/fullscreen still
-         reach. Two mutually-exclusive buttons, both using the YouTube
-         "play-inside-loop-arrow" / "infinity-inside-loop-arrow"
-         iconography: Repeat once first (the more common intent),
-         Loop endlessly second.
+         the native HTML5 control bar.
 
-         Icon design (generic SVG iconography, not copied from any
-         platform's proprietary artwork): an open circular arrow
-         indicating "loop" with the appropriate content centred —
-         play triangle for repeat-once, infinity symbol for loop. -->
+         Repeat once = Material Design's `replay` icon (the exact path
+         YouTube uses for the post-video replay button — arrowhead at
+         TOP-LEFT pointing LEFT, indicating "rewind to start". The
+         arrowhead shape itself reads as a play-triangle-inside-circle
+         pattern, which is the visual idiom Terry is matching).
+
+         Loop endlessly = Material Design's `all-inclusive` icon — the
+         classic infinity symbol. Conveys "loops forever" instantly
+         and is distinct from Repeat once at a glance. -->
     <div class="video-controls-overlay" id="video-controls-overlay">
       <button class="video-controls-btn" id="btn-repeat-once" type="button" title="Repeat once when video ends">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.68.94 6.36 2.64L21 8"/>
-          <polyline points="21 3 21 8 16 8"/>
-          <polygon points="10 9.5 15 12 10 14.5" fill="currentColor" stroke="none"/>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none">
+          <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
         </svg>
       </button>
       <button class="video-controls-btn" id="btn-loop" type="button" title="Loop endlessly">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.68.94 6.36 2.64L21 8"/>
-          <polyline points="21 3 21 8 16 8"/>
-          <text x="12" y="16" text-anchor="middle" font-size="12" font-family="serif" fill="currentColor" stroke="none">&#8734;</text>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none">
+          <path d="M18.6 6.62c-1.44 0-2.8.56-3.77 1.53L7.8 14.39c-.64.64-1.49.99-2.4.99-1.87 0-3.39-1.51-3.39-3.38S3.53 8.62 5.4 8.62c.91 0 1.76.35 2.44 1.03l1.13 1 1.51-1.34L9.22 8.2C8.2 7.18 6.84 6.62 5.4 6.62 2.42 6.62 0 9.04 0 12s2.42 5.38 5.4 5.38c1.44 0 2.8-.56 3.77-1.53l7.03-6.23c.64-.64 1.49-.99 2.4-.99 1.87 0 3.39 1.51 3.39 3.38s-1.52 3.38-3.39 3.38c-.9 0-1.76-.35-2.44-1.03l-1.14-1.01-1.51 1.34 1.27 1.12c1.02 1.01 2.37 1.57 3.82 1.57 2.98 0 5.4-2.41 5.4-5.38s-2.42-5.37-5.4-5.37z"/>
         </svg>
       </button>
     </div>
