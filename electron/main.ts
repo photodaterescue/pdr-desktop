@@ -11284,19 +11284,26 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
       pipeline = pipeline.linear(slope, offset);
     }
 
-    // Temperature — approximate via tint(). Negative = cool (blue
-    // shift); positive = warm (orange shift). sharp's tint multiplies
-    // the channels by the supplied colour. Magnitude small enough to
-    // not overpower the rest of the pipeline.
+    // v2.0.15 (Terry 2026-06-06) — Temperature via .recomb() (per-
+    // channel multiplier matrix), NOT .tint(). Sharp's tint() makes
+    // the image MONOCHROME (single-color tinted), which is what
+    // produced the "saved file came out B&W" bug Terry hit — any
+    // non-zero Temperature value was effectively desaturating the
+    // output. recomb([[r,g,b],[r,g,b],[r,g,b]]) applies a 3×3 colour
+    // matrix; the diagonal-only form below scales each channel
+    // independently, preserving the image's saturation while shifting
+    // the colour balance toward warm (more R, less B) or cool (less
+    // R, more B). 0.15 magnitude per channel = subtle but visible at
+    // ±50 slider position.
     if (temperature !== 0) {
-      // Map -50..+50 to a colour:
-      //   warm  (+): more red, less blue (e.g. 255,235,200 at +50)
-      //   cool  (-): more blue, less red (e.g. 200,225,255 at -50)
       const t = temperature / 50; // -1..+1
-      const r = Math.round(228 + 27 * t);  // 201..255
-      const g = 228;
-      const b = Math.round(228 - 27 * t);  // 255..201
-      pipeline = pipeline.tint({ r, g, b });
+      const rGain = 1 + 0.15 * t;
+      const bGain = 1 - 0.15 * t;
+      pipeline = pipeline.recomb([
+        [rGain, 0,     0    ],
+        [0,     1,     0    ],
+        [0,     0,     bGain],
+      ]);
     }
 
     if (bw) {

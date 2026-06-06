@@ -152,7 +152,13 @@
     .viewer-container:hover .nav-arrow { opacity: 0.9; }
     .nav-arrow:hover { background: rgba(169, 156, 255, 0.35); color: #fff; opacity: 1; transform: translateY(-50%) scale(1.06); }
     .nav-arrow.left { left: 16px; }
-    .nav-arrow.right { right: 16px; }
+    .nav-arrow.right { right: 16px; transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1); }
+    /* v2.0.15 (Terry 2026-06-06) — when the Enhance panel is open
+       (280 px right-side slide-in), shift the next-photo arrow left
+       so it sits just to the left of the panel instead of being
+       hidden behind it. Terry's UX: navigate to next photo without
+       having to close the panel first. */
+    body.enhance-panel-open .nav-arrow.right { right: 296px; }
     .nav-arrow:disabled { opacity: 0.2 !important; cursor: default; }
     /* Cross-window Fix-in-progress chip — same amber pill PDR shows
        on every other window so users always know a Fix is running.
@@ -1737,12 +1743,20 @@ function zoomTo(newZoom, centreX, centreY) {
         if (state.contrast !== 100) parts.push('contrast(' + (state.contrast / 100) + ')');
         if (state.saturation !== 100 && !state.bw) parts.push('saturate(' + (state.saturation / 100) + ')');
         if (state.bw) parts.push('grayscale(1)');
+        // v2.0.15 (Terry 2026-06-06) — Temperature was using sepia +
+        // hue-rotate, which desaturated the preview heavily (sepia is
+        // a tint-toward-brown operation, basically B&W with brown
+        // overlay). Backend uses .recomb() (per-channel matrix) which
+        // is non-destructive of saturation. Preview now uses ONLY a
+        // small hue-rotate to roughly match the warm/cool direction
+        // without desaturating. Imperfect — CSS has no native colour
+        // balance filter — but matches the saved output visually
+        // much more closely than the old combo.
         if (state.temperature !== 0) {
-          // Approximate colour temperature with sepia + a small hue-rotate.
-          // Negative (cool) → blue-shifted; positive (warm) → orange-shifted.
-          const amt = Math.abs(state.temperature) / 100; // 0..0.5
-          parts.push('sepia(' + amt + ')');
-          parts.push('hue-rotate(' + (state.temperature < 0 ? 200 : -25) + 'deg)');
+          // ±10° at the slider's ±50 endpoints. Positive (warm) →
+          // orange shift; negative (cool) → blue shift.
+          const deg = -(state.temperature / 50) * 10;
+          parts.push('hue-rotate(' + deg + 'deg)');
         }
         return parts.length ? parts.join(' ') : 'none';
       }
@@ -1832,10 +1846,14 @@ function zoomTo(newZoom, centreX, centreY) {
       function openPanel() {
         panel.classList.add('open');
         panel.setAttribute('aria-hidden', 'false');
+        // v2.0.15 — body class lets the next-photo arrow CSS shift
+        // left of the panel so it stays clickable.
+        document.body.classList.add('enhance-panel-open');
       }
       function closePanel() {
         panel.classList.remove('open');
         panel.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('enhance-panel-open');
       }
       openBtn.addEventListener('click', function () {
         if (panel.classList.contains('open')) closePanel(); else openPanel();
@@ -1958,6 +1976,10 @@ function zoomTo(newZoom, centreX, centreY) {
         // Disable buttons during the save to prevent double-clicks.
         const targets = [saveNewBtn, saveReplaceBtn];
         targets.forEach(function (b) { if (b) { b.disabled = true; b.classList.add('enhance-save-saving'); } });
+        // v2.0.15 (Terry 2026-06-06) — log the state being sent so
+        // any "saved file looks wrong" report has a verifiable trail
+        // in main.log (renderer console.log is captured there).
+        console.log('[enhance] saving — mode=' + mode + ' state=' + JSON.stringify(state));
         try {
           const result = await pdrViewer.saveEnhanced({
             filePath: filePath,
