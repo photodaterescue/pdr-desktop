@@ -113,12 +113,18 @@
        time current/total, spacer, volume button + slider, fullscreen.
        Bar auto-hides during playback after 2.5s of mouse inactivity
        (re-shown on mousemove, always shown when paused or ended). */
+    /* v2.0.15 (Terry 2026-06-06 round 6 fix) — wrap fills the
+       viewer-container so the video inside has dimensions to resolve
+       max-width/max-height: 100% against. Flex-center the video so
+       it stays in the middle regardless of aspect ratio, same as
+       the bare video element behaved before the wrap was added. */
     .pdrv-wrap {
       position: relative;
-      max-width: 100%;
-      max-height: 100%;
-      display: inline-block;
-      line-height: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .pdrv-wrap video {
       max-width: 100%;
