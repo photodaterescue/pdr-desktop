@@ -462,7 +462,8 @@ export async function redetectSingleFile(
       try {
         const { refineFromVerifiedFaces } = await import('./search-database.js');
         const threshold = settings.aiSearchMatchThreshold ?? 0.72;
-        refineFromVerifiedFaces(threshold);
+        // v2.0.15 (Terry 2026-06-05) — now async + cooperatively yielding.
+        await refineFromVerifiedFaces(threshold);
       } catch (err) {
         console.warn('[AI] redetect: refine pass failed (faces still saved):', (err as Error).message);
       }
