@@ -3613,12 +3613,20 @@ export function getUnclusteredFaceCount(): number {
 // writes. Previously this blocked the main process for 30-60 seconds,
 // which made PM's heartbeat ping time out and the "PDR has stopped
 // responding" banner fire mid-Improve. Now each outer loop yields via
-// setImmediate every YIELD_EVERY iterations so the Electron message
-// pump can answer pings (and other IPC) between chunks of work. The
-// total work is unchanged — only the latency-to-respond changes — so
-// the Improve still takes the same wall-clock time but the rest of
-// PDR stays interactive throughout.
-const YIELD_EVERY = 200;
+// setImmediate so the Electron message pump can answer pings (and
+// other IPC) between chunks of work. The total work is unchanged —
+// only the latency-to-respond changes.
+//
+// v2.0.15 (Terry 2026-06-06) — yields are now TIME-BASED, not
+// iteration-count-based. The old YIELD_EVERY=200 worked out to
+// 50-200ms between yields depending on hardware, which is way longer
+// than the ~16ms a smooth window drag needs — Terry hit obvious lag
+// trying to reposition PM mid-Improve. With YIELD_AFTER_MS=10, main
+// gives up the thread at most every 10ms regardless of iteration cost,
+// so drag stays at 60fps and tooltip/render responsiveness is
+// preserved throughout. Progress event coupling: emit once per yield
+// (still gives smooth bar updates without flooding IPC).
+const YIELD_AFTER_MS = 10;
 const yieldToEventLoop = (): Promise<void> =>
   new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -3794,14 +3802,17 @@ export async function refineFromVerifiedFaces(
     ).all(person.id) as Array<{ id: number; embedding: Buffer }>;
     let unassignedCount = 0;
     let existingIdx = 0;
+    let existingLastYield = performance.now();
     for (const row of existingAutoMatches) {
-      // v2.0.15 — yield to event loop every YIELD_EVERY iterations so
-      // main can answer IPC pings + drag/resize/render between chunks.
-      // Same cadence also drives the progress event so the modal's
-      // bar moves smoothly across the re-test pass without flooding
-      // the IPC channel.
-      if (existingIdx > 0 && existingIdx % YIELD_EVERY === 0) {
+      // v2.0.15 (Terry 2026-06-06) — TIME-based yield. If we've held
+      // the thread for ≥ YIELD_AFTER_MS since the last yield, give it
+      // back so drag / IPC / tooltip render stay smooth. Old iteration-
+      // count basis (every 200 rows) had unpredictable timing across
+      // hardware; this is consistent at "no more than YIELD_AFTER_MS
+      // hold". Progress event piggybacks on the same yield.
+      if (existingIdx > 0 && performance.now() - existingLastYield >= YIELD_AFTER_MS) {
         await yieldToEventLoop();
+        existingLastYield = performance.now();
         try { onProgress?.({ phase: 'retest', personIndex: personIdx, personsTotal: persons.length, personName: person.name, itemIndex: existingIdx, itemsTotal: existingAutoMatches.length, matchedSoFar: totalNewMatches }); } catch {}
       }
       existingIdx++;
@@ -3852,15 +3863,17 @@ export async function refineFromVerifiedFaces(
     `).all() as { id: number; embedding: Buffer }[];
 
     let unnamedIdx = 0;
+    let unnamedLastYield = performance.now();
     for (const row of unnamedRefreshed) {
-      // v2.0.15 — yield to event loop every YIELD_EVERY iterations.
-      // This is the biggest CPU loop in PDR (12 000+ unnamed faces
-      // for Terry's library) so yielding here is what keeps PM's
-      // heartbeat ping responsive during Improve Facial Recognition.
-      // Progress event emits at the same cadence so the modal bar
-      // tracks the main loop accurately.
-      if (unnamedIdx > 0 && unnamedIdx % YIELD_EVERY === 0) {
+      // v2.0.15 (Terry 2026-06-06) — TIME-based yield (10ms). Biggest
+      // CPU loop in PDR (12 000+ unnamed faces for Terry's library)
+      // so frequent yields are critical for keeping window drag, IPC,
+      // and tooltip render smooth during Improve. Progress event
+      // emits at the same cadence so the modal bar updates smoothly
+      // without flooding the IPC channel.
+      if (unnamedIdx > 0 && performance.now() - unnamedLastYield >= YIELD_AFTER_MS) {
         await yieldToEventLoop();
+        unnamedLastYield = performance.now();
         try { onProgress?.({ phase: 'match', personIndex: personIdx, personsTotal: persons.length, personName: person.name, itemIndex: unnamedIdx, itemsTotal: unnamedRefreshed.length, matchedSoFar: totalNewMatches + matchedForThisPerson }); } catch {}
       }
       unnamedIdx++;

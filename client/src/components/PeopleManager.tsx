@@ -4592,6 +4592,19 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
   // ensureClusterCrops dedups, so repeated triggers are harmless.
   const onVisibleRef = useRef(onVisible);
   onVisibleRef.current = onVisible;
+  // v2.0.15 (Terry 2026-06-06) — once-per-row context-crop pre-warm.
+  // Hover preview WAS still laggy on first hover because the
+  // pdr-face://context URL was a cache miss until that hover fired
+  // the sharp pipeline. Now: when a row scrolls into the viewport,
+  // we fire a fetch() at each sample face's context URL — that goes
+  // through the protocol handler, which generates+caches the JPG on
+  // the first call. Subsequent hovers find the cache warm and render
+  // in ~1-5 ms (disk read + browser memory cache). Concurrency-2
+  // keeps the IPC + sharp pressure bounded so the pre-warm doesn't
+  // compete with current-row foreground work. The fetch responses
+  // are discarded — we only care about the side-effect of warming
+  // the cache.
+  const prewarmedContextOnceRef = useRef(false);
   useEffect(() => {
     const el = cardRef.current;
     if (!el) return;
@@ -4599,11 +4612,36 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
       for (const entry of entries) {
         if (entry.isIntersecting) {
           onVisibleRef.current?.();
+          if (!prewarmedContextOnceRef.current) {
+            prewarmedContextOnceRef.current = true;
+            const faces = (cluster.sample_faces ?? []).filter(f => f.file_path);
+            if (faces.length > 0) {
+              let nextIdx = 0;
+              const CONCURRENCY = 2;
+              const warmWorker = async () => {
+                while (nextIdx < faces.length) {
+                  const i = nextIdx++;
+                  const f = faces[i];
+                  const url = buildFaceUrl(f.file_path, f.box_x, f.box_y, f.box_w, f.box_h, 200, 'context');
+                  try {
+                    // Fire-and-forget fetch. The protocol handler will
+                    // generate + cache the JPG; the response body is
+                    // discarded. Cache-hit case is essentially free.
+                    await fetch(url);
+                  } catch { /* best-effort */ }
+                }
+              };
+              void Promise.all(Array.from({ length: CONCURRENCY }, () => warmWorker()));
+            }
+          }
         }
       }
     }, { rootMargin: '200px' });
     observer.observe(el);
     return () => observer.disconnect();
+    // cluster.sample_faces is stable for the row's lifetime — parent re-renders the row
+    // (via key change) if faces change. Disable dep complaint about cluster.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const thumbStripRef = useRef<HTMLDivElement>(null);
 
