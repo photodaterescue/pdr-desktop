@@ -113,6 +113,42 @@ function notifyChange() {
   }
 }
 
+// v2.0.15 (Terry 2026-06-05) — PM face thumbnails moved from base64-
+// over-IPC dataUrls to the pdr-face:// custom protocol (see main.ts).
+// Renderer just constructs URLs synchronously here; the browser
+// handles fetching, caching, decoding via standard <img> tags.
+//
+// Modes:
+//   thumb   → tight square crop, default 64 px for row strips
+//   context → wider crop with neutral letterbox bg, default 200 px
+//             for hover previews
+//
+// Disk cache on main side is content-addressed by sha1(fp+box+size),
+// so the same URL always resolves to the same cached file across
+// sessions — typically a 1-5 ms disk read on cache hit, plus
+// Chromium's own in-renderer memory cache for the lifetime of the
+// window. First cold render of a freshly-detected face hits sharp
+// once, then never again.
+function buildFaceUrl(
+  filePath: string,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+  size: number,
+  mode: 'thumb' | 'context' = 'thumb',
+): string {
+  const params = new URLSearchParams({
+    fp: filePath,
+    bx: String(bx),
+    by: String(by),
+    bw: String(bw),
+    bh: String(bh),
+    size: String(size),
+  });
+  return `pdr-face://${mode}/?${params.toString()}`;
+}
+
 // ─── Main People Manager (standalone page, not modal) ─────────────────────
 export default function PeopleManager() {
   // True whenever ANY window has a Fix in flight. Drives the
@@ -160,10 +196,14 @@ export default function PeopleManager() {
   useEffect(() => {
     try { localStorage.setItem('pdr-pm-view-mode', viewMode); } catch {}
   }, [viewMode]);
-  const [zoomLevel, setZoomLevel] = useState(() => {
-    const saved = localStorage.getItem('pdr-people-zoom');
-    return saved ? parseInt(saved, 10) : 100;
-  });
+  // v2.0.15 (Terry 2026-06-05) — zoom now starts at 100% every time PM
+  // opens, regardless of what was previously saved. The persistence was
+  // restoring earlier zoom levels Terry had tested at (110%, 130%) and
+  // making PM open at the wrong size. localStorage write is kept for
+  // session-local persistence (refresh / navigate back) but the read on
+  // mount is gone. Terry: "100% should be the default view when PM is
+  // opened."
+  const [zoomLevel, setZoomLevel] = useState(100);
   const [clusters, setClusters] = useState<PersonCluster[]>([]);
   // AI processing indicator — surfaces the same "Analyzing N/M" the main
   // window shows, so the user can see analysis progress from inside the
@@ -171,7 +211,11 @@ export default function PeopleManager() {
   const [aiProgress, setAiProgress] = useState<AiProgress | null>(null);
   const [discardedPersons, setDiscardedPersons] = useState<DiscardedPerson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [faceCropsMap, setFaceCropsMap] = useState<Record<string, string>>({});
+  // v2.0.15 (Terry 2026-06-05) — faceCropsMap is now a computed useMemo
+  // of pdr-face:// URLs, not a useState of base64 dataUrls. Defined
+  // below after clusterKey so the URL builder has its dependency.
+  // setFaceCropsMap / ensureClusterCrops / background-round-robin all
+  // removed — browser fetches via the protocol handler on render.
   const [editingCluster, setEditingCluster] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState('');
   /** Optional long-form name input — sits alongside the short-name
@@ -503,17 +547,46 @@ export default function PeopleManager() {
     return c.person_id ? `p${c.person_id}` : `c${c.cluster_id}`;
   };
 
+  // v2.0.15 (Terry 2026-06-05) — face thumbnails are pdr-face:// URLs
+  // built synchronously from cluster data. The browser fetches them via
+  // the custom protocol handler in main.ts, which serves from a content-
+  // addressed disk cache (sha1 of file_path + box + size). No more
+  // ensureClusterCrops, no more background round-robin, no more base64-
+  // over-IPC. PersonCardRow's prop API is unchanged — values are URL
+  // strings instead of dataUrl strings; <img src={...}> works either
+  // way. Keys preserved: face_id for sample faces, clusterKey for the
+  // representative-face shortcut some call sites use.
+  const faceCropsMap = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const cluster of clusters) {
+      const repFace = cluster.sample_faces?.find(f => f.face_id === cluster.representative_face_id);
+      if (repFace?.file_path) {
+        map[clusterKey(cluster)] = buildFaceUrl(repFace.file_path, repFace.box_x, repFace.box_y, repFace.box_w, repFace.box_h, 64);
+      }
+      for (const f of (cluster.sample_faces ?? [])) {
+        if (f.file_path) {
+          map[f.face_id] = buildFaceUrl(f.file_path, f.box_x, f.box_y, f.box_w, f.box_h, 64);
+        }
+      }
+    }
+    return map;
+    // clusterKey is a stable closure — only its inputs change with clusters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clusters]);
+
   const loadClusters = async () => {
     setIsLoading(true);
-    // Render the cluster list AS SOON AS the DB queries return. Face
-    // thumbnails are fetched in two waves:
-    //   1. Foreground: per-cluster when the row enters the viewport.
-    //      Visible rows get priority and populate within ~1–2s.
-    //   2. Background: idle-callback-driven pass over ALL other
-    //      clusters, so by the time the user scrolls, rows are
-    //      already fully populated and appear instantly. Both waves
-    //      go through ensureClusterCrops which dedups atomically, so
-    //      they can race without double-fetching.
+    // v2.0.15 (Terry 2026-06-05) — simplified: just load the 3 IPCs in
+    // parallel and set state. Face thumbnails come via the pdr-face://
+    // protocol (faceCropsMap useMemo above) — the browser fetches on
+    // render, no JS-side fetcher needed, no background round-robin
+    // queue. The previous architecture had a foreground IntersectionO-
+    // bserver-triggered fetcher PLUS a background round-robin loop
+    // processing all 12 000+ clusters; both contended for the same IPC
+    // pipe, occasionally starving visible rows (Terry's "rows 6+ blank
+    // for 1 minute" report). With the protocol approach, only the
+    // currently-rendered <img> tags trigger fetches, and Chromium
+    // caches them in renderer memory for the window's lifetime.
     const [clustersRes, personsRes, discardedRes] = await Promise.all([
       getPersonClusters(),
       listPersons(),
@@ -523,90 +596,6 @@ export default function PeopleManager() {
     if (personsRes.success && personsRes.data) setExistingPersons(personsRes.data);
     if (discardedRes.success && discardedRes.data) setDiscardedPersons(discardedRes.data);
     setIsLoading(false);
-    // Reset the per-open "I've fetched this cluster" dedup tracker so a
-    // refresh re-populates rows that come back into view.
-    fetchedClusterKeysRef.current.clear();
-    // Bump the load id so any still-running background loop from a
-    // previous load bails out instead of fighting for I/O.
-    const myLoadId = ++loadIdRef.current;
-
-    // Background idle fetch: process every remaining cluster in
-    // interleaved order, one at a time, yielding to the browser
-    // between clusters so user scrolls, clicks, and edits stay
-    // responsive.
-    //
-    // Interleave matters: getPersonClusters returns named first then
-    // unnamed, so a naive queue processes all 10 named → all 157
-    // unnamed in order. If the user switches to Unnamed after a few
-    // seconds, they'd see blank rows until the loop got that far.
-    // Round-robin instead: named[0], unnamed[0], special[0], named[1],
-    // unnamed[1], … so every tab's top clusters populate early.
-    if (clustersRes.success && clustersRes.data) {
-      const all = clustersRes.data;
-      const named = all.filter(c => c.person_name && c.person_name !== '__ignored__' && c.person_name !== '__unsure__');
-      const unnamed = all.filter(c => !c.person_name);
-      const special = all.filter(c => c.person_name === '__ignored__' || c.person_name === '__unsure__');
-      const queue: typeof all = [];
-      const maxLen = Math.max(named.length, unnamed.length, special.length);
-      for (let i = 0; i < maxLen; i++) {
-        if (named[i]) queue.push(named[i]);
-        if (unnamed[i]) queue.push(unnamed[i]);
-        if (special[i]) queue.push(special[i]);
-      }
-      const idle: (cb: () => void) => void = (window as any).requestIdleCallback
-        ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 2000 })
-        : (cb) => setTimeout(cb, 100);
-      const processNext = () => {
-        if (loadIdRef.current !== myLoadId) return; // cancelled by re-load
-        if (queue.length === 0) return;
-        idle(async () => {
-          if (loadIdRef.current !== myLoadId) return;
-          // Pull 2 clusters per idle slot and fetch concurrently —
-          // doubles background throughput without starving the main
-          // thread, since each ensureClusterCrops is already mostly
-          // waiting on IPC + sharp, not CPU.
-          const batch = [queue.shift(), queue.shift()].filter(Boolean) as typeof all;
-          await Promise.all(batch.map(c => ensureClusterCrops(c)));
-          processNext();
-        });
-      };
-      processNext();
-    }
-  };
-
-  /** Per-cluster thumbnail fetcher. Fires when a row enters the
-   *  viewport (IntersectionObserver in PersonCardRow / PersonListRow).
-   *  Idempotent: subsequent calls for the same cluster are no-ops, and
-   *  faces already in faceCropsMap are skipped so the second scroll-in
-   *  costs nothing. Small local worker pool so we don't try to open
-   *  25 file handles in parallel for a single row. */
-  const fetchedClusterKeysRef = useRef<Set<string>>(new Set());
-  // Monotonic counter bumped per loadClusters() call so the background
-  // idle loop from an earlier load can detect it's been superseded and
-  // bail out — prevents stale loops from competing with a fresh load's
-  // workers after a refresh / AI-complete re-load.
-  const loadIdRef = useRef<number>(0);
-  const ensureClusterCrops = async (cluster: PersonCluster) => {
-    const key = clusterKey(cluster);
-    if (fetchedClusterKeysRef.current.has(key)) return;
-    fetchedClusterKeysRef.current.add(key);
-    const faces = cluster.sample_faces ?? [];
-    if (faces.length === 0) return;
-    const todo = faces.filter(f => !faceCropsMap[f.face_id]);
-    if (todo.length === 0) return;
-    const CONCURRENCY = 4;
-    let next = 0;
-    const worker = async () => {
-      while (next < todo.length) {
-        const i = next++;
-        const face = todo[i];
-        const crop = await getFaceCrop(face.file_path, face.box_x, face.box_y, face.box_w, face.box_h, 64);
-        if (crop.success && crop.dataUrl) {
-          setFaceCropsMap(prev => ({ ...prev, [face.face_id]: crop.dataUrl! }));
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
   };
 
   useEffect(() => { loadClusters(); }, []);
@@ -666,17 +655,40 @@ export default function PeopleManager() {
     }
   }, [isLoading, clusters]);
 
-  // Ctrl+scroll zoom
+  // Ctrl+scroll zoom — v2.0.15 (Terry 2026-06-05) — RAF-coalesced.
+  // A smooth scroll wheel fires 60-120 events/sec; the old handler ran
+  // setZoomLevel on EVERY event, queuing 60+ React renders per second
+  // and 60+ CSS-zoom reflows of the entire PM tree. That's why scroll
+  // wheel felt "disgustingly slow" vs the zoom BUTTON (one click =
+  // one render). The coalescer accumulates wheel deltas in a ref and
+  // applies them as a single setZoomLevel call per animation frame —
+  // so the browser only paints once per frame max, regardless of how
+  // fast the wheel is spinning.
   useEffect(() => {
+    let pendingDelta = 0;
+    let rafScheduled = false;
     const handler = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      pendingDelta += e.deltaY;
+      if (rafScheduled) return;
+      rafScheduled = true;
+      requestAnimationFrame(() => {
+        rafScheduled = false;
+        const delta = pendingDelta;
+        pendingDelta = 0;
+        if (delta === 0) return;
         setZoomLevel(prev => {
-          const next = Math.max(60, Math.min(150, prev + (e.deltaY < 0 ? 5 : -5)));
+          // Step scales with accumulated delta so a fast spin moves
+          // faster than a single notch — matches the OS feel of
+          // wheel-zoom in browsers / image viewers.
+          const ticks = Math.max(1, Math.min(6, Math.round(Math.abs(delta) / 50)));
+          const direction = delta < 0 ? 1 : -1;
+          const next = Math.max(60, Math.min(150, prev + ticks * 5 * direction));
           localStorage.setItem('pdr-people-zoom', String(next));
           return next;
         });
-      }
+      });
     };
     window.addEventListener('wheel', handler, { passive: false });
     return () => window.removeEventListener('wheel', handler);
@@ -1929,8 +1941,7 @@ export default function PeopleManager() {
                         </IconTooltip>
                       <PersonCardRow
                         rowIndex={idx}
-                        onVisible={() => ensureClusterCrops(cluster)}
-                        cluster={cluster}
+                                                cluster={cluster}
                         cropUrl={faceCropsMap[clusterKey(cluster)]}
                         sampleCrops={faceCropsMap}
                         isEditing={editingCluster === clusterKey(cluster)}
@@ -2052,7 +2063,7 @@ export default function PeopleManager() {
                   <div className="space-y-0.5">
                     {filteredNamed.map((cluster, idx) => (
                       <PersonListRow
-                        key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
+                        key={clusterKey(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
                         isEditing={editingCluster === clusterKey(cluster)} nameInput={nameInput}
                         fullNameInput={fullNameInput}
                         onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(cluster.person_name || ''); setFullNameInput(cluster.person_full_name || ''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
@@ -2172,8 +2183,7 @@ export default function PeopleManager() {
                             </IconTooltip>
                           <PersonCardRow
                             rowIndex={idx}
-                            onVisible={() => ensureClusterCrops(cluster)}
-                            cluster={cluster}
+                                                        cluster={cluster}
                             cropUrl={faceCropsMap[clusterKey(cluster)]}
                             sampleCrops={faceCropsMap}
                             isEditing={editingCluster === clusterKey(cluster)}
@@ -2319,7 +2329,7 @@ export default function PeopleManager() {
                               </div>
                             </IconTooltip>
                           <PersonListRow
-                            onVisible={() => ensureClusterCrops(cluster)} cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
+                            cluster={cluster} cropUrl={faceCropsMap[clusterKey(cluster)]} sampleCrops={faceCropsMap}
                             isEditing={editingCluster === clusterKey(cluster)} nameInput={nameInput}
                             fullNameInput={fullNameInput}
                             onStartEdit={() => { setEditingCluster(clusterKey(cluster)); setNameInput(''); setFullNameInput(''); setTimeout(() => nameInputRef.current?.focus(), 50); }}
@@ -2436,8 +2446,7 @@ export default function PeopleManager() {
                       {unsureClusters.map((cluster, idx) => (
                         <PersonCardRow
                           rowIndex={idx}
-                          key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
-                          cluster={cluster}
+                          key={clusterKey(cluster)}                           cluster={cluster}
                           cropUrl={faceCropsMap[clusterKey(cluster)]}
                           sampleCrops={faceCropsMap}
                           isEditing={editingCluster === clusterKey(cluster)}
@@ -2504,8 +2513,7 @@ export default function PeopleManager() {
                       {ignoredClusters.map((cluster, idx) => (
                         <PersonCardRow
                           rowIndex={idx}
-                          key={clusterKey(cluster)} onVisible={() => ensureClusterCrops(cluster)}
-                          cluster={cluster}
+                          key={clusterKey(cluster)}                           cluster={cluster}
                           cropUrl={faceCropsMap[clusterKey(cluster)]}
                           sampleCrops={faceCropsMap}
                           isEditing={editingCluster === clusterKey(cluster)}
@@ -4394,23 +4402,38 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
   const [selectedSuggestionIdx, setSelectedSuggestionIdx] = useState(-1);
   const [reassignSuggestionIdx, setReassignSuggestionIdx] = useState(-1);
 
-  const [contextCrops, setContextCrops] = useState<Record<string, string>>({});
-  /** Metadata cache for the PM hover preview overlay — filename,
-   *  derived date, country, city. Keyed identically to contextCrops
-   *  so a single hover request can populate both in parallel. */
-  const [contextMeta, setContextMeta] = useState<Record<string, FileMetaSlice>>({});
-  const loadContextCrop = async (key: string, filePath: string, bx: number, by: number, bw: number, bh: number) => {
-    // Fetch image + metadata in parallel; cache both keyed identically.
-    const tasks: Promise<unknown>[] = [];
-    if (!contextCrops[key]) {
-      tasks.push((async () => {
-        const result = await getFaceContext(filePath, bx, by, bw, bh, 200);
-        if (result.success && result.dataUrl) {
-          setContextCrops(prev => ({ ...prev, [key]: result.dataUrl! }));
-        }
-      })());
+  // v2.0.15 (Terry 2026-06-05) — context (hover-preview) images now come
+  // via the pdr-face://context/ protocol — browser fetches them as
+  // normal <img src>. We pre-populate a URL map for every sample face
+  // in this row (both prefix conventions: `face_<id>` for per-thumb
+  // hover, `main_<id>` for the row tooltip), keyed identically to the
+  // old contextCrops state so render code stays unchanged. Disk cache
+  // on main side means a second hover hits in ~1-5 ms.
+  const contextCrops = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const f of (cluster.sample_faces ?? [])) {
+      if (f.file_path) {
+        const url = buildFaceUrl(f.file_path, f.box_x, f.box_y, f.box_w, f.box_h, 200, 'context');
+        map[`face_${f.face_id}`] = url;
+        map[`main_${f.face_id}`] = url;
+      }
     }
-    if (!contextMeta[key]) {
+    return map;
+  }, [cluster]);
+  /** Metadata cache for the PM hover preview overlay — filename,
+   *  derived date, country, city. Still IPC-fetched on demand because
+   *  it's small JSON, not an image, and only needed when the user
+   *  actually hovers. */
+  const [contextMeta, setContextMeta] = useState<Record<string, FileMetaSlice>>({});
+  // v2.0.15 (Terry 2026-06-05) — function name + signature preserved
+  // (many callers) but only the metadata fetch remains. The image part
+  // is automatic via the contextCrops URL useMemo above + browser
+  // rendering; no async wait, no IPC for the image.
+  const loadContextCrop = async (key: string, filePath: string, _bx: number, _by: number, _bw: number, _bh: number) => {
+    if (contextMeta[key]) return;
+    const t0 = performance.now();
+    const tasks: Promise<unknown>[] = [];
+    {
       tasks.push((async () => {
         const result = await getFileMetaByPath(filePath);
         if (result.success && result.data) {
@@ -4418,7 +4441,9 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
         }
       })());
     }
+    if (tasks.length === 0) return;
     await Promise.all(tasks);
+    console.log(`[PM-hover] loadContextCrop meta-only ${key} ${Math.round(performance.now() - t0)}ms`);
   };
 
   /** Render the human-readable date for the PM hover overlay. We only

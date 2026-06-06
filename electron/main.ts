@@ -200,15 +200,21 @@ console.log('[ffmpeg] path =', ffmpegPath);
 
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg']);
 
-// v2.0.15 (Terry 2026-06-05) — session-level negative cache for video
-// thumbnail failures. Without this, every scroll past a known-bad
-// HEVC clip in S&D / Memories re-spawns the 2-attempt ffmpeg cascade
-// (previously 4); on a library with hundreds of unsupported clips
-// in a 6,996-video S&D result set, the scroll-induced subprocess
-// storm crashed the renderer. The cache is module-scoped (not file-
-// system persisted) so a fresh launch retries — useful if the user
-// has updated ffmpeg / installed codecs out-of-band.
-const VIDEO_THUMB_NEGATIVE_CACHE = new Set<string>();
+// v2.0.15 (Terry 2026-06-05) — session-level FAILURE COUNTER for video
+// thumbnail extraction. Without this, every scroll past a known-bad
+// HEVC clip in S&D / Memories re-spawns the 4-attempt ffmpeg cascade;
+// on a library with hundreds of unsupported clips in a 6,996-video
+// S&D result set, the scroll-induced subprocess storm crashed the
+// renderer.
+//
+// Counter (not boolean) because the FIRST cascade run was prone to
+// transient OS-side kills during the storm itself — a legitimate file
+// could get poisoned after one bad-luck run, then stay missing until
+// the next session. With a counter we tolerate transient failures and
+// only give up after `VIDEO_THUMB_GIVE_UP_AFTER` consecutive misses
+// from the SAME file. A successful extract resets the counter to 0.
+const VIDEO_THUMB_FAILURE_COUNT = new Map<string, number>();
+const VIDEO_THUMB_GIVE_UP_AFTER = 3;
 
 // v2.0.15 (Terry 2026-06-05) — hard cap on a single ffmpeg subprocess
 // per attempt. The "no stderr — likely killed / crashed" log lines
@@ -2569,8 +2575,15 @@ const activeTempDirs = new Set<string>();
 const pendingTakeoutEnrichments = new Map<string, PendingTakeoutEnrichment>();
 
 // Register custom protocol for serving local files to viewer
+// v2.0.15 (Terry 2026-06-05) — added 'pdr-face' for PM face thumbnails
+// and hover-preview context crops. Renderer uses <img src="pdr-face://thumb/?fp=...&size=64">
+// instead of base64-over-IPC dataUrls. Browser handles the fetch +
+// caching natively; main only sees a request when the disk cache is
+// cold. Same disk-cache mechanism as ai:faceCrop and ai:faceContext —
+// just delivered as a real HTTP response so img tags work normally.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'pdr-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+  { scheme: 'pdr-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'pdr-face', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 // Single-instance lock — only one PDR may run on a machine at a time.
@@ -2828,6 +2841,141 @@ app.whenReady().then(() => {
       // serve path doesn't worsen the UX — at least the file might
       // still load even if it can't be seeked.
       return net.fetch(fileUrl, { headers: request.headers, method: request.method });
+    }
+  });
+
+  // v2.0.15 (Terry 2026-06-05) — pdr-face:// protocol.
+  // Renderer uses <img src="pdr-face://thumb/?fp=...&bx=...&by=...&bw=...&bh=...&size=64">
+  // (or mode=context for hover previews). Browser handles fetching +
+  // caching natively, so PM rows don't pay per-face base64-over-IPC
+  // overhead and main process doesn't get asked again once Chromium
+  // has the image in its memory cache. Same disk-cache mechanism as
+  // ai:faceCrop and ai:faceContext (content-addressed by sha1 of
+  // filePath + box coords + size) — adds a per-mode suffix so thumb
+  // and context crops don't collide on the same key.
+  //
+  // Modes:
+  //   thumb   — tight square crop (matches ai:faceCrop), default 96px
+  //   context — wider crop with neutral letterbox bg (matches
+  //             ai:faceContext minus the SVG indicator overlay),
+  //             default 240px
+  protocol.handle('pdr-face', async (request) => {
+    try {
+      const url = new URL(request.url);
+      const mode = (url.hostname || 'thumb').toLowerCase();
+      const fp = url.searchParams.get('fp') ?? '';
+      const bx = parseFloat(url.searchParams.get('bx') ?? '');
+      const by = parseFloat(url.searchParams.get('by') ?? '');
+      const bw = parseFloat(url.searchParams.get('bw') ?? '');
+      const bh = parseFloat(url.searchParams.get('bh') ?? '');
+      const size = parseInt(url.searchParams.get('size') ?? '96', 10);
+      if (!fp || !isFinite(bx) || !isFinite(by) || !isFinite(bw) || !isFinite(bh) || !isFinite(size)) {
+        return new Response('Bad request', { status: 400 });
+      }
+      if (mode !== 'thumb' && mode !== 'context') {
+        return new Response('Unknown mode (use thumb or context)', { status: 400 });
+      }
+
+      // Cache key includes mode suffix so thumb vs context don't collide.
+      // The sha1 part is shared with ai:faceCrop's existing disk cache
+      // (mode=thumb), so a thumb already generated by the old code
+      // path is hit here too — no double work after migration.
+      const baseKey = faceCropCacheKey(fp, bx, by, bw, bh, size);
+      const cacheFile = mode === 'thumb'
+        ? baseKey                              // backward-compatible with ai:faceCrop's cache
+        : baseKey.replace(/\.jpg$/, `.${mode}.jpg`);
+      const cachePath = path.join(faceCropCacheDir, cacheFile);
+      const cachePathLong = toLongPath(cachePath);
+
+      // Cache hit → serve from disk
+      try {
+        if (fs.existsSync(cachePathLong)) {
+          const buf = await fs.promises.readFile(cachePathLong);
+          return new Response(buf, {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'public, max-age=31536000, immutable',
+            },
+          });
+        }
+      } catch { /* fall through to fresh render */ }
+
+      // Cache miss → generate via sharp
+      const sharp = (await import('sharp')).default;
+      const filePathLong = toLongPath(fp);
+      const metadata = await sharp(filePathLong, { failOnError: false }).rotate().metadata();
+      if (!metadata.width || !metadata.height) {
+        return new Response('Could not read image', { status: 500 });
+      }
+      const imgW = metadata.width;
+      const imgH = metadata.height;
+
+      let buffer: Buffer;
+
+      if (mode === 'thumb') {
+        // Tight square crop with 25% padding around the face box.
+        // Identical math to ai:faceCrop above — keep them in sync.
+        let px = Math.round(bx * imgW);
+        let py = Math.round(by * imgH);
+        let pw = Math.round(bw * imgW);
+        let ph = Math.round(bh * imgH);
+        const padding = Math.round(Math.max(pw, ph) * 0.25);
+        const sideLen = Math.max(pw, ph) + padding * 2;
+        const cx = px + pw / 2;
+        const cy = py + ph / 2;
+        px = Math.max(0, Math.round(cx - sideLen / 2));
+        py = Math.max(0, Math.round(cy - sideLen / 2));
+        pw = Math.min(sideLen, imgW - px);
+        ph = Math.min(sideLen, imgH - py);
+        if (pw <= 0 || ph <= 0) return new Response('Invalid crop', { status: 500 });
+        buffer = await sharp(filePathLong, { failOnError: false })
+          .rotate()
+          .extract({ left: px, top: py, width: pw, height: ph })
+          .resize(size, size, { fit: 'cover' })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+      } else {
+        // Wider crop with neutral letterbox background. Identical math
+        // to ai:faceContext's crop step, minus the SVG indicator
+        // overlay (the hover preview no longer needs the overlay —
+        // the user has already clicked the thumbnail itself).
+        const faceX = Math.round(bx * imgW);
+        const faceY = Math.round(by * imgH);
+        const faceW = Math.round(bw * imgW);
+        const faceH = Math.round(bh * imgH);
+        const expand = 1.5;
+        const contextSide = Math.round(Math.max(faceW, faceH) * (1 + expand * 2));
+        const cx = faceX + faceW / 2;
+        const cy = faceY + faceH / 2;
+        let cropX = Math.max(0, Math.round(cx - contextSide / 2));
+        let cropY = Math.max(0, Math.round(cy - contextSide / 2));
+        const cropW = Math.min(contextSide, imgW - cropX);
+        const cropH = Math.min(contextSide, imgH - cropY);
+        if (cropW <= 0 || cropH <= 0) return new Response('Invalid crop', { status: 500 });
+        buffer = await sharp(filePathLong, { failOnError: false })
+          .rotate()
+          .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
+          .resize(size, size, { fit: 'contain', background: { r: 245, g: 243, b: 250, alpha: 1 } })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+      }
+
+      // Persist to cache for next time (best-effort).
+      fs.promises.writeFile(cachePathLong, buffer).catch(err =>
+        console.warn(`[pdr-face] cache write failed: ${(err as Error).message}`),
+      );
+
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      });
+    } catch (err) {
+      console.warn('[pdr-face] handler error:', (err as Error).message);
+      return new Response((err as Error).message, { status: 500 });
     }
   });
 
@@ -3658,42 +3806,56 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
 
     // Video: extract a frame via ffmpeg-static, then resize through sharp.
     if (!jpegBuffer && VIDEO_EXTS.has(ext)) {
-      // v2.0.15 (Terry 2026-06-05) — negative-cache short-circuit. If
-      // we already tried and failed to extract a thumbnail from this
-      // exact path during this session, skip the cascade — the result
+      // v2.0.15 (Terry 2026-06-05) — failure-counter short-circuit. If
+      // this file has failed extraction N times in a row this session
+      // (VIDEO_THUMB_GIVE_UP_AFTER), skip the cascade — the result
       // will be the same and the storm of pointless ffmpeg subprocess
       // spawns is what crashed Terry's renderer scrolling 6,996 videos
-      // in S&D filtered to Videos-only.
-      if (VIDEO_THUMB_NEGATIVE_CACHE.has(filePathLong)) {
+      // in S&D filtered to Videos-only. Counter rather than boolean
+      // because the initial-storm runs were prone to transient OS-side
+      // kills; a legitimate file could otherwise get poisoned after
+      // one unlucky run and stay missing until the next session.
+      const priorFailures = VIDEO_THUMB_FAILURE_COUNT.get(filePathLong) ?? 0;
+      if (priorFailures >= VIDEO_THUMB_GIVE_UP_AFTER) {
         // Fall through to the next thumbnail source (sharp / nativeImage
         // fallback below) — they'll also fail but at least don't churn.
       } else {
         try {
           // Cascade of seek positions for short clips and codecs that
-          // dislike a 1s pre-seek. v2.0.15 (Terry 2026-06-05) — trimmed
-          // from 4 attempts (1s, 0s, 0.5s, 2s) to 2 (1s, 0.5s). The
-          // original 4-attempt cascade was the inner loop of a renderer
-          // crash: each failing HEVC clip multiplied 4× into the
-          // subprocess storm. 2 attempts cover both the "skip black
-          // fade-in" case and the "clip shorter than 1s" case;
-          // codecs ffmpeg-static fundamentally can't decode wouldn't
-          // succeed at attempt 3 or 4 anyway.
+          // dislike a 1s pre-seek. v2.0.13 (Terry 2026-05-27) — 0s and
+          // 2s were added specifically because Samsung Motion-Photo
+          // .mp4 side-files (2-3 s HEVC) couldn't seek to 1s but the
+          // embedded photo frame is at frame 0 (seek=0s) or near the
+          // end (seek=2s). v2.0.15 (Terry 2026-06-05) — RESTORED the
+          // full 4-attempt cascade after a brief experiment with 2
+          // attempts re-broke Motion Photo thumbnails. The renderer-
+          // crash storm that motivated the trim is now prevented by
+          // VIDEO_THUMB_FAILURE_COUNT (caps total attempts at N per
+          // file per session — no subprocess multiplication across
+          // scroll-bys).
           let frame = await extractVideoFrame(filePathLong, 1);
+          if (!frame) frame = await extractVideoFrame(filePathLong, 0);
           if (!frame) frame = await extractVideoFrame(filePathLong, 0.5);
+          if (!frame) frame = await extractVideoFrame(filePathLong, 2);
           if (frame) {
             jpegBuffer = await sharp(frame, { failOnError: false })
               .resize(size, size, { fit: 'inside', withoutEnlargement: true })
               .jpeg({ quality: 80 })
               .toBuffer();
+            // v2.0.15 — reset the failure count on success so a single
+            // bad-luck run earlier doesn't keep counting against the file.
+            VIDEO_THUMB_FAILURE_COUNT.delete(filePathLong);
           } else {
-            // v2.0.15 — record the failure so subsequent scroll-by
-            // visits skip the cascade entirely.
-            VIDEO_THUMB_NEGATIVE_CACHE.add(filePathLong);
-            console.warn('[ffmpeg] no frame extracted for', filePath, '(tried 1s, 0.5s — adding to session negative cache)');
+            // v2.0.15 — increment the failure count; subsequent visits
+            // stop trying once VIDEO_THUMB_GIVE_UP_AFTER is reached.
+            const next = priorFailures + 1;
+            VIDEO_THUMB_FAILURE_COUNT.set(filePathLong, next);
+            console.warn(`[ffmpeg] no frame extracted for ${filePath} (tried 1s, 0s, 0.5s, 2s — failure ${next}/${VIDEO_THUMB_GIVE_UP_AFTER})`);
           }
         } catch (e) {
-          VIDEO_THUMB_NEGATIVE_CACHE.add(filePathLong);
-          console.warn('[ffmpeg] frame→sharp failed for', filePath, (e as Error).message);
+          const next = priorFailures + 1;
+          VIDEO_THUMB_FAILURE_COUNT.set(filePathLong, next);
+          console.warn(`[ffmpeg] frame→sharp failed for ${filePath} (failure ${next}/${VIDEO_THUMB_GIVE_UP_AFTER}): ${(e as Error).message}`);
         }
       }
     }
@@ -10102,14 +10264,24 @@ ipcMain.handle('ai:refineFromVerified', async (_event, similarityThreshold?: num
     const threshold = similarityThreshold ?? getSettings().aiSearchMatchThreshold ?? 0.72;
     // personFilter restricts refinement to a single named person — used
     // by per-row "Improve" buttons and the post-verify chip prompt.
-    const result = refineFromVerifiedFaces(threshold, personFilter);
+    // v2.0.15 (Terry 2026-06-05) — refineFromVerifiedFaces is now async
+    // with cooperative yields so main can answer IPC during the
+    // tens-of-millions-of-multiplications inner loop. Await is needed.
+    const result = await refineFromVerifiedFaces(threshold, personFilter);
     // Rebuild FTS for all files whose faces were newly assigned
     const database = getDb();
     const personIds = result.perPerson.filter(p => p.matched > 0).map(p => p.personId);
     if (personIds.length > 0) {
       const placeholders = personIds.map(() => '?').join(',');
       const files = database.prepare(`SELECT DISTINCT file_id FROM face_detections WHERE person_id IN (${placeholders})`).all(...personIds) as { file_id: number }[];
-      for (const f of files) rebuildAiFts(f.file_id);
+      // v2.0.15 (Terry 2026-06-05) — yield every 200 rebuilds so the
+      // post-refine FTS pass doesn't also block main for the matched-
+      // file count (potentially thousands of files for a heavy
+      // Improve run). Same pattern as the inner refine loops.
+      for (let i = 0; i < files.length; i++) {
+        if (i > 0 && i % 200 === 0) await new Promise<void>((r) => setImmediate(r));
+        rebuildAiFts(files[i].file_id);
+      }
     }
     // Was missing — every other mutation IPC invalidates the cache.
     // Without this, the Improve flow's loadClusters() comes back with
