@@ -1839,6 +1839,14 @@
         mediaEl.remove();
         mediaEl = null;
       }
+      // v2.0.15 (Terry 2026-06-07) — also remove any leftover
+      // .pdrv-wrap container from a previous video load. mediaEl.remove()
+      // only kills the <video> tag; the wrap (which holds the custom
+      // controls bar + fs-close overlay) was being orphaned in the
+      // container. Two wraps then stacked — the empty old one in
+      // front of the new video, hiding the picture while the new
+      // video's audio still played.
+      container.querySelectorAll('.pdrv-wrap').forEach((w) => w.remove());
       // Remove any stray status/preparing panes from a previous async load
       container.querySelectorAll('.no-image:not(#placeholder)').forEach((n) => n.remove());
 
