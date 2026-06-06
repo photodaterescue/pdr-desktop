@@ -105,6 +105,39 @@
       border-color: rgba(169, 156, 255, 0.4);
     }
     .toolbar-btn[hidden] { display: none; }
+    /* v2.0.15 (Terry 2026-06-06 round 5) — End-of-video replay button.
+       Native HTML5 video controls don't expose the play button for
+       restyling, so we overlay a custom button positioned over the
+       native play button's location (bottom-left of the controls bar).
+       Only shown when video.ended fires; covers the native button via
+       z-index + matching gradient background so the swap reads as
+       "the play button has become a replay button". Click restarts
+       the video from 0 and hides the overlay so the native button
+       comes back for ordinary play/pause. */
+    .video-replay-button {
+      position: absolute;
+      bottom: 5px;
+      left: 5px;
+      width: 42px;
+      height: 38px;
+      z-index: 10;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      background: linear-gradient(0deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.4) 100%);
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .video-replay-button.show {
+      display: flex;
+    }
+    .video-replay-button:hover {
+      background: rgba(169, 156, 255, 0.45);
+    }
     /* v2.0.15 — active state for toggle-style toolbar buttons (video
        Repeat once + Loop endlessly). When .active, the button reads
        as engaged via lavender fill + white text + ring. */
@@ -859,6 +892,16 @@
   <div class="viewer-container" id="container">
     <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
     <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
+    <!-- v2.0.15 (Terry 2026-06-06 round 5) — End-of-video replay
+         overlay. Positioned to cover the native HTML5 play button at
+         the bottom-left of the controls bar. Visible only when the
+         video has ended; hidden again as soon as the user clicks
+         (which restarts playback) or navigates to a different file. -->
+    <button class="video-replay-button" id="btn-video-replay" type="button" title="Replay video">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" stroke="none">
+        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+      </svg>
+    </button>
     <div class="no-image" id="placeholder">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1048,6 +1091,19 @@
     const btnRotateLeft = document.getElementById('btn-rotateLeft');
     const btnRotateRight = document.getElementById('btn-rotateRight');
     const btnOpenExternal = document.getElementById('btn-openExternal');
+    // v2.0.15 (Terry 2026-06-06 round 5) — replay overlay click. One
+    // listener wired here (the button element persists across video
+    // loads), so we don't re-attach on every loadMedia call.
+    const videoReplayBtn = document.getElementById('btn-video-replay');
+    if (videoReplayBtn) {
+      videoReplayBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (mediaEl && isVideo) {
+          try { mediaEl.currentTime = 0; mediaEl.play(); } catch (_) {}
+        }
+        videoReplayBtn.classList.remove('show');
+      });
+    }
     const speedWrap = document.getElementById('speed-wrap');
     const btnSpeed = document.getElementById('btn-speed');
     const speedMenu = document.getElementById('speed-menu');
@@ -1325,6 +1381,10 @@
       isVideo = isVideoPath(filePath);
       setImageControlsVisible(!isVideo);
       btnOpenExternal.hidden = !isVideo;
+      // v2.0.15 (Terry 2026-06-06 round 5) — hide any leftover replay
+      // overlay from a previous video when navigating to a new file.
+      const _replayBtn = document.getElementById('btn-video-replay');
+      if (_replayBtn) _replayBtn.classList.remove('show');
 
       if (isVideo) {
         // Show a transcoding status while we wait for ffmpeg (no-op for
@@ -1367,6 +1427,17 @@
             showUnplayable(filePath);
           };
           video.src = primaryUrl;
+          // v2.0.15 (Terry 2026-06-06 round 5) — show the end-of-video
+          // replay overlay on ended, hide it as soon as the user
+          // resumes playback (whether via my overlay click or the
+          // native play button).
+          const replayBtn = document.getElementById('btn-video-replay');
+          video.addEventListener('ended', () => {
+            if (replayBtn) replayBtn.classList.add('show');
+          });
+          video.addEventListener('play', () => {
+            if (replayBtn) replayBtn.classList.remove('show');
+          });
           container.appendChild(video);
           mediaEl = video;
         };
